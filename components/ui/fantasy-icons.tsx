@@ -30,15 +30,20 @@ export function SpellbookIcon({ className }: IconProps) {
 export function AbilityIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
-      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#red-grad)" />
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#orange-grad)" />
       <defs>
-        <linearGradient id="red-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#8a4a3a" />
-          <stop offset="100%" stopColor="#5a2a20" />
+        <linearGradient id="orange-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#8a5a3a" />
+          <stop offset="100%" stopColor="#5a3520" />
         </linearGradient>
       </defs>
-      {/* Lightning/energy bolt */}
-      <path d="M18 6l-6 10h5l-2 10 8-12h-6l4-8z" fill="#ffaa55" stroke="#ff8833" strokeWidth="0.5" />
+      {/* Hand with arcane magic flowing */}
+      <path d="M12 24v-8l1.5-4 2 1.5v-6l1.5 0.5v5.5l1.5-0.5v-6l1.5 0.5v6l1.5-0.5v-4l1.5 0.5v8l-1 6h-8z" 
+            fill="#ffcc99" stroke="#dd9966" strokeWidth="0.5" />
+      {/* Arcane energy flowing */}
+      <path d="M8 12c2-2 4-1 5 1M6 16c3-1 5 0 6 2" stroke="#ff8844" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+      <circle cx="7" cy="14" r="1.5" fill="#ffaa44" opacity="0.8" />
+      <circle cx="5" cy="17" r="1" fill="#ff8833" opacity="0.6" />
     </svg>
   )
 }
@@ -53,10 +58,14 @@ export function DashIcon({ className }: IconProps) {
           <stop offset="100%" stopColor="#204030" />
         </linearGradient>
       </defs>
-      {/* Running boot */}
-      <path d="M10 24h12v2H10zM12 18c0-4 2-8 4-10l2 2c-2 2-3 5-3 8v4h-3z" fill="#7ab896" stroke="#5a9a76" strokeWidth="0.5" />
+      {/* Running man figure */}
+      <circle cx="20" cy="8" r="3" fill="#7ab896" /> {/* Head */}
+      <path d="M18 11l-2 6 4 1-1 4-3 6" stroke="#7ab896" strokeWidth="2" strokeLinecap="round" fill="none" /> {/* Body & front leg */}
+      <path d="M18 17l3 2 4 5" stroke="#7ab896" strokeWidth="2" strokeLinecap="round" fill="none" /> {/* Back leg */}
+      <path d="M16 17l-4-2" stroke="#7ab896" strokeWidth="2" strokeLinecap="round" fill="none" /> {/* Arm back */}
+      <path d="M20 14l4-1" stroke="#7ab896" strokeWidth="2" strokeLinecap="round" fill="none" /> {/* Arm front */}
       {/* Speed lines */}
-      <path d="M6 14h4M6 18h3M6 22h2" stroke="#7ab896" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5 12h4M5 16h3M5 20h2" stroke="#7ab896" strokeWidth="1.5" strokeLinecap="round" opacity="0.7" />
     </svg>
   )
 }
@@ -71,10 +80,13 @@ export function DisengageIcon({ className }: IconProps) {
           <stop offset="100%" stopColor="#4a2030" />
         </linearGradient>
       </defs>
-      {/* Crossed arrows pointing away */}
-      <path d="M8 8l6 6M24 8l-6 6" stroke="#c87a8a" strokeWidth="2" strokeLinecap="round" />
-      <path d="M8 8l4 0 0 4M24 8l-4 0 0 4" stroke="#c87a8a" strokeWidth="1.5" fill="none" />
-      <circle cx="16" cy="20" r="4" fill="none" stroke="#c87a8a" strokeWidth="1.5" strokeDasharray="2 2" />
+      {/* Two arrows pointing in different directions (diverging) */}
+      {/* Left arrow pointing up-left */}
+      <path d="M8 8l8 8" stroke="#c87a8a" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 8l5 0M8 8l0 5" stroke="#c87a8a" strokeWidth="2" strokeLinecap="round" />
+      {/* Right arrow pointing down-right */}
+      <path d="M16 16l8 8" stroke="#c87a8a" strokeWidth="2" strokeLinecap="round" />
+      <path d="M24 24l-5 0M24 24l0-5" stroke="#c87a8a" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }
@@ -89,9 +101,12 @@ export function HelpIcon({ className }: IconProps) {
           <stop offset="100%" stopColor="#5a4a3a" />
         </linearGradient>
       </defs>
-      {/* Raised fist */}
-      <path d="M14 8h4v4h-4zM12 12h8v8h-8zM14 20h4v6h-4z" fill="#d4c4a4" stroke="#b4a484" strokeWidth="0.5" />
-      <path d="M12 12v4M20 12v4" stroke="#b4a484" strokeWidth="1" />
+      {/* Helping hand - open palm reaching */}
+      <path d="M10 22v-6l1-3h2v-4h2v-2h2v2h2v4h2l1 3v6z" fill="#d4c4a4" stroke="#b4a484" strokeWidth="0.5" />
+      {/* Fingers */}
+      <path d="M13 9v4M15 7v6M17 7v6M19 9v4" stroke="#c4b494" strokeWidth="1.5" strokeLinecap="round" />
+      {/* Palm line */}
+      <path d="M12 18h8" stroke="#a49474" strokeWidth="0.5" />
     </svg>
   )
 }
