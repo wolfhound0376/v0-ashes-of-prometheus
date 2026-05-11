@@ -3,6 +3,25 @@
 import { useState } from "react"
 import { FantasyPanel, PanelDivider } from "@/components/ui/fantasy-panel"
 import {
+  HoodIcon,
+  NecklaceIcon,
+  RobeIcon,
+  PantsIcon,
+  BootsIcon,
+  StaffIcon,
+  OrbIcon,
+  RingIcon,
+  BackpackIcon,
+  MagiRobeIcon,
+  PotionIcon,
+  ScrollIcon,
+  PearlIcon,
+  RopeIcon,
+  TorchIcon,
+  GoldIcon,
+  IconFrame,
+} from "@/components/ui/fantasy-icons"
+import {
   Heart,
   Shield,
   Star,
@@ -10,13 +29,6 @@ import {
   Eye,
   Sparkles,
   ChevronDown,
-  Backpack,
-  Shirt,
-  FlaskConical,
-  Gem,
-  Cable,
-  Flame,
-  Coins,
   Weight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -56,15 +68,31 @@ interface RightColumnProps {
   inventory: InventoryItem[]
 }
 
-const iconMap: Record<string, any> = {
-  backpack: Backpack,
-  shirt: Shirt,
-  "flask-conical": FlaskConical,
-  scroll: Scroll,
-  gem: Gem,
-  cable: Cable,
-  flame: Flame,
-  coins: Coins,
+const inventoryIconMap: Record<string, React.FC<{ className?: string }>> = {
+  backpack: BackpackIcon,
+  shirt: MagiRobeIcon,
+  "flask-conical": PotionIcon,
+  scroll: ScrollIcon,
+  gem: PearlIcon,
+  cable: RopeIcon,
+  flame: TorchIcon,
+  coins: GoldIcon,
+}
+
+const equipmentSlots = {
+  left: [
+    { id: "head", label: "Head", Icon: HoodIcon },
+    { id: "neck", label: "Neck", Icon: NecklaceIcon },
+    { id: "torso", label: "Torso", Icon: RobeIcon },
+    { id: "legs", label: "Legs", Icon: PantsIcon },
+    { id: "feet", label: "Feet", Icon: BootsIcon },
+  ],
+  right: [
+    { id: "mainHand", label: "Main Hand", Icon: StaffIcon },
+    { id: "offHand", label: "Off Hand", Icon: OrbIcon },
+    { id: "ring1", label: "Ring", Icon: RingIcon },
+    { id: "ring2", label: "Ring", Icon: RingIcon },
+  ],
 }
 
 export function RightColumn({ character, inventory }: RightColumnProps) {
@@ -132,30 +160,37 @@ export function RightColumn({ character, inventory }: RightColumnProps) {
 
         {/* Equipment Paper Doll & Inventory */}
         <div className="flex-1 overflow-y-auto">
-          <div className="flex">
-            {/* Equipment Slots */}
-            <div className="w-32 p-2 border-r border-[#3d3428]/40">
-              <div className="space-y-1">
-                <EquipmentSlot label="Head" />
-                <EquipmentSlot label="Neck" />
-                <EquipmentSlot label="Torso" />
-                <EquipmentSlot label="Legs" />
-                <EquipmentSlot label="Feet" />
+          <div className="flex py-2">
+            {/* Left Equipment Slots */}
+            <div className="w-24 px-2 flex flex-col justify-center">
+              <div className="space-y-2">
+                {equipmentSlots.left.map((slot) => (
+                  <EquipmentSlot key={slot.id} label={slot.label} Icon={slot.Icon} />
+                ))}
               </div>
             </div>
 
             {/* Character Silhouette */}
-            <div className="w-24 p-2 flex items-center justify-center">
-              <div className="w-16 h-32 bg-gradient-to-b from-[#2a3a4a] to-[#1a2a35] rounded-t-full opacity-60 border border-[#4a5a6a]/30" />
+            <div className="flex-1 flex items-center justify-center px-2">
+              <div className="relative w-24 h-40">
+                {/* Character silhouette background */}
+                <div className="absolute inset-0 bg-gradient-to-b from-[#2a3a4a]/60 to-[#1a2a35]/60 rounded-t-full border border-[#4a5a6a]/30">
+                  {/* Head */}
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-10 rounded-full bg-[#3a4a5a]/60" />
+                  {/* Body */}
+                  <div className="absolute top-10 left-1/2 -translate-x-1/2 w-12 h-16 bg-[#2a3a4a]/60 rounded-t-lg" />
+                  {/* Robe details */}
+                  <div className="absolute top-12 left-1/2 -translate-x-1/2 w-16 h-20 border-x border-[#4a6a8a]/30" />
+                </div>
+              </div>
             </div>
 
             {/* Right Equipment Slots */}
-            <div className="w-24 p-2 border-l border-[#3d3428]/40">
-              <div className="space-y-1">
-                <EquipmentSlot label="Main Hand" compact />
-                <EquipmentSlot label="Off Hand" compact />
-                <EquipmentSlot label="Ring" compact />
-                <EquipmentSlot label="Ring" compact />
+            <div className="w-24 px-2 flex flex-col justify-center">
+              <div className="space-y-2">
+                {equipmentSlots.right.map((slot, index) => (
+                  <EquipmentSlot key={`${slot.id}-${index}`} label={slot.label} Icon={slot.Icon} alignRight />
+                ))}
               </div>
             </div>
           </div>
@@ -166,7 +201,7 @@ export function RightColumn({ character, inventory }: RightColumnProps) {
           <div className="px-3 pb-3">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-semibold tracking-[0.15em] uppercase text-[#c9b896]">Inventory</h4>
-              <button className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors">
+              <button className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors px-2 py-1 rounded border border-[#3d3428]/60 bg-[#1a1614]/60">
                 All Items
                 <ChevronDown className="w-3 h-3" />
               </button>
@@ -174,7 +209,7 @@ export function RightColumn({ character, inventory }: RightColumnProps) {
 
             <div className="space-y-1">
               {inventory.map((item) => {
-                const Icon = iconMap[item.icon] || Backpack
+                const IconComponent = inventoryIconMap[item.icon] || BackpackIcon
                 const isSelected = selectedItem === item.id
                 return (
                   <button
@@ -186,12 +221,14 @@ export function RightColumn({ character, inventory }: RightColumnProps) {
                       isSelected && "bg-[#1a2a35]/60 border border-[#4a7a9a]/30"
                     )}
                   >
-                    <div className="w-7 h-7 rounded-sm bg-[#1a1614] border border-[#3d3428]/60 flex items-center justify-center">
-                      <Icon className="w-4 h-4 text-[#8b7355]" />
-                    </div>
+                    <IconFrame className="w-9 h-9 flex-shrink-0" selected={isSelected}>
+                      <div className="w-full h-full bg-[#1a1614] p-0.5">
+                        <IconComponent className="w-full h-full" />
+                      </div>
+                    </IconFrame>
                     <span className="flex-1 text-sm text-stone-300 truncate">{item.name}</span>
                     {item.quantity > 1 && (
-                      <span className="text-xs text-stone-500">x{item.quantity}</span>
+                      <span className="text-xs text-stone-500 tabular-nums">x{item.quantity}</span>
                     )}
                   </button>
                 )
@@ -286,19 +323,31 @@ function StatRow({
   )
 }
 
-function EquipmentSlot({ label, compact }: { label: string; compact?: boolean }) {
+function EquipmentSlot({ 
+  label, 
+  Icon,
+  alignRight 
+}: { 
+  label: string
+  Icon: React.FC<{ className?: string }>
+  alignRight?: boolean 
+}) {
   return (
-    <div className="flex items-center gap-2 group">
-      <div
-        className={cn(
-          "rounded-sm bg-[#1a1614] border border-[#3d3428]/60 flex items-center justify-center",
-          "hover:border-[#5a4a3a]/80 transition-colors cursor-pointer",
-          compact ? "w-8 h-8" : "w-10 h-10"
-        )}
-      >
-        <div className="w-2 h-2 rounded-full bg-[#3d3428]/60" />
-      </div>
-      <span className="text-[10px] text-stone-500 group-hover:text-stone-400 transition-colors">{label}</span>
+    <div className={cn(
+      "flex items-center gap-2 group",
+      alignRight && "flex-row-reverse"
+    )}>
+      <IconFrame className="w-12 h-12 flex-shrink-0">
+        <div className="w-full h-full bg-[#1a1614] hover:bg-[#2a2420] transition-colors cursor-pointer p-1">
+          <Icon className="w-full h-full opacity-70 group-hover:opacity-100 transition-opacity" />
+        </div>
+      </IconFrame>
+      <span className={cn(
+        "text-[10px] text-stone-500 group-hover:text-stone-400 transition-colors",
+        alignRight && "text-right"
+      )}>
+        {label}
+      </span>
     </div>
   )
 }

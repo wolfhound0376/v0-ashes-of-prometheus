@@ -1,22 +1,25 @@
 "use client"
 
-import { FantasyPanel, PanelDivider } from "@/components/ui/fantasy-panel"
+import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { quickAbilities } from "@/lib/game-data"
 import {
-  Sparkles,
-  Zap,
-  Move,
-  ShieldOff,
-  Handshake,
-  Clock,
-  Search,
-  BookOpen,
-  Hand,
-  Flame,
-  Shield,
-  Eye,
-  Lock,
-} from "lucide-react"
+  SpellbookIcon,
+  AbilityIcon,
+  DashIcon,
+  DisengageIcon,
+  HelpIcon,
+  ReadyIcon,
+  SearchIcon,
+  RitualIcon,
+  MageHandIcon,
+  FireBoltIcon,
+  ShieldSpellIcon,
+  MagicMissileIcon,
+  DetectMagicIcon,
+  LockedAbilityIcon,
+  IconFrame,
+} from "@/components/ui/fantasy-icons"
+import { BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Action {
@@ -45,20 +48,24 @@ interface CenterColumnProps {
   resources: Resources
 }
 
-const iconMap: Record<string, any> = {
-  sparkles: Sparkles,
-  zap: Zap,
-  move: Move,
-  "shield-off": ShieldOff,
-  "hand-helping": Handshake,
-  clock: Clock,
-  search: Search,
-  "book-open": BookOpen,
-  hand: Hand,
-  flame: Flame,
-  shield: Shield,
-  eye: Eye,
-  lock: Lock,
+const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
+  "cast-spell": SpellbookIcon,
+  "use-ability": AbilityIcon,
+  dash: DashIcon,
+  disengage: DisengageIcon,
+  help: HelpIcon,
+  ready: ReadyIcon,
+  search: SearchIcon,
+  "cast-ritual": RitualIcon,
+}
+
+const quickAbilityIconMap: Record<string, React.FC<{ className?: string }>> = {
+  "mage-hand": MageHandIcon,
+  "fire-bolt": FireBoltIcon,
+  shield: ShieldSpellIcon,
+  "magic-missile": MagicMissileIcon,
+  "detect-magic": DetectMagicIcon,
+  locked: LockedAbilityIcon,
 }
 
 export function CenterColumn({ selectedAction, onActionSelect, actions, resources }: CenterColumnProps) {
@@ -97,7 +104,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
             {/* Actions list */}
             <div className="flex-1 p-2 space-y-1">
               {actions.map((action) => {
-                const Icon = iconMap[action.icon] || Sparkles
+                const IconComponent = actionIconMap[action.id] || SpellbookIcon
                 const isSelected = selectedAction === action.id
                 return (
                   <button
@@ -109,21 +116,12 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
                       isSelected && "bg-[#1a2a35]/80 border border-[#4a7a9a]/40 shadow-[0_0_10px_rgba(100,150,200,0.15)]"
                     )}
                   >
-                    <div
-                      className={cn(
-                        "w-8 h-8 rounded-sm flex items-center justify-center",
-                        "bg-gradient-to-br from-[#2a2420] to-[#1a1614] border border-[#3d3428]/60",
-                        isSelected && "from-[#1a3040] to-[#0f1a20] border-[#4a7a9a]/60",
-                        "group-hover:border-[#5a4a3a]/80"
-                      )}
+                    <IconFrame 
+                      className="w-10 h-10 flex-shrink-0" 
+                      selected={isSelected}
                     >
-                      <Icon
-                        className={cn(
-                          "w-4 h-4",
-                          isSelected ? "text-[#7aa8c8]" : "text-[#8b7355] group-hover:text-[#c9b896]"
-                        )}
-                      />
-                    </div>
+                      <IconComponent className="w-full h-full" />
+                    </IconFrame>
                     <div className="flex-1 min-w-0">
                       <p
                         className={cn(
@@ -193,36 +191,34 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
         <div className="p-3">
           <div className="flex gap-2 justify-center">
             {quickAbilities.map((ability) => {
-              const Icon = iconMap[ability.icon] || Sparkles
+              const IconComponent = quickAbilityIconMap[ability.icon] || LockedAbilityIcon
               return (
                 <button
                   key={ability.id}
                   disabled={!ability.unlocked}
                   className={cn(
-                    "flex flex-col items-center gap-1 p-2 rounded-sm transition-all",
+                    "flex flex-col items-center gap-1 p-1 rounded-sm transition-all",
                     ability.unlocked
                       ? "hover:bg-[#2a2420]/60 group cursor-pointer"
                       : "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <div
-                    className={cn(
-                      "w-12 h-12 rounded-sm flex items-center justify-center",
-                      "bg-gradient-to-br from-[#1a2a35] to-[#0f1a20] border border-[#4a7a9a]/40",
-                      ability.unlocked && "shadow-[0_0_10px_rgba(100,150,200,0.2)]",
-                      !ability.unlocked && "from-[#1a1614] to-[#0d0b0a] border-[#3d3428]/40"
-                    )}
+                  <IconFrame 
+                    className="w-14 h-14" 
+                    disabled={!ability.unlocked}
                   >
-                    <Icon
-                      className={cn(
-                        "w-6 h-6",
-                        ability.unlocked ? "text-[#7aa8c8]" : "text-stone-600"
-                      )}
-                    />
-                  </div>
+                    <div className={cn(
+                      "w-full h-full bg-gradient-to-br",
+                      ability.unlocked 
+                        ? "from-[#1a2a35] to-[#0f1a20]" 
+                        : "from-[#1a1614] to-[#0d0b0a]"
+                    )}>
+                      <IconComponent className="w-full h-full p-1" />
+                    </div>
+                  </IconFrame>
                   <span
                     className={cn(
-                      "text-[10px] text-center",
+                      "text-[10px] text-center leading-tight",
                       ability.unlocked ? "text-stone-400" : "text-stone-600"
                     )}
                   >
