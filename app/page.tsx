@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
+import { Settings } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
@@ -35,6 +37,15 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
+      {/* Admin link */}
+      <Link 
+        href="/admin"
+        className="fixed top-4 right-4 z-[60] p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
+        title="Content Manager"
+      >
+        <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+      </Link>
+
       {/* Smoke/fog overlay */}
       <div className="fixed inset-0 pointer-events-none z-50 opacity-20">
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20" />
