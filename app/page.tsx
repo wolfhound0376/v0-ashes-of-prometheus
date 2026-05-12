@@ -7,7 +7,7 @@ import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
 import { DiceRollModal, type RollResult, type RollRequest } from "@/components/dashboard/dice-roll-modal"
-import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
+import { characterData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import type { Character, InventoryItem, EquipmentItem } from "@/lib/types/database"
@@ -23,8 +23,6 @@ export default function DashboardPage() {
   const [loadingCharacters, setLoadingCharacters] = useState(true)
 
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
-  const [dialogueInput, setDialogueInput] = useState("")
-  const [dialogue, setDialogue] = useState(dialogueData)
   const [resources, setResources] = useState({
     action: 1,
     bonusAction: 1,
@@ -178,13 +176,6 @@ export default function DashboardPage() {
     }
   }
 
-  const handleDialogueSubmit = () => {
-    if (dialogueInput.trim()) {
-      setDialogue([...dialogue, { speaker: "You", text: dialogueInput.trim() }])
-      setDialogueInput("")
-    }
-  }
-
   // Handler for populating starting equipment (D&D 5E standard gear)
   const handlePopulateStartingGear = async (equipment: any[], inventory: any[], gold: number) => {
     if (!selectedCharacterId) return
@@ -262,12 +253,14 @@ export default function DashboardPage() {
       <div className="h-screen p-2 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
         <LeftColumn
           environment={environmentData}
-          dialogue={dialogue}
-          dialogueInput={dialogueInput}
-          setDialogueInput={setDialogueInput}
-          onDialogueSubmit={handleDialogueSubmit}
+          characterId={selectedCharacterId ?? undefined}
+          campaignId="ashes_of_prometheus"
           characterAvatar={selectedCharacter?.avatar_image_url}
           characterName={selectedCharacter?.name}
+          onDialogueSubmit={(message) => {
+            // Push player dialogue to telemetry
+            handleTelemetryPush('DIALOGUE', message)
+          }}
         />
         
         <CenterColumn

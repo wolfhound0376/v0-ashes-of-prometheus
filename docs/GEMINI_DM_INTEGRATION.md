@@ -126,6 +126,94 @@ When the player takes actions, the dashboard pushes this data:
 - `READY` - Prepare a triggered action
 - `CUNNING_DASH/DISENGAGE/HIDE` - Rogue bonus action versions
 
+### HOW TO PUSH STORY PROMPTS TO THE DASHBOARD
+
+Your narrative responses appear directly in the player's Story Dialogue panel. Push your DM messages to Supabase:
+
+**REST API Call:**
+```
+POST https://ppadxmvvvxmnnejeaoer.supabase.co/rest/v1/story_dialogue
+
+Headers:
+  apikey: [ANON_KEY]
+  Authorization: Bearer [ANON_KEY]
+  Content-Type: application/json
+  Prefer: return=minimal
+
+Body:
+{
+  "campaign_id": "ashes_of_prometheus",
+  "speaker": "The Lich",
+  "speaker_type": "dm",
+  "message": "Your narrative text here...",
+  "emotion": "threatening",
+  "requires_response": true,
+  "response_type": "dialogue"
+}
+```
+
+**Story Dialogue Schema:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| campaign_id | TEXT | Always "ashes_of_prometheus" |
+| speaker | TEXT | "The Lich", "DM", NPC name, etc. |
+| speaker_type | TEXT | "dm", "npc", or "system" |
+| message | TEXT | Your narrative text |
+| emotion | TEXT | Optional: "threatening", "mysterious", "helpful" |
+| requires_response | BOOLEAN | Set true if player must respond |
+| response_type | TEXT | "dialogue", "action", "roll", or null |
+
+**Emotion Styling:**
+- `threatening` - Red text (for danger, warnings)
+- `mysterious` - Purple text (for arcane, unknown)
+- `helpful` - Green text (for guidance, hints)
+- (default) - Stone gray text
+
+**Response Types:**
+- `dialogue` - Player should type a response
+- `action` - Player should select an action from the panel
+- `roll` - Player should make a dice roll
+
+**Example: Lich Narrative**
+```json
+{
+  "campaign_id": "ashes_of_prometheus",
+  "speaker": "The Lich",
+  "speaker_type": "dm",
+  "message": "The shadows coalesce before you, revealing the ancient form of the Lich. Its hollow eye sockets burn with pale fire as it speaks: 'You dare trespass in my sanctum, mortal? How... amusing.'",
+  "emotion": "threatening",
+  "requires_response": true,
+  "response_type": "dialogue"
+}
+```
+
+**Example: System Message**
+```json
+{
+  "campaign_id": "ashes_of_prometheus",
+  "speaker": "System",
+  "speaker_type": "system",
+  "message": "A Stealth check is required (DC 15)",
+  "requires_response": true,
+  "response_type": "roll"
+}
+```
+
+### FETCHING PLAYER RESPONSES
+
+The player's responses also appear in the story_dialogue table. Fetch recent messages:
+
+```
+GET https://ppadxmvvvxmnnejeaoer.supabase.co/rest/v1/story_dialogue?campaign_id=eq.ashes_of_prometheus&order=sequence_number.desc&limit=10
+
+Headers:
+  apikey: [ANON_KEY]
+  Authorization: Bearer [ANON_KEY]
+```
+
+Player messages have `speaker_type: "player"` and contain their typed responses.
+
 ### RESPONSE FORMAT
 
 When responding to player actions, structure your response as:
@@ -134,6 +222,8 @@ When responding to player actions, structure your response as:
 2. **Narrative Description**: Describe what happens in the game world
 3. **State Update**: Note any changes (damage taken, position changed, etc.)
 4. **Prompt**: Ask what the player does next or present choices
+
+**IMPORTANT**: After formulating your response, ALWAYS push it to story_dialogue so it appears in the player's dashboard!
 
 ### EXAMPLE INTERACTION
 
