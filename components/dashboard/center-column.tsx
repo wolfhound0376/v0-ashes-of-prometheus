@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { quickAbilities } from "@/lib/game-data"
 import {
@@ -29,7 +30,15 @@ interface Action {
   icon: string
   iconUrl?: string | null
   type: "action" | "bonus" | "reaction"
+  hasSubmenu?: boolean
 }
+
+// Cunning Action sub-options (D&D 5E: Rogues can Dash, Disengage, or Hide as a bonus action)
+const cunningActionOptions = [
+  { id: "cunning-dash", name: "Dash", description: "Double movement as bonus action", iconUrl: "/icons/actions/dash.png" },
+  { id: "cunning-disengage", name: "Disengage", description: "Avoid opportunity attacks", iconUrl: "/icons/actions/disengage.png" },
+  { id: "cunning-hide", name: "Hide", description: "Make a Stealth check to hide", iconUrl: "/icons/actions/hide.png" },
+]
 
 interface Resources {
   action: number
@@ -287,49 +296,97 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
 }
 
 function ActionButton({ action, isSelected, onSelect }: { action: Action; isSelected: boolean; onSelect: (id: string) => void }) {
+  const [showSubmenu, setShowSubmenu] = useState(false)
   const IconComponent = actionIconMap[action.id] || SpellbookIcon
   const typeColors = actionTypeColors[action.type]
   
+  // Dark red border for bonus actions
+  const bonusBorderClass = action.type === "bonus" ? "ring-2 ring-[#8a2a2a]/60" : ""
+  
+  const handleClick = () => {
+    if (action.hasSubmenu) {
+      setShowSubmenu(!showSubmenu)
+    } else {
+      onSelect(action.id)
+    }
+  }
+  
   return (
-    <button
-      onClick={() => onSelect(action.id)}
-      className={cn(
-        "w-full flex items-center gap-3 p-2 rounded-sm transition-all text-left border",
-        "hover:bg-[#2a2420]/60 group",
-        isSelected 
-          ? cn(typeColors.bg, typeColors.border, "shadow-[0_0_10px_rgba(100,150,100,0.15)]")
-          : "border-transparent"
-      )}
-    >
-      <IconFrame 
-        className="w-10 h-10 flex-shrink-0" 
-        selected={isSelected}
-      >
-        {action.iconUrl ? (
-          <img src={action.iconUrl} alt={action.name} className="w-full h-full object-cover" />
-        ) : (
-          <IconComponent className="w-full h-full" />
+    <div className="relative">
+      <button
+        onClick={handleClick}
+        className={cn(
+          "w-full flex items-center gap-3 p-2 rounded-sm transition-all text-left border",
+          "hover:bg-[#2a2420]/60 group",
+          isSelected 
+            ? cn(typeColors.bg, typeColors.border, "shadow-[0_0_10px_rgba(100,150,100,0.15)]")
+            : "border-transparent"
         )}
-      </IconFrame>
-      <div className="flex-1 min-w-0">
-        <p
-          className={cn(
-            "text-sm font-medium",
-            isSelected ? typeColors.text : "text-stone-200 group-hover:text-white"
-          )}
+      >
+        <IconFrame 
+          className={cn("w-10 h-10 flex-shrink-0", bonusBorderClass)} 
+          selected={isSelected}
         >
-          {action.name}
-        </p>
-        <p className="text-xs text-stone-500 truncate">{action.description}</p>
-      </div>
-      {/* Type indicator dot */}
-      <div className={cn(
-        "w-2 h-2 rounded-full flex-shrink-0",
-        action.type === "action" && "bg-[#4a8a4a]",
-        action.type === "bonus" && "bg-[#8a7a3a]",
-        action.type === "reaction" && "bg-[#7a4a8a]"
-      )} />
-    </button>
+          {action.iconUrl ? (
+            <img src={action.iconUrl} alt={action.name} className="w-full h-full object-cover" />
+          ) : (
+            <IconComponent className="w-full h-full" />
+          )}
+        </IconFrame>
+        <div className="flex-1 min-w-0">
+          <p
+            className={cn(
+              "text-sm font-medium",
+              isSelected ? typeColors.text : "text-stone-200 group-hover:text-white"
+            )}
+          >
+            {action.name}
+          </p>
+          <p className="text-xs text-stone-500 truncate">{action.description}</p>
+        </div>
+        {/* Submenu indicator for Cunning Action */}
+        {action.hasSubmenu && (
+          <span className="text-stone-500 text-xs mr-1">{showSubmenu ? "▼" : "▶"}</span>
+        )}
+        {/* Type indicator dot */}
+        <div className={cn(
+          "w-2 h-2 rounded-full flex-shrink-0",
+          action.type === "action" && "bg-[#4a8a4a]",
+          action.type === "bonus" && "bg-[#8a7a3a]",
+          action.type === "reaction" && "bg-[#7a4a8a]"
+        )} />
+      </button>
+      
+      {/* Cunning Action Submenu */}
+      {action.hasSubmenu && showSubmenu && (
+        <div className="ml-4 mt-1 p-2 bg-[#1a1614] border border-[#8a2a2a]/60 rounded-sm shadow-lg">
+          <p className="text-[10px] uppercase tracking-wider text-[#8a2a2a] mb-2 px-1">Choose Action</p>
+          <div className="flex gap-2">
+            {cunningActionOptions.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => {
+                  onSelect(option.id)
+                  setShowSubmenu(false)
+                }}
+                className="flex flex-col items-center gap-1 p-1 rounded-sm hover:bg-[#2a2420]/60 transition-all group"
+              >
+                <div className="w-12 h-12 rounded-md overflow-hidden border-2 border-[#8a2a2a] shadow-[0_0_8px_rgba(138,42,42,0.4)]">
+                  <img 
+                    src={option.iconUrl} 
+                    alt={option.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <span className="text-[9px] text-stone-400 group-hover:text-white text-center leading-tight">
+                  {option.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

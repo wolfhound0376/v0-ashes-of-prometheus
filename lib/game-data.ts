@@ -53,13 +53,13 @@ export const actionsData = [
   { id: "use-object", name: "Use an Object", description: "Interact with a second object or use a special object.", icon: "package", iconUrl: "/icons/actions/use-object.png", type: "action" },
   
   // Bonus Actions (Yellow)
-  { id: "offhand-attack", name: "Offhand Attack", description: "Attack with a light weapon in your off hand.", icon: "swords", iconUrl: null, type: "bonus" },
-  { id: "cast-bonus-spell", name: "Cast Bonus Spell", description: "Cast a spell with a casting time of 1 bonus action.", icon: "zap", iconUrl: null, type: "bonus" },
-  { id: "cunning-action", name: "Cunning Action", description: "Dash, Disengage, or Hide as a bonus action. (Rogue)", icon: "footprints", iconUrl: null, type: "bonus" },
+  { id: "offhand-attack", name: "Offhand Attack", description: "Attack with a light weapon in your off hand.", icon: "swords", iconUrl: "/icons/actions/offhand-attack.png", type: "bonus" },
+  { id: "cast-bonus-spell", name: "Cast Bonus Spell", description: "Cast a spell with a casting time of 1 bonus action.", icon: "zap", iconUrl: "/icons/actions/cast-spell.png", type: "bonus" },
+  { id: "cunning-action", name: "Cunning Action", description: "Dash, Disengage, or Hide as a bonus action. (Rogue)", icon: "footprints", iconUrl: "/icons/actions/cunning-action.png", type: "bonus", hasSubmenu: true },
   { id: "second-wind", name: "Second Wind", description: "Regain 1d10 + fighter level hit points. (Fighter)", icon: "heart-pulse", iconUrl: "/icons/actions/second-wind.png", type: "bonus" },
   
   // Reactions (Purple)
-  { id: "opportunity-attack", name: "Opportunity Attack", description: "Attack a creature leaving your reach.", icon: "swords", iconUrl: null, type: "reaction" },
+  { id: "opportunity-attack", name: "Opportunity Attack", description: "Attack a creature leaving your reach.", icon: "swords", iconUrl: "/icons/actions/opportunity-attack.png", type: "reaction" },
   { id: "cast-reaction-spell", name: "Cast Reaction Spell", description: "Cast a spell like Shield or Counterspell.", icon: "shield-plus", iconUrl: null, type: "reaction" },
   { id: "uncanny-dodge", name: "Uncanny Dodge", description: "Halve damage from an attack you can see. (Rogue)", icon: "shield-half", iconUrl: null, type: "reaction" },
 ]
