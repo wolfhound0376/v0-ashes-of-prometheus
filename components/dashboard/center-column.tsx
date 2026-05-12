@@ -208,12 +208,20 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
                     disabled={!ability.unlocked}
                   >
                     <div className={cn(
-                      "w-full h-full bg-gradient-to-br",
+                      "w-full h-full bg-gradient-to-br overflow-hidden",
                       ability.unlocked 
                         ? "from-[#1a2a35] to-[#0f1a20]" 
                         : "from-[#1a1614] to-[#0d0b0a]"
                     )}>
-                      <IconComponent className="w-full h-full p-1" />
+                      {ability.iconUrl ? (
+                        <img 
+                          src={ability.iconUrl} 
+                          alt={ability.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <IconComponent className="w-full h-full p-1" />
+                      )}
                     </div>
                   </IconFrame>
                   <span
