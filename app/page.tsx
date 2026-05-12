@@ -6,6 +6,7 @@ import { Settings } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
+import { DiceRoller, type RollResult, type AbilityModifier } from "@/components/dashboard/dice-roller"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
@@ -85,6 +86,31 @@ export default function DashboardPage() {
 
   // Get the currently selected character
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
+
+  // Build ability modifiers for dice roller from character stats
+  const abilityModifiers: AbilityModifier[] = selectedCharacter ? [
+    { name: "Strength", abbr: "STR", modifier: selectedCharacter.str_modifier ?? 0 },
+    { name: "Dexterity", abbr: "DEX", modifier: selectedCharacter.dex_modifier ?? 0 },
+    { name: "Constitution", abbr: "CON", modifier: selectedCharacter.con_modifier ?? 0 },
+    { name: "Intelligence", abbr: "INT", modifier: selectedCharacter.int_modifier ?? 0 },
+    { name: "Wisdom", abbr: "WIS", modifier: selectedCharacter.wis_modifier ?? 0 },
+    { name: "Charisma", abbr: "CHA", modifier: selectedCharacter.cha_modifier ?? 0 },
+  ] : []
+
+  // Calculate proficiency bonus based on level (D&D 5E rules)
+  const proficiencyBonus = selectedCharacter 
+    ? Math.ceil(1 + (selectedCharacter.level ?? 1) / 4) + 1 
+    : 2
+
+  // Handle dice roll with telemetry
+  const handleDiceRoll = (result: RollResult) => {
+    // Push telemetry for the roll
+    handleTelemetryPush(
+      result.label?.toUpperCase().replace(/ /g, '_') || 'DICE_ROLL',
+      `Rolled ${result.dice}: ${result.total}`,
+      result.total
+    )
+  }
 
   // Get available actions based on character class
   const availableActionIds = selectedCharacter 
@@ -211,14 +237,27 @@ export default function DashboardPage() {
           characterAvatar={selectedCharacter?.avatar_image_url}
           characterName={selectedCharacter?.name}
         />
-        <CenterColumn
-          selectedAction={selectedAction}
-          onActionSelect={handleActionSelect}
-          actions={actionsData}
-          resources={resources}
-          availableActionIds={availableActionIds}
-          onTelemetryPush={handleTelemetryPush}
-        />
+        
+        {/* Center area with actions and dice roller */}
+        <div className="flex flex-col gap-2 h-full overflow-hidden">
+          <CenterColumn
+            selectedAction={selectedAction}
+            onActionSelect={handleActionSelect}
+            actions={actionsData}
+            resources={resources}
+            availableActionIds={availableActionIds}
+            onTelemetryPush={handleTelemetryPush}
+          />
+          
+          {/* Dice Roller */}
+          <DiceRoller
+            abilityModifiers={abilityModifiers}
+            proficiencyBonus={proficiencyBonus}
+            onRoll={handleDiceRoll}
+            className="flex-shrink-0"
+          />
+        </div>
+        
         <RightColumn 
           characters={characters}
           selectedCharacterId={selectedCharacterId}

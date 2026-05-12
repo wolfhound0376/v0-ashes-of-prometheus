@@ -106,7 +106,7 @@ const actionTypeColors = {
 
 export function CenterColumn({ selectedAction, onActionSelect, actions, resources }: CenterColumnProps) {
   return (
-    <div className="flex flex-col gap-2 h-full overflow-hidden">
+    <div className="flex flex-col gap-2 flex-1 min-h-0 overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
         <div className="h-[100px] flex items-center justify-center">
           {selectedAction ? (
