@@ -12,20 +12,14 @@ export async function POST(request: NextRequest) {
       request,
       onBeforeGenerateToken: async (pathname) => {
         // Validate and authorize the upload
-        // You can add authentication checks here
         return {
           allowedContentTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
           maximumSizeInBytes: 10 * 1024 * 1024, // 10MB
-          tokenPayload: JSON.stringify({
-            uploadedAt: Date.now(),
-          }),
         }
       },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        // Called after upload is complete
-        // You can update your database here
-        console.log('Upload completed:', blob.pathname)
-      },
+      // Note: onUploadCompleted is omitted as it requires a public callback URL
+      // which isn't available in development. The upload still works - we just
+      // won't get a server-side notification when it completes.
     })
 
     return NextResponse.json(jsonResponse)
