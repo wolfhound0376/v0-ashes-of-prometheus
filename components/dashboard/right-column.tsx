@@ -300,7 +300,7 @@ export function RightColumn({
                     <img 
                       src={(character as any).avatarUrl} 
                       alt={character.name}
-                      className="max-w-full max-h-full object-contain drop-shadow-[0_0_20px_rgba(100,150,200,0.4)] mix-blend-lighten"
+                      className="max-w-full max-h-full object-contain drop-shadow-[0_0_20px_rgba(100,150,200,0.4)]"
                     />
                     {/* Subtle glow effect */}
                     <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-12 bg-[#6aa0c0]/20 rounded-full blur-xl" />

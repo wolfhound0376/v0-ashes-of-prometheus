@@ -57,7 +57,7 @@ export function LeftColumn({
                   <img 
                     src={characterAvatar} 
                     alt={characterName || "Character"} 
-                    className="max-w-full max-h-full object-contain drop-shadow-[0_0_25px_rgba(100,150,200,0.5)] mix-blend-lighten"
+                    className="max-w-full max-h-full object-contain drop-shadow-[0_0_25px_rgba(100,150,200,0.5)]"
                   />
                   {/* Magical glow effect */}
                   <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-28 h-16 bg-[#6aa0c0]/25 rounded-full blur-xl" />
