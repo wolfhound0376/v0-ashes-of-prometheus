@@ -1,3 +1,4 @@
+import { anthropic } from '@ai-sdk/anthropic'
 import { generateText } from 'ai'
 import { composeNarratorPrompt, ASHES_OF_PROMETHEUS_PROMPT, type NarratorContext } from '@/lib/personas/lich-dm'
 
@@ -24,9 +25,9 @@ export async function POST(req: Request) {
       context: narratorContext,
     })
 
-    // Use Vercel AI Gateway with Anthropic Claude Opus 4.7
+    // Use direct Anthropic provider with Claude Opus 4
     const result = await generateText({
-      model: 'anthropic/claude-opus-4.7' as any,
+      model: anthropic('claude-opus-4-20250514'),
       system: systemPrompt,
       prompt: playerInput,
       temperature: 0.8,
