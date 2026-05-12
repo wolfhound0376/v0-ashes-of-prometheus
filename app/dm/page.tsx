@@ -273,10 +273,12 @@ Hint at the artifact they seek and the trials ahead. Make it memorable and theat
 
   // Generate a response from the Lich using Claude
   const generateLichResponse = async (playerInput: string, context?: string) => {
+    console.log('[v0] generateLichResponse called with:', playerInput)
     handleStateChange('speaking')
     setCurrentDialogue('...')
     
     try {
+      console.log('[v0] Calling /api/narrator...')
       const response = await fetch('/api/narrator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -289,11 +291,18 @@ Hint at the artifact they seek and the trials ahead. Make it memorable and theat
         })
       })
       
-      if (!response.ok) throw new Error('Failed to generate response')
+      console.log('[v0] API response status:', response.status)
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('[v0] API error:', errorText)
+        throw new Error('Failed to generate response')
+      }
       
       const data = await response.json()
+      console.log('[v0] API response data:', data)
       const lichResponse = data.response
       
+      console.log('[v0] Setting dialogue to:', lichResponse)
       setCurrentDialogue(lichResponse)
       
       // Insert message to database
@@ -308,11 +317,14 @@ Hint at the artifact they seek and the trials ahead. Make it memorable and theat
       })
       
       // Speak the message if not muted
+      console.log('[v0] isMuted:', isMuted)
       if (!isMuted) {
         try {
+          console.log('[v0] Calling speak()...')
           await speak(lichResponse)
+          console.log('[v0] Speech completed')
         } catch (error) {
-          console.error('Speech failed:', error)
+          console.error('[v0] Speech failed:', error)
         }
       }
       
