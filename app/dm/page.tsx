@@ -215,7 +215,60 @@ export default function DMLayerPage() {
     }
   }
 
-  // Send DM message with speech
+  // Generate a response from the Lich using Claude
+  const generateLichResponse = async (playerInput: string, context?: string) => {
+    handleStateChange('speaking')
+    setCurrentDialogue('...')
+    
+    try {
+      const response = await fetch('/api/narrator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerInput,
+          context,
+          gameState: {
+            currentScene: environments.find(e => e.id === currentEnvironment)?.name || 'Throne Room',
+          }
+        })
+      })
+      
+      if (!response.ok) throw new Error('Failed to generate response')
+      
+      const data = await response.json()
+      const lichResponse = data.response
+      
+      setCurrentDialogue(lichResponse)
+      
+      // Insert message to database
+      await supabase.from('story_dialogue').insert({
+        campaign_id: 'ashes_of_prometheus',
+        speaker: 'Vecna',
+        speaker_type: 'dm',
+        message: lichResponse,
+        emotion: 'threatening',
+        requires_response: true,
+        response_type: 'dialogue'
+      })
+      
+      // Speak the message if not muted
+      if (!isMuted) {
+        try {
+          await speak(lichResponse)
+        } catch (error) {
+          console.error('Speech failed:', error)
+        }
+      }
+      
+      return lichResponse
+    } catch (error) {
+      console.error('Failed to generate Lich response:', error)
+      setCurrentDialogue('*The ancient presence stirs but remains silent*')
+      handleStateChange('idle')
+    }
+  }
+
+  // Send DM message with speech (for manual messages)
   const sendLichMessage = async (message: string, emotion: string = 'threatening') => {
     handleStateChange('speaking')
     setCurrentDialogue(message)
@@ -590,12 +643,13 @@ export default function DMLayerPage() {
         dialogueEndRef={dialogueEndRef}
       />
 
-      {/* DM Controls (for testing/manual control) */}
-      <DMControls 
-        onSendMessage={sendLichMessage}
-        lichState={lichState}
-        setLichState={handleStateChange}
-      />
+{/* DM Controls (for testing/manual control) */}
+<DMControls
+  onSendMessage={sendLichMessage}
+  onGenerateResponse={generateLichResponse}
+  lichState={lichState}
+  setLichState={handleStateChange}
+  />
     </div>
   )
 }

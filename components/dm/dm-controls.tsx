@@ -6,14 +6,16 @@ import { Send, Sparkles, Skull, MessageSquare, Zap } from "lucide-react"
 
 interface DMControlsProps {
   onSendMessage: (message: string, emotion?: string) => void
+  onGenerateResponse?: (playerInput: string, context?: string) => Promise<void>
   lichState: 'idle' | 'speaking' | 'thinking' | 'casting'
   setLichState: (state: 'idle' | 'speaking' | 'thinking' | 'casting') => void
 }
 
-export function DMControls({ onSendMessage, lichState, setLichState }: DMControlsProps) {
+export function DMControls({ onSendMessage, onGenerateResponse, lichState, setLichState }: DMControlsProps) {
   const [input, setInput] = useState("")
   const [selectedEmotion, setSelectedEmotion] = useState<string>("threatening")
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const emotions = [
     { id: 'threatening', label: 'Threatening', color: 'text-red-400 border-red-900/50' },
@@ -140,10 +142,38 @@ export function DMControls({ onSendMessage, lichState, setLichState }: DMControl
             </button>
           </div>
 
-          {/* AI Generate button (future Gemini integration) */}
-          <button className="w-full mt-3 py-2 bg-gradient-to-r from-purple-900/50 to-violet-900/50 border border-purple-700/30 rounded text-purple-300 text-xs uppercase tracking-wider hover:from-purple-800/50 hover:to-violet-800/50 transition-all flex items-center justify-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            Generate AI Response
+          {/* AI Generate button - uses Claude */}
+          <button 
+            onClick={async () => {
+              if (!onGenerateResponse || isGenerating) return
+              setIsGenerating(true)
+              try {
+                const prompt = input.trim() || "The player approaches you seeking guidance"
+                await onGenerateResponse(prompt)
+                setInput("")
+              } finally {
+                setIsGenerating(false)
+              }
+            }}
+            disabled={isGenerating || !onGenerateResponse}
+            className={cn(
+              "w-full mt-3 py-2 border rounded text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2",
+              isGenerating
+                ? "bg-purple-900/30 border-purple-900/30 text-purple-400 cursor-wait"
+                : "bg-gradient-to-r from-purple-900/50 to-violet-900/50 border-purple-700/30 text-purple-300 hover:from-purple-800/50 hover:to-violet-800/50"
+            )}
+          >
+            {isGenerating ? (
+              <>
+                <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                Channeling...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                Generate AI Response (Claude)
+              </>
+            )}
           </button>
         </div>
       )}
