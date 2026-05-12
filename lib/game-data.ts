@@ -41,13 +41,13 @@ export const dialogueData = [
 // D&D 5E Actions - type determines color: action (green), bonus (yellow), reaction (purple)
 export const actionsData = [
   // Standard Actions (Green)
-  { id: "attack", name: "Attack", description: "Make a melee or ranged attack.", icon: "sword", iconUrl: null, type: "action" },
+  { id: "attack", name: "Attack", description: "Make a melee or ranged attack.", icon: "sword", iconUrl: "/icons/actions/attack.png", type: "action" },
   { id: "cast-spell", name: "Cast a Spell", description: "Cast a spell with a casting time of 1 action.", icon: "sparkles", iconUrl: "/icons/actions/cast-spell.png", type: "action" },
-  { id: "dash", name: "Dash", description: "Double your movement speed for this turn.", icon: "move", iconUrl: null, type: "action" },
+  { id: "dash", name: "Dash", description: "Double your movement speed for this turn.", icon: "move", iconUrl: "/icons/actions/dash.png", type: "action" },
   { id: "disengage", name: "Disengage", description: "Your movement doesn't provoke opportunity attacks.", icon: "shield-off", iconUrl: null, type: "action" },
   { id: "dodge", name: "Dodge", description: "Attacks against you have disadvantage until your next turn.", icon: "shield", iconUrl: null, type: "action" },
-  { id: "help", name: "Help", description: "Give an ally advantage on their next ability check or attack.", icon: "hand-helping", iconUrl: null, type: "action" },
-  { id: "hide", name: "Hide", description: "Make a Dexterity (Stealth) check to hide.", icon: "eye-off", iconUrl: null, type: "action" },
+  { id: "help", name: "Help", description: "Give an ally advantage on their next ability check or attack.", icon: "hand-helping", iconUrl: "/icons/actions/help.png", type: "action" },
+  { id: "hide", name: "Hide", description: "Make a Dexterity (Stealth) check to hide.", icon: "eye-off", iconUrl: "/icons/actions/hide.png", type: "action" },
   { id: "ready", name: "Ready", description: "Prepare an action to trigger on a specific condition.", icon: "clock", iconUrl: null, type: "action" },
   { id: "search", name: "Search", description: "Make a Wisdom (Perception) or Intelligence (Investigation) check.", icon: "search", iconUrl: null, type: "action" },
   { id: "use-object", name: "Use an Object", description: "Interact with a second object or use a special object.", icon: "package", iconUrl: null, type: "action" },
