@@ -44,19 +44,19 @@ export const actionsData = [
   { id: "attack", name: "Attack", description: "Make a melee or ranged attack.", icon: "sword", iconUrl: "/icons/actions/attack.png", type: "action" },
   { id: "cast-spell", name: "Cast a Spell", description: "Cast a spell with a casting time of 1 action.", icon: "sparkles", iconUrl: "/icons/actions/cast-spell.png", type: "action" },
   { id: "dash", name: "Dash", description: "Double your movement speed for this turn.", icon: "move", iconUrl: "/icons/actions/dash.png", type: "action" },
-  { id: "disengage", name: "Disengage", description: "Your movement doesn't provoke opportunity attacks.", icon: "shield-off", iconUrl: null, type: "action" },
-  { id: "dodge", name: "Dodge", description: "Attacks against you have disadvantage until your next turn.", icon: "shield", iconUrl: null, type: "action" },
+  { id: "disengage", name: "Disengage", description: "Your movement doesn't provoke opportunity attacks.", icon: "shield-off", iconUrl: "/icons/actions/disengage.png", type: "action" },
+  { id: "dodge", name: "Dodge", description: "Attacks against you have disadvantage until your next turn.", icon: "shield", iconUrl: "/icons/actions/dodge.png", type: "action" },
   { id: "help", name: "Help", description: "Give an ally advantage on their next ability check or attack.", icon: "hand-helping", iconUrl: "/icons/actions/help.png", type: "action" },
   { id: "hide", name: "Hide", description: "Make a Dexterity (Stealth) check to hide.", icon: "eye-off", iconUrl: "/icons/actions/hide.png", type: "action" },
-  { id: "ready", name: "Ready", description: "Prepare an action to trigger on a specific condition.", icon: "clock", iconUrl: null, type: "action" },
-  { id: "search", name: "Search", description: "Make a Wisdom (Perception) or Intelligence (Investigation) check.", icon: "search", iconUrl: null, type: "action" },
-  { id: "use-object", name: "Use an Object", description: "Interact with a second object or use a special object.", icon: "package", iconUrl: null, type: "action" },
+  { id: "ready", name: "Ready", description: "Prepare an action to trigger on a specific condition.", icon: "clock", iconUrl: "/icons/actions/ready.png", type: "action" },
+  { id: "search", name: "Search", description: "Make a Wisdom (Perception) or Intelligence (Investigation) check.", icon: "search", iconUrl: "/icons/actions/search.png", type: "action" },
+  { id: "use-object", name: "Use an Object", description: "Interact with a second object or use a special object.", icon: "package", iconUrl: "/icons/actions/use-object.png", type: "action" },
   
   // Bonus Actions (Yellow)
   { id: "offhand-attack", name: "Offhand Attack", description: "Attack with a light weapon in your off hand.", icon: "swords", iconUrl: null, type: "bonus" },
   { id: "cast-bonus-spell", name: "Cast Bonus Spell", description: "Cast a spell with a casting time of 1 bonus action.", icon: "zap", iconUrl: null, type: "bonus" },
   { id: "cunning-action", name: "Cunning Action", description: "Dash, Disengage, or Hide as a bonus action. (Rogue)", icon: "footprints", iconUrl: null, type: "bonus" },
-  { id: "second-wind", name: "Second Wind", description: "Regain 1d10 + fighter level hit points. (Fighter)", icon: "heart-pulse", iconUrl: null, type: "bonus" },
+  { id: "second-wind", name: "Second Wind", description: "Regain 1d10 + fighter level hit points. (Fighter)", icon: "heart-pulse", iconUrl: "/icons/actions/second-wind.png", type: "bonus" },
   
   // Reactions (Purple)
   { id: "opportunity-attack", name: "Opportunity Attack", description: "Attack a creature leaving your reach.", icon: "swords", iconUrl: null, type: "reaction" },
