@@ -33,7 +33,9 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-interface Character {
+import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
+
+interface FallbackCharacter {
   name: string
   level: number
   class: string
@@ -56,7 +58,7 @@ interface Character {
   weight: { current: number; max: number }
 }
 
-interface InventoryItem {
+interface FallbackInventoryItem {
   id: string
   name: string
   quantity: number
@@ -64,8 +66,15 @@ interface InventoryItem {
 }
 
 interface RightColumnProps {
-  character: Character
-  inventory: InventoryItem[]
+  characters: DBCharacter[]
+  selectedCharacterId: string | null
+  onCharacterSelect: (id: string) => void
+  selectedCharacter?: DBCharacter
+  characterInventory: DBInventoryItem[]
+  characterEquipment: DBEquipmentItem[]
+  fallbackCharacter: FallbackCharacter
+  fallbackInventory: FallbackInventoryItem[]
+  loading: boolean
 }
 
 const inventoryIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -95,8 +104,54 @@ const equipmentSlots = {
   ],
 }
 
-export function RightColumn({ character, inventory }: RightColumnProps) {
+export function RightColumn({ 
+  characters,
+  selectedCharacterId,
+  onCharacterSelect,
+  selectedCharacter,
+  characterInventory,
+  characterEquipment,
+  fallbackCharacter,
+  fallbackInventory,
+  loading
+}: RightColumnProps) {
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
+  const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
+
+  // Transform DB character to display format, or use fallback
+  const character = selectedCharacter ? {
+    name: selectedCharacter.name,
+    level: selectedCharacter.level,
+    class: selectedCharacter.class,
+    xp: selectedCharacter.xp,
+    xpToNext: selectedCharacter.xp_to_next,
+    abilities: {
+      str: { score: selectedCharacter.str_score, modifier: selectedCharacter.str_modifier },
+      dex: { score: selectedCharacter.dex_score, modifier: selectedCharacter.dex_modifier },
+      con: { score: selectedCharacter.con_score, modifier: selectedCharacter.con_modifier },
+      int: { score: selectedCharacter.int_score, modifier: selectedCharacter.int_modifier },
+      wis: { score: selectedCharacter.wis_score, modifier: selectedCharacter.wis_modifier },
+      cha: { score: selectedCharacter.cha_score, modifier: selectedCharacter.cha_modifier },
+    },
+    hp: { current: selectedCharacter.hp_current, max: selectedCharacter.hp_max },
+    ac: selectedCharacter.ac,
+    initiative: selectedCharacter.initiative,
+    proficiencyBonus: selectedCharacter.proficiency_bonus,
+    passivePerception: selectedCharacter.passive_perception,
+    equipment: {},
+    weight: { current: Number(selectedCharacter.weight_current), max: Number(selectedCharacter.weight_max) },
+    avatarUrl: selectedCharacter.avatar_image_url,
+  } : fallbackCharacter
+
+  // Transform inventory
+  const inventory = characterInventory.length > 0 
+    ? characterInventory.map(item => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        icon: item.preset_icon || 'backpack',
+      }))
+    : fallbackInventory
 
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -104,10 +159,67 @@ export function RightColumn({ character, inventory }: RightColumnProps) {
         {/* Character Header */}
         <div className="p-3 border-b border-[#3d3428]/40">
           <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 relative">
               <Sparkles className="w-5 h-5 text-[#7aa8c8]" />
               <div>
-                <h2 className="font-serif text-lg text-[#e8dcc8]">{character.name}</h2>
+                {/* Character name with dropdown */}
+                <button
+                  onClick={() => setShowCharacterDropdown(!showCharacterDropdown)}
+                  className="flex items-center gap-1.5 font-serif text-lg text-[#e8dcc8] hover:text-[#7aa8c8] transition-colors"
+                  disabled={loading || characters.length === 0}
+                >
+                  {loading ? 'Loading...' : character.name}
+                  {characters.length > 0 && (
+                    <ChevronDown className={cn(
+                      "w-4 h-4 transition-transform",
+                      showCharacterDropdown && "rotate-180"
+                    )} />
+                  )}
+                </button>
+                
+                {/* Character dropdown */}
+                {showCharacterDropdown && characters.length > 0 && (
+                  <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px] bg-[#1a1614] border border-[#3d3428] rounded-lg shadow-xl overflow-hidden">
+                    {characters.map((char) => (
+                      <button
+                        key={char.id}
+                        onClick={() => {
+                          onCharacterSelect(char.id)
+                          setShowCharacterDropdown(false)
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[#2a2420] transition-colors",
+                          char.id === selectedCharacterId && "bg-[#1a2a35]/60"
+                        )}
+                      >
+                        {/* Character avatar thumbnail */}
+                        <div className="w-8 h-8 rounded-full bg-[#0a0908] border border-[#3d3428]/60 overflow-hidden flex items-center justify-center flex-shrink-0">
+                          {char.avatar_image_url ? (
+                            <img src={char.avatar_image_url} alt={char.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <Sparkles className="w-4 h-4 text-[#4a5a6a]" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={cn(
+                            "text-sm font-serif truncate",
+                            char.id === selectedCharacterId ? "text-[#7aa8c8]" : "text-stone-300"
+                          )}>
+                            {char.name}
+                          </p>
+                          <p className="text-xs text-stone-500">
+                            Level {char.level} {char.class}
+                          </p>
+                        </div>
+                        {char.is_player && (
+                          <span className="text-[8px] uppercase tracking-wider text-[#c9a868] border border-[#c9a868]/30 px-1.5 py-0.5 rounded">
+                            Player
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="text-right">

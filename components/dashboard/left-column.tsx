@@ -17,6 +17,8 @@ interface LeftColumnProps {
   dialogueInput: string
   setDialogueInput: (value: string) => void
   onDialogueSubmit: () => void
+  characterAvatar?: string | null
+  characterName?: string
 }
 
 export function LeftColumn({
@@ -25,6 +27,8 @@ export function LeftColumn({
   dialogueInput,
   setDialogueInput,
   onDialogueSubmit,
+  characterAvatar,
+  characterName,
 }: LeftColumnProps) {
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -46,11 +50,25 @@ export function LeftColumn({
             {/* Trees/Village silhouette */}
             <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-[#0a1015] via-[#152025] to-transparent" />
             
-            {/* Character silhouette placeholder */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-24 h-48">
-              <div className="w-full h-full bg-gradient-to-b from-[#3a5060] to-[#1a2a35] rounded-t-full opacity-80 shadow-[0_0_30px_rgba(100,150,200,0.3)]" />
-              {/* Magical glow effect */}
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-16 bg-[#6aa0c0]/20 rounded-full blur-xl" />
+            {/* Character avatar or silhouette placeholder */}
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-40 h-56 flex items-end justify-center">
+              {characterAvatar ? (
+                <>
+                  <img 
+                    src={characterAvatar} 
+                    alt={characterName || "Character"} 
+                    className="max-w-full max-h-full object-contain drop-shadow-[0_0_20px_rgba(100,150,200,0.4)]"
+                  />
+                  {/* Magical glow effect */}
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-20 bg-[#6aa0c0]/20 rounded-full blur-xl" />
+                </>
+              ) : (
+                <>
+                  <div className="w-24 h-48 bg-gradient-to-b from-[#3a5060] to-[#1a2a35] rounded-t-full opacity-80 shadow-[0_0_30px_rgba(100,150,200,0.3)]" />
+                  {/* Magical glow effect */}
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-16 bg-[#6aa0c0]/20 rounded-full blur-xl" />
+                </>
+              )}
             </div>
           </div>
 
