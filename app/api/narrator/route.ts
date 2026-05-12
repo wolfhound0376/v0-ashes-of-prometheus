@@ -25,9 +25,9 @@ export async function POST(req: Request) {
       context: narratorContext,
     })
 
-    // Use direct Anthropic provider with Claude Opus 4
+    // Use direct Anthropic provider with Claude Opus 4.7
     const result = await generateText({
-      model: anthropic('claude-opus-4-20250514'),
+      model: anthropic('claude-opus-4-7'),
       system: systemPrompt,
       prompt: playerInput,
       temperature: 0.8,
