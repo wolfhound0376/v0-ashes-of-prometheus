@@ -90,7 +90,7 @@ const inventoryIconMap: Record<string, React.FC<{ className?: string }>> = {
 
 const equipmentSlots = {
   left: [
-    { id: "head", label: "Head", Icon: HoodIcon },
+    { id: "head", label: "Head", Icon: HoodIcon, defaultIconUrl: "/icons/equipment/head.png" },
     { id: "neck", label: "Neck", Icon: NecklaceIcon },
     { id: "torso", label: "Torso", Icon: RobeIcon },
     { id: "legs", label: "Legs", Icon: PantsIcon },
@@ -283,6 +283,7 @@ export function RightColumn({
                     id={slot.id}
                     label={slot.label} 
                     Icon={slot.Icon}
+                    defaultIconUrl={(slot as any).defaultIconUrl}
                     selected={selectedEquipmentSlot === slot.id}
                     onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
                     equippedItem={characterEquipment.find(e => e.slot === slot.id)}
@@ -468,6 +469,7 @@ function EquipmentSlot({
   id,
   label, 
   Icon,
+  defaultIconUrl,
   alignRight,
   selected,
   onClick,
@@ -476,6 +478,7 @@ function EquipmentSlot({
   id: string
   label: string
   Icon: React.FC<{ className?: string }>
+  defaultIconUrl?: string
   alignRight?: boolean
   selected?: boolean
   onClick?: () => void
@@ -502,6 +505,15 @@ function EquipmentSlot({
               src={equippedItem.icon_url} 
               alt={equippedItem.name} 
               className="w-full h-full object-contain"
+            />
+          ) : defaultIconUrl ? (
+            <img 
+              src={defaultIconUrl} 
+              alt={label} 
+              className={cn(
+                "w-full h-full object-contain transition-opacity",
+                selected ? "opacity-100" : "opacity-80 group-hover:opacity-100"
+              )}
             />
           ) : (
             <Icon className={cn(
