@@ -1,11 +1,30 @@
 "use client"
 
 import { useState, useCallback } from 'react'
-import type { TelemetryPayload, CharacterTelemetry, EnvironmentState } from '@/lib/types/telemetry'
+import { createClient } from '@/lib/supabase/client'
 import type { Character } from '@/lib/types/database'
 
+interface TelemetryRecord {
+  id?: string
+  character_id: string
+  campaign_id: string
+  encounter_id?: string
+  hp: number
+  max_hp: number
+  position: { x: number; y: number }
+  action_type: string
+  intent_vector: string
+  last_roll?: number | null
+  roll_type?: string | null
+  environment: string
+  environment_description?: string
+  action_available: boolean
+  bonus_action_available: boolean
+  reaction_available: boolean
+  session_timestamp: string
+}
+
 interface UseTelemetryOptions {
-  sessionId?: string
   campaignId?: string
   encounterId?: string
 }
@@ -15,6 +34,8 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
   const [lastPush, setLastPush] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const supabase = createClient()
+
   // Build telemetry payload from current game state
   const buildPayload = useCallback((
     character: Character,
@@ -23,87 +44,56 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
       intent: string
       roll?: number
       rollType?: string
-      rollResult?: 'success' | 'failure' | 'critical_success' | 'critical_failure'
     },
-    environment: Partial<EnvironmentState>,
+    environment: {
+      name: string
+      description?: string
+    },
     resources: {
       action: boolean
       bonusAction: boolean
       reaction: boolean
-      spellSlots?: number[]
-    },
-    turnInfo?: {
-      roundNumber: number
-      initiativeOrder: string[]
-      currentTurn: string
     }
-  ): TelemetryPayload => {
-    const telemetry: CharacterTelemetry = {
+  ): TelemetryRecord => {
+    return {
+      character_id: character.id,
+      campaign_id: options.campaignId ?? 'ashes_of_prometheus',
+      encounter_id: options.encounterId,
       hp: character.current_hp ?? character.max_hp ?? 10,
       max_hp: character.max_hp ?? 10,
-      ac: character.armor_class ?? 10,
-      position: [0, 0], // Could be extended with actual positioning
-      conditions: [], // Could be extended with condition tracking
+      position: { x: 0, y: 0 },
+      action_type: action.type,
+      intent_vector: action.intent,
       last_roll: action.roll ?? null,
       roll_type: action.rollType ?? null,
-      roll_result: action.rollResult ?? null,
-      resources: {
-        action: resources.action,
-        bonus_action: resources.bonusAction,
-        reaction: resources.reaction,
-        spell_slots: resources.spellSlots ?? [],
-        concentration: null,
-      },
-    }
-
-    const envState: EnvironmentState = {
-      name: environment.name ?? 'Unknown',
-      description: environment.description ?? '',
-      lighting: environment.lighting ?? 'bright',
-      terrain: environment.terrain ?? [],
-      hazards: environment.hazards ?? [],
-      active_effects: environment.active_effects ?? [],
-    }
-
-    return {
-      session_id: options.sessionId ?? `session_${Date.now()}`,
-      campaign_id: options.campaignId ?? 'ashes_of_prometheus',
-      encounter_id: options.encounterId ?? 'exploration',
-      active_character: character.name,
-      character_id: character.id,
-      character_class: character.class,
-      character_level: character.level ?? 1,
-      telemetry,
-      intent_vector: action.intent,
-      action_type: action.type,
-      environment: envState,
-      round_number: turnInfo?.roundNumber ?? 0,
-      initiative_order: turnInfo?.initiativeOrder ?? [],
-      current_turn: turnInfo?.currentTurn ?? character.name,
-      timestamp: new Date().toISOString(),
+      environment: environment.name,
+      environment_description: environment.description,
+      action_available: resources.action,
+      bonus_action_available: resources.bonusAction,
+      reaction_available: resources.reaction,
+      session_timestamp: new Date().toISOString(),
     }
   }, [options])
 
-  // Push telemetry to GitHub via API
-  const pushTelemetry = useCallback(async (payload: TelemetryPayload) => {
+  // Push telemetry to Supabase
+  const pushTelemetry = useCallback(async (payload: TelemetryRecord) => {
     setIsPushing(true)
     setError(null)
 
     try {
-      const response = await fetch('/api/telemetry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const { data, error: insertError } = await supabase
+        .from('session_telemetry')
+        .insert(payload)
+        .select()
+        .single()
 
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(data.message)
+      if (insertError) {
+        throw new Error(insertError.message)
       }
 
-      setLastPush(data.timestamp)
-      return data
+      const timestamp = new Date().toISOString()
+      setLastPush(timestamp)
+      return { success: true, data, timestamp }
 
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to push telemetry'
@@ -112,31 +102,71 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
     } finally {
       setIsPushing(false)
     }
-  }, [])
+  }, [supabase])
 
-  // Fetch current telemetry from GitHub
-  const fetchTelemetry = useCallback(async (): Promise<TelemetryPayload | null> => {
+  // Fetch latest telemetry for a character from Supabase
+  const fetchTelemetry = useCallback(async (characterId?: string): Promise<TelemetryRecord | null> => {
     try {
-      const response = await fetch('/api/telemetry')
-      const data = await response.json()
+      let query = supabase
+        .from('session_telemetry')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
 
-      if (!data.success) {
-        throw new Error(data.message)
+      if (characterId) {
+        query = query.eq('character_id', characterId)
       }
 
-      return data.data
+      const { data, error: fetchError } = await query.single()
+
+      if (fetchError) {
+        if (fetchError.code === 'PGRST116') {
+          // No rows returned - not an error
+          return null
+        }
+        throw new Error(fetchError.message)
+      }
+
+      return data
 
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to fetch telemetry'
       setError(message)
       return null
     }
-  }, [])
+  }, [supabase])
+
+  // Fetch telemetry history for a character
+  const fetchTelemetryHistory = useCallback(async (
+    characterId: string, 
+    limit: number = 10
+  ): Promise<TelemetryRecord[]> => {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('session_telemetry')
+        .select('*')
+        .eq('character_id', characterId)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (fetchError) {
+        throw new Error(fetchError.message)
+      }
+
+      return data ?? []
+
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch telemetry history'
+      setError(message)
+      return []
+    }
+  }, [supabase])
 
   return {
     buildPayload,
     pushTelemetry,
     fetchTelemetry,
+    fetchTelemetryHistory,
     isPushing,
     lastPush,
     error,
