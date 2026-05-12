@@ -7,10 +7,12 @@ interface LichCharacterProps {
   state: 'idle' | 'speaking' | 'thinking' | 'casting' | 'laughing'
   currentDialogue: string
   videoUrl?: string | null
+  isSpeaking?: boolean
+  isSpeechLoading?: boolean
   onVideoEnd?: () => void
 }
 
-export function LichCharacter({ state, currentDialogue, videoUrl, onVideoEnd }: LichCharacterProps) {
+export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, isSpeechLoading, onVideoEnd }: LichCharacterProps) {
   const [eyeGlow, setEyeGlow] = useState(0.6)
   const [breathPhase, setBreathPhase] = useState(0)
   const [videoError, setVideoError] = useState(false)
@@ -253,6 +255,25 @@ export function LichCharacter({ state, currentDialogue, videoUrl, onVideoEnd }: 
       {state === 'speaking' && currentDialogue && (
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 max-w-md animate-fade-in z-20">
           <div className="relative bg-black/80 backdrop-blur-sm border border-purple-500/30 rounded-lg p-4 shadow-[0_0_30px_rgba(138,43,226,0.3)]">
+            {/* Speech status indicator */}
+            {(isSpeaking || isSpeechLoading) && (
+              <div className="absolute -top-3 right-2 flex items-center gap-1.5 bg-black/90 px-2 py-0.5 rounded-full border border-green-500/30">
+                {isSpeechLoading ? (
+                  <>
+                    <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                    <span className="text-[10px] text-yellow-400 font-mono">GENERATING...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                    </span>
+                    <span className="text-[10px] text-green-400 font-mono">SPEAKING</span>
+                  </>
+                )}
+              </div>
+            )}
             <p className="text-purple-100 font-serif text-sm leading-relaxed text-center">
               {currentDialogue}
             </p>

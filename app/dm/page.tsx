@@ -8,8 +8,9 @@ import { DialogueDisplay } from "@/components/dm/dialogue-display"
 import { DMControls } from "@/components/dm/dm-controls"
 import { ConnectionStatus } from "@/components/dm/connection-status"
 import { useRunwayAnimation, type AnimationState } from "@/lib/hooks/use-runway-animation"
+import { useVecnaSpeech } from "@/lib/hooks/use-vecna-speech"
 import Link from "next/link"
-import { ArrowLeft, Settings, Volume2, VolumeX, Video, Loader2, CheckCircle, XCircle, Sparkles } from "lucide-react"
+import { ArrowLeft, Settings, Volume2, VolumeX, Video, Loader2, CheckCircle, XCircle, Sparkles, Mic } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // Types for telemetry and dialogue
@@ -68,6 +69,14 @@ export default function DMLayerPage() {
     generateAnimation,
     playAnimation,
   } = useRunwayAnimation()
+  
+  // Speech hook for Vecna's voice
+  const {
+    speak,
+    stop: stopSpeech,
+    isSpeaking,
+    isLoading: isSpeechLoading,
+  } = useVecnaSpeech()
   
   // Refs
   const dialogueEndRef = useRef<HTMLDivElement>(null)
@@ -171,14 +180,15 @@ export default function DMLayerPage() {
     playAnimation(newState) // Will use cached video if available
   }
 
-  // Send DM message
+  // Send DM message with speech
   const sendLichMessage = async (message: string, emotion: string = 'threatening') => {
     handleStateChange('speaking')
     setCurrentDialogue(message)
     
+    // Insert message to database
     await supabase.from('story_dialogue').insert({
       campaign_id: 'ashes_of_prometheus',
-      speaker: 'The Lich',
+      speaker: 'Vecna',
       speaker_type: 'dm',
       message,
       emotion,
@@ -186,8 +196,29 @@ export default function DMLayerPage() {
       response_type: 'dialogue'
     })
     
-    setTimeout(() => handleStateChange('idle'), 5000)
+    // Speak the message if not muted
+    if (!isMuted) {
+      try {
+        await speak(message)
+      } catch (error) {
+        console.error('Speech failed:', error)
+      }
+    }
+    
+    // Return to idle after speech completes or timeout
+    setTimeout(() => {
+      if (!isSpeaking) {
+        handleStateChange('idle')
+      }
+    }, 5000)
   }
+  
+  // Watch for speech completion to return to idle
+  useEffect(() => {
+    if (!isSpeaking && lichState === 'speaking') {
+      handleStateChange('idle')
+    }
+  }, [isSpeaking, lichState])
 
   // Handle Runway generation
   const handleGenerateAnimation = async (state: AnimationState) => {
@@ -245,12 +276,31 @@ export default function DMLayerPage() {
             {isGenerating && <Loader2 className="w-3 h-3 animate-spin" />}
           </button>
           
-          <button 
-            onClick={() => setIsMuted(!isMuted)}
-            className="p-2 bg-black/40 backdrop-blur border border-purple-900/30 rounded-lg text-stone-400 hover:text-purple-400 transition-all"
-          >
-            {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-          </button>
+<button
+  onClick={() => {
+    if (!isMuted) {
+      stopSpeech() // Stop current speech when muting
+    }
+    setIsMuted(!isMuted)
+  }}
+  className={cn(
+    "p-2 bg-black/40 backdrop-blur border rounded-lg transition-all relative",
+    isMuted 
+      ? "border-red-900/50 text-red-400" 
+      : isSpeaking 
+        ? "border-green-500/50 text-green-400" 
+        : "border-purple-900/30 text-stone-400 hover:text-purple-400"
+  )}
+  title={isMuted ? "Unmute Vecna" : isSpeaking ? "Speaking..." : "Mute Vecna"}
+>
+  {isSpeaking && !isMuted && (
+    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
+    </span>
+  )}
+  {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+</button>
           
           <button 
             onClick={() => setShowSettings(!showSettings)}
@@ -356,17 +406,19 @@ export default function DMLayerPage() {
       <main className="relative h-full flex flex-col items-center justify-center pt-20 pb-32">
         {/* Lich Character */}
         <div className="relative flex-1 flex items-center justify-center w-full max-w-2xl">
-          <LichCharacter 
-            state={lichState} 
-            currentDialogue={currentDialogue}
-            videoUrl={currentVideoUrl}
-            onVideoEnd={() => {
-              // Return to idle after non-looping animations
-              if (lichState !== 'idle') {
-                handleStateChange('idle')
-              }
-            }}
-          />
+<LichCharacter
+  state={lichState}
+  currentDialogue={currentDialogue}
+  videoUrl={currentVideoUrl}
+  isSpeaking={isSpeaking}
+  isSpeechLoading={isSpeechLoading}
+  onVideoEnd={() => {
+    // Return to idle after non-looping animations
+    if (lichState !== 'idle') {
+      handleStateChange('idle')
+    }
+  }}
+/>
         </div>
 
         {/* Current Character Info */}
