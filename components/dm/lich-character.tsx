@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 
 interface LichCharacterProps {
@@ -15,13 +15,11 @@ interface LichCharacterProps {
 export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, isSpeechLoading, onVideoEnd }: LichCharacterProps) {
   const [eyeGlow, setEyeGlow] = useState(0.6)
   const [breathPhase, setBreathPhase] = useState(0)
-  const [videoError, setVideoError] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
 
   // Eye glow animation (for SVG fallback)
   useEffect(() => {
     const interval = setInterval(() => {
-      setEyeGlow(prev => {
+      setEyeGlow(() => {
         const base = state === 'speaking' ? 1 : state === 'thinking' ? 0.8 : 0.6
         const flicker = Math.random() * 0.2
         return base + flicker
@@ -38,80 +36,33 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
     return () => clearInterval(interval)
   }, [])
 
-  // Handle video changes - wait for canplay before playing
-  useEffect(() => {
-    if (videoUrl && videoRef.current) {
-      const video = videoRef.current
-      setVideoError(false)
-      
-      const handleCanPlay = () => {
-        video.play().catch(() => {
-          // Autoplay may be blocked
-        })
-      }
-      
-      video.addEventListener('canplay', handleCanPlay, { once: true })
-      video.load()
-      
-      return () => {
-        video.removeEventListener('canplay', handleCanPlay)
-      }
-    }
-  }, [videoUrl])
-
   const breathOffset = Math.sin(breathPhase) * 3
-  const showVideo = videoUrl && !videoError
 
   return (
     <div className="relative flex flex-col items-center">
-      {/* Runway Video Feed - Close-up overlay without background */}
-      {showVideo && (
+      {/* Video Feed - simple implementation */}
+      {videoUrl ? (
         <div className="relative">
-          {/* Video container - large close-up with blend mode to remove dark background */}
-          <div className="relative">
-            <video
-              ref={videoRef}
-              key={videoUrl}
-              src={videoUrl}
-              className={cn(
-                "w-[500px] h-auto object-contain",
-                "mix-blend-lighten", // Removes black/dark backgrounds
-                "drop-shadow-[0_0_40px_rgba(138,43,226,0.6)]",
-                "transition-all duration-300",
-                state === 'speaking' && "scale-105 drop-shadow-[0_0_60px_rgba(138,43,226,0.8)]",
-                state === 'casting' && "scale-110 drop-shadow-[0_0_80px_rgba(180,80,255,0.9)]"
-              )}
-              loop={state === 'idle'}
-              muted
-              playsInline
-              autoPlay
-              onError={() => setVideoError(true)}
-              onEnded={onVideoEnd}
-            />
-            
-            {/* Subtle glow effects */}
-            <div className="absolute inset-0 pointer-events-none">
-              {/* Purple glow overlay when speaking */}
-              {state === 'speaking' && (
-                <div className="absolute inset-0 bg-purple-600/5 mix-blend-overlay animate-pulse" />
-              )}
-              
-              {/* Magic particles when casting */}
-              {state === 'casting' && (
-                <>
-                  <div className="absolute inset-0 bg-gradient-to-t from-purple-600/10 to-transparent mix-blend-overlay animate-pulse" />
-                  <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-purple-400 rounded-full animate-ping" />
-                  <div className="absolute top-1/3 right-1/4 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping" style={{ animationDelay: '0.2s' }} />
-                  <div className="absolute bottom-1/3 left-1/3 w-1 h-1 bg-purple-500 rounded-full animate-ping" style={{ animationDelay: '0.4s' }} />
-                </>
-              )}
-            </div>
-          </div>
+          <video
+            key={videoUrl}
+            src={videoUrl}
+            className={cn(
+              "w-[500px] h-auto object-contain",
+              "mix-blend-lighten",
+              "drop-shadow-[0_0_40px_rgba(138,43,226,0.6)]",
+              "transition-all duration-300",
+              state === 'speaking' && "scale-105 drop-shadow-[0_0_60px_rgba(138,43,226,0.8)]",
+              state === 'casting' && "scale-110 drop-shadow-[0_0_80px_rgba(180,80,255,0.9)]"
+            )}
+            loop
+            muted
+            autoPlay
+            playsInline
+            onEnded={onVideoEnd}
+          />
         </div>
-      )}
-
-      {/* SVG Fallback when no video */}
-      {!showVideo && (
+      ) : (
+        /* SVG Fallback when no video */
         <div 
           className={cn(
             "relative transition-all duration-500",
@@ -150,7 +101,6 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
             
             {/* Skull Face */}
             <g className="skull">
-              {/* Skull base */}
               <ellipse cx="150" cy="145" rx="45" ry="55" fill="#e8e0d0" opacity="0.9" />
               <ellipse cx="150" cy="135" rx="42" ry="48" fill="#d8d0c0" />
               
@@ -170,58 +120,12 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
                 style={{ filter: `blur(2px) drop-shadow(0 0 8px rgba(180, 80, 255, ${eyeGlow}))` }}
               />
               
-              {/* Eye pupils/cores */}
-              <ellipse cx="130" cy="130" rx="3" ry="4" fill="#fff" opacity={eyeGlow} />
-              <ellipse cx="170" cy="130" rx="3" ry="4" fill="#fff" opacity={eyeGlow} />
-              
               {/* Nasal cavity */}
               <path d="M145 145 L150 165 L155 145 Z" fill="#2a1a30" />
               
               {/* Teeth/Jaw */}
-              <path 
-                d="M120 175 Q150 185 180 175 Q175 200 150 200 Q125 200 120 175 Z" 
-                fill="#d0c8b8" 
-                stroke="#8a7a6a" 
-                strokeWidth="1"
-              />
-              {/* Teeth lines */}
-              <path d="M130 180 L130 190" stroke="#6a5a4a" strokeWidth="1" />
-              <path d="M140 182 L140 193" stroke="#6a5a4a" strokeWidth="1" />
-              <path d="M150 183 L150 195" stroke="#6a5a4a" strokeWidth="1" />
-              <path d="M160 182 L160 193" stroke="#6a5a4a" strokeWidth="1" />
-              <path d="M170 180 L170 190" stroke="#6a5a4a" strokeWidth="1" />
+              <path d="M120 175 Q150 185 180 175 Q175 200 150 200 Q125 200 120 175 Z" fill="#d0c8b8" stroke="#8a7a6a" strokeWidth="1" />
             </g>
-
-            {/* Skeletal Hands */}
-            <g className={cn(
-              "transition-transform duration-500",
-              state === 'casting' && "animate-pulse"
-            )}>
-              {/* Left hand */}
-              <path 
-                d="M80 320 Q60 300 55 280 M55 280 Q50 270 45 260 M55 280 Q52 268 48 258 M55 280 Q55 265 52 255 M55 280 Q58 265 58 252" 
-                stroke="#d8d0c0" 
-                strokeWidth="3" 
-                fill="none"
-                strokeLinecap="round"
-              />
-              {/* Right hand */}
-              <path 
-                d="M220 320 Q240 300 245 280 M245 280 Q250 270 255 260 M245 280 Q248 268 252 258 M245 280 Q245 265 248 255 M245 280 Q242 265 242 252" 
-                stroke="#d8d0c0" 
-                strokeWidth="3" 
-                fill="none"
-                strokeLinecap="round"
-              />
-            </g>
-
-            {/* Magic effects when casting */}
-            {state === 'casting' && (
-              <g className="animate-pulse">
-                <circle cx="55" cy="260" r="15" fill="url(#magic-gradient)" opacity="0.8" />
-                <circle cx="245" cy="260" r="15" fill="url(#magic-gradient)" opacity="0.8" />
-              </g>
-            )}
 
             {/* Gradients */}
             <defs>
@@ -230,28 +134,8 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
                 <stop offset="50%" stopColor="#0a0510" />
                 <stop offset="100%" stopColor="#050208" />
               </linearGradient>
-              <radialGradient id="magic-gradient">
-                <stop offset="0%" stopColor="#b050ff" />
-                <stop offset="100%" stopColor="transparent" />
-              </radialGradient>
             </defs>
           </svg>
-
-          {/* Soul flame above head */}
-          <div className={cn(
-            "absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-12",
-            "transition-all duration-300",
-            state === 'speaking' && "scale-125",
-            state === 'casting' && "scale-150"
-          )}>
-            <div 
-              className="w-full h-full rounded-full blur-sm animate-pulse"
-              style={{ 
-                background: 'radial-gradient(ellipse at bottom, #b050ff 0%, #6020a0 50%, transparent 80%)',
-                animationDuration: '1.5s'
-              }} 
-            />
-          </div>
         </div>
       )}
 
@@ -259,7 +143,6 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
       {state === 'speaking' && currentDialogue && (
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 max-w-md animate-fade-in z-20">
           <div className="relative bg-black/80 backdrop-blur-sm border border-purple-500/30 rounded-lg p-4 shadow-[0_0_30px_rgba(138,43,226,0.3)]">
-            {/* Speech status indicator */}
             {(isSpeaking || isSpeechLoading) && (
               <div className="absolute -top-3 right-2 flex items-center gap-1.5 bg-black/90 px-2 py-0.5 rounded-full border border-green-500/30">
                 {isSpeechLoading ? (
@@ -281,28 +164,10 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
             <p className="text-purple-100 font-serif text-sm leading-relaxed text-center">
               {currentDialogue}
             </p>
-            {/* Speech bubble tail */}
             <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-black/80 border-r border-b border-purple-500/30 rotate-45" />
           </div>
         </div>
       )}
-
-      {/* State indicators */}
-      <div className="mt-4 flex items-center gap-2">
-        {state === 'thinking' && (
-          <div className="flex items-center gap-1 text-purple-400 text-xs animate-pulse">
-            <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            <span className="ml-2 font-serif tracking-wide">Contemplating...</span>
-          </div>
-        )}
-        {state === 'casting' && (
-          <div className="text-purple-300 text-xs font-serif tracking-wide animate-pulse">
-            Weaving dark magic...
-          </div>
-        )}
-      </div>
     </div>
   )
 }
