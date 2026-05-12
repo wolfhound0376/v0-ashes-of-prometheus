@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
-import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield, Dices, Heart } from "lucide-react"
+import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield, Dices, Heart, ListOrdered } from "lucide-react"
 import type { Character } from "@/lib/types/database"
+import { getDefaultAbilityScores } from "@/lib/game-data"
 
 const CLASSES = ['Wizard', 'Fighter', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Sorcerer', 'Druid', 'Monk', 'Barbarian']
 
@@ -232,6 +233,21 @@ function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: 
     }, 500)
   }
 
+  // Apply Standard Array optimized for the selected class (D&D 5E PHB p.13)
+  // Standard Array: 15, 14, 13, 12, 10, 8 - assigned based on class priorities
+  const applyStandardArray = () => {
+    const charClass = formData.class || 'Wizard'
+    const optimizedScores = getDefaultAbilityScores(charClass)
+    
+    const newScores: Partial<Character> = {}
+    Object.entries(optimizedScores).forEach(([stat, { score, modifier }]) => {
+      ;(newScores as any)[`${stat}_score`] = score
+      ;(newScores as any)[`${stat}_modifier`] = modifier
+    })
+    
+    setFormData({ ...formData, ...newScores })
+  }
+
   // Roll HP based on class, level, and CON modifier
   const rollHitPoints = () => {
     const charClass = formData.class || 'Wizard'
@@ -322,15 +338,26 @@ function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: 
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="text-sm text-stone-400">Ability Scores</label>
-          <button
-            type="button"
-            onClick={rollAllStats}
-            disabled={isRolling}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gradient-to-r from-[#4a3a5a] to-[#3a2a4a] border border-purple-500/30 rounded-lg text-purple-300 hover:border-purple-500/50 disabled:opacity-50 transition-all"
-          >
-            <Dices className={`w-3.5 h-3.5 ${isRolling ? 'animate-spin' : ''}`} />
-            {isRolling ? 'Rolling...' : 'Roll 4d6 Drop Lowest'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={applyStandardArray}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gradient-to-r from-[#3a4a3a] to-[#2a3a2a] border border-green-500/30 rounded-lg text-green-300 hover:border-green-500/50 transition-all"
+              title="Standard Array: 15, 14, 13, 12, 10, 8 optimized for class"
+            >
+              <ListOrdered className="w-3.5 h-3.5" />
+              Standard Array
+            </button>
+            <button
+              type="button"
+              onClick={rollAllStats}
+              disabled={isRolling}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gradient-to-r from-[#4a3a5a] to-[#3a2a4a] border border-purple-500/30 rounded-lg text-purple-300 hover:border-purple-500/50 disabled:opacity-50 transition-all"
+            >
+              <Dices className={`w-3.5 h-3.5 ${isRolling ? 'animate-spin' : ''}`} />
+              {isRolling ? 'Rolling...' : 'Roll 4d6 Drop Lowest'}
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-6 gap-2">
           {['str', 'dex', 'con', 'int', 'wis', 'cha'].map(stat => (
