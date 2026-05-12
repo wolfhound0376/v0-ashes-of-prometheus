@@ -67,10 +67,12 @@ export function useRunwayAnimation() {
           }
         })
         
+        console.log('[v0] Loaded cached animations:', cache)
         setCachedAnimations(cache)
         
         // Set idle as default if available
         if (cache.idle) {
+          console.log('[v0] Setting initial video to idle:', cache.idle)
           setCurrentVideoUrl(cache.idle)
         }
       }
@@ -191,9 +193,15 @@ export function useRunwayAnimation() {
   // Switch to a cached animation
   const playAnimation = useCallback((state: AnimationState) => {
     const cachedUrl = cachedAnimations[state]
+    console.log('[v0] playAnimation called:', state, 'cachedUrl:', cachedUrl, 'all cached:', cachedAnimations)
     if (cachedUrl) {
       setCurrentVideoUrl(cachedUrl)
       return true
+    }
+    // Fall back to idle if requested animation not available
+    if (state !== 'idle' && cachedAnimations.idle) {
+      console.log('[v0] Falling back to idle animation')
+      setCurrentVideoUrl(cachedAnimations.idle)
     }
     return false
   }, [cachedAnimations])
