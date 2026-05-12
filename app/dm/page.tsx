@@ -190,8 +190,10 @@ export default function DMLayerPage() {
 
   // Handle state change and play cached animation if available
   const handleStateChange = (newState: AnimationState) => {
+    console.log('[v0] handleStateChange:', newState, 'cachedAnimations:', cachedAnimations)
     setLichState(newState)
     const url = cachedAnimations[newState]
+    console.log('[v0] url for state:', url)
     if (url) {
       setActiveVideoUrl(url)
     }
