@@ -54,11 +54,12 @@ export function ImageUploader({
       const pathname = `${folder}/${timestamp}-${safeName}`
 
       const blob = await upload(pathname, file, {
-        access: 'public',
+        access: 'private',
         handleUploadUrl: '/api/upload',
       })
 
-      onChange(blob.url)
+      // For private blobs, use a proxy URL
+      onChange(`/api/file?pathname=${encodeURIComponent(blob.pathname)}`)
     } catch (error) {
       console.error('Upload error:', error)
       alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`)
