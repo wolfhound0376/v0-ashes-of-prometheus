@@ -1,38 +1,44 @@
 import { anthropic } from '@ai-sdk/anthropic'
-import { streamText } from 'ai'
+import { generateText } from 'ai'
 import { composeNarratorPrompt, ASHES_OF_PROMETHEUS_PROMPT, type NarratorContext } from '@/lib/personas/lich-dm'
 
 export const maxDuration = 60
 
 export async function POST(req: Request) {
   try {
-    const { messages, context } = await req.json() as {
-      messages: Array<{ role: 'user' | 'assistant'; content: string }>
-      context?: NarratorContext
+    const { playerInput, context, gameState } = await req.json() as {
+      playerInput: string
+      context?: string
+      gameState?: { currentScene?: string; playerName?: string }
+    }
+
+    // Build context for the narrator
+    const narratorContext: NarratorContext = {
+      currentScene: gameState?.currentScene || 'Throne Room',
+      recentHistory: context ? [context] : [],
     }
 
     // Compose the full system prompt with persona + campaign + context
     const systemPrompt = composeNarratorPrompt({
       campaignSystemPrompt: ASHES_OF_PROMETHEUS_PROMPT,
       campaignKind: 'fantasy',
-      context,
+      context: narratorContext,
     })
 
     // Use Claude for the Lich's voice
-    // Opus for big moments, Sonnet for connective tissue
-    const result = streamText({
+    const result = await generateText({
       model: anthropic('claude-sonnet-4-20250514'),
       system: systemPrompt,
-      messages,
-      temperature: 0.8, // Slightly creative but controlled
+      prompt: playerInput,
+      temperature: 0.8,
       maxTokens: 1024,
     })
 
-    return result.toDataStreamResponse()
+    return Response.json({ response: result.text })
   } catch (error) {
     console.error('Narrator API error:', error)
     return new Response(
-      JSON.stringify({ error: 'Failed to generate response' }),
+      JSON.stringify({ error: 'Failed to generate response', details: String(error) }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
