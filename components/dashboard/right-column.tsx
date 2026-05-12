@@ -30,9 +30,7 @@ import {
   Sparkles,
   ChevronDown,
   Weight,
-  Package,
 } from "lucide-react"
-import { getStartingEquipment, getClassActions } from "@/lib/game-data"
 import { cn } from "@/lib/utils"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
@@ -77,7 +75,6 @@ interface RightColumnProps {
   fallbackCharacter: FallbackCharacter
   fallbackInventory: FallbackInventoryItem[]
   loading: boolean
-  onPopulateStartingGear?: (equipment: any[], inventory: any[], gold: number) => void
 }
 
 const inventoryIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -116,24 +113,11 @@ export function RightColumn({
   characterEquipment,
   fallbackCharacter,
   fallbackInventory,
-  loading,
-  onPopulateStartingGear
+  loading
 }: RightColumnProps) {
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [selectedEquipmentSlot, setSelectedEquipmentSlot] = useState<string | null>(null)
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
-
-  // Get starting gear based on character class
-  const handlePopulateStartingGear = () => {
-    const charClass = selectedCharacter?.class || fallbackCharacter.class
-    const startingGear = getStartingEquipment(charClass)
-    if (onPopulateStartingGear) {
-      onPopulateStartingGear(startingGear.equipment, startingGear.inventory, startingGear.gold)
-    }
-  }
-
-  // Get available actions for this class
-  const availableActions = getClassActions(selectedCharacter?.class || fallbackCharacter.class)
 
   // Transform DB character to display format, or use fallback
   const character = selectedCharacter ? {
@@ -360,20 +344,10 @@ export function RightColumn({
           <div className="px-3 pb-3">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-semibold tracking-[0.15em] uppercase text-[#c9b896]">Inventory</h4>
-              <div className="flex gap-2">
-                <button 
-                  onClick={handlePopulateStartingGear}
-                  className="flex items-center gap-1.5 text-xs text-green-400 hover:text-green-300 transition-colors px-2 py-1 rounded border border-green-500/30 bg-[#1a2a1a]/60 hover:bg-[#1a3a1a]/60"
-                  title="Populate with D&D 5E starting equipment for this class"
-                >
-                  <Package className="w-3 h-3" />
-                  Starting Gear
-                </button>
-                <button className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors px-2 py-1 rounded border border-[#3d3428]/60 bg-[#1a1614]/60">
-                  All Items
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-              </div>
+              <button className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors px-2 py-1 rounded border border-[#3d3428]/60 bg-[#1a1614]/60">
+                All Items
+                <ChevronDown className="w-3 h-3" />
+              </button>
             </div>
 
             <div className="space-y-1">

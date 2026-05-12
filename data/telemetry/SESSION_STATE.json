@@ -1,0 +1,41 @@
+{
+  "session_id": "session_ossuary_breach_001",
+  "campaign_id": "ashes_of_prometheus",
+  "encounter_id": "ossuary_breach",
+  "active_character": "Fifi",
+  "character_id": "char_fifi_001",
+  "character_class": "Rogue",
+  "character_level": 3,
+  "telemetry": {
+    "hp": 9,
+    "max_hp": 21,
+    "ac": 14,
+    "position": [12, 45],
+    "conditions": ["hidden"],
+    "last_roll": 18,
+    "roll_type": "STEALTH_CHECK",
+    "roll_result": "success",
+    "resources": {
+      "action": true,
+      "bonus_action": false,
+      "reaction": true,
+      "spell_slots": [],
+      "concentration": null
+    }
+  },
+  "intent_vector": "I am shadow-stepping behind the bone-pedestal to reach the Talisman.",
+  "action_type": "STEALTH_CHECK",
+  "environment": {
+    "name": "Maturation Chamber",
+    "description": "A vast underground chamber filled with ossified remains and arcane machinery. Bone pedestals line the walls, each holding artifacts of unknown power.",
+    "lighting": "dim",
+    "terrain": ["difficult_terrain", "bone_debris", "arcane_conduits"],
+    "hazards": ["necrotic_pools", "unstable_pedestals"],
+    "active_effects": ["silence_ward_north", "detection_glyph_active"]
+  },
+  "round_number": 3,
+  "initiative_order": ["Fifi", "Bone Sentinel", "Larloch's Echo", "Korrath"],
+  "current_turn": "Fifi",
+  "timestamp": "2026-05-11T22:45:00Z",
+  "dm_notes": "Fifi has successfully hidden. The Bone Sentinel has not detected her movement. Larloch's Echo is monitoring the central pedestal."
+}
