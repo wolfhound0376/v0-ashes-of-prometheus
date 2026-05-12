@@ -7,8 +7,10 @@ import { CastleBackground } from "@/components/dm/castle-background"
 import { DialogueDisplay } from "@/components/dm/dialogue-display"
 import { DMControls } from "@/components/dm/dm-controls"
 import { ConnectionStatus } from "@/components/dm/connection-status"
+import { useRunwayAnimation, type AnimationState } from "@/lib/hooks/use-runway-animation"
 import Link from "next/link"
-import { ArrowLeft, Settings, Volume2, VolumeX } from "lucide-react"
+import { ArrowLeft, Settings, Volume2, VolumeX, Video, Loader2, CheckCircle, XCircle, Sparkles } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 // Types for telemetry and dialogue
 interface TelemetryData {
@@ -48,13 +50,24 @@ export default function DMLayerPage() {
   
   // State
   const [isConnected, setIsConnected] = useState(false)
-  const [lichState, setLichState] = useState<'idle' | 'speaking' | 'thinking' | 'casting'>('idle')
+  const [lichState, setLichState] = useState<AnimationState>('idle')
   const [currentDialogue, setCurrentDialogue] = useState<string>("")
   const [dialogueHistory, setDialogueHistory] = useState<DialogueEntry[]>([])
   const [latestTelemetry, setLatestTelemetry] = useState<TelemetryData | null>(null)
   const [activeCharacter, setActiveCharacter] = useState<CharacterData | null>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showRunwayPanel, setShowRunwayPanel] = useState(false)
+  
+  // Runway animation hook
+  const {
+    currentVideoUrl,
+    currentTask,
+    isGenerating,
+    cachedAnimations,
+    generateAnimation,
+    playAnimation,
+  } = useRunwayAnimation()
   
   // Refs
   const dialogueEndRef = useRef<HTMLDivElement>(null)
@@ -112,8 +125,8 @@ export default function DMLayerPage() {
           if (newTelemetry.campaign_id === 'ashes_of_prometheus') {
             setLatestTelemetry(newTelemetry)
             // Trigger Lich thinking animation when new action received
-            setLichState('thinking')
-            setTimeout(() => setLichState('idle'), 2000)
+            handleStateChange('thinking')
+            setTimeout(() => handleStateChange('idle'), 2000)
           }
         }
       )
@@ -132,9 +145,9 @@ export default function DMLayerPage() {
             
             // If it's a DM message, show the Lich speaking
             if (newDialogue.speaker_type === 'dm') {
-              setLichState('speaking')
+              handleStateChange('speaking')
               setCurrentDialogue(newDialogue.message)
-              setTimeout(() => setLichState('idle'), 5000)
+              setTimeout(() => handleStateChange('idle'), 5000)
             }
           }
         }
@@ -152,9 +165,15 @@ export default function DMLayerPage() {
     dialogueEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [dialogueHistory])
 
+  // Handle state change and play cached animation if available
+  const handleStateChange = (newState: AnimationState) => {
+    setLichState(newState)
+    playAnimation(newState) // Will use cached video if available
+  }
+
   // Send DM message
   const sendLichMessage = async (message: string, emotion: string = 'threatening') => {
-    setLichState('speaking')
+    handleStateChange('speaking')
     setCurrentDialogue(message)
     
     await supabase.from('story_dialogue').insert({
@@ -167,7 +186,16 @@ export default function DMLayerPage() {
       response_type: 'dialogue'
     })
     
-    setTimeout(() => setLichState('idle'), 5000)
+    setTimeout(() => handleStateChange('idle'), 5000)
+  }
+
+  // Handle Runway generation
+  const handleGenerateAnimation = async (state: AnimationState) => {
+    try {
+      await generateAnimation(state)
+    } catch (error) {
+      console.error('Failed to generate animation:', error)
+    }
   }
 
   return (
@@ -203,6 +231,20 @@ export default function DMLayerPage() {
         <div className="flex items-center gap-2">
           <ConnectionStatus isConnected={isConnected} />
           
+          {/* Runway Video Control */}
+          <button 
+            onClick={() => setShowRunwayPanel(!showRunwayPanel)}
+            className={cn(
+              "p-2 bg-black/40 backdrop-blur border rounded-lg transition-all flex items-center gap-1.5",
+              showRunwayPanel 
+                ? "border-purple-500/50 text-purple-400" 
+                : "border-purple-900/30 text-stone-400 hover:text-purple-400"
+            )}
+          >
+            <Video className="w-5 h-5" />
+            {isGenerating && <Loader2 className="w-3 h-3 animate-spin" />}
+          </button>
+          
           <button 
             onClick={() => setIsMuted(!isMuted)}
             className="p-2 bg-black/40 backdrop-blur border border-purple-900/30 rounded-lg text-stone-400 hover:text-purple-400 transition-all"
@@ -219,6 +261,97 @@ export default function DMLayerPage() {
         </div>
       </header>
 
+      {/* Runway Animation Panel */}
+      {showRunwayPanel && (
+        <div className="absolute top-20 right-4 z-50 w-72 bg-black/80 backdrop-blur-md border border-purple-900/40 rounded-lg p-4 animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-serif text-purple-200 flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              Runway Animations
+            </h3>
+            {isGenerating && (
+              <span className="text-[10px] text-purple-400 animate-pulse">Generating...</span>
+            )}
+          </div>
+          
+          {/* Generation Progress */}
+          {currentTask && currentTask.status !== 'SUCCEEDED' && (
+            <div className="mb-4 p-3 bg-purple-900/20 rounded border border-purple-800/30">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-stone-400">Status:</span>
+                <span className={cn(
+                  "text-xs font-medium",
+                  currentTask.status === 'PENDING' && "text-yellow-400",
+                  currentTask.status === 'RUNNING' && "text-blue-400",
+                  currentTask.status === 'FAILED' && "text-red-400"
+                )}>
+                  {currentTask.status}
+                </span>
+              </div>
+              {currentTask.progress !== undefined && (
+                <div className="h-1.5 bg-stone-800 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-purple-500 transition-all"
+                    style={{ width: `${currentTask.progress}%` }}
+                  />
+                </div>
+              )}
+              {currentTask.error && (
+                <p className="text-xs text-red-400 mt-2">{currentTask.error}</p>
+              )}
+            </div>
+          )}
+
+          {/* Animation States */}
+          <div className="space-y-2">
+            {(['idle', 'speaking', 'thinking', 'casting', 'laughing'] as AnimationState[]).map((state) => (
+              <div 
+                key={state}
+                className="flex items-center justify-between p-2 bg-stone-900/50 rounded border border-stone-800/50"
+              >
+                <div className="flex items-center gap-2">
+                  {cachedAnimations[state] ? (
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-stone-600" />
+                  )}
+                  <span className="text-sm text-stone-300 capitalize">{state}</span>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  {cachedAnimations[state] && (
+                    <button
+                      onClick={() => {
+                        handleStateChange(state)
+                      }}
+                      className="px-2 py-1 text-[10px] bg-purple-900/40 text-purple-300 rounded hover:bg-purple-800/50 transition-colors"
+                    >
+                      Play
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleGenerateAnimation(state)}
+                    disabled={isGenerating}
+                    className={cn(
+                      "px-2 py-1 text-[10px] rounded transition-colors",
+                      isGenerating 
+                        ? "bg-stone-800 text-stone-600 cursor-not-allowed"
+                        : "bg-purple-600/60 text-purple-100 hover:bg-purple-500/60"
+                    )}
+                  >
+                    {isGenerating ? 'Wait...' : 'Generate'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-[10px] text-stone-500 mt-4">
+            Generate Runway video animations for each Lich state. Videos are cached for instant playback.
+          </p>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="relative h-full flex flex-col items-center justify-center pt-20 pb-32">
         {/* Lich Character */}
@@ -226,6 +359,13 @@ export default function DMLayerPage() {
           <LichCharacter 
             state={lichState} 
             currentDialogue={currentDialogue}
+            videoUrl={currentVideoUrl}
+            onVideoEnd={() => {
+              // Return to idle after non-looping animations
+              if (lichState !== 'idle') {
+                handleStateChange('idle')
+              }
+            }}
           />
         </div>
 
@@ -282,7 +422,7 @@ export default function DMLayerPage() {
       <DMControls 
         onSendMessage={sendLichMessage}
         lichState={lichState}
-        setLichState={setLichState}
+        setLichState={handleStateChange}
       />
     </div>
   )
