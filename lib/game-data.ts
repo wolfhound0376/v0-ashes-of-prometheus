@@ -39,14 +39,14 @@ export const dialogueData = [
 ]
 
 export const actionsData = [
-  { id: "cast-spell", name: "Cast a Spell", description: "Use a spell from your spellbook.", icon: "sparkles" },
-  { id: "use-ability", name: "Use an Ability", description: "Use a class or racial ability.", icon: "zap" },
-  { id: "dash", name: "Dash", description: "Move up to your speed.", icon: "move" },
-  { id: "disengage", name: "Disengage", description: "Move without provoking opportunity attacks.", icon: "shield-off" },
-  { id: "help", name: "Help", description: "Aid an ally in their task.", icon: "hand-helping" },
-  { id: "ready", name: "Ready", description: "Prepare an action to trigger later.", icon: "clock" },
-  { id: "search", name: "Search", description: "Look for hidden things.", icon: "search" },
-  { id: "cast-ritual", name: "Cast Ritual", description: "Cast a ritual spell.", icon: "book-open" },
+  { id: "cast-spell", name: "Cast a Spell", description: "Use a spell from your spellbook.", icon: "sparkles", iconUrl: "/icons/actions/cast-spell.png" },
+  { id: "use-ability", name: "Use an Ability", description: "Use a class or racial ability.", icon: "zap", iconUrl: null },
+  { id: "dash", name: "Dash", description: "Move up to your speed.", icon: "move", iconUrl: null },
+  { id: "disengage", name: "Disengage", description: "Move without provoking opportunity attacks.", icon: "shield-off", iconUrl: null },
+  { id: "help", name: "Help", description: "Aid an ally in their task.", icon: "hand-helping", iconUrl: null },
+  { id: "ready", name: "Ready", description: "Prepare an action to trigger later.", icon: "clock", iconUrl: null },
+  { id: "search", name: "Search", description: "Look for hidden things.", icon: "search", iconUrl: null },
+  { id: "cast-ritual", name: "Cast Ritual", description: "Cast a ritual spell.", icon: "book-open", iconUrl: null },
 ]
 
 export const inventoryData = [

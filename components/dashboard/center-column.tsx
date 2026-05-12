@@ -120,7 +120,11 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
                       className="w-10 h-10 flex-shrink-0" 
                       selected={isSelected}
                     >
-                      <IconComponent className="w-full h-full" />
+                      {action.iconUrl ? (
+                        <img src={action.iconUrl} alt={action.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <IconComponent className="w-full h-full" />
+                      )}
                     </IconFrame>
                     <div className="flex-1 min-w-0">
                       <p
