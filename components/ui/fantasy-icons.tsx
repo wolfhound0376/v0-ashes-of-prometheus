@@ -472,6 +472,8 @@ export function IconFrame({
     <div className={cn(
       "relative rounded-md overflow-hidden",
       "border-2 transition-all",
+      // Hover enlarge effect - scales to 200% after 1 second delay
+      "hover:scale-[2] hover:z-50 transition-transform duration-200 hover:delay-1000",
       selected 
         ? "border-[#7aa8c8] shadow-[0_0_12px_rgba(122,168,200,0.5)]" 
         : "border-[#5a4a3a] hover:border-[#8a7a6a]",
