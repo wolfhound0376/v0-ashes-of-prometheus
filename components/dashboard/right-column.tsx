@@ -291,26 +291,27 @@ export function RightColumn({
               </div>
             </div>
 
-            {/* Character Avatar in Center */}
-            <div className="flex-1 flex items-center justify-center px-2">
-              <div className="relative w-28 h-44 flex items-center justify-center">
+            {/* Character Avatar in Center - Twice as large */}
+            <div className="flex-1 flex items-center justify-center px-2 min-h-[320px]">
+              <div className="relative w-56 h-80 flex items-center justify-center">
                 {(character as any).avatarUrl ? (
                   <>
                     <img 
                       src={(character as any).avatarUrl} 
                       alt={character.name}
-                      className="max-w-full max-h-full object-contain drop-shadow-[0_0_15px_rgba(100,150,200,0.3)]"
+                      className="max-w-full max-h-full object-contain drop-shadow-[0_0_20px_rgba(100,150,200,0.4)]"
+                      style={{ background: 'transparent' }}
                     />
                     {/* Subtle glow effect */}
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-8 bg-[#6aa0c0]/20 rounded-full blur-xl" />
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-12 bg-[#6aa0c0]/20 rounded-full blur-xl" />
                   </>
                 ) : (
                   /* Fallback silhouette */
-                  <div className="relative w-24 h-40">
+                  <div className="relative w-48 h-72">
                     <div className="absolute inset-0 bg-gradient-to-b from-[#2a3a4a]/60 to-[#1a2a35]/60 rounded-t-full border border-[#4a5a6a]/30">
-                      <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-10 rounded-full bg-[#3a4a5a]/60" />
-                      <div className="absolute top-10 left-1/2 -translate-x-1/2 w-12 h-16 bg-[#2a3a4a]/60 rounded-t-lg" />
-                      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-16 h-20 border-x border-[#4a6a8a]/30" />
+                      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-20 rounded-full bg-[#3a4a5a]/60" />
+                      <div className="absolute top-20 left-1/2 -translate-x-1/2 w-24 h-32 bg-[#2a3a4a]/60 rounded-t-lg" />
+                      <div className="absolute top-24 left-1/2 -translate-x-1/2 w-32 h-40 border-x border-[#4a6a8a]/30" />
                     </div>
                   </div>
                 )}
