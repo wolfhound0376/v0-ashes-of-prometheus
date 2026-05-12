@@ -211,7 +211,6 @@ export default function DMLayerPage() {
                   
                   if (response.ok) {
                     const data = await response.json()
-                    // This will trigger the DM message flow via sendLichMessage
                     handleStateChange('speaking')
                     setCurrentDialogue(data.response)
                     
@@ -225,6 +224,13 @@ export default function DMLayerPage() {
                       requires_response: true,
                       response_type: 'dialogue'
                     })
+                    
+                    // Speak the response with ElevenLabs
+                    try {
+                      await speak(data.response)
+                    } catch (err) {
+                      console.error('Speech failed:', err)
+                    }
                   }
                 } catch (error) {
                   console.error('Failed to generate auto-response:', error)
