@@ -116,6 +116,7 @@ export function RightColumn({
   loading
 }: RightColumnProps) {
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
+  const [selectedEquipmentSlot, setSelectedEquipmentSlot] = useState<string | null>(null)
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
 
   // Transform DB character to display format, or use fallback
@@ -277,23 +278,42 @@ export function RightColumn({
             <div className="w-24 px-2 flex flex-col justify-center">
               <div className="space-y-2">
                 {equipmentSlots.left.map((slot) => (
-                  <EquipmentSlot key={slot.id} label={slot.label} Icon={slot.Icon} />
+                  <EquipmentSlot 
+                    key={slot.id} 
+                    id={slot.id}
+                    label={slot.label} 
+                    Icon={slot.Icon}
+                    selected={selectedEquipmentSlot === slot.id}
+                    onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
+                    equippedItem={characterEquipment.find(e => e.slot === slot.id)}
+                  />
                 ))}
               </div>
             </div>
 
-            {/* Character Silhouette */}
+            {/* Character Avatar in Center */}
             <div className="flex-1 flex items-center justify-center px-2">
-              <div className="relative w-24 h-40">
-                {/* Character silhouette background */}
-                <div className="absolute inset-0 bg-gradient-to-b from-[#2a3a4a]/60 to-[#1a2a35]/60 rounded-t-full border border-[#4a5a6a]/30">
-                  {/* Head */}
-                  <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-10 rounded-full bg-[#3a4a5a]/60" />
-                  {/* Body */}
-                  <div className="absolute top-10 left-1/2 -translate-x-1/2 w-12 h-16 bg-[#2a3a4a]/60 rounded-t-lg" />
-                  {/* Robe details */}
-                  <div className="absolute top-12 left-1/2 -translate-x-1/2 w-16 h-20 border-x border-[#4a6a8a]/30" />
-                </div>
+              <div className="relative w-28 h-44 flex items-center justify-center">
+                {(character as any).avatarUrl ? (
+                  <>
+                    <img 
+                      src={(character as any).avatarUrl} 
+                      alt={character.name}
+                      className="max-w-full max-h-full object-contain drop-shadow-[0_0_15px_rgba(100,150,200,0.3)]"
+                    />
+                    {/* Subtle glow effect */}
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-8 bg-[#6aa0c0]/20 rounded-full blur-xl" />
+                  </>
+                ) : (
+                  /* Fallback silhouette */
+                  <div className="relative w-24 h-40">
+                    <div className="absolute inset-0 bg-gradient-to-b from-[#2a3a4a]/60 to-[#1a2a35]/60 rounded-t-full border border-[#4a5a6a]/30">
+                      <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-10 rounded-full bg-[#3a4a5a]/60" />
+                      <div className="absolute top-10 left-1/2 -translate-x-1/2 w-12 h-16 bg-[#2a3a4a]/60 rounded-t-lg" />
+                      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-16 h-20 border-x border-[#4a6a8a]/30" />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -301,7 +321,16 @@ export function RightColumn({
             <div className="w-24 px-2 flex flex-col justify-center">
               <div className="space-y-2">
                 {equipmentSlots.right.map((slot, index) => (
-                  <EquipmentSlot key={`${slot.id}-${index}`} label={slot.label} Icon={slot.Icon} alignRight />
+                  <EquipmentSlot 
+                    key={`${slot.id}-${index}`} 
+                    id={slot.id}
+                    label={slot.label} 
+                    Icon={slot.Icon} 
+                    alignRight
+                    selected={selectedEquipmentSlot === slot.id}
+                    onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
+                    equippedItem={characterEquipment.find(e => e.slot === slot.id)}
+                  />
                 ))}
               </div>
             </div>
@@ -436,30 +465,59 @@ function StatRow({
 }
 
 function EquipmentSlot({ 
+  id,
   label, 
   Icon,
-  alignRight 
+  alignRight,
+  selected,
+  onClick,
+  equippedItem,
 }: { 
+  id: string
   label: string
   Icon: React.FC<{ className?: string }>
-  alignRight?: boolean 
+  alignRight?: boolean
+  selected?: boolean
+  onClick?: () => void
+  equippedItem?: DBEquipmentItem
 }) {
   return (
-    <div className={cn(
-      "flex items-center gap-2 group",
-      alignRight && "flex-row-reverse"
-    )}>
-      <IconFrame className="w-12 h-12 flex-shrink-0">
-        <div className="w-full h-full bg-[#1a1614] hover:bg-[#2a2420] transition-colors cursor-pointer p-1">
-          <Icon className="w-full h-full opacity-70 group-hover:opacity-100 transition-opacity" />
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2 group w-full",
+        alignRight && "flex-row-reverse"
+      )}
+    >
+      <IconFrame className={cn(
+        "w-12 h-12 flex-shrink-0 transition-all",
+        selected && "ring-2 ring-[#7aa8c8] ring-offset-1 ring-offset-[#0a0908]"
+      )}>
+        <div className={cn(
+          "w-full h-full transition-colors cursor-pointer p-0.5 overflow-hidden",
+          selected ? "bg-[#1a2a35]" : "bg-[#1a1614] hover:bg-[#2a2420]"
+        )}>
+          {equippedItem?.icon_url ? (
+            <img 
+              src={equippedItem.icon_url} 
+              alt={equippedItem.name} 
+              className="w-full h-full object-contain"
+            />
+          ) : (
+            <Icon className={cn(
+              "w-full h-full transition-opacity",
+              selected ? "opacity-100" : "opacity-70 group-hover:opacity-100"
+            )} />
+          )}
         </div>
       </IconFrame>
       <span className={cn(
-        "text-[10px] text-stone-500 group-hover:text-stone-400 transition-colors",
-        alignRight && "text-right"
+        "text-[10px] transition-colors",
+        alignRight && "text-right",
+        selected ? "text-[#7aa8c8]" : "text-stone-500 group-hover:text-stone-400"
       )}>
-        {label}
+        {equippedItem?.name || label}
       </span>
-    </div>
+    </button>
   )
 }
