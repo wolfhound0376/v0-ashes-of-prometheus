@@ -191,8 +191,10 @@ export default function DMLayerPage() {
 
   // Handle state change and play cached animation if available
   const handleStateChange = (newState: AnimationState) => {
+    console.log('[v0] handleStateChange called:', newState, 'current cachedAnimations:', cachedAnimations)
     setLichState(newState)
-    playAnimation(newState) // Will use cached video if available
+    const played = playAnimation(newState) // Will use cached video if available
+    console.log('[v0] playAnimation returned:', played, 'currentVideoUrl should update')
   }
 
   // Send DM message with speech
