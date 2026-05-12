@@ -1,4 +1,3 @@
-import { anthropic } from '@ai-sdk/anthropic'
 import { generateText } from 'ai'
 import { composeNarratorPrompt, ASHES_OF_PROMETHEUS_PROMPT, type NarratorContext } from '@/lib/personas/lich-dm'
 
@@ -25,9 +24,9 @@ export async function POST(req: Request) {
       context: narratorContext,
     })
 
-    // Use Claude for the Lich's voice
+    // Use Vercel AI Gateway with Anthropic Claude
     const result = await generateText({
-      model: anthropic('claude-3-5-sonnet-20241022'),
+      model: 'anthropic/claude-sonnet-4-20250514' as any,
       system: systemPrompt,
       prompt: playerInput,
       temperature: 0.8,
