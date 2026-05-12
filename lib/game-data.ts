@@ -38,15 +38,30 @@ export const dialogueData = [
   { speaker: "You", text: "Thank you. I'll keep that in mind." },
 ]
 
+// D&D 5E Actions - type determines color: action (green), bonus (yellow), reaction (purple)
 export const actionsData = [
-  { id: "cast-spell", name: "Cast a Spell", description: "Use a spell from your spellbook.", icon: "sparkles", iconUrl: "/icons/actions/cast-spell.png" },
-  { id: "use-ability", name: "Use an Ability", description: "Use a class or racial ability.", icon: "zap", iconUrl: null },
-  { id: "dash", name: "Dash", description: "Move up to your speed.", icon: "move", iconUrl: null },
-  { id: "disengage", name: "Disengage", description: "Move without provoking opportunity attacks.", icon: "shield-off", iconUrl: null },
-  { id: "help", name: "Help", description: "Aid an ally in their task.", icon: "hand-helping", iconUrl: null },
-  { id: "ready", name: "Ready", description: "Prepare an action to trigger later.", icon: "clock", iconUrl: null },
-  { id: "search", name: "Search", description: "Look for hidden things.", icon: "search", iconUrl: null },
-  { id: "cast-ritual", name: "Cast Ritual", description: "Cast a ritual spell.", icon: "book-open", iconUrl: null },
+  // Standard Actions (Green)
+  { id: "attack", name: "Attack", description: "Make a melee or ranged attack.", icon: "sword", iconUrl: null, type: "action" },
+  { id: "cast-spell", name: "Cast a Spell", description: "Cast a spell with a casting time of 1 action.", icon: "sparkles", iconUrl: "/icons/actions/cast-spell.png", type: "action" },
+  { id: "dash", name: "Dash", description: "Double your movement speed for this turn.", icon: "move", iconUrl: null, type: "action" },
+  { id: "disengage", name: "Disengage", description: "Your movement doesn't provoke opportunity attacks.", icon: "shield-off", iconUrl: null, type: "action" },
+  { id: "dodge", name: "Dodge", description: "Attacks against you have disadvantage until your next turn.", icon: "shield", iconUrl: null, type: "action" },
+  { id: "help", name: "Help", description: "Give an ally advantage on their next ability check or attack.", icon: "hand-helping", iconUrl: null, type: "action" },
+  { id: "hide", name: "Hide", description: "Make a Dexterity (Stealth) check to hide.", icon: "eye-off", iconUrl: null, type: "action" },
+  { id: "ready", name: "Ready", description: "Prepare an action to trigger on a specific condition.", icon: "clock", iconUrl: null, type: "action" },
+  { id: "search", name: "Search", description: "Make a Wisdom (Perception) or Intelligence (Investigation) check.", icon: "search", iconUrl: null, type: "action" },
+  { id: "use-object", name: "Use an Object", description: "Interact with a second object or use a special object.", icon: "package", iconUrl: null, type: "action" },
+  
+  // Bonus Actions (Yellow)
+  { id: "offhand-attack", name: "Offhand Attack", description: "Attack with a light weapon in your off hand.", icon: "swords", iconUrl: null, type: "bonus" },
+  { id: "cast-bonus-spell", name: "Cast Bonus Spell", description: "Cast a spell with a casting time of 1 bonus action.", icon: "zap", iconUrl: null, type: "bonus" },
+  { id: "cunning-action", name: "Cunning Action", description: "Dash, Disengage, or Hide as a bonus action. (Rogue)", icon: "footprints", iconUrl: null, type: "bonus" },
+  { id: "second-wind", name: "Second Wind", description: "Regain 1d10 + fighter level hit points. (Fighter)", icon: "heart-pulse", iconUrl: null, type: "bonus" },
+  
+  // Reactions (Purple)
+  { id: "opportunity-attack", name: "Opportunity Attack", description: "Attack a creature leaving your reach.", icon: "swords", iconUrl: null, type: "reaction" },
+  { id: "cast-reaction-spell", name: "Cast Reaction Spell", description: "Cast a spell like Shield or Counterspell.", icon: "shield-plus", iconUrl: null, type: "reaction" },
+  { id: "uncanny-dodge", name: "Uncanny Dodge", description: "Halve damage from an attack you can see. (Rogue)", icon: "shield-half", iconUrl: null, type: "reaction" },
 ]
 
 export const inventoryData = [

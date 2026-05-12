@@ -27,6 +27,8 @@ interface Action {
   name: string
   description: string
   icon: string
+  iconUrl?: string | null
+  type: "action" | "bonus" | "reaction"
 }
 
 interface Resources {
@@ -68,6 +70,31 @@ const quickAbilityIconMap: Record<string, React.FC<{ className?: string }>> = {
   locked: LockedAbilityIcon,
 }
 
+// Action type color configuration matching D&D 5E conventions
+const actionTypeColors = {
+  action: {
+    border: "border-[#4a8a4a]/60",
+    bg: "bg-[#1a2a1a]/40",
+    text: "text-[#7ac87a]",
+    label: "Action",
+    labelBg: "bg-[#2a4a2a]",
+  },
+  bonus: {
+    border: "border-[#8a7a3a]/60",
+    bg: "bg-[#2a2a1a]/40",
+    text: "text-[#d4b454]",
+    label: "Bonus",
+    labelBg: "bg-[#4a4a2a]",
+  },
+  reaction: {
+    border: "border-[#7a4a8a]/60",
+    bg: "bg-[#2a1a2a]/40",
+    text: "text-[#b87ac8]",
+    label: "Reaction",
+    labelBg: "bg-[#3a2a4a]",
+  },
+}
+
 export function CenterColumn({ selectedAction, onActionSelect, actions, resources }: CenterColumnProps) {
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -101,45 +128,58 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
 
         <div className="flex-1 overflow-y-auto">
           <div className="flex">
-            {/* Actions list */}
-            <div className="flex-1 p-2 space-y-1">
-              {actions.map((action) => {
-                const IconComponent = actionIconMap[action.id] || SpellbookIcon
-                const isSelected = selectedAction === action.id
-                return (
-                  <button
-                    key={action.id}
-                    onClick={() => onActionSelect(action.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 p-2 rounded-sm transition-all text-left",
-                      "hover:bg-[#2a2420]/60 group",
-                      isSelected && "bg-[#1a2a35]/80 border border-[#4a7a9a]/40 shadow-[0_0_10px_rgba(100,150,200,0.15)]"
-                    )}
-                  >
-                    <IconFrame 
-                      className="w-10 h-10 flex-shrink-0" 
-                      selected={isSelected}
-                    >
-                      {action.iconUrl ? (
-                        <img src={action.iconUrl} alt={action.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <IconComponent className="w-full h-full" />
-                      )}
-                    </IconFrame>
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className={cn(
-                          "text-sm font-medium",
-                          isSelected ? "text-[#7aa8c8]" : "text-stone-200 group-hover:text-white"
-                        )}
-                      >
-                        {action.name}
-                      </p>
-                      <p className="text-xs text-stone-500 truncate">{action.description}</p>
-                    </div>
-                  </button>
-                )
-              })}
+            {/* Actions list grouped by type */}
+            <div className="flex-1 p-2 space-y-3">
+              {/* Standard Actions */}
+              {actions.filter(a => a.type === "action").length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5 px-1">
+                    <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.action.labelBg, actionTypeColors.action.text)}>
+                      Actions
+                    </span>
+                    <div className="flex-1 h-px bg-[#4a8a4a]/30" />
+                  </div>
+                  <div className="space-y-1">
+                    {actions.filter(a => a.type === "action").map((action) => (
+                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Bonus Actions */}
+              {actions.filter(a => a.type === "bonus").length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5 px-1">
+                    <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.bonus.labelBg, actionTypeColors.bonus.text)}>
+                      Bonus Actions
+                    </span>
+                    <div className="flex-1 h-px bg-[#8a7a3a]/30" />
+                  </div>
+                  <div className="space-y-1">
+                    {actions.filter(a => a.type === "bonus").map((action) => (
+                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Reactions */}
+              {actions.filter(a => a.type === "reaction").length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5 px-1">
+                    <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.reaction.labelBg, actionTypeColors.reaction.text)}>
+                      Reactions
+                    </span>
+                    <div className="flex-1 h-px bg-[#7a4a8a]/30" />
+                  </div>
+                  <div className="space-y-1">
+                    {actions.filter(a => a.type === "reaction").map((action) => (
+                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions remaining sidebar */}
@@ -243,6 +283,53 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
         </div>
       </FantasyPanel>
     </div>
+  )
+}
+
+function ActionButton({ action, isSelected, onSelect }: { action: Action; isSelected: boolean; onSelect: (id: string) => void }) {
+  const IconComponent = actionIconMap[action.id] || SpellbookIcon
+  const typeColors = actionTypeColors[action.type]
+  
+  return (
+    <button
+      onClick={() => onSelect(action.id)}
+      className={cn(
+        "w-full flex items-center gap-3 p-2 rounded-sm transition-all text-left border",
+        "hover:bg-[#2a2420]/60 group",
+        isSelected 
+          ? cn(typeColors.bg, typeColors.border, "shadow-[0_0_10px_rgba(100,150,100,0.15)]")
+          : "border-transparent"
+      )}
+    >
+      <IconFrame 
+        className="w-10 h-10 flex-shrink-0" 
+        selected={isSelected}
+      >
+        {action.iconUrl ? (
+          <img src={action.iconUrl} alt={action.name} className="w-full h-full object-cover" />
+        ) : (
+          <IconComponent className="w-full h-full" />
+        )}
+      </IconFrame>
+      <div className="flex-1 min-w-0">
+        <p
+          className={cn(
+            "text-sm font-medium",
+            isSelected ? typeColors.text : "text-stone-200 group-hover:text-white"
+          )}
+        >
+          {action.name}
+        </p>
+        <p className="text-xs text-stone-500 truncate">{action.description}</p>
+      </div>
+      {/* Type indicator dot */}
+      <div className={cn(
+        "w-2 h-2 rounded-full flex-shrink-0",
+        action.type === "action" && "bg-[#4a8a4a]",
+        action.type === "bonus" && "bg-[#8a7a3a]",
+        action.type === "reaction" && "bg-[#7a4a8a]"
+      )} />
+    </button>
   )
 }
 
