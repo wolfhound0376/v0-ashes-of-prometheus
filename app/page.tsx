@@ -6,7 +6,7 @@ import { Settings } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
-import { characterData, dialogueData, actionsData, inventoryData, environmentData } from "@/lib/game-data"
+import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
 import { createClient } from "@/lib/supabase/client"
 import type { Character, InventoryItem, EquipmentItem } from "@/lib/types/database"
 
@@ -84,6 +84,11 @@ export default function DashboardPage() {
 
   // Get the currently selected character
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
+  
+  // Get available actions based on character class
+  const availableActionIds = selectedCharacter 
+    ? getClassActions(selectedCharacter.class) 
+    : getClassActions('Fighter') // Default to Fighter actions
 
   const handleActionSelect = (actionId: string) => {
     setSelectedAction(actionId === selectedAction ? null : actionId)
@@ -93,6 +98,63 @@ export default function DashboardPage() {
     if (dialogueInput.trim()) {
       setDialogue([...dialogue, { speaker: "You", text: dialogueInput.trim() }])
       setDialogueInput("")
+    }
+  }
+
+  // Handler for populating starting equipment (D&D 5E standard gear)
+  const handlePopulateStartingGear = async (equipment: any[], inventory: any[], gold: number) => {
+    if (!selectedCharacterId) return
+
+    try {
+      // Clear existing inventory and equipment for this character
+      await supabase.from('inventory_items').delete().eq('character_id', selectedCharacterId)
+      await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId)
+
+      // Insert new equipment items
+      if (equipment.length > 0) {
+        const equipmentToInsert = equipment.map(item => ({
+          character_id: selectedCharacterId,
+          slot: item.slot,
+          name: item.name,
+          preset_icon: item.icon,
+          is_equipped: true,
+        }))
+        await supabase.from('equipment_items').insert(equipmentToInsert)
+      }
+
+      // Insert new inventory items (including gold)
+      const inventoryToInsert = [
+        ...inventory.map(item => ({
+          character_id: selectedCharacterId,
+          name: item.name,
+          quantity: item.quantity,
+          preset_icon: item.icon,
+        })),
+        {
+          character_id: selectedCharacterId,
+          name: 'Gold Pieces',
+          quantity: gold,
+          preset_icon: 'coins',
+        }
+      ]
+      await supabase.from('inventory_items').insert(inventoryToInsert)
+
+      // Refresh inventory and equipment
+      const { data: invData } = await supabase
+        .from('inventory_items')
+        .select('*')
+        .eq('character_id', selectedCharacterId)
+        .order('name')
+      if (invData) setCharacterInventory(invData)
+
+      const { data: equipData } = await supabase
+        .from('equipment_items')
+        .select('*')
+        .eq('character_id', selectedCharacterId)
+      if (equipData) setCharacterEquipment(equipData)
+
+    } catch (error) {
+      console.error('Error populating starting gear:', error)
     }
   }
 
@@ -128,6 +190,7 @@ export default function DashboardPage() {
           onActionSelect={handleActionSelect}
           actions={actionsData}
           resources={resources}
+          availableActionIds={availableActionIds}
         />
         <RightColumn 
           characters={characters}
@@ -139,6 +202,7 @@ export default function DashboardPage() {
           fallbackCharacter={characterData}
           fallbackInventory={inventoryData}
           loading={loadingCharacters}
+          onPopulateStartingGear={handlePopulateStartingGear}
         />
       </div>
     </div>

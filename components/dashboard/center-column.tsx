@@ -57,6 +57,7 @@ interface CenterColumnProps {
   onActionSelect: (actionId: string) => void
   actions: Action[]
   resources: Resources
+  availableActionIds?: string[] // Actions available based on character class
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -104,7 +105,12 @@ const actionTypeColors = {
   },
 }
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources }: CenterColumnProps) {
+export function CenterColumn({ selectedAction, onActionSelect, actions, resources, availableActionIds }: CenterColumnProps) {
+  // If availableActionIds is provided, filter actions. Otherwise show all.
+  const isActionAvailable = (actionId: string) => {
+    if (!availableActionIds) return true
+    return availableActionIds.includes(actionId)
+  }
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
@@ -150,7 +156,13 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
                   </div>
                   <div className="space-y-1">
                     {actions.filter(a => a.type === "action").map((action) => (
-                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+                      <ActionButton 
+                        key={action.id} 
+                        action={action} 
+                        isSelected={selectedAction === action.id} 
+                        onSelect={onActionSelect}
+                        isAvailable={isActionAvailable(action.id)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -167,7 +179,13 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
                   </div>
                   <div className="space-y-1">
                     {actions.filter(a => a.type === "bonus").map((action) => (
-                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+                      <ActionButton 
+                        key={action.id} 
+                        action={action} 
+                        isSelected={selectedAction === action.id} 
+                        onSelect={onActionSelect}
+                        isAvailable={isActionAvailable(action.id)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -184,7 +202,13 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
                   </div>
                   <div className="space-y-1">
                     {actions.filter(a => a.type === "reaction").map((action) => (
-                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+                      <ActionButton 
+                        key={action.id} 
+                        action={action} 
+                        isSelected={selectedAction === action.id} 
+                        onSelect={onActionSelect}
+                        isAvailable={isActionAvailable(action.id)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -295,7 +319,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   )
 }
 
-function ActionButton({ action, isSelected, onSelect }: { action: Action; isSelected: boolean; onSelect: (id: string) => void }) {
+function ActionButton({ action, isSelected, onSelect, isAvailable = true }: { action: Action; isSelected: boolean; onSelect: (id: string) => void; isAvailable?: boolean }) {
   const [showSubmenu, setShowSubmenu] = useState(false)
   const IconComponent = actionIconMap[action.id] || SpellbookIcon
   const typeColors = actionTypeColors[action.type]
@@ -304,6 +328,7 @@ function ActionButton({ action, isSelected, onSelect }: { action: Action; isSele
   const bonusBorderClass = action.type === "bonus" ? "ring-2 ring-[#8a2a2a]/60" : ""
   
   const handleClick = () => {
+    if (!isAvailable) return
     if (action.hasSubmenu) {
       setShowSubmenu(!showSubmenu)
     } else {
@@ -315,10 +340,13 @@ function ActionButton({ action, isSelected, onSelect }: { action: Action; isSele
     <div className="relative">
       <button
         onClick={handleClick}
+        disabled={!isAvailable}
         className={cn(
           "w-full flex items-center gap-3 p-2 rounded-sm transition-all text-left border",
-          "hover:bg-[#2a2420]/60 group",
-          isSelected 
+          isAvailable 
+            ? "hover:bg-[#2a2420]/60 group cursor-pointer" 
+            : "opacity-40 cursor-not-allowed grayscale",
+          isSelected && isAvailable
             ? cn(typeColors.bg, typeColors.border, "shadow-[0_0_10px_rgba(100,150,100,0.15)]")
             : "border-transparent"
         )}
@@ -337,12 +365,17 @@ function ActionButton({ action, isSelected, onSelect }: { action: Action; isSele
           <p
             className={cn(
               "text-sm font-medium",
-              isSelected ? typeColors.text : "text-stone-200 group-hover:text-white"
+              !isAvailable 
+                ? "text-stone-600"
+                : isSelected 
+                  ? typeColors.text 
+                  : "text-stone-200 group-hover:text-white"
             )}
           >
             {action.name}
+            {!isAvailable && <span className="ml-2 text-[10px] text-stone-600">(Not available)</span>}
           </p>
-          <p className="text-xs text-stone-500 truncate">{action.description}</p>
+          <p className={cn("text-xs truncate", isAvailable ? "text-stone-500" : "text-stone-700")}>{action.description}</p>
         </div>
         {/* Submenu indicator for Cunning Action */}
         {action.hasSubmenu && (
