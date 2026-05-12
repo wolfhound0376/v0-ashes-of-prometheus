@@ -162,13 +162,11 @@ export function CharactersPanel() {
               </div>
             ) : (
               <div className="flex">
-                <div className="w-24 h-28 bg-[#0f0d0b] flex-shrink-0">
+                <div className="w-24 h-32 bg-[#0f0d0b] flex-shrink-0 flex items-center justify-center overflow-hidden">
                   {char.avatar_image_url ? (
-                    <img src={char.avatar_image_url} alt={char.name} className="w-full h-full object-cover" />
+                    <img src={char.avatar_image_url} alt={char.name} className="max-w-full max-h-full object-contain" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <User className="w-8 h-8 text-stone-700" />
-                    </div>
+                    <User className="w-8 h-8 text-stone-700" />
                   )}
                 </div>
                 <div className="flex-1 p-4">
