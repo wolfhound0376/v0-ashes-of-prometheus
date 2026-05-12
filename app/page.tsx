@@ -235,14 +235,27 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
-      {/* Admin link */}
-      <Link 
-        href="/admin"
-        className="fixed top-4 right-4 z-[60] p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
-        title="Content Manager"
-      >
-        <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-      </Link>
+      {/* Navigation links */}
+      <div className="fixed top-4 right-4 z-[60] flex gap-2">
+        <Link 
+          href="/world-ai"
+          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#e0651a] hover:border-[#e0651a]/30 transition-all group flex items-center gap-1.5"
+          title="World AI — Campaign Engine"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#e0651a] opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#e0651a]" />
+          </span>
+          <span className="text-xs font-serif tracking-wide hidden sm:inline">WORLD AI</span>
+        </Link>
+        <Link 
+          href="/admin"
+          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
+          title="Content Manager"
+        >
+          <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+        </Link>
+      </div>
 
       {/* Smoke/fog overlay */}
       <div className="fixed inset-0 pointer-events-none z-50 opacity-20">
