@@ -30,9 +30,16 @@ export function ImageUploader({
     wide: "aspect-[16/9]"
   }
 
+  const MAX_FILE_SIZE = 4.5 * 1024 * 1024 // 4.5MB limit for Vercel
+
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Please upload an image file')
+      return
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      alert(`File is too large. Maximum size is 4.5MB. Your file is ${(file.size / 1024 / 1024).toFixed(1)}MB`)
       return
     }
 
@@ -46,6 +53,14 @@ export function ImageUploader({
         method: 'POST',
         body: formData,
       })
+
+      // Handle non-JSON error responses (like "Request Entity Too Large")
+      const contentType = response.headers.get('content-type')
+      if (!contentType?.includes('application/json')) {
+        const text = await response.text()
+        console.error('[v0] Non-JSON response:', text)
+        throw new Error(text || `Server error: ${response.status}`)
+      }
 
       const data = await response.json()
       
@@ -146,7 +161,7 @@ export function ImageUploader({
               <p className="text-sm text-stone-400">
                 {dragOver ? "Drop image here" : "Click or drag to upload"}
               </p>
-              <p className="text-xs text-stone-600 mt-1">PNG, JPG up to 10MB</p>
+              <p className="text-xs text-stone-600 mt-1">PNG, JPG up to 4.5MB</p>
             </>
           )}
         </div>
