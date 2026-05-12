@@ -235,36 +235,43 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
-      {/* Navigation links */}
-      <div className="fixed top-4 right-4 z-[60] flex gap-2">
+      {/* Layer Navigation */}
+      <div className="fixed top-4 right-4 z-[60] flex items-center gap-1 bg-[#0d0b0a]/80 backdrop-blur-sm rounded-xl p-1 border border-stone-800/50">
         <Link 
           href="/dm"
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-purple-400 hover:border-purple-500/30 transition-all group flex items-center gap-1.5"
-          title="The Lich — Dungeon Master"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-stone-500 hover:text-purple-400 hover:bg-purple-500/10 transition-all"
+          title="Layer 1: The Lich DM"
         >
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-500 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
           </span>
-          <span className="text-xs font-serif tracking-wide hidden sm:inline">THE LICH</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider hidden sm:inline">L1</span>
         </Link>
         <Link 
           href="/world-ai"
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#e0651a] hover:border-[#e0651a]/30 transition-all group flex items-center gap-1.5"
-          title="World AI — Campaign Engine"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-stone-500 hover:text-[#e0651a] hover:bg-[#e0651a]/10 transition-all"
+          title="Layer 2: World AI"
         >
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#e0651a] opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-[#e0651a]" />
           </span>
-          <span className="text-xs font-serif tracking-wide hidden sm:inline">WORLD AI</span>
+          <span className="text-[10px] font-mono uppercase tracking-wider hidden sm:inline">L2</span>
         </Link>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#c4a777]/10 text-[#c4a777]" title="Layer 3: Player Dashboard (Current)">
+          <span className="relative flex h-2 w-2">
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#c4a777]" />
+          </span>
+          <span className="text-[10px] font-mono uppercase tracking-wider hidden sm:inline">L3</span>
+        </div>
+        <div className="w-px h-4 bg-stone-700 mx-1" />
         <Link 
           href="/admin"
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
+          className="p-1.5 rounded-lg text-stone-500 hover:text-[#c4a777] hover:bg-[#c4a777]/10 transition-all group"
           title="Content Manager"
         >
-          <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+          <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
         </Link>
       </div>
 

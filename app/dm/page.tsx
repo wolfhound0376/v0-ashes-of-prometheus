@@ -264,16 +264,39 @@ export default function DMLayerPage() {
       {/* Header */}
       <header className="absolute top-0 left-0 right-0 z-50 p-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link 
-            href="/"
-            className="p-2 bg-black/40 backdrop-blur border border-purple-900/30 rounded-lg text-stone-400 hover:text-purple-400 hover:border-purple-500/50 transition-all"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
+          {/* Layer Navigation */}
+          <div className="flex items-center gap-1 bg-black/60 backdrop-blur-sm rounded-xl p-1 border border-purple-900/30">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-400" title="Layer 1: The Lich DM (Current)">
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
+              </span>
+              <span className="text-[10px] font-mono uppercase tracking-wider">L1</span>
+            </div>
+            <Link 
+              href="/world-ai"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-stone-500 hover:text-[#e0651a] hover:bg-[#e0651a]/10 transition-all"
+              title="Layer 2: World AI"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#e0651a]" />
+              </span>
+              <span className="text-[10px] font-mono uppercase tracking-wider">L2</span>
+            </Link>
+            <Link 
+              href="/"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-stone-500 hover:text-[#c4a777] hover:bg-[#c4a777]/10 transition-all"
+              title="Layer 3: Player Dashboard"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#c4a777]" />
+              </span>
+              <span className="text-[10px] font-mono uppercase tracking-wider">L3</span>
+            </Link>
+          </div>
           
           <div className="flex flex-col">
-            <h1 className="text-lg font-serif text-purple-200 tracking-wider">THE LICH</h1>
-            <span className="text-[10px] text-stone-500 tracking-widest uppercase">Dungeon Master • Layer 1</span>
+            <h1 className="text-lg font-serif text-purple-200 tracking-wider">VECNA</h1>
+            <span className="text-[10px] text-stone-500 tracking-widest uppercase">Dungeon Master</span>
           </div>
         </div>
 
