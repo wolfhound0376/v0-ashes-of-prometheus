@@ -66,10 +66,10 @@ export const environmentData = {
 }
 
 export const quickAbilities = [
-  { id: "mage-hand", name: "Mage Hand", icon: "mage-hand", iconUrl: null, unlocked: true },
+  { id: "mage-hand", name: "Mage Hand", icon: "mage-hand", iconUrl: "/icons/abilities/mage-hand.png", unlocked: true },
   { id: "fire-bolt", name: "Fire Bolt", icon: "fire-bolt", iconUrl: "/icons/abilities/fire-bolt.png", unlocked: true },
-  { id: "shield", name: "Shield", icon: "shield", iconUrl: null, unlocked: true },
-  { id: "magic-missile", name: "Magic Missile", icon: "magic-missile", iconUrl: null, unlocked: true },
-  { id: "detect-magic", name: "Detect Magic", icon: "detect-magic", iconUrl: null, unlocked: true },
+  { id: "shield", name: "Shield", icon: "shield", iconUrl: "/icons/abilities/shield.png", unlocked: true },
+  { id: "magic-missile", name: "Magic Missile", icon: "magic-missile", iconUrl: "/icons/abilities/magic-missile.png", unlocked: true },
+  { id: "detect-magic", name: "Detect Magic", icon: "detect-magic", iconUrl: "/icons/abilities/detect-magic.png", unlocked: true },
   { id: "locked", name: "Lv. 10", icon: "locked", iconUrl: null, unlocked: false },
 ]
