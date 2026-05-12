@@ -9,8 +9,9 @@ import { DMControls } from "@/components/dm/dm-controls"
 import { ConnectionStatus } from "@/components/dm/connection-status"
 import { useRunwayAnimation, type AnimationState } from "@/lib/hooks/use-runway-animation"
 import { useVecnaSpeech } from "@/lib/hooks/use-vecna-speech"
+import { useEnvironmentVideo, type EnvironmentType } from "@/lib/hooks/use-environment-video"
 import Link from "next/link"
-import { ArrowLeft, Settings, Volume2, VolumeX, Video, Loader2, CheckCircle, XCircle, Sparkles, Mic } from "lucide-react"
+import { ArrowLeft, Settings, Volume2, VolumeX, Video, Loader2, CheckCircle, XCircle, Sparkles, Mic, MapPin } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // Types for telemetry and dialogue
@@ -77,6 +78,20 @@ export default function DMLayerPage() {
     isSpeaking,
     isLoading: isSpeechLoading,
   } = useVecnaSpeech()
+  
+  // Environment video hook
+  const {
+    currentEnvironment,
+    currentVideoUrl: envVideoUrl,
+    cachedEnvironments,
+    currentTask: envTask,
+    isGenerating: isGeneratingEnv,
+    generateEnvironment,
+    switchEnvironment,
+    environments,
+  } = useEnvironmentVideo()
+  
+  const [showEnvironmentPanel, setShowEnvironmentPanel] = useState(false)
   
   // Refs
   const dialogueEndRef = useRef<HTMLDivElement>(null)
@@ -232,7 +247,10 @@ export default function DMLayerPage() {
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black">
       {/* Castle Background */}
-      <CastleBackground />
+      <CastleBackground 
+        videoUrl={envVideoUrl}
+        environmentName={environments.find(e => e.id === currentEnvironment)?.name}
+      />
       
       {/* Atmospheric Overlay */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 pointer-events-none" />
@@ -262,6 +280,21 @@ export default function DMLayerPage() {
         <div className="flex items-center gap-2">
           <ConnectionStatus isConnected={isConnected} />
           
+          {/* Environment Control */}
+          <button 
+            onClick={() => setShowEnvironmentPanel(!showEnvironmentPanel)}
+            className={cn(
+              "p-2 bg-black/40 backdrop-blur border rounded-lg transition-all flex items-center gap-1.5",
+              showEnvironmentPanel 
+                ? "border-green-500/50 text-green-400" 
+                : "border-purple-900/30 text-stone-400 hover:text-green-400"
+            )}
+            title="Change Environment"
+          >
+            <MapPin className="w-5 h-5" />
+            {isGeneratingEnv && <Loader2 className="w-3 h-3 animate-spin" />}
+          </button>
+          
           {/* Runway Video Control */}
           <button 
             onClick={() => setShowRunwayPanel(!showRunwayPanel)}
@@ -271,6 +304,7 @@ export default function DMLayerPage() {
                 ? "border-purple-500/50 text-purple-400" 
                 : "border-purple-900/30 text-stone-400 hover:text-purple-400"
             )}
+            title="Vecna Animations"
           >
             <Video className="w-5 h-5" />
             {isGenerating && <Loader2 className="w-3 h-3 animate-spin" />}
@@ -398,6 +432,104 @@ export default function DMLayerPage() {
 
           <p className="text-[10px] text-stone-500 mt-4">
             Generate Runway video animations for each Lich state. Videos are cached for instant playback.
+          </p>
+        </div>
+      )}
+
+      {/* Environment Panel */}
+      {showEnvironmentPanel && (
+        <div className="absolute top-20 right-4 z-50 w-80 bg-black/80 backdrop-blur-md border border-green-900/40 rounded-lg p-4 animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-serif text-green-200 flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              Environment Backgrounds
+            </h3>
+            {isGeneratingEnv && (
+              <span className="text-[10px] text-green-400 animate-pulse">Generating...</span>
+            )}
+          </div>
+          
+          {/* Generation Progress */}
+          {envTask && envTask.status === 'processing' && (
+            <div className="mb-4 p-3 bg-green-900/20 rounded border border-green-800/30">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-stone-400">Generating {envTask.environment}...</span>
+                <Loader2 className="w-4 h-4 text-green-400 animate-spin" />
+              </div>
+            </div>
+          )}
+          
+          {/* Environment Grid */}
+          <div className="grid grid-cols-1 gap-2">
+            {environments.map((env) => {
+              const isCached = cachedEnvironments.has(env.id)
+              const isActive = currentEnvironment === env.id
+              const isGeneratingThis = envTask?.environment === env.id && envTask.status === 'processing'
+              
+              return (
+                <div
+                  key={env.id}
+                  className={cn(
+                    "flex items-center justify-between p-2.5 rounded border transition-all",
+                    isActive 
+                      ? "bg-green-900/30 border-green-500/50" 
+                      : "bg-stone-900/50 border-stone-800/50 hover:border-green-800/50"
+                  )}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-lg">{env.icon}</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-sm",
+                          isActive ? "text-green-300" : "text-stone-300"
+                        )}>
+                          {env.name}
+                        </span>
+                        {isCached ? (
+                          <CheckCircle className="w-3 h-3 text-green-500" />
+                        ) : (
+                          <XCircle className="w-3 h-3 text-stone-600" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-stone-500">{env.description}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-1">
+                    {isCached && !isActive && (
+                      <button
+                        onClick={() => switchEnvironment(env.id)}
+                        className="px-2 py-1 text-[10px] bg-green-600/40 text-green-200 rounded hover:bg-green-500/50 transition-colors"
+                      >
+                        Use
+                      </button>
+                    )}
+                    {isActive && (
+                      <span className="px-2 py-1 text-[10px] bg-green-500/20 text-green-400 rounded">
+                        Active
+                      </span>
+                    )}
+                    <button
+                      onClick={() => generateEnvironment(env.id)}
+                      disabled={isGeneratingEnv}
+                      className={cn(
+                        "px-2 py-1 text-[10px] rounded transition-colors",
+                        isGeneratingEnv
+                          ? "bg-stone-800 text-stone-600 cursor-not-allowed"
+                          : "bg-green-600/60 text-green-100 hover:bg-green-500/60"
+                      )}
+                    >
+                      {isGeneratingThis ? <Loader2 className="w-3 h-3 animate-spin" /> : isCached ? 'Regen' : 'Generate'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <p className="text-[10px] text-stone-500 mt-4">
+            Generate looping background videos for Vecna&apos;s lair. Switch environments to change the scene.
           </p>
         </div>
       )}
