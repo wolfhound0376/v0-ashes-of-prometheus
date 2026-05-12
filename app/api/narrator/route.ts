@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
     // Use Claude for the Lich's voice
     const result = await generateText({
-      model: anthropic('claude-sonnet-4-20250514'),
+      model: anthropic('claude-3-5-sonnet-20241022'),
       system: systemPrompt,
       prompt: playerInput,
       temperature: 0.8,
