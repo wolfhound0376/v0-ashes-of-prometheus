@@ -179,7 +179,7 @@ export default function DMLayerPage() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'story_dialogue' },
-        (payload) => {
+        async (payload) => {
           const newDialogue = payload.new as DialogueEntry
           if (newDialogue.campaign_id === 'ashes_of_prometheus') {
             setDialogueHistory(prev => [...prev, newDialogue])
@@ -189,6 +189,47 @@ export default function DMLayerPage() {
               handleStateChange('speaking')
               setCurrentDialogue(newDialogue.message)
               setTimeout(() => handleStateChange('idle'), 5000)
+            }
+            
+            // If it's a player message, auto-generate Lich response
+            if (newDialogue.speaker_type === 'player' && newDialogue.requires_response) {
+              // Small delay to let the player message display first
+              setTimeout(async () => {
+                try {
+                  const response = await fetch('/api/narrator', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      playerInput: newDialogue.message,
+                      context: `Player ${newDialogue.speaker} says: "${newDialogue.message}"`,
+                      gameState: {
+                        currentScene: 'Throne Room',
+                        playerName: newDialogue.speaker
+                      }
+                    })
+                  })
+                  
+                  if (response.ok) {
+                    const data = await response.json()
+                    // This will trigger the DM message flow via sendLichMessage
+                    handleStateChange('speaking')
+                    setCurrentDialogue(data.response)
+                    
+                    // Save to database
+                    await supabase.from('story_dialogue').insert({
+                      campaign_id: 'ashes_of_prometheus',
+                      speaker: 'Vecna',
+                      speaker_type: 'dm',
+                      message: data.response,
+                      emotion: 'threatening',
+                      requires_response: true,
+                      response_type: 'dialogue'
+                    })
+                  }
+                } catch (error) {
+                  console.error('Failed to generate auto-response:', error)
+                }
+              }, 1000)
             }
           }
         }
@@ -213,6 +254,15 @@ export default function DMLayerPage() {
     if (url) {
       setActiveVideoUrl(url)
     }
+  }
+
+  // Start the campaign with an opening monologue
+  const startCampaign = async () => {
+    const openingPrompt = `You are beginning a new campaign session. A player named Fifi, a cunning rogue, has entered your throne room. 
+Give your dramatic opening monologue as the Lich Dungeon Master, introducing yourself and setting the dark, foreboding tone. 
+Hint at the artifact they seek and the trials ahead. Make it memorable and theatrical - this is the campaign's opening moment.`
+    
+    await generateLichResponse(openingPrompt, "Campaign opening - dramatic introduction")
   }
 
   // Generate a response from the Lich using Claude
@@ -647,6 +697,7 @@ export default function DMLayerPage() {
 <DMControls
   onSendMessage={sendLichMessage}
   onGenerateResponse={generateLichResponse}
+  onStartCampaign={startCampaign}
   lichState={lichState}
   setLichState={handleStateChange}
   />

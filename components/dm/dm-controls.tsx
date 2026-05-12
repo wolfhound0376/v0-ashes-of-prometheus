@@ -7,15 +7,17 @@ import { Send, Sparkles, Skull, MessageSquare, Zap } from "lucide-react"
 interface DMControlsProps {
   onSendMessage: (message: string, emotion?: string) => void
   onGenerateResponse?: (playerInput: string, context?: string) => Promise<void>
+  onStartCampaign?: () => Promise<void>
   lichState: 'idle' | 'speaking' | 'thinking' | 'casting'
   setLichState: (state: 'idle' | 'speaking' | 'thinking' | 'casting') => void
 }
 
-export function DMControls({ onSendMessage, onGenerateResponse, lichState, setLichState }: DMControlsProps) {
+export function DMControls({ onSendMessage, onGenerateResponse, onStartCampaign, lichState, setLichState }: DMControlsProps) {
   const [input, setInput] = useState("")
   const [selectedEmotion, setSelectedEmotion] = useState<string>("threatening")
   const [isExpanded, setIsExpanded] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [campaignStarted, setCampaignStarted] = useState(false)
 
   const emotions = [
     { id: 'threatening', label: 'Threatening', color: 'text-red-400 border-red-900/50' },
@@ -175,6 +177,41 @@ export function DMControls({ onSendMessage, onGenerateResponse, lichState, setLi
               </>
             )}
           </button>
+
+          {/* Start Campaign button */}
+          {!campaignStarted && onStartCampaign && (
+            <button 
+              onClick={async () => {
+                if (isGenerating) return
+                setIsGenerating(true)
+                setCampaignStarted(true)
+                try {
+                  await onStartCampaign()
+                } finally {
+                  setIsGenerating(false)
+                }
+              }}
+              disabled={isGenerating}
+              className={cn(
+                "w-full mt-3 py-3 border-2 rounded text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2",
+                isGenerating
+                  ? "bg-red-900/20 border-red-900/30 text-red-400 cursor-wait"
+                  : "bg-gradient-to-r from-red-900/50 to-orange-900/50 border-red-700/50 text-red-300 hover:from-red-800/50 hover:to-orange-800/50"
+              )}
+            >
+              {isGenerating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                  The Lich Awakens...
+                </>
+              ) : (
+                <>
+                  <Skull className="w-5 h-5" />
+                  Start Campaign
+                </>
+              )}
+            </button>
+          )}
         </div>
       )}
     </div>
