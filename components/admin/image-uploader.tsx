@@ -107,13 +107,13 @@ export function ImageUploader({
       
       {value ? (
         <div className={cn(
-          "relative rounded-lg overflow-hidden border border-[#3d3428]/60 bg-[#1a1614]",
+          "relative rounded-lg overflow-hidden border border-[#3d3428]/60 bg-[#1a1614] flex items-center justify-center",
           aspectClasses[aspectRatio]
         )}>
           <img 
             src={value} 
             alt="Uploaded" 
-            className="w-full h-full object-cover"
+            className="max-w-full max-h-full object-contain"
           />
           <button
             onClick={handleRemove}
