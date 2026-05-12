@@ -48,11 +48,9 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
             src={videoUrl}
             className={cn(
               "w-[500px] h-auto object-contain",
-              "mix-blend-lighten",
-              "drop-shadow-[0_0_40px_rgba(138,43,226,0.6)]",
               "transition-all duration-300",
-              state === 'speaking' && "scale-105 drop-shadow-[0_0_60px_rgba(138,43,226,0.8)]",
-              state === 'casting' && "scale-110 drop-shadow-[0_0_80px_rgba(180,80,255,0.9)]"
+              state === 'speaking' && "scale-105",
+              state === 'casting' && "scale-110"
             )}
             loop
             muted
