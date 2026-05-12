@@ -563,6 +563,7 @@ export default function DMLayerPage() {
       <main className="relative h-full flex flex-col items-center justify-center pt-20 pb-32">
         {/* Lich Character */}
         <div className="relative flex-1 flex items-center justify-center w-full max-w-2xl">
+          {console.log('[v0] DM page render - currentVideoUrl:', currentVideoUrl)}
 <LichCharacter
   state={lichState}
   currentDialogue={currentDialogue}
