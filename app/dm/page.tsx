@@ -7,6 +7,7 @@ import { CastleBackground } from "@/components/dm/castle-background"
 import { DialogueDisplay } from "@/components/dm/dialogue-display"
 import { DMControls } from "@/components/dm/dm-controls"
 import { ConnectionStatus } from "@/components/dm/connection-status"
+import { WorldAI } from "@/components/dm/world-ai"
 type AnimationState = 'idle' | 'speaking' | 'thinking' | 'casting' | 'laughing'
 import { useVecnaSpeech } from "@/lib/hooks/use-vecna-speech"
 import { useEnvironmentVideo, type EnvironmentType } from "@/lib/hooks/use-environment-video"
@@ -60,6 +61,7 @@ export default function DMLayerPage() {
   const [isMuted, setIsMuted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showRunwayPanel, setShowRunwayPanel] = useState(false)
+  const [showWorldAI, setShowWorldAI] = useState(false)
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null)
   const [animations, setAnimations] = useState<Record<string, string>>({})
   
@@ -478,6 +480,18 @@ Hint at the artifact they seek and the trials ahead. Make it memorable and theat
   {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
 </button>
           
+          {/* World AI Button */}
+          <button 
+            onClick={() => setShowWorldAI(true)}
+            className={cn(
+              "p-2 bg-black/40 backdrop-blur border rounded-lg transition-all flex items-center gap-1.5",
+              "border-amber-900/30 text-amber-400 hover:border-amber-500/50 hover:text-amber-300"
+            )}
+            title="World AI - Campaign Reference"
+          >
+            <Sparkles className="w-5 h-5" />
+          </button>
+
           <button 
             onClick={() => setShowSettings(!showSettings)}
             className="p-2 bg-black/40 backdrop-blur border border-purple-900/30 rounded-lg text-stone-400 hover:text-purple-400 transition-all"
@@ -707,6 +721,9 @@ Hint at the artifact they seek and the trials ahead. Make it memorable and theat
   lichState={lichState}
   setLichState={handleStateChange}
   />
+
+{/* World AI - Campaign Reference Tool */}
+<WorldAI isOpen={showWorldAI} onClose={() => setShowWorldAI(false)} />
     </div>
   )
 }
