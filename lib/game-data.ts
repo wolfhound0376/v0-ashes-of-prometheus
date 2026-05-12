@@ -61,7 +61,7 @@ export const actionsData = [
   // Reactions (Purple)
   { id: "opportunity-attack", name: "Opportunity Attack", description: "Attack a creature leaving your reach.", icon: "swords", iconUrl: "/icons/actions/opportunity-attack.png", type: "reaction" },
   { id: "cast-reaction-spell", name: "Cast Reaction Spell", description: "Cast a spell like Shield or Counterspell.", icon: "shield-plus", iconUrl: null, type: "reaction" },
-  { id: "uncanny-dodge", name: "Uncanny Dodge", description: "Halve damage from an attack you can see. (Rogue)", icon: "shield-half", iconUrl: null, type: "reaction" },
+  { id: "uncanny-dodge", name: "Uncanny Dodge", description: "Halve damage from an attack you can see. (Rogue)", icon: "shield-half", iconUrl: "/icons/actions/uncanny-dodge.png", type: "reaction" },
 ]
 
 export const inventoryData = [
