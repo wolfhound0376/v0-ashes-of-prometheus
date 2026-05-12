@@ -71,6 +71,8 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
           <div className="relative">
             <video
               ref={videoRef}
+              key={videoUrl}
+              src={videoUrl}
               className={cn(
                 "w-[500px] h-auto object-contain",
                 "mix-blend-lighten", // Removes black/dark backgrounds
@@ -82,11 +84,10 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
               loop={state === 'idle'}
               muted
               playsInline
+              autoPlay
               onError={() => setVideoError(true)}
               onEnded={onVideoEnd}
-            >
-              <source src={videoUrl} type="video/mp4" />
-            </video>
+            />
             
             {/* Subtle glow effects */}
             <div className="absolute inset-0 pointer-events-none">
