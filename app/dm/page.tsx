@@ -7,7 +7,7 @@ import { CastleBackground } from "@/components/dm/castle-background"
 import { DialogueDisplay } from "@/components/dm/dialogue-display"
 import { DMControls } from "@/components/dm/dm-controls"
 import { ConnectionStatus } from "@/components/dm/connection-status"
-import { useRunwayAnimation, type AnimationState } from "@/lib/hooks/use-runway-animation"
+type AnimationState = 'idle' | 'speaking' | 'thinking' | 'casting' | 'laughing'
 import { useVecnaSpeech } from "@/lib/hooks/use-vecna-speech"
 import { useEnvironmentVideo, type EnvironmentType } from "@/lib/hooks/use-environment-video"
 import Link from "next/link"
@@ -61,14 +61,32 @@ export default function DMLayerPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showRunwayPanel, setShowRunwayPanel] = useState(false)
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null)
+  const [animations, setAnimations] = useState<Record<string, string>>({})
   
-  // Runway animation hook
-  const {
-    currentTask,
-    isGenerating,
-    cachedAnimations,
-    generateAnimation,
-  } = useRunwayAnimation()
+  // Load animations from database on mount
+  useEffect(() => {
+    const loadAnimations = async () => {
+      const { data } = await supabase
+        .from('lich_animations')
+        .select('state, video_url')
+        .order('created_at', { ascending: false })
+      
+      if (data) {
+        const animMap: Record<string, string> = {}
+        data.forEach((row: { state: string; video_url: string }) => {
+          if (!animMap[row.state]) {
+            animMap[row.state] = row.video_url
+          }
+        })
+        setAnimations(animMap)
+        // Set idle as default
+        if (animMap.idle) {
+          setActiveVideoUrl(animMap.idle)
+        }
+      }
+    }
+    loadAnimations()
+  }, [supabase])
   
   // Speech hook for Vecna's voice
   const {
@@ -188,23 +206,14 @@ export default function DMLayerPage() {
     dialogueEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [dialogueHistory])
 
-  // Handle state change and play cached animation if available
+  // Handle state change and play animation
   const handleStateChange = (newState: AnimationState) => {
-    console.log('[v0] handleStateChange:', newState, 'cachedAnimations:', cachedAnimations)
     setLichState(newState)
-    const url = cachedAnimations[newState]
-    console.log('[v0] url for state:', url)
+    const url = animations[newState]
     if (url) {
       setActiveVideoUrl(url)
     }
   }
-  
-  // Set initial video when animations load
-  useEffect(() => {
-    if (cachedAnimations.idle && !activeVideoUrl) {
-      setActiveVideoUrl(cachedAnimations.idle)
-    }
-  }, [cachedAnimations, activeVideoUrl])
 
   // Send DM message with speech
   const sendLichMessage = async (message: string, emotion: string = 'threatening') => {
@@ -245,15 +254,6 @@ export default function DMLayerPage() {
       handleStateChange('idle')
     }
   }, [isSpeaking, lichState])
-
-  // Handle Runway generation
-  const handleGenerateAnimation = async (state: AnimationState) => {
-    try {
-      await generateAnimation(state)
-    } catch (error) {
-      console.error('Failed to generate animation:', error)
-    }
-  }
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black">
@@ -341,7 +341,6 @@ export default function DMLayerPage() {
             title="Vecna Animations"
           >
             <Video className="w-5 h-5" />
-            {isGenerating && <Loader2 className="w-3 h-3 animate-spin" />}
           </button>
           
 <button
@@ -385,50 +384,19 @@ export default function DMLayerPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-serif text-purple-200 flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
-              Runway Animations
+              Vecna Animations
             </h3>
-            {isGenerating && (
-              <span className="text-[10px] text-purple-400 animate-pulse">Generating...</span>
-            )}
           </div>
-          
-          {/* Generation Progress */}
-          {currentTask && currentTask.status !== 'SUCCEEDED' && (
-            <div className="mb-4 p-3 bg-purple-900/20 rounded border border-purple-800/30">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-stone-400">Status:</span>
-                <span className={cn(
-                  "text-xs font-medium",
-                  currentTask.status === 'PENDING' && "text-yellow-400",
-                  currentTask.status === 'RUNNING' && "text-blue-400",
-                  currentTask.status === 'FAILED' && "text-red-400"
-                )}>
-                  {currentTask.status}
-                </span>
-              </div>
-              {currentTask.progress !== undefined && (
-                <div className="h-1.5 bg-stone-800 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-purple-500 transition-all"
-                    style={{ width: `${currentTask.progress}%` }}
-                  />
-                </div>
-              )}
-              {currentTask.error && (
-                <p className="text-xs text-red-400 mt-2">{currentTask.error}</p>
-              )}
-            </div>
-          )}
 
           {/* Animation States */}
           <div className="space-y-2">
-            {(['idle', 'speaking', 'thinking', 'casting', 'laughing'] as AnimationState[]).map((state) => (
+            {(['idle', 'speaking', 'casting', 'laughing'] as AnimationState[]).map((state) => (
               <div 
                 key={state}
                 className="flex items-center justify-between p-2 bg-stone-900/50 rounded border border-stone-800/50"
               >
                 <div className="flex items-center gap-2">
-                  {cachedAnimations[state] ? (
+                  {animations[state] ? (
                     <CheckCircle className="w-4 h-4 text-green-500" />
                   ) : (
                     <XCircle className="w-4 h-4 text-stone-600" />
@@ -437,28 +405,14 @@ export default function DMLayerPage() {
                 </div>
                 
                 <div className="flex items-center gap-1">
-                  {cachedAnimations[state] && (
+                  {animations[state] && (
                     <button
-                      onClick={() => {
-                        handleStateChange(state)
-                      }}
+                      onClick={() => handleStateChange(state)}
                       className="px-2 py-1 text-[10px] bg-purple-900/40 text-purple-300 rounded hover:bg-purple-800/50 transition-colors"
                     >
                       Play
                     </button>
                   )}
-                  <button
-                    onClick={() => handleGenerateAnimation(state)}
-                    disabled={isGenerating}
-                    className={cn(
-                      "px-2 py-1 text-[10px] rounded transition-colors",
-                      isGenerating 
-                        ? "bg-stone-800 text-stone-600 cursor-not-allowed"
-                        : "bg-purple-600/60 text-purple-100 hover:bg-purple-500/60"
-                    )}
-                  >
-                    {isGenerating ? 'Wait...' : 'Generate'}
-                  </button>
                 </div>
               </div>
             ))}
