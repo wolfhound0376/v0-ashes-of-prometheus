@@ -238,6 +238,17 @@ export default function DashboardPage() {
       {/* Navigation links */}
       <div className="fixed top-4 right-4 z-[60] flex gap-2">
         <Link 
+          href="/dm"
+          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-purple-400 hover:border-purple-500/30 transition-all group flex items-center gap-1.5"
+          title="The Lich — Dungeon Master"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-500 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
+          </span>
+          <span className="text-xs font-serif tracking-wide hidden sm:inline">THE LICH</span>
+        </Link>
+        <Link 
           href="/world-ai"
           className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#e0651a] hover:border-[#e0651a]/30 transition-all group flex items-center gap-1.5"
           title="World AI — Campaign Engine"
