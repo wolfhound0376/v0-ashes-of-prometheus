@@ -48,14 +48,19 @@ export function CharactersPanel() {
 
   const fetchCharacters = async () => {
     setLoading(true)
+    console.log('[v0] Fetching characters from Supabase...')
     const { data, error } = await supabase
       .from('characters')
       .select('*')
       .order('is_player', { ascending: false })
       .order('name')
     
-    if (error) console.error('Error:', error)
-    else setCharacters(data || [])
+    if (error) {
+      console.error('[v0] Error fetching characters:', error)
+    } else {
+      console.log('[v0] Fetched characters:', data?.length || 0)
+      setCharacters(data || [])
+    }
     setLoading(false)
   }
 
@@ -63,7 +68,8 @@ export function CharactersPanel() {
 
   const handleCreate = async () => {
     if (!formData.name) return
-    const { error } = await supabase.from('characters').insert({
+    console.log('[v0] Creating character:', formData.name)
+    const { data, error } = await supabase.from('characters').insert({
       name: formData.name,
       level: formData.level || 1,
       class: formData.class || 'Wizard',
@@ -93,8 +99,15 @@ export function CharactersPanel() {
       weight_max: formData.weight_max || 150,
       is_player: formData.is_player || false,
     })
-    if (error) console.error('Error:', error)
-    else { setCreating(false); setFormData({}); fetchCharacters() }
+    if (error) {
+      console.error('[v0] Error creating character:', error)
+      alert(`Failed to create character: ${error.message}`)
+    } else {
+      console.log('[v0] Character created successfully')
+      setCreating(false)
+      setFormData({})
+      fetchCharacters()
+    }
   }
 
   const handleUpdate = async (id: string) => {
