@@ -47,15 +47,18 @@ export function ImageUploader({
         body: formData,
       })
 
+      const data = await response.json()
+      
       if (!response.ok) {
-        throw new Error('Upload failed')
+        console.error('[v0] Upload failed:', data)
+        throw new Error(data.details || data.error || 'Upload failed')
       }
 
-      const { url } = await response.json()
-      onChange(url)
+      console.log('[v0] Upload success:', data)
+      onChange(data.url)
     } catch (error) {
-      console.error('Upload error:', error)
-      alert('Failed to upload image')
+      console.error('[v0] Upload error:', error)
+      alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsUploading(false)
     }

@@ -15,16 +15,26 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now()
     const filename = `${folder}/${timestamp}-${file.name}`
 
+    console.log('[v0] Uploading file:', filename, 'Size:', file.size)
+
+    // Use private access since the blob store is configured as private
     const blob = await put(filename, file, {
-      access: 'public',
+      access: 'private',
     })
 
+    console.log('[v0] Upload successful:', blob.pathname)
+
+    // Return the pathname for use with our delivery route
     return NextResponse.json({ 
-      url: blob.url,
-      pathname: blob.pathname 
+      url: `/api/file?pathname=${encodeURIComponent(blob.pathname)}`,
+      pathname: blob.pathname,
+      directUrl: blob.url
     })
   } catch (error) {
-    console.error('Upload error:', error)
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
+    console.error('[v0] Upload error:', error)
+    return NextResponse.json({ 
+      error: 'Upload failed', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 }
