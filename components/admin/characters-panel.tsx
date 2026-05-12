@@ -3,10 +3,39 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
-import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield } from "lucide-react"
+import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield, Dices, Heart } from "lucide-react"
 import type { Character } from "@/lib/types/database"
 
 const CLASSES = ['Wizard', 'Fighter', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Sorcerer', 'Druid', 'Monk', 'Barbarian']
+
+// D&D 5e Hit Die by class
+const HIT_DIE: Record<string, number> = {
+  'Wizard': 6, 'Sorcerer': 6,
+  'Bard': 8, 'Cleric': 8, 'Druid': 8, 'Monk': 8, 'Rogue': 8, 'Warlock': 8,
+  'Fighter': 10, 'Paladin': 10, 'Ranger': 10,
+  'Barbarian': 12,
+}
+
+// Roll 4d6 drop lowest for ability score
+function roll4d6DropLowest(): number {
+  const rolls = Array.from({ length: 4 }, () => Math.floor(Math.random() * 6) + 1)
+  rolls.sort((a, b) => b - a)
+  return rolls[0] + rolls[1] + rolls[2] // Sum top 3
+}
+
+// Roll HP for a given level and class
+function rollHP(level: number, hitDie: number, conModifier: number): { current: number; max: number } {
+  // Level 1: Max hit die + CON mod
+  let hp = hitDie + conModifier
+  
+  // Level 2+: Roll hit die + CON mod for each level
+  for (let i = 2; i <= level; i++) {
+    const roll = Math.floor(Math.random() * hitDie) + 1
+    hp += Math.max(1, roll + conModifier) // Minimum 1 HP per level
+  }
+  
+  return { current: Math.max(1, hp), max: Math.max(1, hp) }
+}
 
 export function CharactersPanel() {
   const [characters, setCharacters] = useState<Character[]>([])
@@ -166,8 +195,42 @@ export function CharactersPanel() {
 }
 
 function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: Partial<Character>; setFormData: (d: Partial<Character>) => void; onSave: () => void; onCancel: () => void }) {
+  const [isRolling, setIsRolling] = useState(false)
+  
   const updateScore = (stat: string, value: number) => {
     setFormData({ ...formData, [`${stat}_score`]: value, [`${stat}_modifier`]: Math.floor((value - 10) / 2) })
+  }
+
+  // Roll all ability scores using 4d6 drop lowest
+  const rollAllStats = () => {
+    setIsRolling(true)
+    
+    // Animate the rolling
+    setTimeout(() => {
+      const newScores: Partial<Character> = {}
+      const stats = ['str', 'dex', 'con', 'int', 'wis', 'cha']
+      
+      stats.forEach(stat => {
+        const score = roll4d6DropLowest()
+        ;(newScores as any)[`${stat}_score`] = score
+        ;(newScores as any)[`${stat}_modifier`] = Math.floor((score - 10) / 2)
+      })
+      
+      setFormData({ ...formData, ...newScores })
+      setIsRolling(false)
+    }, 500)
+  }
+
+  // Roll HP based on class, level, and CON modifier
+  const rollHitPoints = () => {
+    const charClass = formData.class || 'Wizard'
+    const level = formData.level || 1
+    const conScore = formData.con_score || 10
+    const conMod = Math.floor((conScore - 10) / 2)
+    const hitDie = HIT_DIE[charClass] || 6
+    
+    const { current, max } = rollHP(level, hitDie, conMod)
+    setFormData({ ...formData, hp_current: current, hp_max: max })
   }
 
   return (
@@ -208,6 +271,19 @@ function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: 
       </div>
 
       {/* Stats */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm text-stone-400">Hit Points & Combat Stats</label>
+          <button
+            type="button"
+            onClick={rollHitPoints}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gradient-to-r from-[#5a3a3a] to-[#4a2a2a] border border-red-500/30 rounded-lg text-red-300 hover:border-red-500/50 transition-all"
+          >
+            <Heart className="w-3.5 h-3.5" />
+            Roll HP (d{HIT_DIE[formData.class || 'Wizard']} + CON)
+          </button>
+        </div>
+      </div>
       <div className="grid grid-cols-4 gap-4">
         <div>
           <label className="block text-sm text-stone-400 mb-2">HP Current</label>
@@ -233,7 +309,18 @@ function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: 
 
       {/* Ability Scores */}
       <div>
-        <label className="block text-sm text-stone-400 mb-2">Ability Scores</label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-sm text-stone-400">Ability Scores</label>
+          <button
+            type="button"
+            onClick={rollAllStats}
+            disabled={isRolling}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gradient-to-r from-[#4a3a5a] to-[#3a2a4a] border border-purple-500/30 rounded-lg text-purple-300 hover:border-purple-500/50 disabled:opacity-50 transition-all"
+          >
+            <Dices className={`w-3.5 h-3.5 ${isRolling ? 'animate-spin' : ''}`} />
+            {isRolling ? 'Rolling...' : 'Roll 4d6 Drop Lowest'}
+          </button>
+        </div>
         <div className="grid grid-cols-6 gap-2">
           {['str', 'dex', 'con', 'int', 'wis', 'cha'].map(stat => (
             <div key={stat} className="text-center">
