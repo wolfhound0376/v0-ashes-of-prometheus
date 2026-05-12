@@ -1,8 +1,8 @@
 import { put } from '@vercel/blob'
 import { type NextRequest, NextResponse } from 'next/server'
 
-// Allow larger file uploads (up to 10MB)
-export const runtime = 'nodejs'
+// Use edge runtime which has no body size limit (up to 100MB)
+export const runtime = 'edge'
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,23 +18,17 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now()
     const filename = `${folder}/${timestamp}-${file.name}`
 
-    console.log('[v0] Uploading file:', filename, 'Size:', file.size)
-
-    // Use private access since the blob store is configured as private
+    // Upload to blob storage with public access
     const blob = await put(filename, file, {
-      access: 'private',
+      access: 'public',
     })
 
-    console.log('[v0] Upload successful:', blob.pathname)
-
-    // Return the pathname for use with our delivery route
     return NextResponse.json({ 
-      url: `/api/file?pathname=${encodeURIComponent(blob.pathname)}`,
-      pathname: blob.pathname,
-      directUrl: blob.url
+      url: blob.url,
+      pathname: blob.pathname
     })
   } catch (error) {
-    console.error('[v0] Upload error:', error)
+    console.error('Upload error:', error)
     return NextResponse.json({ 
       error: 'Upload failed', 
       details: error instanceof Error ? error.message : 'Unknown error'

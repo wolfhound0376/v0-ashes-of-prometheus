@@ -30,7 +30,7 @@ export function ImageUploader({
     wide: "aspect-[16/9]"
   }
 
-  const MAX_FILE_SIZE = 4.5 * 1024 * 1024 // 4.5MB limit for Vercel
+  const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB limit
 
   const handleUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -39,11 +39,12 @@ export function ImageUploader({
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      alert(`File is too large. Maximum size is 4.5MB. Your file is ${(file.size / 1024 / 1024).toFixed(1)}MB`)
+      alert(`File is too large. Maximum size is 10MB. Your file is ${(file.size / 1024 / 1024).toFixed(1)}MB`)
       return
     }
 
     setIsUploading(true)
+    
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -54,25 +55,22 @@ export function ImageUploader({
         body: formData,
       })
 
-      // Handle non-JSON error responses (like "Request Entity Too Large")
+      // Handle non-JSON responses
       const contentType = response.headers.get('content-type')
       if (!contentType?.includes('application/json')) {
         const text = await response.text()
-        console.error('[v0] Non-JSON response:', text)
         throw new Error(text || `Server error: ${response.status}`)
       }
 
       const data = await response.json()
       
       if (!response.ok) {
-        console.error('[v0] Upload failed:', data)
         throw new Error(data.details || data.error || 'Upload failed')
       }
 
-      console.log('[v0] Upload success:', data)
       onChange(data.url)
     } catch (error) {
-      console.error('[v0] Upload error:', error)
+      console.error('Upload error:', error)
       alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsUploading(false)
@@ -148,7 +146,10 @@ export function ImageUploader({
           )}
         >
           {isUploading ? (
-            <Loader2 className="w-8 h-8 text-[#c4a777] animate-spin" />
+            <div className="flex flex-col items-center">
+              <Loader2 className="w-8 h-8 text-[#c4a777] animate-spin" />
+              <p className="text-xs text-stone-500 mt-2">Uploading...</p>
+            </div>
           ) : (
             <>
               <div className="p-3 rounded-full bg-[#2a2520] mb-3">
@@ -161,7 +162,7 @@ export function ImageUploader({
               <p className="text-sm text-stone-400">
                 {dragOver ? "Drop image here" : "Click or drag to upload"}
               </p>
-              <p className="text-xs text-stone-600 mt-1">PNG, JPG up to 4.5MB</p>
+              <p className="text-xs text-stone-600 mt-1">PNG, JPG, GIF, WebP up to 10MB</p>
             </>
           )}
         </div>
