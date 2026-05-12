@@ -54,14 +54,21 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
 
   return (
     <div className="relative flex flex-col items-center">
-      {/* Runway Video Feed */}
+      {/* Runway Video Feed - Close-up overlay without background */}
       {showVideo && (
         <div className="relative">
-          {/* Video with dark frame */}
-          <div className="relative rounded-lg overflow-hidden border-2 border-purple-900/50 shadow-[0_0_60px_rgba(138,43,226,0.4)]">
+          {/* Video container - large close-up with blend mode to remove dark background */}
+          <div className="relative">
             <video
               ref={videoRef}
-              className="w-80 h-auto object-cover"
+              className={cn(
+                "w-[500px] h-auto object-contain",
+                "mix-blend-lighten", // Removes black/dark backgrounds
+                "drop-shadow-[0_0_40px_rgba(138,43,226,0.6)]",
+                "transition-all duration-300",
+                state === 'speaking' && "scale-105 drop-shadow-[0_0_60px_rgba(138,43,226,0.8)]",
+                state === 'casting' && "scale-110 drop-shadow-[0_0_80px_rgba(180,80,255,0.9)]"
+              )}
               loop={state === 'idle'}
               muted
               playsInline
@@ -71,37 +78,23 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
               <source src={videoUrl} type="video/mp4" />
             </video>
             
-            {/* Overlay effects */}
+            {/* Subtle glow effects */}
             <div className="absolute inset-0 pointer-events-none">
-              {/* Vignette */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/30" />
-              
               {/* Purple glow overlay when speaking */}
               {state === 'speaking' && (
-                <div className="absolute inset-0 bg-purple-600/10 animate-pulse" />
+                <div className="absolute inset-0 bg-purple-600/5 mix-blend-overlay animate-pulse" />
               )}
               
-              {/* Magic overlay when casting */}
+              {/* Magic particles when casting */}
               {state === 'casting' && (
-                <div className="absolute inset-0 bg-gradient-to-t from-purple-900/40 to-transparent animate-pulse" />
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-t from-purple-600/10 to-transparent mix-blend-overlay animate-pulse" />
+                  <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-purple-400 rounded-full animate-ping" />
+                  <div className="absolute top-1/3 right-1/4 w-1.5 h-1.5 bg-purple-300 rounded-full animate-ping" style={{ animationDelay: '0.2s' }} />
+                  <div className="absolute bottom-1/3 left-1/3 w-1 h-1 bg-purple-500 rounded-full animate-ping" style={{ animationDelay: '0.4s' }} />
+                </>
               )}
             </div>
-          </div>
-          
-          {/* Soul flame above video */}
-          <div className={cn(
-            "absolute -top-6 left-1/2 -translate-x-1/2 w-10 h-14",
-            "transition-all duration-300",
-            state === 'speaking' && "scale-125",
-            state === 'casting' && "scale-150"
-          )}>
-            <div 
-              className="w-full h-full rounded-full blur-sm animate-pulse"
-              style={{ 
-                background: 'radial-gradient(ellipse at bottom, #b050ff 0%, #6020a0 50%, transparent 80%)',
-                animationDuration: '1.5s'
-              }} 
-            />
           </div>
         </div>
       )}
