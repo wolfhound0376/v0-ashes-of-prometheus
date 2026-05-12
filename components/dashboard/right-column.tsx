@@ -91,16 +91,16 @@ const inventoryIconMap: Record<string, React.FC<{ className?: string }>> = {
 const equipmentSlots = {
   left: [
     { id: "head", label: "Head", Icon: HoodIcon, defaultIconUrl: "/icons/equipment/head.png" },
-    { id: "neck", label: "Neck", Icon: NecklaceIcon },
-    { id: "torso", label: "Torso", Icon: RobeIcon },
-    { id: "legs", label: "Legs", Icon: PantsIcon },
-    { id: "feet", label: "Feet", Icon: BootsIcon },
+    { id: "neck", label: "Neck", Icon: NecklaceIcon, defaultIconUrl: "/icons/equipment/neck.png" },
+    { id: "torso", label: "Torso", Icon: RobeIcon, defaultIconUrl: "/icons/equipment/torso.png" },
+    { id: "legs", label: "Legs", Icon: PantsIcon, defaultIconUrl: "/icons/equipment/legs.png" },
+    { id: "feet", label: "Feet", Icon: BootsIcon, defaultIconUrl: "/icons/equipment/feet.png" },
   ],
   right: [
-    { id: "mainHand", label: "Main Hand", Icon: StaffIcon },
-    { id: "offHand", label: "Off Hand", Icon: OrbIcon },
-    { id: "ring1", label: "Ring", Icon: RingIcon },
-    { id: "ring2", label: "Ring", Icon: RingIcon },
+    { id: "mainHand", label: "Main Hand", Icon: StaffIcon, defaultIconUrl: "/icons/equipment/main-hand.png" },
+    { id: "offHand", label: "Off Hand", Icon: OrbIcon, defaultIconUrl: "/icons/equipment/off-hand.png" },
+    { id: "ring1", label: "Ring", Icon: RingIcon, defaultIconUrl: "/icons/equipment/ring.png" },
+    { id: "ring2", label: "Ring", Icon: RingIcon, defaultIconUrl: "/icons/equipment/ring2.png" },
   ],
 }
 
@@ -326,7 +326,8 @@ export function RightColumn({
                     key={`${slot.id}-${index}`} 
                     id={slot.id}
                     label={slot.label} 
-                    Icon={slot.Icon} 
+                    Icon={slot.Icon}
+                    defaultIconUrl={(slot as any).defaultIconUrl}
                     alignRight
                     selected={selectedEquipmentSlot === slot.id}
                     onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
