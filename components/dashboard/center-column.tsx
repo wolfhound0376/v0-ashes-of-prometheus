@@ -19,6 +19,17 @@ import {
   DetectMagicIcon,
   LockedAbilityIcon,
   IconFrame,
+  AttackIcon,
+  DodgeIcon,
+  HideIcon,
+  UseObjectIcon,
+  OffhandAttackIcon,
+  CunningActionIcon,
+  SecondWindIcon,
+  OpportunityAttackIcon,
+  UncannyDodgeIcon,
+  CastBonusSpellIcon,
+  CastReactionSpellIcon,
 } from "@/components/ui/fantasy-icons"
 import { BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -60,14 +71,28 @@ interface CenterColumnProps {
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
+  // Standard Actions
+  "attack": AttackIcon,
   "cast-spell": SpellbookIcon,
+  "dash": DashIcon,
+  "disengage": DisengageIcon,
+  "dodge": DodgeIcon,
+  "help": HelpIcon,
+  "hide": HideIcon,
+  "ready": ReadyIcon,
+  "search": SearchIcon,
+  "use-object": UseObjectIcon,
   "use-ability": AbilityIcon,
-  dash: DashIcon,
-  disengage: DisengageIcon,
-  help: HelpIcon,
-  ready: ReadyIcon,
-  search: SearchIcon,
   "cast-ritual": RitualIcon,
+  // Bonus Actions
+  "offhand-attack": OffhandAttackIcon,
+  "cast-bonus-spell": CastBonusSpellIcon,
+  "cunning-action": CunningActionIcon,
+  "second-wind": SecondWindIcon,
+  // Reactions
+  "opportunity-attack": OpportunityAttackIcon,
+  "cast-reaction-spell": CastReactionSpellIcon,
+  "uncanny-dodge": UncannyDodgeIcon,
 }
 
 const quickAbilityIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -295,7 +320,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   )
 }
 
-function ActionButton({ action, isSelected, onSelect }: { action: Action; isSelected: boolean; onSelect: (id: string) => void }) {
+function ActionButton({ action, isSelected, onSelect, isAvailable = true }: { action: Action; isSelected: boolean; onSelect: (id: string) => void; isAvailable?: boolean }) {
   const [showSubmenu, setShowSubmenu] = useState(false)
   const IconComponent = actionIconMap[action.id] || SpellbookIcon
   const typeColors = actionTypeColors[action.type]
@@ -304,6 +329,7 @@ function ActionButton({ action, isSelected, onSelect }: { action: Action; isSele
   const bonusBorderClass = action.type === "bonus" ? "ring-2 ring-[#8a2a2a]/60" : ""
   
   const handleClick = () => {
+    if (!isAvailable) return
     if (action.hasSubmenu) {
       setShowSubmenu(!showSubmenu)
     } else {
@@ -315,10 +341,13 @@ function ActionButton({ action, isSelected, onSelect }: { action: Action; isSele
     <div className="relative">
       <button
         onClick={handleClick}
+        disabled={!isAvailable}
         className={cn(
           "w-full flex items-center gap-3 p-2 rounded-sm transition-all text-left border",
-          "hover:bg-[#2a2420]/60 group",
-          isSelected 
+          isAvailable 
+            ? "hover:bg-[#2a2420]/60 group cursor-pointer" 
+            : "opacity-40 cursor-not-allowed grayscale",
+          isSelected && isAvailable
             ? cn(typeColors.bg, typeColors.border, "shadow-[0_0_10px_rgba(100,150,100,0.15)]")
             : "border-transparent"
         )}
@@ -337,12 +366,17 @@ function ActionButton({ action, isSelected, onSelect }: { action: Action; isSele
           <p
             className={cn(
               "text-sm font-medium",
-              isSelected ? typeColors.text : "text-stone-200 group-hover:text-white"
+              !isAvailable 
+                ? "text-stone-600"
+                : isSelected 
+                  ? typeColors.text 
+                  : "text-stone-200 group-hover:text-white"
             )}
           >
             {action.name}
+            {!isAvailable && <span className="ml-2 text-[10px] text-stone-600">(Class restricted)</span>}
           </p>
-          <p className="text-xs text-stone-500 truncate">{action.description}</p>
+          <p className={cn("text-xs truncate", isAvailable ? "text-stone-500" : "text-stone-700")}>{action.description}</p>
         </div>
         {/* Submenu indicator for Cunning Action */}
         {action.hasSubmenu && (

@@ -456,6 +456,241 @@ export function LockedAbilityIcon({ className }: IconProps) {
   )
 }
 
+// Attack Icon - Sword striking
+export function AttackIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#attack-grad)" />
+      <defs>
+        <linearGradient id="attack-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#6a4a4a" />
+          <stop offset="100%" stopColor="#4a2a2a" />
+        </linearGradient>
+      </defs>
+      {/* Sword */}
+      <path d="M24 6l-14 14-2-2 14-14z" fill="#c0c0c0" stroke="#808080" strokeWidth="0.5" />
+      <path d="M8 20l-2 6 6-2-4-4z" fill="#8b4513" stroke="#5a2d0a" strokeWidth="0.5" />
+      {/* Impact effect */}
+      <circle cx="10" cy="22" r="3" fill="#ff6b35" opacity="0.6" />
+      <path d="M6 18l2 2M12 24l2 2M8 26l1 1" stroke="#ffaa00" strokeWidth="1" opacity="0.8" />
+    </svg>
+  )
+}
+
+// Dodge Icon - Shield with movement lines
+export function DodgeIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#dodge-grad)" />
+      <defs>
+        <linearGradient id="dodge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#4a5a6a" />
+          <stop offset="100%" stopColor="#2a3a4a" />
+        </linearGradient>
+      </defs>
+      {/* Shield */}
+      <path d="M16 6l8 4v8c0 4-4 8-8 10-4-2-8-6-8-10V10l8-4z" fill="#607090" stroke="#8090a0" strokeWidth="1" />
+      <path d="M16 8l6 3v6c0 3-3 6-6 8" fill="#708090" opacity="0.5" />
+      {/* Movement blur lines */}
+      <path d="M4 14h4M4 18h3M4 22h2" stroke="#90a0b0" strokeWidth="1.5" opacity="0.6" />
+    </svg>
+  )
+}
+
+// Hide Icon - Eye with slash
+export function HideIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#hide-grad)" />
+      <defs>
+        <linearGradient id="hide-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#3a4a5a" />
+          <stop offset="100%" stopColor="#1a2a3a" />
+        </linearGradient>
+      </defs>
+      {/* Eye shape */}
+      <ellipse cx="16" cy="16" rx="10" ry="6" fill="none" stroke="#7090a0" strokeWidth="2" />
+      <circle cx="16" cy="16" r="3" fill="#7090a0" />
+      {/* Slash through */}
+      <path d="M6 26L26 6" stroke="#c87070" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// Use Object Icon - Hand reaching for item
+export function UseObjectIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#object-grad)" />
+      <defs>
+        <linearGradient id="object-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#5a5a4a" />
+          <stop offset="100%" stopColor="#3a3a2a" />
+        </linearGradient>
+      </defs>
+      {/* Hand */}
+      <path d="M8 22v-8l2-4 2 2v-5l2 1v5l2-1v-5l2 1v5l2-1v-3l2 1v6l-2 6H8z" 
+            fill="#e8d0b0" stroke="#c0a080" strokeWidth="0.5" />
+      {/* Object/potion */}
+      <path d="M22 8h4v6l-2 4-2-4V8z" fill="#60a0ff" stroke="#4080d0" strokeWidth="0.5" />
+      <ellipse cx="24" cy="8" rx="2" ry="1" fill="#80c0ff" />
+    </svg>
+  )
+}
+
+// Offhand Attack Icon - Two crossed swords
+export function OffhandAttackIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#offhand-grad)" />
+      <defs>
+        <linearGradient id="offhand-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#6a5a3a" />
+          <stop offset="100%" stopColor="#4a3a2a" />
+        </linearGradient>
+      </defs>
+      {/* Two crossed swords */}
+      <path d="M8 6l14 14" stroke="#c0c0c0" strokeWidth="2" strokeLinecap="round" />
+      <path d="M6 8l2-2M20 22l2-2" stroke="#a0a0a0" strokeWidth="3" />
+      <path d="M24 6L10 20" stroke="#c0c0c0" strokeWidth="2" strokeLinecap="round" />
+      <path d="M26 8l-2-2M12 22l-2-2" stroke="#a0a0a0" strokeWidth="3" />
+      {/* Hilts */}
+      <rect x="5" y="20" width="4" height="6" rx="1" fill="#8b4513" />
+      <rect x="23" y="20" width="4" height="6" rx="1" fill="#8b4513" />
+    </svg>
+  )
+}
+
+// Cunning Action Icon - Rogue silhouette
+export function CunningActionIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#cunning-grad)" />
+      <defs>
+        <linearGradient id="cunning-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#4a3a5a" />
+          <stop offset="100%" stopColor="#2a1a3a" />
+        </linearGradient>
+      </defs>
+      {/* Hooded rogue figure */}
+      <path d="M16 6c-4 0-6 3-6 6v2l4 2v-4l4 0v4l4-2v-2c0-3-2-6-6-6z" fill="#2a2030" />
+      <circle cx="16" cy="10" r="3" fill="#3a3040" />
+      {/* Daggers */}
+      <path d="M10 18l-4 8M22 18l4 8" stroke="#a090b0" strokeWidth="1.5" strokeLinecap="round" />
+      {/* Speed lines */}
+      <path d="M6 12h3M6 16h2" stroke="#8070a0" strokeWidth="1" opacity="0.6" />
+    </svg>
+  )
+}
+
+// Second Wind Icon - Heart with wind swirl
+export function SecondWindIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#wind-grad)" />
+      <defs>
+        <linearGradient id="wind-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#5a3a3a" />
+          <stop offset="100%" stopColor="#3a2020" />
+        </linearGradient>
+      </defs>
+      {/* Heart */}
+      <path d="M16 26l-8-8c-3-3-3-7 0-10 2-2 5-2 8 1 3-3 6-3 8-1 3 3 3 7 0 10l-8 8z" 
+            fill="#c85050" stroke="#a03030" strokeWidth="0.5" />
+      {/* Wind swirl */}
+      <path d="M8 14c2-4 6-2 8 0M10 18c2-2 4-1 5 1" stroke="#80c080" strokeWidth="1.5" fill="none" opacity="0.8" />
+      {/* Sparkle */}
+      <circle cx="20" cy="12" r="1.5" fill="#90e090" />
+    </svg>
+  )
+}
+
+// Opportunity Attack Icon - Sword with exclamation
+export function OpportunityAttackIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#opp-grad)" />
+      <defs>
+        <linearGradient id="opp-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#5a4a6a" />
+          <stop offset="100%" stopColor="#3a2a4a" />
+        </linearGradient>
+      </defs>
+      {/* Sword */}
+      <path d="M8 24l12-12" stroke="#c0c0c0" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M6 26l2-2M18 14l2-2" stroke="#a0a0a0" strokeWidth="3" />
+      <rect x="5" y="22" width="4" height="5" rx="1" fill="#8b4513" />
+      {/* Exclamation mark */}
+      <path d="M24 6v10" stroke="#ff6b6b" strokeWidth="3" strokeLinecap="round" />
+      <circle cx="24" cy="22" r="2" fill="#ff6b6b" />
+    </svg>
+  )
+}
+
+// Uncanny Dodge Icon - Figure dodging
+export function UncannyDodgeIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#uncanny-grad)" />
+      <defs>
+        <linearGradient id="uncanny-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#4a4a6a" />
+          <stop offset="100%" stopColor="#2a2a4a" />
+        </linearGradient>
+      </defs>
+      {/* Leaning/dodging figure */}
+      <circle cx="12" cy="10" r="3" fill="#9090b0" />
+      <path d="M10 13l-4 8M14 13l2 5 4 6" stroke="#9090b0" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 17l-4 2M16 18l4-2" stroke="#9090b0" strokeWidth="2" strokeLinecap="round" />
+      {/* Incoming attack deflected */}
+      <path d="M26 8l-8 8" stroke="#c07070" strokeWidth="2" strokeLinecap="round" strokeDasharray="2 2" />
+      <path d="M18 16l-2 4" stroke="#70c070" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// Cast Bonus Spell Icon - Quick magic
+export function CastBonusSpellIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#bonus-spell-grad)" />
+      <defs>
+        <linearGradient id="bonus-spell-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#6a5a2a" />
+          <stop offset="100%" stopColor="#4a3a1a" />
+        </linearGradient>
+      </defs>
+      {/* Lightning bolt for quick cast */}
+      <path d="M18 4l-6 12h6l-6 12 10-14h-6l6-10z" fill="#ffcc00" stroke="#ff9900" strokeWidth="0.5" />
+      {/* Sparkles */}
+      <circle cx="8" cy="12" r="1.5" fill="#ffe066" />
+      <circle cx="24" cy="20" r="1" fill="#ffe066" />
+    </svg>
+  )
+}
+
+// Cast Reaction Spell Icon - Shield with magic
+export function CastReactionSpellIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 32 32" className={cn("w-8 h-8", className)}>
+      <rect x="2" y="2" width="28" height="28" rx="2" fill="url(#react-spell-grad)" />
+      <defs>
+        <linearGradient id="react-spell-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#5a4a6a" />
+          <stop offset="100%" stopColor="#3a2a4a" />
+        </linearGradient>
+      </defs>
+      {/* Magic shield */}
+      <path d="M16 6l10 4v8c0 5-5 9-10 12-5-3-10-7-10-12V10l10-4z" 
+            fill="none" stroke="#80a0ff" strokeWidth="2" />
+      <path d="M16 10l6 3v5c0 3-3 6-6 8" fill="#6080ff" opacity="0.3" />
+      {/* Magic runes */}
+      <circle cx="16" cy="18" r="3" fill="none" stroke="#a0c0ff" strokeWidth="1.5" />
+      <path d="M16 15v6M13 18h6" stroke="#c0e0ff" strokeWidth="1" />
+    </svg>
+  )
+}
+
 // Icon wrapper with bronze frame (BG3 style)
 export function IconFrame({ 
   children, 
