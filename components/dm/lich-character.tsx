@@ -38,17 +38,26 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
     return () => clearInterval(interval)
   }, [])
 
-  // Handle video changes
+  // Handle video changes - wait for canplay before playing
   useEffect(() => {
-    console.log('[v0] LichCharacter videoUrl changed:', videoUrl, 'state:', state)
     if (videoUrl && videoRef.current) {
+      const video = videoRef.current
       setVideoError(false)
-      videoRef.current.load()
-      videoRef.current.play().catch((err) => {
-        console.log('[v0] Video play error:', err)
-      })
+      
+      const handleCanPlay = () => {
+        video.play().catch(() => {
+          // Autoplay may be blocked
+        })
+      }
+      
+      video.addEventListener('canplay', handleCanPlay, { once: true })
+      video.load()
+      
+      return () => {
+        video.removeEventListener('canplay', handleCanPlay)
+      }
     }
-  }, [videoUrl, state])
+  }, [videoUrl])
 
   const breathOffset = Math.sin(breathPhase) * 3
   const showVideo = videoUrl && !videoError
