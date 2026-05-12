@@ -60,15 +60,14 @@ export default function DMLayerPage() {
   const [isMuted, setIsMuted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showRunwayPanel, setShowRunwayPanel] = useState(false)
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null)
   
   // Runway animation hook
   const {
-    currentVideoUrl,
     currentTask,
     isGenerating,
     cachedAnimations,
     generateAnimation,
-    playAnimation,
   } = useRunwayAnimation()
   
   // Speech hook for Vecna's voice
@@ -191,11 +190,19 @@ export default function DMLayerPage() {
 
   // Handle state change and play cached animation if available
   const handleStateChange = (newState: AnimationState) => {
-    console.log('[v0] handleStateChange called:', newState, 'current cachedAnimations:', cachedAnimations)
     setLichState(newState)
-    const played = playAnimation(newState) // Will use cached video if available
-    console.log('[v0] playAnimation returned:', played, 'currentVideoUrl should update')
+    const url = cachedAnimations[newState]
+    if (url) {
+      setActiveVideoUrl(url)
+    }
   }
+  
+  // Set initial video when animations load
+  useEffect(() => {
+    if (cachedAnimations.idle && !activeVideoUrl) {
+      setActiveVideoUrl(cachedAnimations.idle)
+    }
+  }, [cachedAnimations, activeVideoUrl])
 
   // Send DM message with speech
   const sendLichMessage = async (message: string, emotion: string = 'threatening') => {
@@ -563,11 +570,10 @@ export default function DMLayerPage() {
       <main className="relative h-full flex flex-col items-center justify-center pt-20 pb-32">
         {/* Lich Character */}
         <div className="relative flex-1 flex items-center justify-center w-full max-w-2xl">
-          {console.log('[v0] DM page render - currentVideoUrl:', currentVideoUrl)}
 <LichCharacter
   state={lichState}
   currentDialogue={currentDialogue}
-  videoUrl={currentVideoUrl}
+  videoUrl={activeVideoUrl}
   isSpeaking={isSpeaking}
   isSpeechLoading={isSpeechLoading}
   onVideoEnd={() => {

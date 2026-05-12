@@ -13,7 +13,6 @@ interface LichCharacterProps {
 }
 
 export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, isSpeechLoading, onVideoEnd }: LichCharacterProps) {
-  console.log('[v0] LichCharacter render - videoUrl:', videoUrl, 'state:', state)
   const [eyeGlow, setEyeGlow] = useState(0.6)
   const [breathPhase, setBreathPhase] = useState(0)
   const [videoError, setVideoError] = useState(false)
