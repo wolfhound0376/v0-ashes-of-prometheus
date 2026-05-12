@@ -47,8 +47,7 @@ export function LichCharacter({ state, currentDialogue, videoUrl, isSpeaking, is
             key={videoUrl}
             src={videoUrl}
             className={cn(
-              "w-[500px] h-auto object-contain",
-              "mix-blend-lighten", // Makes dark/black backgrounds transparent
+              "w-[500px] h-auto object-contain rounded-lg",
               "transition-all duration-300",
               state === 'speaking' && "scale-105",
               state === 'casting' && "scale-110"
