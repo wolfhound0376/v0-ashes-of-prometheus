@@ -24,9 +24,9 @@ export async function POST(req: Request) {
       context: narratorContext,
     })
 
-    // Use Vercel AI Gateway with Anthropic Claude Opus 4
+    // Use Vercel AI Gateway with Anthropic Claude Opus 4.7
     const result = await generateText({
-      model: 'anthropic/claude-opus-4' as any,
+      model: 'anthropic/claude-opus-4.7' as any,
       system: systemPrompt,
       prompt: playerInput,
       temperature: 0.8,
