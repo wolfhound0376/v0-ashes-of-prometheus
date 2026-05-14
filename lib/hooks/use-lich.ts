@@ -2,28 +2,17 @@
 
 import { useState, useCallback } from "react"
 
-interface MusicCue {
-  action: "play" | "stop"
-  trackId?: string
-  trackName?: string
-  reason?: string
-}
-
 interface LichResponse {
   text: string
-  musicCue?: MusicCue
 }
 
 export function useLich(campaignId: string = "abyss") {
   const [isLoading, setIsLoading] = useState(false)
-  const [lastMusicCue, setLastMusicCue] = useState<MusicCue | null>(null)
 
   const sendMessage = useCallback(async (
     message: string,
-    onMusicCue?: (cue: MusicCue) => void
   ): Promise<LichResponse> => {
     setIsLoading(true)
-    setLastMusicCue(null)
 
     try {
       let response: Response | null = null
@@ -52,22 +41,7 @@ export function useLich(campaignId: string = "abyss") {
       }
 
       const data = await response.json()
-      
-      // Handle music cue
-      if (data.musicCue) {
-        const cue: MusicCue = data.musicCue.action === "stop"
-          ? { action: "stop" }
-          : {
-              action: "play",
-              trackId: data.musicCue.trackId,
-              trackName: data.musicCue.trackName,
-              reason: data.musicCue.reason,
-            }
-        setLastMusicCue(cue)
-        onMusicCue?.(cue)
-      }
-
-      return { text: data.text || "", musicCue: data.musicCue }
+      return { text: data.text || "" }
     } catch (error) {
       console.error("Error sending message:", error)
       throw error
@@ -79,6 +53,5 @@ export function useLich(campaignId: string = "abyss") {
   return {
     sendMessage,
     isLoading,
-    lastMusicCue,
   }
 }

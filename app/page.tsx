@@ -50,14 +50,6 @@ export default function DashboardPage() {
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
   
-  // Handle music cues from the Lich
-  const handleMusicCue = useCallback((cue: { action: "play" | "stop"; trackId?: string }) => {
-    if (cue.action === "stop") {
-      setCurrentMusicTrack(null)
-    } else if (cue.trackId) {
-      setCurrentMusicTrack(cue.trackId)
-    }
-  }, [])
   
   // Handle campaign change with confirmation
   const handleCampaignChange = (newCampaign: Campaign) => {
@@ -377,7 +369,7 @@ if (error) {
       // 3. Saving messages to dialogue table
       // Real-time subscription will update the UI
       // Pass music cue handler to react to atmospheric changes
-      sendToLich(text, handleMusicCue)
+      sendToLich(text)
     }
   }
 
@@ -554,7 +546,7 @@ if (error) {
           characterName={selectedCharacter?.name}
           onSendToLich={async (message) => {
             // Send to Lich - real-time subscription handles dialogue display
-            const response = await sendToLich(message, handleMusicCue)
+            const response = await sendToLich(message)
             if (response) {
               // Refresh character data to pick up any XP or items from the Lich
               await fetchCharacterData()
