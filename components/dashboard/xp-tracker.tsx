@@ -15,8 +15,8 @@ interface XPTrackerProps {
 }
 
 export function XPTracker({
-  currentXP,
-  currentLevel,
+  currentXP = 0,
+  currentLevel = 1,
   characterName = "Character",
   onLevelUp,
   onAddXP,
