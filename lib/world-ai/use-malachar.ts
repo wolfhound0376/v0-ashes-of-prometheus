@@ -101,6 +101,7 @@ export function useMalachar(campaign: CampaignContext) {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        console.log("[v0] Malachar stream event:", data.type, data)
 
         switch (data.type) {
           case "content_start":
