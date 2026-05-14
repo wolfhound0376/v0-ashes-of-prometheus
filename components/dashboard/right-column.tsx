@@ -29,9 +29,34 @@ import {
   Eye,
   Sparkles,
   ChevronDown,
+  ChevronRight,
   Weight,
+  AlertTriangle,
+  Package,
+  User,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+// D&D 5E Conditions with their effects
+const DND_CONDITIONS = {
+  blinded: { name: "Blinded", color: "text-stone-400", description: "Can't see, auto-fail sight checks, attacks have disadvantage" },
+  charmed: { name: "Charmed", color: "text-pink-400", description: "Can't attack charmer, charmer has advantage on social checks" },
+  deafened: { name: "Deafened", color: "text-stone-400", description: "Can't hear, auto-fail hearing checks" },
+  frightened: { name: "Frightened", color: "text-purple-400", description: "Disadvantage while source visible, can't move closer" },
+  grappled: { name: "Grappled", color: "text-orange-400", description: "Speed is 0, ends if grappler incapacitated" },
+  incapacitated: { name: "Incapacitated", color: "text-red-400", description: "Can't take actions or reactions" },
+  invisible: { name: "Invisible", color: "text-cyan-400", description: "Impossible to see, advantage on attacks, attacks against have disadvantage" },
+  paralyzed: { name: "Paralyzed", color: "text-yellow-400", description: "Incapacitated, auto-fail STR/DEX saves, attacks have advantage, melee crits" },
+  petrified: { name: "Petrified", color: "text-stone-500", description: "Transformed to stone, incapacitated, unaware" },
+  poisoned: { name: "Poisoned", color: "text-green-400", description: "Disadvantage on attacks and ability checks" },
+  prone: { name: "Prone", color: "text-amber-400", description: "Disadvantage on attacks, melee attacks have advantage, ranged disadvantage" },
+  restrained: { name: "Restrained", color: "text-orange-400", description: "Speed 0, disadvantage on attacks and DEX saves" },
+  stunned: { name: "Stunned", color: "text-yellow-400", description: "Incapacitated, auto-fail STR/DEX saves, attacks have advantage" },
+  unconscious: { name: "Unconscious", color: "text-red-500", description: "Incapacitated, unaware, drop items, prone, auto-fail STR/DEX, attacks have advantage, melee crits" },
+  exhaustion: { name: "Exhaustion", color: "text-amber-600", description: "Cumulative levels with increasing penalties" },
+} as const
+
+type ConditionKey = keyof typeof DND_CONDITIONS
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 
@@ -118,6 +143,13 @@ export function RightColumn({
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [selectedEquipmentSlot, setSelectedEquipmentSlot] = useState<string | null>(null)
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
+  
+  // Collapsible sections
+  const [showStats, setShowStats] = useState(false)
+  const [showInventory, setShowInventory] = useState(false)
+  
+  // Mock conditions for now - would come from character data
+  const activeConditions: ConditionKey[] = [] // e.g., ["poisoned", "exhaustion"]
 
   // Transform DB character to display format, or use fallback
   const character = selectedCharacter ? {
@@ -155,8 +187,8 @@ export function RightColumn({
 
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
-      <FantasyPanel title="Character Info & Inventory" className="flex-1 min-h-0 flex flex-col">
-        {/* Character Header */}
+      <FantasyPanel title="Character" className="flex-1 min-h-0 flex flex-col">
+        {/* Character Header - Always visible */}
         <div className="p-3 border-b border-[#3d3428]/40">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2 relative">
@@ -192,7 +224,6 @@ export function RightColumn({
                           char.id === selectedCharacterId && "bg-[#1a2a35]/60"
                         )}
                       >
-                        {/* Character avatar thumbnail */}
                         <div className="w-8 h-8 rounded-full bg-[#0a0908] border border-[#3d3428]/60 overflow-hidden flex items-center justify-center flex-shrink-0">
                           {char.avatar_image_url ? (
                             <img src={char.avatar_image_url} alt={char.name} className="w-full h-full object-cover" />
@@ -228,175 +259,213 @@ export function RightColumn({
             </div>
           </div>
 
-          {/* XP Bar */}
+          {/* Core Stats Row - HP, AC, Initiative */}
+          <div className="mt-3 flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <Heart className="w-4 h-4 text-red-400" />
+              <span className="text-sm font-medium text-stone-300">{character.hp.current}/{character.hp.max}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Shield className="w-4 h-4 text-amber-600" />
+              <span className="text-sm font-medium text-stone-300">{character.ac}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Star className="w-4 h-4 text-yellow-400" />
+              <span className="text-sm font-medium text-stone-300">+{character.initiative}</span>
+            </div>
+          </div>
+          
+          {/* Conditions - D&D 5E status effects */}
           <div className="mt-2">
-            <div className="flex justify-between text-xs text-stone-500 mb-1">
-              <span>XP: {character.xp.toLocaleString()} / {character.xpToNext.toLocaleString()}</span>
-              <span>Next Level: {(character.xpToNext - character.xp).toLocaleString()} XP</span>
-            </div>
-            <div className="h-1.5 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/40">
-              <div
-                className="h-full bg-gradient-to-r from-[#4a7a9a] to-[#7aa8c8] shadow-[0_0_8px_rgba(100,150,200,0.5)]"
-                style={{ width: `${(character.xp / character.xpToNext) * 100}%` }}
-              />
-            </div>
+            {activeConditions.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {activeConditions.map((condition) => {
+                  const conditionData = DND_CONDITIONS[condition]
+                  return (
+                    <span
+                      key={condition}
+                      className={cn(
+                        "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border",
+                        conditionData.color,
+                        "border-current/30 bg-current/10"
+                      )}
+                      title={conditionData.description}
+                    >
+                      {conditionData.name}
+                    </span>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400/70">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>No conditions</span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Ability Scores */}
-        <div className="p-3 border-b border-[#3d3428]/40">
-          <div className="grid grid-cols-6 gap-2">
-            {Object.entries(character.abilities).map(([key, value]) => (
-              <AbilityScore
-                key={key}
-                name={key.toUpperCase()}
-                score={value.score}
-                modifier={value.modifier}
-                highlight={key === "int"}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="p-3 border-b border-[#3d3428]/40">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <StatRow icon={Heart} label="Hit Points" value={`${character.hp.current} / ${character.hp.max}`} color="red" />
-            <StatRow icon={Scroll} label="Proficiency Bonus" value={`+${character.proficiencyBonus}`} />
-            <StatRow icon={Shield} label="Armor Class" value={character.ac.toString()} color="bronze" />
-            <StatRow icon={Scroll} label="Saving Throws" value="" />
-            <StatRow icon={Star} label="Initiative" value={`+${character.initiative}`} color="gold" />
-            <StatRow icon={Eye} label="Passive Perception" value={character.passivePerception.toString()} />
-          </div>
-        </div>
-
-        {/* Equipment Paper Doll & Inventory */}
+        {/* Collapsible Sections */}
         <div className="flex-1 overflow-y-auto">
-          <div className="flex py-2">
-            {/* Left Equipment Slots */}
-            <div className="w-24 px-2 flex flex-col justify-center">
-              <div className="space-y-2">
-                {equipmentSlots.left.map((slot) => (
-                  <EquipmentSlot 
-                    key={slot.id} 
-                    id={slot.id}
-                    label={slot.label} 
-                    Icon={slot.Icon}
-                    defaultIconUrl={(slot as any).defaultIconUrl}
-                    selected={selectedEquipmentSlot === slot.id}
-                    onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
-                    equippedItem={characterEquipment.find(e => e.slot === slot.id)}
-                  />
-                ))}
+          {/* Stats & Equipment - Collapsible */}
+          <button
+            onClick={() => setShowStats(!showStats)}
+            className="w-full flex items-center justify-between px-3 py-2 hover:bg-[#2a2420]/40 transition-colors border-b border-[#3d3428]/40"
+          >
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-[#7aa8c8]" />
+              <span className="text-xs font-semibold tracking-[0.15em] uppercase text-[#c9b896]">
+                Stats & Equipment
+              </span>
+            </div>
+            <ChevronRight className={cn("w-4 h-4 text-stone-500 transition-transform", showStats && "rotate-90")} />
+          </button>
+          
+          {showStats && (
+            <div className="border-b border-[#3d3428]/40">
+              {/* Ability Scores */}
+              <div className="p-3 border-b border-[#3d3428]/20">
+                <div className="grid grid-cols-6 gap-2">
+                  {Object.entries(character.abilities).map(([key, value]) => (
+                    <AbilityScore
+                      key={key}
+                      name={key.toUpperCase()}
+                      score={value.score}
+                      modifier={value.modifier}
+                      highlight={key === "int"}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Other Stats */}
+              <div className="p-3 border-b border-[#3d3428]/20">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <StatRow icon={Scroll} label="Proficiency" value={`+${character.proficiencyBonus}`} />
+                  <StatRow icon={Eye} label="Passive Perception" value={character.passivePerception.toString()} />
+                </div>
+              </div>
+
+              {/* Equipment Paper Doll */}
+              <div className="flex py-2">
+                <div className="w-20 px-2 flex flex-col justify-center">
+                  <div className="space-y-1.5">
+                    {equipmentSlots.left.map((slot) => (
+                      <EquipmentSlot 
+                        key={slot.id} 
+                        id={slot.id}
+                        label={slot.label} 
+                        Icon={slot.Icon}
+                        defaultIconUrl={(slot as any).defaultIconUrl}
+                        selected={selectedEquipmentSlot === slot.id}
+                        onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
+                        equippedItem={characterEquipment.find(e => e.slot === slot.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 flex items-center justify-center px-2">
+                  <div className="relative w-32 h-48 flex items-center justify-center">
+                    {(character as any).avatarUrl ? (
+                      <img 
+                        src={(character as any).avatarUrl} 
+                        alt={character.name}
+                        className="max-w-full max-h-full object-contain drop-shadow-[0_0_15px_rgba(100,150,200,0.3)]"
+                      />
+                    ) : (
+                      <div className="w-24 h-40 bg-gradient-to-b from-[#2a3a4a]/40 to-[#1a2a35]/40 rounded-t-full border border-[#4a5a6a]/20" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="w-20 px-2 flex flex-col justify-center">
+                  <div className="space-y-1.5">
+                    {equipmentSlots.right.map((slot, index) => (
+                      <EquipmentSlot 
+                        key={`${slot.id}-${index}`} 
+                        id={slot.id}
+                        label={slot.label} 
+                        Icon={slot.Icon}
+                        defaultIconUrl={(slot as any).defaultIconUrl}
+                        alignRight
+                        selected={selectedEquipmentSlot === slot.id}
+                        onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
+                        equippedItem={characterEquipment.find(e => e.slot === slot.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Character Avatar in Center - Twice as large */}
-            <div className="flex-1 flex items-center justify-center px-2 min-h-[320px]">
-              <div className="relative w-56 h-80 flex items-center justify-center">
-                {(character as any).avatarUrl ? (
-                  <>
-                    <img 
-                      src={(character as any).avatarUrl} 
-                      alt={character.name}
-                      className="max-w-full max-h-full object-contain drop-shadow-[0_0_20px_rgba(100,150,200,0.4)]"
-                    />
-                    {/* Subtle glow effect */}
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-12 bg-[#6aa0c0]/20 rounded-full blur-xl" />
-                  </>
-                ) : (
-                  /* Fallback silhouette */
-                  <div className="relative w-48 h-72">
-                    <div className="absolute inset-0 bg-gradient-to-b from-[#2a3a4a]/60 to-[#1a2a35]/60 rounded-t-full border border-[#4a5a6a]/30">
-                      <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-20 rounded-full bg-[#3a4a5a]/60" />
-                      <div className="absolute top-20 left-1/2 -translate-x-1/2 w-24 h-32 bg-[#2a3a4a]/60 rounded-t-lg" />
-                      <div className="absolute top-24 left-1/2 -translate-x-1/2 w-32 h-40 border-x border-[#4a6a8a]/30" />
-                    </div>
+          {/* Inventory - Collapsible */}
+          <button
+            onClick={() => setShowInventory(!showInventory)}
+            className="w-full flex items-center justify-between px-3 py-2 hover:bg-[#2a2420]/40 transition-colors border-b border-[#3d3428]/40"
+          >
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-[#c9a868]" />
+              <span className="text-xs font-semibold tracking-[0.15em] uppercase text-[#c9b896]">
+                Inventory
+              </span>
+              <span className="text-xs text-stone-500">({inventory.length})</span>
+            </div>
+            <ChevronRight className={cn("w-4 h-4 text-stone-500 transition-transform", showInventory && "rotate-90")} />
+          </button>
+          
+          {showInventory && (
+            <div className="px-3 py-2">
+              <div className="space-y-1">
+                {inventory.length === 0 ? (
+                  <div className="text-center py-4 text-stone-500 text-sm italic">
+                    No possessions
                   </div>
+                ) : (
+                  inventory.map((item) => {
+                    const IconComponent = inventoryIconMap[item.icon] || BackpackIcon
+                    const isSelected = selectedItem === item.id
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setSelectedItem(item.id === selectedItem ? null : item.id)}
+                        className={cn(
+                          "w-full flex items-center gap-2 p-1.5 rounded-sm transition-all text-left",
+                          "hover:bg-[#2a2420]/60",
+                          isSelected && "bg-[#1a2a35]/60 border border-[#4a7a9a]/30"
+                        )}
+                      >
+                        <IconFrame className="w-8 h-8 flex-shrink-0" selected={isSelected}>
+                          <div className="w-full h-full bg-[#1a1614] p-0.5 overflow-hidden">
+                            {item.iconUrl ? (
+                              <img 
+                                src={item.iconUrl} 
+                                alt={item.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <IconComponent className="w-full h-full" />
+                            )}
+                          </div>
+                        </IconFrame>
+                        <span className="flex-1 text-sm text-stone-300 truncate">{item.name}</span>
+                        {item.quantity > 1 && (
+                          <span className="text-xs text-stone-500 tabular-nums">x{item.quantity}</span>
+                        )}
+                      </button>
+                    )
+                  })
                 )}
               </div>
-            </div>
 
-            {/* Right Equipment Slots */}
-            <div className="w-24 px-2 flex flex-col justify-center">
-              <div className="space-y-2">
-                {equipmentSlots.right.map((slot, index) => (
-                  <EquipmentSlot 
-                    key={`${slot.id}-${index}`} 
-                    id={slot.id}
-                    label={slot.label} 
-                    Icon={slot.Icon}
-                    defaultIconUrl={(slot as any).defaultIconUrl}
-                    alignRight
-                    selected={selectedEquipmentSlot === slot.id}
-                    onClick={() => setSelectedEquipmentSlot(slot.id === selectedEquipmentSlot ? null : slot.id)}
-                    equippedItem={characterEquipment.find(e => e.slot === slot.id)}
-                  />
-                ))}
+              {/* Weight */}
+              <div className="mt-3 flex items-center gap-2 text-xs text-stone-500">
+                <Weight className="w-3 h-3" />
+                <span>{character.weight.current} / {character.weight.max} lbs</span>
               </div>
             </div>
-          </div>
-
-          <PanelDivider />
-
-          {/* Inventory */}
-          <div className="px-3 pb-3">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-semibold tracking-[0.15em] uppercase text-[#c9b896]">Inventory</h4>
-              <button className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors px-2 py-1 rounded border border-[#3d3428]/60 bg-[#1a1614]/60">
-                All Items
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              {inventory.length === 0 ? (
-                <div className="text-center py-4 text-stone-500 text-sm italic">
-                  No possessions
-                </div>
-              ) : (
-                inventory.map((item) => {
-                  const IconComponent = inventoryIconMap[item.icon] || BackpackIcon
-                  const isSelected = selectedItem === item.id
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setSelectedItem(item.id === selectedItem ? null : item.id)}
-                      className={cn(
-                        "w-full flex items-center gap-2 p-1.5 rounded-sm transition-all text-left",
-                        "hover:bg-[#2a2420]/60",
-                        isSelected && "bg-[#1a2a35]/60 border border-[#4a7a9a]/30"
-                      )}
-                    >
-                      <IconFrame className="w-9 h-9 flex-shrink-0" selected={isSelected}>
-                        <div className="w-full h-full bg-[#1a1614] p-0.5 overflow-hidden">
-                          {item.iconUrl ? (
-                            <img 
-                              src={item.iconUrl} 
-                              alt={item.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <IconComponent className="w-full h-full" />
-                          )}
-                        </div>
-                      </IconFrame>
-                      <span className="flex-1 text-sm text-stone-300 truncate">{item.name}</span>
-                      {item.quantity > 1 && (
-                        <span className="text-xs text-stone-500 tabular-nums">x{item.quantity}</span>
-                      )}
-                    </button>
-                  )
-                })
-              )}
-            </div>
-
-            {/* Weight */}
-            <div className="mt-3 flex items-center gap-2 text-xs text-stone-500">
-              <Weight className="w-3 h-3" />
-              <span>{character.weight.current} / {character.weight.max} lbs</span>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* View Item Button */}
