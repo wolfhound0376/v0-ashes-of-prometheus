@@ -1,4 +1,4 @@
-// Create a new Malachar session
+// Create a new Malachar session - connects to Anthropic Managed Agents API
 import { NextResponse } from "next/server"
 
 export async function POST(req: Request) {
