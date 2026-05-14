@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { FantasyPanel, PanelDivider } from "@/components/ui/fantasy-panel"
+import { useState, useRef, useEffect, useMemo } from "react"
+import { useChat } from "@ai-sdk/react"
+import { DefaultChatTransport, type UIMessage } from "ai"
 import { 
   MessageSquare, 
   Map, 
@@ -22,13 +23,6 @@ import { rollDice, formatDiceResult, DiceRollResult } from "@/lib/world-ai/dice"
 import { DiceModal } from "./dice-modal"
 
 type ViewTab = "chat" | "maps" | "lore" | "library"
-
-interface Message {
-  id: string
-  type: "user" | "world" | "error" | "thinking"
-  content: string
-  timestamp: Date
-}
 
 interface WorldAIPanelProps {
   onCampaignChange?: (campaign: Campaign) => void
@@ -52,12 +46,35 @@ export function WorldAIPanel({
   const [activeMapId, setActiveMapId] = useState(currentCampaign.maps[0]?.id || "")
   const [mapZoom, setMapZoom] = useState(1)
   const [hoveredHotspot, setHoveredHotspot] = useState<{ name: string; text: string } | null>(null)
-
-  // Chat state
-  const [messages, setMessages] = useState<Message[]>([])
+  
+  // Chat input state (managed separately from useChat)
   const [inputValue, setInputValue] = useState("")
-  const [isThinking, setIsThinking] = useState(false)
   const chatLogRef = useRef<HTMLDivElement>(null)
+
+  // Build campaign context for the API
+  const campaignContext = useMemo(() => ({
+    name: currentCampaign.name,
+    systemPrompt: currentCampaign.systemPrompt,
+    currentEpisode: currentEpisode,
+    currentLocation: currentLocation,
+    currentHeat: currentHeat,
+  }), [currentCampaign, currentEpisode, currentLocation, currentHeat])
+
+  // AI Chat hook with Claude
+  const { messages, status, sendMessage, setMessages } = useChat({
+    transport: new DefaultChatTransport({
+      api: "/api/world-ai/chat",
+      prepareSendMessagesRequest: ({ id, messages }) => ({
+        body: {
+          messages,
+          id,
+          campaign: campaignContext,
+        },
+      }),
+    }),
+  })
+  
+  const isThinking = status === "streaming" || status === "submitted"
 
   // Dice state
   const [diceModalOpen, setDiceModalOpen] = useState(false)
@@ -81,7 +98,7 @@ export function WorldAIPanel({
     setCurrentLocation(campaign.contexts.locations[0])
     setCurrentHeat(campaign.contexts.defaults.heat)
     setActiveMapId(campaign.maps[0]?.id || "")
-    setMessages([])
+    setMessages([]) // Clear chat history when switching campaigns
     onCampaignChange?.(campaign)
     setActiveView("chat")
   }
@@ -112,40 +129,20 @@ export function WorldAIPanel({
       // Roll dice first, then send prompt with result
       handleDiceRoll(action.roll.notation, action.roll.name, (rollResult) => {
         const prompt = action.prompt.replace(/#{roll}/g, rollResult.toString())
-        sendMessage(prompt)
+        handleSendMessage(prompt)
       })
     } else {
-      sendMessage(action.prompt)
+      handleSendMessage(action.prompt)
     }
   }
 
-  // Send message handler (placeholder - would integrate with AI)
-  const sendMessage = (content?: string) => {
+  // Send message handler - uses AI SDK useChat
+  const handleSendMessage = (content?: string) => {
     const text = content || inputValue.trim()
-    if (!text) return
+    if (!text || isThinking) return
 
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      type: "user",
-      content: text,
-      timestamp: new Date()
-    }
-
-    setMessages(prev => [...prev, userMessage])
     setInputValue("")
-    setIsThinking(true)
-
-    // Simulate AI response (would be replaced with actual AI call)
-    setTimeout(() => {
-      const worldMessage: Message = {
-        id: `world-${Date.now()}`,
-        type: "world",
-        content: `[World AI would respond to: "${text.slice(0, 50)}..."] — This is a placeholder. Connect to your AI backend to enable full responses.`,
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, worldMessage])
-      setIsThinking(false)
-    }, 1000)
+    sendMessage({ text })
   }
 
   const activeMap = currentCampaign.maps.find(m => m.id === activeMapId)
@@ -279,7 +276,7 @@ export function WorldAIPanel({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault()
-                      sendMessage()
+                      handleSendMessage()
                     }
                   }}
                   placeholder="Ask the world anything..."
@@ -287,7 +284,7 @@ export function WorldAIPanel({
                   rows={1}
                 />
                 <button
-                  onClick={() => sendMessage()}
+                  onClick={() => handleSendMessage()}
                   disabled={!inputValue.trim() || isThinking}
                   className={cn(
                     "px-4 py-2 border rounded font-serif text-xs uppercase tracking-wider transition-all",
@@ -487,29 +484,36 @@ function ContextSelector({
   )
 }
 
-// Chat message component
-function ChatMessage({ message }: { message: Message }) {
-  const isUser = message.type === "user"
-  const isWorld = message.type === "world"
-  const isError = message.type === "error"
+// Helper to extract text from UIMessage parts
+function getUIMessageText(msg: UIMessage): string {
+  if (!msg.parts || !Array.isArray(msg.parts)) return ''
+  return msg.parts
+    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+    .map((p) => p.text)
+    .join('')
+}
+
+// Chat message component - works with AI SDK UIMessage format
+function ChatMessage({ message }: { message: UIMessage }) {
+  const isUser = message.role === "user"
+  const isAssistant = message.role === "assistant"
+  const content = getUIMessageText(message)
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-1 duration-200">
       <div className={cn(
         "text-[9px] uppercase tracking-wider mb-1",
         isUser && "text-stone-500",
-        isWorld && "text-[#d4b15a]",
-        isError && "text-red-400"
+        isAssistant && "text-[#d4b15a]"
       )}>
-        {isUser ? "You" : isWorld ? "World AI" : "Error"}
+        {isUser ? "You" : "World AI"}
       </div>
       <div className={cn(
-        "bg-[#1f1c16]/70 backdrop-blur-sm rounded p-3 text-sm leading-relaxed border-l-2",
+        "bg-[#1f1c16]/70 backdrop-blur-sm rounded p-3 text-sm leading-relaxed border-l-2 whitespace-pre-wrap",
         isUser && "border-[#3d3428]",
-        isWorld && "border-[#d4b15a]",
-        isError && "border-red-400 text-red-300"
+        isAssistant && "border-[#d4b15a]"
       )}>
-        {message.content}
+        {content}
       </div>
     </div>
   )
