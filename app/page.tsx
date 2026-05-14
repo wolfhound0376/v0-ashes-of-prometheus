@@ -502,12 +502,10 @@ if (error) {
           characterLevel={selectedCharacter?.level}
           characterName={selectedCharacter?.name}
           onSendToLich={async (message) => {
-            // Add message to dialogue and send to Lich
-            setDialogue(prev => [...prev, { speaker: selectedCharacter?.name || "Player", text: message }])
-            const response = await sendToLich(message)
+            // Send to Lich - real-time subscription handles dialogue display
+            const response = await sendToLich(message, handleMusicCue)
             if (response) {
-              setDialogue(prev => [...prev, { speaker: "Malachar", text: response }])
-              // Refresh character data to pick up any XP awarded by the Lich
+              // Refresh character data to pick up any XP or items from the Lich
               await fetchCharacterData()
             }
           }}
