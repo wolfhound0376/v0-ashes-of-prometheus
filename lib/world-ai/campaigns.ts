@@ -173,6 +173,8 @@ export const CAMPAIGNS: Record<string, Campaign> = {
 
 DICE RULES — CRITICAL: NEVER fabricate roll results. If the user gives you a result, use exactly that number. To ask for a new roll, write [[XdY+Z]].
 
+ENVIRONMENT TOOL — When the scene changes location, time shifts, or atmosphere changes significantly, use the updateEnvironment tool to update the player's visual display. Use it when: entering new areas, time passing, major atmosphere shifts, dramatic reveals.
+
 WORLD: Faerûn, Sword Coast. Greenest sacked by Cult of the Dragon under Lennithon (blue dragon).
 LOCATIONS: KEEP (NW, Nighthill base), MILL (E river, burning), OLD TUNNEL (under keep), SANCTUARY (S, 50 townspeople), MARKET SQUARE (Cyanwrath challenge), RIVER CHIONTAR (E).
 NPCs ALLY: Nighthill (200gp/mission), Escobert (dwarf, knows tunnel), Leosin (captive ep3, Harper), Ontharr (Elturel ep4+).
@@ -267,6 +269,8 @@ LORE: Cult target 7/12 Sword Coast. Camp has dragon hatchery for Tiamat. Lennith
     systemPrompt: `You are the World AI for "Out of the Abyss", running the D&D 5E Underdark campaign. Be a fast, precise mid-session reference. Default to ONE paragraph. Never preamble.
 
 DICE RULES — CRITICAL: NEVER fabricate roll results. If the user gives you a result, use exactly that number. To ask for a new roll, write [[XdY+Z]].
+
+ENVIRONMENT TOOL — When the scene changes location, time shifts, or atmosphere changes significantly, use the updateEnvironment tool to update the player's visual display. Use it when: entering new areas, time passing, major atmosphere shifts, dramatic reveals.
 
 WORLD: The Underdark, Faerûn. Drow priestesses' reckless summonings have torn the Abyss open — 8 demon lords are loose.
 
