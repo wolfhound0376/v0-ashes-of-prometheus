@@ -680,6 +680,8 @@ age: (selectedCharacter as any).age,
           spellcastingAbility={character.spellcastingAbility}
           spellSaveDC={character.spellSaveDC}
           spellAttackBonus={character.spellAttackBonus}
+          strModifier={character.abilities.str.modifier}
+          proficiencyBonus={character.proficiencyBonus}
           characterClass={character.class}
           characterLevel={character.level}
         />

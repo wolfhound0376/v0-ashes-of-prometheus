@@ -39,6 +39,10 @@ interface AttacksSpellcastingProps {
   spellAttackBonus?: number
   spells?: Spell[]
   spellSlots?: SpellSlots
+  strModifier?: number
+  proficiencyBonus?: number
+  characterClass?: string
+  characterLevel?: number
 }
 
 // Damage type colors
@@ -65,7 +69,11 @@ export function AttacksSpellcasting({
   spellSaveDC,
   spellAttackBonus,
   spells = [],
-  spellSlots = {}
+  spellSlots = {},
+  strModifier = 0,
+  proficiencyBonus = 2,
+  characterClass,
+  characterLevel = 1
 }: AttacksSpellcastingProps) {
   const [activeTab, setActiveTab] = useState<"attacks" | "spells">("attacks")
 
@@ -118,14 +126,15 @@ export function AttacksSpellcasting({
               </div>
             )}
             
-            {/* Unarmed Strike - Always available */}
+            {/* Unarmed Strike - Always available per D&D 5E rules */}
             <AttackRow 
               attack={{
                 id: "unarmed",
                 name: "Unarmed Strike",
-                attackBonus: 0, // Would be calculated from STR
-                damage: "1",
+                attackBonus: strModifier + proficiencyBonus,
+                damage: `1${strModifier >= 0 ? '+' + strModifier : strModifier}`,
                 damageType: "bludgeoning",
+                range: "Melee",
                 properties: []
               }} 
             />
