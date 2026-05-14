@@ -82,7 +82,18 @@ RULES:
 - Track their progress through the campaign
 - IMPORTANT: When the player acquires ANY item (through scavenging, finding, stealing, being given, etc.), you MUST use the giveItem tool to add it to their inventory
 - When rolling for starting equipment or scavenged items, use the giveItem tool for each item they receive
-- Describe the item narratively, then call giveItem to actually add it to their inventory`
+- Describe the item narratively, then call giveItem to actually add it to their inventory
+
+EXPERIENCE POINTS (D&D 5E):
+- Award XP using the awardXP tool when players:
+  - Defeat monsters (use standard 5E XP values based on CR)
+  - Complete quests or objectives
+  - Solve puzzles or overcome challenges creatively
+  - Achieve significant roleplay moments
+  - Survive dangerous encounters
+- Standard monster XP by CR: CR0=10, CR1/8=25, CR1/4=50, CR1/2=100, CR1=200, CR2=450, CR3=700, CR4=1100, CR5=1800, CR6=2300, CR7=2900, CR8=3900
+- Always announce XP awards narratively, e.g. "The shadows of your fallen foes yield their essence... you gain 200 experience points."
+- When a player is ready to level up, congratulate them dramatically`
 
   const result = streamText({
     model: "anthropic/claude-sonnet-4-20250514",
@@ -188,6 +199,88 @@ RULES:
               .update({ quantity: existingItem.quantity - quantity })
               .eq("id", existingItem.id)
             return { success: true, message: `Removed ${quantity} ${name} (${existingItem.quantity - quantity} remaining)` }
+          }
+        }
+      }),
+      awardXP: tool({
+        description: "Award experience points to the player character. Use after defeating monsters, completing quests, solving puzzles, or achieving significant milestones. Follow D&D 5E XP values.",
+        inputSchema: z.object({
+          amount: z.number().describe("The amount of XP to award"),
+          reason: z.string().describe("Why XP is being awarded, e.g. 'Defeated goblin', 'Completed quest', 'Creative problem solving'"),
+          source: z.enum(["encounter", "quest", "milestone", "dm_award"]).default("dm_award").describe("The source of the XP"),
+        }),
+        execute: async ({ amount, reason, source }) => {
+          if (!playerCharacter?.id) {
+            return { success: false, error: "No player character found" }
+          }
+          
+          // Get current character data
+          const { data: character } = await supabase
+            .from("characters")
+            .select("name, level, experience_points")
+            .eq("id", playerCharacter.id)
+            .single()
+          
+          if (!character) {
+            return { success: false, error: "Character not found" }
+          }
+          
+          // D&D 5E XP thresholds for leveling
+          const xpThresholds: Record<number, number> = {
+            1: 0, 2: 300, 3: 900, 4: 2700, 5: 6500,
+            6: 14000, 7: 23000, 8: 34000, 9: 48000, 10: 64000,
+            11: 85000, 12: 100000, 13: 120000, 14: 140000, 15: 165000,
+            16: 195000, 17: 225000, 18: 265000, 19: 305000, 20: 355000
+          }
+          
+          const currentXP = character.experience_points || 0
+          const newXP = currentXP + amount
+          const currentLevel = character.level || 1
+          const nextLevelXP = currentLevel < 20 ? xpThresholds[currentLevel + 1] : 0
+          const xpToNextLevel = nextLevelXP > 0 ? Math.max(0, nextLevelXP - newXP) : 0
+          const canLevelUp = currentLevel < 20 && newXP >= nextLevelXP
+          
+          // Update character XP
+          const { error: updateError } = await supabase
+            .from("characters")
+            .update({ 
+              experience_points: newXP,
+              xp_to_next_level: xpToNextLevel
+            })
+            .eq("id", playerCharacter.id)
+          
+          if (updateError) {
+            console.error('[Chat] Error updating XP:', updateError)
+            return { success: false, error: "Failed to update XP" }
+          }
+          
+          // Record in XP history
+          await supabase
+            .from("xp_history")
+            .insert({
+              character_id: playerCharacter.id,
+              amount,
+              reason,
+              source
+            })
+          
+          if (canLevelUp) {
+            return { 
+              success: true, 
+              message: `Awarded ${amount} XP for: ${reason}. ${character.name} now has ${newXP} XP total.`,
+              canLevelUp: true,
+              newTotal: newXP,
+              xpToNextLevel: 0,
+              levelUpMessage: `${character.name} has enough experience to reach Level ${currentLevel + 1}!`
+            }
+          }
+          
+          return { 
+            success: true, 
+            message: `Awarded ${amount} XP for: ${reason}. ${character.name} now has ${newXP} XP total. ${xpToNextLevel} XP needed to reach Level ${currentLevel + 1}.`,
+            canLevelUp: false,
+            newTotal: newXP,
+            xpToNextLevel
           }
         }
       }),

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { Settings, Sparkles, X, Save, RotateCcw } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
@@ -236,30 +236,43 @@ export default function DashboardPage() {
     }
   }, [])
 
+  // Fetch character data function - callable from multiple places
+  const fetchCharacterData = useCallback(async () => {
+    if (!selectedCharacterId) return
+
+    // Fetch inventory
+    const { data: invData } = await supabase
+      .from('inventory_items')
+      .select('*')
+      .eq('character_id', selectedCharacterId)
+      .order('name')
+    
+    if (invData) setCharacterInventory(invData)
+
+    // Fetch equipment
+    const { data: equipData } = await supabase
+      .from('equipment_items')
+      .select('*')
+      .eq('character_id', selectedCharacterId)
+    
+    if (equipData) setCharacterEquipment(equipData)
+
+    // Refresh character to get updated XP
+    const { data: charData } = await supabase
+      .from('characters')
+      .select('*')
+      .eq('id', selectedCharacterId)
+      .single()
+    
+    if (charData) {
+      setCharacters(prev => prev.map(c => c.id === selectedCharacterId ? charData : c))
+    }
+  }, [selectedCharacterId])
+
   // Fetch inventory and equipment when character changes
   useEffect(() => {
-    async function fetchCharacterData() {
-      if (!selectedCharacterId) return
-
-      // Fetch inventory
-      const { data: invData } = await supabase
-        .from('inventory_items')
-        .select('*')
-        .eq('character_id', selectedCharacterId)
-        .order('name')
-      
-      if (invData) setCharacterInventory(invData)
-
-      // Fetch equipment
-      const { data: equipData } = await supabase
-        .from('equipment_items')
-        .select('*')
-        .eq('character_id', selectedCharacterId)
-      
-      if (equipData) setCharacterEquipment(equipData)
-    }
     fetchCharacterData()
-  }, [selectedCharacterId])
+  }, [fetchCharacterData])
 
   // Get the currently selected character
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
@@ -482,6 +495,8 @@ export default function DashboardPage() {
             const response = await sendToLich(message)
             if (response) {
               setDialogue(prev => [...prev, { speaker: "Malachar", text: response }])
+              // Refresh character data to pick up any XP awarded by the Lich
+              await fetchCharacterData()
             }
           }}
         />
