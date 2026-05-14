@@ -2,7 +2,7 @@
 import { NextRequest } from "next/server"
 
 const MALACHAR_API_URL = process.env.MALACHAR_API_URL
-const MALACHAR_API_KEY = process.env.Claude_Lich_API
+const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
 
 export async function GET(
   req: NextRequest,
