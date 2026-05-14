@@ -437,22 +437,12 @@ age: (selectedCharacter as any).age,
         size="fullscreen"
       >
         <div className="h-full flex">
-          {/* Main Paper Doll Area */}
-          <div className="flex-1 relative flex items-center justify-center p-8">
-            {/* Character Silhouette - Large */}
-            <div className="relative h-full max-h-[600px] aspect-[3/5] flex items-center justify-center">
-              <img 
-                src={character.gender === "female" 
-                  ? "/icons/paperdoll/silhouette-female.jpg" 
-                  : "/icons/paperdoll/silhouette-male.jpg"
-                }
-                alt="Character"
-                className="h-full w-auto opacity-50 object-contain"
-              />
-              
-              {/* Equipment Slots - Positioned around the figure */}
-              {/* Head - Top Center */}
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+          {/* Main Content Area */}
+          <div className="flex-1 flex items-center justify-center p-4">
+            {/* Left Column - Head, Neck, Torso, Legs, Feet */}
+            <div className="flex flex-col gap-3 mr-4">
+              {/* Head */}
+              <div className="flex items-center gap-3">
                 <EquipmentSlotButton 
                   slot={EQUIPMENT_SLOTS[0]} 
                   equipped={getEquippedItem("head")}
@@ -460,35 +450,23 @@ age: (selectedCharacter as any).age,
                   onClick={() => setSelectedSlot(selectedSlot === "head" ? null : "head")}
                   className="w-16 h-16"
                 />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Head</div>
+                <span className="text-sm text-stone-400 w-12">Head</span>
               </div>
               
-              {/* Neck - Below head, slightly right */}
-              <div className="absolute top-[12%] right-[5%]">
+              {/* Neck */}
+              <div className="flex items-center gap-3">
                 <EquipmentSlotButton 
                   slot={EQUIPMENT_SLOTS[1]} 
                   equipped={getEquippedItem("neck")}
                   isSelected={selectedSlot === "neck"}
                   onClick={() => setSelectedSlot(selectedSlot === "neck" ? null : "neck")}
-                  className="w-14 h-14"
-                />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Neck</div>
-              </div>
-              
-              {/* Main Hand - Left side, arm level */}
-              <div className="absolute top-[30%] -left-[15%]">
-                <EquipmentSlotButton 
-                  slot={EQUIPMENT_SLOTS[3]} 
-                  equipped={getEquippedItem("main_hand")}
-                  isSelected={selectedSlot === "main_hand"}
-                  onClick={() => setSelectedSlot(selectedSlot === "main_hand" ? null : "main_hand")}
                   className="w-16 h-16"
                 />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Main Hand</div>
+                <span className="text-sm text-stone-400 w-12">Neck</span>
               </div>
               
-              {/* Torso - Center chest */}
-              <div className="absolute top-[25%] left-1/2 -translate-x-1/2">
+              {/* Torso */}
+              <div className="flex items-center gap-3">
                 <EquipmentSlotButton 
                   slot={EQUIPMENT_SLOTS[2]} 
                   equipped={getEquippedItem("torso")}
@@ -496,11 +474,63 @@ age: (selectedCharacter as any).age,
                   onClick={() => setSelectedSlot(selectedSlot === "torso" ? null : "torso")}
                   className="w-16 h-16"
                 />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Torso</div>
+                <span className="text-sm text-stone-400 w-12">Torso</span>
               </div>
               
-              {/* Off Hand - Right side, arm level */}
-              <div className="absolute top-[30%] -right-[15%]">
+              {/* Legs */}
+              <div className="flex items-center gap-3">
+                <EquipmentSlotButton 
+                  slot={EQUIPMENT_SLOTS[5]} 
+                  equipped={getEquippedItem("legs")}
+                  isSelected={selectedSlot === "legs"}
+                  onClick={() => setSelectedSlot(selectedSlot === "legs" ? null : "legs")}
+                  className="w-16 h-16"
+                />
+                <span className="text-sm text-stone-400 w-12">Legs</span>
+              </div>
+              
+              {/* Feet */}
+              <div className="flex items-center gap-3">
+                <EquipmentSlotButton 
+                  slot={EQUIPMENT_SLOTS[6]} 
+                  equipped={getEquippedItem("feet")}
+                  isSelected={selectedSlot === "feet"}
+                  onClick={() => setSelectedSlot(selectedSlot === "feet" ? null : "feet")}
+                  className="w-16 h-16"
+                />
+                <span className="text-sm text-stone-400 w-12">Feet</span>
+              </div>
+            </div>
+            
+            {/* Center - Character Image */}
+            <div className="h-full max-h-[500px] aspect-[3/4] mx-4 border border-[#3d3428] rounded overflow-hidden bg-[#0a0908]">
+              <img 
+                src={(character as any).avatarUrl || (character.gender === "female" 
+                  ? "/icons/paperdoll/silhouette-female.jpg" 
+                  : "/icons/paperdoll/silhouette-male.jpg"
+                )}
+                alt={character.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            
+            {/* Right Column - Main Hand, Off Hand, Ring, Ring */}
+            <div className="flex flex-col gap-3 ml-4">
+              {/* Main Hand */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-stone-400 w-16 text-right">Main Hand</span>
+                <EquipmentSlotButton 
+                  slot={EQUIPMENT_SLOTS[3]} 
+                  equipped={getEquippedItem("main_hand")}
+                  isSelected={selectedSlot === "main_hand"}
+                  onClick={() => setSelectedSlot(selectedSlot === "main_hand" ? null : "main_hand")}
+                  className="w-16 h-16"
+                />
+              </div>
+              
+              {/* Off Hand */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-stone-400 w-16 text-right">Off Hand</span>
                 <EquipmentSlotButton 
                   slot={EQUIPMENT_SLOTS[4]} 
                   equipped={getEquippedItem("off_hand")}
@@ -508,55 +538,30 @@ age: (selectedCharacter as any).age,
                   onClick={() => setSelectedSlot(selectedSlot === "off_hand" ? null : "off_hand")}
                   className="w-16 h-16"
                 />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Off Hand</div>
               </div>
               
-              {/* Ring 1 - Left hand */}
-              <div className="absolute top-[50%] -left-[10%]">
+              {/* Ring 1 */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-stone-400 w-16 text-right">Ring</span>
                 <EquipmentSlotButton 
                   slot={EQUIPMENT_SLOTS[7]} 
                   equipped={getEquippedItem("ring_1")}
                   isSelected={selectedSlot === "ring_1"}
                   onClick={() => setSelectedSlot(selectedSlot === "ring_1" ? null : "ring_1")}
-                  className="w-12 h-12"
+                  className="w-16 h-16"
                 />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Ring</div>
               </div>
               
-              {/* Ring 2 - Right hand */}
-              <div className="absolute top-[50%] -right-[10%]">
+              {/* Ring 2 */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-stone-400 w-16 text-right">Ring</span>
                 <EquipmentSlotButton 
                   slot={EQUIPMENT_SLOTS[8]} 
                   equipped={getEquippedItem("ring_2")}
                   isSelected={selectedSlot === "ring_2"}
                   onClick={() => setSelectedSlot(selectedSlot === "ring_2" ? null : "ring_2")}
-                  className="w-12 h-12"
+                  className="w-16 h-16"
                 />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Ring</div>
-              </div>
-              
-              {/* Legs - Lower body */}
-              <div className="absolute top-[60%] left-1/2 -translate-x-1/2">
-                <EquipmentSlotButton 
-                  slot={EQUIPMENT_SLOTS[5]} 
-                  equipped={getEquippedItem("legs")}
-                  isSelected={selectedSlot === "legs"}
-                  onClick={() => setSelectedSlot(selectedSlot === "legs" ? null : "legs")}
-                  className="w-14 h-14"
-                />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Legs</div>
-              </div>
-              
-              {/* Feet - Bottom */}
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2">
-                <EquipmentSlotButton 
-                  slot={EQUIPMENT_SLOTS[6]} 
-                  equipped={getEquippedItem("feet")}
-                  isSelected={selectedSlot === "feet"}
-                  onClick={() => setSelectedSlot(selectedSlot === "feet" ? null : "feet")}
-                  className="w-14 h-14"
-                />
-                <div className="text-[10px] text-center text-stone-500 mt-1">Feet</div>
               </div>
             </div>
           </div>
