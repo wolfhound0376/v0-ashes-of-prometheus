@@ -86,16 +86,17 @@ RULES:
 
 AMBIENT MUSIC:
 - Use the playMusic tool to set the atmosphere during narration
-- Change music when the scene changes significantly:
-  - Combat/Boss fights: "there-be-dragons" or "rise-of-the-ancients"  
-  - Tension/Danger approaching: "dark-and-stormy"
-  - Forest/Night exploration: "forest-night"
-  - Sneaking/Stealth: "sleeping-dragon"
-  - Mountain/Open travel: "mountain-pass"
-  - Swamps/Marshland: "swamplandia"
-  - Dungeons/Underground: "dungeon-i"
-- Use "stop" when transitioning to dialogue-heavy scenes or rest
-- Don't change music too frequently - let it play for atmosphere
+- Match music to the current scene:
+  - COMBAT: "there-be-dragons" (dragons/epic), "rise-of-the-ancients" (boss fights), "dark-angel" (celestial)
+  - TENSION: "dark-and-stormy" (storms), "burning-village" (disaster/urgency)
+  - TRAVEL: "mountain-pass" (overland), "carriage-journey" (roads), "astral-plane" (planar)
+  - NATURE: "forest-night" (wilderness), "swamplandia" (swamps), "druid-hilltop" (sacred), "the-feywild" (fey)
+  - DUNGEON: "dungeon-i" (generic), "cavern-of-lost-souls" (haunted), "mummys-tomb" (ancient), "castle-jail" (prison), "sewers" (city)
+  - HORROR: "vampire-castle" (gothic), "graveyard" (cemetery), "heart-meat-corridor" (aberrant), "shadowfell" (dark realm)
+  - MYSTERY: "sleeping-dragon" (stealth), "wizards-tower" (arcane), "floating-ice-castle" (frost)
+  - SOCIAL: "tavern-music" (inns), "country-village" (peaceful), "waterkeep" (city), "blacksmith-shoppe" (shops)
+- Use "stop" for dialogue-heavy or quiet moments
+- Don't change music too frequently - let it establish atmosphere
 
 EXPERIENCE POINTS (D&D 5E):
 - Award XP using the awardXP tool when players:
@@ -298,48 +299,53 @@ EXPERIENCE POINTS (D&D 5E):
         }
       }),
       playMusic: tool({
-        description: "Trigger ambient music to set the mood. Use this to enhance the atmosphere during narration. Available tracks: 'there-be-dragons' (epic combat/dragons), 'dark-and-stormy' (tension/storms), 'forest-night' (peaceful night forest), 'sleeping-dragon' (sneaking/suspense), 'mountain-pass' (exploration/travel), 'swamplandia' (murky swamps), 'rise-of-the-ancients' (epic/ancient discoveries), 'dungeon-i' (underground exploration). Use 'stop' to fade out music.",
+        description: `Trigger ambient music to set the mood. Available tracks by category:
+COMBAT: 'there-be-dragons' (epic battles), 'rise-of-the-ancients' (boss fights)
+TENSION: 'dark-and-stormy' (storms/danger), 'burning-village' (urgent/disaster)
+EXPLORATION: 'mountain-pass' (travel), 'carriage-journey' (road trips), 'astral-plane' (planar travel)
+NATURE: 'forest-night' (peaceful), 'swamplandia' (swamps), 'druid-hilltop' (sacred groves), 'the-feywild' (fey realm)
+DUNGEON: 'dungeon-i' (underground), 'cavern-of-lost-souls' (haunted), 'mummys-tomb' (ancient), 'castle-jail' (prison), 'sewers' (city underground)
+HORROR: 'vampire-castle' (gothic), 'graveyard' (cemetery), 'heart-meat-corridor' (flesh dungeons), 'shadowfell' (dark realm)
+MYSTERY: 'sleeping-dragon' (sneaking), 'wizards-tower' (arcane), 'floating-ice-castle' (frost realms)
+AMBIENT: 'country-village' (peaceful town), 'tavern-music' (inn/social), 'waterkeep' (city), 'blacksmith-shoppe' (forge)
+Use 'stop' to fade out music.`,
         inputSchema: z.object({
           trackId: z.enum([
-            "there-be-dragons",
-            "dark-and-stormy", 
-            "forest-night",
-            "sleeping-dragon",
-            "mountain-pass",
-            "swamplandia",
-            "rise-of-the-ancients",
-            "dungeon-i",
-            "stop"
+            "there-be-dragons", "dark-and-stormy", "forest-night", "sleeping-dragon",
+            "mountain-pass", "swamplandia", "rise-of-the-ancients", "dungeon-i",
+            "country-village", "wizards-tower", "vampire-castle", "dark-angel",
+            "astral-plane", "burning-village", "carriage-journey", "cavern-of-lost-souls",
+            "druid-hilltop", "mummys-tomb", "castle-jail", "the-feywild",
+            "tavern-music", "waterkeep", "floating-ice-castle", "blacksmith-shoppe",
+            "graveyard", "sewers", "heart-meat-corridor", "shadowfell", "stop"
           ]).describe("The track ID to play, or 'stop' to stop music"),
-          reason: z.string().optional().describe("Brief reason for the music change, e.g. 'entering combat', 'exploring the dungeon'")
+          reason: z.string().optional().describe("Brief reason for the music change")
         }),
         execute: async ({ trackId, reason }) => {
-          // This returns the track info - the client will handle actual playback
           if (trackId === "stop") {
-            return { 
-              success: true, 
-              action: "stop",
-              message: "Music fading out..." 
-            }
+            return { success: true, action: "stop", message: "Music fading out..." }
           }
           
           const trackNames: Record<string, string> = {
-            "there-be-dragons": "There Be Dragons",
-            "dark-and-stormy": "Dark and Stormy",
-            "forest-night": "Forest Night",
-            "sleeping-dragon": "Sleeping Dragon",
-            "mountain-pass": "Mountain Pass",
-            "swamplandia": "Swamplandia",
-            "rise-of-the-ancients": "Rise of the Ancients",
-            "dungeon-i": "Dungeon I"
+            "there-be-dragons": "There Be Dragons", "dark-and-stormy": "Dark and Stormy",
+            "forest-night": "Forest Night", "sleeping-dragon": "Sleeping Dragon",
+            "mountain-pass": "Mountain Pass", "swamplandia": "Swamplandia",
+            "rise-of-the-ancients": "Rise of the Ancients", "dungeon-i": "Dungeon I",
+            "country-village": "Country Village", "wizards-tower": "Wizard's Tower",
+            "vampire-castle": "Vampire Castle", "dark-angel": "Dark Angel",
+            "astral-plane": "Astral Plane", "burning-village": "Burning Village",
+            "carriage-journey": "Carriage Journey", "cavern-of-lost-souls": "Cavern of Lost Souls",
+            "druid-hilltop": "Druid Hilltop", "mummys-tomb": "Mummy's Tomb",
+            "castle-jail": "Castle Jail", "the-feywild": "The Feywild",
+            "tavern-music": "Tavern Music", "waterkeep": "Waterkeep",
+            "floating-ice-castle": "Floating Ice Castle", "blacksmith-shoppe": "Blacksmith Shoppe",
+            "graveyard": "Graveyard", "sewers": "Sewers",
+            "heart-meat-corridor": "Heart Meat Corridor", "shadowfell": "Shadowfell"
           }
           
           return { 
-            success: true, 
-            action: "play",
-            trackId,
-            trackName: trackNames[trackId],
-            reason: reason || "Setting the mood"
+            success: true, action: "play", trackId,
+            trackName: trackNames[trackId], reason: reason || "Setting the mood"
           }
         }
       }),

@@ -85,6 +85,167 @@ export const MUSIC_LIBRARY: MusicTrack[] = [
     category: "dungeon",
     mood: ["dark", "echoing", "underground"],
     description: "Ambient dungeon sounds for underground exploration"
+  },
+  // New tracks
+  {
+    id: "country-village",
+    name: "Country Village",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/182_Country_Village-duH8bVeNSZMWdgEYiZStdWPgl7GukW.mp3",
+    category: "ambient",
+    mood: ["peaceful", "rustic", "safe"],
+    description: "Pleasant village atmosphere for towns and settlements"
+  },
+  {
+    id: "wizards-tower",
+    name: "Wizard's Tower",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/174_Wizards_Tower-6nYQUTbA3ET4iLpW4E6GXsmlVdh6t9.mp3",
+    category: "mystery",
+    mood: ["magical", "arcane", "mysterious"],
+    description: "Mystical ambience for wizard towers and magical locations"
+  },
+  {
+    id: "vampire-castle",
+    name: "Vampire Castle",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/102_Vampire_Castle-zs6f354TddEWwyL1DkyphiK1k49bph.mp3",
+    category: "horror",
+    mood: ["gothic", "dread", "undead"],
+    description: "Gothic horror for vampire lairs and cursed castles"
+  },
+  {
+    id: "dark-angel",
+    name: "Dark Angel",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/162_Dark_Angel-plT5qqGnQ2c4cjkUp3xnVaEl11kQP1.mp3",
+    category: "epic",
+    mood: ["divine", "ominous", "celestial"],
+    description: "Dark celestial theme for fallen angels and divine conflicts"
+  },
+  {
+    id: "astral-plane",
+    name: "Astral Plane",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/113_Astral_Plane-XPxLxu2E1vMIZ0Sa0GWBVO0hwhA303.mp3",
+    category: "exploration",
+    mood: ["otherworldly", "ethereal", "cosmic"],
+    description: "Ethereal music for planar travel and astral exploration"
+  },
+  {
+    id: "burning-village",
+    name: "Burning Village",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/213_Burning_Village-yAIXcxjb0PuNnqjICl8wy4kMXbV83B.mp3",
+    category: "tension",
+    mood: ["urgent", "destruction", "chaos"],
+    description: "Urgent atmosphere for villages under attack or disasters"
+  },
+  {
+    id: "carriage-journey",
+    name: "Carriage Journey",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/134_Carriage_Journey-GrBXRAoAwc8csz9tPBThNQCA8368qu.mp3",
+    category: "exploration",
+    mood: ["travel", "adventure", "road"],
+    description: "Travel music for carriage rides and road journeys"
+  },
+  {
+    id: "cavern-of-lost-souls",
+    name: "Cavern of Lost Souls",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/99_Cavern_of_Lost_Souls-THx80DYk2x7Bbhv3h7KPAeIxLPywTO.mp3",
+    category: "dungeon",
+    mood: ["haunted", "echoing", "souls"],
+    description: "Haunted cavern sounds for spirit-filled underground areas"
+  },
+  {
+    id: "druid-hilltop",
+    name: "Druid Hilltop",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/200_Druid_Hilltop-8LIrLq8GCIHvdNGedCJE4ZfUycG9Hv.mp3",
+    category: "nature",
+    mood: ["sacred", "natural", "peaceful"],
+    description: "Serene druidic atmosphere for sacred groves and nature sites"
+  },
+  {
+    id: "mummys-tomb",
+    name: "Mummy's Tomb",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/142_Mummys_Tomb-Ol1rvEIq0MolDtr6ndJOHLpn8ehIjd.mp3",
+    category: "dungeon",
+    mood: ["ancient", "cursed", "egyptian"],
+    description: "Ancient tomb ambience for pyramids and burial chambers"
+  },
+  {
+    id: "castle-jail",
+    name: "Castle Jail",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/172_Castle_Jail-2aIRsXyM4KmfAMNYFHb6nQI10132M7.mp3",
+    category: "dungeon",
+    mood: ["imprisonment", "despair", "chains"],
+    description: "Grim dungeon atmosphere for prisons and jail cells"
+  },
+  {
+    id: "the-feywild",
+    name: "The Feywild",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/169_The_Feywild-o7NjJn6vZTdJW8eoonbmCp505x3svB.mp3",
+    category: "nature",
+    mood: ["magical", "whimsical", "fey"],
+    description: "Enchanting fey realm music for Feywild encounters"
+  },
+  {
+    id: "tavern-music",
+    name: "Tavern Music",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/177_Tavern_Music-fzJbx23LWwYrKIB6wrU9tnppwrV75q.mp3",
+    category: "ambient",
+    mood: ["lively", "social", "drinking"],
+    description: "Lively tavern atmosphere for inns and social gatherings"
+  },
+  {
+    id: "waterkeep",
+    name: "Waterkeep",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/158_Waterkeep-MVx43LgDRHkXKLv8MFpxVUKiJ2lr4C.mp3",
+    category: "ambient",
+    mood: ["city", "harbor", "urban"],
+    description: "Bustling city sounds for large cities and ports"
+  },
+  {
+    id: "floating-ice-castle",
+    name: "Floating Ice Castle",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/146_Floating_Ice_Castle-4dbHgRn3fLdstqjr72dyxt6eVlWgN5.mp3",
+    category: "mystery",
+    mood: ["cold", "magical", "ethereal"],
+    description: "Icy magical atmosphere for frost castles and winter realms"
+  },
+  {
+    id: "blacksmith-shoppe",
+    name: "Blacksmith Shoppe",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/80_Blacksmith_Shoppe-J0QPgtd1CT7ipqOQ94z4Mx10Fgw54x.mp3",
+    category: "ambient",
+    mood: ["industrial", "crafting", "fire"],
+    description: "Forge sounds for blacksmith shops and crafting areas"
+  },
+  {
+    id: "graveyard",
+    name: "Graveyard",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/147_Graveyard-dQbn4fk1qkiR5STKR9bWhCm7BAOwNt.mp3",
+    category: "horror",
+    mood: ["death", "haunted", "somber"],
+    description: "Eerie graveyard atmosphere for cemeteries and burial grounds"
+  },
+  {
+    id: "sewers",
+    name: "Sewers",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/85_Sewers-1VUKL9B6O2qMFZPxkMwFzKNOuMmcsB.mp3",
+    category: "dungeon",
+    mood: ["dank", "underground", "urban"],
+    description: "Underground sewer sounds for city underbelly exploration"
+  },
+  {
+    id: "heart-meat-corridor",
+    name: "Heart Meat Corridor",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/204_Heart_Meat_Corridor-kojaOSupkeBMSQURGkvSsQq61RmZYF.mp3",
+    category: "horror",
+    mood: ["grotesque", "fleshy", "nightmare"],
+    description: "Disturbing organic sounds for flesh dungeons and aberrant lairs"
+  },
+  {
+    id: "shadowfell",
+    name: "Shadowfell",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/198_Shadowfell-dMxt8FpApIUH0fIu8GZcoUt7fxeaQu.mp3",
+    category: "horror",
+    mood: ["dark", "despair", "shadow"],
+    description: "Bleak atmosphere for Shadowfell and realms of darkness"
   }
 ]
 
