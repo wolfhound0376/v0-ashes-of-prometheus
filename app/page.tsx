@@ -10,6 +10,8 @@ import { WorldAIPanel } from "@/components/world-ai"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
+import { useMalachar } from "@/lib/world-ai/use-malachar"
+import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
 
@@ -30,6 +32,28 @@ export default function DashboardPage() {
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
   const [currentCampaign, setCurrentCampaign] = useState<Campaign | null>(null)
+  const [currentEpisode, setCurrentEpisode] = useState("")
+  const [currentLocation, setCurrentLocation] = useState("")
+  const [currentHeat, setCurrentHeat] = useState("")
+
+  // Initialize with first campaign
+  const activeCampaign = currentCampaign || CAMPAIGNS["ashes-of-prometheus"]
+  
+  // Malachar connection for the dashboard - sends player dialogue to the lich
+  const malacharContext = {
+    name: activeCampaign.name,
+    systemPrompt: activeCampaign.systemPrompt,
+    currentEpisode: currentEpisode || activeCampaign.contexts.defaults.episode,
+    currentLocation: currentLocation || activeCampaign.contexts.locations[0],
+    currentHeat: currentHeat || activeCampaign.contexts.defaults.heat,
+  }
+  
+  const { 
+    sendMessage: sendToMalachar, 
+    isLoading: malacharLoading,
+    backendMode 
+  } = useMalachar(malacharContext)
+
   const [resources, setResources] = useState({
     action: 1,
     bonusAction: 1,
@@ -181,6 +205,21 @@ export default function DashboardPage() {
         // Fallback: add locally if save fails
         setDialogue(prev => [...prev, { speaker: "You", text }])
       }
+      
+      // Send to Malachar so the lich can respond
+      // Include world context with the message
+      const worldContext = {
+        campaignId: activeCampaign.id,
+        campaignName: activeCampaign.name,
+        currentEpisode: currentEpisode || activeCampaign.contexts.defaults.episode,
+        currentLocation: currentLocation || activeCampaign.contexts.locations[0],
+        currentHeat: currentHeat || activeCampaign.contexts.defaults.heat,
+        characterName: selectedCharacter?.name,
+        characterClass: selectedCharacter?.class,
+        characterLevel: selectedCharacter?.level,
+      }
+      
+      sendToMalachar(text, worldContext)
     }
   }
 
@@ -298,15 +337,16 @@ export default function DashboardPage() {
 
       {/* Main dashboard grid */}
       <div className="h-screen p-2 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
-        <LeftColumn
-          environment={environmentData}
-          dialogue={dialogue}
-          dialogueInput={dialogueInput}
-          setDialogueInput={setDialogueInput}
-          onDialogueSubmit={handleDialogueSubmit}
-          characterAvatar={selectedCharacter?.avatar_image_url}
-          characterName={selectedCharacter?.name}
-        />
+<LeftColumn
+            environment={environmentData}
+            dialogue={dialogue}
+            dialogueInput={dialogueInput}
+            setDialogueInput={setDialogueInput}
+            onDialogueSubmit={handleDialogueSubmit}
+            characterAvatar={selectedCharacter?.avatar_image_url}
+            characterName={selectedCharacter?.name}
+            isWorldAIThinking={malacharLoading}
+            />
         <CenterColumn
           selectedAction={selectedAction}
           onActionSelect={handleActionSelect}

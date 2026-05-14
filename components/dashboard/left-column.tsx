@@ -19,6 +19,7 @@ interface LeftColumnProps {
   onDialogueSubmit: () => void
   characterAvatar?: string | null
   characterName?: string
+  isWorldAIThinking?: boolean
 }
 
 export function LeftColumn({
@@ -29,6 +30,7 @@ export function LeftColumn({
   onDialogueSubmit,
   characterAvatar,
   characterName,
+  isWorldAIThinking = false,
 }: LeftColumnProps) {
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -94,7 +96,8 @@ export function LeftColumn({
             <div key={index} className="text-sm">
               <span
                 className={`font-serif font-semibold ${
-                  entry.speaker === "You" ? "text-[#7aa8c8]" : "text-[#c9a868]"
+                  entry.speaker === "You" ? "text-[#7aa8c8]" : 
+                  entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
                 }`}
               >
                 {entry.speaker}:
@@ -102,6 +105,12 @@ export function LeftColumn({
               <span className="text-stone-300 ml-2">{entry.text}</span>
             </div>
           ))}
+          {isWorldAIThinking && (
+            <div className="text-sm animate-pulse">
+              <span className="font-serif font-semibold text-[#8b5cf6]">Malachar:</span>
+              <span className="text-stone-400 ml-2 italic">weaving dark knowledge...</span>
+            </div>
+          )}
         </div>
 
         {/* Input area */}
