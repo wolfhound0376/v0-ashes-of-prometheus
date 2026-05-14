@@ -127,17 +127,39 @@ export function AttacksSpellcasting({
             )}
             
             {/* Unarmed Strike - Always available per D&D 5E rules */}
-            <AttackRow 
-              attack={{
-                id: "unarmed",
-                name: "Unarmed Strike",
-                attackBonus: strModifier + proficiencyBonus,
-                damage: `1${strModifier >= 0 ? '+' + strModifier : strModifier}`,
-                damageType: "bludgeoning",
-                range: "Melee",
-                properties: []
-              }} 
-            />
+            {(() => {
+              // Monks get Martial Arts die that scales with level
+              // Everyone else does 1 + STR modifier
+              const isMonk = characterClass?.toLowerCase() === "monk"
+              let unarmedDamage: string
+              
+              if (isMonk) {
+                // Monk Martial Arts die progression
+                let martialArtsDie = "1d4"
+                if (characterLevel >= 17) martialArtsDie = "1d10"
+                else if (characterLevel >= 11) martialArtsDie = "1d8"
+                else if (characterLevel >= 5) martialArtsDie = "1d6"
+                
+                unarmedDamage = `${martialArtsDie}${strModifier >= 0 ? '+' + strModifier : strModifier}`
+              } else {
+                // Standard unarmed strike: 1 + STR modifier
+                unarmedDamage = `1${strModifier >= 0 ? '+' + strModifier : strModifier}`
+              }
+              
+              return (
+                <AttackRow 
+                  attack={{
+                    id: "unarmed",
+                    name: isMonk ? "Unarmed Strike (Martial Arts)" : "Unarmed Strike",
+                    attackBonus: strModifier + proficiencyBonus,
+                    damage: unarmedDamage,
+                    damageType: "bludgeoning",
+                    range: "Melee",
+                    properties: isMonk ? ["Finesse (Monk)"] : []
+                  }} 
+                />
+              )
+            })()}
           </div>
         ) : (
           <div className="space-y-3">
