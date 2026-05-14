@@ -71,13 +71,14 @@ export function useMalachar(campaign: CampaignContext) {
     }
   }, [sessionId])
 
-  // Try to create Malachar session, fall back to Claude if not configured
+  // Create session - uses Vercel AI Gateway (zero config) by default
+  // Malachar Managed Agents API is optional if env vars are configured
   const createSession = useCallback(async () => {
     setIsConnecting(true)
     setError(null)
 
     try {
-      // Try Malachar first
+      // Try Malachar API only if ALL env vars are configured
       const response = await fetch("/api/world-ai/malachar/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
