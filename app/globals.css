@@ -164,6 +164,11 @@
   animation: magical-pulse 2s ease-in-out infinite;
 }
 
+/* Radial gradient utility for World AI dice modal */
+.bg-gradient-radial {
+  background: radial-gradient(ellipse at center, var(--tw-gradient-stops));
+}
+
 /* Parchment texture overlay */
 .parchment-bg {
   background-image: 
