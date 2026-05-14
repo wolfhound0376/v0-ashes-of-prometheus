@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils"
 import { ProficienciesPanel } from "./panels/proficiencies-panel"
 import { AttacksSpellcasting } from "./panels/attacks-spellcasting"
 import { DetailedStats } from "./panels/detailed-stats"
+import { XPTracker } from "./xp-tracker"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 
@@ -45,6 +46,8 @@ interface RightColumnProps {
   loading: boolean
   onEquipItem?: (itemId: string, slot: string) => void
   onUnequipItem?: (slot: string) => void
+  onAddXP?: (characterId: string, amount: number, reason: string) => void
+  onLevelUp?: (characterId: string) => void
 }
 
 // Equipment Slot Button Component
@@ -100,7 +103,7 @@ const EQUIPMENT_SLOTS = [
   { id: "ring_2", label: "Ring", icon: "/icons/equipment/ring2.png", position: "bottom-right" },
 ] as const
 
-export function RightColumn({ 
+export function RightColumn({
   characters,
   selectedCharacterId,
   onCharacterSelect,
@@ -109,7 +112,9 @@ export function RightColumn({
   characterEquipment,
   loading,
   onEquipItem,
-  onUnequipItem
+  onUnequipItem,
+  onAddXP,
+  onLevelUp
 }: RightColumnProps) {
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
   
@@ -165,6 +170,7 @@ age: (selectedCharacter as any).age,
     spellSaveDC: (selectedCharacter as any).spell_save_dc,
     spellAttackBonus: (selectedCharacter as any).spell_attack_bonus,
     avatarUrl: selectedCharacter.avatar_image_url,
+    experiencePoints: (selectedCharacter as any).experience_points || 0,
   } : {
     name: "No Character",
     race: "Unknown",
@@ -203,6 +209,7 @@ age: (selectedCharacter as any).age,
     spellSaveDC: null,
     spellAttackBonus: null,
     avatarUrl: null,
+    experiencePoints: 0,
   }
 
   // Transform inventory
@@ -323,6 +330,17 @@ age: (selectedCharacter as any).age,
                   style={{ width: `${(character.hp.current / character.hp.max) * 100}%` }}
                 />
               </div>
+            </div>
+
+            {/* XP Tracker */}
+            <div className="mb-3">
+              <XPTracker
+                currentXP={character.experiencePoints}
+                currentLevel={character.level}
+                characterName={character.name}
+                onLevelUp={() => onLevelUp?.(selectedCharacterId!)}
+                onAddXP={(amount, reason) => onAddXP?.(selectedCharacterId!, amount, reason)}
+              />
             </div>
 
             {/* Core Stats Row */}

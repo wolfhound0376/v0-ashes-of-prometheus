@@ -485,15 +485,45 @@ export default function DashboardPage() {
             }
           }}
         />
-        <RightColumn 
-          characters={characters}
-          selectedCharacterId={selectedCharacterId}
-          onCharacterSelect={setSelectedCharacterId}
-          selectedCharacter={selectedCharacter}
-          characterInventory={characterInventory}
-          characterEquipment={characterEquipment}
-          loading={loadingCharacters}
-        />
+<RightColumn
+  characters={characters}
+  selectedCharacterId={selectedCharacterId}
+  onCharacterSelect={setSelectedCharacterId}
+  selectedCharacter={selectedCharacter}
+  characterInventory={characterInventory}
+  characterEquipment={characterEquipment}
+  loading={loadingCharacters}
+  onAddXP={async (characterId, amount, reason) => {
+    // Add XP to character and record in history
+    const { error } = await supabase.rpc('add_character_xp', {
+      p_character_id: characterId,
+      p_amount: amount,
+      p_reason: reason
+    })
+    if (!error) {
+      // Refresh character data
+      fetchCharacterData()
+    }
+  }}
+  onLevelUp={async (characterId) => {
+    // Level up the character
+    const character = characters.find(c => c.id === characterId)
+    if (character && character.level < 20) {
+      const { error } = await supabase
+        .from('characters')
+        .update({ level: character.level + 1 })
+        .eq('id', characterId)
+      if (!error) {
+        fetchCharacterData()
+        // Notify the Lich
+        setDialogue(prev => [...prev, { 
+          speaker: "System", 
+          text: `${character.name} has reached Level ${character.level + 1}!` 
+        }])
+      }
+    }
+  }}
+/>
       </div>
 
       {/* Campaign Change Confirmation Dialog */}
