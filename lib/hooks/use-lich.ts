@@ -15,31 +15,6 @@ interface LichResponse {
   musicCue?: MusicCue
 }
 
-// Parse AI SDK data stream format
-// Format: TYPE:JSON_VALUE\n (e.g., 0:"text" for text, 9:{...} for tool results)
-function parseDataStreamLine(line: string): { type: string; value: unknown } | null {
-  const colonIndex = line.indexOf(":")
-  if (colonIndex === -1) return null
-  
-  const typeCode = line.substring(0, colonIndex)
-  const jsonValue = line.substring(colonIndex + 1)
-  
-  try {
-    const value = JSON.parse(jsonValue)
-    // Type codes: 0 = text, 9 = tool_result, a = tool_call, etc.
-    const typeMap: Record<string, string> = {
-      "0": "text",
-      "9": "tool_result", 
-      "a": "tool_call",
-      "e": "error",
-      "d": "finish",
-    }
-    return { type: typeMap[typeCode] || typeCode, value }
-  } catch {
-    return null
-  }
-}
-
 export function useLich(campaignId: string = "abyss") {
   const [isLoading, setIsLoading] = useState(false)
   const [streamingText, setStreamingText] = useState("")
@@ -54,7 +29,7 @@ export function useLich(campaignId: string = "abyss") {
     setLastMusicCue(null)
 
     try {
-      // Retry logic for transient failures (e.g., during dev server restarts)
+      // Retry logic for transient failures
       let response: Response | null = null
       let lastError: Error | null = null
       
@@ -70,7 +45,6 @@ export function useLich(campaignId: string = "abyss") {
           lastError = new Error(`HTTP ${response.status}`)
         } catch (fetchError) {
           lastError = fetchError as Error
-          // Wait before retrying (exponential backoff)
           if (attempt < 2) {
             await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)))
           }
@@ -81,60 +55,51 @@ export function useLich(campaignId: string = "abyss") {
         throw lastError || new Error("Failed to send message")
       }
 
-      // Stream the response
+      // toTextStreamResponse() sends plain text chunks - read them directly
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let fullText = ""
       let musicCue: MusicCue | undefined
 
       if (reader) {
-        let buffer = ""
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
           
           const chunk = decoder.decode(value, { stream: true })
-          buffer += chunk
-          
-          // Parse the data stream format - each line is a separate message
-          const lines = buffer.split("\n")
-          buffer = lines.pop() || "" // Keep incomplete line in buffer
-          
-          for (const line of lines) {
-            if (!line.trim()) continue
-            
-            const part = parseDataStreamLine(line)
-            if (part) {
-              if (part.type === "text") {
-                fullText += part.value
-                setStreamingText(fullText)
-              } else if (part.type === "tool_result") {
-                // Handle tool results (music cues, etc)
-                const result = part.value as { result?: unknown }
-                if (result?.result && typeof result.result === 'object') {
-                  const toolResult = result.result as Record<string, unknown>
-                  if (toolResult.trackId) {
-                    musicCue = { 
-                      action: "play" as const,
-                      trackId: toolResult.trackId as string,
-                      trackName: toolResult.trackName as string,
-                      reason: toolResult.reason as string
-                    }
-                  }
+          fullText += chunk
+          setStreamingText(fullText)
+
+          // Check for music cue JSON in the stream
+          if (chunk.includes('"trackId"') || chunk.includes('"action":"stop"')) {
+            try {
+              const playMatch = fullText.match(/"trackId"\s*:\s*"([^"]+)"/)
+              const stopMatch = fullText.match(/"action"\s*:\s*"stop"/)
+              
+              if (stopMatch && !musicCue) {
+                musicCue = { action: "stop" }
+                setLastMusicCue(musicCue)
+                onMusicCue?.(musicCue)
+              } else if (playMatch && !musicCue) {
+                const trackId = playMatch[1]
+                if (trackId !== "stop") {
+                  musicCue = { action: "play", trackId }
+                  setLastMusicCue(musicCue)
+                  onMusicCue?.(musicCue)
                 }
               }
+            } catch {
+              // Ignore parsing errors
             }
-          }
-          
-          // Trigger music cue callback if we found one during streaming
-          if (musicCue) {
-            setLastMusicCue(musicCue)
-            onMusicCue?.(musicCue)
           }
         }
       }
 
-      const cleanText = fullText.trim()
+      // Clean up any JSON tool results that leaked into the text
+      const cleanText = fullText
+        .replace(/\{"success":true[^}]*\}/g, "")
+        .replace(/\{"success":false[^}]*\}/g, "")
+        .trim()
       
       // Save Malachar's response to dialogue table
       if (cleanText && cleanText.length > 0) {
