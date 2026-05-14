@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useRef, useEffect } from "react"
+import { createClient } from "@/lib/supabase/client"
 
 export interface MalacharMessage {
   id: string
@@ -36,11 +37,39 @@ export function useMalachar(campaign: CampaignContext) {
   const eventSourceRef = useRef<EventSource | null>(null)
   const currentAssistantMessageRef = useRef<string>("")
   const campaignRef = useRef(campaign)
+  const supabaseRef = useRef(createClient())
 
   // Keep campaign ref updated
   useEffect(() => {
     campaignRef.current = campaign
   }, [campaign])
+
+  // Save dialogue entry to Supabase
+  const saveDialogue = useCallback(async (
+    speaker: string,
+    text: string,
+    source: "player" | "malachar" | "npc" | "system",
+    metadata?: Record<string, unknown>
+  ) => {
+    try {
+      const { error } = await supabaseRef.current
+        .from("dialogue")
+        .insert({
+          speaker,
+          text,
+          source,
+          session_id: sessionId,
+          campaign_id: campaignRef.current.name,
+          metadata: metadata || {},
+        })
+      
+      if (error) {
+        console.error("[Malachar] Failed to save dialogue:", error)
+      }
+    } catch (err) {
+      console.error("[Malachar] Error saving dialogue:", err)
+    }
+  }, [sessionId])
 
   // Try to create Malachar session, fall back to Claude if not configured
   const createSession = useCallback(async () => {
@@ -185,6 +214,13 @@ export function useMalachar(campaign: CampaignContext) {
           // Session is idle - agent finished responding
           case "session.status_idle":
             setIsStreaming(false)
+            // Save Malachar's response to dialogue table
+            if (currentAssistantMessageRef.current.trim()) {
+              saveDialogue("Malachar", currentAssistantMessageRef.current, "malachar", {
+                location: campaignRef.current.currentLocation,
+                episode: campaignRef.current.currentEpisode,
+              })
+            }
             // Finalize the streaming message
             setMessages((prev) => {
               const lastMsg = prev[prev.length - 1]
@@ -317,6 +353,15 @@ export function useMalachar(campaign: CampaignContext) {
         }
       }
       
+      // Save to dialogue table
+      if (currentAssistantMessageRef.current.trim()) {
+        saveDialogue("World AI", currentAssistantMessageRef.current, "malachar", {
+          location: campaignRef.current.currentLocation,
+          episode: campaignRef.current.currentEpisode,
+          fallback: true,
+        })
+      }
+      
       // Finalize message
       setMessages((prev) => {
         const lastMsg = prev[prev.length - 1]
@@ -335,7 +380,7 @@ export function useMalachar(campaign: CampaignContext) {
     } finally {
       setIsStreaming(false)
     }
-  }, [messages])
+  }, [messages, saveDialogue])
 
   // Send a message (routes to correct backend)
   const sendMessage = useCallback(async (content: string, context?: Record<string, unknown>) => {
@@ -351,14 +396,20 @@ export function useMalachar(campaign: CampaignContext) {
       }
     }
 
-    // Add user message immediately
-    const userMessage: MalacharMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: content.trim(),
-      timestamp: new Date(),
-    }
-    setMessages((prev) => [...prev, userMessage])
+// Add user message immediately
+  const userMessage: MalacharMessage = {
+  id: `user-${Date.now()}`,
+  role: "user",
+  content: content.trim(),
+  timestamp: new Date(),
+  }
+  setMessages((prev) => [...prev, userMessage])
+  
+  // Save player message to dialogue table
+  saveDialogue("Player", content.trim(), "player", {
+    location: campaignRef.current.currentLocation,
+    episode: campaignRef.current.currentEpisode,
+  })
 
     // Route to correct backend
     if (backendMode === "claude-fallback" || sid === "claude-fallback") {

@@ -25,7 +25,7 @@ export default function DashboardPage() {
 
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
-  const [dialogue, setDialogue] = useState(dialogueData)
+  const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
   
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
@@ -62,6 +62,42 @@ export default function DashboardPage() {
       setLoadingCharacters(false)
     }
     fetchCharacters()
+  }, [])
+
+  // Fetch dialogue from Supabase and subscribe to real-time updates
+  useEffect(() => {
+    // Initial fetch
+    async function fetchDialogue() {
+      const { data, error } = await supabase
+        .from('dialogue')
+        .select('speaker, text')
+        .order('created_at', { ascending: true })
+        .limit(50)
+      
+      if (error) {
+        console.error('Error fetching dialogue:', error)
+      } else if (data) {
+        setDialogue(data)
+      }
+    }
+    fetchDialogue()
+
+    // Subscribe to real-time updates
+    const channel = supabase
+      .channel('dialogue-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'dialogue' },
+        (payload) => {
+          const newEntry = payload.new as { speaker: string; text: string }
+          setDialogue(prev => [...prev, { speaker: newEntry.speaker, text: newEntry.text }])
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   // Fetch inventory and equipment when character changes
@@ -126,10 +162,25 @@ export default function DashboardPage() {
     setSelectedAction(actionId === selectedAction ? null : actionId)
   }
 
-  const handleDialogueSubmit = () => {
+  const handleDialogueSubmit = async () => {
     if (dialogueInput.trim()) {
-      setDialogue([...dialogue, { speaker: "You", text: dialogueInput.trim() }])
+      const text = dialogueInput.trim()
       setDialogueInput("")
+      
+      // Save to Supabase - real-time subscription will update the UI
+      const { error } = await supabase
+        .from('dialogue')
+        .insert({
+          speaker: "You",
+          text,
+          source: "player",
+        })
+      
+      if (error) {
+        console.error('Error saving dialogue:', error)
+        // Fallback: add locally if save fails
+        setDialogue(prev => [...prev, { speaker: "You", text }])
+      }
     }
   }
 
