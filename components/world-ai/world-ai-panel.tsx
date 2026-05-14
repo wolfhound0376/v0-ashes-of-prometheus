@@ -135,13 +135,23 @@ export function WorldAIPanel({
     }
   }
 
-  // Send message handler - uses Malachar session
-  const handleSendMessage = (content?: string, context?: Record<string, unknown>) => {
+  // Send message handler - uses Malachar session with world context
+  const handleSendMessage = (content?: string) => {
     const text = content || inputValue.trim()
     if (!text || isThinking) return
 
     setInputValue("")
-    sendMessage(text, context)
+    
+    // Include campaign context with every message so Malachar has world knowledge
+    const worldContext = {
+      campaignId: currentCampaign.id,
+      campaignName: currentCampaign.name,
+      currentEpisode: currentEpisode,
+      currentLocation: currentLocation,
+      currentHeat: currentHeat,
+    }
+    
+    sendMessage(text, worldContext)
   }
 
   const activeMap = currentCampaign.maps.find(m => m.id === activeMapId)
