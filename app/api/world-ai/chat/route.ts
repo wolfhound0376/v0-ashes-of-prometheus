@@ -1,6 +1,6 @@
 import { streamText, convertToModelMessages, tool } from 'ai'
 import { type NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { z } from 'zod'
 
 // World AI Chat API - D&D Campaign Engine powered by Claude
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
           }),
           execute: async ({ name, timeOfDay, description, backgroundImageUrl, fogOverlayUrl, ambientAnimation }) => {
             try {
-              const supabase = await createClient()
+              const supabase = createAdminClient()
               
               // Upsert the environment (update if exists, create if not)
               const { data, error } = await supabase
