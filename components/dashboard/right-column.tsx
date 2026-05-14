@@ -47,17 +47,57 @@ interface RightColumnProps {
   onUnequipItem?: (slot: string) => void
 }
 
-// Equipment slot definitions
+// Equipment Slot Button Component
+function EquipmentSlotButton({ 
+  slot, 
+  equipped, 
+  isSelected, 
+  onClick, 
+  className 
+}: { 
+  slot: { id: string; label: string; icon: string }
+  equipped: { id: string; name: string; iconUrl?: string } | null
+  isSelected: boolean
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-12 h-12 rounded border transition-all flex items-center justify-center group",
+        equipped 
+          ? "border-[#4a7a9a]/60 bg-[#1a2a35]/60" 
+          : "border-[#3d3428]/60 bg-[#1a1614]/80 hover:border-[#5d5448]",
+        isSelected && "ring-2 ring-[#d4b15a]/60",
+        className
+      )}
+      title={equipped ? equipped.name : slot.label}
+    >
+      {equipped ? (
+        equipped.iconUrl ? (
+          <img src={equipped.iconUrl} alt={equipped.name} className="w-10 h-10 object-cover rounded" />
+        ) : (
+          <BackpackIcon className="w-6 h-6 text-[#7aa8c8]" />
+        )
+      ) : (
+        <img src={slot.icon} alt={slot.label} className="w-8 h-8 opacity-40 group-hover:opacity-60 transition-opacity" />
+      )}
+    </button>
+  )
+}
+
+// Equipment slot definitions with icon paths and positions
 const EQUIPMENT_SLOTS = [
-  { id: "head", label: "Head" },
-  { id: "neck", label: "Neck" },
-  { id: "chest", label: "Chest" },
-  { id: "main_hand", label: "Main Hand" },
-  { id: "off_hand", label: "Off Hand" },
-  { id: "hands", label: "Hands" },
-  { id: "ring_1", label: "Ring" },
-  { id: "ring_2", label: "Ring" },
-  { id: "feet", label: "Feet" },
+  { id: "head", label: "Head", icon: "/icons/equipment/head.png", position: "top" },
+  { id: "neck", label: "Neck", icon: "/icons/equipment/neck.png", position: "top-right" },
+  { id: "torso", label: "Torso", icon: "/icons/equipment/torso.png", position: "right" },
+  { id: "main_hand", label: "Main Hand", icon: "/icons/equipment/main-hand.png", position: "left" },
+  { id: "off_hand", label: "Off Hand", icon: "/icons/equipment/off-hand.png", position: "right-low" },
+  { id: "legs", label: "Legs", icon: "/icons/equipment/legs.png", position: "bottom-left" },
+  { id: "feet", label: "Feet", icon: "/icons/equipment/feet.png", position: "bottom" },
+  { id: "ring_1", label: "Ring", icon: "/icons/equipment/ring.png", position: "left-low" },
+  { id: "ring_2", label: "Ring", icon: "/icons/equipment/ring2.png", position: "bottom-right" },
 ] as const
 
 export function RightColumn({ 
@@ -91,9 +131,10 @@ export function RightColumn({
     level: selectedCharacter.level,
     background: (selectedCharacter as any).background || "Unknown",
     alignment: (selectedCharacter as any).alignment || "Neutral",
-    age: (selectedCharacter as any).age,
-    height: (selectedCharacter as any).height,
-    weight: (selectedCharacter as any).character_weight,
+age: (selectedCharacter as any).age,
+  height: (selectedCharacter as any).height,
+  weight: (selectedCharacter as any).character_weight,
+  gender: (selectedCharacter as any).gender || "male",
     hp: { 
       current: selectedCharacter.hp_current, 
       max: selectedCharacter.hp_max,
@@ -339,46 +380,103 @@ export function RightColumn({
             </div>
           </div>
 
-          {/* Equipment Slots Grid */}
+          {/* Equipped Items - Paper Doll Layout */}
           <div className="p-3 border-b border-[#3d3428]/40">
-            <div className="text-[9px] uppercase tracking-wider text-stone-500 mb-2">Equipment</div>
-            <div className="grid grid-cols-5 gap-1.5">
-              {EQUIPMENT_SLOTS.map((slot) => {
-                const equipped = getEquippedItem(slot.id)
-                const isSelected = selectedSlot === slot.id
-                return (
-                  <button
-                    key={slot.id}
-                    onClick={() => {
-                      if (equipped) {
-                        // Already equipped - could unequip or show item details
-                      } else {
-                        // Select slot and open inventory to choose item
-                        setSelectedSlot(slot.id)
-                        setInventoryOpen(true)
-                      }
-                    }}
-                    className={cn(
-                      "aspect-square rounded border transition-all flex items-center justify-center relative group",
-                      equipped 
-                        ? "border-[#4a7a9a]/50 bg-[#1a2a35]/40" 
-                        : "border-[#3d3428]/60 bg-[#1a1614]/60 hover:border-[#5d5448]",
-                      isSelected && "ring-2 ring-[#d4b15a]/50"
-                    )}
-                    title={slot.label}
-                  >
-                    {equipped ? (
-                      equipped.iconUrl ? (
-                        <img src={equipped.iconUrl} alt={equipped.name} className="w-full h-full object-cover rounded" />
-                      ) : (
-                        <BackpackIcon className="w-5 h-5 text-[#7aa8c8]" />
-                      )
-                    ) : (
-                      <span className="text-[8px] text-stone-600 uppercase">{slot.label.slice(0, 4)}</span>
-                    )}
-                  </button>
-                )
-              })}
+            <div className="text-[9px] uppercase tracking-wider text-stone-500 mb-2">Equipped Items</div>
+            <div className="relative h-[280px]">
+              {/* Character Silhouette in Center */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <img 
+                  src={character.gender === "female" 
+                    ? "/icons/paperdoll/silhouette-female.jpg" 
+                    : "/icons/paperdoll/silhouette-male.jpg"
+                  }
+                  alt="Character"
+                  className="h-[220px] w-auto opacity-40 object-contain"
+                />
+              </div>
+              
+              {/* Equipment Slots positioned around silhouette */}
+              {/* Head - Top Center */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[0]} 
+                equipped={getEquippedItem("head")}
+                isSelected={selectedSlot === "head"}
+                onClick={() => { setSelectedSlot("head"); setInventoryOpen(true); }}
+                className="absolute top-0 left-1/2 -translate-x-1/2"
+              />
+              
+              {/* Neck - Top Right of head */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[1]} 
+                equipped={getEquippedItem("neck")}
+                isSelected={selectedSlot === "neck"}
+                onClick={() => { setSelectedSlot("neck"); setInventoryOpen(true); }}
+                className="absolute top-8 right-4"
+              />
+              
+              {/* Main Hand - Left side */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[3]} 
+                equipped={getEquippedItem("main_hand")}
+                isSelected={selectedSlot === "main_hand"}
+                onClick={() => { setSelectedSlot("main_hand"); setInventoryOpen(true); }}
+                className="absolute top-16 left-0"
+              />
+              
+              {/* Torso - Right of center */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[2]} 
+                equipped={getEquippedItem("torso")}
+                isSelected={selectedSlot === "torso"}
+                onClick={() => { setSelectedSlot("torso"); setInventoryOpen(true); }}
+                className="absolute top-20 right-0"
+              />
+              
+              {/* Ring 1 - Left lower */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[7]} 
+                equipped={getEquippedItem("ring_1")}
+                isSelected={selectedSlot === "ring_1"}
+                onClick={() => { setSelectedSlot("ring_1"); setInventoryOpen(true); }}
+                className="absolute top-32 left-0"
+              />
+              
+              {/* Off Hand - Right lower */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[4]} 
+                equipped={getEquippedItem("off_hand")}
+                isSelected={selectedSlot === "off_hand"}
+                onClick={() => { setSelectedSlot("off_hand"); setInventoryOpen(true); }}
+                className="absolute top-36 right-0"
+              />
+              
+              {/* Legs - Bottom Left */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[5]} 
+                equipped={getEquippedItem("legs")}
+                isSelected={selectedSlot === "legs"}
+                onClick={() => { setSelectedSlot("legs"); setInventoryOpen(true); }}
+                className="absolute bottom-12 left-4"
+              />
+              
+              {/* Feet - Bottom Center */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[6]} 
+                equipped={getEquippedItem("feet")}
+                isSelected={selectedSlot === "feet"}
+                onClick={() => { setSelectedSlot("feet"); setInventoryOpen(true); }}
+                className="absolute bottom-0 left-1/2 -translate-x-1/2"
+              />
+              
+              {/* Ring 2 - Bottom Right */}
+              <EquipmentSlotButton 
+                slot={EQUIPMENT_SLOTS[8]} 
+                equipped={getEquippedItem("ring_2")}
+                isSelected={selectedSlot === "ring_2"}
+                onClick={() => { setSelectedSlot("ring_2"); setInventoryOpen(true); }}
+                className="absolute bottom-12 right-4"
+              />
             </div>
           </div>
 
@@ -389,7 +487,7 @@ export function RightColumn({
               className="w-full flex items-center gap-3 px-3 py-2 rounded border border-[#3d3428]/60 bg-[#1a1614]/40 hover:bg-[#2a2420]/60 hover:border-[#5d5448] transition-all text-left"
             >
               <Package className="w-4 h-4 text-[#c9a868]" />
-              <span className="text-sm text-stone-300">Equipment & Inventory</span>
+              <span className="text-sm text-stone-300">Inventory</span>
               <span className="ml-auto text-xs text-stone-500">({inventory.length})</span>
             </button>
             
@@ -422,7 +520,7 @@ export function RightColumn({
 
       {/* Floating Windows */}
       <FloatingWindow
-        title={selectedSlot ? `Select Item for ${EQUIPMENT_SLOTS.find(s => s.id === selectedSlot)?.label}` : "Equipment & Inventory"}
+        title={selectedSlot ? `Select Item for ${EQUIPMENT_SLOTS.find(s => s.id === selectedSlot)?.label}` : "Inventory"}
         isOpen={inventoryOpen}
         onClose={() => { setInventoryOpen(false); setSelectedSlot(null); }}
         size="md"
