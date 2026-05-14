@@ -62,16 +62,14 @@ RULES:
       ...conversationHistory,
       { role: "user", content: message }
     ],
-  })
-  
-  // Save Malachar's response after streaming completes
-  result.then(async (r) => {
-    const text = await r.text
-    await supabase.from("dialogue").insert({
-      speaker: "Malachar",
-      text,
-      source: "world_ai"
-    })
+    onFinish: async ({ text }) => {
+      // Save Malachar's response after streaming completes
+      await supabase.from("dialogue").insert({
+        speaker: "Malachar",
+        text,
+        source: "world_ai"
+      })
+    }
   })
   
   return result.toTextStreamResponse()
