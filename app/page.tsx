@@ -475,6 +475,15 @@ export default function DashboardPage() {
           onTelemetryPush={handleTelemetryPush}
           characterClass={selectedCharacter?.class}
           characterLevel={selectedCharacter?.level}
+          characterName={selectedCharacter?.name}
+          onSendToLich={async (message) => {
+            // Add message to dialogue and send to Lich
+            setDialogue(prev => [...prev, { speaker: selectedCharacter?.name || "Player", text: message }])
+            const response = await sendToLich(message)
+            if (response) {
+              setDialogue(prev => [...prev, { speaker: "Malachar", text: response }])
+            }
+          }}
         />
         <RightColumn 
           characters={characters}

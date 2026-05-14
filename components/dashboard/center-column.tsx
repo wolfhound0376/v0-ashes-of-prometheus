@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/fantasy-icons"
 import { BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DiceRoller } from "./dice-roller"
+import { ReactionsPanel } from "./reactions-panel"
 
 interface Action {
   id: string
@@ -59,8 +61,10 @@ interface CenterColumnProps {
   resources: Resources
   characterClass?: string
   characterLevel?: number
+  characterName?: string
   availableActionIds?: string[]
   onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
+  onSendToLich?: (message: string) => void
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -110,7 +114,7 @@ const actionTypeColors = {
 
 type ActionTab = "action" | "bonus" | "reaction"
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel }: CenterColumnProps) {
+export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich }: CenterColumnProps) {
   // Check if character can cast spells based on D&D 5E rules
   const spellcasting = getClassSpellcasting(characterClass || "", characterLevel || 1)
   
@@ -319,6 +323,26 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
           </div>
         </FantasyPanel>
       )}
+
+      {/* Collapsible Reactions Panel */}
+      <ReactionsPanel
+        reactions={[]}
+        reactionCount={resources.reaction}
+        onReactionUse={(reactionId) => {
+          onActionSelect(reactionId)
+          // Notify Lich of reaction use
+          if (onSendToLich) {
+            onSendToLich(`[Reaction] ${characterName || "Player"} uses ${reactionId}`)
+          }
+        }}
+        characterClass={characterClass}
+      />
+
+      {/* Dice Roller */}
+      <DiceRoller
+        onSendToLich={onSendToLich}
+        characterName={characterName}
+      />
     </div>
   )
 }
