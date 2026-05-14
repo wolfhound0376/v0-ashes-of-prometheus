@@ -98,23 +98,10 @@ export function WorldAIPanel({
   const chatLogRef = useRef<HTMLDivElement>(null)
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
-  const { sendMessage, isLoading: isThinking, streamingText } = useLich(currentCampaign.id)
+  const { sendMessage, isLoading: isThinking } = useLich(currentCampaign.id)
   
   // Local messages for UI display (will sync with Supabase via real-time)
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([])
-  
-  // Add streaming text to messages when it arrives
-  useEffect(() => {
-    if (streamingText) {
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1]
-        if (lastMsg?.role === "assistant") {
-          return [...prev.slice(0, -1), { role: "assistant", content: streamingText }]
-        }
-        return [...prev, { role: "assistant", content: streamingText }]
-      })
-    }
-  }, [streamingText])
 
   // Dice state
   const [diceModalOpen, setDiceModalOpen] = useState(false)
@@ -184,8 +171,18 @@ export function WorldAIPanel({
     // Add user message to local state immediately
     setMessages(prev => [...prev, { role: "user", content: text }])
     
-    // Send to the lich - API handles context and saves to Supabase
-    await sendMessage(text)
+    try {
+      // Send to the lich - API handles context and saves to Supabase
+      const response = await sendMessage(text)
+      
+      // Add assistant response to local messages
+      if (response.text) {
+        setMessages(prev => [...prev, { role: "assistant", content: response.text }])
+      }
+    } catch (error) {
+      console.error("Error from lich:", error)
+      setMessages(prev => [...prev, { role: "assistant", content: "...the shadows swirl, but no response comes. Try again." }])
+    }
   }
 
   const activeMap = currentCampaign.maps.find(m => m.id === activeMapId)
@@ -292,7 +289,7 @@ export function WorldAIPanel({
               {messages.map((msg, idx) => (
                 <ChatMessage key={idx} message={msg} />
               ))}
-              {isThinking && !streamingText && (
+              {isThinking && (
                 <div className="flex gap-2 items-start">
                   <Sparkles className="w-4 h-4 animate-pulse flex-shrink-0 mt-1 text-[#8b5cf6]" />
                   <div className="text-sm text-stone-500 italic">

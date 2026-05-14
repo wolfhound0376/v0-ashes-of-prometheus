@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { createClient } from "@/lib/supabase/client"
 
 interface MusicCue {
   action: "play" | "stop"
@@ -17,7 +16,6 @@ interface LichResponse {
 
 export function useLich(campaignId: string = "abyss") {
   const [isLoading, setIsLoading] = useState(false)
-  const [streamingText, setStreamingText] = useState("")
   const [lastMusicCue, setLastMusicCue] = useState<MusicCue | null>(null)
 
   const sendMessage = useCallback(async (
@@ -25,11 +23,9 @@ export function useLich(campaignId: string = "abyss") {
     onMusicCue?: (cue: MusicCue) => void
   ): Promise<LichResponse> => {
     setIsLoading(true)
-    setStreamingText("")
     setLastMusicCue(null)
 
     try {
-      // Retry logic for transient failures
       let response: Response | null = null
       let lastError: Error | null = null
       
@@ -55,63 +51,23 @@ export function useLich(campaignId: string = "abyss") {
         throw lastError || new Error("Failed to send message")
       }
 
-      // toTextStreamResponse() sends plain text chunks - read them directly
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let fullText = ""
-      let musicCue: MusicCue | undefined
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          
-          const chunk = decoder.decode(value, { stream: true })
-          fullText += chunk
-          setStreamingText(fullText)
-
-          // Check for music cue JSON in the stream
-          if (chunk.includes('"trackId"') || chunk.includes('"action":"stop"')) {
-            try {
-              const playMatch = fullText.match(/"trackId"\s*:\s*"([^"]+)"/)
-              const stopMatch = fullText.match(/"action"\s*:\s*"stop"/)
-              
-              if (stopMatch && !musicCue) {
-                musicCue = { action: "stop" }
-                setLastMusicCue(musicCue)
-                onMusicCue?.(musicCue)
-              } else if (playMatch && !musicCue) {
-                const trackId = playMatch[1]
-                if (trackId !== "stop") {
-                  musicCue = { action: "play", trackId }
-                  setLastMusicCue(musicCue)
-                  onMusicCue?.(musicCue)
-                }
-              }
-            } catch {
-              // Ignore parsing errors
-            }
-          }
-        }
-      }
-
-      // Clean up any JSON tool results that leaked into the text
-      const cleanText = fullText
-        .replace(/\{"success":true[^}]*\}/g, "")
-        .replace(/\{"success":false[^}]*\}/g, "")
-        .trim()
+      const data = await response.json()
       
-      // Save Malachar's response to dialogue table
-      if (cleanText && cleanText.length > 0) {
-        const supabase = createClient()
-        await supabase.from("dialogue").insert({
-          speaker: "Malachar",
-          text: cleanText,
-          source: "world_ai"
-        })
+      // Handle music cue
+      if (data.musicCue) {
+        const cue: MusicCue = data.musicCue.action === "stop"
+          ? { action: "stop" }
+          : {
+              action: "play",
+              trackId: data.musicCue.trackId,
+              trackName: data.musicCue.trackName,
+              reason: data.musicCue.reason,
+            }
+        setLastMusicCue(cue)
+        onMusicCue?.(cue)
       }
 
-      return { text: cleanText, musicCue }
+      return { text: data.text || "", musicCue: data.musicCue }
     } catch (error) {
       console.error("Error sending message:", error)
       throw error
@@ -123,7 +79,6 @@ export function useLich(campaignId: string = "abyss") {
   return {
     sendMessage,
     isLoading,
-    streamingText,
     lastMusicCue,
   }
 }

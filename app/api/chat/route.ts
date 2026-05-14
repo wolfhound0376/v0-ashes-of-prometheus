@@ -1,4 +1,4 @@
-import { streamText, tool } from "ai"
+import { generateText, tool } from "ai"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
@@ -119,7 +119,7 @@ EXPERIENCE POINTS (D&D 5E):
 - Always announce XP awards narratively, e.g. "The shadows of your fallen foes yield their essence... you gain 200 experience points."
 - When a player is ready to level up, congratulate them dramatically`
 
-  const result = streamText({
+  const result = await generateText({
     model: "anthropic/claude-sonnet-4-20250514",
     system: lichPrompt,
     messages: [
@@ -376,7 +376,27 @@ Use 'stop' to fade out music.`,
     maxSteps: 5, // Allow multiple tool calls in one response
     })
   
-  return result.toTextStreamResponse()
+  // Save Malachar's response to dialogue
+  const responseText = result.text?.trim()
+  if (responseText) {
+    await supabase.from("dialogue").insert({
+      speaker: "Malachar",
+      text: responseText,
+      source: "world_ai"
+    })
+  }
+  
+  // Extract music cue from tool results if any
+  let musicCue = null
+  for (const step of result.steps) {
+    for (const toolResult of step.toolResults) {
+      if (toolResult.toolName === "playMusic" && toolResult.result?.success) {
+        musicCue = toolResult.result
+      }
+    }
+  }
+  
+  return Response.json({ text: responseText || "", musicCue })
 }
 
 // Map item types to preset icons as fallback
