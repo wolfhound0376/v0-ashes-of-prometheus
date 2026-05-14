@@ -376,7 +376,7 @@ Use 'stop' to fade out music.`,
     maxSteps: 5, // Allow multiple tool calls in one response
     })
   
-  return result.toTextStreamResponse()
+  return result.toDataStreamResponse()
 }
 
 // Map item types to preset icons as fallback

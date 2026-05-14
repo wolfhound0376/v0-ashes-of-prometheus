@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { parseDataStreamPart } from "ai"
 
 interface MusicCue {
   action: "play" | "stop"
@@ -65,6 +66,7 @@ export function useLich(campaignId: string = "abyss") {
       console.log("[v0] Starting to read stream, reader:", !!reader)
 
       if (reader) {
+        let buffer = ""
         while (true) {
           const { done, value } = await reader.read()
           if (done) {
@@ -73,58 +75,51 @@ export function useLich(campaignId: string = "abyss") {
           }
           
           const chunk = decoder.decode(value, { stream: true })
-          console.log("[v0] Got chunk:", chunk.substring(0, 100))
-          fullText += chunk
+          buffer += chunk
+          console.log("[v0] Got raw chunk:", chunk.substring(0, 100))
           
-          // Check for music cue in the stream (tool results contain JSON)
-          // The AI SDK streams tool results with specific markers
-          if (chunk.includes('"trackId"') || chunk.includes('"action":"stop"')) {
+          // Parse the data stream format - each line is a separate message
+          const lines = buffer.split("\n")
+          buffer = lines.pop() || "" // Keep incomplete line in buffer
+          
+          for (const line of lines) {
+            if (!line.trim()) continue
             try {
-              // Try to extract music cue from the stream
-              const playMatch = fullText.match(/"trackId"\s*:\s*"([^"]+)"/)
-              const stopMatch = fullText.match(/"action"\s*:\s*"stop"/)
-              
-              if (stopMatch && !musicCue) {
-                musicCue = { action: "stop" }
-                setLastMusicCue(musicCue)
-                onMusicCue?.(musicCue)
-              } else if (playMatch && !musicCue) {
-                const trackId = playMatch[1]
-                if (trackId !== "stop") {
-                  musicCue = { action: "play", trackId }
-                  setLastMusicCue(musicCue)
-                  onMusicCue?.(musicCue)
+              const part = parseDataStreamPart(line)
+              if (part.type === "text") {
+                fullText += part.value
+                setStreamingText(fullText)
+              } else if (part.type === "tool_result") {
+                // Handle tool results (music cues, etc)
+                const result = part.value as { result?: unknown }
+                if (result?.result && typeof result.result === 'object') {
+                  const toolResult = result.result as Record<string, unknown>
+                  if (toolResult.trackId) {
+                    musicCue = { 
+                      action: "play" as const,
+                      trackId: toolResult.trackId as string,
+                      trackName: toolResult.trackName as string,
+                      reason: toolResult.reason as string
+                    }
+                  }
                 }
               }
-            } catch (e) {
-              // Ignore parsing errors, continue streaming
+            } catch {
+              // Not a valid data stream part, might be raw text
+              fullText += line
             }
           }
           
-          setStreamingText(fullText)
+          // Trigger music cue callback if we found one during streaming
+          if (musicCue) {
+            setLastMusicCue(musicCue)
+            onMusicCue?.(musicCue)
+          }
         }
       }
 
-      // Clean up the text - AI SDK uses format like 0:"text content"\n
-      // Extract just the text content from the stream format
-      let cleanText = ""
-      
-      // Parse the AI SDK text stream format: 0:"text"\n0:"more text"\n
-      const textMatches = fullText.matchAll(/0:"([^"]*)"/g)
-      for (const match of textMatches) {
-        cleanText += match[1]
-      }
-      
-      // If no matches, maybe it's plain text (fallback)
-      if (!cleanText && fullText) {
-        cleanText = fullText
-      }
-      
-      // Remove any JSON tool results that leaked through
-      cleanText = cleanText
-        .replace(/\{"success":true[^}]+\}/g, "")
-        .replace(/\\n/g, "\n") // Unescape newlines
-        .trim()
+      // fullText is already clean from the parseDataStreamPart extraction
+      const cleanText = fullText.trim()
       
       console.log("[v0] Clean text length:", cleanText.length, "preview:", cleanText.substring(0, 100))
       
