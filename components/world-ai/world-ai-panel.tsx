@@ -51,27 +51,41 @@ export function WorldAIPanel({
   const [inputValue, setInputValue] = useState("")
   const chatLogRef = useRef<HTMLDivElement>(null)
 
-  // Build campaign context for the API
-  const campaignContext = useMemo(() => ({
+  // Store campaign context in a ref to avoid stale closures in transport
+  const campaignContextRef = useRef({
     name: currentCampaign.name,
     systemPrompt: currentCampaign.systemPrompt,
     currentEpisode: currentEpisode,
     currentLocation: currentLocation,
     currentHeat: currentHeat,
-  }), [currentCampaign, currentEpisode, currentLocation, currentHeat])
+  })
+  
+  // Update ref when context changes
+  useEffect(() => {
+    campaignContextRef.current = {
+      name: currentCampaign.name,
+      systemPrompt: currentCampaign.systemPrompt,
+      currentEpisode: currentEpisode,
+      currentLocation: currentLocation,
+      currentHeat: currentHeat,
+    }
+  }, [currentCampaign, currentEpisode, currentLocation, currentHeat])
+
+  // Memoize transport to prevent recreation on every render
+  const chatTransport = useMemo(() => new DefaultChatTransport({
+    api: "/api/world-ai/chat",
+    prepareSendMessagesRequest: ({ id, messages }) => ({
+      body: {
+        messages,
+        id,
+        campaign: campaignContextRef.current,
+      },
+    }),
+  }), [])
 
   // AI Chat hook with Claude
   const { messages, status, sendMessage, setMessages } = useChat({
-    transport: new DefaultChatTransport({
-      api: "/api/world-ai/chat",
-      prepareSendMessagesRequest: ({ id, messages }) => ({
-        body: {
-          messages,
-          id,
-          campaign: campaignContext,
-        },
-      }),
-    }),
+    transport: chatTransport,
   })
   
   const isThinking = status === "streaming" || status === "submitted"
