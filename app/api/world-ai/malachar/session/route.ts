@@ -6,18 +6,35 @@ const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
 const MALACHAR_AGENT_ID = process.env.MALACHAR_AGENT_ID
 
 export async function POST(req: Request) {
-  if (!MALACHAR_API_URL || !MALACHAR_API_KEY || !MALACHAR_AGENT_ID) {
+  // Check which env vars are missing
+  const missingVars = []
+  if (!MALACHAR_API_URL) missingVars.push("MALACHAR_API_URL")
+  if (!MALACHAR_API_KEY) missingVars.push("MALACHAR_API_KEY")
+  if (!MALACHAR_AGENT_ID) missingVars.push("MALACHAR_AGENT_ID")
+  
+  if (missingVars.length > 0) {
+    console.error("[Malachar] Missing environment variables:", missingVars.join(", "))
     return NextResponse.json(
-      { error: "Malachar configuration missing" },
+      { 
+        error: "Malachar configuration missing", 
+        missingVars,
+        hint: "Please add these environment variables in Settings > Vars"
+      },
       { status: 500 }
     )
   }
+  
+  console.log("[Malachar] Creating session with agent:", MALACHAR_AGENT_ID)
+  console.log("[Malachar] API URL:", MALACHAR_API_URL)
 
   try {
     const { campaign } = await req.json()
+    
+    const sessionUrl = `${MALACHAR_API_URL}/v1/sessions`
+    console.log("[Malachar] Creating session at:", sessionUrl)
 
     // Create a new session with Malachar
-    const response = await fetch(`${MALACHAR_API_URL}/v1/sessions`, {
+    const response = await fetch(sessionUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -49,15 +66,20 @@ export async function POST(req: Request) {
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error("[Malachar] Session creation failed:", errorText)
+      console.error("[Malachar] Session creation failed:", response.status, errorText)
       return NextResponse.json(
-        { error: "Failed to create Malachar session" },
+        { 
+          error: "Failed to create Malachar session", 
+          status: response.status,
+          details: errorText.substring(0, 200) // Truncate for safety
+        },
         { status: response.status }
       )
     }
 
     const session = await response.json()
-    return NextResponse.json({ sessionId: session.id })
+    console.log("[Malachar] Session created:", session.id || session)
+    return NextResponse.json({ sessionId: session.id || session.session_id })
   } catch (error) {
     console.error("[Malachar] Session error:", error)
     return NextResponse.json(

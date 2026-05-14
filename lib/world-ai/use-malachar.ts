@@ -52,15 +52,26 @@ export function useMalachar(campaign: CampaignContext) {
         body: JSON.stringify({ campaign: campaignRef.current }),
       })
 
+      const data = await response.json()
+      
       if (!response.ok) {
-        throw new Error("Failed to create session")
+        // Show detailed error from server
+        let errorMessage = data.error || "Failed to create session"
+        if (data.missingVars) {
+          errorMessage = `Missing: ${data.missingVars.join(", ")}`
+        } else if (data.details) {
+          errorMessage = `${data.error}: ${data.details}`
+        }
+        console.error("[useMalachar] API error:", data)
+        throw new Error(errorMessage)
       }
 
-      const { sessionId: newSessionId } = await response.json()
-      setSessionId(newSessionId)
-      return newSessionId
+      setSessionId(data.sessionId)
+      return data.sessionId
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed")
+      const message = err instanceof Error ? err.message : "Connection failed"
+      console.error("[useMalachar] Session creation failed:", message)
+      setError(message)
       return null
     } finally {
       setIsConnecting(false)

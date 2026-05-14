@@ -240,9 +240,17 @@ export function WorldAIPanel({
   </div>
   )}
   {malacharError && (
-  <div className="flex items-center justify-center gap-2 text-red-400 text-sm py-4 px-3">
-    <WifiOff className="w-4 h-4" />
-    <span>{malacharError}</span>
+  <div className="flex flex-col items-center justify-center gap-3 text-sm py-4 px-3">
+    <div className="flex items-center gap-2 text-red-400">
+      <WifiOff className="w-4 h-4 flex-shrink-0" />
+      <span className="text-center">{malacharError}</span>
+    </div>
+    <button
+      onClick={() => reconnect()}
+      className="px-3 py-1.5 bg-[#3d3428] hover:bg-[#4d4438] border border-[#5d5448] rounded text-stone-300 text-xs transition-colors"
+    >
+      Retry Connection
+    </button>
   </div>
   )}
   {!isConnecting && !malacharError && messages.length === 0 && (
