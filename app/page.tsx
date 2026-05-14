@@ -186,28 +186,16 @@ export default function DashboardPage() {
     setSelectedAction(actionId === selectedAction ? null : actionId)
   }
 
-  const handleDialogueSubmit = async () => {
+  const handleDialogueSubmit = () => {
     if (dialogueInput.trim()) {
       const text = dialogueInput.trim()
       setDialogueInput("")
       
-      // Save to Supabase - real-time subscription will update the UI
-      const { error } = await supabase
-        .from('dialogue')
-        .insert({
-          speaker: "You",
-          text,
-          source: "player",
-        })
-      
-      if (error) {
-        console.error('Error saving dialogue:', error)
-        // Fallback: add locally if save fails
-        setDialogue(prev => [...prev, { speaker: "You", text }])
-      }
-      
-      // Send to Malachar so the lich can respond
-      // Include world context with the message
+      // Send to Malachar - the useMalachar hook handles:
+      // 1. Saving player message to dialogue table
+      // 2. Sending to Malachar API with world context
+      // 3. Saving Malachar's response to dialogue table
+      // Real-time subscription will update the UI for both
       const worldContext = {
         campaignId: activeCampaign.id,
         campaignName: activeCampaign.name,
