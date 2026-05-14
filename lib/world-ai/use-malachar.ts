@@ -103,9 +103,35 @@ export function useMalachar(campaign: CampaignContext) {
         const data = JSON.parse(event.data)
         console.log("[v0] Malachar stream event:", data.type, data)
 
+        // Helper to add/update assistant message
+        const updateAssistantMessage = (text: string) => {
+          if (!text) return
+          currentAssistantMessageRef.current += text
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1]
+            if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
+              return [
+                ...prev.slice(0, -1),
+                { ...lastMsg, content: currentAssistantMessageRef.current },
+              ]
+            } else {
+              return [
+                ...prev,
+                {
+                  id: `streaming-${Date.now()}`,
+                  role: "assistant",
+                  content: currentAssistantMessageRef.current,
+                  timestamp: new Date(),
+                },
+              ]
+            }
+          })
+        }
+
         switch (data.type) {
           // Session started running
           case "session.status_running":
+          case "session.thread_status_running":
             setIsStreaming(true)
             break
 
@@ -121,40 +147,42 @@ export function useMalachar(campaign: CampaignContext) {
                 .filter((c: { type: string }) => c.type === "text")
                 .map((c: { text: string }) => c.text)
                 .join("")
-              
-              if (textContent) {
-                currentAssistantMessageRef.current += textContent
-                setMessages((prev) => {
-                  const lastMsg = prev[prev.length - 1]
-                  if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
-                    return [
-                      ...prev.slice(0, -1),
-                      { ...lastMsg, content: currentAssistantMessageRef.current },
-                    ]
-                  } else {
-                    return [
-                      ...prev,
-                      {
-                        id: `streaming-${Date.now()}`,
-                        role: "assistant",
-                        content: currentAssistantMessageRef.current,
-                        timestamp: new Date(),
-                      },
-                    ]
-                  }
-                })
-              }
+              updateAssistantMessage(textContent)
+            }
+            break
+
+          // Streaming content blocks (Anthropic streaming format)
+          case "content_block_start":
+            setIsStreaming(true)
+            break
+
+          case "content_block_delta":
+            if (data.delta?.text) {
+              updateAssistantMessage(data.delta.text)
+            }
+            break
+
+          case "content_block_stop":
+            // Block finished
+            break
+
+          // Message delta (another streaming format)
+          case "message_delta":
+            if (data.delta?.text) {
+              updateAssistantMessage(data.delta.text)
             }
             break
 
           // Agent tool use (e.g., bash commands)
           case "agent.tool_use":
             // Could show tool usage in UI if desired
+            console.log("[v0] Malachar tool use:", data.name, data.input)
             break
 
           // Agent tool result
           case "agent.tool_result":
             // Tool finished executing
+            console.log("[v0] Malachar tool result:", data.content)
             break
 
           // Session is idle - agent finished responding
@@ -179,6 +207,16 @@ export function useMalachar(campaign: CampaignContext) {
             setError(data.content || "An error occurred")
             setIsStreaming(false)
             break
+
+          // Ignore these events silently
+          case "user.message":
+          case "span.model_request_start":
+          case "span.model_request_end":
+            break
+
+          default:
+            // Log unhandled events so we can add support
+            console.log("[v0] Unhandled Malachar event type:", data.type, data)
         }
       } catch (err) {
         console.error("[Malachar] Failed to parse event:", err)
