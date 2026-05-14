@@ -26,21 +26,30 @@ import { useMalachar, type MalacharMessage } from "@/lib/world-ai/use-malachar"
 type ViewTab = "chat" | "maps" | "lore" | "library"
 
 interface WorldAIPanelProps {
+  campaign: Campaign
   onCampaignChange?: (campaign: Campaign) => void
   onLocationChange?: (location: string) => void
   className?: string
 }
 
 export function WorldAIPanel({ 
+  campaign,
   onCampaignChange, 
   onLocationChange, 
   className 
 }: WorldAIPanelProps) {
-  // Campaign state
-  const [currentCampaign, setCurrentCampaign] = useState<Campaign>(CAMPAIGNS.tyranny)
+  // Campaign state - controlled by parent, local state for episode/location/heat
+  const currentCampaign = campaign
   const [currentEpisode, setCurrentEpisode] = useState(currentCampaign.contexts.defaults.episode)
   const [currentLocation, setCurrentLocation] = useState(currentCampaign.contexts.locations[0])
   const [currentHeat, setCurrentHeat] = useState(currentCampaign.contexts.defaults.heat)
+  
+  // Reset local state when campaign changes
+  useEffect(() => {
+    setCurrentEpisode(campaign.contexts.defaults.episode)
+    setCurrentLocation(campaign.contexts.locations[0])
+    setCurrentHeat(campaign.contexts.defaults.heat)
+  }, [campaign])
 
   // View state
   const [activeView, setActiveView] = useState<ViewTab>("chat")
@@ -89,17 +98,11 @@ export function WorldAIPanel({
     }
   }, [messages])
 
-  // Handle campaign change
+  // Handle campaign change - delegate to parent for confirmation dialog
   const handleCampaignSelect = (campaign: Campaign) => {
-    setCurrentCampaign(campaign)
-    setCurrentEpisode(campaign.contexts.defaults.episode)
-    setCurrentLocation(campaign.contexts.locations[0])
-    setCurrentHeat(campaign.contexts.defaults.heat)
-    setActiveMapId(campaign.maps[0]?.id || "")
-    // Reconnect Malachar with new campaign context
-    reconnect()
+    if (campaign.id === currentCampaign.id) return
+    // Parent handles confirmation and state change
     onCampaignChange?.(campaign)
-    setActiveView("chat")
   }
 
   // Handle location change

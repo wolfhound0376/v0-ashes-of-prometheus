@@ -31,28 +31,73 @@ export default function DashboardPage() {
   
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
-  const [currentCampaign, setCurrentCampaign] = useState<Campaign | null>(null)
-  const [currentEpisode, setCurrentEpisode] = useState("")
-  const [currentLocation, setCurrentLocation] = useState("")
-  const [currentHeat, setCurrentHeat] = useState("")
-
-  // Initialize with first campaign
-  const activeCampaign = currentCampaign || CAMPAIGNS["ashes-of-prometheus"]
+  const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
+  const [pendingCampaignChange, setPendingCampaignChange] = useState<Campaign | null>(null)
+  
+  // Default campaign is Out of the Abyss - Malachar manages progression
+  const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
   
   // Malachar connection for the dashboard - sends player dialogue to the lich
+  // Malachar tracks episode, location, and heat progression internally
   const malacharContext = {
+    id: activeCampaign.id,
     name: activeCampaign.name,
     systemPrompt: activeCampaign.systemPrompt,
-    currentEpisode: currentEpisode || activeCampaign.contexts.defaults.episode,
-    currentLocation: currentLocation || activeCampaign.contexts.locations[0],
-    currentHeat: currentHeat || activeCampaign.contexts.defaults.heat,
+    currentEpisode: activeCampaign.contexts.defaults.episode,
+    currentLocation: activeCampaign.contexts.locations[0],
+    currentHeat: activeCampaign.contexts.defaults.heat,
   }
   
   const { 
     sendMessage: sendToMalachar, 
     isLoading: malacharLoading,
-    backendMode 
+    backendMode,
+    clearMessages: clearMalacharMessages,
+    reconnect: reconnectMalachar
   } = useMalachar(malacharContext)
+  
+  // Handle campaign change with confirmation
+  const handleCampaignChange = (newCampaign: Campaign) => {
+    if (newCampaign.id === activeCampaign.id) return
+    setPendingCampaignChange(newCampaign)
+    setShowCampaignChangeDialog(true)
+  }
+  
+  // Confirm campaign change - clears dialogue and restarts
+  const confirmCampaignChange = async () => {
+    if (!pendingCampaignChange) return
+    
+    // Clear all dialogue from the database
+    const { error } = await supabase
+      .from('dialogue')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000') // Delete all
+    
+    if (error) {
+      console.error('Error clearing dialogue:', error)
+    }
+    
+    // Clear local dialogue state
+    setDialogue([])
+    
+    // Clear Malachar messages and reconnect with new campaign
+    clearMalacharMessages()
+    
+    // Set the new campaign
+    setActiveCampaign(pendingCampaignChange)
+    
+    // Close dialog
+    setShowCampaignChangeDialog(false)
+    setPendingCampaignChange(null)
+    
+    // Reconnect Malachar to start fresh session
+    reconnectMalachar()
+  }
+  
+  const cancelCampaignChange = () => {
+    setShowCampaignChangeDialog(false)
+    setPendingCampaignChange(null)
+  }
 
   const [resources, setResources] = useState({
     action: 1,
@@ -313,10 +358,11 @@ export default function DashboardPage() {
           </button>
           
           <WorldAIPanel 
-            onCampaignChange={(campaign) => setCurrentCampaign(campaign)}
+            campaign={activeCampaign}
+            onCampaignChange={handleCampaignChange}
             onLocationChange={(location) => {
               // Update environment data when location changes in World AI
-              console.log("[v0] World AI location changed:", location)
+              // Malachar manages location progression
             }}
             className="h-full"
           />
@@ -356,6 +402,35 @@ export default function DashboardPage() {
           onPopulateStartingGear={handlePopulateStartingGear}
         />
       </div>
+
+      {/* Campaign Change Confirmation Dialog */}
+      {showCampaignChangeDialog && pendingCampaignChange && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#1a1614] border border-[#3d3428] rounded-lg p-6 max-w-md mx-4 shadow-2xl">
+            <h2 className="text-xl font-serif text-[#d4b15a] mb-3">Change Campaign?</h2>
+            <p className="text-stone-300 mb-4">
+              Switching to <span className="text-[#e0651a] font-semibold">{pendingCampaignChange.name}</span> will clear all dialogue history and restart your session with Malachar.
+            </p>
+            <p className="text-stone-400 text-sm mb-6">
+              Your character data will be preserved. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelCampaignChange}
+                className="px-4 py-2 rounded bg-[#2a2520] border border-[#3d3428] text-stone-400 hover:text-stone-200 hover:border-stone-500 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmCampaignChange}
+                className="px-4 py-2 rounded bg-[#e0651a]/20 border border-[#e0651a]/50 text-[#e0651a] hover:bg-[#e0651a]/30 transition-colors"
+              >
+                Change Campaign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
