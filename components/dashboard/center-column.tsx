@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { quickAbilities } from "@/lib/game-data"
+import { quickAbilities, getClassSpellcasting } from "@/lib/game-data"
 import {
   SpellbookIcon,
   AbilityIcon,
@@ -57,6 +57,10 @@ interface CenterColumnProps {
   onActionSelect: (actionId: string) => void
   actions: Action[]
   resources: Resources
+  characterClass?: string
+  characterLevel?: number
+  availableActionIds?: string[]
+  onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -104,7 +108,10 @@ const actionTypeColors = {
   },
 }
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources }: CenterColumnProps) {
+export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel }: CenterColumnProps) {
+  // Check if character can cast spells based on D&D 5E rules
+  const spellcasting = getClassSpellcasting(characterClass || "", characterLevel || 1)
+  
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
@@ -207,90 +214,104 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
         </div>
       </FantasyPanel>
 
-      {/* Magical Resources */}
-      <FantasyPanel title="Magical Resources & Abilities" className="flex-shrink-0">
-        <div className="p-3">
-          <div className="flex gap-2">
-            <ResourceBox
-              label="Spell Slots"
-              current={resources.spellSlots}
-              max={resources.maxSpellSlots}
-              color="purple"
-            />
-            <ResourceBox
-              label="Sorcery Points"
-              current={resources.sorceryPoints}
-              max={resources.maxSorceryPoints}
-              color="pink"
-            />
-            <ResourceBox
-              label="Arcane Charges"
-              current={resources.arcaneCharges}
-              max={resources.maxArcaneCharges}
-              color="blue"
-            />
-            <button className="flex-1 flex flex-col items-center justify-center gap-1 p-2 rounded-sm bg-[#1a1614] border border-[#3d3428]/60 hover:border-[#5a4a3a]/80 transition-colors group">
-              <BookOpen className="w-6 h-6 text-[#8b7355] group-hover:text-[#c9b896] transition-colors" />
-              <span className="text-[10px] uppercase tracking-wider text-[#8b7355] group-hover:text-[#c9b896]">
-                Open Book
-              </span>
-            </button>
-          </div>
-        </div>
-      </FantasyPanel>
-
-      {/* Quick Abilities */}
-      <FantasyPanel title="Quick Abilities" className="flex-shrink-0">
-        <div className="p-3">
-          <div className="flex gap-2 justify-center">
-            {quickAbilities.map((ability) => {
-              const IconComponent = quickAbilityIconMap[ability.icon] || LockedAbilityIcon
-              return (
-                <button
-                  key={ability.id}
-                  disabled={!ability.unlocked}
-                  className={cn(
-                    "flex flex-col items-center gap-1 p-1 rounded-sm transition-all",
-                    ability.unlocked
-                      ? "hover:bg-[#2a2420]/60 group cursor-pointer"
-                      : "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <IconFrame 
-                    className="w-14 h-14" 
-                    disabled={!ability.unlocked}
-                  >
-                    <div className={cn(
-                      "w-full h-full bg-gradient-to-br overflow-hidden",
-                      ability.unlocked 
-                        ? "from-[#1a2a35] to-[#0f1a20]" 
-                        : "from-[#1a1614] to-[#0d0b0a]"
-                    )}>
-                      {ability.iconUrl ? (
-                        <img 
-                          src={ability.iconUrl} 
-                          alt={ability.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <IconComponent className="w-full h-full p-1" />
-                      )}
-                    </div>
-                  </IconFrame>
-                  <span
-                    className={cn(
-                      "text-[10px] text-center leading-tight",
-                      ability.unlocked ? "text-stone-400" : "text-stone-600"
-                    )}
-                  >
-                    {ability.name}
+      {/* Magical Resources - Only show for spellcasting classes */}
+      {spellcasting.canCast && (
+        <FantasyPanel title="Magical Resources & Abilities" className="flex-shrink-0">
+          <div className="p-3">
+            <div className="flex gap-2">
+              {/* Spell Slots - for all casters */}
+              <ResourceBox
+                label="Spell Slots"
+                current={resources.spellSlots}
+                max={resources.maxSpellSlots}
+                color="purple"
+              />
+              {/* Sorcery Points - only for Sorcerers */}
+              {spellcasting.hasSorceryPoints && (
+                <ResourceBox
+                  label="Sorcery Points"
+                  current={resources.sorceryPoints}
+                  max={resources.maxSorceryPoints}
+                  color="pink"
+                />
+              )}
+              {/* Pact Slots/Arcane Charges - only for Warlocks */}
+              {spellcasting.hasArcaneCharges && (
+                <ResourceBox
+                  label="Pact Slots"
+                  current={resources.arcaneCharges}
+                  max={resources.maxArcaneCharges}
+                  color="blue"
+                />
+              )}
+              {/* Spellbook - only for Wizards */}
+              {spellcasting.hasSpellbook && (
+                <button className="flex-1 flex flex-col items-center justify-center gap-1 p-2 rounded-sm bg-[#1a1614] border border-[#3d3428]/60 hover:border-[#5a4a3a]/80 transition-colors group">
+                  <BookOpen className="w-6 h-6 text-[#8b7355] group-hover:text-[#c9b896] transition-colors" />
+                  <span className="text-[10px] uppercase tracking-wider text-[#8b7355] group-hover:text-[#c9b896]">
+                    Spellbook
                   </span>
                 </button>
-              )
-            })}
+              )}
+            </div>
           </div>
-        </div>
-      </FantasyPanel>
+        </FantasyPanel>
+      )}
+
+      {/* Quick Abilities - Only show for spellcasting classes */}
+      {spellcasting.canCast && (
+        <FantasyPanel title="Quick Abilities" className="flex-shrink-0">
+          <div className="p-3">
+            <div className="flex gap-2 justify-center">
+              {quickAbilities.map((ability) => {
+                const IconComponent = quickAbilityIconMap[ability.icon] || LockedAbilityIcon
+                return (
+                  <button
+                    key={ability.id}
+                    disabled={!ability.unlocked}
+                    className={cn(
+                      "flex flex-col items-center gap-1 p-1 rounded-sm transition-all",
+                      ability.unlocked
+                        ? "hover:bg-[#2a2420]/60 group cursor-pointer"
+                        : "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <IconFrame 
+                      className="w-14 h-14" 
+                      disabled={!ability.unlocked}
+                    >
+                      <div className={cn(
+                        "w-full h-full bg-gradient-to-br overflow-hidden",
+                        ability.unlocked 
+                          ? "from-[#1a2a35] to-[#0f1a20]" 
+                          : "from-[#1a1614] to-[#0d0b0a]"
+                      )}>
+                        {ability.iconUrl ? (
+                          <img 
+                            src={ability.iconUrl} 
+                            alt={ability.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <IconComponent className="w-full h-full p-1" />
+                        )}
+                      </div>
+                    </IconFrame>
+                    <span
+                      className={cn(
+                        "text-[10px] text-center leading-tight",
+                        ability.unlocked ? "text-stone-400" : "text-stone-600"
+                      )}
+                    >
+                      {ability.name}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </FantasyPanel>
+      )}
     </div>
   )
 }

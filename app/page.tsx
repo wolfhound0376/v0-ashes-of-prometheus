@@ -388,6 +388,8 @@ export default function DashboardPage() {
           resources={resources}
           availableActionIds={availableActionIds}
           onTelemetryPush={handleTelemetryPush}
+          characterClass={selectedCharacter?.class}
+          characterLevel={selectedCharacter?.level}
         />
         <RightColumn 
           characters={characters}
