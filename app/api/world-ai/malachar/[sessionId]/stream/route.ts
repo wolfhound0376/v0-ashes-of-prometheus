@@ -23,6 +23,8 @@ export async function GET(
         headers: {
           "Authorization": `Bearer ${MALACHAR_API_KEY}`,
           "Accept": "text/event-stream",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "managed-agents-2026-04-01",
         },
       }
     )
