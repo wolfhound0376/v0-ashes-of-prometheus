@@ -104,39 +104,63 @@ export function useMalachar(campaign: CampaignContext) {
         console.log("[v0] Malachar stream event:", data.type, data)
 
         switch (data.type) {
-          case "content_start":
-            currentAssistantMessageRef.current = ""
+          // Session started running
+          case "session.status_running":
             setIsStreaming(true)
             break
 
-          case "content_delta":
-            if (data.delta) {
-              currentAssistantMessageRef.current += data.delta
-              setMessages((prev) => {
-                const lastMsg = prev[prev.length - 1]
-                if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
-                  return [
-                    ...prev.slice(0, -1),
-                    { ...lastMsg, content: currentAssistantMessageRef.current },
-                  ]
-                } else {
-                  return [
-                    ...prev,
-                    {
-                      id: `streaming-${Date.now()}`,
-                      role: "assistant",
-                      content: currentAssistantMessageRef.current,
-                      timestamp: new Date(),
-                    },
-                  ]
-                }
-              })
+          // Agent is thinking
+          case "agent.thinking":
+            setIsStreaming(true)
+            break
+
+          // Agent message with text content
+          case "agent.message":
+            if (data.content && Array.isArray(data.content)) {
+              const textContent = data.content
+                .filter((c: { type: string }) => c.type === "text")
+                .map((c: { text: string }) => c.text)
+                .join("")
+              
+              if (textContent) {
+                currentAssistantMessageRef.current += textContent
+                setMessages((prev) => {
+                  const lastMsg = prev[prev.length - 1]
+                  if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
+                    return [
+                      ...prev.slice(0, -1),
+                      { ...lastMsg, content: currentAssistantMessageRef.current },
+                    ]
+                  } else {
+                    return [
+                      ...prev,
+                      {
+                        id: `streaming-${Date.now()}`,
+                        role: "assistant",
+                        content: currentAssistantMessageRef.current,
+                        timestamp: new Date(),
+                      },
+                    ]
+                  }
+                })
+              }
             }
             break
 
-          case "content_end":
+          // Agent tool use (e.g., bash commands)
+          case "agent.tool_use":
+            // Could show tool usage in UI if desired
+            break
+
+          // Agent tool result
+          case "agent.tool_result":
+            // Tool finished executing
+            break
+
+          // Session is idle - agent finished responding
           case "session.status_idle":
             setIsStreaming(false)
+            // Finalize the streaming message
             setMessages((prev) => {
               const lastMsg = prev[prev.length - 1]
               if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
@@ -147,6 +171,8 @@ export function useMalachar(campaign: CampaignContext) {
               }
               return prev
             })
+            // Reset for next message
+            currentAssistantMessageRef.current = ""
             break
 
           case "error":
