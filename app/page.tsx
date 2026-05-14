@@ -12,8 +12,6 @@ import { createClient } from "@/lib/supabase/client"
 import type { Character, InventoryItem, EquipmentItem } from "@/lib/types/database"
 
 export default function DashboardPage() {
-  const supabase = createClient()
-  
   // Character selection state
   const [characters, setCharacters] = useState<Character[]>([])
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
@@ -40,18 +38,23 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchCharacters() {
       setLoadingCharacters(true)
-      const { data, error } = await supabase
-        .from('characters')
-        .select('*')
-        .order('is_player', { ascending: false })
-        .order('name')
-      
-      if (error) {
-        console.error('Error fetching characters:', error)
-      } else if (data && data.length > 0) {
-        setCharacters(data)
-        // Auto-select first character (usually the player)
-        setSelectedCharacterId(data[0].id)
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('characters')
+          .select('*')
+          .order('is_player', { ascending: false })
+          .order('name')
+        
+        if (error) {
+          console.error('Error fetching characters:', error)
+        } else if (data && data.length > 0) {
+          setCharacters(data)
+          // Auto-select first character (usually the player)
+          setSelectedCharacterId(data[0].id)
+        }
+      } catch (err) {
+        console.error('Supabase client error:', err)
       }
       setLoadingCharacters(false)
     }
@@ -63,22 +66,28 @@ export default function DashboardPage() {
     async function fetchCharacterData() {
       if (!selectedCharacterId) return
 
-      // Fetch inventory
-      const { data: invData } = await supabase
-        .from('inventory_items')
-        .select('*')
-        .eq('character_id', selectedCharacterId)
-        .order('name')
-      
-      if (invData) setCharacterInventory(invData)
+      try {
+        const supabase = createClient()
+        
+        // Fetch inventory
+        const { data: invData } = await supabase
+          .from('inventory_items')
+          .select('*')
+          .eq('character_id', selectedCharacterId)
+          .order('name')
+        
+        if (invData) setCharacterInventory(invData)
 
-      // Fetch equipment
-      const { data: equipData } = await supabase
-        .from('equipment_items')
-        .select('*')
-        .eq('character_id', selectedCharacterId)
-      
-      if (equipData) setCharacterEquipment(equipData)
+        // Fetch equipment
+        const { data: equipData } = await supabase
+          .from('equipment_items')
+          .select('*')
+          .eq('character_id', selectedCharacterId)
+        
+        if (equipData) setCharacterEquipment(equipData)
+      } catch (err) {
+        console.error('Error fetching character data:', err)
+      }
     }
     fetchCharacterData()
   }, [selectedCharacterId])
@@ -132,6 +141,8 @@ export default function DashboardPage() {
     if (!selectedCharacterId) return
 
     try {
+      const supabase = createClient()
+      
       // Clear existing inventory and equipment for this character
       await supabase.from('inventory_items').delete().eq('character_id', selectedCharacterId)
       await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId)
