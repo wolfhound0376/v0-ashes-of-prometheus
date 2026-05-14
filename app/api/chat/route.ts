@@ -376,6 +376,15 @@ Use 'stop' to fade out music.`,
     maxSteps: 5, // Allow multiple tool calls in one response
     })
   
+  // Debug: what did generateText return?
+  console.log("[v0] generateText result.text:", JSON.stringify(result.text?.substring(0, 200)))
+  console.log("[v0] generateText result.steps count:", result.steps.length)
+  for (const step of result.steps) {
+    console.log("[v0] step text:", JSON.stringify(step.text?.substring(0, 100)))
+    console.log("[v0] step toolCalls:", step.toolCalls?.length || 0)
+    console.log("[v0] step toolResults:", step.toolResults?.length || 0)
+  }
+
   // Save Malachar's response to dialogue
   const responseText = result.text?.trim()
   if (responseText) {
