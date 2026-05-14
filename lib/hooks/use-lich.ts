@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import { createClient } from "@/lib/supabase/client"
 
 interface MusicCue {
   action: "play" | "stop"
@@ -103,6 +104,16 @@ export function useLich(campaignId: string = "abyss") {
         .replace(/\{"success":true[^}]+\}/g, "")
         .replace(/\s+/g, " ")
         .trim()
+      
+      // Save Malachar's response to dialogue table
+      if (cleanText && cleanText.length > 0) {
+        const supabase = createClient()
+        await supabase.from("dialogue").insert({
+          speaker: "Malachar",
+          text: cleanText,
+          source: "world_ai"
+        })
+      }
 
       return { text: cleanText, musicCue }
     } catch (error) {

@@ -376,48 +376,7 @@ Use 'stop' to fade out music.`,
     maxSteps: 5, // Allow multiple tool calls in one response
     })
   
-  // Use toDataStreamResponse which properly handles onFinish
-  // But we need to manually save the response since onFinish is unreliable in serverless
-  // Instead, we'll use a transform stream to capture the full response and save it
-  const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
-  let fullText = ""
-  
-  const transformStream = new TransformStream({
-    transform(chunk, controller) {
-      const text = decoder.decode(chunk, { stream: true })
-      fullText += text
-      controller.enqueue(chunk)
-    },
-    async flush() {
-      // Save Malachar's response when stream completes
-      // Clean the text (remove any JSON artifacts from tool calls)
-      const cleanText = fullText
-        .replace(/\d+:"([^"]*)"/g, '$1') // Remove stream prefixes like 0:"text"
-        .replace(/\{"[^}]+\}/g, '') // Remove JSON objects
-        .replace(/\s+/g, ' ')
-        .trim()
-      
-      if (cleanText && cleanText.length > 0) {
-        console.log('[v0] Saving Malachar response, length:', cleanText.length)
-        const { error } = await supabase.from("dialogue").insert({
-          speaker: "Malachar",
-          text: cleanText,
-          source: "world_ai"
-        })
-        if (error) {
-          console.error('[v0] Failed to save Malachar response:', error)
-        }
-      }
-    }
-  })
-  
-  const response = result.toTextStreamResponse()
-  const transformedStream = response.body?.pipeThrough(transformStream)
-  
-  return new Response(transformedStream, {
-    headers: response.headers,
-  })
+  return result.toTextStreamResponse()
 }
 
 // Map item types to preset icons as fallback
