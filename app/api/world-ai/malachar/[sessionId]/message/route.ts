@@ -33,9 +33,22 @@ export async function POST(
           context.currentHeat || ""
         )
         worldContextText = formatWorldContextForAI(worldContext)
+        console.log("[Malachar] World context built:", {
+          campaignId: context.campaignId,
+          charactersCount: worldContext.characters.length,
+          characters: worldContext.characters.map(c => ({
+            name: c.name,
+            class: c.class,
+            race: c.race,
+            inventoryCount: c.inventory.length
+          })),
+          contextLength: worldContextText.length
+        })
       } catch (err) {
         console.error("[Malachar] Error building world context:", err)
       }
+    } else {
+      console.log("[Malachar] No campaignId in context:", context)
     }
 
     // Build the message with world context included

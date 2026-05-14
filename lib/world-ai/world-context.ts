@@ -111,7 +111,7 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
         .from("equipment_items")
         .select("name, slot")
         .eq("character_id", char.id)
-        .eq("equipped", true)
+        .eq("is_equipped", true)
       
       // Get abilities
       const { data: abilities } = await supabase
