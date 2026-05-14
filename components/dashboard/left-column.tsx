@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { Sun, MessageSquare, Volume2, VolumeX, Square } from "lucide-react"
+import { Sun, MessageSquare, Volume2, Square, Loader2 } from "lucide-react"
 
 interface DialogueEntry {
   speaker: string
@@ -35,45 +35,76 @@ export function LeftColumn({
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null)
+  const [loadingIndex, setLoadingIndex] = useState<number | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [dialogue, isWorldAIThinking])
 
-  // Text-to-speech function
-  const speakDialogue = useCallback((text: string, speaker: string, index: number) => {
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel()
+  // Text-to-speech function using OpenAI TTS
+  const speakDialogue = useCallback(async (text: string, speaker: string, index: number) => {
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
     
     if (speakingIndex === index) {
-      // If clicking on the same one that's speaking, stop it
       setSpeakingIndex(null)
       return
     }
 
-    const utterance = new SpeechSynthesisUtterance(text)
+    setLoadingIndex(index)
     
-    // Adjust voice settings based on speaker
-    if (speaker === "Malachar") {
-      utterance.pitch = 0.7
-      utterance.rate = 0.85
-    } else {
-      utterance.pitch = 1.0
-      utterance.rate = 1.0
+    try {
+      // Choose voice based on speaker - Onyx for Malachar, Alloy for players
+      const voice = speaker === "Malachar" ? "onyx" : "alloy"
+      
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice }),
+      })
+
+      if (!response.ok) {
+        throw new Error("TTS request failed")
+      }
+
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+      
+      audio.onplay = () => {
+        setLoadingIndex(null)
+        setSpeakingIndex(index)
+      }
+      audio.onended = () => {
+        setSpeakingIndex(null)
+        URL.revokeObjectURL(audioUrl)
+      }
+      audio.onerror = () => {
+        setLoadingIndex(null)
+        setSpeakingIndex(null)
+      }
+      
+      await audio.play()
+    } catch (error) {
+      console.error("[TTS] Error:", error)
+      setLoadingIndex(null)
+      setSpeakingIndex(null)
     }
-    
-    utterance.onstart = () => setSpeakingIndex(index)
-    utterance.onend = () => setSpeakingIndex(null)
-    utterance.onerror = () => setSpeakingIndex(null)
-    
-    window.speechSynthesis.speak(utterance)
   }, [speakingIndex])
 
-  // Stop speech when component unmounts
+  // Stop audio when component unmounts
   useEffect(() => {
     return () => {
-      window.speechSynthesis.cancel()
+      if (audioRef.current) {
+        audioRef.current.pause()
+      }
     }
   }, [])
   
@@ -141,14 +172,19 @@ export function LeftColumn({
             <div key={index} className="text-sm group flex items-start gap-2">
               <button
                 onClick={() => speakDialogue(entry.text, entry.speaker, index)}
+                disabled={loadingIndex === index}
                 className={`flex-shrink-0 mt-0.5 p-1 rounded transition-colors ${
-                  speakingIndex === index 
+                  loadingIndex === index
+                    ? "bg-[#3d3428]/60 text-[#c9a868]"
+                    : speakingIndex === index 
                     ? "bg-[#8b5cf6]/30 text-[#8b5cf6]" 
                     : "opacity-0 group-hover:opacity-100 hover:bg-[#3d3428]/60 text-stone-500 hover:text-stone-300"
                 }`}
-                title={speakingIndex === index ? "Stop speaking" : "Read aloud"}
+                title={loadingIndex === index ? "Loading..." : speakingIndex === index ? "Stop speaking" : "Read aloud"}
               >
-                {speakingIndex === index ? (
+                {loadingIndex === index ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : speakingIndex === index ? (
                   <Square className="w-3 h-3" />
                 ) : (
                   <Volume2 className="w-3 h-3" />
