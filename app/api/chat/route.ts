@@ -365,12 +365,15 @@ Use 'stop' to fade out music.`,
     },
     maxSteps: 5, // Allow multiple tool calls in one response
     onFinish: async ({ text }) => {
-      // Save Malachar's response after streaming completes
-      await supabase.from("dialogue").insert({
-        speaker: "Malachar",
-        text,
-        source: "world_ai"
-      })
+      // Only save Malachar's response if there's actual text content
+      // (tool-only responses shouldn't create empty dialogue entries)
+      if (text && text.trim()) {
+        await supabase.from("dialogue").insert({
+          speaker: "Malachar",
+          text: text.trim(),
+          source: "world_ai"
+        })
+      }
     }
   })
   
