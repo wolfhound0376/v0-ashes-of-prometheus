@@ -300,14 +300,14 @@ EXPERIENCE POINTS (D&D 5E):
       }),
       playMusic: tool({
         description: `Trigger ambient music to set the mood. Available tracks by category:
-COMBAT: 'there-be-dragons' (epic battles), 'rise-of-the-ancients' (boss fights)
-TENSION: 'dark-and-stormy' (storms/danger), 'burning-village' (urgent/disaster)
-EXPLORATION: 'mountain-pass' (travel), 'carriage-journey' (road trips), 'astral-plane' (planar travel)
-NATURE: 'forest-night' (peaceful), 'swamplandia' (swamps), 'druid-hilltop' (sacred groves), 'the-feywild' (fey realm)
-DUNGEON: 'dungeon-i' (underground), 'cavern-of-lost-souls' (haunted), 'mummys-tomb' (ancient), 'castle-jail' (prison), 'sewers' (city underground)
-HORROR: 'vampire-castle' (gothic), 'graveyard' (cemetery), 'heart-meat-corridor' (flesh dungeons), 'shadowfell' (dark realm)
-MYSTERY: 'sleeping-dragon' (sneaking), 'wizards-tower' (arcane), 'floating-ice-castle' (frost realms)
-AMBIENT: 'country-village' (peaceful town), 'tavern-music' (inn/social), 'waterkeep' (city), 'blacksmith-shoppe' (forge)
+COMBAT: 'there-be-dragons' (epic), 'rise-of-the-ancients' (boss), 'ice-dragon' (frost dragon)
+TENSION: 'dark-and-stormy' (storms), 'burning-village' (disaster), 'sleeping-ogre' (stealth near monster)
+EXPLORATION: 'mountain-pass', 'carriage-journey', 'wagon-ride', 'astral-plane' (planar)
+NATURE: 'forest-night', 'swamplandia', 'druid-hilltop', 'the-feywild', 'salt-marsh', 'lorekeeper-grove', 'dusk-of-the-dryad', 'farmyard'
+DUNGEON: 'dungeon-i', 'cavern-of-lost-souls', 'mummys-tomb', 'castle-jail', 'sewers', 'forge-of-fury', 'spiders-den', 'defiled-temple'
+HORROR: 'vampire-castle', 'graveyard', 'heart-meat-corridor', 'shadowfell'
+MYSTERY: 'sleeping-dragon', 'wizards-tower', 'floating-ice-castle', 'summoning', 'shamans-hollow'
+AMBIENT: 'country-village', 'tavern-music', 'the-hearth-inn', 'waterkeep', 'blacksmith-shoppe', 'magic-shoppe', 'oasis-city', 'throne-room', 'court-of-the-count'
 Use 'stop' to fade out music.`,
         inputSchema: z.object({
           trackId: z.enum([
@@ -317,7 +317,11 @@ Use 'stop' to fade out music.`,
             "astral-plane", "burning-village", "carriage-journey", "cavern-of-lost-souls",
             "druid-hilltop", "mummys-tomb", "castle-jail", "the-feywild",
             "tavern-music", "waterkeep", "floating-ice-castle", "blacksmith-shoppe",
-            "graveyard", "sewers", "heart-meat-corridor", "shadowfell", "stop"
+            "graveyard", "sewers", "heart-meat-corridor", "shadowfell",
+            "court-of-the-count", "summoning", "the-hearth-inn", "defiled-temple",
+            "lorekeeper-grove", "magic-shoppe", "oasis-city", "ice-dragon",
+            "salt-marsh", "sleeping-ogre", "forge-of-fury", "dusk-of-the-dryad",
+            "farmyard", "spiders-den", "throne-room", "shamans-hollow", "wagon-ride", "stop"
           ]).describe("The track ID to play, or 'stop' to stop music"),
           reason: z.string().optional().describe("Brief reason for the music change")
         }),
@@ -340,7 +344,16 @@ Use 'stop' to fade out music.`,
             "tavern-music": "Tavern Music", "waterkeep": "Waterkeep",
             "floating-ice-castle": "Floating Ice Castle", "blacksmith-shoppe": "Blacksmith Shoppe",
             "graveyard": "Graveyard", "sewers": "Sewers",
-            "heart-meat-corridor": "Heart Meat Corridor", "shadowfell": "Shadowfell"
+            "heart-meat-corridor": "Heart Meat Corridor", "shadowfell": "Shadowfell",
+            "court-of-the-count": "Court of the Count", "summoning": "Summoning",
+            "the-hearth-inn": "The Hearth Inn", "defiled-temple": "Defiled Temple",
+            "lorekeeper-grove": "Lorekeeper Grove", "magic-shoppe": "Magic Shoppe",
+            "oasis-city": "Oasis City", "ice-dragon": "Ice Dragon",
+            "salt-marsh": "Salt Marsh", "sleeping-ogre": "Sleeping Ogre",
+            "forge-of-fury": "Forge of Fury", "dusk-of-the-dryad": "Dusk of the Dryad",
+            "farmyard": "Farmyard", "spiders-den": "Spider's Den",
+            "throne-room": "Throne Room", "shamans-hollow": "Shaman's Hollow",
+            "wagon-ride": "Wagon Ride"
           }
           
           return { 

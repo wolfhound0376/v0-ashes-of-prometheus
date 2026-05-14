@@ -246,6 +246,143 @@ export const MUSIC_LIBRARY: MusicTrack[] = [
     category: "horror",
     mood: ["dark", "despair", "shadow"],
     description: "Bleak atmosphere for Shadowfell and realms of darkness"
+  },
+  // Batch 3 tracks
+  {
+    id: "court-of-the-count",
+    name: "Court of the Count",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/267_Court_of_the_Count-8YtJs3Hp7MmfHrAgrgq4blV1Lto9jA.mp3",
+    category: "ambient",
+    mood: ["noble", "regal", "gothic"],
+    description: "Noble court atmosphere for vampire lords and aristocratic settings"
+  },
+  {
+    id: "summoning",
+    name: "Summoning",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/303_Summoning-t7H6vwjg0oHZBNMsaiXsOpDuXdJzto.mp3",
+    category: "mystery",
+    mood: ["ritual", "magical", "ominous"],
+    description: "Dark ritual music for summoning circles and magical ceremonies"
+  },
+  {
+    id: "the-hearth-inn",
+    name: "The Hearth Inn",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/255_The_Hearth_Inn-HIvUewCvVbrbsJNuT7RlexCE2uhZGi.mp3",
+    category: "ambient",
+    mood: ["cozy", "warm", "rest"],
+    description: "Warm and inviting inn atmosphere for rest and relaxation"
+  },
+  {
+    id: "defiled-temple",
+    name: "Defiled Temple",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/236_Defiled_Temple-p4Q6B5PT3BW3VNy0Enip9G6vGukwGe.mp3",
+    category: "horror",
+    mood: ["corrupted", "unholy", "dread"],
+    description: "Corrupted sacred ground for desecrated temples and unholy sites"
+  },
+  {
+    id: "lorekeeper-grove",
+    name: "Lorekeeper Grove",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/275_Lorekeeper_Grove-MSBfJLp07udJtsFFGMjj2lyqagZCSq.mp3",
+    category: "nature",
+    mood: ["ancient", "wisdom", "serene"],
+    description: "Ancient grove of knowledge for libraries and wise elders"
+  },
+  {
+    id: "magic-shoppe",
+    name: "Magic Shoppe",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/246_Magic_Shoppe-VhT35j9rkOkTdafvsFXuiy7Htg0PQw.mp3",
+    category: "ambient",
+    mood: ["whimsical", "arcane", "curiosity"],
+    description: "Enchanted shop atmosphere for magic item vendors"
+  },
+  {
+    id: "oasis-city",
+    name: "Oasis City",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/284_Oasis_City-yvUqxjTvRVqzcCH1HP3sH7DjG5iHy4.mp3",
+    category: "ambient",
+    mood: ["desert", "exotic", "bustling"],
+    description: "Desert oasis marketplace for Middle Eastern-style cities"
+  },
+  {
+    id: "ice-dragon",
+    name: "Ice Dragon",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/256_Ice_Dragon-JjP6y0COR1uSaC7ohuldamjoK5HsXg.mp3",
+    category: "combat",
+    mood: ["frost", "epic", "dragon"],
+    description: "Epic frost dragon battle music"
+  },
+  {
+    id: "salt-marsh",
+    name: "Salt Marsh",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/223_Salt_Marsh-jeYukagyHP79iGmCbtImagHT55RhMj.mp3",
+    category: "nature",
+    mood: ["coastal", "murky", "isolation"],
+    description: "Coastal marshland atmosphere for seaside swamps"
+  },
+  {
+    id: "sleeping-ogre",
+    name: "Sleeping Ogre",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/218_Sleeping_Ogre-uy1M9yQZuNTXyWA56BWJCVqf7dmeca.mp3",
+    category: "tension",
+    mood: ["stealth", "danger", "suspense"],
+    description: "Tense stealth music for sneaking past sleeping monsters"
+  },
+  {
+    id: "forge-of-fury",
+    name: "Forge of Fury",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/276_Forge_of_Fury-A6np6hKTXluYuCux58rBerYGsyddrT.mp3",
+    category: "dungeon",
+    mood: ["fire", "industry", "dwarven"],
+    description: "Intense forge sounds for dwarven strongholds and volcanic areas"
+  },
+  {
+    id: "dusk-of-the-dryad",
+    name: "Dusk of the Dryad",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/313_Dusk_of_the_Dryad-dKT1F2aADlAKzypLWXQxirX2GybBCY.mp3",
+    category: "nature",
+    mood: ["twilight", "fey", "melancholy"],
+    description: "Twilight forest music for dryad encounters and fey glades"
+  },
+  {
+    id: "farmyard",
+    name: "Farmyard",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/278_Farmyard-wIvRzCghV4qHWejM1ErgrEpI4fx9uj.mp3",
+    category: "ambient",
+    mood: ["rural", "peaceful", "pastoral"],
+    description: "Peaceful farmland atmosphere for rural countryside"
+  },
+  {
+    id: "spiders-den",
+    name: "Spider's Den",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/242_Spiders_Den-jhj2HhGVWhAxraKZoDDR7uidVZlPlw.mp3",
+    category: "dungeon",
+    mood: ["creepy", "webs", "lurking"],
+    description: "Creepy spider lair for giant spider encounters"
+  },
+  {
+    id: "throne-room",
+    name: "Throne Room",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/240_Throne_Room-QteQiWm2uusPr2oktH0d3os5IEF80o.mp3",
+    category: "ambient",
+    mood: ["royal", "power", "grandeur"],
+    description: "Majestic throne room for royal audiences and palace scenes"
+  },
+  {
+    id: "shamans-hollow",
+    name: "Shaman's Hollow",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/319_Shamans_Hollow-10aekOjYaSOxowwrlkvgXZia68eWIe.mp3",
+    category: "mystery",
+    mood: ["tribal", "spiritual", "primal"],
+    description: "Tribal spiritual music for shaman encounters and ritual sites"
+  },
+  {
+    id: "wagon-ride",
+    name: "Wagon Ride",
+    url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/290_Wagon_Ride-2Xi28oloxhT7V5s93gOxE51RrlWv4p.mp3",
+    category: "exploration",
+    mood: ["travel", "adventure", "journey"],
+    description: "Travel music for wagon journeys and overland expeditions"
   }
 ]
 
