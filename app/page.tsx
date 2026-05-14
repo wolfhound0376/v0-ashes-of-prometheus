@@ -7,6 +7,7 @@ import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
 import { WorldAIPanel } from "@/components/world-ai"
+import { MusicPlayer } from "@/components/dashboard/music-player"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
@@ -28,6 +29,7 @@ export default function DashboardPage() {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
+  const [currentMusicTrack, setCurrentMusicTrack] = useState<string | null>(null)
   
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
@@ -44,6 +46,15 @@ export default function DashboardPage() {
   
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
+  
+  // Handle music cues from the Lich
+  const handleMusicCue = useCallback((cue: { action: "play" | "stop"; trackId?: string }) => {
+    if (cue.action === "stop") {
+      setCurrentMusicTrack(null)
+    } else if (cue.trackId) {
+      setCurrentMusicTrack(cue.trackId)
+    }
+  }, [])
   
   // Handle campaign change with confirmation
   const handleCampaignChange = (newCampaign: Campaign) => {
@@ -321,7 +332,8 @@ export default function DashboardPage() {
       // 2. Building world context
       // 3. Saving messages to dialogue table
       // Real-time subscription will update the UI
-      sendToLich(text)
+      // Pass music cue handler to react to atmospheric changes
+      sendToLich(text, handleMusicCue)
     }
   }
 
@@ -598,6 +610,12 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Music Player */}
+      <MusicPlayer
+        currentTrackId={currentMusicTrack}
+        onTrackChange={setCurrentMusicTrack}
+      />
     </div>
   )
 }

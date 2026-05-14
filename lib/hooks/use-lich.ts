@@ -2,13 +2,30 @@
 
 import { useState, useCallback } from "react"
 
+interface MusicCue {
+  action: "play" | "stop"
+  trackId?: string
+  trackName?: string
+  reason?: string
+}
+
+interface LichResponse {
+  text: string
+  musicCue?: MusicCue
+}
+
 export function useLich(campaignId: string = "abyss") {
   const [isLoading, setIsLoading] = useState(false)
   const [streamingText, setStreamingText] = useState("")
+  const [lastMusicCue, setLastMusicCue] = useState<MusicCue | null>(null)
 
-  const sendMessage = useCallback(async (message: string) => {
+  const sendMessage = useCallback(async (
+    message: string,
+    onMusicCue?: (cue: MusicCue) => void
+  ): Promise<LichResponse> => {
     setIsLoading(true)
     setStreamingText("")
+    setLastMusicCue(null)
 
     try {
       const response = await fetch("/api/chat", {
@@ -25,6 +42,7 @@ export function useLich(campaignId: string = "abyss") {
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let fullText = ""
+      let musicCue: MusicCue | undefined
 
       if (reader) {
         while (true) {
@@ -33,11 +51,43 @@ export function useLich(campaignId: string = "abyss") {
           
           const chunk = decoder.decode(value, { stream: true })
           fullText += chunk
+          
+          // Check for music cue in the stream (tool results contain JSON)
+          // The AI SDK streams tool results with specific markers
+          if (chunk.includes('"trackId"') || chunk.includes('"action":"stop"')) {
+            try {
+              // Try to extract music cue from the stream
+              const playMatch = fullText.match(/"trackId"\s*:\s*"([^"]+)"/)
+              const stopMatch = fullText.match(/"action"\s*:\s*"stop"/)
+              
+              if (stopMatch && !musicCue) {
+                musicCue = { action: "stop" }
+                setLastMusicCue(musicCue)
+                onMusicCue?.(musicCue)
+              } else if (playMatch && !musicCue) {
+                const trackId = playMatch[1]
+                if (trackId !== "stop") {
+                  musicCue = { action: "play", trackId }
+                  setLastMusicCue(musicCue)
+                  onMusicCue?.(musicCue)
+                }
+              }
+            } catch (e) {
+              // Ignore parsing errors, continue streaming
+            }
+          }
+          
           setStreamingText(fullText)
         }
       }
 
-      return fullText
+      // Clean up the text (remove any JSON tool results that leaked through)
+      const cleanText = fullText
+        .replace(/\{"success":true[^}]+\}/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+
+      return { text: cleanText, musicCue }
     } catch (error) {
       console.error("Error sending message:", error)
       throw error
@@ -50,5 +100,6 @@ export function useLich(campaignId: string = "abyss") {
     sendMessage,
     isLoading,
     streamingText,
+    lastMusicCue,
   }
 }

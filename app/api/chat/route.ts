@@ -84,6 +84,19 @@ RULES:
 - When rolling for starting equipment or scavenged items, use the giveItem tool for each item they receive
 - Describe the item narratively, then call giveItem to actually add it to their inventory
 
+AMBIENT MUSIC:
+- Use the playMusic tool to set the atmosphere during narration
+- Change music when the scene changes significantly:
+  - Combat/Boss fights: "there-be-dragons" or "rise-of-the-ancients"  
+  - Tension/Danger approaching: "dark-and-stormy"
+  - Forest/Night exploration: "forest-night"
+  - Sneaking/Stealth: "sleeping-dragon"
+  - Mountain/Open travel: "mountain-pass"
+  - Swamps/Marshland: "swamplandia"
+  - Dungeons/Underground: "dungeon-i"
+- Use "stop" when transitioning to dialogue-heavy scenes or rest
+- Don't change music too frequently - let it play for atmosphere
+
 EXPERIENCE POINTS (D&D 5E):
 - Award XP using the awardXP tool when players:
   - Defeat monsters (use standard 5E XP values based on CR)
@@ -281,6 +294,52 @@ EXPERIENCE POINTS (D&D 5E):
             canLevelUp: false,
             newTotal: newXP,
             xpToNextLevel
+          }
+        }
+      }),
+      playMusic: tool({
+        description: "Trigger ambient music to set the mood. Use this to enhance the atmosphere during narration. Available tracks: 'there-be-dragons' (epic combat/dragons), 'dark-and-stormy' (tension/storms), 'forest-night' (peaceful night forest), 'sleeping-dragon' (sneaking/suspense), 'mountain-pass' (exploration/travel), 'swamplandia' (murky swamps), 'rise-of-the-ancients' (epic/ancient discoveries), 'dungeon-i' (underground exploration). Use 'stop' to fade out music.",
+        inputSchema: z.object({
+          trackId: z.enum([
+            "there-be-dragons",
+            "dark-and-stormy", 
+            "forest-night",
+            "sleeping-dragon",
+            "mountain-pass",
+            "swamplandia",
+            "rise-of-the-ancients",
+            "dungeon-i",
+            "stop"
+          ]).describe("The track ID to play, or 'stop' to stop music"),
+          reason: z.string().optional().describe("Brief reason for the music change, e.g. 'entering combat', 'exploring the dungeon'")
+        }),
+        execute: async ({ trackId, reason }) => {
+          // This returns the track info - the client will handle actual playback
+          if (trackId === "stop") {
+            return { 
+              success: true, 
+              action: "stop",
+              message: "Music fading out..." 
+            }
+          }
+          
+          const trackNames: Record<string, string> = {
+            "there-be-dragons": "There Be Dragons",
+            "dark-and-stormy": "Dark and Stormy",
+            "forest-night": "Forest Night",
+            "sleeping-dragon": "Sleeping Dragon",
+            "mountain-pass": "Mountain Pass",
+            "swamplandia": "Swamplandia",
+            "rise-of-the-ancients": "Rise of the Ancients",
+            "dungeon-i": "Dungeon I"
+          }
+          
+          return { 
+            success: true, 
+            action: "play",
+            trackId,
+            trackName: trackNames[trackId],
+            reason: reason || "Setting the mood"
           }
         }
       }),
