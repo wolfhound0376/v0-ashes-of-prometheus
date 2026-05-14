@@ -144,15 +144,13 @@ export function RightColumn({
     avatarUrl: selectedCharacter.avatar_image_url,
   } : fallbackCharacter
 
-  // Transform inventory
-  const inventory = characterInventory.length > 0 
-    ? characterInventory.map(item => ({
-        id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        icon: item.preset_icon || 'backpack',
-      }))
-    : fallbackInventory
+// Transform inventory - only show items from database, no fallback placeholder items
+  const inventory = characterInventory.map(item => ({
+    id: item.id,
+    name: item.name,
+    quantity: item.quantity,
+    icon: item.preset_icon || 'backpack',
+  }))
 
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -351,31 +349,37 @@ export function RightColumn({
             </div>
 
             <div className="space-y-1">
-              {inventory.map((item) => {
-                const IconComponent = inventoryIconMap[item.icon] || BackpackIcon
-                const isSelected = selectedItem === item.id
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setSelectedItem(item.id === selectedItem ? null : item.id)}
-                    className={cn(
-                      "w-full flex items-center gap-2 p-1.5 rounded-sm transition-all text-left",
-                      "hover:bg-[#2a2420]/60",
-                      isSelected && "bg-[#1a2a35]/60 border border-[#4a7a9a]/30"
-                    )}
-                  >
-                    <IconFrame className="w-9 h-9 flex-shrink-0" selected={isSelected}>
-                      <div className="w-full h-full bg-[#1a1614] p-0.5">
-                        <IconComponent className="w-full h-full" />
-                      </div>
-                    </IconFrame>
-                    <span className="flex-1 text-sm text-stone-300 truncate">{item.name}</span>
-                    {item.quantity > 1 && (
-                      <span className="text-xs text-stone-500 tabular-nums">x{item.quantity}</span>
-                    )}
-                  </button>
-                )
-              })}
+              {inventory.length === 0 ? (
+                <div className="text-center py-4 text-stone-500 text-sm italic">
+                  No possessions
+                </div>
+              ) : (
+                inventory.map((item) => {
+                  const IconComponent = inventoryIconMap[item.icon] || BackpackIcon
+                  const isSelected = selectedItem === item.id
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setSelectedItem(item.id === selectedItem ? null : item.id)}
+                      className={cn(
+                        "w-full flex items-center gap-2 p-1.5 rounded-sm transition-all text-left",
+                        "hover:bg-[#2a2420]/60",
+                        isSelected && "bg-[#1a2a35]/60 border border-[#4a7a9a]/30"
+                      )}
+                    >
+                      <IconFrame className="w-9 h-9 flex-shrink-0" selected={isSelected}>
+                        <div className="w-full h-full bg-[#1a1614] p-0.5">
+                          <IconComponent className="w-full h-full" />
+                        </div>
+                      </IconFrame>
+                      <span className="flex-1 text-sm text-stone-300 truncate">{item.name}</span>
+                      {item.quantity > 1 && (
+                        <span className="text-xs text-stone-500 tabular-nums">x{item.quantity}</span>
+                      )}
+                    </button>
+                  )
+                })
+              )}
             </div>
 
             {/* Weight */}
