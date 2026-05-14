@@ -106,7 +106,9 @@ export function useMalachar(campaign: CampaignContext) {
         // Helper to add/update assistant message
         const updateAssistantMessage = (text: string) => {
           if (!text) return
+          console.log("[v0] updateAssistantMessage called with:", text.substring(0, 50) + "...")
           currentAssistantMessageRef.current += text
+          console.log("[v0] currentAssistantMessageRef now:", currentAssistantMessageRef.current.substring(0, 50) + "...")
           setMessages((prev) => {
             const lastMsg = prev[prev.length - 1]
             if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
@@ -147,6 +149,7 @@ export function useMalachar(campaign: CampaignContext) {
                 .filter((c: { type: string }) => c.type === "text")
                 .map((c: { text: string }) => c.text)
                 .join("")
+              console.log("[v0] Malachar extracted text:", textContent.substring(0, 100) + "...")
               updateAssistantMessage(textContent)
             }
             break
