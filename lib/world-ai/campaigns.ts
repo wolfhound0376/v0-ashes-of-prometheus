@@ -269,14 +269,24 @@ LORE: Cult target 7/12 Sword Coast. Camp has dragon hatchery for Tiamat. Lennith
 DICE RULES — CRITICAL: NEVER fabricate roll results. If the user gives you a result, use exactly that number. To ask for a new roll, write [[XdY+Z]].
 
 WORLD: The Underdark, Faerûn. Drow priestesses' reckless summonings have torn the Abyss open — 8 demon lords are loose.
+
+CHAPTER 1 — PRISONERS OF THE DROW (Starting Rules):
+STARTING CONDITIONS: PCs wake in Velkynvelve slave pen. NO gear, NO spell components. Manacles (restrained, normal speed). Collared. Been here 1d10 days. Magical wards block spells cast inside pen (but not from outside).
+SCAVENGED ITEMS (d100, roll ONCE per PC at start): 01-10 Gold coin, 11-16 Carnelian gem (10gp), 17-22 Obsidian flake dagger (1d4 slashing), 23-28 Crossbow bolt, 29-34 1d4 mushrooms (edible), 35-40 Coil of silk rope (50ft), 41-46 Belt pouch with 1d4 cp, 47-52 Drow poison (unconscious 1hr on fail DC 13 CON), 53-58 Flask of lamp oil, 59-64 Waterskin, 65-70 Hand crossbow, 71-76 Shattered spellbook pages (contains 1 random cantrip), 77-82 Iron key (fits manacles), 83-88 Bag of caltrops, 89-94 Tin mess kit, 95-100 Nothing. NOTE: Rogues may have concealed lockpick (DM discretion). Wizards may have 1 spell component.
+ESCAPE OPTIONS: (1) Jorlan unlocks door (he hates Ilvara for dumping him), (2) Demon attack chaos, (3) Steal during slave work.
+SLAVE DUTIES: Fill water barrels, operate lift, clean barracks, empty chamber pots (grey ooze in pool!), food prep (knives available), laundry. Stealing requires DEX (Sleight of Hand) vs guard passive Perception.
+PLAYER GEAR: Locked in Ilvara's chest (area 7). Getting it is near-suicide without a plan.
+MANACLES: Slip DC 20 DEX, Break DC 20 STR, Pick DC 20 DEX (disadvantage without tools).
+
 ACTS: 1 Escape Velkynvelve · 2 Discovery (settlements + demon signs) · 3 Madness Rising (Labyrinth, Vizeran) · 4 Surface coordination + banishment ritual.
 LOCATIONS: VELKYNVELVE (drow slave outpost, start), SLOOBLUDOP (kuo-toa, Demogorgon corruption), DARKLAKE (vast subterranean sea), GRACKLSTUGH (duergar city, Themberchaud the trapped red dragon), NEVERLIGHT GROVE (Zuggtmoy myconid colony), BLINGDENSTONE (deep gnomes, friendly), GRAVENHOLLOW (stone giant library), THE LABYRINTH (Yeenoghu/Baphomet), MANTOL-DERITH (neutral trade), MENZOBERRANZAN (drow city, optional).
-PRISONERS (Act 1 companions): Eldeth (dwarf, loyal), Stool (myconid sprout, telepathic), Sarith (drow, will betray at Neverlight), Buppido (derro serial killer), Prince Derendil (quaggoth believing himself an elf prince), Topsy & Turvy (gnome twins), Jimjar (gambler gnome), Ront (cowardly orc), Shuushar (pacifist kuo-toa).
-DROW PURSUERS: Ilvara Mizzrym (5/5, vain priestess), Shoor (4/5, lieutenant/lover), Jorlan (3/5, disfigured, secret aid).
+PRISONERS (Act 1 companions): Eldeth (dwarf scout, loyal, AC12 HP16), Stool (myconid sprout, telepathic rapport spores 3/day), Sarith (drow, infected by Zuggtmoy spores - will betray at Neverlight), Buppido (derro, secretly insane serial killer god-complex), Prince Derendil (quaggoth AC13 HP45, believes he's cursed elf prince), Topsy & Turvy (gnome twins, secretly wererats), Jimjar (gambler gnome, possibly a god in disguise), Ront (cowardly orc bully, picks on Stool), Shuushar (pacifist kuo-toa, will not fight).
+DROW PURSUERS: Ilvara Mizzrym (5/5, vain priestess AC16 HP71, WAY too powerful to fight), Shoor Vandree (4/5, arrogant lieutenant/lover, has wand of viscid globs), Jorlan Duskryn (3/5, scarred and bitter, secret ally - will help escape to spite Ilvara), Asha Vandree (apprentice, secretly antagonizing Jorlan).
 DEMON LORDS LOOSE: Demogorgon (madness, Darklake), Zuggtmoy (fungus, Neverlight), Juiblex (slime, Gracklstugh), Yeenoghu (slaughter, Labyrinth), Baphomet (mazes), Fraz-Urb'luu (illusion), Orcus (undeath), Graz'zt (cruelty).
 TRAVEL d12: 1 drow patrol, 2 giant centipede, 3 hook horrors, 4 duergar scouts, 5 carrion crawler, 6 quaggoth hunters, 7 fire beetle swarm, 8 stirges, 9 lost miner ghosts, 10 friendly merchant, 11 demon-lord madness manifestation, 12 unnatural silence.
 MADNESS: Witnessing a demon lord triggers a save. Short-term (1d10 min), Long-term (1d10×10 hours), Indefinite (until cured). Lean into the roleplay.
-HEAT (Act 1 pursuit): 1-2 far behind, 3-4 closing, 5 caught. -1 with hidden travel/water crossings, +1 with combat/bodies/obvious route.`,
+HEAT (Act 1 pursuit): 1-2 far behind, 3-4 closing, 5 caught. -1 with hidden travel/water crossings, +1 with combat/bodies/obvious route.
+ESCAPE ROUTES: North (Menzoberranzan, 26 days - BAD), West (Darklake), South (Gracklstugh, 28 days).`,
     contexts: {
       episodes: [['1', 'Act 1 — Escape Velkynvelve'], ['2', 'Act 2 — Discovery'], ['3', 'Act 3 — Madness Rising'], ['4', 'Act 4 — The Ritual']],
       locations: ['Velkynvelve (slave pen)', 'Velkynvelve (outpost)', 'Underdark tunnels', 'Sloobludop', 'The Darklake', 'Gracklstugh', 'Neverlight Grove', 'Blingdenstone', 'Gravenhollow', 'The Labyrinth', 'Mantol-Derith', 'Surface — Gauntlgrym'],
