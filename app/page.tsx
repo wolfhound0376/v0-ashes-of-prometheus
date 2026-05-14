@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Settings, Sparkles, X } from "lucide-react"
+import { Settings, Sparkles, X, Save, RotateCcw } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
@@ -33,6 +33,11 @@ export default function DashboardPage() {
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
   const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
   const [pendingCampaignChange, setPendingCampaignChange] = useState<Campaign | null>(null)
+  
+  // Save/Restart campaign state
+  const [showRestartDialog, setShowRestartDialog] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
   
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
@@ -75,6 +80,90 @@ export default function DashboardPage() {
   const cancelCampaignChange = () => {
     setShowCampaignChangeDialog(false)
     setPendingCampaignChange(null)
+  }
+  
+  // Save campaign - stores dialogue, inventory, and character state
+  const handleSaveCampaign = async () => {
+    if (!selectedCharacter) return
+    
+    setIsSaving(true)
+    setSaveMessage(null)
+    
+    try {
+      // Get current inventory
+      const { data: inventoryData } = await supabase
+        .from('inventory_items')
+        .select('*')
+        .eq('character_id', selectedCharacter.id)
+      
+      // Create save
+      const { error } = await supabase
+        .from('campaign_saves')
+        .insert({
+          campaign_id: activeCampaign.id,
+          save_name: `${activeCampaign.name} - ${new Date().toLocaleString()}`,
+          dialogue_snapshot: dialogue,
+          inventory_snapshot: inventoryData || [],
+          character_snapshot: {
+            id: selectedCharacter.id,
+            name: selectedCharacter.name,
+            class: selectedCharacter.class,
+            level: selectedCharacter.level,
+            hp_current: selectedCharacter.hp_current,
+            hp_max: selectedCharacter.hp_max,
+          },
+          campaign_metadata: {
+            savedAt: new Date().toISOString(),
+          }
+        })
+      
+      if (error) throw error
+      
+      setSaveMessage("Campaign saved!")
+      setTimeout(() => setSaveMessage(null), 3000)
+    } catch (err) {
+      console.error('Error saving campaign:', err)
+      setSaveMessage("Failed to save")
+      setTimeout(() => setSaveMessage(null), 3000)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+  
+  // Restart campaign - confirms then clears dialogue and inventory
+  const handleRestartCampaign = () => {
+    setShowRestartDialog(true)
+  }
+  
+  const confirmRestartCampaign = async () => {
+    if (!selectedCharacter) return
+    
+    try {
+      // Clear all dialogue
+      await supabase
+        .from('dialogue')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000')
+      
+      // Clear character inventory
+      await supabase
+        .from('inventory_items')
+        .delete()
+        .eq('character_id', selectedCharacter.id)
+      
+      // Reset local state
+      setDialogue([])
+      setCharacterInventory([])
+      
+      // Close dialog
+      setShowRestartDialog(false)
+    } catch (err) {
+      console.error('Error restarting campaign:', err)
+    }
+  }
+  
+  const cancelRestartCampaign = () => {
+    setShowRestartDialog(false)
   }
 
   const [resources, setResources] = useState({
@@ -282,27 +371,56 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
-      {/* World AI Toggle Button */}
-      <button
-        onClick={() => setWorldAIPanelOpen(!worldAIPanelOpen)}
-        className={`fixed top-4 right-16 z-[60] p-2 bg-[#1a1614]/90 border rounded-lg transition-all group ${
-          worldAIPanelOpen 
-            ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]" 
-            : "border-[#3d3428]/60 text-stone-500 hover:text-[#d4b15a] hover:border-[#d4b15a]/30"
-        }`}
-        title="World AI - Campaign Engine"
-      >
-        <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-      </button>
-      
-      {/* Admin link */}
-      <Link 
-        href="/admin"
-        className="fixed top-4 right-4 z-[60] p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
-        title="Content Manager"
-      >
-        <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-      </Link>
+      {/* Campaign Controls */}
+      <div className="fixed top-4 right-4 z-[60] flex items-center gap-2">
+        {/* Save message toast */}
+        {saveMessage && (
+          <div className="px-3 py-1.5 bg-[#1a1614]/95 border border-[#3d3428] rounded-lg text-sm text-[#d4b15a] animate-in fade-in slide-in-from-right-2">
+            {saveMessage}
+          </div>
+        )}
+        
+        {/* Save Campaign */}
+        <button
+          onClick={handleSaveCampaign}
+          disabled={isSaving}
+          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-emerald-400 hover:border-emerald-400/30 transition-all group disabled:opacity-50"
+          title="Save Campaign"
+        >
+          <Save className={`w-5 h-5 transition-transform duration-300 ${isSaving ? 'animate-pulse' : 'group-hover:scale-110'}`} />
+        </button>
+        
+        {/* Restart Campaign */}
+        <button
+          onClick={handleRestartCampaign}
+          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-red-400 hover:border-red-400/30 transition-all group"
+          title="Restart Campaign"
+        >
+          <RotateCcw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
+        </button>
+        
+        {/* World AI Toggle */}
+        <button
+          onClick={() => setWorldAIPanelOpen(!worldAIPanelOpen)}
+          className={`p-2 bg-[#1a1614]/90 border rounded-lg transition-all group ${
+            worldAIPanelOpen 
+              ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]" 
+              : "border-[#3d3428]/60 text-stone-500 hover:text-[#d4b15a] hover:border-[#d4b15a]/30"
+          }`}
+          title="World AI - Campaign Engine"
+        >
+          <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+        </button>
+        
+        {/* Admin link */}
+        <Link 
+          href="/admin"
+          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
+          title="Content Manager"
+        >
+          <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+        </Link>
+      </div>
 
       {/* Smoke/fog overlay */}
       <div className="fixed inset-0 pointer-events-none z-50 opacity-20">
@@ -395,6 +513,35 @@ export default function DashboardPage() {
                 className="px-4 py-2 rounded bg-[#e0651a]/20 border border-[#e0651a]/50 text-[#e0651a] hover:bg-[#e0651a]/30 transition-colors"
               >
                 Change Campaign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restart Campaign Confirmation Dialog */}
+      {showRestartDialog && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#1a1614] border border-[#3d3428] rounded-lg p-6 max-w-md mx-4 shadow-2xl">
+            <h2 className="text-xl font-serif text-red-400 mb-3">Restart Campaign?</h2>
+            <p className="text-stone-300 mb-4">
+              This will <span className="text-red-400 font-semibold">permanently delete</span> all dialogue history and remove all items from your inventory.
+            </p>
+            <p className="text-stone-400 text-sm mb-6">
+              Your character stats will be preserved, but you will start fresh in <span className="text-[#d4b15a]">{activeCampaign.name}</span>. This cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelRestartCampaign}
+                className="px-4 py-2 rounded bg-[#2a2520] border border-[#3d3428] text-stone-400 hover:text-stone-200 hover:border-stone-500 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRestartCampaign}
+                className="px-4 py-2 rounded bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30 transition-colors"
+              >
+                Restart Campaign
               </button>
             </div>
           </div>
