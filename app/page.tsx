@@ -222,29 +222,25 @@ export default function DashboardPage() {
         .limit(50)
       
 if (error) {
-  console.error('Error fetching dialogue:', error)
-  } else if (data) {
-  console.log('[v0] Initial dialogue fetched:', data.length, 'messages')
-  setDialogue(data)
-  }
-  }
-  fetchDialogue()
+        console.error('Error fetching dialogue:', error)
+      } else if (data) {
+        setDialogue(data)
+      }
+    }
+    fetchDialogue()
 
-// Subscribe to real-time updates
-  const channel = supabase
-  .channel('dialogue-changes')
-  .on(
-  'postgres_changes',
-  { event: 'INSERT', schema: 'public', table: 'dialogue' },
-  (payload) => {
-  console.log('[v0] Real-time dialogue update received:', payload)
-  const newEntry = payload.new as { speaker: string; text: string }
-  setDialogue(prev => [...prev, { speaker: newEntry.speaker, text: newEntry.text }])
-  }
-  )
-  .subscribe((status) => {
-  console.log('[v0] Dialogue subscription status:', status)
-  })
+    // Subscribe to real-time updates
+    const channel = supabase
+      .channel('dialogue-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'dialogue' },
+        (payload) => {
+          const newEntry = payload.new as { speaker: string; text: string }
+          setDialogue(prev => [...prev, { speaker: newEntry.speaker, text: newEntry.text }])
+        }
+      )
+      .subscribe()
 
     return () => {
       supabase.removeChannel(channel)

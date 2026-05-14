@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { Sun, MessageSquare, Send } from "lucide-react"
 
@@ -32,6 +33,13 @@ export function LeftColumn({
   characterName,
   isWorldAIThinking = false,
 }: LeftColumnProps) {
+  const dialogueEndRef = useRef<HTMLDivElement>(null)
+  
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [dialogue, isWorldAIThinking])
+  
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="Avatar / Environment" className="flex-shrink-0">
@@ -111,6 +119,7 @@ export function LeftColumn({
               <span className="text-stone-400 ml-2 italic">weaving dark knowledge...</span>
             </div>
           )}
+          <div ref={dialogueEndRef} />
         </div>
 
         {/* Input area */}
