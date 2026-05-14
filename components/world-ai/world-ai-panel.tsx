@@ -17,6 +17,7 @@ import {
   Wifi
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase/client"
 import { Campaign, CAMPAIGNS, getAllCampaigns } from "@/lib/world-ai/campaigns"
 import { rollDice, formatDiceResult, DiceRollResult } from "@/lib/world-ai/dice"
 import { DiceModal } from "./dice-modal"
@@ -43,12 +44,48 @@ export function WorldAIPanel({
   const [currentLocation, setCurrentLocation] = useState(currentCampaign.contexts.locations[0])
   const [currentHeat, setCurrentHeat] = useState(currentCampaign.contexts.defaults.heat)
   
-  // Reset local state when campaign changes
+  // Reset local state when campaign changes and sync environment to Supabase
   useEffect(() => {
     setCurrentEpisode(campaign.contexts.defaults.episode)
     setCurrentLocation(campaign.contexts.locations[0])
     setCurrentHeat(campaign.contexts.defaults.heat)
+    
+    // Sync the initial location to Supabase for avatar display
+    syncEnvironmentToSupabase(campaign.contexts.locations[0], `Starting location for ${campaign.name}`)
   }, [campaign])
+  
+  // Helper to sync environment to Supabase (update existing or create new)
+  const syncEnvironmentToSupabase = async (location: string, description?: string) => {
+    const supabase = createClient()
+    
+    // First try to find an existing environment with this name
+    const { data: existing } = await supabase
+      .from('environments')
+      .select('id')
+      .eq('name', location)
+      .single()
+    
+    if (existing) {
+      // Update existing
+      await supabase
+        .from('environments')
+        .update({
+          time_of_day: currentHeat === 'Hot' ? 'Night' : 'Afternoon',
+          description: description || `Current location: ${location}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+    } else {
+      // Create new
+      await supabase
+        .from('environments')
+        .insert({
+          name: location,
+          time_of_day: 'Afternoon',
+          description: description || `Current location: ${location}`,
+        })
+    }
+  }
 
   // View state
   const [activeView, setActiveView] = useState<ViewTab>("chat")
@@ -101,10 +138,13 @@ export function WorldAIPanel({
     onCampaignChange?.(campaign)
   }
 
-  // Handle location change
-  const handleLocationChange = (location: string) => {
+  // Handle location change - sync to Supabase so avatar display updates
+  const handleLocationChange = async (location: string) => {
     setCurrentLocation(location)
     onLocationChange?.(location)
+    
+    // Sync to Supabase environments table for avatar display
+    await syncEnvironmentToSupabase(location)
   }
 
   // Dice roll handler
