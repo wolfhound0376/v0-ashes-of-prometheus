@@ -14,14 +14,13 @@ import {
   Home,
   Flame,
   MapPin,
-  Wifi,
-  WifiOff
+  Wifi
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Campaign, CAMPAIGNS, getAllCampaigns } from "@/lib/world-ai/campaigns"
 import { rollDice, formatDiceResult, DiceRollResult } from "@/lib/world-ai/dice"
 import { DiceModal } from "./dice-modal"
-import { useMalachar, type MalacharMessage } from "@/lib/world-ai/use-malachar"
+import { useLich } from "@/lib/hooks/use-lich"
 
 type ViewTab = "chat" | "maps" | "lore" | "library"
 
@@ -61,27 +60,24 @@ export function WorldAIPanel({
   const [inputValue, setInputValue] = useState("")
   const chatLogRef = useRef<HTMLDivElement>(null)
 
-  // Build campaign context for Malachar
-  const campaignContext = useMemo(() => ({
-    name: currentCampaign.name,
-    systemPrompt: currentCampaign.systemPrompt,
-    currentEpisode: currentEpisode,
-    currentLocation: currentLocation,
-    currentHeat: currentHeat,
-  }), [currentCampaign, currentEpisode, currentLocation, currentHeat])
-
-  // Malachar session hook - connects to the lich personality (falls back to Claude if not configured)
-  const { 
-    messages, 
-    isLoading: isThinking, 
-    isConnecting,
-    error: malacharError,
-    sendMessage, 
-    clearMessages,
-    reconnect,
-    sessionId,
-    backendMode
-  } = useMalachar(campaignContext)
+  // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
+  const { sendMessage, isLoading: isThinking, streamingText } = useLich(currentCampaign.id)
+  
+  // Local messages for UI display (will sync with Supabase via real-time)
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([])
+  
+  // Add streaming text to messages when it arrives
+  useEffect(() => {
+    if (streamingText) {
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg?.role === "assistant") {
+          return [...prev.slice(0, -1), { role: "assistant", content: streamingText }]
+        }
+        return [...prev, { role: "assistant", content: streamingText }]
+      })
+    }
+  }, [streamingText])
 
   // Dice state
   const [diceModalOpen, setDiceModalOpen] = useState(false)
@@ -138,23 +134,18 @@ export function WorldAIPanel({
     }
   }
 
-  // Send message handler - uses Malachar session with world context
-  const handleSendMessage = (content?: string) => {
+  // Send message handler - simple API call, Supabase stores the conversation
+  const handleSendMessage = async (content?: string) => {
     const text = content || inputValue.trim()
     if (!text || isThinking) return
 
     setInputValue("")
     
-    // Include campaign context with every message so Malachar has world knowledge
-    const worldContext = {
-      campaignId: currentCampaign.id,
-      campaignName: currentCampaign.name,
-      currentEpisode: currentEpisode,
-      currentLocation: currentLocation,
-      currentHeat: currentHeat,
-    }
+    // Add user message to local state immediately
+    setMessages(prev => [...prev, { role: "user", content: text }])
     
-    sendMessage(text, worldContext)
+    // Send to the lich - API handles context and saves to Supabase
+    await sendMessage(text)
   }
 
   const activeMap = currentCampaign.maps.find(m => m.id === activeMapId)
@@ -246,49 +237,29 @@ export function WorldAIPanel({
               ref={chatLogRef}
               className="flex-1 overflow-y-auto p-3 space-y-3"
             >
-{/* Connection status */}
-  {isConnecting && (
-  <div className="flex items-center justify-center gap-2 text-stone-500 text-sm py-4">
-    <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-    <span>Summoning Malachar...</span>
-  </div>
-  )}
-  {malacharError && (
-  <div className="flex flex-col items-center justify-center gap-3 text-sm py-4 px-3">
-    <div className="flex items-center gap-2 text-red-400">
-      <WifiOff className="w-4 h-4 flex-shrink-0" />
-      <span className="text-center">{malacharError}</span>
-    </div>
-    <button
-      onClick={() => reconnect()}
-      className="px-3 py-1.5 bg-[#3d3428] hover:bg-[#4d4438] border border-[#5d5448] rounded text-stone-300 text-xs transition-colors"
-    >
-      Retry Connection
-    </button>
-  </div>
-  )}
-  {!isConnecting && !malacharError && messages.length === 0 && (
-  <div className="text-center py-8">
-    <div className={`text-sm mb-2 flex items-center justify-center gap-2 ${backendMode === "malachar" ? "text-[#8b5cf6]" : "text-[#d4b15a]"}`}>
-      <Wifi className="w-4 h-4" />
-      <span>{backendMode === "malachar" ? "Connected to Malachar" : "Connected to World AI"}</span>
-    </div>
-    <div className="text-stone-500 text-sm italic">
-      {backendMode === "malachar" ? "The lich awaits your query..." : "Ask about your campaign..."}
-    </div>
-  </div>
-  )}
-              {messages.map((msg) => (
-                <ChatMessage key={msg.id} message={msg} isMalachar={backendMode === "malachar"} />
+{/* Empty state */}
+              {messages.length === 0 && (
+                <div className="text-center py-8">
+                  <div className="text-sm mb-2 flex items-center justify-center gap-2 text-[#8b5cf6]">
+                    <Wifi className="w-4 h-4" />
+                    <span>Connected to the Lich</span>
+                  </div>
+                  <div className="text-stone-500 text-sm italic">
+                    Malachar awaits your query...
+                  </div>
+                </div>
+              )}
+              {messages.map((msg, idx) => (
+                <ChatMessage key={idx} message={msg} />
               ))}
-{isThinking && (
-  <div className="flex gap-2 items-start">
-  <Sparkles className={`w-4 h-4 animate-pulse flex-shrink-0 mt-1 ${backendMode === "malachar" ? "text-[#8b5cf6]" : "text-[#d4b15a]"}`} />
-  <div className="text-sm text-stone-500 italic">
-  {backendMode === "malachar" ? "Malachar is weaving dark knowledge..." : "The World AI is thinking..."}
-  </div>
-  </div>
-  )}
+              {isThinking && !streamingText && (
+                <div className="flex gap-2 items-start">
+                  <Sparkles className="w-4 h-4 animate-pulse flex-shrink-0 mt-1 text-[#8b5cf6]" />
+                  <div className="text-sm text-stone-500 italic">
+                    Malachar is weaving dark knowledge...
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Quick Actions */}
@@ -523,26 +494,21 @@ function ContextSelector({
   )
 }
 
-// Chat message component - adapts to backend mode
-function ChatMessage({ message, isMalachar }: { message: MalacharMessage; isMalachar?: boolean }) {
+// Chat message component
+function ChatMessage({ message }: { message: { role: "user" | "assistant"; content: string } }) {
   const isUser = message.role === "user"
-  const isAssistant = message.role === "assistant"
-  const accentColor = isMalachar ? "text-[#8b5cf6]" : "text-[#d4b15a]"
-  const borderColor = isMalachar ? "border-[#8b5cf6]" : "border-[#d4b15a]"
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-1 duration-200">
       <div className={cn(
         "text-[9px] uppercase tracking-wider mb-1",
-        isUser && "text-stone-500",
-        isAssistant && accentColor
+        isUser ? "text-stone-500" : "text-[#8b5cf6]"
       )}>
-        {isUser ? "You" : (isMalachar ? "Malachar" : "World AI")}
+        {isUser ? "You" : "Malachar"}
       </div>
       <div className={cn(
         "bg-[#1f1c16]/70 backdrop-blur-sm rounded p-3 text-sm leading-relaxed border-l-2 whitespace-pre-wrap",
-        isUser && "border-[#3d3428]",
-        isAssistant && borderColor
+        isUser ? "border-[#3d3428]" : "border-[#8b5cf6]"
       )}>
         {message.content}
       </div>

@@ -10,7 +10,7 @@ import { WorldAIPanel } from "@/components/world-ai"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
-import { useMalachar } from "@/lib/world-ai/use-malachar"
+import { useLich } from "@/lib/hooks/use-lich"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
@@ -34,27 +34,11 @@ export default function DashboardPage() {
   const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
   const [pendingCampaignChange, setPendingCampaignChange] = useState<Campaign | null>(null)
   
-  // Default campaign is Out of the Abyss - Malachar manages progression
+  // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
   
-  // Malachar connection for the dashboard - sends player dialogue to the lich
-  // Malachar tracks episode, location, and heat progression internally
-  const malacharContext = {
-    id: activeCampaign.id,
-    name: activeCampaign.name,
-    systemPrompt: activeCampaign.systemPrompt,
-    currentEpisode: activeCampaign.contexts.defaults.episode,
-    currentLocation: activeCampaign.contexts.locations[0],
-    currentHeat: activeCampaign.contexts.defaults.heat,
-  }
-  
-  const { 
-    sendMessage: sendToMalachar, 
-    isLoading: malacharLoading,
-    backendMode,
-    clearMessages: clearMalacharMessages,
-    reconnect: reconnectMalachar
-  } = useMalachar(malacharContext)
+  // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
+  const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
   
   // Handle campaign change with confirmation
   const handleCampaignChange = (newCampaign: Campaign) => {
@@ -80,18 +64,12 @@ export default function DashboardPage() {
     // Clear local dialogue state
     setDialogue([])
     
-    // Clear Malachar messages and reconnect with new campaign
-    clearMalacharMessages()
-    
     // Set the new campaign
     setActiveCampaign(pendingCampaignChange)
     
     // Close dialog
     setShowCampaignChangeDialog(false)
     setPendingCampaignChange(null)
-    
-    // Reconnect Malachar to start fresh session
-    reconnectMalachar()
   }
   
   const cancelCampaignChange = () => {
@@ -236,23 +214,12 @@ export default function DashboardPage() {
       const text = dialogueInput.trim()
       setDialogueInput("")
       
-      // Send to Malachar - the useMalachar hook handles:
-      // 1. Saving player message to dialogue table
-      // 2. Sending to Malachar API with world context
-      // 3. Saving Malachar's response to dialogue table
-      // Real-time subscription will update the UI for both
-      const worldContext = {
-        campaignId: activeCampaign.id,
-        campaignName: activeCampaign.name,
-        currentEpisode: activeCampaign.contexts.defaults.episode,
-        currentLocation: activeCampaign.contexts.locations[0],
-        currentHeat: activeCampaign.contexts.defaults.heat,
-        characterName: selectedCharacter?.name,
-        characterClass: selectedCharacter?.class,
-        characterLevel: selectedCharacter?.level,
-      }
-      
-      sendToMalachar(text, worldContext)
+      // Send to the Lich - API handles:
+      // 1. Fetching character data from Supabase
+      // 2. Building world context
+      // 3. Saving messages to dialogue table
+      // Real-time subscription will update the UI
+      sendToLich(text)
     }
   }
 
@@ -379,7 +346,7 @@ export default function DashboardPage() {
             onDialogueSubmit={handleDialogueSubmit}
             characterAvatar={selectedCharacter?.avatar_image_url}
             characterName={selectedCharacter?.name}
-            isWorldAIThinking={malacharLoading}
+            isWorldAIThinking={lichLoading}
             />
         <CenterColumn
           selectedAction={selectedAction}
