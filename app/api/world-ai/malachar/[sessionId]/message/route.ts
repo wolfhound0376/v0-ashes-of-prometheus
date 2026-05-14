@@ -1,14 +1,15 @@
 // Send a message to a Malachar session
 import { NextRequest, NextResponse } from "next/server"
 
-const MALACHAR_API_URL = process.env.MALACHAR_API_URL
-const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
-
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params
+  
+  // Read env vars inside function to pick up changes without restart
+  const MALACHAR_API_URL = process.env.MALACHAR_API_URL
+  const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
   
   if (!MALACHAR_API_URL || !MALACHAR_API_KEY) {
     return NextResponse.json(

@@ -1,11 +1,12 @@
 // Create a new Malachar session
 import { NextResponse } from "next/server"
 
-const MALACHAR_API_URL = process.env.MALACHAR_API_URL
-const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
-const MALACHAR_AGENT_ID = process.env.MALACHAR_AGENT_ID
-
 export async function POST(req: Request) {
+  // Read env vars inside function to pick up changes without restart
+  const MALACHAR_API_URL = process.env.MALACHAR_API_URL
+  const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
+  const MALACHAR_AGENT_ID = process.env.MALACHAR_AGENT_ID
+  
   // Check which env vars are missing
   const missingVars = []
   if (!MALACHAR_API_URL) missingVars.push("MALACHAR_API_URL")
