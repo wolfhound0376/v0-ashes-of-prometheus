@@ -62,12 +62,18 @@ export function useLich(campaignId: string = "abyss") {
       let fullText = ""
       let musicCue: MusicCue | undefined
 
+      console.log("[v0] Starting to read stream, reader:", !!reader)
+
       if (reader) {
         while (true) {
           const { done, value } = await reader.read()
-          if (done) break
+          if (done) {
+            console.log("[v0] Stream done, fullText length:", fullText.length)
+            break
+          }
           
           const chunk = decoder.decode(value, { stream: true })
+          console.log("[v0] Got chunk:", chunk.substring(0, 100))
           fullText += chunk
           
           // Check for music cue in the stream (tool results contain JSON)
@@ -99,11 +105,28 @@ export function useLich(campaignId: string = "abyss") {
         }
       }
 
-      // Clean up the text (remove any JSON tool results that leaked through)
-      const cleanText = fullText
+      // Clean up the text - AI SDK uses format like 0:"text content"\n
+      // Extract just the text content from the stream format
+      let cleanText = ""
+      
+      // Parse the AI SDK text stream format: 0:"text"\n0:"more text"\n
+      const textMatches = fullText.matchAll(/0:"([^"]*)"/g)
+      for (const match of textMatches) {
+        cleanText += match[1]
+      }
+      
+      // If no matches, maybe it's plain text (fallback)
+      if (!cleanText && fullText) {
+        cleanText = fullText
+      }
+      
+      // Remove any JSON tool results that leaked through
+      cleanText = cleanText
         .replace(/\{"success":true[^}]+\}/g, "")
-        .replace(/\s+/g, " ")
+        .replace(/\\n/g, "\n") // Unescape newlines
         .trim()
+      
+      console.log("[v0] Clean text length:", cleanText.length, "preview:", cleanText.substring(0, 100))
       
       // Save Malachar's response to dialogue table
       if (cleanText && cleanText.length > 0) {
