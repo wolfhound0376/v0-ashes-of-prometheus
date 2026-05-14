@@ -123,7 +123,7 @@ EXPERIENCE POINTS (D&D 5E):
           name: z.string().describe("The item name, e.g. 'Rusty Dagger', 'Silk Rope', 'Gold Coin'"),
           quantity: z.number().default(1).describe("How many of this item"),
           description: z.string().describe("A brief description of the item"),
-          itemType: z.enum(["weapon", "armor", "tool", "consumable", "treasure", "misc"]).describe("The type of item"),
+          itemType: z.enum(["weapon", "armor", "consumable", "misc", "currency"]).default("misc").describe("The type of item: weapon, armor, consumable, misc, or currency"),
           weight: z.number().default(0.1).describe("Weight in pounds"),
           value: z.number().default(0).describe("Value in copper pieces"),
         }),
@@ -382,10 +382,9 @@ function getPresetIcon(itemType: string): string {
   const iconMap: Record<string, string> = {
     weapon: "sword",
     armor: "shield",
-    tool: "wrench",
     consumable: "potion",
-    treasure: "gem",
     misc: "backpack",
+    currency: "coins",
   }
   return iconMap[itemType] || "backpack"
 }
