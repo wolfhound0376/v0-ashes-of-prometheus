@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { parseDataStreamPart } from "ai"
 
 interface MusicCue {
   action: "play" | "stop"
@@ -14,6 +13,31 @@ interface MusicCue {
 interface LichResponse {
   text: string
   musicCue?: MusicCue
+}
+
+// Parse AI SDK data stream format
+// Format: TYPE:JSON_VALUE\n (e.g., 0:"text" for text, 9:{...} for tool results)
+function parseDataStreamLine(line: string): { type: string; value: unknown } | null {
+  const colonIndex = line.indexOf(":")
+  if (colonIndex === -1) return null
+  
+  const typeCode = line.substring(0, colonIndex)
+  const jsonValue = line.substring(colonIndex + 1)
+  
+  try {
+    const value = JSON.parse(jsonValue)
+    // Type codes: 0 = text, 9 = tool_result, a = tool_call, etc.
+    const typeMap: Record<string, string> = {
+      "0": "text",
+      "9": "tool_result", 
+      "a": "tool_call",
+      "e": "error",
+      "d": "finish",
+    }
+    return { type: typeMap[typeCode] || typeCode, value }
+  } catch {
+    return null
+  }
 }
 
 export function useLich(campaignId: string = "abyss") {
@@ -63,20 +87,14 @@ export function useLich(campaignId: string = "abyss") {
       let fullText = ""
       let musicCue: MusicCue | undefined
 
-      console.log("[v0] Starting to read stream, reader:", !!reader)
-
       if (reader) {
         let buffer = ""
         while (true) {
           const { done, value } = await reader.read()
-          if (done) {
-            console.log("[v0] Stream done, fullText length:", fullText.length)
-            break
-          }
+          if (done) break
           
           const chunk = decoder.decode(value, { stream: true })
           buffer += chunk
-          console.log("[v0] Got raw chunk:", chunk.substring(0, 100))
           
           // Parse the data stream format - each line is a separate message
           const lines = buffer.split("\n")
@@ -84,8 +102,9 @@ export function useLich(campaignId: string = "abyss") {
           
           for (const line of lines) {
             if (!line.trim()) continue
-            try {
-              const part = parseDataStreamPart(line)
+            
+            const part = parseDataStreamLine(line)
+            if (part) {
               if (part.type === "text") {
                 fullText += part.value
                 setStreamingText(fullText)
@@ -104,9 +123,6 @@ export function useLich(campaignId: string = "abyss") {
                   }
                 }
               }
-            } catch {
-              // Not a valid data stream part, might be raw text
-              fullText += line
             }
           }
           
@@ -118,10 +134,7 @@ export function useLich(campaignId: string = "abyss") {
         }
       }
 
-      // fullText is already clean from the parseDataStreamPart extraction
       const cleanText = fullText.trim()
-      
-      console.log("[v0] Clean text length:", cleanText.length, "preview:", cleanText.substring(0, 100))
       
       // Save Malachar's response to dialogue table
       if (cleanText && cleanText.length > 0) {
