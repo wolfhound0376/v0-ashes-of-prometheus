@@ -11,7 +11,7 @@ interface FloatingWindowProps {
   children: ReactNode
   className?: string
   position?: "left" | "center" | "right"
-  size?: "sm" | "md" | "lg"
+  size?: "sm" | "md" | "lg" | "xl" | "fullscreen"
 }
 
 export function FloatingWindow({ 
@@ -28,7 +28,9 @@ export function FloatingWindow({
   const sizeClasses = {
     sm: "max-w-sm",
     md: "max-w-md",
-    lg: "max-w-lg"
+    lg: "max-w-lg",
+    xl: "max-w-4xl",
+    fullscreen: "max-w-[90vw] h-[85vh]"
   }
 
   const positionClasses = {
@@ -51,6 +53,7 @@ export function FloatingWindow({
           "absolute top-1/2 -translate-y-1/2 w-[calc(100%-2rem)] pointer-events-auto",
           "bg-[#1a1614] border border-[#3d3428] rounded-lg shadow-2xl",
           "animate-in fade-in zoom-in-95 duration-200",
+          size === "fullscreen" && "flex flex-col",
           sizeClasses[size],
           positionClasses[position],
           className
@@ -71,7 +74,10 @@ export function FloatingWindow({
         </div>
         
         {/* Content */}
-        <div className="max-h-[70vh] overflow-y-auto">
+        <div className={cn(
+          "overflow-y-auto",
+          size === "fullscreen" ? "flex-1" : "max-h-[70vh]"
+        )}>
           {children}
         </div>
       </div>
