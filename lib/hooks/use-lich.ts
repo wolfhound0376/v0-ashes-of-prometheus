@@ -28,14 +28,31 @@ export function useLich(campaignId: string = "abyss") {
     setLastMusicCue(null)
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, campaignId }),
-      })
+      // Retry logic for transient failures (e.g., during dev server restarts)
+      let response: Response | null = null
+      let lastError: Error | null = null
+      
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message, campaignId }),
+          })
+          
+          if (response.ok) break
+          lastError = new Error(`HTTP ${response.status}`)
+        } catch (fetchError) {
+          lastError = fetchError as Error
+          // Wait before retrying (exponential backoff)
+          if (attempt < 2) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)))
+          }
+        }
+      }
 
-      if (!response.ok) {
-        throw new Error("Failed to send message")
+      if (!response?.ok) {
+        throw lastError || new Error("Failed to send message")
       }
 
       // Stream the response
