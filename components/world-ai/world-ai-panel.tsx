@@ -1,8 +1,6 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport, type UIMessage } from "ai"
 import { 
   MessageSquare, 
   Map, 
@@ -15,12 +13,15 @@ import {
   ZoomOut,
   Home,
   Flame,
-  MapPin
+  MapPin,
+  Wifi,
+  WifiOff
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Campaign, CAMPAIGNS, getAllCampaigns } from "@/lib/world-ai/campaigns"
 import { rollDice, formatDiceResult, DiceRollResult } from "@/lib/world-ai/dice"
 import { DiceModal } from "./dice-modal"
+import { useMalachar, type MalacharMessage } from "@/lib/world-ai/use-malachar"
 
 type ViewTab = "chat" | "maps" | "lore" | "library"
 
@@ -47,48 +48,30 @@ export function WorldAIPanel({
   const [mapZoom, setMapZoom] = useState(1)
   const [hoveredHotspot, setHoveredHotspot] = useState<{ name: string; text: string } | null>(null)
   
-  // Chat input state (managed separately from useChat)
+  // Chat input state
   const [inputValue, setInputValue] = useState("")
   const chatLogRef = useRef<HTMLDivElement>(null)
 
-  // Store campaign context in a ref to avoid stale closures in transport
-  const campaignContextRef = useRef({
+  // Build campaign context for Malachar
+  const campaignContext = useMemo(() => ({
     name: currentCampaign.name,
     systemPrompt: currentCampaign.systemPrompt,
     currentEpisode: currentEpisode,
     currentLocation: currentLocation,
     currentHeat: currentHeat,
-  })
-  
-  // Update ref when context changes
-  useEffect(() => {
-    campaignContextRef.current = {
-      name: currentCampaign.name,
-      systemPrompt: currentCampaign.systemPrompt,
-      currentEpisode: currentEpisode,
-      currentLocation: currentLocation,
-      currentHeat: currentHeat,
-    }
-  }, [currentCampaign, currentEpisode, currentLocation, currentHeat])
+  }), [currentCampaign, currentEpisode, currentLocation, currentHeat])
 
-  // Memoize transport to prevent recreation on every render
-  const chatTransport = useMemo(() => new DefaultChatTransport({
-    api: "/api/world-ai/chat",
-    prepareSendMessagesRequest: ({ id, messages }) => ({
-      body: {
-        messages,
-        id,
-        campaign: campaignContextRef.current,
-      },
-    }),
-  }), [])
-
-  // AI Chat hook with Claude
-  const { messages, status, sendMessage, setMessages } = useChat({
-    transport: chatTransport,
-  })
-  
-  const isThinking = status === "streaming" || status === "submitted"
+  // Malachar session hook - connects to the lich personality
+  const { 
+    messages, 
+    isLoading: isThinking, 
+    isConnecting,
+    error: malacharError,
+    sendMessage, 
+    clearMessages,
+    reconnect,
+    sessionId 
+  } = useMalachar(campaignContext)
 
   // Dice state
   const [diceModalOpen, setDiceModalOpen] = useState(false)
@@ -112,7 +95,8 @@ export function WorldAIPanel({
     setCurrentLocation(campaign.contexts.locations[0])
     setCurrentHeat(campaign.contexts.defaults.heat)
     setActiveMapId(campaign.maps[0]?.id || "")
-    setMessages([]) // Clear chat history when switching campaigns
+    // Reconnect Malachar with new campaign context
+    reconnect()
     onCampaignChange?.(campaign)
     setActiveView("chat")
   }
@@ -150,13 +134,13 @@ export function WorldAIPanel({
     }
   }
 
-  // Send message handler - uses AI SDK useChat
-  const handleSendMessage = (content?: string) => {
+  // Send message handler - uses Malachar session
+  const handleSendMessage = (content?: string, context?: Record<string, unknown>) => {
     const text = content || inputValue.trim()
     if (!text || isThinking) return
 
     setInputValue("")
-    sendMessage({ text })
+    sendMessage(text, context)
   }
 
   const activeMap = currentCampaign.maps.find(m => m.id === activeMapId)
@@ -248,22 +232,41 @@ export function WorldAIPanel({
               ref={chatLogRef}
               className="flex-1 overflow-y-auto p-3 space-y-3"
             >
-              {messages.length === 0 && (
-                <div className="text-center text-stone-500 text-sm italic py-8">
-                  Ask the World AI anything about your campaign...
-                </div>
-              )}
+{/* Connection status */}
+  {isConnecting && (
+  <div className="flex items-center justify-center gap-2 text-stone-500 text-sm py-4">
+    <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+    <span>Summoning Malachar...</span>
+  </div>
+  )}
+  {malacharError && (
+  <div className="flex items-center justify-center gap-2 text-red-400 text-sm py-4 px-3">
+    <WifiOff className="w-4 h-4" />
+    <span>{malacharError}</span>
+  </div>
+  )}
+  {!isConnecting && !malacharError && messages.length === 0 && (
+  <div className="text-center py-8">
+    <div className="text-[#8b5cf6] text-sm mb-2 flex items-center justify-center gap-2">
+      <Wifi className="w-4 h-4" />
+      <span>Connected to Malachar</span>
+    </div>
+    <div className="text-stone-500 text-sm italic">
+      The lich awaits your query...
+    </div>
+  </div>
+  )}
               {messages.map((msg) => (
                 <ChatMessage key={msg.id} message={msg} />
               ))}
-              {isThinking && (
-                <div className="flex gap-2 items-start">
-                  <Sparkles className="w-4 h-4 text-[#d4b15a] animate-pulse flex-shrink-0 mt-1" />
-                  <div className="text-sm text-stone-500 italic">
-                    The World AI is thinking...
-                  </div>
-                </div>
-              )}
+{isThinking && (
+  <div className="flex gap-2 items-start">
+  <Sparkles className="w-4 h-4 text-[#8b5cf6] animate-pulse flex-shrink-0 mt-1" />
+  <div className="text-sm text-stone-500 italic">
+  Malachar is weaving dark knowledge...
+  </div>
+  </div>
+  )}
             </div>
 
             {/* Quick Actions */}
@@ -498,36 +501,26 @@ function ContextSelector({
   )
 }
 
-// Helper to extract text from UIMessage parts
-function getUIMessageText(msg: UIMessage): string {
-  if (!msg.parts || !Array.isArray(msg.parts)) return ''
-  return msg.parts
-    .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-    .map((p) => p.text)
-    .join('')
-}
-
-// Chat message component - works with AI SDK UIMessage format
-function ChatMessage({ message }: { message: UIMessage }) {
+// Chat message component - works with Malachar message format
+function ChatMessage({ message }: { message: MalacharMessage }) {
   const isUser = message.role === "user"
   const isAssistant = message.role === "assistant"
-  const content = getUIMessageText(message)
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-1 duration-200">
       <div className={cn(
         "text-[9px] uppercase tracking-wider mb-1",
         isUser && "text-stone-500",
-        isAssistant && "text-[#d4b15a]"
+        isAssistant && "text-[#8b5cf6]" // Purple for the lich
       )}>
-        {isUser ? "You" : "World AI"}
+        {isUser ? "You" : "Malachar"}
       </div>
       <div className={cn(
         "bg-[#1f1c16]/70 backdrop-blur-sm rounded p-3 text-sm leading-relaxed border-l-2 whitespace-pre-wrap",
         isUser && "border-[#3d3428]",
-        isAssistant && "border-[#d4b15a]"
+        isAssistant && "border-[#8b5cf6]" // Purple accent for the lich
       )}>
-        {content}
+        {message.content}
       </div>
     </div>
   )
