@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { Sun, MessageSquare, Send } from "lucide-react"
+import { Sun, MessageSquare, Volume2, VolumeX, Square } from "lucide-react"
 
 interface DialogueEntry {
   speaker: string
@@ -34,11 +34,48 @@ export function LeftColumn({
   isWorldAIThinking = false,
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null)
   
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [dialogue, isWorldAIThinking])
+
+  // Text-to-speech function
+  const speakDialogue = useCallback((text: string, speaker: string, index: number) => {
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel()
+    
+    if (speakingIndex === index) {
+      // If clicking on the same one that's speaking, stop it
+      setSpeakingIndex(null)
+      return
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text)
+    
+    // Adjust voice settings based on speaker
+    if (speaker === "Malachar") {
+      utterance.pitch = 0.7
+      utterance.rate = 0.85
+    } else {
+      utterance.pitch = 1.0
+      utterance.rate = 1.0
+    }
+    
+    utterance.onstart = () => setSpeakingIndex(index)
+    utterance.onend = () => setSpeakingIndex(null)
+    utterance.onerror = () => setSpeakingIndex(null)
+    
+    window.speechSynthesis.speak(utterance)
+  }, [speakingIndex])
+
+  // Stop speech when component unmounts
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis.cancel()
+    }
+  }, [])
   
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -101,16 +138,33 @@ export function LeftColumn({
       <FantasyPanel title="Dialogue Log" className="flex-1 min-h-0 flex flex-col">
         <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-[#3d3428] scrollbar-track-transparent">
           {dialogue.map((entry, index) => (
-            <div key={index} className="text-sm">
-              <span
-                className={`font-serif font-semibold ${
-                  entry.speaker === "You" ? "text-[#7aa8c8]" : 
-                  entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
+            <div key={index} className="text-sm group flex items-start gap-2">
+              <button
+                onClick={() => speakDialogue(entry.text, entry.speaker, index)}
+                className={`flex-shrink-0 mt-0.5 p-1 rounded transition-colors ${
+                  speakingIndex === index 
+                    ? "bg-[#8b5cf6]/30 text-[#8b5cf6]" 
+                    : "opacity-0 group-hover:opacity-100 hover:bg-[#3d3428]/60 text-stone-500 hover:text-stone-300"
                 }`}
+                title={speakingIndex === index ? "Stop speaking" : "Read aloud"}
               >
-                {entry.speaker}:
-              </span>
-              <span className="text-stone-300 ml-2">{entry.text}</span>
+                {speakingIndex === index ? (
+                  <Square className="w-3 h-3" />
+                ) : (
+                  <Volume2 className="w-3 h-3" />
+                )}
+              </button>
+              <div className="flex-1">
+                <span
+                  className={`font-serif font-semibold ${
+                    entry.speaker === "You" ? "text-[#7aa8c8]" : 
+                    entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
+                  }`}
+                >
+                  {entry.speaker}:
+                </span>
+                <span className="text-stone-300 ml-2">{entry.text}</span>
+              </div>
             </div>
           ))}
           {isWorldAIThinking && (
