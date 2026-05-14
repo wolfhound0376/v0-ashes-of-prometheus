@@ -30,7 +30,9 @@ export async function GET(
     )
 
     if (!response.ok) {
-      return new Response("Failed to connect to Malachar stream", { 
+      const errorText = await response.text()
+      console.error("[Malachar] Stream connection failed:", response.status, errorText)
+      return new Response(`Stream connection failed: ${errorText}`, { 
         status: response.status 
       })
     }

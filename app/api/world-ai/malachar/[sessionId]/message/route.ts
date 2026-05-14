@@ -33,11 +33,14 @@ export async function POST(
           "anthropic-beta": "managed-agents-2026-04-01",
         },
         body: JSON.stringify({
-          type: "user_message",
-          message: {
-            role: "user",
-            content: content,
-          },
+          events: [
+            {
+              type: "user.message",
+              content: [
+                { type: "text", text: content }
+              ],
+            }
+          ],
         }),
       }
     )
