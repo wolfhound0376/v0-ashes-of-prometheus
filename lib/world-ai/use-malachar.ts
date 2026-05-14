@@ -101,14 +101,11 @@ export function useMalachar(campaign: CampaignContext) {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        console.log("[v0] Malachar stream event:", data.type, data)
 
         // Helper to add/update assistant message
         const updateAssistantMessage = (text: string) => {
           if (!text) return
-          console.log("[v0] updateAssistantMessage called with:", text.substring(0, 50) + "...")
           currentAssistantMessageRef.current += text
-          console.log("[v0] currentAssistantMessageRef now:", currentAssistantMessageRef.current.substring(0, 50) + "...")
           setMessages((prev) => {
             const lastMsg = prev[prev.length - 1]
             if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
@@ -149,7 +146,6 @@ export function useMalachar(campaign: CampaignContext) {
                 .filter((c: { type: string }) => c.type === "text")
                 .map((c: { text: string }) => c.text)
                 .join("")
-              console.log("[v0] Malachar extracted text:", textContent.substring(0, 100) + "...")
               updateAssistantMessage(textContent)
             }
             break
@@ -179,13 +175,11 @@ export function useMalachar(campaign: CampaignContext) {
           // Agent tool use (e.g., bash commands)
           case "agent.tool_use":
             // Could show tool usage in UI if desired
-            console.log("[v0] Malachar tool use:", data.name, data.input)
             break
 
           // Agent tool result
           case "agent.tool_result":
             // Tool finished executing
-            console.log("[v0] Malachar tool result:", data.content)
             break
 
           // Session is idle - agent finished responding
@@ -218,8 +212,8 @@ export function useMalachar(campaign: CampaignContext) {
             break
 
           default:
-            // Log unhandled events so we can add support
-            console.log("[v0] Unhandled Malachar event type:", data.type, data)
+            // Unhandled event type - ignore silently
+            break
         }
       } catch (err) {
         console.error("[Malachar] Failed to parse event:", err)
