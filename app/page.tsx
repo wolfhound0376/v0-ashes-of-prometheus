@@ -13,7 +13,7 @@ import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { useLich } from "@/lib/hooks/use-lich"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
-import type { Character, InventoryItem, EquipmentItem } from "@/lib/types/database"
+import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
 
 export default function DashboardPage() {
@@ -25,6 +25,9 @@ export default function DashboardPage() {
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
   const [loadingCharacters, setLoadingCharacters] = useState(true)
+  
+  // Current environment from database
+  const [currentEnvironment, setCurrentEnvironment] = useState<Environment | null>(null)
 
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
@@ -189,7 +192,7 @@ export default function DashboardPage() {
     maxArcaneCharges: 3,
   })
 
-  // Fetch characters from Supabase on mount
+  // Fetch characters and environment from Supabase on mount
   useEffect(() => {
     async function fetchCharacters() {
       setLoadingCharacters(true)
@@ -208,7 +211,25 @@ export default function DashboardPage() {
       }
       setLoadingCharacters(false)
     }
+    
+    async function fetchEnvironment() {
+      // Fetch the current/active environment
+      const { data, error } = await supabase
+        .from('environments')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+      
+      if (error) {
+        console.error('Error fetching environment:', error)
+      } else if (data) {
+        setCurrentEnvironment(data)
+      }
+    }
+    
     fetchCharacters()
+    fetchEnvironment()
   }, [])
 
   // Fetch dialogue from Supabase and subscribe to real-time updates
@@ -229,8 +250,8 @@ if (error) {
     }
     fetchDialogue()
 
-    // Subscribe to real-time updates
-    const channel = supabase
+    // Subscribe to real-time updates for dialogue and environment
+    const dialogueChannel = supabase
       .channel('dialogue-changes')
       .on(
         'postgres_changes',
@@ -241,9 +262,32 @@ if (error) {
         }
       )
       .subscribe()
+    
+    // Subscribe to environment changes (when Malachar or admin changes location)
+    const environmentChannel = supabase
+      .channel('environment-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'environments' },
+        async () => {
+          // Refetch the current environment on any change
+          const { data } = await supabase
+            .from('environments')
+            .select('*')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .single()
+          
+          if (data) {
+            setCurrentEnvironment(data)
+          }
+        }
+      )
+      .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(dialogueChannel)
+      supabase.removeChannel(environmentChannel)
     }
   }, [])
 
@@ -482,15 +526,22 @@ if (error) {
       {/* Main dashboard grid */}
       <div className="h-screen p-2 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
 <LeftColumn
-            environment={environmentData}
-            dialogue={dialogue}
-            dialogueInput={dialogueInput}
-            setDialogueInput={setDialogueInput}
-            onDialogueSubmit={handleDialogueSubmit}
-            characterAvatar={selectedCharacter?.avatar_image_url}
-            characterName={selectedCharacter?.name}
-            isWorldAIThinking={lichLoading}
-            />
+  environment={{
+    location: currentEnvironment?.name || environmentData.location,
+    timeOfDay: currentEnvironment?.time_of_day || environmentData.timeOfDay,
+    backgroundImageUrl: currentEnvironment?.background_image_url,
+    fogOverlayUrl: currentEnvironment?.fog_overlay_url,
+    ambientAnimation: currentEnvironment?.ambient_animation,
+    description: currentEnvironment?.description,
+  }}
+  dialogue={dialogue}
+  dialogueInput={dialogueInput}
+  setDialogueInput={setDialogueInput}
+  onDialogueSubmit={handleDialogueSubmit}
+  characterAvatar={selectedCharacter?.avatar_image_url}
+  characterName={selectedCharacter?.name}
+  isWorldAIThinking={lichLoading}
+/>
         <CenterColumn
           selectedAction={selectedAction}
           onActionSelect={handleActionSelect}
