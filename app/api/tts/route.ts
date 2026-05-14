@@ -14,10 +14,10 @@ export async function POST(request: NextRequest) {
     }
 
     // ElevenLabs voice IDs
-    // For Malachar (onyx): "Adam" - deep, authoritative male voice
+    // For Malachar (onyx): Custom lich voice - cold, ancient, contemptuous
     // For players (alloy): "Rachel" - clear, warm voice
     const voiceIds: Record<string, string> = {
-      onyx: "pNInz6obpgDQGcFmaJgB",  // Adam - deep male
+      onyx: "NiQt0cwFeLsVf6cAmcCp",  // Custom Malachar lich voice
       alloy: "21m00Tcm4TlvDq8ikWAM", // Rachel - clear female
     }
 
