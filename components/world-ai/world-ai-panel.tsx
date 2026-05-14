@@ -61,7 +61,7 @@ export function WorldAIPanel({
     currentHeat: currentHeat,
   }), [currentCampaign, currentEpisode, currentLocation, currentHeat])
 
-  // Malachar session hook - connects to the lich personality
+  // Malachar session hook - connects to the lich personality (falls back to Claude if not configured)
   const { 
     messages, 
     isLoading: isThinking, 
@@ -70,7 +70,8 @@ export function WorldAIPanel({
     sendMessage, 
     clearMessages,
     reconnect,
-    sessionId 
+    sessionId,
+    backendMode
   } = useMalachar(campaignContext)
 
   // Dice state
@@ -255,23 +256,23 @@ export function WorldAIPanel({
   )}
   {!isConnecting && !malacharError && messages.length === 0 && (
   <div className="text-center py-8">
-    <div className="text-[#8b5cf6] text-sm mb-2 flex items-center justify-center gap-2">
+    <div className={`text-sm mb-2 flex items-center justify-center gap-2 ${backendMode === "malachar" ? "text-[#8b5cf6]" : "text-[#d4b15a]"}`}>
       <Wifi className="w-4 h-4" />
-      <span>Connected to Malachar</span>
+      <span>{backendMode === "malachar" ? "Connected to Malachar" : "Connected to World AI"}</span>
     </div>
     <div className="text-stone-500 text-sm italic">
-      The lich awaits your query...
+      {backendMode === "malachar" ? "The lich awaits your query..." : "Ask about your campaign..."}
     </div>
   </div>
   )}
               {messages.map((msg) => (
-                <ChatMessage key={msg.id} message={msg} />
+                <ChatMessage key={msg.id} message={msg} isMalachar={backendMode === "malachar"} />
               ))}
 {isThinking && (
   <div className="flex gap-2 items-start">
-  <Sparkles className="w-4 h-4 text-[#8b5cf6] animate-pulse flex-shrink-0 mt-1" />
+  <Sparkles className={`w-4 h-4 animate-pulse flex-shrink-0 mt-1 ${backendMode === "malachar" ? "text-[#8b5cf6]" : "text-[#d4b15a]"}`} />
   <div className="text-sm text-stone-500 italic">
-  Malachar is weaving dark knowledge...
+  {backendMode === "malachar" ? "Malachar is weaving dark knowledge..." : "The World AI is thinking..."}
   </div>
   </div>
   )}
@@ -509,24 +510,26 @@ function ContextSelector({
   )
 }
 
-// Chat message component - works with Malachar message format
-function ChatMessage({ message }: { message: MalacharMessage }) {
+// Chat message component - adapts to backend mode
+function ChatMessage({ message, isMalachar }: { message: MalacharMessage; isMalachar?: boolean }) {
   const isUser = message.role === "user"
   const isAssistant = message.role === "assistant"
+  const accentColor = isMalachar ? "text-[#8b5cf6]" : "text-[#d4b15a]"
+  const borderColor = isMalachar ? "border-[#8b5cf6]" : "border-[#d4b15a]"
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-1 duration-200">
       <div className={cn(
         "text-[9px] uppercase tracking-wider mb-1",
         isUser && "text-stone-500",
-        isAssistant && "text-[#8b5cf6]" // Purple for the lich
+        isAssistant && accentColor
       )}>
-        {isUser ? "You" : "Malachar"}
+        {isUser ? "You" : (isMalachar ? "Malachar" : "World AI")}
       </div>
       <div className={cn(
         "bg-[#1f1c16]/70 backdrop-blur-sm rounded p-3 text-sm leading-relaxed border-l-2 whitespace-pre-wrap",
         isUser && "border-[#3d3428]",
-        isAssistant && "border-[#8b5cf6]" // Purple accent for the lich
+        isAssistant && borderColor
       )}>
         {message.content}
       </div>

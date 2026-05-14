@@ -9,13 +9,6 @@ export interface MalacharMessage {
   timestamp: Date
 }
 
-interface MalacharEvent {
-  type: string
-  content?: string
-  delta?: string
-  metadata?: Record<string, unknown>
-}
-
 interface CampaignContext {
   name: string
   systemPrompt: string
@@ -24,12 +17,21 @@ interface CampaignContext {
   currentHeat: string
 }
 
+type BackendMode = "malachar" | "claude-fallback"
+
+/**
+ * useMalachar - World AI chat hook
+ * 
+ * Tries to connect to Malachar session API first.
+ * If env vars aren't configured, automatically falls back to standard Claude API.
+ */
 export function useMalachar(campaign: CampaignContext) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<MalacharMessage[]>([])
   const [isConnecting, setIsConnecting] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [backendMode, setBackendMode] = useState<BackendMode | null>(null)
   
   const eventSourceRef = useRef<EventSource | null>(null)
   const currentAssistantMessageRef = useRef<string>("")
@@ -40,12 +42,13 @@ export function useMalachar(campaign: CampaignContext) {
     campaignRef.current = campaign
   }, [campaign])
 
-  // Create a new session
+  // Try to create Malachar session, fall back to Claude if not configured
   const createSession = useCallback(async () => {
     setIsConnecting(true)
     setError(null)
 
     try {
+      // Try Malachar first
       const response = await fetch("/api/world-ai/malachar/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -55,31 +58,37 @@ export function useMalachar(campaign: CampaignContext) {
       const data = await response.json()
       
       if (!response.ok) {
-        // Show detailed error from server
-        let errorMessage = data.error || "Failed to create session"
-        if (data.missingVars) {
-          errorMessage = `Missing: ${data.missingVars.join(", ")}`
-        } else if (data.details) {
-          errorMessage = `${data.error}: ${data.details}`
+        // If Malachar env vars are missing, fall back to Claude
+        if (data.missingVars && data.missingVars.length > 0) {
+          console.log("[useMalachar] Malachar not configured, using Claude fallback")
+          setBackendMode("claude-fallback")
+          setSessionId("claude-fallback")
+          return "claude-fallback"
         }
-        console.error("[useMalachar] API error:", data)
-        throw new Error(errorMessage)
+        
+        // Other error
+        throw new Error(data.error || "Failed to create session")
       }
 
+      // Malachar session created successfully
+      setBackendMode("malachar")
       setSessionId(data.sessionId)
       return data.sessionId
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Connection failed"
-      console.error("[useMalachar] Session creation failed:", message)
-      setError(message)
-      return null
+      // Network error or other failure - try Claude fallback
+      console.log("[useMalachar] Falling back to Claude API")
+      setBackendMode("claude-fallback")
+      setSessionId("claude-fallback")
+      return "claude-fallback"
     } finally {
       setIsConnecting(false)
     }
   }, [])
 
-  // Connect to event stream
+  // Connect to Malachar event stream (only used in malachar mode)
   const connectStream = useCallback((sid: string) => {
+    if (sid === "claude-fallback") return
+    
     // Close existing connection
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
@@ -91,20 +100,17 @@ export function useMalachar(campaign: CampaignContext) {
 
     eventSource.onmessage = (event) => {
       try {
-        const data: MalacharEvent = JSON.parse(event.data)
+        const data = JSON.parse(event.data)
 
         switch (data.type) {
           case "content_start":
-            // New assistant message starting
             currentAssistantMessageRef.current = ""
             setIsStreaming(true)
             break
 
           case "content_delta":
-            // Streaming content
             if (data.delta) {
               currentAssistantMessageRef.current += data.delta
-              // Update the last assistant message or create new one
               setMessages((prev) => {
                 const lastMsg = prev[prev.length - 1]
                 if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
@@ -129,9 +135,7 @@ export function useMalachar(campaign: CampaignContext) {
 
           case "content_end":
           case "session.status_idle":
-            // Message complete
             setIsStreaming(false)
-            // Finalize the message ID
             setMessages((prev) => {
               const lastMsg = prev[prev.length - 1]
               if (lastMsg?.role === "assistant" && lastMsg.id.startsWith("streaming-")) {
@@ -155,29 +159,134 @@ export function useMalachar(campaign: CampaignContext) {
     }
 
     eventSource.onerror = () => {
-      setError("Connection lost. Reconnecting...")
       eventSource.close()
-      // Attempt reconnection after delay
       setTimeout(() => {
-        if (sessionId) {
+        if (sessionId && backendMode === "malachar") {
           connectStream(sessionId)
         }
       }, 2000)
     }
 
     eventSourceRef.current = eventSource
-  }, [sessionId])
+  }, [sessionId, backendMode])
 
-  // Send a message
+  // Send message via Claude fallback (streaming)
+  const sendViaClaude = useCallback(async (content: string) => {
+    setIsStreaming(true)
+    currentAssistantMessageRef.current = ""
+    
+    // Add streaming placeholder
+    const streamingId = `streaming-${Date.now()}`
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: streamingId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+      },
+    ])
+
+    try {
+      // Build messages array for Claude
+      const chatMessages = messages.concat({
+        id: `user-${Date.now()}`,
+        role: "user",
+        content,
+        timestamp: new Date(),
+      }).map(m => ({
+        role: m.role,
+        parts: [{ type: "text" as const, text: m.content }],
+      }))
+
+      const response = await fetch("/api/world-ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: chatMessages,
+          campaign: campaignRef.current,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to get response")
+      }
+
+      // Parse SSE stream
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      
+      if (!reader) throw new Error("No response body")
+      
+      let buffer = ""
+      
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+        
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (trimmed.startsWith("data:")) {
+            const data = trimmed.slice(5).trim()
+            if (data === "[DONE]") continue
+            try {
+              const parsed = JSON.parse(data)
+              if (parsed.type === "text-delta" && parsed.delta) {
+                currentAssistantMessageRef.current += parsed.delta
+                setMessages((prev) => {
+                  const lastMsg = prev[prev.length - 1]
+                  if (lastMsg?.id === streamingId) {
+                    return [
+                      ...prev.slice(0, -1),
+                      { ...lastMsg, content: currentAssistantMessageRef.current },
+                    ]
+                  }
+                  return prev
+                })
+              }
+            } catch {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+      
+      // Finalize message
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1]
+        if (lastMsg?.id === streamingId) {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMsg, id: `claude-${Date.now()}` },
+          ]
+        }
+        return prev
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send")
+      // Remove failed streaming message
+      setMessages((prev) => prev.filter(m => m.id !== streamingId))
+    } finally {
+      setIsStreaming(false)
+    }
+  }, [messages])
+
+  // Send a message (routes to correct backend)
   const sendMessage = useCallback(async (content: string, context?: Record<string, unknown>) => {
-    if (!content.trim()) return
+    if (!content.trim() || isStreaming) return
 
     // Ensure we have a session
     let sid = sessionId
     if (!sid) {
       sid = await createSession()
       if (!sid) return
-      connectStream(sid)
+      if (sid !== "claude-fallback") {
+        connectStream(sid)
+      }
     }
 
     // Add user message immediately
@@ -189,29 +298,34 @@ export function useMalachar(campaign: CampaignContext) {
     }
     setMessages((prev) => [...prev, userMessage])
 
-    // Send to Malachar
-    try {
-      const response = await fetch(`/api/world-ai/malachar/${sid}/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, context }),
-      })
+    // Route to correct backend
+    if (backendMode === "claude-fallback" || sid === "claude-fallback") {
+      await sendViaClaude(content.trim())
+    } else {
+      // Send to Malachar session
+      try {
+        const response = await fetch(`/api/world-ai/malachar/${sid}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content, context }),
+        })
 
-      if (!response.ok) {
-        throw new Error("Failed to send message")
+        if (!response.ok) {
+          throw new Error("Failed to send message")
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to send")
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send")
     }
-  }, [sessionId, createSession, connectStream])
+  }, [sessionId, backendMode, isStreaming, createSession, connectStream, sendViaClaude])
 
-  // Initialize session on mount
+  // Initialize on mount
   useEffect(() => {
     let mounted = true
 
     const init = async () => {
       const sid = await createSession()
-      if (sid && mounted) {
+      if (sid && mounted && sid !== "claude-fallback") {
         connectStream(sid)
       }
     }
@@ -226,22 +340,21 @@ export function useMalachar(campaign: CampaignContext) {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear messages (e.g., when switching campaigns)
   const clearMessages = useCallback(() => {
     setMessages([])
     currentAssistantMessageRef.current = ""
   }, [])
 
-  // Reconnect with new session (e.g., after campaign change)
   const reconnect = useCallback(async () => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
     }
     setSessionId(null)
+    setBackendMode(null)
     clearMessages()
     
     const sid = await createSession()
-    if (sid) {
+    if (sid && sid !== "claude-fallback") {
       connectStream(sid)
     }
   }, [createSession, connectStream, clearMessages])
@@ -256,5 +369,6 @@ export function useMalachar(campaign: CampaignContext) {
     clearMessages,
     reconnect,
     sessionId,
+    backendMode, // Expose which backend is being used
   }
 }
