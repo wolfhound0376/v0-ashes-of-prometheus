@@ -35,35 +35,39 @@ export async function POST(req: Request) {
     console.log("[Malachar] Creating session at:", sessionUrl)
 
     // Create a new session with Malachar
+    // Note: The Managed Agents API requires an environment_id
+    // Check if user has provided one, otherwise we'll need it
+    const MALACHAR_ENV_ID = process.env.MALACHAR_ENVIRONMENT_ID
+    
+    if (!MALACHAR_ENV_ID) {
+      console.error("[Malachar] Missing MALACHAR_ENVIRONMENT_ID - required for Managed Agents API")
+      return NextResponse.json(
+        { 
+          error: "Missing MALACHAR_ENVIRONMENT_ID", 
+          hint: "Please add your Anthropic environment ID in Settings > Vars"
+        },
+        { status: 500 }
+      )
+    }
+    
     const response = await fetch(sessionUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${MALACHAR_API_KEY}`,
+        "x-api-key": MALACHAR_API_KEY,
         "anthropic-version": "2023-06-01",
         "anthropic-beta": "managed-agents-2026-04-01",
       },
       body: JSON.stringify({
-        agent_id: MALACHAR_AGENT_ID,
-        environment: "production",
-        // Attach campaign context as resources
-        resources: campaign ? [
-          {
-            type: "text",
-            name: "campaign_context",
-            content: JSON.stringify({
-              campaign_name: campaign.name,
-              current_episode: campaign.currentEpisode,
-              current_location: campaign.currentLocation,
-              heat_level: campaign.currentHeat,
-              system_context: campaign.systemPrompt,
-            }),
-          }
-        ] : [],
-        // Enable memory for cross-session persistence
-        memory: {
-          enabled: true,
-        },
+        agent: MALACHAR_AGENT_ID,
+        environment_id: MALACHAR_ENV_ID,
+        title: campaign?.name ? `${campaign.name} Session` : "World AI Session",
+        metadata: campaign ? {
+          campaign_name: campaign.name || "",
+          current_episode: campaign.currentEpisode || "",
+          current_location: campaign.currentLocation || "",
+          heat_level: campaign.currentHeat || "",
+        } : {},
       }),
     })
 
