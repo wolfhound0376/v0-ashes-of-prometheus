@@ -244,9 +244,9 @@ export default function DashboardPage() {
       const worldContext = {
         campaignId: activeCampaign.id,
         campaignName: activeCampaign.name,
-        currentEpisode: currentEpisode || activeCampaign.contexts.defaults.episode,
-        currentLocation: currentLocation || activeCampaign.contexts.locations[0],
-        currentHeat: currentHeat || activeCampaign.contexts.defaults.heat,
+        currentEpisode: activeCampaign.contexts.defaults.episode,
+        currentLocation: activeCampaign.contexts.locations[0],
+        currentHeat: activeCampaign.contexts.defaults.heat,
         characterName: selectedCharacter?.name,
         characterClass: selectedCharacter?.class,
         characterLevel: selectedCharacter?.level,
