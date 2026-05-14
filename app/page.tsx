@@ -483,10 +483,7 @@ export default function DashboardPage() {
           selectedCharacter={selectedCharacter}
           characterInventory={characterInventory}
           characterEquipment={characterEquipment}
-          fallbackCharacter={characterData}
-          fallbackInventory={inventoryData}
           loading={loadingCharacters}
-          onPopulateStartingGear={handlePopulateStartingGear}
         />
       </div>
 
