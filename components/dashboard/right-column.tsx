@@ -150,6 +150,7 @@ export function RightColumn({
     name: item.name,
     quantity: item.quantity,
     icon: item.preset_icon || 'backpack',
+    iconUrl: item.icon_url, // Custom generated icon
   }))
 
   return (
@@ -368,8 +369,16 @@ export function RightColumn({
                       )}
                     >
                       <IconFrame className="w-9 h-9 flex-shrink-0" selected={isSelected}>
-                        <div className="w-full h-full bg-[#1a1614] p-0.5">
-                          <IconComponent className="w-full h-full" />
+                        <div className="w-full h-full bg-[#1a1614] p-0.5 overflow-hidden">
+                          {item.iconUrl ? (
+                            <img 
+                              src={item.iconUrl} 
+                              alt={item.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <IconComponent className="w-full h-full" />
+                          )}
                         </div>
                       </IconFrame>
                       <span className="flex-1 text-sm text-stone-300 truncate">{item.name}</span>
