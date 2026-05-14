@@ -1,3 +1,69 @@
+// D&D 5E Experience Points Thresholds (PHB p.15)
+// XP required to reach each level
+export const XP_THRESHOLDS: Record<number, number> = {
+  1: 0,
+  2: 300,
+  3: 900,
+  4: 2700,
+  5: 6500,
+  6: 14000,
+  7: 23000,
+  8: 34000,
+  9: 48000,
+  10: 64000,
+  11: 85000,
+  12: 100000,
+  13: 120000,
+  14: 140000,
+  15: 165000,
+  16: 195000,
+  17: 225000,
+  18: 265000,
+  19: 305000,
+  20: 355000,
+}
+
+// Get XP needed for next level
+export function getXPForNextLevel(currentLevel: number): number {
+  if (currentLevel >= 20) return 0 // Max level
+  return XP_THRESHOLDS[currentLevel + 1]
+}
+
+// Get XP needed from current XP to next level
+export function getXPToNextLevel(currentXP: number, currentLevel: number): number {
+  if (currentLevel >= 20) return 0
+  const nextLevelXP = XP_THRESHOLDS[currentLevel + 1]
+  return Math.max(0, nextLevelXP - currentXP)
+}
+
+// Get level from XP
+export function getLevelFromXP(xp: number): number {
+  let level = 1
+  for (let i = 20; i >= 1; i--) {
+    if (xp >= XP_THRESHOLDS[i]) {
+      level = i
+      break
+    }
+  }
+  return level
+}
+
+// Check if character can level up
+export function canLevelUp(currentXP: number, currentLevel: number): boolean {
+  if (currentLevel >= 20) return false
+  return currentXP >= XP_THRESHOLDS[currentLevel + 1]
+}
+
+// Get XP progress percentage to next level
+export function getXPProgressPercent(currentXP: number, currentLevel: number): number {
+  if (currentLevel >= 20) return 100
+  const currentLevelXP = XP_THRESHOLDS[currentLevel]
+  const nextLevelXP = XP_THRESHOLDS[currentLevel + 1]
+  const xpInCurrentLevel = currentXP - currentLevelXP
+  const xpNeededForLevel = nextLevelXP - currentLevelXP
+  return Math.min(100, Math.floor((xpInCurrentLevel / xpNeededForLevel) * 100))
+}
+
 // D&D 5E Class Defaults based on System Reference Document 5.2.1
 // These are applied when a character selects a class
 export const classDefaults: Record<string, {
