@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { experimental_generateSpeech as generateSpeech } from "ai"
+import { openai } from "@ai-sdk/openai"
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,28 +10,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No text provided" }, { status: 400 })
     }
 
-    // Use OpenAI TTS via AI Gateway
-    const response = await fetch("https://ai-gateway.vercel.sh/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "openai/tts-1",
-        input: text,
-        voice: voice,
-        response_format: "mp3",
-      }),
+    // Use OpenAI TTS directly
+    const result = await generateSpeech({
+      model: openai.speech("tts-1"),
+      text,
+      voice,
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[TTS] Error from AI Gateway:", errorText)
-      return NextResponse.json({ error: "TTS generation failed" }, { status: 500 })
-    }
-
     // Return the audio as a stream
-    const audioBuffer = await response.arrayBuffer()
+    const audioBuffer = result.audio.uint8Array.buffer
     
     return new NextResponse(audioBuffer, {
       headers: {
