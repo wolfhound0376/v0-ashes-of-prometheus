@@ -75,6 +75,7 @@ ${campaign.systemPrompt}
 ${worldContextText}
 
 RULES:
+- CRITICAL: You MUST ALWAYS include narrative text in your response. Tool calls alone are NOT a valid response. If you call any tool (playMusic, giveItem, awardXP, updateEnvironment), you MUST ALSO write narrative text describing the scene, action, or dialogue. Every response must contain at least one paragraph of narration.
 - Address the player by their character name
 - Reference their class abilities, stats, and inventory when relevant
 - For dice rolls, write [[XdY+Z]] and wait for the player to roll
@@ -381,12 +382,22 @@ Use 'stop' to fade out music.`,
   console.log("[v0] generateText result.steps count:", result.steps.length)
   for (const step of result.steps) {
     console.log("[v0] step text:", JSON.stringify(step.text?.substring(0, 100)))
-    console.log("[v0] step toolCalls:", step.toolCalls?.length || 0)
-    console.log("[v0] step toolResults:", step.toolResults?.length || 0)
+    console.log("[v0] step toolCalls:", JSON.stringify(step.toolCalls?.map((tc: { toolName: string }) => tc.toolName)))
+    console.log("[v0] step toolResults:", JSON.stringify(step.toolResults?.map((tr: { toolName: string; result: unknown }) => ({ name: tr.toolName, result: tr.result }))))
   }
+  console.log("[v0] result.finishReason:", result.finishReason)
 
-  // Save Malachar's response to dialogue
-  const responseText = result.text?.trim()
+  // If model only used tools with no text, collect step text from all steps
+  let responseText = result.text?.trim()
+  if (!responseText) {
+    // Check if any step had text
+    for (const step of result.steps) {
+      if (step.text?.trim()) {
+        responseText = step.text.trim()
+        break
+      }
+    }
+  }
   if (responseText) {
     await supabase.from("dialogue").insert({
       speaker: "Malachar",
