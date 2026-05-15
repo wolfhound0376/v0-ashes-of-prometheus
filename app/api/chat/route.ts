@@ -78,6 +78,10 @@ RULES:
   - You may include multiple ITEM_ADD tags if multiple items are acquired
 - When the player loses, uses, or gives away an item: [ITEM_REMOVE: name | quantity]
   - Example: [ITEM_REMOVE: Health Potion | 1]
+- When an NPC or monster is first introduced, encountered, or enters the scene, include a tag: [NPC_IMAGE: detailed visual description for an artist]
+  - Describe their appearance, race, clothing, weapons, posture, lighting, and mood
+  - Example: [NPC_IMAGE: A gaunt drow priestess in black spider-silk robes, white hair pulled back severely, violet eyes glowing with malice, holding a bone-handled scourge, standing in dim purple torchlight of an Underdark cavern]
+  - Only include this tag when a NEW character or creature appears, not for every mention
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
@@ -163,10 +167,34 @@ EXPERIENCE POINTS:
     }
   }
   
-  // Strip inventory tags from the displayed text
+  // Parse NPC_IMAGE tag and generate an image if present
+  let npcImageUrl: string | null = null
+  const npcImageMatch = rawText.match(/\[NPC_IMAGE:\s*([^\]]+)\]/)
+  if (npcImageMatch) {
+    const npcDescription = npcImageMatch[1].trim()
+    try {
+      const imageResult = await generateText({
+        model: "google/gemini-3.1-flash-image-preview",
+        prompt: `Generate a dark fantasy portrait illustration: ${npcDescription}. Style: detailed fantasy RPG character art, dramatic lighting, painterly style, no text or labels.`,
+      })
+      if (imageResult.files) {
+        for (const file of imageResult.files) {
+          if (file.mediaType?.startsWith("image/") && file.base64) {
+            npcImageUrl = `data:${file.mediaType};base64,${file.base64}`
+            break
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[v0] NPC image generation failed:", err)
+    }
+  }
+
+  // Strip all tags from the displayed text
   const responseText = rawText
     .replace(/\[ITEM_ADD:[^\]]+\]/g, "")
     .replace(/\[ITEM_REMOVE:[^\]]+\]/g, "")
+    .replace(/\[NPC_IMAGE:[^\]]+\]/g, "")
     .trim()
   
   if (responseText) {
@@ -177,5 +205,5 @@ EXPERIENCE POINTS:
     })
   }
   
-  return Response.json({ text: responseText || "" })
+  return Response.json({ text: responseText || "", npcImageUrl })
 }

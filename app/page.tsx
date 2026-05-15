@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
+  const [npcImageUrl, setNpcImageUrl] = useState<string | null>(null)
   // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
   const [isTTSMuted, setIsTTSMuted] = useState(false)
   useEffect(() => {
@@ -556,11 +557,15 @@ if (error) {
           characterClass={selectedCharacter?.class}
           characterLevel={selectedCharacter?.level}
           characterName={selectedCharacter?.name}
-          sceneImageUrl={currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg"}
+          sceneImageUrl={npcImageUrl || undefined}
           onSendToLich={async (message) => {
             // Send to Lich - real-time subscription handles dialogue display
             const response = await sendToLich(message)
             if (response) {
+              // Update NPC image if the response includes one
+              if (response.npcImageUrl) {
+                setNpcImageUrl(response.npcImageUrl)
+              }
               // Refresh character data to pick up any XP or items from the Lich
               await fetchCharacterData()
             }
