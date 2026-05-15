@@ -32,7 +32,20 @@ export default function DashboardPage() {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
-  const [currentMusicTrack, setCurrentMusicTrack] = useState<string | null>(null)
+  // TTS mute state - persisted in localStorage
+  const [isTTSMuted, setIsTTSMuted] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("tts-muted") === "true"
+    }
+    return false
+  })
+  const toggleTTSMute = useCallback(() => {
+    setIsTTSMuted(prev => {
+      const next = !prev
+      localStorage.setItem("tts-muted", String(next))
+      return next
+    })
+  }, [])
   
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
@@ -533,6 +546,7 @@ if (error) {
   characterAvatar={selectedCharacter?.avatar_image_url}
   characterName={selectedCharacter?.name}
   isWorldAIThinking={lichLoading}
+  isTTSMuted={isTTSMuted}
 />
         <CenterColumn
           selectedAction={selectedAction}
@@ -652,10 +666,10 @@ if (error) {
         </div>
       )}
 
-      {/* Music Player */}
+      {/* TTS Mute Toggle */}
       <MusicPlayer
-        currentTrackId={currentMusicTrack}
-        onTrackChange={setCurrentMusicTrack}
+        isTTSMuted={isTTSMuted}
+        onToggleTTSMute={toggleTTSMute}
       />
     </div>
   )

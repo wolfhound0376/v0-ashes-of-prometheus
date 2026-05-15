@@ -90,13 +90,17 @@ EXPERIENCE POINTS:
         description: "Add an item to the player's inventory. Use when the player acquires, finds, or is given an item. You MUST also write narrative text alongside this tool call.",
         parameters: z.object({
           name: z.string().describe("Item name, e.g. 'Rusty Dagger'"),
-          quantity: z.number().default(1),
+          quantity: z.number().optional().describe("How many, defaults to 1"),
           description: z.string().describe("Brief description of the item"),
-          itemType: z.enum(["weapon", "armor", "consumable", "misc", "currency"]).default("misc"),
-          weight: z.number().default(0.1),
-          value: z.number().default(0),
+          itemType: z.enum(["weapon", "armor", "consumable", "misc", "currency"]).optional().describe("Item category, defaults to misc"),
+          weight: z.number().optional().describe("Weight in pounds, defaults to 0.1"),
+          value: z.number().optional().describe("Value in copper pieces, defaults to 0"),
         }),
-        execute: async ({ name, quantity, description, itemType, weight, value }) => {
+        execute: async ({ name, quantity: rawQty, description, itemType: rawType, weight: rawWeight, value: rawValue }) => {
+          const quantity = rawQty ?? 1
+          const itemType = rawType ?? "misc"
+          const weight = rawWeight ?? 0.1
+          const value = rawValue ?? 0
           if (!playerCharacter?.id) return { success: false, error: "No player character" }
           
           const { data: existing } = await supabase
@@ -127,9 +131,10 @@ EXPERIENCE POINTS:
         description: "Remove an item from inventory. Use when items are consumed, lost, or given away.",
         parameters: z.object({
           name: z.string().describe("Item name to remove"),
-          quantity: z.number().default(1),
+          quantity: z.number().optional().describe("How many to remove, defaults to 1"),
         }),
-        execute: async ({ name, quantity }) => {
+        execute: async ({ name, quantity: rawQty }) => {
+          const quantity = rawQty ?? 1
           if (!playerCharacter?.id) return { success: false, error: "No player character" }
           
           const { data: existing } = await supabase
