@@ -64,30 +64,122 @@ export function LeftColumn({
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  
-  // Track which dialogue index we've processed up to (avoids strict-mode double-fires)
-  const processedUpToRef = useRef<number>(-1)
-  const hasMountedRef = useRef<boolean>(false)
-  const isAutoPlayingRef = useRef<boolean>(false)
+  const readyRef = useRef(false)
   const isTTSMutedRef = useRef(isTTSMuted)
   isTTSMutedRef.current = isTTSMuted
 
-  // Unlock audio on any user click (required by browser autoplay policy)
+  // After mount + initial data load, mark as ready so only NEW lines auto-play.
+  // The 2-second delay ensures all historical dialogue has loaded from Supabase.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Mark everything currently in dialogue as "already played"
+      for (const entry of dialogue) {
+        if (entry.speaker === "Malachar") {
+          ttsPlayedTexts.add(entry.text)
+        }
+      }
+      readyRef.current = true
+      console.log("[v0] TTS ready, marked", dialogue.length, "historical entries as played")
+    }, 2000)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Intentionally only run once on mount
+
+  // Unlock audio on first user interaction (browser autoplay policy)
   useEffect(() => {
     const unlock = () => {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext()
-      }
-      if (audioContextRef.current.state === "suspended") {
-        audioContextRef.current.resume()
-      }
+      const audio = new Audio()
+      audio.play().catch(() => {})
+      document.removeEventListener("click", unlock)
+      document.removeEventListener("keydown", unlock)
     }
     document.addEventListener("click", unlock)
     document.addEventListener("keydown", unlock)
     return () => {
       document.removeEventListener("click", unlock)
       document.removeEventListener("keydown", unlock)
+    }
+  }, [])
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [dialogue, isWorldAIThinking])
+
+  // Auto-play TTS for newly-arrived Malachar lines
+  useEffect(() => {
+    if (!readyRef.current) return
+    if (isTTSMuted) return
+
+    // Find new Malachar lines that haven't been played yet
+    const newTexts: string[] = []
+    for (const entry of dialogue) {
+      if (entry.speaker === "Malachar" && !ttsPlayedTexts.has(entry.text)) {
+        ttsPlayedTexts.add(entry.text)
+        newTexts.push(entry.text)
+      }
+    }
+
+    if (newTexts.length === 0) return
+
+    console.log("[v0] TTS queuing", newTexts.length, "new Malachar line(s)")
+
+    // Play each new line
+    const play = async () => {
+      for (const rawText of newTexts) {
+        if (isTTSMutedRef.current) break
+        const text = sanitizeForTTS(rawText)
+        if (!text) continue
+        try {
+          console.log("[v0] TTS fetching:", text.substring(0, 60))
+          const res = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, voice: "onyx" }),
+          })
+          if (!res.ok) {
+            console.log("[v0] TTS fetch failed:", res.status)
+            continue
+          }
+          const blob = await res.blob()
+          console.log("[v0] TTS blob received, size:", blob.size)
+          const url = URL.createObjectURL(blob)
+          await new Promise<void>((resolve) => {
+            const audio = new Audio(url)
+            audioRef.current = audio
+            audio.onended = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+            audio.onerror = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+            audio.play().then(() => {
+              console.log("[v0] TTS playing audio")
+            }).catch((err) => {
+              console.log("[v0] TTS play() failed:", err.message)
+              audioRef.current = null
+              URL.revokeObjectURL(url)
+              resolve()
+            })
+          })
+        } catch (err) {
+          console.log("[v0] TTS error:", err)
+        }
+      }
+    }
+    play()
+  }, [dialogue, isTTSMuted])
+
+  // Stop audio immediately when muted
+  useEffect(() => {
+    if (isTTSMuted && audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+  }, [isTTSMuted])
+
+  // Stop audio when component unmounts
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+      }
     }
   }, [])
 
