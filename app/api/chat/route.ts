@@ -54,6 +54,18 @@ ${campaign.systemPrompt}
 
 ${worldContextText}
 
+FORMATTING — CRITICAL:
+- NEVER use asterisks (*), underscores (_), backticks, or any markdown formatting in your responses
+- NEVER wrap text in quotation marks unless it is actual spoken dialogue by an NPC
+- Write plain prose. Use em-dashes, ellipses, and sentence structure for emphasis instead of markdown
+- Your text will be read aloud by text-to-speech. Formatting characters are spoken literally and sound terrible.
+
+CAMPAIGN FLOW — CRITICAL:
+- Follow the campaign structure faithfully. If the campaign has starting procedures (like scavenging rolls, character introductions, item tables), you MUST execute them before moving forward.
+- For Out of the Abyss Chapter 1: When a new character begins, IMMEDIATELY ask the player to roll [[1d100]] on the Scavenged Items table to determine what hidden item they have. Do NOT skip this step. Do NOT assume a result. Wait for the player to provide their d100 roll.
+- After resolving the scavenged item roll, describe the slave pen scene and introduce the fellow prisoners.
+- Enforce starting conditions: NO gear, NO spell components, manacles, collared. The player starts with NOTHING except what they scavenge.
+
 RULES:
 - Address the player by their character name
 - Reference their class abilities, stats, and inventory when relevant
