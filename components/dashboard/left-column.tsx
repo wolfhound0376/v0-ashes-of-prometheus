@@ -1,6 +1,27 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef } from "react"
+
+// Module-level set survives HMR remounts - tracks which texts have already been sent to TTS
+const ttsPlayedTexts = new Set<string>()
+
+/** Strip markdown / special chars that ElevenLabs reads aloud */
+function sanitizeForTTS(text: string): string {
+  return text
+    .replace(/\*+/g, "")           // asterisks (bold/italic markdown)
+    .replace(/_{2,}/g, "")         // underscores (markdown emphasis)
+    .replace(/#{1,6}\s*/g, "")     // markdown headers
+    .replace(/`{1,3}/g, "")        // backticks
+    .replace(/~{2}/g, "")          // strikethrough
+    .replace(/[""\u201C\u201D]/g, "") // smart & straight double quotes
+    .replace(/['\u2018\u2019]/g, "") // smart single quotes
+    .replace(/\[ITEM_ADD:[^\]]*\]/g, "") // inventory tags
+    .replace(/\[ITEM_REMOVE:[^\]]*\]/g, "")
+    .replace(/--+/g, ", ")         // em-dashes to pause
+    .replace(/\.\.\./g, "...")     // keep ellipsis (TTS handles it)
+    .replace(/\s{2,}/g, " ")      // collapse whitespace
+    .trim()
+}
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { Sun, MessageSquare } from "lucide-react"
 
@@ -57,11 +78,9 @@ export function LeftColumn({
     const unlock = () => {
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext()
-        console.log("[v0] AudioContext created, state:", audioContextRef.current.state)
       }
       if (audioContextRef.current.state === "suspended") {
         audioContextRef.current.resume()
-        console.log("[v0] AudioContext resumed")
       }
     }
     document.addEventListener("click", unlock)
@@ -82,7 +101,6 @@ export function LeftColumn({
     if (!hasMountedRef.current) {
       hasMountedRef.current = true
       processedUpToRef.current = dialogue.length - 1
-      console.log("[v0] TTS mounted, skipping", dialogue.length, "historical entries, muted:", isTTSMuted)
     }
   }, [dialogue, isTTSMuted])
 
@@ -99,10 +117,11 @@ export function LeftColumn({
     const lastIndex = dialogue.length - 1
     if (lastIndex <= lastProcessed) return
 
-    // Collect new Malachar lines we haven't processed yet
+    // Collect new Malachar lines we haven't processed yet (dedup via module-level set)
     const newMalacharTexts: string[] = []
     for (let i = lastProcessed + 1; i <= lastIndex; i++) {
-      if (dialogue[i].speaker === "Malachar") {
+      if (dialogue[i].speaker === "Malachar" && !ttsPlayedTexts.has(dialogue[i].text)) {
+        ttsPlayedTexts.add(dialogue[i].text)
         newMalacharTexts.push(dialogue[i].text)
       }
     }
@@ -110,32 +129,24 @@ export function LeftColumn({
 
     if (newMalacharTexts.length === 0) return
 
-    console.log("[v0] TTS auto-play queuing", newMalacharTexts.length, "Malachar lines")
-
     // Play sequentially - don't re-enter if already playing
     if (isAutoPlayingRef.current) return
     
     const playQueue = async () => {
       isAutoPlayingRef.current = true
 
-      for (const text of newMalacharTexts) {
-        if (isTTSMutedRef.current) {
-          console.log("[v0] TTS muted, stopping queue")
-          break
-        }
+      for (const rawText of newMalacharTexts) {
+        if (isTTSMutedRef.current) break
+        const text = sanitizeForTTS(rawText)
+        if (!text) continue
         try {
-          console.log("[v0] TTS fetching audio for:", text.substring(0, 50) + "...")
           const response = await fetch("/api/tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text, voice: "onyx" }),
           })
-          if (!response.ok) {
-            console.log("[v0] TTS fetch failed:", response.status)
-            continue
-          }
+          if (!response.ok) continue
           const blob = await response.blob()
-          console.log("[v0] TTS audio blob received, size:", blob.size)
           const url = URL.createObjectURL(blob)
           
           await new Promise<void>((resolve) => {
@@ -143,21 +154,16 @@ export function LeftColumn({
             audioRef.current = audio
             
             audio.onended = () => {
-              console.log("[v0] TTS audio playback ended")
               audioRef.current = null
               URL.revokeObjectURL(url)
               resolve()
             }
-            audio.onerror = (e) => {
-              console.log("[v0] TTS audio error:", e)
+            audio.onerror = () => {
               audioRef.current = null
               URL.revokeObjectURL(url)
               resolve()
             }
-            audio.play().then(() => {
-              console.log("[v0] TTS audio playing successfully")
-            }).catch((err) => {
-              console.log("[v0] TTS audio.play() rejected:", err.message)
+            audio.play().catch(() => {
               audioRef.current = null
               URL.revokeObjectURL(url)
               resolve()
