@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     // For Malachar (onyx): Custom lich voice - cold, ancient, contemptuous
     // For players (alloy): "Rachel" - clear, warm voice
     const voiceIds: Record<string, string> = {
-      onyx: "NiQt0cwFeLsVf6cAmcCp",  // Custom Malachar lich voice
+      onyx: "muBd6HraZDTmFThHosTN",  // Custom Malachar lich voice
       alloy: "21m00Tcm4TlvDq8ikWAM", // Rachel - clear female
     }
 
