@@ -52,4 +52,8 @@ export default function RootLayout({
       <body className={`${cinzel.variable} ${crimsonText.variable} font-sans antialiased`}>
         {children}
         <SupabaseStatus />
-        {pr
+        <Analytics />
+      </body>
+    </html>
+  )
+}
