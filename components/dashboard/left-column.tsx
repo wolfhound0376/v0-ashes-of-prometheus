@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useCallback } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { Sun, MessageSquare, Volume2, Square, Loader2 } from "lucide-react"
+import { Sun, MessageSquare } from "lucide-react"
 
 interface DialogueEntry {
   speaker: string
@@ -42,8 +42,6 @@ export function LeftColumn({
   isTTSMuted = false,
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
-  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null)
-  const [loadingIndex, setLoadingIndex] = useState<number | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   
   // Track previous dialogue length to detect new entries (not historical loads)
@@ -105,9 +103,10 @@ export function LeftColumn({
         const url = URL.createObjectURL(blob)
         await new Promise<void>((resolve) => {
           const audio = new Audio(url)
-          audio.onended = () => { URL.revokeObjectURL(url); resolve() }
-          audio.onerror = () => { URL.revokeObjectURL(url); resolve() }
-          audio.play().catch(() => resolve())
+          audioRef.current = audio
+          audio.onended = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+          audio.onerror = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+          audio.play().catch(() => { audioRef.current = null; resolve() })
         })
       } catch {
         // TTS failed, skip
@@ -117,61 +116,14 @@ export function LeftColumn({
     isAutoPlayingRef.current = false
   }, [isTTSMuted])
 
-  // Text-to-speech function using OpenAI TTS
-  const speakDialogue = useCallback(async (text: string, speaker: string, index: number) => {
-    // Stop any currently playing audio
-    if (audioRef.current) {
+  // Stop auto-playing audio when muted
+  useEffect(() => {
+    if (isTTSMuted && audioRef.current) {
       audioRef.current.pause()
       audioRef.current = null
+      autoPlayQueueRef.current = []
     }
-    
-    if (speakingIndex === index) {
-      setSpeakingIndex(null)
-      return
-    }
-
-    setLoadingIndex(index)
-    
-    try {
-      // Choose voice based on speaker - Onyx for Malachar, Alloy for players
-      const voice = speaker === "Malachar" ? "onyx" : "alloy"
-      
-      const response = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice }),
-      })
-
-      if (!response.ok) {
-        throw new Error("TTS request failed")
-      }
-
-      const audioBlob = await response.blob()
-      const audioUrl = URL.createObjectURL(audioBlob)
-      
-      const audio = new Audio(audioUrl)
-      audioRef.current = audio
-      
-      audio.onplay = () => {
-        setLoadingIndex(null)
-        setSpeakingIndex(index)
-      }
-      audio.onended = () => {
-        setSpeakingIndex(null)
-        URL.revokeObjectURL(audioUrl)
-      }
-      audio.onerror = () => {
-        setLoadingIndex(null)
-        setSpeakingIndex(null)
-      }
-      
-      await audio.play()
-    } catch (error) {
-      console.error("[TTS] Error:", error)
-      setLoadingIndex(null)
-      setSpeakingIndex(null)
-    }
-  }, [speakingIndex])
+  }, [isTTSMuted])
 
   // Stop audio when component unmounts
   useEffect(() => {
@@ -272,40 +224,16 @@ export function LeftColumn({
       <FantasyPanel title="Dialogue Log" className="flex-1 min-h-0 flex flex-col">
         <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-[#3d3428] scrollbar-track-transparent">
           {dialogue.map((entry, index) => (
-            <div key={index} className="text-sm group flex items-start gap-2">
-              <div className="flex-1">
-                <span
-                  className={`font-serif font-semibold ${
-                    entry.speaker === "You" ? "text-[#7aa8c8]" : 
-                    entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
-                  }`}
-                >
-                  {entry.speaker}:
-                </span>
-                <span className="text-stone-300 ml-2">{entry.text}</span>
-              </div>
-              {entry.speaker === "Malachar" && (
-                <button
-                  onClick={() => speakDialogue(entry.text, entry.speaker, index)}
-                  disabled={loadingIndex === index}
-                  className={`flex-shrink-0 mt-0.5 p-1 rounded transition-colors ${
-                    loadingIndex === index
-                      ? "bg-[#3d3428]/60 text-[#c9a868]"
-                      : speakingIndex === index 
-                      ? "bg-[#8b5cf6]/30 text-[#8b5cf6]" 
-                      : "opacity-0 group-hover:opacity-100 hover:bg-[#3d3428]/60 text-stone-500 hover:text-stone-300"
-                  }`}
-                  title={loadingIndex === index ? "Loading..." : speakingIndex === index ? "Stop" : "Replay"}
-                >
-                  {loadingIndex === index ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : speakingIndex === index ? (
-                    <Square className="w-3 h-3" />
-                  ) : (
-                    <Volume2 className="w-3 h-3" />
-                  )}
-                </button>
-              )}
+            <div key={index} className="text-sm">
+              <span
+                className={`font-serif font-semibold ${
+                  entry.speaker === "You" ? "text-[#7aa8c8]" : 
+                  entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
+                }`}
+              >
+                {entry.speaker}:
+              </span>
+              <span className="text-stone-300 ml-2">{entry.text}</span>
             </div>
           ))}
           {isWorldAIThinking && (
