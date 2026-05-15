@@ -140,6 +140,28 @@ export interface DashboardAsset {
   updated_at: string
 }
 
+export interface EnvironmentInventory {
+  id: string
+  environment_id: string | null
+  campaign_id: string | null
+  location: string | null
+  name: string
+  description: string | null
+  quantity: number
+  icon_url: string | null
+  icon_type: 'custom' | 'preset'
+  preset_icon: string | null
+  weight: number
+  value: number
+  item_type: 'weapon' | 'armor' | 'consumable' | 'misc' | 'currency' | 'quest'
+  requirements: string | null
+  is_hidden: boolean
+  is_available: boolean
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 // Form types for creating/updating
 export type CreateEnvironment = Omit<Environment, 'id' | 'created_at' | 'updated_at'>
 export type CreateCharacter = Omit<Character, 'id' | 'created_at' | 'updated_at'>
@@ -150,6 +172,7 @@ export type CreateAbility = Omit<Ability, 'id' | 'created_at' | 'updated_at'>
 export type CreateDialogue = Omit<Dialogue, 'id' | 'created_at'>
 export type CreateMagicalResource = Omit<MagicalResource, 'id' | 'created_at' | 'updated_at'>
 export type CreateDashboardAsset = Omit<DashboardAsset, 'id' | 'created_at' | 'updated_at'>
+export type CreateEnvironmentInventory = Omit<EnvironmentInventory, 'id' | 'created_at' | 'updated_at'>
 
 // Preset icon options
 export const ACTION_PRESET_ICONS = [

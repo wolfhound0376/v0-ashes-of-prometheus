@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { upload } from "@vercel/blob/client"
 import { Upload, X, Loader2, Image as ImageIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -47,19 +46,25 @@ export function ImageUploader({
     setIsUploading(true)
     
     try {
-      // Use client-side upload - uploads directly to Blob storage
-      // bypassing the serverless function size limit
-      const timestamp = Date.now()
-      const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-      const pathname = `${folder}/${timestamp}-${safeName}`
+      // Use server-side upload via FormData
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folder', folder)
 
-      const blob = await upload(pathname, file, {
-        access: 'private',
-        handleUploadUrl: '/api/upload',
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
       })
 
-      // For private blobs, use a proxy URL
-      onChange(`/api/file?pathname=${encodeURIComponent(blob.pathname)}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Upload failed')
+      }
+
+      const data = await response.json()
+      
+      // Use the proxy URL for private blobs
+      onChange(data.url)
     } catch (error) {
       console.error('Upload error:', error)
       alert(`Failed to upload image: ${error instanceof Error ? error.message : 'Unknown error'}`)

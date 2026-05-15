@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { quickAbilities } from "@/lib/game-data"
+import { quickAbilities, getClassSpellcasting } from "@/lib/game-data"
 import {
   SpellbookIcon,
   AbilityIcon,
@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/fantasy-icons"
 import { BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DiceRoller } from "./dice-roller"
+import { ReactionsPanel } from "./reactions-panel"
 
 interface Action {
   id: string
@@ -57,6 +59,12 @@ interface CenterColumnProps {
   onActionSelect: (actionId: string) => void
   actions: Action[]
   resources: Resources
+  characterClass?: string
+  characterLevel?: number
+  characterName?: string
+  availableActionIds?: string[]
+  onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
+  onSendToLich?: (message: string) => void
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -104,7 +112,19 @@ const actionTypeColors = {
   },
 }
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources }: CenterColumnProps) {
+type ActionTab = "action" | "bonus" | "reaction"
+
+export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich }: CenterColumnProps) {
+  // Check if character can cast spells based on D&D 5E rules
+  const spellcasting = getClassSpellcasting(characterClass || "", characterLevel || 1)
+  
+  // Action type tab state
+  const [activeTab, setActiveTab] = useState<ActionTab>("action")
+  
+  // Filter actions by current tab (reactions always visible)
+  const filteredActions = actions.filter(a => a.type === activeTab)
+  const reactionActions = actions.filter(a => a.type === "reaction")
+  
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
@@ -126,171 +146,203 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
 
       {/* Available Actions */}
       <FantasyPanel className="flex-1 min-h-0 flex flex-col">
-        <div className="px-4 py-2 border-b border-[#3d3428]/60 flex items-center justify-between">
-          <h3 className="text-xs font-semibold tracking-[0.2em] uppercase text-[#c9b896]">
-            Available Actions
-          </h3>
-          <div className="text-right">
-            <span className="text-[10px] uppercase tracking-wider text-stone-500">Actions Remaining</span>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          <div className="flex">
-            {/* Actions list grouped by type */}
-            <div className="flex-1 p-2 space-y-3">
-              {/* Standard Actions */}
-              {actions.filter(a => a.type === "action").length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-1.5 px-1">
-                    <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.action.labelBg, actionTypeColors.action.text)}>
-                      Actions
-                    </span>
-                    <div className="flex-1 h-px bg-[#4a8a4a]/30" />
-                  </div>
-                  <div className="space-y-1">
-                    {actions.filter(a => a.type === "action").map((action) => (
-                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
-                    ))}
-                  </div>
-                </div>
+        {/* Tab Header */}
+        <div className="px-2 py-2 border-b border-[#3d3428]/60">
+          <div className="flex gap-1">
+            {/* Action Tab */}
+            <button
+              onClick={() => setActiveTab("action")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wider transition-all",
+                activeTab === "action"
+                  ? "bg-[#2a4a2a] text-[#7ac87a] border border-[#4a8a4a]/60"
+                  : "text-stone-500 hover:text-stone-300 hover:bg-[#2a2420]/40"
               )}
-              
-              {/* Bonus Actions */}
-              {actions.filter(a => a.type === "bonus").length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-1.5 px-1">
-                    <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.bonus.labelBg, actionTypeColors.bonus.text)}>
-                      Bonus Actions
-                    </span>
-                    <div className="flex-1 h-px bg-[#8a7a3a]/30" />
-                  </div>
-                  <div className="space-y-1">
-                    {actions.filter(a => a.type === "bonus").map((action) => (
-                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
-                    ))}
-                  </div>
-                </div>
+            >
+              <span>Actions</span>
+              <span className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center text-[10px]",
+                activeTab === "action" ? "bg-[#4a8a4a]/40" : "bg-[#3d3428]/60"
+              )}>
+                {resources.action}
+              </span>
+            </button>
+            
+            {/* Bonus Action Tab */}
+            <button
+              onClick={() => setActiveTab("bonus")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wider transition-all",
+                activeTab === "bonus"
+                  ? "bg-[#4a4a2a] text-[#d4b454] border border-[#8a7a3a]/60"
+                  : "text-stone-500 hover:text-stone-300 hover:bg-[#2a2420]/40"
               )}
-              
-              {/* Reactions */}
-              {actions.filter(a => a.type === "reaction").length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-1.5 px-1">
-                    <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.reaction.labelBg, actionTypeColors.reaction.text)}>
-                      Reactions
-                    </span>
-                    <div className="flex-1 h-px bg-[#7a4a8a]/30" />
-                  </div>
-                  <div className="space-y-1">
-                    {actions.filter(a => a.type === "reaction").map((action) => (
-                      <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Actions remaining sidebar */}
-            <div className="w-24 border-l border-[#3d3428]/40 p-3 flex flex-col gap-3">
-              <ActionCounter label="Action" value={resources.action} type="action" />
-              <ActionCounter label="Bonus Action" value={resources.bonusAction} type="bonus" />
-              <ActionCounter label="Reaction" value={resources.reaction} type="reaction" />
-            </div>
-          </div>
-        </div>
-
-        <div className="px-3 py-1.5 border-t border-[#3d3428]/40">
-          <p className="text-[10px] text-stone-500 italic">
-            Actions available are based on your class, resources, and current situation.
-          </p>
-        </div>
-      </FantasyPanel>
-
-      {/* Magical Resources */}
-      <FantasyPanel title="Magical Resources & Abilities" className="flex-shrink-0">
-        <div className="p-3">
-          <div className="flex gap-2">
-            <ResourceBox
-              label="Spell Slots"
-              current={resources.spellSlots}
-              max={resources.maxSpellSlots}
-              color="purple"
-            />
-            <ResourceBox
-              label="Sorcery Points"
-              current={resources.sorceryPoints}
-              max={resources.maxSorceryPoints}
-              color="pink"
-            />
-            <ResourceBox
-              label="Arcane Charges"
-              current={resources.arcaneCharges}
-              max={resources.maxArcaneCharges}
-              color="blue"
-            />
-            <button className="flex-1 flex flex-col items-center justify-center gap-1 p-2 rounded-sm bg-[#1a1614] border border-[#3d3428]/60 hover:border-[#5a4a3a]/80 transition-colors group">
-              <BookOpen className="w-6 h-6 text-[#8b7355] group-hover:text-[#c9b896] transition-colors" />
-              <span className="text-[10px] uppercase tracking-wider text-[#8b7355] group-hover:text-[#c9b896]">
-                Open Book
+            >
+              <span>Bonus</span>
+              <span className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center text-[10px]",
+                activeTab === "bonus" ? "bg-[#8a7a3a]/40" : "bg-[#3d3428]/60"
+              )}>
+                {resources.bonusAction}
               </span>
             </button>
           </div>
         </div>
+
+        {/* Actions List */}
+        <div className="flex-1 overflow-y-auto p-2">
+          {filteredActions.length > 0 ? (
+            <div className="space-y-1">
+              {filteredActions.map((action) => (
+                <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-stone-500 text-sm italic">
+              No {activeTab === "action" ? "actions" : "bonus actions"} available
+            </div>
+          )}
+        </div>
+
+        {/* Reactions - Always visible at bottom */}
+        {reactionActions.length > 0 && (
+          <div className="border-t border-[#3d3428]/40 p-2">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.reaction.labelBg, actionTypeColors.reaction.text)}>
+                Reactions
+              </span>
+              <span className="w-4 h-4 rounded-full bg-[#3a2a4a] flex items-center justify-center text-[10px] text-[#b87ac8]">
+                {resources.reaction}
+              </span>
+              <div className="flex-1 h-px bg-[#7a4a8a]/30" />
+            </div>
+            <div className="space-y-1">
+              {reactionActions.map((action) => (
+                <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
+              ))}
+            </div>
+          </div>
+        )}
       </FantasyPanel>
 
-      {/* Quick Abilities */}
-      <FantasyPanel title="Quick Abilities" className="flex-shrink-0">
-        <div className="p-3">
-          <div className="flex gap-2 justify-center">
-            {quickAbilities.map((ability) => {
-              const IconComponent = quickAbilityIconMap[ability.icon] || LockedAbilityIcon
-              return (
-                <button
-                  key={ability.id}
-                  disabled={!ability.unlocked}
-                  className={cn(
-                    "flex flex-col items-center gap-1 p-1 rounded-sm transition-all",
-                    ability.unlocked
-                      ? "hover:bg-[#2a2420]/60 group cursor-pointer"
-                      : "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <IconFrame 
-                    className="w-14 h-14" 
-                    disabled={!ability.unlocked}
-                  >
-                    <div className={cn(
-                      "w-full h-full bg-gradient-to-br overflow-hidden",
-                      ability.unlocked 
-                        ? "from-[#1a2a35] to-[#0f1a20]" 
-                        : "from-[#1a1614] to-[#0d0b0a]"
-                    )}>
-                      {ability.iconUrl ? (
-                        <img 
-                          src={ability.iconUrl} 
-                          alt={ability.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <IconComponent className="w-full h-full p-1" />
-                      )}
-                    </div>
-                  </IconFrame>
-                  <span
-                    className={cn(
-                      "text-[10px] text-center leading-tight",
-                      ability.unlocked ? "text-stone-400" : "text-stone-600"
-                    )}
-                  >
-                    {ability.name}
+      {/* Magical Resources - Only show for spellcasting classes */}
+      {spellcasting.canCast && (
+        <FantasyPanel title="Magical Resources & Abilities" className="flex-shrink-0">
+          <div className="p-3">
+            <div className="flex gap-2">
+              {/* Spell Slots - for all casters */}
+              <ResourceBox
+                label="Spell Slots"
+                current={resources.spellSlots}
+                max={resources.maxSpellSlots}
+                color="purple"
+              />
+              {/* Sorcery Points - only for Sorcerers */}
+              {spellcasting.hasSorceryPoints && (
+                <ResourceBox
+                  label="Sorcery Points"
+                  current={resources.sorceryPoints}
+                  max={resources.maxSorceryPoints}
+                  color="pink"
+                />
+              )}
+              {/* Pact Slots/Arcane Charges - only for Warlocks */}
+              {spellcasting.hasArcaneCharges && (
+                <ResourceBox
+                  label="Pact Slots"
+                  current={resources.arcaneCharges}
+                  max={resources.maxArcaneCharges}
+                  color="blue"
+                />
+              )}
+              {/* Spellbook - only for Wizards */}
+              {spellcasting.hasSpellbook && (
+                <button className="flex-1 flex flex-col items-center justify-center gap-1 p-2 rounded-sm bg-[#1a1614] border border-[#3d3428]/60 hover:border-[#5a4a3a]/80 transition-colors group">
+                  <BookOpen className="w-6 h-6 text-[#8b7355] group-hover:text-[#c9b896] transition-colors" />
+                  <span className="text-[10px] uppercase tracking-wider text-[#8b7355] group-hover:text-[#c9b896]">
+                    Spellbook
                   </span>
                 </button>
-              )
-            })}
+              )}
+            </div>
           </div>
-        </div>
-      </FantasyPanel>
+        </FantasyPanel>
+      )}
+
+      {/* Quick Abilities - Only show for spellcasting classes */}
+      {spellcasting.canCast && (
+        <FantasyPanel title="Quick Abilities" className="flex-shrink-0">
+          <div className="p-3">
+            <div className="flex gap-2 justify-center">
+              {quickAbilities.map((ability) => {
+                const IconComponent = quickAbilityIconMap[ability.icon] || LockedAbilityIcon
+                return (
+                  <button
+                    key={ability.id}
+                    disabled={!ability.unlocked}
+                    className={cn(
+                      "flex flex-col items-center gap-1 p-1 rounded-sm transition-all",
+                      ability.unlocked
+                        ? "hover:bg-[#2a2420]/60 group cursor-pointer"
+                        : "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <IconFrame 
+                      className="w-14 h-14" 
+                      disabled={!ability.unlocked}
+                    >
+                      <div className={cn(
+                        "w-full h-full bg-gradient-to-br overflow-hidden",
+                        ability.unlocked 
+                          ? "from-[#1a2a35] to-[#0f1a20]" 
+                          : "from-[#1a1614] to-[#0d0b0a]"
+                      )}>
+                        {ability.iconUrl ? (
+                          <img 
+                            src={ability.iconUrl} 
+                            alt={ability.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <IconComponent className="w-full h-full p-1" />
+                        )}
+                      </div>
+                    </IconFrame>
+                    <span
+                      className={cn(
+                        "text-[10px] text-center leading-tight",
+                        ability.unlocked ? "text-stone-400" : "text-stone-600"
+                      )}
+                    >
+                      {ability.name}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </FantasyPanel>
+      )}
+
+      {/* Collapsible Reactions Panel */}
+      <ReactionsPanel
+        reactions={[]}
+        reactionCount={resources.reaction}
+        onReactionUse={(reactionId) => {
+          onActionSelect(reactionId)
+          // Notify Lich of reaction use
+          if (onSendToLich) {
+            onSendToLich(`[Reaction] ${characterName || "Player"} uses ${reactionId}`)
+          }
+        }}
+        characterClass={characterClass}
+      />
+
+      {/* Dice Roller */}
+      <DiceRoller
+        onSendToLich={onSendToLich}
+        characterName={characterName}
+      />
     </div>
   )
 }

@@ -1,3 +1,69 @@
+// D&D 5E Experience Points Thresholds (PHB p.15)
+// XP required to reach each level
+export const XP_THRESHOLDS: Record<number, number> = {
+  1: 0,
+  2: 300,
+  3: 900,
+  4: 2700,
+  5: 6500,
+  6: 14000,
+  7: 23000,
+  8: 34000,
+  9: 48000,
+  10: 64000,
+  11: 85000,
+  12: 100000,
+  13: 120000,
+  14: 140000,
+  15: 165000,
+  16: 195000,
+  17: 225000,
+  18: 265000,
+  19: 305000,
+  20: 355000,
+}
+
+// Get XP needed for next level
+export function getXPForNextLevel(currentLevel: number): number {
+  if (currentLevel >= 20) return 0 // Max level
+  return XP_THRESHOLDS[currentLevel + 1]
+}
+
+// Get XP needed from current XP to next level
+export function getXPToNextLevel(currentXP: number, currentLevel: number): number {
+  if (currentLevel >= 20) return 0
+  const nextLevelXP = XP_THRESHOLDS[currentLevel + 1]
+  return Math.max(0, nextLevelXP - currentXP)
+}
+
+// Get level from XP
+export function getLevelFromXP(xp: number): number {
+  let level = 1
+  for (let i = 20; i >= 1; i--) {
+    if (xp >= XP_THRESHOLDS[i]) {
+      level = i
+      break
+    }
+  }
+  return level
+}
+
+// Check if character can level up
+export function canLevelUp(currentXP: number, currentLevel: number): boolean {
+  if (currentLevel >= 20) return false
+  return currentXP >= XP_THRESHOLDS[currentLevel + 1]
+}
+
+// Get XP progress percentage to next level
+export function getXPProgressPercent(currentXP: number, currentLevel: number): number {
+  if (currentLevel >= 20) return 100
+  const currentLevelXP = XP_THRESHOLDS[currentLevel]
+  const nextLevelXP = XP_THRESHOLDS[currentLevel + 1]
+  const xpInCurrentLevel = currentXP - currentLevelXP
+  const xpNeededForLevel = nextLevelXP - currentLevelXP
+  return Math.min(100, Math.floor((xpInCurrentLevel / xpNeededForLevel) * 100))
+}
+
 // D&D 5E Class Defaults based on System Reference Document 5.2.1
 // These are applied when a character selects a class
 export const classDefaults: Record<string, {
@@ -262,6 +328,122 @@ export function calculateStartingHP(className: string, conModifier: number, leve
 export function getClassActions(className: string): string[] {
   const classData = classDefaults[className]
   return classData?.classActions || ["attack", "dash", "disengage", "dodge", "help", "hide", "ready", "search", "use-object"]
+}
+
+// Helper function to check if a class can cast spells
+// Returns spellcasting info if the class can cast, null otherwise
+export function getClassSpellcasting(className: string, level: number = 1): {
+  canCast: boolean
+  ability: string | null
+  cantripsKnown: number
+  spellSlots: number[]
+  hasSpellbook: boolean
+  hasSorceryPoints: boolean
+  hasArcaneCharges: boolean
+} {
+  const classData = classDefaults[className]
+  
+  // Classes that never cast spells
+  const nonCasters = ["Barbarian", "Fighter", "Monk", "Rogue"]
+  
+  // Subclasses that gain spellcasting (Eldritch Knight, Arcane Trickster)
+  // For now, we assume base class - subclass handling can be added later
+  if (nonCasters.includes(className)) {
+    return {
+      canCast: false,
+      ability: null,
+      cantripsKnown: 0,
+      spellSlots: [],
+      hasSpellbook: false,
+      hasSorceryPoints: false,
+      hasArcaneCharges: false,
+    }
+  }
+  
+  // Half-casters (Paladin, Ranger) get spells at level 2
+  if ((className === "Paladin" || className === "Ranger") && level < 2) {
+    return {
+      canCast: false,
+      ability: null,
+      cantripsKnown: 0,
+      spellSlots: [],
+      hasSpellbook: false,
+      hasSorceryPoints: false,
+      hasArcaneCharges: false,
+    }
+  }
+  
+  if (!classData?.spellcasting) {
+    return {
+      canCast: false,
+      ability: null,
+      cantripsKnown: 0,
+      spellSlots: [],
+      hasSpellbook: false,
+      hasSorceryPoints: false,
+      hasArcaneCharges: false,
+    }
+  }
+  
+  // Calculate spell slots based on level
+  // This is a simplified version - full implementation would use spell slot progression tables
+  const spellSlots = calculateSpellSlots(className, level)
+  
+  return {
+    canCast: true,
+    ability: classData.spellcasting.ability,
+    cantripsKnown: classData.spellcasting.cantripsKnown,
+    spellSlots,
+    hasSpellbook: className === "Wizard",
+    hasSorceryPoints: className === "Sorcerer",
+    hasArcaneCharges: className === "Warlock", // Pact Magic uses different slots
+  }
+}
+
+// Calculate spell slots by level for each caster type
+function calculateSpellSlots(className: string, level: number): number[] {
+  // Full casters: Bard, Cleric, Druid, Sorcerer, Wizard
+  const fullCasterSlots: Record<number, number[]> = {
+    1: [2], 2: [3], 3: [4, 2], 4: [4, 3], 5: [4, 3, 2],
+    6: [4, 3, 3], 7: [4, 3, 3, 1], 8: [4, 3, 3, 2], 9: [4, 3, 3, 3, 1],
+    10: [4, 3, 3, 3, 2], 11: [4, 3, 3, 3, 2, 1], 12: [4, 3, 3, 3, 2, 1],
+    13: [4, 3, 3, 3, 2, 1, 1], 14: [4, 3, 3, 3, 2, 1, 1], 15: [4, 3, 3, 3, 2, 1, 1, 1],
+    16: [4, 3, 3, 3, 2, 1, 1, 1], 17: [4, 3, 3, 3, 2, 1, 1, 1, 1], 18: [4, 3, 3, 3, 3, 1, 1, 1, 1],
+    19: [4, 3, 3, 3, 3, 2, 1, 1, 1], 20: [4, 3, 3, 3, 3, 2, 2, 1, 1],
+  }
+  
+  // Half casters: Paladin, Ranger (slot progression starts at level 2)
+  const halfCasterSlots: Record<number, number[]> = {
+    2: [2], 3: [3], 4: [3], 5: [4, 2], 6: [4, 2], 7: [4, 3],
+    8: [4, 3], 9: [4, 3, 2], 10: [4, 3, 2], 11: [4, 3, 3],
+    12: [4, 3, 3], 13: [4, 3, 3, 1], 14: [4, 3, 3, 1], 15: [4, 3, 3, 2],
+    16: [4, 3, 3, 2], 17: [4, 3, 3, 3, 1], 18: [4, 3, 3, 3, 1], 19: [4, 3, 3, 3, 2],
+    20: [4, 3, 3, 3, 2],
+  }
+  
+  // Warlock Pact Magic (short rest recovery, different progression)
+  const warlockSlots: Record<number, number[]> = {
+    1: [1], 2: [2], 3: [2], 4: [2], 5: [2], 6: [2], 7: [2], 8: [2], 9: [2],
+    10: [2], 11: [3], 12: [3], 13: [3], 14: [3], 15: [3], 16: [3], 17: [4],
+    18: [4], 19: [4], 20: [4],
+  }
+  
+  const fullCasters = ["Bard", "Cleric", "Druid", "Sorcerer", "Wizard"]
+  const halfCasters = ["Paladin", "Ranger"]
+  
+  if (className === "Warlock") {
+    return warlockSlots[level] || [1]
+  }
+  
+  if (fullCasters.includes(className)) {
+    return fullCasterSlots[level] || [2]
+  }
+  
+  if (halfCasters.includes(className)) {
+    return halfCasterSlots[level] || []
+  }
+  
+  return []
 }
 
 export const characterData = {
