@@ -1,52 +1,50 @@
-// Stream events from a Malachar session
+// Stream events from a Malachar session via the Anthropic Managed Agents API
 import { NextRequest } from "next/server"
+import Anthropic from "@anthropic-ai/sdk"
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params
-  
-  // Read env vars inside function to pick up changes without restart
-  const MALACHAR_API_URL = process.env.MALACHAR_API_URL
-  const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
-  
-  if (!MALACHAR_API_URL || !MALACHAR_API_KEY) {
-    return new Response("Malachar configuration missing", { status: 500 })
+  const apiKey = process.env.ANTHROPIC_API_KEY
+
+  if (!apiKey) {
+    return new Response("ANTHROPIC_API_KEY not configured", { status: 500 })
   }
 
   try {
-    // Connect to Malachar's event stream
-    const response = await fetch(
-      `${MALACHAR_API_URL}/v1/sessions/${sessionId}/events/stream`,
-      {
-        headers: {
-          "x-api-key": MALACHAR_API_KEY,
-          "Accept": "text/event-stream",
-          "anthropic-version": "2023-06-01",
-          "anthropic-beta": "managed-agents-2026-04-01",
-        },
-      }
-    )
+    const client = new Anthropic({ apiKey })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[Malachar] Stream connection failed:", response.status, errorText)
-      return new Response(`Stream connection failed: ${errorText}`, { 
-        status: response.status 
-      })
-    }
+    // Get the SSE stream from the Anthropic Managed Agents API
+    const stream = await client.beta.sessions.events.stream(sessionId)
 
-    // Forward the SSE stream to the client
-    return new Response(response.body, {
+    // Convert the SDK stream into a web-standard ReadableStream of SSE
+    const readable = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        try {
+          for await (const event of stream) {
+            const ssePayload = `data: ${JSON.stringify(event)}\n\n`
+            controller.enqueue(encoder.encode(ssePayload))
+          }
+          controller.close()
+        } catch (err) {
+          console.error("[Malachar] Stream error:", err)
+          controller.error(err)
+        }
+      },
+    })
+
+    return new Response(readable, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     })
   } catch (error) {
-    console.error("[Malachar] Stream error:", error)
+    console.error("[Malachar] Stream connection failed:", error)
     return new Response("Stream connection failed", { status: 500 })
   }
 }
