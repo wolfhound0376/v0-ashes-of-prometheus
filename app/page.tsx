@@ -532,7 +532,7 @@ if (error) {
   environment={{
     location: currentEnvironment?.name || environmentData.location,
     timeOfDay: currentEnvironment?.time_of_day || environmentData.timeOfDay,
-    backgroundImageUrl: currentEnvironment?.background_image_url,
+    backgroundImageUrl: currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
     fogOverlayUrl: currentEnvironment?.fog_overlay_url,
     ambientAnimation: currentEnvironment?.ambient_animation,
     description: currentEnvironment?.description,
