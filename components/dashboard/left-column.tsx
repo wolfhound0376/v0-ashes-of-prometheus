@@ -64,34 +64,21 @@ export function LeftColumn({
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const readyRef = useRef(false)
+  const audioUnlockedRef = useRef(false)
+  const prevDialogueLenRef = useRef<number | null>(null)
   const isTTSMutedRef = useRef(isTTSMuted)
   isTTSMutedRef.current = isTTSMuted
 
-  // After mount + initial data load, mark as ready so only NEW lines auto-play.
-  // The 2-second delay ensures all historical dialogue has loaded from Supabase.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // Mark everything currently in dialogue as "already played"
-      for (const entry of dialogue) {
-        if (entry.speaker === "Malachar") {
-          ttsPlayedTexts.add(entry.text)
-        }
-      }
-      readyRef.current = true
-      console.log("[v0] TTS ready, marked", dialogue.length, "historical entries as played")
-    }, 2000)
-    return () => clearTimeout(timer)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Intentionally only run once on mount
-
-  // Unlock audio on first user interaction (browser autoplay policy)
+  // Unlock audio playback on any user interaction (browser autoplay policy).
+  // Creates and resumes an AudioContext which globally unlocks HTMLAudioElement.play().
   useEffect(() => {
     const unlock = () => {
-      const audio = new Audio()
-      audio.play().catch(() => {})
-      document.removeEventListener("click", unlock)
-      document.removeEventListener("keydown", unlock)
+      if (audioUnlockedRef.current) return
+      const ctx = new AudioContext()
+      ctx.resume().then(() => {
+        audioUnlockedRef.current = true
+        console.log("[v0] Audio unlocked via user interaction")
+      })
     }
     document.addEventListener("click", unlock)
     document.addEventListener("keydown", unlock)
@@ -106,14 +93,39 @@ export function LeftColumn({
     dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [dialogue, isWorldAIThinking])
 
-  // Auto-play TTS for newly-arrived Malachar lines
+  // TTS auto-play: only plays lines added AFTER the first render with dialogue data.
+  // prevDialogueLenRef starts null. First time dialogue has entries, we snapshot the length
+  // and mark all existing entries as played. Subsequent additions are genuinely new.
   useEffect(() => {
-    if (!readyRef.current) return
+    // First time we see dialogue data, snapshot it as "historical" and skip
+    if (prevDialogueLenRef.current === null) {
+      if (dialogue.length > 0) {
+        for (const entry of dialogue) {
+          if (entry.speaker === "Malachar") {
+            ttsPlayedTexts.add(entry.text)
+          }
+        }
+        prevDialogueLenRef.current = dialogue.length
+        console.log("[v0] TTS initialized, marked", dialogue.length, "historical entries")
+      }
+      return
+    }
+
+    // No new entries
+    if (dialogue.length <= prevDialogueLenRef.current) {
+      prevDialogueLenRef.current = dialogue.length
+      return
+    }
+
+    const prevLen = prevDialogueLenRef.current
+    prevDialogueLenRef.current = dialogue.length
+
     if (isTTSMuted) return
 
-    // Find new Malachar lines that haven't been played yet
+    // Only look at entries added since last render
     const newTexts: string[] = []
-    for (const entry of dialogue) {
+    for (let i = prevLen; i < dialogue.length; i++) {
+      const entry = dialogue[i]
       if (entry.speaker === "Malachar" && !ttsPlayedTexts.has(entry.text)) {
         ttsPlayedTexts.add(entry.text)
         newTexts.push(entry.text)
@@ -122,9 +134,8 @@ export function LeftColumn({
 
     if (newTexts.length === 0) return
 
-    console.log("[v0] TTS queuing", newTexts.length, "new Malachar line(s)")
+    console.log("[v0] TTS queuing", newTexts.length, "new line(s)")
 
-    // Play each new line
     const play = async () => {
       for (const rawText of newTexts) {
         if (isTTSMutedRef.current) break
@@ -142,7 +153,7 @@ export function LeftColumn({
             continue
           }
           const blob = await res.blob()
-          console.log("[v0] TTS blob received, size:", blob.size)
+          console.log("[v0] TTS blob size:", blob.size)
           const url = URL.createObjectURL(blob)
           await new Promise<void>((resolve) => {
             const audio = new Audio(url)
@@ -152,7 +163,7 @@ export function LeftColumn({
             audio.play().then(() => {
               console.log("[v0] TTS playing audio")
             }).catch((err) => {
-              console.log("[v0] TTS play() failed:", err.message)
+              console.log("[v0] TTS play() blocked:", err.message)
               audioRef.current = null
               URL.revokeObjectURL(url)
               resolve()
@@ -174,7 +185,7 @@ export function LeftColumn({
     }
   }, [isTTSMuted])
 
-  // Stop audio when component unmounts
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (audioRef.current) {
