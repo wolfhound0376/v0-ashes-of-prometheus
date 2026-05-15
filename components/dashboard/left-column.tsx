@@ -43,6 +43,7 @@ export function LeftColumn({
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
   
   // Track which dialogue index we've processed up to (avoids strict-mode double-fires)
   const processedUpToRef = useRef<number>(-1)
@@ -50,6 +51,26 @@ export function LeftColumn({
   const isAutoPlayingRef = useRef<boolean>(false)
   const isTTSMutedRef = useRef(isTTSMuted)
   isTTSMutedRef.current = isTTSMuted
+
+  // Unlock audio on any user click (required by browser autoplay policy)
+  useEffect(() => {
+    const unlock = () => {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext()
+        console.log("[v0] AudioContext created, state:", audioContextRef.current.state)
+      }
+      if (audioContextRef.current.state === "suspended") {
+        audioContextRef.current.resume()
+        console.log("[v0] AudioContext resumed")
+      }
+    }
+    document.addEventListener("click", unlock)
+    document.addEventListener("keydown", unlock)
+    return () => {
+      document.removeEventListener("click", unlock)
+      document.removeEventListener("keydown", unlock)
+    }
+  }, [])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -61,13 +82,18 @@ export function LeftColumn({
     if (!hasMountedRef.current) {
       hasMountedRef.current = true
       processedUpToRef.current = dialogue.length - 1
+      console.log("[v0] TTS mounted, skipping", dialogue.length, "historical entries, muted:", isTTSMuted)
     }
-  }, [dialogue])
+  }, [dialogue, isTTSMuted])
 
   // Auto-play TTS for newly-arrived Malachar lines
   useEffect(() => {
     if (!hasMountedRef.current) return
-    if (isTTSMuted) return
+    if (isTTSMuted) {
+      // Still update processedUpToRef so we don't replay when unmuted
+      processedUpToRef.current = dialogue.length - 1
+      return
+    }
 
     const lastProcessed = processedUpToRef.current
     const lastIndex = dialogue.length - 1
@@ -84,31 +110,61 @@ export function LeftColumn({
 
     if (newMalacharTexts.length === 0) return
 
-    // Play sequentially
+    console.log("[v0] TTS auto-play queuing", newMalacharTexts.length, "Malachar lines")
+
+    // Play sequentially - don't re-enter if already playing
+    if (isAutoPlayingRef.current) return
+    
     const playQueue = async () => {
-      if (isAutoPlayingRef.current) return
       isAutoPlayingRef.current = true
 
       for (const text of newMalacharTexts) {
-        if (isTTSMutedRef.current) break
+        if (isTTSMutedRef.current) {
+          console.log("[v0] TTS muted, stopping queue")
+          break
+        }
         try {
+          console.log("[v0] TTS fetching audio for:", text.substring(0, 50) + "...")
           const response = await fetch("/api/tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text, voice: "onyx" }),
           })
-          if (!response.ok) continue
+          if (!response.ok) {
+            console.log("[v0] TTS fetch failed:", response.status)
+            continue
+          }
           const blob = await response.blob()
+          console.log("[v0] TTS audio blob received, size:", blob.size)
           const url = URL.createObjectURL(blob)
+          
           await new Promise<void>((resolve) => {
             const audio = new Audio(url)
             audioRef.current = audio
-            audio.onended = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
-            audio.onerror = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
-            audio.play().catch(() => { audioRef.current = null; resolve() })
+            
+            audio.onended = () => {
+              console.log("[v0] TTS audio playback ended")
+              audioRef.current = null
+              URL.revokeObjectURL(url)
+              resolve()
+            }
+            audio.onerror = (e) => {
+              console.log("[v0] TTS audio error:", e)
+              audioRef.current = null
+              URL.revokeObjectURL(url)
+              resolve()
+            }
+            audio.play().then(() => {
+              console.log("[v0] TTS audio playing successfully")
+            }).catch((err) => {
+              console.log("[v0] TTS audio.play() rejected:", err.message)
+              audioRef.current = null
+              URL.revokeObjectURL(url)
+              resolve()
+            })
           })
-        } catch {
-          // TTS failed, skip
+        } catch (err) {
+          console.log("[v0] TTS error:", err)
         }
       }
 
