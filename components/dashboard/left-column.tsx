@@ -291,7 +291,7 @@ export function LeftColumn({
   
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
-      <FantasyPanel title="Avatar / Environment" className="flex-shrink-0">
+      <FantasyPanel title="Environment" className="flex-shrink-0">
         {/* Environment/Avatar Scene */}
         <div className="relative h-[280px] overflow-hidden">
           {/* Background - uses actual environment image or fallback gradient */}
@@ -337,27 +337,8 @@ export function LeftColumn({
               />
             )}
             
-            {/* Bottom vignette for avatar grounding */}
+            {/* Bottom vignette */}
             <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
-            
-            {/* Character avatar */}
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-64 h-64 flex items-end justify-center">
-              {characterAvatar ? (
-                <>
-                  <img 
-                    src={characterAvatar} 
-                    alt={characterName || "Character"} 
-                    className="max-w-full max-h-full object-contain drop-shadow-[0_0_25px_rgba(100,150,200,0.5)]"
-                  />
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-28 h-16 bg-[#6aa0c0]/25 rounded-full blur-xl" />
-                </>
-              ) : (
-                <>
-                  <div className="w-32 h-56 bg-gradient-to-b from-[#3a5060] to-[#1a2a35] rounded-t-full opacity-80 shadow-[0_0_30px_rgba(100,150,200,0.3)]" />
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-16 bg-[#6aa0c0]/20 rounded-full blur-xl" />
-                </>
-              )}
-            </div>
           </div>
 
           {/* Location overlay card */}
