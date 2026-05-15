@@ -1,4 +1,5 @@
-import { generateText } from "ai"
+import { generateText, tool } from "ai"
+import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
@@ -60,7 +61,8 @@ RULES:
 - For dice rolls, write [[XdY+Z]] and wait for the player to roll
 - Keep responses concise (1-3 paragraphs) unless describing important scenes
 - Track their progress through the campaign
-- When the player acquires items, describe them narratively
+- When the player acquires ANY item (through scavenging, finding, stealing, being given, etc.), you MUST use the giveItem tool AND write narrative text describing the acquisition. Never call a tool without also writing narrative.
+- When items are consumed, lost, or given away, use the removeItem tool
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
@@ -83,9 +85,84 @@ EXPERIENCE POINTS:
       ...conversationHistory,
       { role: "user", content: message }
     ],
+    tools: {
+      giveItem: tool({
+        description: "Add an item to the player's inventory. Use when the player acquires, finds, or is given an item. You MUST also write narrative text alongside this tool call.",
+        parameters: z.object({
+          name: z.string().describe("Item name, e.g. 'Rusty Dagger'"),
+          quantity: z.number().default(1),
+          description: z.string().describe("Brief description of the item"),
+          itemType: z.enum(["weapon", "armor", "consumable", "misc", "currency"]).default("misc"),
+          weight: z.number().default(0.1),
+          value: z.number().default(0),
+        }),
+        execute: async ({ name, quantity, description, itemType, weight, value }) => {
+          if (!playerCharacter?.id) return { success: false, error: "No player character" }
+          
+          const { data: existing } = await supabase
+            .from("inventory_items")
+            .select("id, quantity")
+            .eq("character_id", playerCharacter.id)
+            .eq("name", name)
+            .single()
+          
+          if (existing) {
+            await supabase.from("inventory_items")
+              .update({ quantity: existing.quantity + quantity })
+              .eq("id", existing.id)
+            return { success: true, message: `Updated ${name} (total: ${existing.quantity + quantity})` }
+          }
+          
+          const { error } = await supabase.from("inventory_items").insert({
+            character_id: playerCharacter.id,
+            name, quantity, description,
+            item_type: itemType, weight, value,
+          })
+          
+          if (error) return { success: false, error: error.message }
+          return { success: true, message: `Added ${quantity}x ${name}` }
+        }
+      }),
+      removeItem: tool({
+        description: "Remove an item from inventory. Use when items are consumed, lost, or given away.",
+        parameters: z.object({
+          name: z.string().describe("Item name to remove"),
+          quantity: z.number().default(1),
+        }),
+        execute: async ({ name, quantity }) => {
+          if (!playerCharacter?.id) return { success: false, error: "No player character" }
+          
+          const { data: existing } = await supabase
+            .from("inventory_items")
+            .select("id, quantity")
+            .eq("character_id", playerCharacter.id)
+            .eq("name", name)
+            .single()
+          
+          if (!existing) return { success: false, error: `${name} not found` }
+          
+          if (existing.quantity <= quantity) {
+            await supabase.from("inventory_items").delete().eq("id", existing.id)
+            return { success: true, message: `Removed all ${name}` }
+          }
+          
+          await supabase.from("inventory_items")
+            .update({ quantity: existing.quantity - quantity })
+            .eq("id", existing.id)
+          return { success: true, message: `Removed ${quantity} ${name}` }
+        }
+      }),
+    },
+    maxSteps: 2,
   })
   
-  const responseText = result.text?.trim()
+  // Collect text from all steps (tool step + follow-up text step)
+  let responseText = ""
+  for (const step of result.steps) {
+    if (step.text?.trim()) {
+      responseText += (responseText ? "\n\n" : "") + step.text.trim()
+    }
+  }
   
   if (responseText) {
     await supabase.from("dialogue").insert({
