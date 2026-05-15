@@ -1,7 +1,9 @@
-// Send a message to a Malachar session with full world context
+// Send a message to a Malachar session via the Anthropic Managed Agents API
 import { NextRequest, NextResponse } from "next/server"
-import Anthropic from "@anthropic-ai/sdk"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
+
+const ANTHROPIC_API = "https://api.anthropic.com"
+const BETA_HEADER = "managed-agents-2026-04-01"
 
 export async function POST(
   req: NextRequest,
@@ -33,22 +35,41 @@ export async function POST(
       }
     }
 
-    // Build the message with world context included
+    // Build the message with world context prepended
     const messageWithContext = worldContextText
       ? `[WORLD CONTEXT - Reference this for campaign knowledge]\n${worldContextText}\n\n[PLAYER MESSAGE]\n${content}`
       : content
 
-    const client = new Anthropic({ apiKey })
-
-    // Send user message event to the Malachar session
-    await client.beta.sessions.events.send(sessionId, {
-      events: [
-        {
-          type: "user.message",
-          content: [{ type: "text", text: messageWithContext }],
+    // POST events to the Anthropic session
+    const response = await fetch(
+      `${ANTHROPIC_API}/v1/sessions/${sessionId}/events?beta=true`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-beta": BETA_HEADER,
+          "anthropic-version": "2023-06-01",
         },
-      ],
-    })
+        body: JSON.stringify({
+          events: [
+            {
+              type: "user.message",
+              content: [{ type: "text", text: messageWithContext }],
+            },
+          ],
+        }),
+      }
+    )
+
+    if (!response.ok) {
+      const errBody = await response.text()
+      console.error("[Malachar] Send events failed:", response.status, errBody)
+      return NextResponse.json(
+        { error: `Anthropic API error ${response.status}` },
+        { status: response.status }
+      )
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
