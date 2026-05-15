@@ -556,6 +556,7 @@ if (error) {
           characterClass={selectedCharacter?.class}
           characterLevel={selectedCharacter?.level}
           characterName={selectedCharacter?.name}
+          sceneImageUrl={currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg"}
           onSendToLich={async (message) => {
             // Send to Lich - real-time subscription handles dialogue display
             const response = await sendToLich(message)

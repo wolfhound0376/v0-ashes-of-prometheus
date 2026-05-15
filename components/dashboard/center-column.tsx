@@ -65,6 +65,7 @@ interface CenterColumnProps {
   availableActionIds?: string[]
   onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
   onSendToLich?: (message: string) => void
+  sceneImageUrl?: string
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -114,7 +115,7 @@ const actionTypeColors = {
 
 type ActionTab = "action" | "bonus" | "reaction"
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich }: CenterColumnProps) {
+export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich, sceneImageUrl }: CenterColumnProps) {
   // Check if character can cast spells based on D&D 5E rules
   const spellcasting = getClassSpellcasting(characterClass || "", characterLevel || 1)
   
@@ -128,19 +129,29 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
-        <div className="h-[100px] flex items-center justify-center">
-          {selectedAction ? (
-            <div className="text-center">
-              <p className="text-[#7aa8c8] font-serif text-lg">
-                {actions.find((a) => a.id === selectedAction)?.name}
-              </p>
-              <p className="text-stone-400 text-sm mt-1">
-                {actions.find((a) => a.id === selectedAction)?.description}
-              </p>
-            </div>
-          ) : (
-            <p className="text-stone-500 italic text-sm">No one is interacting with you right now.</p>
+        <div className="relative h-[140px] overflow-hidden rounded-sm">
+          {sceneImageUrl && (
+            <img
+              src={sceneImageUrl}
+              alt="Current scene"
+              className="absolute inset-0 w-full h-full object-cover opacity-60"
+            />
           )}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#1a1614] via-[#1a1614]/40 to-transparent" />
+          <div className="relative h-full flex items-end justify-center p-3">
+            {selectedAction ? (
+              <div className="text-center">
+                <p className="text-[#7aa8c8] font-serif text-lg drop-shadow-lg">
+                  {actions.find((a) => a.id === selectedAction)?.name}
+                </p>
+                <p className="text-stone-300 text-sm mt-1 drop-shadow-lg">
+                  {actions.find((a) => a.id === selectedAction)?.description}
+                </p>
+              </div>
+            ) : (
+              <p className="text-stone-400 italic text-sm drop-shadow-lg">No one is interacting with you right now.</p>
+            )}
+          </div>
         </div>
       </FantasyPanel>
 
