@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Cinzel, Crimson_Text, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { SupabaseStatus } from '@/components/supabase-status'
 import './globals.css'
 
 const cinzel = Cinzel({ 
@@ -50,8 +51,5 @@ export default function RootLayout({
     <html lang="en" className="dark bg-[#0a0908]">
       <body className={`${cinzel.variable} ${crimsonText.variable} font-sans antialiased`}>
         {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
-      </body>
-    </html>
-  )
-}
+        <SupabaseStatus />
+        {pr
