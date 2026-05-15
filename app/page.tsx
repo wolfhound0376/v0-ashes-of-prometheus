@@ -32,13 +32,11 @@ export default function DashboardPage() {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
-  // TTS mute state - persisted in localStorage
-  const [isTTSMuted, setIsTTSMuted] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("tts-muted") === "true"
-    }
-    return false
-  })
+  // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
+  const [isTTSMuted, setIsTTSMuted] = useState(false)
+  useEffect(() => {
+    setIsTTSMuted(localStorage.getItem("tts-muted") === "true")
+  }, [])
   const toggleTTSMute = useCallback(() => {
     setIsTTSMuted(prev => {
       const next = !prev

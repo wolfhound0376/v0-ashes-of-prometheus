@@ -44,84 +44,85 @@ export function LeftColumn({
   const dialogueEndRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   
-  // Track previous dialogue length to detect new entries (not historical loads)
-  const prevDialogueLenRef = useRef<number>(0)
-  const initialLoadRef = useRef<boolean>(true)
-  const autoPlayQueueRef = useRef<string[]>([])
+  // Track which dialogue index we've processed up to (avoids strict-mode double-fires)
+  const processedUpToRef = useRef<number>(-1)
+  const hasMountedRef = useRef<boolean>(false)
   const isAutoPlayingRef = useRef<boolean>(false)
+  const isTTSMutedRef = useRef(isTTSMuted)
+  isTTSMutedRef.current = isTTSMuted
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [dialogue, isWorldAIThinking])
 
+  // Mark all existing dialogue as "already seen" on first render
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      processedUpToRef.current = dialogue.length - 1
+    }
+  }, [dialogue])
+
   // Auto-play TTS for newly-arrived Malachar lines
   useEffect(() => {
-    const prevLen = prevDialogueLenRef.current
-    prevDialogueLenRef.current = dialogue.length
-
-    // Skip the initial load (historical lines)
-    if (initialLoadRef.current) {
-      if (dialogue.length > 0) initialLoadRef.current = false
-      return
-    }
-
-    // Only process genuinely new entries
-    if (dialogue.length <= prevLen) return
+    if (!hasMountedRef.current) return
     if (isTTSMuted) return
 
-    const newEntries = dialogue.slice(prevLen)
-    const malacharLines = newEntries
-      .filter(e => e.speaker === "Malachar")
-      .map(e => e.text)
+    const lastProcessed = processedUpToRef.current
+    const lastIndex = dialogue.length - 1
+    if (lastIndex <= lastProcessed) return
 
-    if (malacharLines.length === 0) return
-
-    // Queue new lines and start processing
-    autoPlayQueueRef.current.push(...malacharLines)
-    processAutoPlayQueue()
-  }, [dialogue, isTTSMuted])
-
-  const processAutoPlayQueue = useCallback(async () => {
-    if (isAutoPlayingRef.current) return
-    isAutoPlayingRef.current = true
-
-    while (autoPlayQueueRef.current.length > 0) {
-      const text = autoPlayQueueRef.current.shift()!
-      if (isTTSMuted) {
-        autoPlayQueueRef.current = []
-        break
-      }
-      try {
-        const response = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, voice: "onyx" }),
-        })
-        if (!response.ok) continue
-        const blob = await response.blob()
-        const url = URL.createObjectURL(blob)
-        await new Promise<void>((resolve) => {
-          const audio = new Audio(url)
-          audioRef.current = audio
-          audio.onended = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
-          audio.onerror = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
-          audio.play().catch(() => { audioRef.current = null; resolve() })
-        })
-      } catch {
-        // TTS failed, skip
+    // Collect new Malachar lines we haven't processed yet
+    const newMalacharTexts: string[] = []
+    for (let i = lastProcessed + 1; i <= lastIndex; i++) {
+      if (dialogue[i].speaker === "Malachar") {
+        newMalacharTexts.push(dialogue[i].text)
       }
     }
+    processedUpToRef.current = lastIndex
 
-    isAutoPlayingRef.current = false
-  }, [isTTSMuted])
+    if (newMalacharTexts.length === 0) return
 
-  // Stop auto-playing audio when muted
+    // Play sequentially
+    const playQueue = async () => {
+      if (isAutoPlayingRef.current) return
+      isAutoPlayingRef.current = true
+
+      for (const text of newMalacharTexts) {
+        if (isTTSMutedRef.current) break
+        try {
+          const response = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, voice: "onyx" }),
+          })
+          if (!response.ok) continue
+          const blob = await response.blob()
+          const url = URL.createObjectURL(blob)
+          await new Promise<void>((resolve) => {
+            const audio = new Audio(url)
+            audioRef.current = audio
+            audio.onended = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+            audio.onerror = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+            audio.play().catch(() => { audioRef.current = null; resolve() })
+          })
+        } catch {
+          // TTS failed, skip
+        }
+      }
+
+      isAutoPlayingRef.current = false
+    }
+
+    playQueue()
+  }, [dialogue, isTTSMuted])
+
+  // Stop audio immediately when muted
   useEffect(() => {
     if (isTTSMuted && audioRef.current) {
       audioRef.current.pause()
       audioRef.current = null
-      autoPlayQueueRef.current = []
     }
   }, [isTTSMuted])
 
