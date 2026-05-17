@@ -24,6 +24,7 @@ export default function DashboardPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
+  const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; is_active: boolean }[]>([])
   const [loadingCharacters, setLoadingCharacters] = useState(true)
   
   // Current environment from database
@@ -327,6 +328,15 @@ if (error) {
     if (charData) {
       setCharacters(prev => prev.map(c => c.id === selectedCharacterId ? charData : c))
     }
+    
+    // Fetch active NPC encounters
+    const { data: npcData } = await supabase
+      .from('npc_encounters')
+      .select('id, name, description, portrait_url, is_active')
+      .eq('character_id', selectedCharacterId)
+      .eq('is_active', true)
+    
+    if (npcData) setNpcEncounters(npcData)
   }, [selectedCharacterId])
 
   // Fetch inventory and equipment when character changes
@@ -559,17 +569,18 @@ if (error) {
   isWorldAIThinking={lichLoading}
   isTTSMuted={isTTSMuted}
 />
-        <CenterColumn
-          selectedAction={selectedAction}
-          onActionSelect={handleActionSelect}
-          actions={actionsData}
-          resources={resources}
-          availableActionIds={availableActionIds}
-          onTelemetryPush={handleTelemetryPush}
-          characterClass={selectedCharacter?.class}
-          characterLevel={selectedCharacter?.level}
-          characterName={selectedCharacter?.name}
-          sceneImageUrl={npcImageUrl || undefined}
+          <CenterColumn
+            selectedAction={selectedAction}
+            onActionSelect={handleActionSelect}
+            actions={actionsData}
+            resources={resources}
+            availableActionIds={availableActionIds}
+            onTelemetryPush={handleTelemetryPush}
+            characterClass={selectedCharacter?.class}
+            characterLevel={selectedCharacter?.level}
+            characterName={selectedCharacter?.name}
+            sceneImageUrl={npcImageUrl || undefined}
+            npcEncounters={npcEncounters}
           onSendToLich={async (message) => {
             // Optimistically add player message to dialogue immediately
             const playerName = selectedCharacter?.name || "Player"

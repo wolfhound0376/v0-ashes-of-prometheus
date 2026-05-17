@@ -54,6 +54,14 @@ interface Resources {
   maxArcaneCharges: number
 }
 
+interface NpcEncounter {
+  id: string
+  name: string
+  description: string | null
+  portrait_url: string | null
+  is_active: boolean
+}
+
 interface CenterColumnProps {
   selectedAction: string | null
   onActionSelect: (actionId: string) => void
@@ -66,6 +74,7 @@ interface CenterColumnProps {
   onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
   onSendToLich?: (message: string) => void
   sceneImageUrl?: string
+  npcEncounters?: NpcEncounter[]
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -115,7 +124,10 @@ const actionTypeColors = {
 
 type ActionTab = "action" | "bonus" | "reaction"
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich, sceneImageUrl }: CenterColumnProps) {
+export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich, sceneImageUrl, npcEncounters = [] }: CenterColumnProps) {
+  // Filter active encounters
+  const activeEncounters = npcEncounters.filter(e => e.is_active)
+  
   // Check if character can cast spells based on D&D 5E rules
   const spellcasting = getClassSpellcasting(characterClass || "", characterLevel || 1)
   
@@ -130,7 +142,31 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
         <div className="relative h-[140px] overflow-hidden rounded-sm">
-          {sceneImageUrl ? (
+          {activeEncounters.length > 0 ? (
+            <div className="h-full flex gap-2 p-2 overflow-x-auto">
+              {activeEncounters.map((encounter) => (
+                <div key={encounter.id} className="flex-shrink-0 w-28 flex flex-col items-center gap-1">
+                  <div className="w-20 h-20 rounded-full border-2 border-[#c9a868]/60 overflow-hidden bg-[#0a0908]">
+                    {encounter.portrait_url ? (
+                      <img
+                        src={encounter.portrait_url}
+                        alt={encounter.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
+                        <span className="text-2xl text-stone-600">?</span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs text-stone-300 font-semibold text-center truncate w-full">{encounter.name}</span>
+                  {encounter.description && (
+                    <span className="text-[10px] text-stone-500 text-center line-clamp-2">{encounter.description}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : sceneImageUrl ? (
             <>
               <img
                 src={sceneImageUrl}
@@ -142,11 +178,13 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-[#1a1614] via-[#2a2018] to-[#1a1614]" />
           )}
-          <div className="relative h-full flex items-end justify-center p-3">
-            <p className="text-stone-400 italic text-sm drop-shadow-lg">
-              {sceneImageUrl ? "" : "No one is interacting with you right now."}
-            </p>
-          </div>
+          {activeEncounters.length === 0 && (
+            <div className="relative h-full flex items-end justify-center p-3">
+              <p className="text-stone-400 italic text-sm drop-shadow-lg">
+                {sceneImageUrl ? "" : "No one is interacting with you right now."}
+              </p>
+            </div>
+          )}
         </div>
       </FantasyPanel>
 
