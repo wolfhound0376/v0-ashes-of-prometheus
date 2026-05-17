@@ -2,6 +2,12 @@ import { generateText } from "ai"
 import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
+import * as fal from "@fal-ai/serverless-client"
+
+// Configure Fal client
+fal.config({
+  credentials: process.env.FAL_KEY,
+})
 
 export async function POST(req: Request) {
   const { message, campaignId = "abyss" } = await req.json()
@@ -167,53 +173,49 @@ EXPERIENCE POINTS:
     }
   }
   
-  // Parse NPC_IMAGE tag and generate an image if present
+  // Parse NPC_IMAGE tag and generate an image using Fal
   let npcImageUrl: string | null = null
   const npcImageMatch = rawText.match(/\[NPC_IMAGE:\s*([^\]]+)\]/)
   if (npcImageMatch) {
     const npcDescription = npcImageMatch[1].trim()
     try {
-      const imageResult = await generateText({
-        model: "google/gemini-3.1-flash-image-preview",
-        prompt: `Generate a dark fantasy portrait illustration: ${npcDescription}. Style: detailed fantasy RPG character art, dramatic lighting, painterly style, no text or labels.`,
+      const result = await fal.subscribe("fal-ai/flux-schnell", {
+        input: {
+          prompt: `Dark fantasy portrait: ${npcDescription}. Style: detailed RPG character art, dramatic fantasy lighting, painterly, professional illustration.`,
+          image_size: "square_hd",
+          num_inference_steps: 4,
+          num_images: 1,
+        },
       })
-      if (imageResult.files) {
-        for (const file of imageResult.files) {
-          if (file.mediaType?.startsWith("image/") && file.base64) {
-            npcImageUrl = `data:${file.mediaType};base64,${file.base64}`
-            break
-          }
-        }
+      if (result.images && result.images.length > 0) {
+        npcImageUrl = result.images[0].url
       }
     } catch (err) {
       console.error("[v0] NPC image generation failed:", err)
     }
   }
 
-  // Parse LOCATION_IMAGE tag and generate scene image if present
-  // NOTE: Disabled due to free credits restriction on image generation models
-  // Re-enable when paid credits are available
+  // Parse LOCATION_IMAGE tag and generate scene image using Fal
   let locationImageUrl: string | null = null
-  // const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
-  // if (locationImageMatch) {
-  //   const locationDescription = locationImageMatch[1].trim()
-  //   try {
-  //     const imageResult = await generateText({
-  //       model: "google/gemini-3.1-flash-image-preview",
-  //       prompt: `Generate a dark fantasy environment/landscape illustration: ${locationDescription}. Style: detailed fantasy RPG scene art, atmospheric, dramatic lighting, painterly, no text or labels.`,
-  //     })
-  //     if (imageResult.files) {
-  //       for (const file of imageResult.files) {
-  //         if (file.mediaType?.startsWith("image/") && file.base64) {
-  //           locationImageUrl = `data:${file.mediaType};base64,${file.base64}`
-  //           break
-  //         }
-  //       }
-  //     }
-  //   } catch (err) {
-  //     console.error("[v0] Location image generation failed:", err)
-  //   }
-  // }
+  const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
+  if (locationImageMatch) {
+    const locationDescription = locationImageMatch[1].trim()
+    try {
+      const result = await fal.subscribe("fal-ai/flux-schnell", {
+        input: {
+          prompt: `Dark fantasy environment illustration: ${locationDescription}. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
+          image_size: "square_hd",
+          num_inference_steps: 4,
+          num_images: 1,
+        },
+      })
+      if (result.images && result.images.length > 0) {
+        locationImageUrl = result.images[0].url
+      }
+    } catch (err) {
+      console.error("[v0] Location image generation failed:", err)
+    }
+  }
 
   // Strip all tags from the displayed text
   const responseText = rawText
