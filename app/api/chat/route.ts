@@ -263,6 +263,28 @@ EXPERIENCE POINTS:
   if (updateLocationMatch) {
     updatedLocation = updateLocationMatch[1].trim()
     console.log("[v0] Updating campaign location to:", updatedLocation)
+    
+    // If no LOCATION_IMAGE tag was provided, auto-generate one based on the location name
+    if (!locationImageUrl && updatedLocation) {
+      console.log("[v0] Auto-generating location image for:", updatedLocation)
+      try {
+        const result = await fal.subscribe("fal-ai/flux-schnell", {
+          input: {
+            prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
+            image_size: "square_hd",
+            num_inference_steps: 4,
+            num_images: 1,
+          },
+        }) as any
+        if (result?.images && result.images.length > 0) {
+          locationImageUrl = result.images[0].url
+          console.log("[v0] Auto-generated location image:", locationImageUrl)
+        }
+      } catch (err) {
+        console.error("[v0] Auto-generation of location image failed:", err)
+      }
+    }
+    
     try {
       // Create or update the environment record with the new location and image
       const { data: existingEnv } = await supabase
@@ -272,23 +294,23 @@ EXPERIENCE POINTS:
         .single()
       
       if (existingEnv) {
-        // Location already exists - if we generated an image, update it
+        // Location already exists - if we have an image (either from tag or auto-generated), update it
         if (locationImageUrl) {
           await supabase
             .from("environments")
             .update({ background_image_url: locationImageUrl })
             .eq("id", existingEnv.id)
-          console.log("[v0] Updated existing environment with new image")
+          console.log("[v0] Updated existing environment with image")
         }
       } else {
-        // Create new location environment with the generated image
+        // Create new location environment with the image
         await supabase.from("environments").insert({
           name: updatedLocation,
           time_of_day: "Unknown",
           description: `The party has arrived at ${updatedLocation}.`,
           background_image_url: locationImageUrl || undefined,
         })
-        console.log("[v0] Created new environment for location:", updatedLocation, "with image:", !!locationImageUrl)
+        console.log("[v0] Created new environment:", updatedLocation, "with image:", !!locationImageUrl)
       }
     } catch (err) {
       console.error("[v0] Location update error:", err)
