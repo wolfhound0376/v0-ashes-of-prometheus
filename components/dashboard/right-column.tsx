@@ -262,8 +262,19 @@ age: (selectedCharacter as any).age,
           {/* Character Header */}
           <div className="p-3 border-b border-[#3d3428]/40">
             <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2 relative">
-                <Sparkles className="w-5 h-5 text-[#7aa8c8]" />
+              <div className="flex items-center gap-3 relative">
+                {/* Character Avatar */}
+                <div className="w-14 h-14 rounded-full bg-[#0a0908] border-2 border-[#c9a868]/60 shadow-[0_0_12px_rgba(201,168,104,0.3)] overflow-hidden flex-shrink-0 flex items-center justify-center">
+                  {character.avatarUrl ? (
+                    <img 
+                      src={character.avatarUrl} 
+                      alt={character.name} 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User2 className="w-7 h-7 text-[#4a5a6a]" />
+                  )}
+                </div>
                 <div>
                   <button
                     onClick={() => setShowCharacterDropdown(!showCharacterDropdown)}

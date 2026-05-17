@@ -45,6 +45,7 @@ interface CharacterDetails {
   eyes?: string
   skin?: string
   hair?: string
+  avatarUrl?: string | null
   abilities: Record<AbilityKey, AbilityScore>
   savingThrowProficiencies: AbilityKey[]
   skillProficiencies: string[]
@@ -113,7 +114,23 @@ export function DetailedStats({
           <ChevronDown className={cn("w-4 h-4 transition-transform", showAppearance && "rotate-180")} />
         </button>
         {showAppearance && (
-          <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+          <div className="mt-2 space-y-3">
+            {/* Character Portrait */}
+            <div className="flex justify-center">
+              <div className="w-24 h-24 rounded-full bg-[#0a0908] border-2 border-[#c9a868]/60 shadow-[0_0_12px_rgba(201,168,104,0.3)] overflow-hidden flex items-center justify-center">
+                {character.avatarUrl ? (
+                  <img 
+                    src={character.avatarUrl} 
+                    alt={character.name} 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="w-10 h-10 text-[#4a5a6a]" />
+                )}
+              </div>
+            </div>
+            {/* Physical Details */}
+            <div className="grid grid-cols-3 gap-2 text-xs">
             {character.age && (
               <div className="text-center p-1 bg-[#1a1614]/60 rounded">
                 <div className="text-stone-500">Age</div>
@@ -150,6 +167,7 @@ export function DetailedStats({
                 <div className="text-stone-300">{character.hair}</div>
               </div>
             )}
+            </div>
           </div>
         )}
       </div>
