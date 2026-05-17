@@ -48,9 +48,7 @@ export async function POST(req: Request) {
   })
   
   // The Lich Malachar system prompt
-  const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character.
-
-${campaign.systemPrompt}
+  const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
 
 ${worldContextText}
 
@@ -59,12 +57,14 @@ FORMATTING — CRITICAL:
 - NEVER wrap text in quotation marks unless it is actual spoken dialogue by an NPC
 - Write plain prose. Use em-dashes, ellipses, and sentence structure for emphasis instead of markdown
 - Your text will be read aloud by text-to-speech. Formatting characters are spoken literally and sound terrible.
+- NEVER repeat your name "Malachar" in every response. Establish character once, then drop the name unless specifically needed.
 
 CAMPAIGN FLOW — CRITICAL:
 - Follow the campaign structure faithfully. If the campaign has starting procedures (like scavenging rolls, character introductions, item tables), you MUST execute them before moving forward.
 - For Out of the Abyss Chapter 1: When a new character begins, IMMEDIATELY ask the player to roll [[1d100]] on the Scavenged Items table to determine what hidden item they have. Do NOT skip this step. Do NOT assume a result. Wait for the player to provide their d100 roll.
 - After resolving the scavenged item roll, describe the slave pen scene and introduce the fellow prisoners.
 - Enforce starting conditions: NO gear, NO spell components, manacles, collared. The player starts with NOTHING except what they scavenge.
+- When the location changes significantly (moving to a new area, entering a major location, or time passing), include a [LOCATION_IMAGE: description] tag so a new environment image can be generated.
 
 RULES:
 - Address the player by their character name
@@ -190,11 +190,35 @@ EXPERIENCE POINTS:
     }
   }
 
+  // Parse LOCATION_IMAGE tag and generate scene image if present
+  let locationImageUrl: string | null = null
+  const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
+  if (locationImageMatch) {
+    const locationDescription = locationImageMatch[1].trim()
+    try {
+      const imageResult = await generateText({
+        model: "google/gemini-3.1-flash-image-preview",
+        prompt: `Generate a dark fantasy environment/landscape illustration: ${locationDescription}. Style: detailed fantasy RPG scene art, atmospheric, dramatic lighting, painterly, no text or labels.`,
+      })
+      if (imageResult.files) {
+        for (const file of imageResult.files) {
+          if (file.mediaType?.startsWith("image/") && file.base64) {
+            locationImageUrl = `data:${file.mediaType};base64,${file.base64}`
+            break
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[v0] Location image generation failed:", err)
+    }
+  }
+
   // Strip all tags from the displayed text
   const responseText = rawText
     .replace(/\[ITEM_ADD:[^\]]+\]/g, "")
     .replace(/\[ITEM_REMOVE:[^\]]+\]/g, "")
     .replace(/\[NPC_IMAGE:[^\]]+\]/g, "")
+    .replace(/\[LOCATION_IMAGE:[^\]]+\]/g, "")
     .trim()
   
   if (responseText) {
@@ -205,5 +229,5 @@ EXPERIENCE POINTS:
     })
   }
   
-  return Response.json({ text: responseText || "", npcImageUrl })
+  return Response.json({ text: responseText || "", npcImageUrl, locationImageUrl })
 }

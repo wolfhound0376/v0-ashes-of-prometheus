@@ -33,6 +33,7 @@ export default function DashboardPage() {
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
   const [npcImageUrl, setNpcImageUrl] = useState<string | null>(null)
+  const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
   // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
   const [isTTSMuted, setIsTTSMuted] = useState(false)
   useEffect(() => {
@@ -533,7 +534,7 @@ if (error) {
   environment={{
     location: currentEnvironment?.name || environmentData.location,
     timeOfDay: currentEnvironment?.time_of_day || environmentData.timeOfDay,
-    backgroundImageUrl: currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
+    backgroundImageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
     fogOverlayUrl: currentEnvironment?.fog_overlay_url,
     ambientAnimation: currentEnvironment?.ambient_animation,
     description: currentEnvironment?.description,
@@ -565,6 +566,10 @@ if (error) {
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {
                 setNpcImageUrl(response.npcImageUrl)
+              }
+              // Update scene image if the location changed
+              if (response.locationImageUrl) {
+                setSceneImageUrl(response.locationImageUrl)
               }
               // Refresh character data to pick up any XP or items from the Lich
               await fetchCharacterData()
