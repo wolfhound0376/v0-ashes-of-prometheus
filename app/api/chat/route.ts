@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   })
   
   // Determine campaign stage based on location
-  const currentLocation = worldContext.environment?.currentLocation || "Velkynvelve (slave pen)"
+  const currentLocation = worldContext.environment?.name || "Velkynvelve (slave pen)"
   let stageContext = ""
   
   if (currentLocation.toLowerCase().includes("slave pen") || currentLocation.toLowerCase().includes("pen")) {
@@ -222,8 +222,8 @@ EXPERIENCE POINTS:
           num_inference_steps: 4,
           num_images: 1,
         },
-      })
-      if (result.images && result.images.length > 0) {
+      }) as any
+      if (result?.images && result.images.length > 0) {
         npcImageUrl = result.images[0].url
       }
     } catch (err) {
@@ -245,8 +245,8 @@ EXPERIENCE POINTS:
           num_inference_steps: 4,
           num_images: 1,
         },
-      })
-      if (result.images && result.images.length > 0) {
+      }) as any
+      if (result?.images && result.images.length > 0) {
         locationImageUrl = result.images[0].url
         console.log("[v0] Location image generated:", locationImageUrl)
       }
