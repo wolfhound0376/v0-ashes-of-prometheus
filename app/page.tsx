@@ -371,18 +371,29 @@ if (error) {
     setSelectedAction(actionId === selectedAction ? null : actionId)
   }
 
-  const handleDialogueSubmit = () => {
+  const handleDialogueSubmit = async () => {
     if (dialogueInput.trim()) {
       const text = dialogueInput.trim()
       setDialogueInput("")
       
-      // Send to the Lich - API handles:
-      // 1. Fetching character data from Supabase
-      // 2. Building world context
-      // 3. Saving messages to dialogue table
-      // Real-time subscription will update the UI
-      // Pass music cue handler to react to atmospheric changes
-      sendToLich(text)
+      // Optimistically add player message to dialogue immediately
+      const playerName = selectedCharacter?.name || "Player"
+      setDialogue(prev => [...prev, { speaker: playerName, text }])
+      
+      // Send to the Lich
+      const response = await sendToLich(text)
+      if (response?.text) {
+        // Optimistically add Malachar's response
+        setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
+        
+        // Update images if returned
+        if (response.npcImageUrl) {
+          setNpcImageUrl(response.npcImageUrl)
+        }
+        if (response.locationImageUrl) {
+          setSceneImageUrl(response.locationImageUrl)
+        }
+      }
     }
   }
 
@@ -560,9 +571,17 @@ if (error) {
           characterName={selectedCharacter?.name}
           sceneImageUrl={npcImageUrl || undefined}
           onSendToLich={async (message) => {
-            // Send to Lich - real-time subscription handles dialogue display
+            // Optimistically add player message to dialogue immediately
+            const playerName = selectedCharacter?.name || "Player"
+            setDialogue(prev => [...prev, { speaker: playerName, text: message }])
+            
+            // Send to Lich
             const response = await sendToLich(message)
             if (response) {
+              // Optimistically add Malachar's response to dialogue
+              if (response.text) {
+                setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
+              }
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {
                 setNpcImageUrl(response.npcImageUrl)
