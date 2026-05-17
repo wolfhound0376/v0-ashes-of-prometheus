@@ -116,6 +116,10 @@ RULES:
   - Describe their appearance, race, clothing, weapons, posture, lighting, and mood
   - Example: [NPC_IMAGE: A gaunt drow priestess in black spider-silk robes, white hair pulled back severely, violet eyes glowing with malice, holding a bone-handled scourge, standing in dim purple torchlight of an Underdark cavern]
   - Only include this tag when a NEW character or creature appears, not for every mention
+- When you transition the party to a new location/stage, include: [UPDATE_LOCATION: exact location name]
+  - The location name must match the new stage (e.g., "Velkynvelve Outpost", "Underdark Tunnels")
+  - Example: [UPDATE_LOCATION: Underdark Tunnels]
+  - This updates the world state so future responses reference the correct location
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
@@ -249,12 +253,44 @@ EXPERIENCE POINTS:
     console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
   }
 
+  // Parse UPDATE_LOCATION tag to update the campaign location
+  let updatedLocation: string | null = null
+  const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
+  if (updateLocationMatch) {
+    updatedLocation = updateLocationMatch[1].trim()
+    console.log("[v0] Updating campaign location to:", updatedLocation)
+    try {
+      // Create or update the environment record with the new location
+      const { data: existingEnv } = await supabase
+        .from("environments")
+        .select("id")
+        .eq("name", updatedLocation)
+        .single()
+      
+      if (existingEnv) {
+        // Location already exists, just note it
+        console.log("[v0] Location", updatedLocation, "already exists in database")
+      } else {
+        // Create new location environment
+        await supabase.from("environments").insert({
+          name: updatedLocation,
+          time_of_day: "Unknown",
+          description: `The party has arrived at ${updatedLocation}.`,
+        })
+        console.log("[v0] Created new environment for location:", updatedLocation)
+      }
+    } catch (err) {
+      console.error("[v0] Location update error:", err)
+    }
+  }
+
   // Strip all tags from the displayed text
   const responseText = rawText
     .replace(/\[ITEM_ADD:[^\]]+\]/g, "")
     .replace(/\[ITEM_REMOVE:[^\]]+\]/g, "")
     .replace(/\[NPC_IMAGE:[^\]]+\]/g, "")
     .replace(/\[LOCATION_IMAGE:[^\]]+\]/g, "")
+    .replace(/\[UPDATE_LOCATION:[^\]]+\]/g, "")
     .trim()
   
   if (responseText) {

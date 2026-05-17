@@ -165,9 +165,16 @@ export async function fetchEnvironment(campaignId?: string, location?: string): 
   try {
     const supabase = await createClient()
     
-    const { data: env, error } = await supabase
+    // Query by location name if provided, otherwise get first
+    let query = supabase
       .from("environments")
       .select("id, name, time_of_day, description")
+    
+    if (location) {
+      query = query.eq("name", location)
+    }
+    
+    const { data: env, error } = await query
       .limit(1)
       .single()
     
