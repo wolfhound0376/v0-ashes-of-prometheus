@@ -34,10 +34,11 @@ export async function POST(req: Request) {
     .limit(20)
   
   // Build world context with character data
+  // Don't pass a hardcoded location - let buildWorldContext fetch the latest from database
   const worldContext = await buildWorldContext(
     campaignId,
     campaign.contexts.defaults.episode,
-    campaign.contexts.locations[0],
+    "", // Pass empty string - buildWorldContext will query the latest location from DB
     campaign.contexts.defaults.heat
   )
   const worldContextText = formatWorldContextForAI(worldContext)
