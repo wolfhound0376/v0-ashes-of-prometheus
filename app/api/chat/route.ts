@@ -121,20 +121,45 @@ RULES:
 - For dice rolls, write [[XdY+Z]] and wait for the player to roll
 - Keep responses concise (1-3 paragraphs) unless describing important scenes
 - Track their progress through the campaign
-- When the player acquires ANY item, include a tag at the end of your response: [ITEM_ADD: name | quantity | type | description]
-  - type must be one of: weapon, armor, consumable, misc, currency
+
+STRUCTURED TAGS — CRITICAL FOR GAME STATE:
+Include these tags inline with your prose whenever game state changes. The system parses them to update the dashboard.
+
+ITEMS:
+- [ITEM_ADD: name | quantity | type | description] — when player acquires an item
+  - type must be: weapon, armor, consumable, misc, currency
   - Example: [ITEM_ADD: Rusty Dagger | 1 | weapon | A corroded blade found in the rubble]
-  - You may include multiple ITEM_ADD tags if multiple items are acquired
-- When the player loses, uses, or gives away an item: [ITEM_REMOVE: name | quantity]
+- [ITEM_REMOVE: name | quantity] — when player loses/uses/gives away an item
   - Example: [ITEM_REMOVE: Health Potion | 1]
-- When an NPC or monster is first introduced, encountered, or enters the scene, include a tag: [NPC_IMAGE: detailed visual description for an artist]
-  - Describe their appearance, race, clothing, weapons, posture, lighting, and mood
-  - Example: [NPC_IMAGE: A gaunt drow priestess in black spider-silk robes, white hair pulled back severely, violet eyes glowing with malice, holding a bone-handled scourge, standing in dim purple torchlight of an Underdark cavern]
-  - Only include this tag when a NEW character or creature appears, not for every mention
-- When you transition the party to a new location/stage, include: [UPDATE_LOCATION: exact location name]
-  - The location name must match the new stage (e.g., "Velkynvelve Outpost", "Underdark Tunnels")
+
+HEALTH & CONDITIONS:
+- [DAMAGE: amount type] — when player takes damage. Include this EVERY time damage is dealt.
+  - Example: [DAMAGE: 4 acid] or [DAMAGE: 8 slashing]
+- [HEAL: amount] — when player is healed
+  - Example: [HEAL: 5]
+- [CONDITION_ADD: name] — when player gains a condition
+  - Standard D&D 5e: prone, poisoned, charmed, frightened, grappled, incapacitated, invisible, paralyzed, petrified, restrained, stunned, unconscious, blinded, deafened, exhaustion
+  - Narrative: acid_burn, bleeding, manacled, etc.
+  - Example: [CONDITION_ADD: poisoned]
+- [CONDITION_REMOVE: name] — when a condition clears
+  - Example: [CONDITION_REMOVE: prone]
+
+NPC/MONSTER ENCOUNTERS:
+- [NPC_ENCOUNTER: name | description | portrait_prompt] — when an NPC/monster enters active combat or interaction
+  - name: The creature's name (e.g. "Gray Ooze", "Ilvara")
+  - description: Short tactical description visible to player
+  - portrait_prompt: Art prompt for generating portrait
+  - Example: [NPC_ENCOUNTER: Gray Ooze | A pulsing mass of corrosive jelly | dark fantasy concept art of a gray ooze creature, dim cave lighting, menacing]
+- [NPC_LEAVE: name] — when an NPC/monster dies, flees, or is no longer interacting
+  - Example: [NPC_LEAVE: Gray Ooze]
+- [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking)
+  - Use for introducing NPCs visually without adding to active encounters
+
+LOCATION:
+- [UPDATE_LOCATION: name] — updates the current location in world state
   - Example: [UPDATE_LOCATION: Underdark Tunnels]
-  - This updates the world state so future responses reference the correct location
+- [LOCATION_IMAGE: description] — generates a new location background image
+  - Example: [LOCATION_IMAGE: vast cavern with bioluminescent fungi]
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
@@ -195,7 +220,7 @@ EXPERIENCE POINTS:
     }
     
     // Handle ITEM_REMOVE tags
-    const removeMatches = rawText.matchAll(/\[ITEM_REMOVE:\s*([^|]+)\|\s*(\d+)\s*\]/g)
+    const removeMatches = rawText.matchAll(/\[ITEM_REMOVE:\s*([^|]+)\|\s*(\d+)\s*\]/gi)
     for (const match of removeMatches) {
       const [, name, qty] = match
       const itemName = name.trim()
@@ -216,6 +241,211 @@ EXPERIENCE POINTS:
             .update({ quantity: existing.quantity - quantity })
             .eq("id", existing.id)
         }
+      }
+    }
+    
+    // Handle DAMAGE tags - [DAMAGE: amount type]
+    const damageMatches = rawText.matchAll(/\[DAMAGE:\s*(\d+)\s*(\w+)?\s*\]/gi)
+    for (const match of damageMatches) {
+      const [, amountStr, damageType] = match
+      const amount = parseInt(amountStr) || 0
+      console.log("[v0] DAMAGE tag found:", amount, damageType || "untyped")
+      
+      if (amount > 0) {
+        // Get current HP and apply damage
+        const { data: char } = await supabase
+          .from("characters")
+          .select("hp_current")
+          .eq("id", playerCharacter.id)
+          .single()
+        
+        if (char) {
+          const newHp = Math.max(0, (char.hp_current || 0) - amount)
+          const { error } = await supabase
+            .from("characters")
+            .update({ hp_current: newHp })
+            .eq("id", playerCharacter.id)
+          
+          if (error) {
+            console.error("[v0] Error applying damage:", error)
+          } else {
+            console.log("[v0] HP updated:", char.hp_current, "->", newHp)
+          }
+        }
+      }
+    }
+    
+    // Handle HEAL tags - [HEAL: amount]
+    const healMatches = rawText.matchAll(/\[HEAL:\s*(\d+)\s*\]/gi)
+    for (const match of healMatches) {
+      const [, amountStr] = match
+      const amount = parseInt(amountStr) || 0
+      console.log("[v0] HEAL tag found:", amount)
+      
+      if (amount > 0) {
+        // Get current HP and max HP, apply healing
+        const { data: char } = await supabase
+          .from("characters")
+          .select("hp_current, hp_max")
+          .eq("id", playerCharacter.id)
+          .single()
+        
+        if (char) {
+          const newHp = Math.min(char.hp_max || 10, (char.hp_current || 0) + amount)
+          const { error } = await supabase
+            .from("characters")
+            .update({ hp_current: newHp })
+            .eq("id", playerCharacter.id)
+          
+          if (error) {
+            console.error("[v0] Error applying heal:", error)
+          } else {
+            console.log("[v0] HP healed:", char.hp_current, "->", newHp)
+          }
+        }
+      }
+    }
+    
+    // Handle CONDITION_ADD tags - [CONDITION_ADD: name]
+    const conditionAddMatches = rawText.matchAll(/\[CONDITION_ADD:\s*([^\]]+)\]/gi)
+    for (const match of conditionAddMatches) {
+      const [, conditionName] = match
+      const condition = conditionName.trim().toLowerCase()
+      console.log("[v0] CONDITION_ADD tag found:", condition)
+      
+      // Get current conditions array
+      const { data: char } = await supabase
+        .from("characters")
+        .select("conditions")
+        .eq("id", playerCharacter.id)
+        .single()
+      
+      const currentConditions: string[] = (char?.conditions as string[]) || []
+      if (!currentConditions.includes(condition)) {
+        const { error } = await supabase
+          .from("characters")
+          .update({ conditions: [...currentConditions, condition] })
+          .eq("id", playerCharacter.id)
+        
+        if (error) {
+          console.error("[v0] Error adding condition:", error)
+        } else {
+          console.log("[v0] Condition added:", condition)
+        }
+      }
+    }
+    
+    // Handle CONDITION_REMOVE tags - [CONDITION_REMOVE: name]
+    const conditionRemoveMatches = rawText.matchAll(/\[CONDITION_REMOVE:\s*([^\]]+)\]/gi)
+    for (const match of conditionRemoveMatches) {
+      const [, conditionName] = match
+      const condition = conditionName.trim().toLowerCase()
+      console.log("[v0] CONDITION_REMOVE tag found:", condition)
+      
+      // Get current conditions array
+      const { data: char } = await supabase
+        .from("characters")
+        .select("conditions")
+        .eq("id", playerCharacter.id)
+        .single()
+      
+      const currentConditions: string[] = (char?.conditions as string[]) || []
+      if (currentConditions.includes(condition)) {
+        const { error } = await supabase
+          .from("characters")
+          .update({ conditions: currentConditions.filter(c => c !== condition) })
+          .eq("id", playerCharacter.id)
+        
+        if (error) {
+          console.error("[v0] Error removing condition:", error)
+        } else {
+          console.log("[v0] Condition removed:", condition)
+        }
+      }
+    }
+    
+    // Handle NPC_ENCOUNTER tags - [NPC_ENCOUNTER: name | description | portrait_prompt]
+    const npcEncounterMatches = rawText.matchAll(/\[NPC_ENCOUNTER:\s*([^|]+)\|\s*([^|]+)\|\s*([^\]]+)\]/gi)
+    for (const match of npcEncounterMatches) {
+      const [, npcName, description, portraitPrompt] = match
+      const name = npcName.trim()
+      const desc = description.trim()
+      const prompt = portraitPrompt.trim()
+      console.log("[v0] NPC_ENCOUNTER tag found:", name)
+      
+      // Generate portrait image via Fal
+      let portraitUrl: string | null = null
+      try {
+        const result = await fal.subscribe("fal-ai/flux-schnell", {
+          input: {
+            prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
+            image_size: "square_hd",
+            num_inference_steps: 4,
+            num_images: 1,
+          },
+        }) as any
+        if (result?.images && result.images.length > 0) {
+          portraitUrl = result.images[0].url
+          console.log("[v0] NPC portrait generated:", portraitUrl)
+        }
+      } catch (err) {
+        console.error("[v0] NPC portrait generation failed:", err)
+      }
+      
+      // Check if this NPC already exists (might be returning)
+      const { data: existingNpc } = await supabase
+        .from("npc_encounters")
+        .select("id")
+        .eq("name", name)
+        .eq("character_id", playerCharacter.id)
+        .single()
+      
+      if (existingNpc) {
+        // Reactivate existing NPC
+        await supabase
+          .from("npc_encounters")
+          .update({ 
+            is_active: true, 
+            description: desc,
+            portrait_url: portraitUrl || undefined 
+          })
+          .eq("id", existingNpc.id)
+        console.log("[v0] NPC reactivated:", name)
+      } else {
+        // Insert new NPC encounter
+        const { error } = await supabase.from("npc_encounters").insert({
+          character_id: playerCharacter.id,
+          name,
+          description: desc,
+          portrait_url: portraitUrl,
+          is_active: true,
+        })
+        if (error) {
+          console.error("[v0] Error creating NPC encounter:", error)
+        } else {
+          console.log("[v0] NPC encounter created:", name)
+        }
+      }
+    }
+    
+    // Handle NPC_LEAVE tags - [NPC_LEAVE: name]
+    const npcLeaveMatches = rawText.matchAll(/\[NPC_LEAVE:\s*([^\]]+)\]/gi)
+    for (const match of npcLeaveMatches) {
+      const [, npcName] = match
+      const name = npcName.trim()
+      console.log("[v0] NPC_LEAVE tag found:", name)
+      
+      const { error } = await supabase
+        .from("npc_encounters")
+        .update({ is_active: false })
+        .eq("name", name)
+        .eq("character_id", playerCharacter.id)
+        .eq("is_active", true)
+      
+      if (error) {
+        console.error("[v0] Error deactivating NPC:", error)
+      } else {
+        console.log("[v0] NPC deactivated:", name)
       }
     }
   }
@@ -346,11 +576,17 @@ EXPERIENCE POINTS:
 
   // Strip all tags from the displayed text
   const responseText = rawText
-    .replace(/\[ITEM_ADD:[^\]]+\]/g, "")
-    .replace(/\[ITEM_REMOVE:[^\]]+\]/g, "")
-    .replace(/\[NPC_IMAGE:[^\]]+\]/g, "")
-    .replace(/\[LOCATION_IMAGE:[^\]]+\]/g, "")
-    .replace(/\[UPDATE_LOCATION:[^\]]+\]/g, "")
+    .replace(/\[ITEM_ADD:[^\]]+\]/gi, "")
+    .replace(/\[ITEM_REMOVE:[^\]]+\]/gi, "")
+    .replace(/\[NPC_IMAGE:[^\]]+\]/gi, "")
+    .replace(/\[LOCATION_IMAGE:[^\]]+\]/gi, "")
+    .replace(/\[UPDATE_LOCATION:[^\]]+\]/gi, "")
+    .replace(/\[DAMAGE:[^\]]+\]/gi, "")
+    .replace(/\[HEAL:[^\]]+\]/gi, "")
+    .replace(/\[CONDITION_ADD:[^\]]+\]/gi, "")
+    .replace(/\[CONDITION_REMOVE:[^\]]+\]/gi, "")
+    .replace(/\[NPC_ENCOUNTER:[^\]]+\]/gi, "")
+    .replace(/\[NPC_LEAVE:[^\]]+\]/gi, "")
     .trim()
   
   // Persist Malachar's response to the dialogue table
