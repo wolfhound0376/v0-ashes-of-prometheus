@@ -263,6 +263,7 @@ EXPERIENCE POINTS:
   if (updateLocationMatch) {
     updatedLocation = updateLocationMatch[1].trim()
     console.log("[v0] Updating campaign location to:", updatedLocation)
+    console.log("[v0] Current locationImageUrl:", locationImageUrl ? "SET" : "EMPTY", "| updatedLocation:", updatedLocation)
     
     // If no LOCATION_IMAGE tag was provided, auto-generate one based on the location name
     if (!locationImageUrl && updatedLocation) {
@@ -276,13 +277,18 @@ EXPERIENCE POINTS:
             num_images: 1,
           },
         }) as any
+        console.log("[v0] Fal result received:", result ? "YES" : "NO")
         if (result?.images && result.images.length > 0) {
           locationImageUrl = result.images[0].url
           console.log("[v0] Auto-generated location image:", locationImageUrl)
+        } else {
+          console.log("[v0] Fal returned no images. Result:", JSON.stringify(result).substring(0, 200))
         }
       } catch (err) {
-        console.error("[v0] Auto-generation of location image failed:", err)
+        console.error("[v0] Auto-generation of location image failed:", err instanceof Error ? err.message : String(err))
       }
+    } else {
+      console.log("[v0] Skipping auto-generation: locationImageUrl exists or no updatedLocation")
     }
     
     try {
@@ -296,21 +302,31 @@ EXPERIENCE POINTS:
       if (existingEnv) {
         // Location already exists - if we have an image (either from tag or auto-generated), update it
         if (locationImageUrl) {
-          await supabase
+          const { error: updateErr } = await supabase
             .from("environments")
             .update({ background_image_url: locationImageUrl })
             .eq("id", existingEnv.id)
-          console.log("[v0] Updated existing environment with image")
+          if (updateErr) {
+            console.error("[v0] Error updating environment image:", updateErr)
+          } else {
+            console.log("[v0] Updated existing environment with image URL:", locationImageUrl.substring(0, 80))
+          }
+        } else {
+          console.log("[v0] No image URL to update for existing environment")
         }
       } else {
         // Create new location environment with the image
-        await supabase.from("environments").insert({
+        const { error: insertErr } = await supabase.from("environments").insert({
           name: updatedLocation,
           time_of_day: "Unknown",
           description: `The party has arrived at ${updatedLocation}.`,
           background_image_url: locationImageUrl || undefined,
         })
-        console.log("[v0] Created new environment:", updatedLocation, "with image:", !!locationImageUrl)
+        if (insertErr) {
+          console.error("[v0] Error creating environment:", insertErr)
+        } else {
+          console.log("[v0] Created new environment:", updatedLocation, "with image:", locationImageUrl ? "YES" : "NO")
+        }
       }
     } catch (err) {
       console.error("[v0] Location update error:", err)
