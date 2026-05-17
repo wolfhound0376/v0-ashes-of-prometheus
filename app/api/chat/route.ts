@@ -191,27 +191,29 @@ EXPERIENCE POINTS:
   }
 
   // Parse LOCATION_IMAGE tag and generate scene image if present
+  // NOTE: Disabled due to free credits restriction on image generation models
+  // Re-enable when paid credits are available
   let locationImageUrl: string | null = null
-  const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
-  if (locationImageMatch) {
-    const locationDescription = locationImageMatch[1].trim()
-    try {
-      const imageResult = await generateText({
-        model: "google/gemini-3.1-flash-image-preview",
-        prompt: `Generate a dark fantasy environment/landscape illustration: ${locationDescription}. Style: detailed fantasy RPG scene art, atmospheric, dramatic lighting, painterly, no text or labels.`,
-      })
-      if (imageResult.files) {
-        for (const file of imageResult.files) {
-          if (file.mediaType?.startsWith("image/") && file.base64) {
-            locationImageUrl = `data:${file.mediaType};base64,${file.base64}`
-            break
-          }
-        }
-      }
-    } catch (err) {
-      console.error("[v0] Location image generation failed:", err)
-    }
-  }
+  // const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
+  // if (locationImageMatch) {
+  //   const locationDescription = locationImageMatch[1].trim()
+  //   try {
+  //     const imageResult = await generateText({
+  //       model: "google/gemini-3.1-flash-image-preview",
+  //       prompt: `Generate a dark fantasy environment/landscape illustration: ${locationDescription}. Style: detailed fantasy RPG scene art, atmospheric, dramatic lighting, painterly, no text or labels.`,
+  //     })
+  //     if (imageResult.files) {
+  //       for (const file of imageResult.files) {
+  //         if (file.mediaType?.startsWith("image/") && file.base64) {
+  //           locationImageUrl = `data:${file.mediaType};base64,${file.base64}`
+  //           break
+  //         }
+  //       }
+  //     }
+  //   } catch (err) {
+  //     console.error("[v0] Location image generation failed:", err)
+  //   }
+  // }
 
   // Strip all tags from the displayed text
   const responseText = rawText
