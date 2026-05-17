@@ -98,7 +98,10 @@ PROGRESSION TRIGGERS — ENFORCE THESE:
   * STAGE 4 (Outpost): After they overcome the escape encounter and reach the drow outpost proper, describe Velkynvelve's architecture, markets, bridges, and the danger above. Introduce key NPCs like Ilvara (drow priestess), merchants, guards. The slave pens are one level below. They are now loose in a hostile drow enclave.
   * STAGE 5 (Tunnels): When they flee Velkynvelve entirely (leaving the outpost through tunnels, sewers, or hidden passages), transition to the Underdark tunnels. Describe the vast caverns, bioluminescent fungi, distant sounds. This is the beginning of Act 2.
 - Track which STAGE the party is in based on their progress. If they backtrack or get captured, you may revert stages.
-- When moving to a new STAGE, include a [LOCATION_IMAGE: description] tag.
+- CRITICAL: When moving to a new STAGE/LOCATION, you MUST include BOTH tags in your response:
+  * [LOCATION_IMAGE: vivid description of the new location for image generation]
+  * [UPDATE_LOCATION: exact name of the new location]
+  * These tags are REQUIRED and cannot be omitted when transitioning between stages. Without them, the environment will not update.
 - Enforce the starting conditions: slaves have NO gear, NO weapons, NO spell components. They are barefoot and manacled until they escape or acquire items.
 
 RULES:
@@ -261,7 +264,7 @@ EXPERIENCE POINTS:
     updatedLocation = updateLocationMatch[1].trim()
     console.log("[v0] Updating campaign location to:", updatedLocation)
     try {
-      // Create or update the environment record with the new location
+      // Create or update the environment record with the new location and image
       const { data: existingEnv } = await supabase
         .from("environments")
         .select("id")
@@ -269,16 +272,23 @@ EXPERIENCE POINTS:
         .single()
       
       if (existingEnv) {
-        // Location already exists, just note it
-        console.log("[v0] Location", updatedLocation, "already exists in database")
+        // Location already exists - if we generated an image, update it
+        if (locationImageUrl) {
+          await supabase
+            .from("environments")
+            .update({ background_image_url: locationImageUrl })
+            .eq("id", existingEnv.id)
+          console.log("[v0] Updated existing environment with new image")
+        }
       } else {
-        // Create new location environment
+        // Create new location environment with the generated image
         await supabase.from("environments").insert({
           name: updatedLocation,
           time_of_day: "Unknown",
           description: `The party has arrived at ${updatedLocation}.`,
+          background_image_url: locationImageUrl || undefined,
         })
-        console.log("[v0] Created new environment for location:", updatedLocation)
+        console.log("[v0] Created new environment for location:", updatedLocation, "with image:", !!locationImageUrl)
       }
     } catch (err) {
       console.error("[v0] Location update error:", err)
