@@ -1,52 +1,55 @@
-// Stream events from a Malachar session
+// Stream events from a Malachar session via the Anthropic Managed Agents API
+// Proxies the upstream SSE stream so the client never sees the API key.
 import { NextRequest } from "next/server"
 
+const ANTHROPIC_API = "https://api.anthropic.com"
+const BETA_HEADER = "managed-agents-2026-04-01"
+
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   const { sessionId } = await params
-  
-  // Read env vars inside function to pick up changes without restart
-  const MALACHAR_API_URL = process.env.MALACHAR_API_URL
-  const MALACHAR_API_KEY = process.env.MALACHAR_API_KEY
-  
-  if (!MALACHAR_API_URL || !MALACHAR_API_KEY) {
-    return new Response("Malachar configuration missing", { status: 500 })
+  const apiKey = process.env.ANTHROPIC_API_KEY
+
+  if (!apiKey) {
+    return new Response("ANTHROPIC_API_KEY not configured", { status: 500 })
   }
 
   try {
-    // Connect to Malachar's event stream
-    const response = await fetch(
-      `${MALACHAR_API_URL}/v1/sessions/${sessionId}/events/stream`,
+    // Open the upstream SSE stream from the Anthropic Agents API
+    const upstream = await fetch(
+      `${ANTHROPIC_API}/v1/sessions/${sessionId}/events/stream?beta=true`,
       {
         headers: {
-          "x-api-key": MALACHAR_API_KEY,
-          "Accept": "text/event-stream",
+          "x-api-key": apiKey,
+          "anthropic-beta": BETA_HEADER,
           "anthropic-version": "2023-06-01",
-          "anthropic-beta": "managed-agents-2026-04-01",
+          Accept: "text/event-stream",
         },
       }
     )
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[Malachar] Stream connection failed:", response.status, errorText)
-      return new Response(`Stream connection failed: ${errorText}`, { 
-        status: response.status 
-      })
+    if (!upstream.ok) {
+      const errBody = await upstream.text()
+      console.error("[Malachar] Stream connect failed:", upstream.status, errBody)
+      return new Response(`Anthropic API error ${upstream.status}`, { status: upstream.status })
     }
 
-    // Forward the SSE stream to the client
-    return new Response(response.body, {
+    if (!upstream.body) {
+      return new Response("No stream body from Anthropic", { status: 502 })
+    }
+
+    // Pipe the upstream SSE body straight through to the client
+    return new Response(upstream.body, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     })
   } catch (error) {
-    console.error("[Malachar] Stream error:", error)
+    console.error("[Malachar] Stream connection failed:", error)
     return new Response("Stream connection failed", { status: 500 })
   }
 }

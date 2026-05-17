@@ -4,6 +4,8 @@ import { useState, useCallback } from "react"
 
 interface LichResponse {
   text: string
+  npcImageUrl?: string | null
+  locationImageUrl?: string | null
 }
 
 export function useLich(campaignId: string = "abyss") {
@@ -41,7 +43,7 @@ export function useLich(campaignId: string = "abyss") {
       }
 
       const data = await response.json()
-      return { text: data.text || "" }
+      return { text: data.text || "", npcImageUrl: data.npcImageUrl || null, locationImageUrl: data.locationImageUrl || null }
     } catch (error) {
       console.error("Error sending message:", error)
       throw error

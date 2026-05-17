@@ -165,9 +165,16 @@ export async function fetchEnvironment(campaignId?: string, location?: string): 
   try {
     const supabase = await createClient()
     
-    const { data: env, error } = await supabase
+    // Query by location name if provided, otherwise get first
+    let query = supabase
       .from("environments")
       .select("id, name, time_of_day, description")
+    
+    if (location) {
+      query = query.eq("name", location)
+    }
+    
+    const { data: env, error } = await query
       .limit(1)
       .single()
     
@@ -251,13 +258,27 @@ export async function buildWorldContext(
   location: string,
   heat: string
 ): Promise<WorldContext> {
+  const supabase = await createClient()
+
+  // Fetch the CURRENT location from database (most recently created/updated)
+  // This ensures we always use the latest location even after [UPDATE_LOCATION:] tags
+  const { data: latestEnv } = await supabase
+    .from("environments")
+    .select("name")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single()
+
+  const currentLocation = latestEnv?.name || location
+  console.log("[WorldContext] Using location:", currentLocation)
+
   const [characters, environment, recentDialogue] = await Promise.all([
     fetchCharacters(),
-    fetchEnvironment(campaignId, location),
+    fetchEnvironment(campaignId, currentLocation),
     fetchRecentDialogue()
   ])
 
-  const campaign = buildCampaignContext(campaignId, episode, location, heat)
+  const campaign = buildCampaignContext(campaignId, episode, currentLocation, heat)
 
   return {
     campaign: campaign || {
@@ -266,7 +287,7 @@ export async function buildWorldContext(
       description: "",
       systemPrompt: "",
       currentEpisode: episode,
-      currentLocation: location,
+      currentLocation: currentLocation,
       heatLevel: heat,
       lore: [],
       quickActions: [],

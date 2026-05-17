@@ -1,8 +1,29 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef } from "react"
+
+// Module-level set survives HMR remounts - tracks which texts have already been sent to TTS
+const ttsPlayedTexts = new Set<string>()
+
+/** Strip markdown / special chars that ElevenLabs reads aloud */
+function sanitizeForTTS(text: string): string {
+  return text
+    .replace(/\*+/g, "")           // asterisks (bold/italic markdown)
+    .replace(/_{2,}/g, "")         // underscores (markdown emphasis)
+    .replace(/#{1,6}\s*/g, "")     // markdown headers
+    .replace(/`{1,3}/g, "")        // backticks
+    .replace(/~{2}/g, "")          // strikethrough
+    .replace(/[""\u201C\u201D]/g, "") // smart & straight double quotes
+    .replace(/['\u2018\u2019]/g, "") // smart single quotes
+    .replace(/\[ITEM_ADD:[^\]]*\]/g, "") // inventory tags
+    .replace(/\[ITEM_REMOVE:[^\]]*\]/g, "")
+    .replace(/--+/g, ", ")         // em-dashes to pause
+    .replace(/\.\.\./g, "...")     // keep ellipsis (TTS handles it)
+    .replace(/\s{2,}/g, " ")      // collapse whitespace
+    .trim()
+}
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { Sun, MessageSquare, Volume2, Square, Loader2 } from "lucide-react"
+import { Sun, MessageSquare } from "lucide-react"
 
 interface DialogueEntry {
   speaker: string
@@ -27,6 +48,7 @@ interface LeftColumnProps {
   characterAvatar?: string | null
   characterName?: string
   isWorldAIThinking?: boolean
+  isTTSMuted?: boolean
 }
 
 export function LeftColumn({
@@ -38,74 +60,132 @@ export function LeftColumn({
   characterAvatar,
   characterName,
   isWorldAIThinking = false,
+  isTTSMuted = false,
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
-  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null)
-  const [loadingIndex, setLoadingIndex] = useState<number | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  
+  const audioUnlockedRef = useRef(false)
+  const prevDialogueLenRef = useRef<number | null>(null)
+  const isTTSMutedRef = useRef(isTTSMuted)
+  isTTSMutedRef.current = isTTSMuted
+
+  // Unlock audio playback on any user interaction (browser autoplay policy).
+  // Creates and resumes an AudioContext which globally unlocks HTMLAudioElement.play().
+  useEffect(() => {
+    const unlock = () => {
+      if (audioUnlockedRef.current) return
+      const ctx = new AudioContext()
+      ctx.resume().then(() => {
+        audioUnlockedRef.current = true
+        console.log("[v0] Audio unlocked via user interaction")
+      })
+    }
+    document.addEventListener("click", unlock)
+    document.addEventListener("keydown", unlock)
+    return () => {
+      document.removeEventListener("click", unlock)
+      document.removeEventListener("keydown", unlock)
+    }
+  }, [])
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [dialogue, isWorldAIThinking])
 
-  // Text-to-speech function using OpenAI TTS
-  const speakDialogue = useCallback(async (text: string, speaker: string, index: number) => {
-    // Stop any currently playing audio
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current = null
-    }
-    
-    if (speakingIndex === index) {
-      setSpeakingIndex(null)
+  // TTS auto-play: only plays lines added AFTER the first render with dialogue data.
+  // prevDialogueLenRef starts null. First time dialogue has entries, we snapshot the length
+  // and mark all existing entries as played. Subsequent additions are genuinely new.
+  useEffect(() => {
+    // First time we see dialogue data, snapshot it as "historical" and skip
+    if (prevDialogueLenRef.current === null) {
+      if (dialogue.length > 0) {
+        for (const entry of dialogue) {
+          if (entry.speaker === "Malachar") {
+            ttsPlayedTexts.add(entry.text)
+          }
+        }
+        prevDialogueLenRef.current = dialogue.length
+        console.log("[v0] TTS initialized, marked", dialogue.length, "historical entries")
+      }
       return
     }
 
-    setLoadingIndex(index)
-    
-    try {
-      // Choose voice based on speaker - Onyx for Malachar, Alloy for players
-      const voice = speaker === "Malachar" ? "onyx" : "alloy"
-      
-      const response = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice }),
-      })
-
-      if (!response.ok) {
-        throw new Error("TTS request failed")
-      }
-
-      const audioBlob = await response.blob()
-      const audioUrl = URL.createObjectURL(audioBlob)
-      
-      const audio = new Audio(audioUrl)
-      audioRef.current = audio
-      
-      audio.onplay = () => {
-        setLoadingIndex(null)
-        setSpeakingIndex(index)
-      }
-      audio.onended = () => {
-        setSpeakingIndex(null)
-        URL.revokeObjectURL(audioUrl)
-      }
-      audio.onerror = () => {
-        setLoadingIndex(null)
-        setSpeakingIndex(null)
-      }
-      
-      await audio.play()
-    } catch (error) {
-      console.error("[TTS] Error:", error)
-      setLoadingIndex(null)
-      setSpeakingIndex(null)
+    // No new entries
+    if (dialogue.length <= prevDialogueLenRef.current) {
+      prevDialogueLenRef.current = dialogue.length
+      return
     }
-  }, [speakingIndex])
 
-  // Stop audio when component unmounts
+    const prevLen = prevDialogueLenRef.current
+    prevDialogueLenRef.current = dialogue.length
+
+    if (isTTSMuted) return
+
+    // Only look at entries added since last render
+    const newTexts: string[] = []
+    for (let i = prevLen; i < dialogue.length; i++) {
+      const entry = dialogue[i]
+      if (entry.speaker === "Malachar" && !ttsPlayedTexts.has(entry.text)) {
+        ttsPlayedTexts.add(entry.text)
+        newTexts.push(entry.text)
+      }
+    }
+
+    if (newTexts.length === 0) return
+
+    console.log("[v0] TTS queuing", newTexts.length, "new line(s)")
+
+    const play = async () => {
+      for (const rawText of newTexts) {
+        if (isTTSMutedRef.current) break
+        const text = sanitizeForTTS(rawText)
+        if (!text) continue
+        try {
+          console.log("[v0] TTS fetching:", text.substring(0, 60))
+          const res = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, voice: "onyx" }),
+          })
+          if (!res.ok) {
+            console.log("[v0] TTS fetch failed:", res.status)
+            continue
+          }
+          const blob = await res.blob()
+          console.log("[v0] TTS blob size:", blob.size)
+          const url = URL.createObjectURL(blob)
+          await new Promise<void>((resolve) => {
+            const audio = new Audio(url)
+            audioRef.current = audio
+            audio.onended = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+            audio.onerror = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
+            audio.play().then(() => {
+              console.log("[v0] TTS playing audio")
+            }).catch((err) => {
+              console.log("[v0] TTS play() blocked:", err.message)
+              audioRef.current = null
+              URL.revokeObjectURL(url)
+              resolve()
+            })
+          })
+        } catch (err) {
+          console.log("[v0] TTS error:", err)
+        }
+      }
+    }
+    play()
+  }, [dialogue, isTTSMuted])
+
+  // Stop audio immediately when muted
+  useEffect(() => {
+    if (isTTSMuted && audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+  }, [isTTSMuted])
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (audioRef.current) {
@@ -113,10 +193,10 @@ export function LeftColumn({
       }
     }
   }, [])
-  
+
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
-      <FantasyPanel title="Avatar / Environment" className="flex-shrink-0">
+      <FantasyPanel title="Environment" className="flex-shrink-0">
         {/* Environment/Avatar Scene */}
         <div className="relative h-[280px] overflow-hidden">
           {/* Background - uses actual environment image or fallback gradient */}
@@ -162,27 +242,8 @@ export function LeftColumn({
               />
             )}
             
-            {/* Bottom vignette for avatar grounding */}
+            {/* Bottom vignette */}
             <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
-            
-            {/* Character avatar */}
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-64 h-64 flex items-end justify-center">
-              {characterAvatar ? (
-                <>
-                  <img 
-                    src={characterAvatar} 
-                    alt={characterName || "Character"} 
-                    className="max-w-full max-h-full object-contain drop-shadow-[0_0_25px_rgba(100,150,200,0.5)]"
-                  />
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-28 h-16 bg-[#6aa0c0]/25 rounded-full blur-xl" />
-                </>
-              ) : (
-                <>
-                  <div className="w-32 h-56 bg-gradient-to-b from-[#3a5060] to-[#1a2a35] rounded-t-full opacity-80 shadow-[0_0_30px_rgba(100,150,200,0.3)]" />
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-20 h-16 bg-[#6aa0c0]/20 rounded-full blur-xl" />
-                </>
-              )}
-            </div>
           </div>
 
           {/* Location overlay card */}
@@ -204,38 +265,16 @@ export function LeftColumn({
       <FantasyPanel title="Dialogue Log" className="flex-1 min-h-0 flex flex-col">
         <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-[#3d3428] scrollbar-track-transparent">
           {dialogue.map((entry, index) => (
-            <div key={index} className="text-sm group flex items-start gap-2">
-              <button
-                onClick={() => speakDialogue(entry.text, entry.speaker, index)}
-                disabled={loadingIndex === index}
-                className={`flex-shrink-0 mt-0.5 p-1 rounded transition-colors ${
-                  loadingIndex === index
-                    ? "bg-[#3d3428]/60 text-[#c9a868]"
-                    : speakingIndex === index 
-                    ? "bg-[#8b5cf6]/30 text-[#8b5cf6]" 
-                    : "opacity-0 group-hover:opacity-100 hover:bg-[#3d3428]/60 text-stone-500 hover:text-stone-300"
+            <div key={index} className="text-sm">
+              <span
+                className={`font-serif font-semibold ${
+                  entry.speaker === "You" ? "text-[#7aa8c8]" : 
+                  entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
                 }`}
-                title={loadingIndex === index ? "Loading..." : speakingIndex === index ? "Stop speaking" : "Read aloud"}
               >
-                {loadingIndex === index ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : speakingIndex === index ? (
-                  <Square className="w-3 h-3" />
-                ) : (
-                  <Volume2 className="w-3 h-3" />
-                )}
-              </button>
-              <div className="flex-1">
-                <span
-                  className={`font-serif font-semibold ${
-                    entry.speaker === "You" ? "text-[#7aa8c8]" : 
-                    entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
-                  }`}
-                >
-                  {entry.speaker}:
-                </span>
-                <span className="text-stone-300 ml-2">{entry.text}</span>
-              </div>
+                {entry.speaker}:
+              </span>
+              <span className="text-stone-300 ml-2">{entry.text}</span>
             </div>
           ))}
           {isWorldAIThinking && (
