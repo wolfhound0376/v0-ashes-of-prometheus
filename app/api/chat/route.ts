@@ -26,6 +26,17 @@ export async function POST(req: Request) {
     .eq("is_player", true)
     .single()
   
+  // Persist player's message to the dialogue table FIRST
+  const playerName = playerCharacter?.name || "Player"
+  const { error: playerDialogueError } = await supabase.from("dialogue").insert({
+    speaker: playerName,
+    speaker_type: "player",
+    text: message,
+  })
+  if (playerDialogueError) {
+    console.error("[v0] Error inserting player dialogue:", playerDialogueError)
+  }
+  
   // Get recent dialogue history for context (last 20 messages)
   const { data: recentDialogue } = await supabase
     .from("dialogue")
@@ -342,12 +353,16 @@ EXPERIENCE POINTS:
     .replace(/\[UPDATE_LOCATION:[^\]]+\]/g, "")
     .trim()
   
+  // Persist Malachar's response to the dialogue table
   if (responseText) {
-    await supabase.from("dialogue").insert({
+    const { error: dialogueError } = await supabase.from("dialogue").insert({
       speaker: "Malachar",
+      speaker_type: "dm",
       text: responseText,
-      source: "world_ai"
     })
+    if (dialogueError) {
+      console.error("[v0] Error inserting Malachar dialogue:", dialogueError)
+    }
   }
   
   return Response.json({ text: responseText || "", npcImageUrl, locationImageUrl })
