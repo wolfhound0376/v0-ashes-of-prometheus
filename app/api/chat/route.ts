@@ -9,6 +9,10 @@ fal.config({
   credentials: process.env.FAL_KEY,
 })
 
+if (!process.env.FAL_KEY) {
+  console.warn("[v0] Warning: FAL_KEY environment variable not set. Image generation will fail.")
+}
+
 export async function POST(req: Request) {
   const { message, campaignId = "abyss" } = await req.json()
   
@@ -200,6 +204,7 @@ EXPERIENCE POINTS:
   const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
   if (locationImageMatch) {
     const locationDescription = locationImageMatch[1].trim()
+    console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
     try {
       const result = await fal.subscribe("fal-ai/flux-schnell", {
         input: {
@@ -211,10 +216,13 @@ EXPERIENCE POINTS:
       })
       if (result.images && result.images.length > 0) {
         locationImageUrl = result.images[0].url
+        console.log("[v0] Location image generated:", locationImageUrl)
       }
     } catch (err) {
       console.error("[v0] Location image generation failed:", err)
     }
+  } else {
+    console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
   }
 
   // Strip all tags from the displayed text
