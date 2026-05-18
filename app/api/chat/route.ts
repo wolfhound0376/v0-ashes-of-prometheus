@@ -125,6 +125,69 @@ And when the player escapes to a new area:
 
 === END CRITICAL RULES ===
 
+=== COMBAT RULES (MANDATORY) ===
+D&D 5E combat is turn-based and must follow the rules strictly. NO EXCEPTIONS.
+
+ATTACK ROLLS & HITS:
+- When a player declares an attack, ALWAYS ask them to roll 1d20 + their attack modifier vs the target's AC. NEVER resolve hits/misses yourself.
+- Wait for their roll. Once they provide the result, narrate whether it hits based on the NPC's AC (shown below).
+- Natural 1 = miss. Natural 20 = auto-hit crit.
+- On a hit, ask for a damage roll using the appropriate die (e.g., "Roll 1d4+4 damage" for a dagger, or "Roll 1d8+2" for a rapier).
+
+DAMAGE & NPC HP:
+- When they provide damage, narrate the wound AND emit [NPC_DAMAGE: <Name> <amount>] on its own line.
+- The dashboard parses this and decrements the NPC's current HP.
+- After every hit, ALWAYS tell the player the NPC's current HP. Example: "Your blade rakes across its chitin. The Hook Horror screams. (Hook Horror: 63/75 HP)"
+- DO NOT declare an NPC dead unless its HP reaches 0. Only use [NPC_LEAVE: <Name>] when it dies or flees.
+
+NPC COUNTER-ATTACKS:
+- When an NPC attacks Fifi, roll 1d20 + the NPC's attack bonus vs her AC.
+- If hit, roll the NPC's damage dice and emit [DAMAGE: <amount> <type>] so her HP updates.
+- Example: "The Hook Horror's barbed leg lashes out! [DAMAGE: 7 piercing]"
+
+CRITICAL HITS:
+- On a natural 20 attack, double the damage DICE (not the modifier). Example: 1d8+4 becomes 2d8+4.
+- Roll the doubled dice and narrate the critical hit, then emit [NPC_DAMAGE:] with the total.
+
+CURRENT NPC STATS (Hook Horror):
+- AC: 15
+- Attack: +7 to hit
+- Damage: 1d8+4 (bite or claw) + 2d6 (barbed leg, once per combat)
+- HP: 75 max
+- Conditions: none
+
+WORKED EXAMPLE — TWO-TURN COMBAT:
+
+Turn 1:
+"The Hook Horror's mandibles snap. You have an opening. What do you do?"
+[Player: "I attack with my dagger"]
+"Roll 1d20 + your attack modifier."
+[Player: "I rolled 22"]
+"A solid hit! Roll 1d4+4 damage."
+[Player: "I rolled 6"]
+"Your dagger slides between its chitinous plates, drawing ichor. The creature shrills in pain.
+
+[NPC_DAMAGE: Hook Horror 6]
+(Hook Horror: 69/75 HP)"
+
+Turn 2:
+"The Hook Horror retaliates, its barbed leg whipping toward your face."
+"[[1d20+7]] for its attack. [rolling 16] Its leg catches your shoulder!
+
+[DAMAGE: 5 piercing]
+
+You take a glancing blow. What's your action?"
+
+When it dies:
+"Your final strike pierces the creature's core. It collapses, ichor pooling around its broken body.
+
+[NPC_DAMAGE: Hook Horror 10]
+[NPC_LEAVE: Hook Horror]
+
+Victory is yours—but the sound of its death-screams echoes through the caverns. Something larger might have heard that."
+
+=== END COMBAT RULES ===
+
 ${worldContextText}
 
 ${stageContext}
@@ -495,6 +558,47 @@ EXPERIENCE POINTS:
       }
     }
     
+    // Handle NPC_DAMAGE tags - [NPC_DAMAGE: Name amount]
+    const npcDamageMatches = rawText.matchAll(/\[NPC_DAMAGE:\s*([^|\s]+)\s+(\d+)\s*\]/gi)
+    for (const match of npcDamageMatches) {
+      const [, npcName, amountStr] = match
+      const name = npcName.trim()
+      const amount = parseInt(amountStr) || 0
+      console.log("[v0] NPC_DAMAGE tag found:", name, "takes", amount, "damage")
+      
+      if (amount > 0) {
+        // Get NPC's current HP
+        const { data: npc } = await supabase
+          .from("npc_encounters")
+          .select("hp_current, hp_max")
+          .eq("name", name)
+          .eq("character_id", playerCharacter.id)
+          .eq("is_active", true)
+          .single()
+        
+        if (npc) {
+          const newHp = Math.max(0, (npc.hp_current || 0) - amount)
+          const isDefeated = newHp <= 0
+          
+          // Update NPC HP
+          const { error } = await supabase
+            .from("npc_encounters")
+            .update({ 
+              hp_current: newHp,
+              is_active: !isDefeated  // Deactivate if HP reaches 0
+            })
+            .eq("name", name)
+            .eq("character_id", playerCharacter.id)
+          
+          if (error) {
+            console.error("[v0] Error applying NPC damage:", error)
+          } else {
+            console.log("[v0] NPC HP updated:", npc.hp_current, "->", newHp, "| Defeated:", isDefeated)
+          }
+        }
+      }
+    }
+    
     // Handle NPC_LEAVE tags - [NPC_LEAVE: name]
     const npcLeaveMatches = rawText.matchAll(/\[NPC_LEAVE:\s*([^\]]+)\]/gi)
     for (const match of npcLeaveMatches) {
@@ -653,6 +757,7 @@ EXPERIENCE POINTS:
     .replace(/\[CONDITION_ADD:[^\]]+\]/gi, "")
     .replace(/\[CONDITION_REMOVE:[^\]]+\]/gi, "")
     .replace(/\[NPC_ENCOUNTER:[^\]]+\]/gi, "")
+    .replace(/\[NPC_DAMAGE:[^\]]+\]/gi, "")
     .replace(/\[NPC_LEAVE:[^\]]+\]/gi, "")
     .trim()
   
