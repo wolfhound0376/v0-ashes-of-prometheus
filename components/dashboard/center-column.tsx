@@ -60,6 +60,8 @@ interface NpcEncounter {
   description: string | null
   portrait_url: string | null
   is_active: boolean
+  hp_current?: number | null
+  hp_max?: number | null
 }
 
 interface CenterColumnProps {
@@ -163,6 +165,24 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
                   {encounter.description && (
                     <span className="text-[10px] text-stone-500 text-center line-clamp-2">{encounter.description}</span>
                   )}
+                  {/* HP Bar */}
+                  {encounter.hp_max !== undefined && encounter.hp_max !== null && encounter.hp_current !== undefined && encounter.hp_current !== null ? (
+                    <div className="w-full px-1">
+                      <div className="text-[9px] text-stone-400 text-center mb-0.5">{encounter.hp_current}/{encounter.hp_max} HP</div>
+                      <div className="h-1.5 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/60">
+                        <div
+                          className={cn(
+                            "h-full transition-all",
+                            encounter.hp_current <= 0 ? "bg-[#4a3a3a]" :
+                            encounter.hp_current <= encounter.hp_max * 0.3 ? "bg-[#c84a3a]" :
+                            encounter.hp_current <= encounter.hp_max * 0.6 ? "bg-[#d4a856]" :
+                            "bg-[#5ab85a]"
+                          )}
+                          style={{ width: `${Math.max(0, (encounter.hp_current / encounter.hp_max) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
