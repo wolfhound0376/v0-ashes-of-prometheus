@@ -443,7 +443,7 @@ EXPERIENCE POINTS:
       // Generate portrait image via Fal
       let portraitUrl: string | null = null
       try {
-        const result = await fal.subscribe("fal-ai/flux-schnell", {
+        const result = await fal.subscribe("fal-ai/flux/schnell", {
           input: {
             prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
             image_size: "square_hd",
@@ -523,7 +523,7 @@ EXPERIENCE POINTS:
   if (npcImageMatch) {
     const npcDescription = npcImageMatch[1].trim()
     try {
-      const result = await fal.subscribe("fal-ai/flux-schnell", {
+      const result = await fal.subscribe("fal-ai/flux/schnell", {
         input: {
           prompt: `Dark fantasy portrait: ${npcDescription}. Style: detailed RPG character art, dramatic fantasy lighting, painterly, professional illustration.`,
           image_size: "square_hd",
@@ -546,7 +546,7 @@ EXPERIENCE POINTS:
     const locationDescription = locationImageMatch[1].trim()
     console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
     try {
-      const result = await fal.subscribe("fal-ai/flux-schnell", {
+      const result = await fal.subscribe("fal-ai/flux/schnell", {
         input: {
           prompt: `Dark fantasy environment illustration: ${locationDescription}. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
           image_size: "square_hd",
@@ -577,7 +577,7 @@ EXPERIENCE POINTS:
     if (!locationImageUrl && updatedLocation) {
       console.log("[v0] Auto-generating location image for:", updatedLocation)
       try {
-        const result = await fal.subscribe("fal-ai/flux-schnell", {
+        const result = await fal.subscribe("fal-ai/flux/schnell", {
           input: {
             prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
             image_size: "square_hd",
