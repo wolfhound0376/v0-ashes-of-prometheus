@@ -84,6 +84,47 @@ export async function POST(req: Request) {
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
 
+=== CRITICAL OUTPUT RULES — READ FIRST ===
+These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
+
+1. LOCATION CHANGES: You MUST emit [UPDATE_LOCATION: <name>] AND [LOCATION_IMAGE: <scene description>] on their own lines at the END of any response where the character moves to a new area. If you describe entering a tunnel, ledge, chamber, or any new space — EMIT THE TAGS.
+
+2. DAMAGE: You MUST emit [DAMAGE: <amount> <type>] for ANY damage taken. If your prose says "you take 4 points of acid damage" or "the blow deals 6 slashing damage", you MUST ALSO emit the tag. Example: [DAMAGE: 4 acid]
+
+3. HEALING: You MUST emit [HEAL: <amount>] whenever HP is restored.
+
+4. CONDITIONS: You MUST emit [CONDITION_ADD: <name>] when the player gains ANY condition (poisoned, grappled, prone, restrained, frightened, exhaustion, bleeding, acid_burn, manacled, etc.). Emit [CONDITION_REMOVE: <name>] when it clears.
+
+5. NPC/MONSTER ENCOUNTERS: You MUST emit [NPC_ENCOUNTER: <Name> | <description> | <portrait_prompt>] the FIRST time any NPC or monster meaningfully interacts with the player. If you describe a gray ooze blocking passage, a drow guard confronting them, or any creature entering the scene — EMIT THE TAG.
+
+6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends.
+
+7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] when they lose/use items.
+
+WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
+
+=== EXAMPLE OF CORRECT OUTPUT ===
+Here is a CORRECT response that properly mixes prose with tags:
+
+"The acidic tendril of the gray ooze lashes across your arm, searing flesh. You cry out as the corrosive slime eats into your skin.
+
+[DAMAGE: 4 acid]
+[CONDITION_ADD: acid_burn]
+
+Gritting your teeth against the pain, you spot a narrow fissure in the cavern wall behind the creature — an escape route, perhaps, if you can get past this gelatinous horror.
+
+[NPC_ENCOUNTER: Gray Ooze | A pulsing mass of corrosive jelly blocking the passage | dark fantasy concept art of a translucent gray ooze creature in a damp Underdark tunnel, bioluminescent fungi, dim lighting]"
+
+And when the player escapes to a new area:
+
+"You squeeze through the fissure, the ooze's pseudopod grasping uselessly at the stone behind you. The passage opens onto a vast underground ledge, the darkness below seemingly infinite.
+
+[NPC_LEAVE: Gray Ooze]
+[UPDATE_LOCATION: Underdark Ledge]
+[LOCATION_IMAGE: vast underground cavern ledge overlooking an endless dark abyss, bioluminescent fungi clinging to walls, ancient stone formations, dramatic fantasy lighting]"
+
+=== END CRITICAL RULES ===
+
 ${worldContextText}
 
 ${stageContext}
@@ -185,6 +226,32 @@ EXPERIENCE POINTS:
   })
   
   const rawText = result.text || ""
+  
+  // === WARNING LOG: Detect when Malachar describes state changes without tags ===
+  const hasDamageTag = /\[DAMAGE:/i.test(rawText)
+  const hasLocationTag = /\[UPDATE_LOCATION:/i.test(rawText)
+  const hasNpcEncounterTag = /\[NPC_ENCOUNTER:/i.test(rawText)
+  const hasConditionTag = /\[CONDITION_ADD:/i.test(rawText)
+  
+  // Check for damage-like prose without tag
+  if (!hasDamageTag && /\b(take|takes|dealt|deals|suffer|suffers)\s+\d+\s*(points?\s*(of\s*)?)?(damage|hit points?|hp)/i.test(rawText)) {
+    console.warn("[v0] WARNING: Response describes damage but contains no [DAMAGE:] tag!")
+  }
+  
+  // Check for location change prose without tag
+  if (!hasLocationTag && /\b(you\s+(arrive|enter|emerge|step|climb|crawl|squeeze|descend|ascend)\s+(at|into|onto|through|out|in))|(\binto\s+(a|the|an)\s+(chamber|cavern|tunnel|passage|room|corridor|ledge|chute))/i.test(rawText)) {
+    console.warn("[v0] WARNING: Response describes location change but contains no [UPDATE_LOCATION:] tag!")
+  }
+  
+  // Check for NPC/monster introduction without tag
+  if (!hasNpcEncounterTag && /\b(looms?|blocks?|confronts?|appears?|emerges?|attacks?|lunges?|approaches?)\s+(before|toward|at)\s+(you|the\s+party)/i.test(rawText)) {
+    console.warn("[v0] WARNING: Response describes NPC/monster encounter but contains no [NPC_ENCOUNTER:] tag!")
+  }
+  
+  // Check for condition-like prose without tag
+  if (!hasConditionTag && /\b(you\s+(are|feel|become)\s+(poisoned|paralyzed|frightened|charmed|grappled|restrained|prone|blinded|deafened|stunned|unconscious|incapacitated))/i.test(rawText)) {
+    console.warn("[v0] WARNING: Response describes condition but contains no [CONDITION_ADD:] tag!")
+  }
   
   // Parse and process inventory tags from the response
   if (playerCharacter?.id) {
