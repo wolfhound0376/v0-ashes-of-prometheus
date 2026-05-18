@@ -6,6 +6,7 @@ interface LichResponse {
   text: string
   npcImageUrl?: string | null
   locationImageUrl?: string | null
+  updatedLocation?: string
 }
 
 export function useLich(campaignId: string = "abyss") {

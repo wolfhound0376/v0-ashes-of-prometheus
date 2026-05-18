@@ -134,11 +134,12 @@ ATTACK ROLLS & HITS:
 - Natural 1 = miss. Natural 20 = auto-hit crit.
 - On a hit, ask for a damage roll using the appropriate die (e.g., "Roll 1d4+4 damage" for a dagger, or "Roll 1d8+2" for a rapier).
 
-DAMAGE & NPC HP:
-- When they provide damage, narrate the wound AND emit [NPC_DAMAGE: <Name> <amount>] on its own line.
-- The dashboard parses this and decrements the NPC's current HP.
-- After every hit, ALWAYS tell the player the NPC's current HP. Example: "Your blade rakes across its chitin. The Hook Horror screams. (Hook Horror: 63/75 HP)"
-- DO NOT declare an NPC dead unless its HP reaches 0. Only use [NPC_LEAVE: <Name>] when it dies or flees.
+  DAMAGE & NPC HP:
+  - When they provide damage, narrate the wound AND emit [NPC_DAMAGE: <Name> <amount>] on its own line.
+  - The dashboard parses this and decrements the NPC's current HP.
+  - After every hit, ALWAYS tell the player the NPC's current HP. Example: "Your blade rakes across its chitin. The Hook Horror screams. (Hook Horror: 63/75 HP)"
+  - DO NOT declare an NPC dead unless its HP reaches 0. Only use [NPC_LEAVE: <Name>] when it dies or flees.
+  - CRITICAL: If an NPC is killed, there MUST be AT LEAST ONE [NPC_DAMAGE:] tag in the same response bringing its HP to 0 or below. You cannot emit [NPC_LEAVE:] without prior damage. Example wrong: "The Hook Horror falls. [NPC_LEAVE: Hook Horror]" (missing damage tag). Example correct: "[NPC_DAMAGE: Hook Horror 10] [NPC_LEAVE: Hook Horror]"
 
 NPC COUNTER-ATTACKS:
 - When an NPC attacks Fifi, roll 1d20 + the NPC's attack bonus vs her AC.
@@ -248,15 +249,19 @@ HEALTH & CONDITIONS:
 - [CONDITION_REMOVE: name] — when a condition clears
   - Example: [CONDITION_REMOVE: prone]
 
-NPC/MONSTER ENCOUNTERS:
-- [NPC_ENCOUNTER: name | description | portrait_prompt] — when an NPC/monster enters active combat or interaction
+  NPC/MONSTER ENCOUNTERS:
+  - [NPC_ENCOUNTER: name | description | portrait_prompt | CR=<n> | XP=<n> | type=<creature_type>] — when an NPC/monster enters active combat or interaction
   - name: The creature's name (e.g. "Gray Ooze", "Ilvara")
   - description: Short tactical description visible to player
   - portrait_prompt: Art prompt for generating portrait
-  - Example: [NPC_ENCOUNTER: Gray Ooze | A pulsing mass of corrosive jelly | dark fantasy concept art of a gray ooze creature, dim cave lighting, menacing]
-- [NPC_LEAVE: name] — when an NPC/monster dies, flees, or is no longer interacting
+  - CR: Challenge Rating from Monster Manual (e.g., CR=3 for Hook Horror, CR=1/2 for Gray Ooze)
+  - XP: XP value from Monster Manual (e.g., XP=700 for CR 3, XP=100 for CR 1/2)
+  - type: Creature type from Monster Manual (e.g., Monstrosity, Ooze, Humanoid)
+  - ALWAYS use real Monster Manual stats. Hook Horror = CR 3, XP 700, Monstrosity. Gray Ooze = CR 1/2, XP 100, Ooze.
+  - Example: [NPC_ENCOUNTER: Gray Ooze | A pulsing mass of corrosive jelly | dark fantasy concept art of a gray ooze creature, dim cave lighting, menacing | CR=0.5 | XP=100 | type=Ooze]
+  - [NPC_LEAVE: name] — when an NPC/monster dies, flees, or is no longer interacting
   - Example: [NPC_LEAVE: Gray Ooze]
-- [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking)
+  - [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking)
   - Use for introducing NPCs visually without adding to active encounters
 
 LOCATION:
@@ -494,14 +499,19 @@ EXPERIENCE POINTS:
       }
     }
     
-    // Handle NPC_ENCOUNTER tags - [NPC_ENCOUNTER: name | description | portrait_prompt]
-    const npcEncounterMatches = rawText.matchAll(/\[NPC_ENCOUNTER:\s*([^|]+)\|\s*([^|]+)\|\s*([^\]]+)\]/gi)
+    // Handle NPC_ENCOUNTER tags - [NPC_ENCOUNTER: name | description | portrait_prompt | CR=<n> | XP=<n> | type=<creature_type>]
+    // Updated regex to capture optional CR/XP/type at the end
+    const npcEncounterMatches = rawText.matchAll(/\[NPC_ENCOUNTER:\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)(?:\|\s*CR\s*=\s*([0-9.\/]+))?\s*(?:\|\s*XP\s*=\s*(\d+))?\s*(?:\|\s*type\s*=\s*([^\]]+))?\s*\]/gi)
     for (const match of npcEncounterMatches) {
-      const [, npcName, description, portraitPrompt] = match
+      const [, npcName, description, portraitPrompt, crStr, xpStr, monsterType] = match
       const name = npcName.trim()
       const desc = description.trim()
       const prompt = portraitPrompt.trim()
-      console.log("[v0] NPC_ENCOUNTER tag found:", name)
+      const cr = crStr ? parseFloat(crStr.trim()) : undefined
+      const xp = xpStr ? parseInt(xpStr.trim()) : undefined
+      const type = monsterType ? monsterType.trim() : undefined
+      
+      console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
       
       // Generate portrait image via Fal
       let portraitUrl: string | null = null
@@ -548,12 +558,17 @@ EXPERIENCE POINTS:
           name,
           description: desc,
           portrait_url: portraitUrl,
+          challenge_rating: cr,
+          xp_value: xp,
+          monster_type: type,
           is_active: true,
+          hp_max: 75, // Default HP - will be overridden if specific NPC stats are known
+          hp_current: 75,
         })
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
         } else {
-          console.log("[v0] NPC encounter created:", name)
+          console.log("[v0] NPC encounter created:", name, "| XP:", xp)
         }
       }
     }
@@ -605,6 +620,57 @@ EXPERIENCE POINTS:
       const [, npcName] = match
       const name = npcName.trim()
       console.log("[v0] NPC_LEAVE tag found:", name)
+      
+      // Fetch NPC to check if it's truly defeated (HP = 0) and get XP
+      const { data: npc } = await supabase
+        .from("npc_encounters")
+        .select("id, hp_current, hp_max, xp_value, is_active")
+        .eq("name", name)
+        .eq("character_id", playerCharacter.id)
+        .eq("is_active", true)
+        .single()
+      
+      if (npc) {
+        // Check if NPC is defeated narratively without HP reaching 0 (missing damage tags)
+        if ((npc.hp_current || 0) > 0) {
+          console.warn("[v0] WARNING: [NPC_LEAVE:] emitted for", name, 'but hp_current is', npc.hp_current, '— NPC defeated narratively without [NPC_DAMAGE:] tags!')
+        }
+        
+        // Award XP if the NPC has xp_value (true defeat)
+        if (npc.xp_value && (npc.hp_current || 0) <= 0) {
+          console.log("[v0] Awarding", npc.xp_value, 'XP for defeating', name)
+          
+          // Get current XP and level to check for level-up
+          const { data: char } = await supabase
+            .from("characters")
+            .select("xp, level")
+            .eq("id", playerCharacter.id)
+            .single()
+          
+          if (char) {
+            const newXp = (char.xp || 0) + npc.xp_value
+            const { error: xpError } = await supabase
+              .from("characters")
+              .update({ xp: newXp })
+              .eq("id", playerCharacter.id)
+            
+            if (xpError) {
+              console.error("[v0] Error awarding XP:", xpError)
+            } else {
+              // Check if this crossed a level threshold
+              const xpThresholds = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000]
+              const currentLevel = xpThresholds.findIndex(xp => newXp < xp) || xpThresholds.length
+              const leveledUp = currentLevel > (char.level || 1)
+              
+              if (leveledUp) {
+                console.log("[v0] LEVEL UP! New level:", currentLevel, '| XP:', newXp)
+              } else {
+                console.log("[v0] XP awarded. Total XP:", newXp, "| Next level at:", xpThresholds[Math.min((char.level || 1) + 1, xpThresholds.length - 1)])
+              }
+            }
+          }
+        }
+      }
       
       const { error } = await supabase
         .from("npc_encounters")
@@ -773,5 +839,10 @@ EXPERIENCE POINTS:
     }
   }
   
-  return Response.json({ text: responseText || "", npcImageUrl, locationImageUrl })
+  return Response.json({ 
+    text: responseText || "", 
+    npcImageUrl, 
+    locationImageUrl,
+    updatedLocation: updatedLocation || undefined,
+  })
 }
