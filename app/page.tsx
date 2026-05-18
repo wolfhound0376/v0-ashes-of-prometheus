@@ -601,6 +601,14 @@ if (error) {
               if (response.locationImageUrl) {
                 setSceneImageUrl(response.locationImageUrl)
               }
+              // Optimistically update environment if location changed
+              if (response.updatedLocation) {
+                setCurrentEnvironment(prev => ({
+                  ...prev,
+                  name: response.updatedLocation,
+                  background_image_url: response.locationImageUrl || prev?.background_image_url,
+                } as any))
+              }
               // Refresh character data to pick up any XP or items from the Lich
               await fetchCharacterData()
             }
