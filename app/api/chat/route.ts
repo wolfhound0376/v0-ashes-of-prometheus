@@ -261,28 +261,40 @@ HEALTH & CONDITIONS:
   - Example: [NPC_ENCOUNTER: Gray Ooze | A pulsing mass of corrosive jelly | dark fantasy concept art of a gray ooze creature, dim cave lighting, menacing | CR=0.5 | XP=100 | type=Ooze]
   - [NPC_LEAVE: name] — when an NPC/monster dies, flees, or is no longer interacting
   - Example: [NPC_LEAVE: Gray Ooze]
-  - [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking)
-  - Use for introducing NPCs visually without adding to active encounters
-  - MANDATORY: You MUST emit [NPC_IMAGE: ...] the FIRST TIME any named NPC speaks to or interacts with the player, AND any time the player initiates direct conversation with an NPC. Use the NPC appearance descriptions below.
-  - Out of the Abyss NPC appearance prompts (use these EXACTLY):
-    * Ilvara Mizzrym: "dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting"
-    * Jorlan Duskryn: "dark fantasy portrait of a drow warrior, half his face horribly scarred and burned, silver-white hair, black leather armor, bitter haunted expression, dim cave torchlight"
-    * Sarith Kzekarit: "dark fantasy portrait of a drow soldier, unusually pale even for a drow, sunken eyes, grey-tinged skin showing signs of fungal illness, hollow gaze, Underdark setting"
-    * Eldeth Feldrun: "dark fantasy portrait of a stout shield dwarf woman, auburn braided hair, sturdy build, wearing tattered prisoner clothes, proud defiant expression, Underdark cave background"
-    * Jimjar: "dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background"
-    * Ront: "dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression"
-    * Stool: "dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave"
-    * Topsy: "dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy"
-    * Turvy: "dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy"
-    * Shuushar: "dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background"
-    * Derendil: "dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave"
-    * For any NPC not listed: generate a fitting dark fantasy Underdark portrait based on their race and role
+  - [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking). Use ONLY for purely visual reveals with no interaction.
+
+  === CRITICAL NPC INTERACTION RULE ===
+  When a player TALKS TO or INTERACTS WITH any named NPC (not just sees them), you MUST emit [NPC_ENCOUNTER:] for that NPC. This is what shows their portrait card in the UI. Use [NPC_IMAGE:] is NOT enough for interactive NPCs.
+
+  MANDATORY: Any time the player speaks to, approaches, or directly interacts with a named NPC, emit:
+  [NPC_ENCOUNTER: Name | short description | portrait_prompt | CR=0 | XP=0 | type=Humanoid]
+
+  Use CR=0 XP=0 type=Humanoid for non-combat NPCs (prisoners, allies, merchants).
+
+  NPC portrait prompts for Out of the Abyss characters (use these EXACTLY as the portrait_prompt):
+    * Ilvara Mizzrym → dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting
+    * Jorlan Duskryn → dark fantasy portrait of a drow warrior, half his face horribly scarred and burned, silver-white hair, black leather armor, bitter haunted expression, dim cave torchlight
+    * Sarith Kzekarit → dark fantasy portrait of a drow soldier, unusually pale even for a drow, sunken eyes, grey-tinged skin showing signs of fungal illness, hollow gaze, Underdark setting
+    * Eldeth Feldrun → dark fantasy portrait of a stout shield dwarf woman, auburn braided hair, sturdy build, tattered prisoner clothes, proud defiant expression, Underdark cave background
+    * Jimjar → dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background
+    * Ront → dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression
+    * Stool → dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave
+    * Topsy → dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy
+    * Turvy → dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy
+    * Shuushar → dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background
+    * Derendil → dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave
+
+  Example for Ilvara interaction:
+  [NPC_ENCOUNTER: Ilvara Mizzrym | Mistress of Velkynvelve, priestess of Lolth | dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting | CR=0 | XP=0 | type=Humanoid]
+
+  === END NPC INTERACTION RULE ===
 
 LOCATION:
-- [UPDATE_LOCATION: name] — updates the current location in world state
+- [UPDATE_LOCATION: name] — updates the current location in world state. ALWAYS emit this when the player moves to a new area.
   - Example: [UPDATE_LOCATION: Underdark Tunnels]
-- [LOCATION_IMAGE: description] — generates a new location background image
-  - Example: [LOCATION_IMAGE: vast cavern with bioluminescent fungi]
+- [LOCATION_IMAGE: description] — generates a new location background image. ALWAYS emit this alongside UPDATE_LOCATION.
+  - Example: [LOCATION_IMAGE: vast cavern with bioluminescent fungi, dramatic shadows, glowing mushrooms]
+- CRITICAL: You MUST emit BOTH [UPDATE_LOCATION:] AND [LOCATION_IMAGE:] together every time the player enters a new location. Never emit one without the other.
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
