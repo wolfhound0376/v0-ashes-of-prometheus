@@ -263,6 +263,20 @@ HEALTH & CONDITIONS:
   - Example: [NPC_LEAVE: Gray Ooze]
   - [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking)
   - Use for introducing NPCs visually without adding to active encounters
+  - MANDATORY: You MUST emit [NPC_IMAGE: ...] the FIRST TIME any named NPC speaks to or interacts with the player, AND any time the player initiates direct conversation with an NPC. Use the NPC appearance descriptions below.
+  - Out of the Abyss NPC appearance prompts (use these EXACTLY):
+    * Ilvara Mizzrym: "dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting"
+    * Jorlan Duskryn: "dark fantasy portrait of a drow warrior, half his face horribly scarred and burned, silver-white hair, black leather armor, bitter haunted expression, dim cave torchlight"
+    * Sarith Kzekarit: "dark fantasy portrait of a drow soldier, unusually pale even for a drow, sunken eyes, grey-tinged skin showing signs of fungal illness, hollow gaze, Underdark setting"
+    * Eldeth Feldrun: "dark fantasy portrait of a stout shield dwarf woman, auburn braided hair, sturdy build, wearing tattered prisoner clothes, proud defiant expression, Underdark cave background"
+    * Jimjar: "dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background"
+    * Ront: "dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression"
+    * Stool: "dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave"
+    * Topsy: "dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy"
+    * Turvy: "dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy"
+    * Shuushar: "dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background"
+    * Derendil: "dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave"
+    * For any NPC not listed: generate a fitting dark fantasy Underdark portrait based on their race and role
 
 LOCATION:
 - [UPDATE_LOCATION: name] — updates the current location in world state
