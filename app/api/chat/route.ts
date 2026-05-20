@@ -864,7 +864,118 @@ EXPERIENCE POINTS:
       console.error("[v0] Error inserting Malachar dialogue:", dialogueError)
     }
   }
-  
+
+  // === AUTO NPC DETECTION FROM QUOTED SPEECH ===
+  // If no NPC_ENCOUNTER tag was fired, scan the response for quoted dialogue
+  // and automatically detect which NPC is speaking, then generate their portrait.
+  const hadNpcEncounterTag = /\[NPC_ENCOUNTER:/i.test(rawText)
+  if (!hadNpcEncounterTag && playerCharacter) {
+    const hasQuotes = /[\u201C\u201D""]/.test(responseText) || /"[^"]{3,}"/.test(responseText)
+    if (hasQuotes) {
+      try {
+        const detectionPrompt = `You are analyzing a D&D dungeon master's narration from "Out of the Abyss".
+
+Narration:
+"""
+${responseText}
+"""
+
+Is a specific named NPC speaking the quoted dialogue? Known NPCs: Ilvara Mizzrym, Jorlan Duskryn, Sarith Kzekarit, Eldeth Feldrun, Jimjar, Ront, Stool, Topsy, Turvy, Shuushar, Derendil.
+
+Respond ONLY with valid JSON, no other text:
+- If a named NPC is speaking: {"npc": "Exact NPC Name", "description": "one sentence physical description"}
+- If speaker is unnamed or unclear: {"npc": null}`
+
+        const detectionResult = await generateText({
+          model: "anthropic/claude-haiku-4-5-20251001",
+          messages: [{ role: "user", content: detectionPrompt }],
+        })
+
+        const parsed = JSON.parse(detectionResult.text.trim())
+
+        if (parsed.npc) {
+          const npcName: string = parsed.npc
+          console.log("[v0] Auto-detected speaking NPC:", npcName)
+
+          const portraitPrompts: Record<string, string> = {
+            "Ilvara Mizzrym": "dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting",
+            "Jorlan Duskryn": "dark fantasy portrait of a drow warrior, half his face horribly scarred and burned, silver-white hair, black leather armor, bitter haunted expression, dim cave torchlight",
+            "Sarith Kzekarit": "dark fantasy portrait of a drow soldier, unusually pale even for a drow, sunken eyes, grey-tinged skin showing signs of fungal illness, hollow gaze, Underdark setting",
+            "Eldeth Feldrun": "dark fantasy portrait of a stout shield dwarf woman, auburn braided hair, sturdy build, tattered prisoner clothes, proud defiant expression, Underdark cave background",
+            "Jimjar": "dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background",
+            "Ront": "dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression",
+            "Stool": "dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave",
+            "Topsy": "dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy",
+            "Turvy": "dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy",
+            "Shuushar": "dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background",
+            "Derendil": "dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave",
+          }
+
+          const portraitPrompt = portraitPrompts[npcName] ||
+            `dark fantasy portrait of ${parsed.description || npcName}, dramatic Underdark lighting, detailed RPG character art`
+
+          // Generate portrait via Fal
+          let autoPortraitUrl: string | null = null
+          try {
+            const result = await fal.subscribe("fal-ai/flux/schnell", {
+              input: {
+                prompt: `Dark fantasy portrait: ${portraitPrompt}. Style: detailed RPG character art, dramatic fantasy lighting, painterly, professional illustration.`,
+                image_size: "square_hd",
+                num_inference_steps: 4,
+                num_images: 1,
+              },
+            }) as any
+            if (result?.images?.[0]?.url) {
+              autoPortraitUrl = result.images[0].url
+              console.log("[v0] Auto-generated portrait for:", npcName)
+            }
+          } catch (err) {
+            console.error("[v0] Auto portrait generation failed:", err)
+          }
+
+          // Upsert NPC encounter in Supabase
+          const { data: existingNpc } = await supabase
+            .from("npc_encounters")
+            .select("id")
+            .eq("name", npcName)
+            .eq("character_id", playerCharacter.id)
+            .single()
+
+          if (existingNpc) {
+            await supabase
+              .from("npc_encounters")
+              .update({
+                is_active: true,
+                portrait_url: autoPortraitUrl || undefined,
+                description: parsed.description || undefined,
+              })
+              .eq("id", existingNpc.id)
+          } else {
+            await supabase.from("npc_encounters").insert({
+              character_id: playerCharacter.id,
+              name: npcName,
+              description: parsed.description || `${npcName} is speaking`,
+              portrait_url: autoPortraitUrl,
+              is_active: true,
+              hp_max: null,
+              hp_current: null,
+              challenge_rating: 0,
+              xp_value: 0,
+              monster_type: "Humanoid",
+            })
+          }
+
+          if (autoPortraitUrl) {
+            npcImageUrl = autoPortraitUrl
+          }
+        }
+      } catch (err) {
+        console.error("[v0] NPC auto-detection failed:", err)
+      }
+    }
+  }
+  // === END AUTO NPC DETECTION ===
+
   return Response.json({ 
     text: responseText || "", 
     npcImageUrl, 
