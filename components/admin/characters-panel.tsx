@@ -141,7 +141,7 @@ export function CharactersPanel() {
   return (
     <div className="space-y-6">
       {!creating && (
-        <button onClick={() => { setCreating(true); setEditing(null); setFormData({ level: 1, class: 'Wizard' }) }}
+        <button onClick={() => { setCreating(true); setEditing(null); setFormData({ level: 1, class: 'Wizard', character_type: 'npc' }) }}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#3d3428] to-[#2a2520] border border-[#c4a777]/30 rounded-lg text-[#c4a777] text-sm hover:border-[#c4a777]/50">
           <Plus className="w-4 h-4" />Add Character
         </button>
@@ -154,49 +154,61 @@ export function CharactersPanel() {
         </div>
       )}
 
-      <div className="grid gap-4">
-        {characters.map((char) => (
-          <div key={char.id} className="bg-gradient-to-br from-[#1a1614] to-[#0f0d0b] border border-[#3d3428]/60 rounded-lg overflow-hidden">
-            {editing === char.id ? (
-              <div className="p-6">
-                <h3 className="font-serif text-lg text-[#c4a777] mb-4">Edit Character</h3>
-                <CharacterForm formData={formData} setFormData={setFormData} onSave={() => handleUpdate(char.id)} onCancel={() => { setEditing(null); setFormData({}) }} />
-              </div>
-            ) : (
-              <div className="flex">
-                <div className="w-24 h-32 bg-[#0f0d0b] flex-shrink-0 flex items-center justify-center overflow-hidden">
-                  {char.avatar_image_url ? (
-                    <img src={char.avatar_image_url} alt={char.name} className="max-w-full max-h-full object-contain" />
-                  ) : (
-                    <User className="w-8 h-8 text-stone-700" />
-                  )}
-                </div>
-                <div className="flex-1 p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-serif text-[#e8dcc4]">{char.name}</h4>
-                        {char.is_player && <Crown className="w-4 h-4 text-[#c4a777]" />}
+      <div className="space-y-6">
+        {(["player", "npc", "monster"] as const).map((type) => {
+          const group = characters.filter((c) => (c.character_type ?? (c.is_player ? "player" : "npc")) === type)
+          if (group.length === 0) return null
+          const label = type === "player" ? "Players" : type === "npc" ? "NPCs" : "Monsters"
+          return (
+            <div key={type} className="space-y-3">
+              <h3 className="font-serif text-lg text-[#c4a777] uppercase tracking-wide">{label}</h3>
+              <div className="grid gap-4">
+                {group.map((char) => (
+                  <div key={char.id} className="bg-gradient-to-br from-[#1a1614] to-[#0f0d0b] border border-[#3d3428]/60 rounded-lg overflow-hidden">
+                    {editing === char.id ? (
+                      <div className="p-6">
+                        <h3 className="font-serif text-lg text-[#c4a777] mb-4">Edit Character</h3>
+                        <CharacterForm formData={formData} setFormData={setFormData} onSave={() => handleUpdate(char.id)} onCancel={() => { setEditing(null); setFormData({}) }} />
                       </div>
-                      <p className="text-sm text-stone-500">Level {char.level} {char.class}</p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-stone-600">
-                        <span>HP: {char.hp_current}/{char.hp_max}</span>
-                        <span>AC: {char.ac}</span>
-                        <span>XP: {char.xp?.toLocaleString()}</span>
+                    ) : (
+                      <div className="flex">
+                        <div className="w-24 h-32 bg-[#0f0d0b] flex-shrink-0 flex items-center justify-center overflow-hidden">
+                          {char.avatar_image_url ? (
+                            <img src={char.avatar_image_url} alt={char.name} className="max-w-full max-h-full object-contain" />
+                          ) : (
+                            <User className="w-8 h-8 text-stone-700" />
+                          )}
+                        </div>
+                        <div className="flex-1 p-4">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-serif text-[#e8dcc4]">{char.name}</h4>
+                                {char.is_player && <Crown className="w-4 h-4 text-[#c4a777]" />}
+                              </div>
+                              <p className="text-sm text-stone-500">Level {char.level} {char.class}</p>
+                              <div className="flex items-center gap-4 mt-2 text-xs text-stone-600">
+                                <span>HP: {char.hp_current}/{char.hp_max}</span>
+                                <span>AC: {char.ac}</span>
+                                <span>XP: {char.xp?.toLocaleString()}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => { setEditing(char.id); setFormData(char); setCreating(false) }}
+                                className="p-2 text-stone-500 hover:text-[#c4a777]"><Pencil className="w-4 h-4" /></button>
+                              <button onClick={() => handleDelete(char.id)}
+                                className="p-2 text-stone-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => { setEditing(char.id); setFormData(char); setCreating(false) }}
-                        className="p-2 text-stone-500 hover:text-[#c4a777]"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => handleDelete(char.id)}
-                        className="p-2 text-stone-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
-                    </div>
+                    )}
                   </div>
-                </div>
+                ))}
               </div>
-            )}
-          </div>
-        ))}
+            </div>
+          )
+        })}
         {characters.length === 0 && !creating && (
           <div className="text-center py-12 text-stone-500">
             <User className="w-12 h-12 mx-auto mb-3 opacity-50" /><p>No characters yet</p>
@@ -290,10 +302,14 @@ function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: 
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <input type="checkbox" checked={formData.is_player || false} onChange={(e) => setFormData({ ...formData, is_player: e.target.checked })}
-              className="w-4 h-4 rounded bg-[#0f0d0b] border-[#3d3428]/60" />
-            <label className="text-sm text-stone-400">This is the player character</label>
+          <div>
+            <label className="block text-sm text-stone-400 mb-2">Type</label>
+            <select value={formData.character_type || 'npc'} onChange={(e) => setFormData({ ...formData, character_type: e.target.value as 'player' | 'npc' | 'monster' })}
+              className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none focus:border-[#c4a777]/50">
+              <option value="player">Player</option>
+              <option value="npc">NPC</option>
+              <option value="monster">Monster</option>
+            </select>
           </div>
         </div>
       </div>
