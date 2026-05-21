@@ -53,7 +53,7 @@ export function CharactersPanel() {
     const { data, error } = await supabase
       .from('characters')
       .select('*')
-      .order('is_player', { ascending: false })
+      .order('character_type', { ascending: false })
       .order('name')
     
     if (error) {
@@ -98,7 +98,8 @@ export function CharactersPanel() {
       cha_modifier: Math.floor(((formData.cha_score || 10) - 10) / 2),
       weight_current: formData.weight_current || 0,
       weight_max: formData.weight_max || 150,
-      is_player: formData.is_player || false,
+      character_type: formData.character_type || 'npc',
+      is_player: (formData.character_type || 'npc') === 'player',
     })
     if (error) {
       console.error('[v0] Error creating character:', error)
