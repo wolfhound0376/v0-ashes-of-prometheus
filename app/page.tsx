@@ -205,7 +205,7 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('characters')
         .select('*')
-        .order('is_player', { ascending: false })
+        .order('character_type', { ascending: false })
         .order('name')
       
       if (error) {
