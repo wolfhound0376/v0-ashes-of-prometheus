@@ -1,4 +1,5 @@
 import { generateText } from "ai"
+import { anthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
@@ -311,7 +312,7 @@ EXPERIENCE POINTS:
 - Follow D&D 5E XP values based on CR`
 
   const result = await generateText({
-    model: "anthropic/claude-sonnet-4-20250514",
+    model: anthropic("claude-sonnet-4-20250514"),
     system: lichPrompt,
     messages: [
       ...conversationHistory,
@@ -887,7 +888,7 @@ Respond ONLY with valid JSON, no other text:
 - If speaker is unnamed or unclear: {"npc": null}`
 
         const detectionResult = await generateText({
-          model: "anthropic/claude-haiku-4-5-20251001",
+          model: anthropic("claude-haiku-4-5-20251001"),
           messages: [{ role: "user", content: detectionPrompt }],
         })
 
