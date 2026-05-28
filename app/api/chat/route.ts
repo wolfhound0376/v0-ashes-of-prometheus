@@ -312,7 +312,7 @@ EXPERIENCE POINTS:
 - Follow D&D 5E XP values based on CR`
 
   const result = await generateText({
-    model: anthropic("claude-sonnet-4-20250514"),
+    model: anthropic("claude-sonnet-4-6"),
     system: lichPrompt,
     messages: [
       ...conversationHistory,
