@@ -102,6 +102,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] when they lose/use items.
 
+8. ITEM AWARDS: When narrating the player finding, picking up, receiving, or being given an item, you MUST emit [ITEM_AWARD: name | qty | description | item_type | icon_hint] where icon_hint is a keyword for matching existing icons (e.g., "dagger", "potion", "key", "torch").
+
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
 === EXAMPLE OF CORRECT OUTPUT ===
@@ -237,6 +239,10 @@ ITEMS:
   - Example: [ITEM_ADD: Rusty Dagger | 1 | weapon | A corroded blade found in the rubble]
 - [ITEM_REMOVE: name | quantity] — when player loses/uses/gives away an item
   - Example: [ITEM_REMOVE: Health Potion | 1]
+- [ITEM_AWARD: name | qty | description | item_type | icon_hint] — when narrating the player finding/receiving an item
+  - item_type: weapon, armor, consumable, misc, currency
+  - icon_hint: keyword for matching existing icons (dagger, potion, key, torch, etc.)
+  - Example: [ITEM_AWARD: Rusty Dagger | 1 | A corroded blade found in the rubble | weapon | dagger]
 
 HEALTH & CONDITIONS:
 - [DAMAGE: amount type] — when player takes damage. Include this EVERY time damage is dealt.
@@ -403,6 +409,62 @@ EXPERIENCE POINTS:
             .update({ quantity: existing.quantity - quantity })
             .eq("id", existing.id)
         }
+      }
+    }
+    
+    // Handle ITEM_AWARD tags - [ITEM_AWARD: name | qty | description | item_type | icon_hint]
+    const awardMatches = rawText.matchAll(/\[ITEM_AWARD:\s*([^|]+)\|\s*(\d+)\s*\|\s*([^|]+)\|\s*(\w+)\s*\|\s*([^\]]+)\]/gi)
+    for (const match of awardMatches) {
+      const [, name, qty, description, itemType, iconHint] = match
+      const itemName = name.trim()
+      const quantity = parseInt(qty.trim()) || 1
+      const desc = description.trim()
+      const type = itemType.trim() || "misc"
+      const hint = iconHint.trim()
+      
+      console.log("[v0] ITEM_AWARD tag found:", itemName, "| qty:", quantity, "| icon_hint:", hint)
+      
+      // Try to find an existing icon from dashboard_assets
+      let iconUrl: string | null = null
+      const { data: existingIcon } = await supabase
+        .from("dashboard_assets")
+        .select("url")
+        .eq("asset_type", "item_icon")
+        .or(`name.ilike.%${hint}%,name.ilike.%${itemName}%`)
+        .limit(1)
+        .single()
+      
+      if (existingIcon?.url) {
+        iconUrl = existingIcon.url
+        console.log("[v0] Found existing icon for item:", iconUrl)
+      }
+      
+      // Check if item already exists in inventory
+      const { data: existing } = await supabase
+        .from("inventory_items")
+        .select("id, quantity")
+        .eq("character_id", playerCharacter.id)
+        .eq("name", itemName)
+        .single()
+      
+      if (existing) {
+        await supabase.from("inventory_items")
+          .update({ 
+            quantity: existing.quantity + quantity,
+            icon_url: iconUrl || undefined 
+          })
+          .eq("id", existing.id)
+        console.log("[v0] Updated existing item quantity:", itemName)
+      } else {
+        await supabase.from("inventory_items").insert({
+          character_id: playerCharacter.id,
+          name: itemName,
+          quantity,
+          description: desc,
+          item_type: type,
+          icon_url: iconUrl,
+        })
+        console.log("[v0] Created new inventory item:", itemName)
       }
     }
     
@@ -741,22 +803,39 @@ EXPERIENCE POINTS:
   const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
   if (locationImageMatch) {
     const locationDescription = locationImageMatch[1].trim()
-    console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
-    try {
-      const result = await fal.subscribe("fal-ai/flux/schnell", {
-        input: {
-          prompt: `Dark fantasy environment illustration: ${locationDescription}. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
-          image_size: "square_hd",
-          num_inference_steps: 4,
-          num_images: 1,
-        },
-      }) as any
-      if (result?.images && result.images.length > 0) {
-        locationImageUrl = result.images[0].url
-        console.log("[v0] Location image generated:", locationImageUrl)
+    console.log("[v0] Processing location image for:", locationDescription.substring(0, 60))
+    
+    // First, check if we have an existing environment with a background image that matches
+    const { data: existingEnv } = await supabase
+      .from("environments")
+      .select("background_image_url, name")
+      .ilike("name", `%${locationDescription.split(" ")[0]}%`)
+      .not("background_image_url", "is", null)
+      .limit(1)
+      .single()
+    
+    if (existingEnv?.background_image_url) {
+      locationImageUrl = existingEnv.background_image_url
+      console.log("[v0] Reusing existing environment image for:", existingEnv.name)
+    } else {
+      // No existing image found, generate with Fal
+      console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
+      try {
+        const result = await fal.subscribe("fal-ai/flux/schnell", {
+          input: {
+            prompt: `Dark fantasy environment illustration: ${locationDescription}. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
+            image_size: "square_hd",
+            num_inference_steps: 4,
+            num_images: 1,
+          },
+        }) as any
+        if (result?.images && result.images.length > 0) {
+          locationImageUrl = result.images[0].url
+          console.log("[v0] Location image generated:", locationImageUrl)
+        }
+      } catch (err) {
+        console.error("[v0] Location image generation failed:", err)
       }
-    } catch (err) {
-      console.error("[v0] Location image generation failed:", err)
     }
   } else {
     console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
@@ -770,27 +849,42 @@ EXPERIENCE POINTS:
     console.log("[v0] Updating campaign location to:", updatedLocation)
     console.log("[v0] Current locationImageUrl:", locationImageUrl ? "SET" : "EMPTY", "| updatedLocation:", updatedLocation)
     
-    // If no LOCATION_IMAGE tag was provided, auto-generate one based on the location name
+    // If no LOCATION_IMAGE tag was provided, check for existing image first, then auto-generate
     if (!locationImageUrl && updatedLocation) {
-      console.log("[v0] Auto-generating location image for:", updatedLocation)
-      try {
-        const result = await fal.subscribe("fal-ai/flux/schnell", {
-          input: {
-            prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
-            image_size: "square_hd",
-            num_inference_steps: 4,
-            num_images: 1,
-          },
-        }) as any
-        console.log("[v0] Fal result received:", result ? "YES" : "NO")
-        if (result?.images && result.images.length > 0) {
-          locationImageUrl = result.images[0].url
-          console.log("[v0] Auto-generated location image:", locationImageUrl)
-        } else {
-          console.log("[v0] Fal returned no images. Result:", JSON.stringify(result).substring(0, 200))
+      // First check if there's an existing environment with a background image for this location
+      const { data: existingEnvImage } = await supabase
+        .from("environments")
+        .select("background_image_url, name")
+        .ilike("name", `%${updatedLocation}%`)
+        .not("background_image_url", "is", null)
+        .limit(1)
+        .single()
+      
+      if (existingEnvImage?.background_image_url) {
+        locationImageUrl = existingEnvImage.background_image_url
+        console.log("[v0] Reusing existing environment image for:", existingEnvImage.name)
+      } else {
+        // No existing image found, generate with Fal
+        console.log("[v0] Auto-generating location image for:", updatedLocation)
+        try {
+          const result = await fal.subscribe("fal-ai/flux/schnell", {
+            input: {
+              prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
+              image_size: "square_hd",
+              num_inference_steps: 4,
+              num_images: 1,
+            },
+          }) as any
+          console.log("[v0] Fal result received:", result ? "YES" : "NO")
+          if (result?.images && result.images.length > 0) {
+            locationImageUrl = result.images[0].url
+            console.log("[v0] Auto-generated location image:", locationImageUrl)
+          } else {
+            console.log("[v0] Fal returned no images. Result:", JSON.stringify(result).substring(0, 200))
+          }
+        } catch (err) {
+          console.error("[v0] Auto-generation of location image failed:", err instanceof Error ? err.message : String(err))
         }
-      } catch (err) {
-        console.error("[v0] Auto-generation of location image failed:", err instanceof Error ? err.message : String(err))
       }
     } else {
       console.log("[v0] Skipping auto-generation: locationImageUrl exists or no updatedLocation")
@@ -842,6 +936,7 @@ EXPERIENCE POINTS:
   const responseText = rawText
     .replace(/\[ITEM_ADD:[^\]]+\]/gi, "")
     .replace(/\[ITEM_REMOVE:[^\]]+\]/gi, "")
+    .replace(/\[ITEM_AWARD:[^\]]+\]/gi, "")
     .replace(/\[NPC_IMAGE:[^\]]+\]/gi, "")
     .replace(/\[LOCATION_IMAGE:[^\]]+\]/gi, "")
     .replace(/\[UPDATE_LOCATION:[^\]]+\]/gi, "")
