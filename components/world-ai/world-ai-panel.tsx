@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/client"
 import { Campaign, CAMPAIGNS, getAllCampaigns } from "@/lib/world-ai/campaigns"
 import { rollDice, formatDiceResult, DiceRollResult } from "@/lib/world-ai/dice"
 import { DiceModal } from "./dice-modal"
+import { PersonalityDials } from "./personality-dials"
 import { useLich } from "@/lib/hooks/use-lich"
 
 type ViewTab = "chat" | "maps" | "lore" | "library"
@@ -202,8 +203,10 @@ export function WorldAIPanel({
             </span>
           </div>
           
-          {/* View tabs */}
-          <div className="flex gap-1">
+          {/* Settings and View tabs */}
+          <div className="flex items-center gap-2">
+            <PersonalityDials />
+            <div className="flex gap-1">
             {[
               { id: "chat" as ViewTab, icon: MessageSquare, label: "Chat" },
               { id: "maps" as ViewTab, icon: Map, label: "Maps" },
@@ -223,6 +226,7 @@ export function WorldAIPanel({
                 {tab.label}
               </button>
             ))}
+            </div>
           </div>
         </div>
       </div>
