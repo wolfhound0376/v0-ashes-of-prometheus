@@ -16,6 +16,7 @@ import {
   MapPin,
   Wifi
 } from "lucide-react"
+import { PersonalityDials } from "./personality-dials"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { Campaign, CAMPAIGNS, getAllCampaigns } from "@/lib/world-ai/campaigns"
@@ -202,7 +203,9 @@ export function WorldAIPanel({
             </span>
           </div>
           
-          {/* View tabs */}
+          {/* Settings and View tabs */}
+          <div className="flex items-center gap-2">
+            <PersonalityDials />
           <div className="flex gap-1">
             {[
               { id: "chat" as ViewTab, icon: MessageSquare, label: "Chat" },
@@ -310,8 +313,9 @@ export function WorldAIPanel({
                   >
                     {action.label}
                   </button>
-                ))}
-              </div>
+))}
+            </div>
+          </div>
             </div>
 
             {/* Input Bar */}

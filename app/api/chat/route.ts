@@ -19,6 +19,23 @@ export async function POST(req: Request) {
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
   
+  // Fetch lich personality settings for this session
+  const { data: personality } = await supabase
+    .from("lich_personality")
+    .select("*")
+    .limit(1)
+    .single()
+  
+  // Default personality values if not found
+  const lichPersonality = {
+    snark: personality?.snark ?? 5,
+    crassness: personality?.crassness ?? 3,
+    cruelty: personality?.cruelty ?? 4,
+    roast_target: personality?.roast_target ?? "even",
+    swearing: personality?.swearing ?? "mild",
+    fourth_wall: personality?.fourth_wall ?? "occasionally",
+  }
+  
   // Get the player character
   const { data: playerCharacter } = await supabase
     .from("characters")
@@ -80,6 +97,56 @@ export async function POST(req: Request) {
   } else if (currentLocation.toLowerCase().includes("tunnel") || currentLocation.toLowerCase().includes("underdark")) {
     stageContext = "CURRENT STAGE: Underdark Tunnels (Stage 5+). The party has fled Velkynvelve. Describe vast caverns, bioluminescent fungi, distant echoes. They are beginning their journey through the Underdark."
   }
+
+  // Build PERSONALITY OVERRIDES block from lich_personality settings
+  const getDialLevel = (n: number): string => {
+    if (n <= 2) return "barely"
+    if (n <= 5) return "moderately"
+    if (n <= 8) return "liberally"
+    return "constantly"
+  }
+  
+  const getCrassnessStyle = (n: number): string => {
+    if (n <= 3) return "elegant and refined"
+    if (n <= 6) return "somewhat coarse"
+    return "crude and vulgar"
+  }
+  
+  const getCrueltyStyle = (n: number): string => {
+    if (n <= 2) return "playful teasing only"
+    if (n <= 5) return "enjoys watching them squirm"
+    if (n <= 8) return "wants them to suffer"
+    return "psychological warfare"
+  }
+  
+  const getRoastTargetText = (target: string): string => {
+    if (target === "off") return "none — do not single anyone out for mockery"
+    if (target === "even") return "spread evenly — distribute mockery evenly among all players"
+    return `${target.charAt(0).toUpperCase() + target.slice(1)} — when you mock someone, prefer targeting ${target.charAt(0).toUpperCase() + target.slice(1)}`
+  }
+  
+  const getSwearingText = (level: string): string => {
+    if (level === "off") return "off — no swearing whatsoever"
+    if (level === "mild") return "mild — light swears only (damn, hell, bastard), absolutely no f-bombs"
+    return "unrestricted — all swears permitted including f-bombs"
+  }
+  
+  const getFourthWallText = (level: string): string => {
+    if (level === "off") return "off — stay fully in character at all times"
+    if (level === "occasionally") return "occasionally — drop occasional asides to the audience"
+    return "often — frequently address viewers directly"
+  }
+  
+  const personalityOverrides = `=== PERSONALITY OVERRIDES (apply these to your voice this session) ===
+Snark: ${lichPersonality.snark}/10 — make ${getDialLevel(lichPersonality.snark)} use of dry, observational mockery of the players' choices.
+Crassness: ${lichPersonality.crassness}/10 — keep your insults ${getCrassnessStyle(lichPersonality.crassness)}.
+Cruelty: ${lichPersonality.cruelty}/10 — ${getCrueltyStyle(lichPersonality.cruelty)}.
+Roast target this session: ${getRoastTargetText(lichPersonality.roast_target)}.
+Swearing: ${getSwearingText(lichPersonality.swearing)}.
+Fourth wall: ${getFourthWallText(lichPersonality.fourth_wall)}.
+=== END PERSONALITY OVERRIDES ===
+
+`
 
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
@@ -312,7 +379,7 @@ EXPERIENCE POINTS:
 
   const result = await generateText({
     model: "anthropic/claude-sonnet-4-20250514",
-    system: lichPrompt,
+    system: personalityOverrides + lichPrompt,
     messages: [
       ...conversationHistory,
       { role: "user", content: message }
