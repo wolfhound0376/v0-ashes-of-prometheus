@@ -1,9 +1,14 @@
 import { generateText } from "ai"
-import { anthropic } from "@ai-sdk/anthropic"
+import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import * as fal from "@fal-ai/serverless-client"
+// Force direct calls to api.anthropic.com using ANTHROPIC_API_KEY,
+// bypassing the Vercel AI Gateway free-tier model block.
+const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+})
 
 // Configure Fal client
 fal.config({
