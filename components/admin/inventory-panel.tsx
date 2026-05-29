@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
 import { Plus, Pencil, Trash2, Save, X, Loader2, Package } from "lucide-react"
-import { INVENTORY_PRESET_ICONS } from "@/lib/types/database"
+import { INVENTORY_PRESET_ICONS, EQUIPMENT_SLOTS } from "@/lib/types/database"
 import { BackpackIcon, RobeIcon, PotionIcon, ScrollIcon, PearlIcon, RopeIcon, TorchIcon, GoldIcon } from "@/components/ui/fantasy-icons"
 import type { InventoryItem, Character } from "@/lib/types/database"
 
@@ -67,6 +67,7 @@ export function InventoryPanel() {
       weight: formData.weight || 0,
       value: formData.value || 0,
       item_type: formData.item_type || 'misc',
+      equippable_slot: formData.equippable_slot || null,
     })
     if (error) console.error('Error:', error)
     else { setCreating(false); setFormData({}); fetchData() }
@@ -184,7 +185,7 @@ function ItemForm({ formData, setFormData, onSave, onCancel }: { formData: Parti
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div>
           <label className="block text-sm text-stone-400 mb-2">Weight (lbs)</label>
           <input type="number" min={0} step={0.1} value={formData.weight || 0} onChange={(e) => setFormData({ ...formData, weight: parseFloat(e.target.value) })}
@@ -194,6 +195,14 @@ function ItemForm({ formData, setFormData, onSave, onCancel }: { formData: Parti
           <label className="block text-sm text-stone-400 mb-2">Value (Gold)</label>
           <input type="number" min={0} value={formData.value || 0} onChange={(e) => setFormData({ ...formData, value: parseInt(e.target.value) })}
             className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none" />
+        </div>
+        <div>
+          <label className="block text-sm text-stone-400 mb-2">Equippable in slot</label>
+          <select value={formData.equippable_slot || ''} onChange={(e) => setFormData({ ...formData, equippable_slot: (e.target.value || null) as InventoryItem['equippable_slot'] })}
+            className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none">
+            <option value="">— not equippable —</option>
+            {EQUIPMENT_SLOTS.map(s => <option key={s} value={s} className="capitalize">{s.replace('_', ' ')}</option>)}
+          </select>
         </div>
       </div>
 

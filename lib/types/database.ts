@@ -71,6 +71,8 @@ export interface InventoryItem {
   weight: number
   value: number
   item_type: 'weapon' | 'armor' | 'consumable' | 'misc' | 'currency'
+  /** If set, the equipment slot this item can be equipped into. null = not equippable. */
+  equippable_slot: EquipmentItem['slot'] | null
   created_at: string
   updated_at: string
 }

@@ -99,8 +99,8 @@ const EQUIPMENT_SLOTS = [
   { id: "off_hand", label: "Off Hand", icon: "/icons/equipment/off-hand.png", position: "right-low" },
   { id: "legs", label: "Legs", icon: "/icons/equipment/legs.png", position: "bottom-left" },
   { id: "feet", label: "Feet", icon: "/icons/equipment/feet.png", position: "bottom" },
-  { id: "ring_1", label: "Ring", icon: "/icons/equipment/ring.png", position: "left-low" },
-  { id: "ring_2", label: "Ring", icon: "/icons/equipment/ring2.png", position: "bottom-right" },
+  { id: "ring1", label: "Ring", icon: "/icons/equipment/ring.png", position: "left-low" },
+  { id: "ring2", label: "Ring", icon: "/icons/equipment/ring2.png", position: "bottom-right" },
 ] as const
 
 export function RightColumn({
@@ -219,6 +219,7 @@ age: (selectedCharacter as any).age,
     quantity: item.quantity,
     iconUrl: item.icon_url,
     preset_icon: item.preset_icon,
+    equippable_slot: item.equippable_slot,
   }))
 
   // Transform equipped items
@@ -572,23 +573,23 @@ age: (selectedCharacter as any).age,
               {/* Ring 1 */}
               <div className="flex items-center gap-4">
                 <span className="text-base text-stone-400 font-medium w-24 text-right">Ring</span>
-                <EquipmentSlotButton 
-                  slot={EQUIPMENT_SLOTS[7]} 
-                  equipped={getEquippedItem("ring_1")}
-                  isSelected={selectedSlot === "ring_1"}
-                  onClick={() => setSelectedSlot(selectedSlot === "ring_1" ? null : "ring_1")}
+                <EquipmentSlotButton
+                  slot={EQUIPMENT_SLOTS[7]}
+                  equipped={getEquippedItem("ring1")}
+                  isSelected={selectedSlot === "ring1"}
+                  onClick={() => setSelectedSlot(selectedSlot === "ring1" ? null : "ring1")}
                   className="w-28 h-28"
                 />
               </div>
-              
+
               {/* Ring 2 */}
               <div className="flex items-center gap-4">
                 <span className="text-base text-stone-400 font-medium w-24 text-right">Ring</span>
-                <EquipmentSlotButton 
-                  slot={EQUIPMENT_SLOTS[8]} 
-                  equipped={getEquippedItem("ring_2")}
-                  isSelected={selectedSlot === "ring_2"}
-                  onClick={() => setSelectedSlot(selectedSlot === "ring_2" ? null : "ring_2")}
+                <EquipmentSlotButton
+                  slot={EQUIPMENT_SLOTS[8]}
+                  equipped={getEquippedItem("ring2")}
+                  isSelected={selectedSlot === "ring2"}
+                  onClick={() => setSelectedSlot(selectedSlot === "ring2" ? null : "ring2")}
                   className="w-28 h-28"
                 />
               </div>
@@ -607,7 +608,7 @@ age: (selectedCharacter as any).age,
                 {getEquippedItem(selectedSlot) && (
                   <button
                     onClick={() => {
-                      // Unequip logic here
+                      onUnequipItem?.(selectedSlot)
                       setSelectedSlot(null)
                     }}
                     className="w-full p-2 rounded border border-red-500/30 bg-red-500/10 text-red-400 text-sm hover:bg-red-500/20 transition-colors"
@@ -615,11 +616,11 @@ age: (selectedCharacter as any).age,
                     Unequip {getEquippedItem(selectedSlot)?.name}
                   </button>
                 )}
-                
-                {/* Available items */}
-                {inventory.filter(item => !characterEquipment.some(e => e.inventory_item_id === item.id)).length > 0 ? (
+
+                {/* Available items — only show items flagged equippable in this slot */}
+                {inventory.filter(item => item.equippable_slot === selectedSlot).length > 0 ? (
                   inventory
-                    .filter(item => !characterEquipment.some(e => e.inventory_item_id === item.id))
+                    .filter(item => item.equippable_slot === selectedSlot)
                     .map(item => (
                       <button
                         key={item.id}

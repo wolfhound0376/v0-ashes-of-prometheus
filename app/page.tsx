@@ -344,6 +344,35 @@ if (error) {
     fetchCharacterData()
   }, [fetchCharacterData])
 
+  // Subscribe to inventory + equipment changes for the active character so
+  // admin edits and Lich-awarded items push live without a page refresh.
+  useEffect(() => {
+    if (!selectedCharacterId) return
+
+    const inventoryChannel = supabase
+      .channel(`inventory-${selectedCharacterId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'inventory_items', filter: `character_id=eq.${selectedCharacterId}` },
+        () => { fetchCharacterData() }
+      )
+      .subscribe()
+
+    const equipmentChannel = supabase
+      .channel(`equipment-${selectedCharacterId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'equipment_items', filter: `character_id=eq.${selectedCharacterId}` },
+        () => { fetchCharacterData() }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(inventoryChannel)
+      supabase.removeChannel(equipmentChannel)
+    }
+  }, [selectedCharacterId, fetchCharacterData])
+
   // Get the currently selected character
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
 
@@ -423,7 +452,7 @@ if (error) {
           slot: item.slot,
           name: item.name,
           preset_icon: item.icon,
-          is_equipped: true,
+          equipped: true,
         }))
         await supabase.from('equipment_items').insert(equipmentToInsert)
       }
@@ -622,6 +651,38 @@ if (error) {
   characterInventory={characterInventory}
   characterEquipment={characterEquipment}
   loading={loadingCharacters}
+  onEquipItem={async (itemId, slot) => {
+    if (!selectedCharacterId) return
+    const item = characterInventory.find(i => i.id === itemId)
+    if (!item) return
+    // Replace anything already in this slot (one item per slot)
+    await supabase
+      .from('equipment_items')
+      .delete()
+      .eq('character_id', selectedCharacterId)
+      .eq('slot', slot)
+    const { error } = await supabase.from('equipment_items').insert({
+      character_id: selectedCharacterId,
+      slot,
+      name: item.name,
+      icon_url: item.icon_url,
+      equipped: true,
+      description: item.description,
+      stats_bonus: {},
+    })
+    if (error) console.error('[equip] insert failed:', error)
+    fetchCharacterData()
+  }}
+  onUnequipItem={async (slot) => {
+    if (!selectedCharacterId) return
+    const { error } = await supabase
+      .from('equipment_items')
+      .delete()
+      .eq('character_id', selectedCharacterId)
+      .eq('slot', slot)
+    if (error) console.error('[unequip] delete failed:', error)
+    fetchCharacterData()
+  }}
   onAddXP={async (characterId, amount, reason) => {
     // Add XP to character and record in history
     const { error } = await supabase.rpc('add_character_xp', {
