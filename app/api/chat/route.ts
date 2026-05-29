@@ -7,7 +7,9 @@ import * as fal from "@fal-ai/serverless-client"
 // and never route through the Vercel AI Gateway (which blocks Anthropic
 // models for free-tier users with a 403).
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  // This project provisions the key as ANTHROPIC_AUTH_TOKEN; fall back to the
+  // SDK's default ANTHROPIC_API_KEY name if that is set instead.
+  apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_AUTH_TOKEN,
 })
 
 // Configure Fal client
