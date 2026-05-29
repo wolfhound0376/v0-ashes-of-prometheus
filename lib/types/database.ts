@@ -42,6 +42,7 @@ export interface Character {
   weight_current: number
   weight_max: number
   is_player: boolean
+  character_type: 'player' | 'npc' | 'monster'
   created_at: string
   updated_at: string
 }

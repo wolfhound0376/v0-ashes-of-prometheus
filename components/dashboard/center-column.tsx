@@ -147,42 +147,42 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
           {activeEncounters.length > 0 ? (
             <div className="h-full flex gap-2 p-2 overflow-x-auto">
               {activeEncounters.map((encounter) => (
-                <div key={encounter.id} className="flex-shrink-0 w-28 flex flex-col items-center gap-1">
-                  <div className="w-20 h-20 rounded-full border-2 border-[#c9a868]/60 overflow-hidden bg-[#0a0908]">
-                    {encounter.portrait_url ? (
-                      <img
-                        src={encounter.portrait_url}
-                        alt={encounter.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
-                        <span className="text-2xl text-stone-600">?</span>
+                <div key={encounter.id} className="flex-shrink-0 relative overflow-hidden rounded-sm" style={{ width: activeEncounters.length === 1 ? '100%' : '140px' }}>
+                  {/* Portrait Image as Background */}
+                  {encounter.portrait_url ? (
+                    <img
+                      src={encounter.portrait_url}
+                      alt={encounter.name}
+                      className="absolute inset-0 w-full h-full object-cover object-top"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
+                      <span className="text-4xl text-stone-600">?</span>
+                    </div>
+                  )}
+                  {/* Gradient overlay for readability */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0908]/90 via-transparent to-transparent" />
+                  {/* Name & HP info overlay at bottom */}
+                  <div className="absolute bottom-0 left-0 right-0 p-1.5">
+                    <p className="text-xs text-[#c9a868] font-semibold text-center truncate drop-shadow">{encounter.name}</p>
+                    {encounter.hp_current != null && encounter.hp_max != null && encounter.hp_max > 0 && (
+                      <div className="mt-0.5">
+                        <div className="text-[9px] text-stone-400 text-center mb-0.5">{encounter.hp_current}/{encounter.hp_max} HP</div>
+                        <div className="h-1.5 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/60">
+                          <div
+                            className={cn(
+                              "h-full transition-all",
+                              encounter.hp_current <= 0 ? "bg-[#4a3a3a]" :
+                              encounter.hp_current <= encounter.hp_max * 0.3 ? "bg-[#c84a3a]" :
+                              encounter.hp_current <= encounter.hp_max * 0.6 ? "bg-[#d4a856]" :
+                              "bg-[#5ab85a]"
+                            )}
+                            style={{ width: `${Math.max(0, (encounter.hp_current / encounter.hp_max) * 100)}%` }}
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
-                  <span className="text-xs text-stone-300 font-semibold text-center truncate w-full">{encounter.name}</span>
-                  {encounter.description && (
-                    <span className="text-[10px] text-stone-500 text-center line-clamp-2">{encounter.description}</span>
-                  )}
-                  {/* HP Bar */}
-                  {encounter.hp_max !== undefined && encounter.hp_max !== null && encounter.hp_current !== undefined && encounter.hp_current !== null ? (
-                    <div className="w-full px-1">
-                      <div className="text-[9px] text-stone-400 text-center mb-0.5">{encounter.hp_current}/{encounter.hp_max} HP</div>
-                      <div className="h-1.5 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/60">
-                        <div
-                          className={cn(
-                            "h-full transition-all",
-                            encounter.hp_current <= 0 ? "bg-[#4a3a3a]" :
-                            encounter.hp_current <= encounter.hp_max * 0.3 ? "bg-[#c84a3a]" :
-                            encounter.hp_current <= encounter.hp_max * 0.6 ? "bg-[#d4a856]" :
-                            "bg-[#5ab85a]"
-                          )}
-                          style={{ width: `${Math.max(0, (encounter.hp_current / encounter.hp_max) * 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               ))}
             </div>

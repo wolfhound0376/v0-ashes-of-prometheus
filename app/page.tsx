@@ -205,7 +205,7 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('characters')
         .select('*')
-        .order('is_player', { ascending: false })
+        .order('character_type', { ascending: false })
         .order('name')
       
       if (error) {
@@ -432,6 +432,8 @@ if (error) {
         if (response.locationImageUrl) {
           setSceneImageUrl(response.locationImageUrl)
         }
+        // Refresh NPC encounters so the center column shows newly encountered NPCs
+        await fetchCharacterData()
       }
     }
   }

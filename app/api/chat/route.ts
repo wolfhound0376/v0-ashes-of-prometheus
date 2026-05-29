@@ -1,4 +1,5 @@
 import { generateText } from "ai"
+import { anthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
@@ -100,6 +101,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends.
 
 7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] when they lose/use items.
+
+8. ITEM AWARDS: When narrating the player finding, picking up, receiving, or being given an item, you MUST emit [ITEM_AWARD: name | qty | description | item_type | icon_hint] where icon_hint is a keyword for matching existing icons (e.g., "dagger", "potion", "key", "torch").
 
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
@@ -236,6 +239,10 @@ ITEMS:
   - Example: [ITEM_ADD: Rusty Dagger | 1 | weapon | A corroded blade found in the rubble]
 - [ITEM_REMOVE: name | quantity] — when player loses/uses/gives away an item
   - Example: [ITEM_REMOVE: Health Potion | 1]
+- [ITEM_AWARD: name | qty | description | item_type | icon_hint] — when narrating the player finding/receiving an item
+  - item_type: weapon, armor, consumable, misc, currency
+  - icon_hint: keyword for matching existing icons (dagger, potion, key, torch, etc.)
+  - Example: [ITEM_AWARD: Rusty Dagger | 1 | A corroded blade found in the rubble | weapon | dagger]
 
 HEALTH & CONDITIONS:
 - [DAMAGE: amount type] — when player takes damage. Include this EVERY time damage is dealt.
@@ -261,14 +268,40 @@ HEALTH & CONDITIONS:
   - Example: [NPC_ENCOUNTER: Gray Ooze | A pulsing mass of corrosive jelly | dark fantasy concept art of a gray ooze creature, dim cave lighting, menacing | CR=0.5 | XP=100 | type=Ooze]
   - [NPC_LEAVE: name] — when an NPC/monster dies, flees, or is no longer interacting
   - Example: [NPC_LEAVE: Gray Ooze]
-  - [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking)
-  - Use for introducing NPCs visually without adding to active encounters
+  - [NPC_IMAGE: description] — generates a portrait image only (no encounter tracking). Use ONLY for purely visual reveals with no interaction.
+
+  === CRITICAL NPC INTERACTION RULE ===
+  When a player TALKS TO or INTERACTS WITH any named NPC (not just sees them), you MUST emit [NPC_ENCOUNTER:] for that NPC. This is what shows their portrait card in the UI. Use [NPC_IMAGE:] is NOT enough for interactive NPCs.
+
+  MANDATORY: Any time the player speaks to, approaches, or directly interacts with a named NPC, emit:
+  [NPC_ENCOUNTER: Name | short description | portrait_prompt | CR=0 | XP=0 | type=Humanoid]
+
+  Use CR=0 XP=0 type=Humanoid for non-combat NPCs (prisoners, allies, merchants).
+
+  NPC portrait prompts for Out of the Abyss characters (use these EXACTLY as the portrait_prompt):
+    * Ilvara Mizzrym → dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting
+    * Jorlan Duskryn → dark fantasy portrait of a drow warrior, half his face horribly scarred and burned, silver-white hair, black leather armor, bitter haunted expression, dim cave torchlight
+    * Sarith Kzekarit → dark fantasy portrait of a drow soldier, unusually pale even for a drow, sunken eyes, grey-tinged skin showing signs of fungal illness, hollow gaze, Underdark setting
+    * Eldeth Feldrun → dark fantasy portrait of a stout shield dwarf woman, auburn braided hair, sturdy build, tattered prisoner clothes, proud defiant expression, Underdark cave background
+    * Jimjar → dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background
+    * Ront → dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression
+    * Stool → dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave
+    * Topsy → dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy
+    * Turvy → dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy
+    * Shuushar → dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background
+    * Derendil → dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave
+
+  Example for Ilvara interaction:
+  [NPC_ENCOUNTER: Ilvara Mizzrym | Mistress of Velkynvelve, priestess of Lolth | dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting | CR=0 | XP=0 | type=Humanoid]
+
+  === END NPC INTERACTION RULE ===
 
 LOCATION:
-- [UPDATE_LOCATION: name] — updates the current location in world state
+- [UPDATE_LOCATION: name] — updates the current location in world state. ALWAYS emit this when the player moves to a new area.
   - Example: [UPDATE_LOCATION: Underdark Tunnels]
-- [LOCATION_IMAGE: description] — generates a new location background image
-  - Example: [LOCATION_IMAGE: vast cavern with bioluminescent fungi]
+- [LOCATION_IMAGE: description] — generates a new location background image. ALWAYS emit this alongside UPDATE_LOCATION.
+  - Example: [LOCATION_IMAGE: vast cavern with bioluminescent fungi, dramatic shadows, glowing mushrooms]
+- CRITICAL: You MUST emit BOTH [UPDATE_LOCATION:] AND [LOCATION_IMAGE:] together every time the player enters a new location. Never emit one without the other.
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
@@ -285,7 +318,7 @@ EXPERIENCE POINTS:
 - Follow D&D 5E XP values based on CR`
 
   const result = await generateText({
-    model: "anthropic/claude-sonnet-4-20250514",
+    model: anthropic("claude-sonnet-4-6"),
     system: lichPrompt,
     messages: [
       ...conversationHistory,
@@ -376,6 +409,62 @@ EXPERIENCE POINTS:
             .update({ quantity: existing.quantity - quantity })
             .eq("id", existing.id)
         }
+      }
+    }
+    
+    // Handle ITEM_AWARD tags - [ITEM_AWARD: name | qty | description | item_type | icon_hint]
+    const awardMatches = rawText.matchAll(/\[ITEM_AWARD:\s*([^|]+)\|\s*(\d+)\s*\|\s*([^|]+)\|\s*(\w+)\s*\|\s*([^\]]+)\]/gi)
+    for (const match of awardMatches) {
+      const [, name, qty, description, itemType, iconHint] = match
+      const itemName = name.trim()
+      const quantity = parseInt(qty.trim()) || 1
+      const desc = description.trim()
+      const type = itemType.trim() || "misc"
+      const hint = iconHint.trim()
+      
+      console.log("[v0] ITEM_AWARD tag found:", itemName, "| qty:", quantity, "| icon_hint:", hint)
+      
+      // Try to find an existing icon from dashboard_assets
+      let iconUrl: string | null = null
+      const { data: existingIcon } = await supabase
+        .from("dashboard_assets")
+        .select("url")
+        .eq("asset_type", "item_icon")
+        .or(`name.ilike.%${hint}%,name.ilike.%${itemName}%`)
+        .limit(1)
+        .single()
+      
+      if (existingIcon?.url) {
+        iconUrl = existingIcon.url
+        console.log("[v0] Found existing icon for item:", iconUrl)
+      }
+      
+      // Check if item already exists in inventory
+      const { data: existing } = await supabase
+        .from("inventory_items")
+        .select("id, quantity")
+        .eq("character_id", playerCharacter.id)
+        .eq("name", itemName)
+        .single()
+      
+      if (existing) {
+        await supabase.from("inventory_items")
+          .update({ 
+            quantity: existing.quantity + quantity,
+            icon_url: iconUrl || undefined 
+          })
+          .eq("id", existing.id)
+        console.log("[v0] Updated existing item quantity:", itemName)
+      } else {
+        await supabase.from("inventory_items").insert({
+          character_id: playerCharacter.id,
+          name: itemName,
+          quantity,
+          description: desc,
+          item_type: type,
+          icon_url: iconUrl,
+        })
+        console.log("[v0] Created new inventory item:", itemName)
       }
     }
     
@@ -714,22 +803,39 @@ EXPERIENCE POINTS:
   const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
   if (locationImageMatch) {
     const locationDescription = locationImageMatch[1].trim()
-    console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
-    try {
-      const result = await fal.subscribe("fal-ai/flux/schnell", {
-        input: {
-          prompt: `Dark fantasy environment illustration: ${locationDescription}. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
-          image_size: "square_hd",
-          num_inference_steps: 4,
-          num_images: 1,
-        },
-      }) as any
-      if (result?.images && result.images.length > 0) {
-        locationImageUrl = result.images[0].url
-        console.log("[v0] Location image generated:", locationImageUrl)
+    console.log("[v0] Processing location image for:", locationDescription.substring(0, 60))
+    
+    // First, check if we have an existing environment with a background image that matches
+    const { data: existingEnv } = await supabase
+      .from("environments")
+      .select("background_image_url, name")
+      .ilike("name", `%${locationDescription.split(" ")[0]}%`)
+      .not("background_image_url", "is", null)
+      .limit(1)
+      .single()
+    
+    if (existingEnv?.background_image_url) {
+      locationImageUrl = existingEnv.background_image_url
+      console.log("[v0] Reusing existing environment image for:", existingEnv.name)
+    } else {
+      // No existing image found, generate with Fal
+      console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
+      try {
+        const result = await fal.subscribe("fal-ai/flux/schnell", {
+          input: {
+            prompt: `Dark fantasy environment illustration: ${locationDescription}. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
+            image_size: "square_hd",
+            num_inference_steps: 4,
+            num_images: 1,
+          },
+        }) as any
+        if (result?.images && result.images.length > 0) {
+          locationImageUrl = result.images[0].url
+          console.log("[v0] Location image generated:", locationImageUrl)
+        }
+      } catch (err) {
+        console.error("[v0] Location image generation failed:", err)
       }
-    } catch (err) {
-      console.error("[v0] Location image generation failed:", err)
     }
   } else {
     console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
@@ -743,27 +849,42 @@ EXPERIENCE POINTS:
     console.log("[v0] Updating campaign location to:", updatedLocation)
     console.log("[v0] Current locationImageUrl:", locationImageUrl ? "SET" : "EMPTY", "| updatedLocation:", updatedLocation)
     
-    // If no LOCATION_IMAGE tag was provided, auto-generate one based on the location name
+    // If no LOCATION_IMAGE tag was provided, check for existing image first, then auto-generate
     if (!locationImageUrl && updatedLocation) {
-      console.log("[v0] Auto-generating location image for:", updatedLocation)
-      try {
-        const result = await fal.subscribe("fal-ai/flux/schnell", {
-          input: {
-            prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
-            image_size: "square_hd",
-            num_inference_steps: 4,
-            num_images: 1,
-          },
-        }) as any
-        console.log("[v0] Fal result received:", result ? "YES" : "NO")
-        if (result?.images && result.images.length > 0) {
-          locationImageUrl = result.images[0].url
-          console.log("[v0] Auto-generated location image:", locationImageUrl)
-        } else {
-          console.log("[v0] Fal returned no images. Result:", JSON.stringify(result).substring(0, 200))
+      // First check if there's an existing environment with a background image for this location
+      const { data: existingEnvImage } = await supabase
+        .from("environments")
+        .select("background_image_url, name")
+        .ilike("name", `%${updatedLocation}%`)
+        .not("background_image_url", "is", null)
+        .limit(1)
+        .single()
+      
+      if (existingEnvImage?.background_image_url) {
+        locationImageUrl = existingEnvImage.background_image_url
+        console.log("[v0] Reusing existing environment image for:", existingEnvImage.name)
+      } else {
+        // No existing image found, generate with Fal
+        console.log("[v0] Auto-generating location image for:", updatedLocation)
+        try {
+          const result = await fal.subscribe("fal-ai/flux/schnell", {
+            input: {
+              prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
+              image_size: "square_hd",
+              num_inference_steps: 4,
+              num_images: 1,
+            },
+          }) as any
+          console.log("[v0] Fal result received:", result ? "YES" : "NO")
+          if (result?.images && result.images.length > 0) {
+            locationImageUrl = result.images[0].url
+            console.log("[v0] Auto-generated location image:", locationImageUrl)
+          } else {
+            console.log("[v0] Fal returned no images. Result:", JSON.stringify(result).substring(0, 200))
+          }
+        } catch (err) {
+          console.error("[v0] Auto-generation of location image failed:", err instanceof Error ? err.message : String(err))
         }
-      } catch (err) {
-        console.error("[v0] Auto-generation of location image failed:", err instanceof Error ? err.message : String(err))
       }
     } else {
       console.log("[v0] Skipping auto-generation: locationImageUrl exists or no updatedLocation")
@@ -815,6 +936,7 @@ EXPERIENCE POINTS:
   const responseText = rawText
     .replace(/\[ITEM_ADD:[^\]]+\]/gi, "")
     .replace(/\[ITEM_REMOVE:[^\]]+\]/gi, "")
+    .replace(/\[ITEM_AWARD:[^\]]+\]/gi, "")
     .replace(/\[NPC_IMAGE:[^\]]+\]/gi, "")
     .replace(/\[LOCATION_IMAGE:[^\]]+\]/gi, "")
     .replace(/\[UPDATE_LOCATION:[^\]]+\]/gi, "")
@@ -838,7 +960,118 @@ EXPERIENCE POINTS:
       console.error("[v0] Error inserting Malachar dialogue:", dialogueError)
     }
   }
-  
+
+  // === AUTO NPC DETECTION FROM QUOTED SPEECH ===
+  // If no NPC_ENCOUNTER tag was fired, scan the response for quoted dialogue
+  // and automatically detect which NPC is speaking, then generate their portrait.
+  const hadNpcEncounterTag = /\[NPC_ENCOUNTER:/i.test(rawText)
+  if (!hadNpcEncounterTag && playerCharacter) {
+    const hasQuotes = /[\u201C\u201D""]/.test(responseText) || /"[^"]{3,}"/.test(responseText)
+    if (hasQuotes) {
+      try {
+        const detectionPrompt = `You are analyzing a D&D dungeon master's narration from "Out of the Abyss".
+
+Narration:
+"""
+${responseText}
+"""
+
+Is a specific named NPC speaking the quoted dialogue? Known NPCs: Ilvara Mizzrym, Jorlan Duskryn, Sarith Kzekarit, Eldeth Feldrun, Jimjar, Ront, Stool, Topsy, Turvy, Shuushar, Derendil.
+
+Respond ONLY with valid JSON, no other text:
+- If a named NPC is speaking: {"npc": "Exact NPC Name", "description": "one sentence physical description"}
+- If speaker is unnamed or unclear: {"npc": null}`
+
+        const detectionResult = await generateText({
+          model: anthropic("claude-haiku-4-5-20251001"),
+          messages: [{ role: "user", content: detectionPrompt }],
+        })
+
+        const parsed = JSON.parse(detectionResult.text.trim())
+
+        if (parsed.npc) {
+          const npcName: string = parsed.npc
+          console.log("[v0] Auto-detected speaking NPC:", npcName)
+
+          const portraitPrompts: Record<string, string> = {
+            "Ilvara Mizzrym": "dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting",
+            "Jorlan Duskryn": "dark fantasy portrait of a drow warrior, half his face horribly scarred and burned, silver-white hair, black leather armor, bitter haunted expression, dim cave torchlight",
+            "Sarith Kzekarit": "dark fantasy portrait of a drow soldier, unusually pale even for a drow, sunken eyes, grey-tinged skin showing signs of fungal illness, hollow gaze, Underdark setting",
+            "Eldeth Feldrun": "dark fantasy portrait of a stout shield dwarf woman, auburn braided hair, sturdy build, tattered prisoner clothes, proud defiant expression, Underdark cave background",
+            "Jimjar": "dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background",
+            "Ront": "dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression",
+            "Stool": "dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave",
+            "Topsy": "dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy",
+            "Turvy": "dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy",
+            "Shuushar": "dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background",
+            "Derendil": "dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave",
+          }
+
+          const portraitPrompt = portraitPrompts[npcName] ||
+            `dark fantasy portrait of ${parsed.description || npcName}, dramatic Underdark lighting, detailed RPG character art`
+
+          // Generate portrait via Fal
+          let autoPortraitUrl: string | null = null
+          try {
+            const result = await fal.subscribe("fal-ai/flux/schnell", {
+              input: {
+                prompt: `Dark fantasy portrait: ${portraitPrompt}. Style: detailed RPG character art, dramatic fantasy lighting, painterly, professional illustration.`,
+                image_size: "square_hd",
+                num_inference_steps: 4,
+                num_images: 1,
+              },
+            }) as any
+            if (result?.images?.[0]?.url) {
+              autoPortraitUrl = result.images[0].url
+              console.log("[v0] Auto-generated portrait for:", npcName)
+            }
+          } catch (err) {
+            console.error("[v0] Auto portrait generation failed:", err)
+          }
+
+          // Upsert NPC encounter in Supabase
+          const { data: existingNpc } = await supabase
+            .from("npc_encounters")
+            .select("id")
+            .eq("name", npcName)
+            .eq("character_id", playerCharacter.id)
+            .single()
+
+          if (existingNpc) {
+            await supabase
+              .from("npc_encounters")
+              .update({
+                is_active: true,
+                portrait_url: autoPortraitUrl || undefined,
+                description: parsed.description || undefined,
+              })
+              .eq("id", existingNpc.id)
+          } else {
+            await supabase.from("npc_encounters").insert({
+              character_id: playerCharacter.id,
+              name: npcName,
+              description: parsed.description || `${npcName} is speaking`,
+              portrait_url: autoPortraitUrl,
+              is_active: true,
+              hp_max: null,
+              hp_current: null,
+              challenge_rating: 0,
+              xp_value: 0,
+              monster_type: "Humanoid",
+            })
+          }
+
+          if (autoPortraitUrl) {
+            npcImageUrl = autoPortraitUrl
+          }
+        }
+      } catch (err) {
+        console.error("[v0] NPC auto-detection failed:", err)
+      }
+    }
+  }
+  // === END AUTO NPC DETECTION ===
+
   return Response.json({ 
     text: responseText || "", 
     npcImageUrl, 
