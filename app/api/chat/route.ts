@@ -1,12 +1,12 @@
-import { generateText } from "ai"
-import { createAnthropic } from "@ai-sdk/anthropic"
+import Anthropic from "@anthropic-ai/sdk"
 import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import * as fal from "@fal-ai/serverless-client"
-// Force direct calls to api.anthropic.com using ANTHROPIC_API_KEY,
-// bypassing the Vercel AI Gateway free-tier model block.
-const anthropic = createAnthropic({
+// Use the official Anthropic SDK so requests hit api.anthropic.com directly
+// and never route through the Vercel AI Gateway (which blocks Anthropic
+// models for free-tier users with a 403).
+const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   const conversationHistory = (recentDialogue || [])
     .reverse()
     .map(d => ({
-      role: d.speaker === "Malachar" ? "assistant" : "user" as const,
+      role: (d.speaker === "Malachar" ? "assistant" : "user") as "assistant" | "user",
       content: `${d.speaker}: ${d.text}`
     }))
   
@@ -322,16 +322,18 @@ EXPERIENCE POINTS:
 - When players defeat monsters, complete quests, or achieve milestones, announce XP awards narratively
 - Follow D&D 5E XP values based on CR`
 
-  const result = await generateText({
-    model: anthropic("claude-sonnet-4-6"),
+  const result = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4096,
     system: lichPrompt,
     messages: [
       ...conversationHistory,
-      { role: "user", content: message }
+      { role: "user" as const, content: message }
     ],
   })
-  
-  const rawText = result.text || ""
+
+  const firstBlock = result.content[0]
+  const rawText = (firstBlock && firstBlock.type === "text") ? firstBlock.text : ""
   
   // === WARNING LOG: Detect when Malachar describes state changes without tags ===
   const hasDamageTag = /\[DAMAGE:/i.test(rawText)
@@ -429,20 +431,35 @@ EXPERIENCE POINTS:
       
       console.log("[v0] ITEM_AWARD tag found:", itemName, "| qty:", quantity, "| icon_hint:", hint)
       
-      // Try to find an existing icon from dashboard_assets
+      // Try to find an existing icon from dashboard_assets.
+      // Assets store their image at `file_url` and item icons use asset_type "icon".
+      // Search by the icon_hint first, then by the item name.
       let iconUrl: string | null = null
       const { data: existingIcon } = await supabase
         .from("dashboard_assets")
-        .select("url")
-        .eq("asset_type", "item_icon")
+        .select("file_url")
+        .eq("asset_type", "icon")
         .or(`name.ilike.%${hint}%,name.ilike.%${itemName}%`)
+        .not("file_url", "is", null)
         .limit(1)
-        .single()
+        .maybeSingle()
       
-      if (existingIcon?.url) {
-        iconUrl = existingIcon.url
+      if (existingIcon?.file_url) {
+        iconUrl = existingIcon.file_url
         console.log("[v0] Found existing icon for item:", iconUrl)
       }
+
+      // Fall back to a preset icon derived from the item_type when no custom
+      // asset matches, so the item still renders a meaningful glyph.
+      const ITEM_TYPE_PRESET: Record<string, string> = {
+        weapon: "backpack",
+        armor: "robe",
+        consumable: "potion",
+        currency: "gold",
+        misc: "backpack",
+      }
+      const presetIcon = ITEM_TYPE_PRESET[type] || type
+      const iconType: "custom" | "preset" = iconUrl ? "custom" : "preset"
       
       // Check if item already exists in inventory
       const { data: existing } = await supabase
@@ -450,13 +467,13 @@ EXPERIENCE POINTS:
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
         .eq("name", itemName)
-        .single()
+        .maybeSingle()
       
       if (existing) {
         await supabase.from("inventory_items")
           .update({ 
             quantity: existing.quantity + quantity,
-            icon_url: iconUrl || undefined 
+            ...(iconUrl ? { icon_url: iconUrl, icon_type: "custom" } : {}),
           })
           .eq("id", existing.id)
         console.log("[v0] Updated existing item quantity:", itemName)
@@ -468,8 +485,10 @@ EXPERIENCE POINTS:
           description: desc,
           item_type: type,
           icon_url: iconUrl,
+          icon_type: iconType,
+          preset_icon: iconUrl ? null : presetIcon,
         })
-        console.log("[v0] Created new inventory item:", itemName)
+        console.log("[v0] Created new inventory item:", itemName, "| icon_type:", iconType)
       }
     }
     
@@ -803,6 +822,14 @@ EXPERIENCE POINTS:
     }
   }
 
+  // Parse the new location name up-front so every image path can match an
+  // existing environment by NAME (e.g. reuse "Scene_1_Velkynvelve (slave pen)").
+  let updatedLocation: string | null = null
+  const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
+  if (updateLocationMatch) {
+    updatedLocation = updateLocationMatch[1].trim()
+  }
+
   // Parse LOCATION_IMAGE tag and generate scene image using Fal
   let locationImageUrl: string | null = null
   const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
@@ -810,14 +837,16 @@ EXPERIENCE POINTS:
     const locationDescription = locationImageMatch[1].trim()
     console.log("[v0] Processing location image for:", locationDescription.substring(0, 60))
     
-    // First, check if we have an existing environment with a background image that matches
+    // First, check if we have an existing environment with a background image
+    // that matches the location NAME (fall back to the first descriptive word).
+    const envSearchTerm = updatedLocation || locationDescription.split(" ")[0]
     const { data: existingEnv } = await supabase
       .from("environments")
       .select("background_image_url, name")
-      .ilike("name", `%${locationDescription.split(" ")[0]}%`)
+      .ilike("name", `%${envSearchTerm}%`)
       .not("background_image_url", "is", null)
       .limit(1)
-      .single()
+      .maybeSingle()
     
     if (existingEnv?.background_image_url) {
       locationImageUrl = existingEnv.background_image_url
@@ -846,11 +875,8 @@ EXPERIENCE POINTS:
     console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
   }
 
-  // Parse UPDATE_LOCATION tag to update the campaign location
-  let updatedLocation: string | null = null
-  const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
-  if (updateLocationMatch) {
-    updatedLocation = updateLocationMatch[1].trim()
+  // Apply the parsed UPDATE_LOCATION tag to the campaign location
+  if (updatedLocation) {
     console.log("[v0] Updating campaign location to:", updatedLocation)
     console.log("[v0] Current locationImageUrl:", locationImageUrl ? "SET" : "EMPTY", "| updatedLocation:", updatedLocation)
     
@@ -863,7 +889,7 @@ EXPERIENCE POINTS:
         .ilike("name", `%${updatedLocation}%`)
         .not("background_image_url", "is", null)
         .limit(1)
-        .single()
+        .maybeSingle()
       
       if (existingEnvImage?.background_image_url) {
         locationImageUrl = existingEnvImage.background_image_url
@@ -987,12 +1013,15 @@ Respond ONLY with valid JSON, no other text:
 - If a named NPC is speaking: {"npc": "Exact NPC Name", "description": "one sentence physical description"}
 - If speaker is unnamed or unclear: {"npc": null}`
 
-        const detectionResult = await generateText({
-          model: anthropic("claude-haiku-4-5-20251001"),
-          messages: [{ role: "user", content: detectionPrompt }],
+        const detectionResult = await anthropic.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 256,
+          messages: [{ role: "user" as const, content: detectionPrompt }],
         })
 
-        const parsed = JSON.parse(detectionResult.text.trim())
+        const detectionBlock = detectionResult.content[0]
+        const detectionText = (detectionBlock && detectionBlock.type === "text") ? detectionBlock.text : ""
+        const parsed = JSON.parse(detectionText.trim())
 
         if (parsed.npc) {
           const npcName: string = parsed.npc
