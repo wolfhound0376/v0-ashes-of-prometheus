@@ -772,11 +772,11 @@ EXPERIENCE POINTS:
       // Names don't always match the module exactly (e.g. "Turvey" vs "Turvy",
       // trailing spaces, "Shuushar the Awakened" vs "Shuushar"), so try
       // exact -> prefix -> contains and take the first hit.
-      let npcCharacter: { portrait_image_url: string | null; avatar_image_url: string | null } | null = null
+      let npcCharacter: { id: string; name: string; portrait_image_url: string | null; avatar_image_url: string | null } | null = null
       for (const pattern of [name, `${name}%`, `%${name}%`]) {
         const { data } = await supabase
           .from("characters")
-          .select("portrait_image_url, avatar_image_url")
+          .select("id, name, portrait_image_url, avatar_image_url")
           .eq("is_player", false)
           .ilike("name", pattern)
           .limit(1)
@@ -786,6 +786,27 @@ EXPERIENCE POINTS:
           break
         }
       }
+
+      // Final fallback: the encounter name is LONGER than the stored name
+      // (e.g. spoken "Prince Derendil" vs stored "Derendil"). Match when the
+      // stored character name is contained within the encounter name.
+      if (!npcCharacter) {
+        const { data: candidates } = await supabase
+          .from("characters")
+          .select("id, name, portrait_image_url, avatar_image_url")
+          .eq("is_player", false)
+        const lowerName = name.toLowerCase()
+        const found = (candidates || []).find(c => {
+          const stored = (c.name || "").trim().toLowerCase()
+          return stored.length > 0 && lowerName.includes(stored)
+        })
+        if (found) {
+          npcCharacter = found
+        }
+      }
+
+      // If a character matched, collapse every spoken variant to their proper name.
+      const canonicalName = npcCharacter ? npcCharacter.name.trim() : name
 
       const uploadedPortrait = npcCharacter?.portrait_image_url || npcCharacter?.avatar_image_url || null
 
@@ -825,11 +846,12 @@ EXPERIENCE POINTS:
       })
       console.log("[v0] Beat: npc_reveal")
       
-      // Check if this NPC already exists (might be returning)
+      // Check if this NPC already exists (might be returning).
+      // Use canonicalName so spoken variants collapse to ONE encounter card.
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
         .select("id")
-        .eq("name", name)
+        .eq("name", canonicalName)
         .eq("character_id", playerCharacter.id)
         .single()
       
@@ -843,12 +865,12 @@ EXPERIENCE POINTS:
             portrait_url: portraitUrl || undefined 
           })
           .eq("id", existingNpc.id)
-        console.log("[v0] NPC reactivated:", name)
+        console.log("[v0] NPC reactivated:", canonicalName)
       } else {
         // Insert new NPC encounter
         const { error } = await supabase.from("npc_encounters").insert({
           character_id: playerCharacter.id,
-          name,
+          name: canonicalName,
           description: desc,
           portrait_url: portraitUrl,
           challenge_rating: cr,
@@ -861,7 +883,7 @@ EXPERIENCE POINTS:
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
         } else {
-          console.log("[v0] NPC encounter created:", name, "| XP:", xp)
+          console.log("[v0] NPC encounter created:", canonicalName, "| XP:", xp)
         }
       }
     }
