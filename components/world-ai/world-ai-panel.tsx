@@ -28,6 +28,7 @@ type ViewTab = "chat" | "maps" | "lore" | "library"
 
 interface WorldAIPanelProps {
   campaign: Campaign
+  activeCharacterId?: string | null
   onCampaignChange?: (campaign: Campaign) => void
   onLocationChange?: (location: string) => void
   className?: string
@@ -35,6 +36,7 @@ interface WorldAIPanelProps {
 
 export function WorldAIPanel({ 
   campaign,
+  activeCharacterId,
   onCampaignChange, 
   onLocationChange, 
   className 
@@ -174,7 +176,7 @@ export function WorldAIPanel({
     
     try {
       // Send to the lich - API handles context and saves to Supabase
-      const response = await sendMessage(text)
+      const response = await sendMessage(text, activeCharacterId)
       
       // Add assistant response to local messages
       if (response.text) {

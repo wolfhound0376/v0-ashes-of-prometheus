@@ -570,6 +570,7 @@ if (error) {
           
           <WorldAIPanel 
             campaign={activeCampaign}
+            activeCharacterId={selectedCharacterId}
             onCampaignChange={handleCampaignChange}
             onLocationChange={(location) => {
               // Update environment data when location changes in World AI
