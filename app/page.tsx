@@ -419,8 +419,8 @@ if (error) {
       const playerName = selectedCharacter?.name || "Player"
       setDialogue(prev => [...prev, { speaker: playerName, text }])
       
-      // Send to the Lich
-      const response = await sendToLich(text)
+      // Send to the Lich (pass the selected character so server writes target it)
+      const response = await sendToLich(text, selectedCharacterId)
       if (response?.text) {
         // Optimistically add Malachar's response
         setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
@@ -570,6 +570,7 @@ if (error) {
           
           <WorldAIPanel 
             campaign={activeCampaign}
+            activeCharacterId={selectedCharacterId}
             onCampaignChange={handleCampaignChange}
             onLocationChange={(location) => {
               // Update environment data when location changes in World AI
@@ -617,8 +618,8 @@ if (error) {
             const playerName = selectedCharacter?.name || "Player"
             setDialogue(prev => [...prev, { speaker: playerName, text: message }])
             
-            // Send to Lich
-            const response = await sendToLich(message)
+            // Send to Lich (pass the selected character so server writes target it)
+            const response = await sendToLich(message, selectedCharacterId)
             if (response) {
               // Optimistically add Malachar's response to dialogue
               if (response.text) {

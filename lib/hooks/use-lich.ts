@@ -14,6 +14,7 @@ export function useLich(campaignId: string = "abyss") {
 
   const sendMessage = useCallback(async (
     message: string,
+    characterId?: string | null,
   ): Promise<LichResponse> => {
     setIsLoading(true)
 
@@ -26,7 +27,7 @@ export function useLich(campaignId: string = "abyss") {
           response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, campaignId }),
+            body: JSON.stringify({ message, campaignId, characterId }),
           })
           
           if (response.ok) break
