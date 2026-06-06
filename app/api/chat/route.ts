@@ -646,23 +646,51 @@ EXPERIENCE POINTS:
       
       console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
       
-      // Generate portrait image via Fal
       let portraitUrl: string | null = null
-      try {
-        const result = await fal.subscribe("fal-ai/flux/schnell", {
-          input: {
-            prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
-            image_size: "square_hd",
-            num_inference_steps: 4,
-            num_images: 1,
-          },
-        }) as any
-        if (result?.images && result.images.length > 0) {
-          portraitUrl = result.images[0].url
-          console.log("[v0] NPC portrait generated:", portraitUrl)
+
+      // First, try to reuse an uploaded portrait from a matching NPC character.
+      // Names don't always match the module exactly (e.g. "Turvey" vs "Turvy",
+      // trailing spaces, "Shuushar the Awakened" vs "Shuushar"), so try
+      // exact -> prefix -> contains and take the first hit.
+      let npcCharacter: { portrait_image_url: string | null; avatar_image_url: string | null } | null = null
+      for (const pattern of [name, `${name}%`, `%${name}%`]) {
+        const { data } = await supabase
+          .from("characters")
+          .select("portrait_image_url, avatar_image_url")
+          .eq("is_player", false)
+          .ilike("name", pattern)
+          .limit(1)
+          .maybeSingle()
+        if (data) {
+          npcCharacter = data
+          break
         }
-      } catch (err) {
-        console.error("[v0] NPC portrait generation failed:", err)
+      }
+
+      const uploadedPortrait = npcCharacter?.portrait_image_url || npcCharacter?.avatar_image_url || null
+
+      if (uploadedPortrait) {
+        // Reuse the uploaded art and skip Fal generation entirely.
+        portraitUrl = uploadedPortrait
+        console.log("[v0] Reusing uploaded NPC portrait for:", name)
+      } else {
+        // No uploaded image found - generate a portrait via Fal as before.
+        try {
+          const result = await fal.subscribe("fal-ai/flux/schnell", {
+            input: {
+              prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
+              image_size: "square_hd",
+              num_inference_steps: 4,
+              num_images: 1,
+            },
+          }) as any
+          if (result?.images && result.images.length > 0) {
+            portraitUrl = result.images[0].url
+            console.log("[v0] NPC portrait generated:", portraitUrl)
+          }
+        } catch (err) {
+          console.error("[v0] NPC portrait generation failed:", err)
+        }
       }
       
       // Check if this NPC already exists (might be returning)
