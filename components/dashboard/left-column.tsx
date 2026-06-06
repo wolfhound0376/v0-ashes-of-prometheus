@@ -26,6 +26,7 @@ import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { Sun, MessageSquare } from "lucide-react"
 
 interface DialogueEntry {
+  id?: string
   speaker: string
   text: string
 }
@@ -265,7 +266,7 @@ export function LeftColumn({
       <FantasyPanel title="Dialogue Log" className="flex-1 min-h-0 flex flex-col">
         <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-[#3d3428] scrollbar-track-transparent">
           {dialogue.map((entry, index) => (
-            <div key={index} className="text-sm">
+            <div key={entry.id ?? index} className="text-sm">
               <span
                 className={`font-serif font-semibold ${
                   entry.speaker === "You" ? "text-[#7aa8c8]" : 
