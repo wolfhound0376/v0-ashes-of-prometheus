@@ -32,7 +32,7 @@ export default function DashboardPage() {
 
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
-  const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
+  const [dialogue, setDialogue] = useState<{ id?: string; speaker: string; text: string }[]>([])
   const [npcImageUrl, setNpcImageUrl] = useState<string | null>(null)
   const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
   // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
@@ -244,14 +244,14 @@ export default function DashboardPage() {
     async function fetchDialogue() {
       const { data, error } = await supabase
         .from('dialogue')
-        .select('speaker, text')
+        .select('id, speaker, text')
         .order('created_at', { ascending: true })
         .limit(50)
       
 if (error) {
         console.error('Error fetching dialogue:', error)
       } else if (data) {
-        setDialogue(data)
+        setDialogue(data.map(row => ({ id: row.id, speaker: row.speaker, text: row.text })))
       }
     }
     fetchDialogue()
@@ -263,8 +263,8 @@ if (error) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'dialogue' },
         (payload) => {
-          const newEntry = payload.new as { speaker: string; text: string }
-          setDialogue(prev => [...prev, { speaker: newEntry.speaker, text: newEntry.text }])
+          const newEntry = payload.new as { id: string; speaker: string; text: string }
+          setDialogue(prev => prev.some(m => m.id && m.id === newEntry.id) ? prev : [...prev, { id: newEntry.id, speaker: newEntry.speaker, text: newEntry.text }])
         }
       )
       .subscribe()
@@ -415,16 +415,10 @@ if (error) {
       const text = dialogueInput.trim()
       setDialogueInput("")
       
-      // Optimistically add player message to dialogue immediately
-      const playerName = selectedCharacter?.name || "Player"
-      setDialogue(prev => [...prev, { speaker: playerName, text }])
-      
       // Send to the Lich (pass the selected character so server writes target it)
+      // Realtime subscription is the single source of truth for dialogue rendering.
       const response = await sendToLich(text, selectedCharacterId)
       if (response?.text) {
-        // Optimistically add Malachar's response
-        setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
-        
         // Update images if returned
         if (response.npcImageUrl) {
           setNpcImageUrl(response.npcImageUrl)
@@ -614,17 +608,10 @@ if (error) {
             sceneImageUrl={npcImageUrl || undefined}
             npcEncounters={npcEncounters}
           onSendToLich={async (message) => {
-            // Optimistically add player message to dialogue immediately
-            const playerName = selectedCharacter?.name || "Player"
-            setDialogue(prev => [...prev, { speaker: playerName, text: message }])
-            
             // Send to Lich (pass the selected character so server writes target it)
+            // Realtime subscription is the single source of truth for dialogue rendering.
             const response = await sendToLich(message, selectedCharacterId)
             if (response) {
-              // Optimistically add Malachar's response to dialogue
-              if (response.text) {
-                setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
-              }
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {
                 setNpcImageUrl(response.npcImageUrl)
