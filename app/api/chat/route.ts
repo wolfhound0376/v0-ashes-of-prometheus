@@ -858,12 +858,12 @@ EXPERIENCE POINTS:
     console.log("[v0] Processing location image for:", locationDescription.substring(0, 60))
     
     // First, check if we have an existing environment with a background image
-    // that matches the location NAME (fall back to the first descriptive word).
-    const envSearchTerm = updatedLocation || locationDescription.split(" ")[0]
+    // that matches the location NAME (exact, case-insensitive, trimmed).
+    const envSearchTerm = (updatedLocation || locationDescription.split(" ")[0]).trim()
     const { data: existingEnv } = await supabase
       .from("environments")
       .select("background_image_url, name")
-      .ilike("name", `%${envSearchTerm}%`)
+      .ilike("name", envSearchTerm)
       .not("background_image_url", "is", null)
       .limit(1)
       .maybeSingle()
@@ -902,11 +902,12 @@ EXPERIENCE POINTS:
     
     // If no LOCATION_IMAGE tag was provided, check for existing image first, then auto-generate
     if (!locationImageUrl && updatedLocation) {
-      // First check if there's an existing environment with a background image for this location
+      // First check if there's an existing environment with a background image
+      // for this location (exact, case-insensitive, trimmed).
       const { data: existingEnvImage } = await supabase
         .from("environments")
         .select("background_image_url, name")
-        .ilike("name", `%${updatedLocation}%`)
+        .ilike("name", updatedLocation.trim())
         .not("background_image_url", "is", null)
         .limit(1)
         .maybeSingle()
@@ -942,19 +943,26 @@ EXPERIENCE POINTS:
     }
     
     try {
-      // Create or update the environment record with the new location and image
+      // Create or update the environment record with the new location and image.
+      // Match existing rows by name (exact, case-insensitive, trimmed) so we
+      // never create duplicate rows for the same location.
       const { data: existingEnv } = await supabase
         .from("environments")
         .select("id")
-        .eq("name", updatedLocation)
-        .single()
+        .ilike("name", updatedLocation.trim())
+        .limit(1)
+        .maybeSingle()
       
       if (existingEnv) {
-        // Location already exists - if we have an image (either from tag or auto-generated), update it
+        // Location already exists - if we have an image (either from tag or auto-generated), update it.
+        // Always bump updated_at so the dashboard (newest updated_at) surfaces this location.
         if (locationImageUrl) {
           const { error: updateErr } = await supabase
             .from("environments")
-            .update({ background_image_url: locationImageUrl })
+            .update({
+              background_image_url: locationImageUrl,
+              updated_at: new Date().toISOString(),
+            })
             .eq("id", existingEnv.id)
           if (updateErr) {
             console.error("[v0] Error updating environment image:", updateErr)
@@ -962,15 +970,25 @@ EXPERIENCE POINTS:
             console.log("[v0] Updated existing environment with image URL:", locationImageUrl.substring(0, 80))
           }
         } else {
-          console.log("[v0] No image URL to update for existing environment")
+          // No image, but still mark this location as the most recently visited.
+          const { error: touchErr } = await supabase
+            .from("environments")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", existingEnv.id)
+          if (touchErr) {
+            console.error("[v0] Error touching environment updated_at:", touchErr)
+          } else {
+            console.log("[v0] No image URL; bumped updated_at for existing environment")
+          }
         }
       } else {
         // Create new location environment with the image
         const { error: insertErr } = await supabase.from("environments").insert({
-          name: updatedLocation,
+          name: updatedLocation.trim(),
           time_of_day: "Unknown",
           description: `The party has arrived at ${updatedLocation}.`,
           background_image_url: locationImageUrl || undefined,
+          updated_at: new Date().toISOString(),
         })
         if (insertErr) {
           console.error("[v0] Error creating environment:", insertErr)
