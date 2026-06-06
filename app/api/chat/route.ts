@@ -22,17 +22,35 @@ if (!process.env.FAL_KEY) {
 }
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss" } = await req.json()
+  const { message, campaignId = "abyss", characterId } = await req.json()
   
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
   
-  // Get the player character
-  const { data: playerCharacter } = await supabase
-    .from("characters")
-    .select("id, name")
-    .eq("is_player", true)
-    .single()
+  // Resolve the active player character.
+  // If the frontend passed the currently selected character id, use it.
+  // Otherwise fall back to the oldest player. Never use .single() here, since
+  // multiple rows can have is_player = true and .single() throws (which
+  // silently skipped every item/damage/heal/condition write).
+  let playerCharacter: { id: string; name: string } | null = null
+  if (characterId) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name")
+      .eq("id", characterId)
+      .maybeSingle()
+    playerCharacter = data
+  }
+  if (!playerCharacter) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name")
+      .eq("is_player", true)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    playerCharacter = data
+  }
   
   // Persist player's message to the dialogue table FIRST
   const playerName = playerCharacter?.name || "Player"
