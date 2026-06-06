@@ -52,6 +52,59 @@ export async function POST(req: Request) {
     playerCharacter = data
   }
   
+  // === HIGHLIGHT BEAT CAPTURE: resolve the active session for this campaign ===
+  // Never block chat if this fails - sessionId just stays null.
+  let sessionId: string | null = null
+  try {
+    const { data: activeSession } = await supabase
+      .from("sessions")
+      .select("id")
+      .eq("campaign_id", campaignId)
+      .eq("status", "active")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (activeSession?.id) {
+      sessionId = activeSession.id
+    } else {
+      const { data: newSession } = await supabase
+        .from("sessions")
+        .insert({
+          campaign_id: campaignId,
+          title: `Session ${new Date().toISOString().slice(0, 10)}`,
+          status: "active",
+        })
+        .select("id")
+        .maybeSingle()
+      sessionId = newSession?.id ?? null
+    }
+    console.log("[v0] Active session resolved:", sessionId)
+  } catch (e) {
+    console.error("[v0] Active session resolution failed", e)
+    sessionId = null
+  }
+
+  // Record a highlight "beat" for the current session. Wrapped so a failure
+  // never breaks the chat response.
+  async function recordBeat(beat: {
+    beat_type: string
+    priority: number
+    character_id?: string | null
+    subject?: string | null
+    summary?: string | null
+    dice_value?: number | null
+    image_ref?: string | null
+    narration?: string | null
+    shot_recipe?: string | null
+  }) {
+    if (!sessionId) return
+    try {
+      await supabase.from("session_beats").insert({ session_id: sessionId, ...beat })
+    } catch (e) {
+      console.error("[v0] recordBeat failed", e)
+    }
+  }
+  
   // Persist player's message to the dialogue table FIRST
   const playerName = playerCharacter?.name || "Player"
   const { error: playerDialogueError } = await supabase.from("dialogue").insert({
@@ -61,6 +114,37 @@ export async function POST(req: Request) {
   })
   if (playerDialogueError) {
     console.error("[v0] Error inserting player dialogue:", playerDialogueError)
+  }
+  
+  // === DICE CRITS: capture a natural 20 / natural 1 on a d20 from the player message ===
+  try {
+    if (/1d20/i.test(message)) {
+      const totalMatch = message.match(/=\s*\*\*\s*(\d+)\s*\*\*/)
+      const total = totalMatch ? parseInt(totalMatch[1]) : null
+      if (total === 20) {
+        await recordBeat({
+          beat_type: "crit_success",
+          priority: 8,
+          character_id: playerCharacter?.id,
+          summary: `${playerCharacter?.name || "A hero"} rolled a natural 20`,
+          dice_value: 20,
+          shot_recipe: "reaction",
+        })
+        console.log("[v0] Beat: crit_success")
+      } else if (total === 1) {
+        await recordBeat({
+          beat_type: "crit_fail",
+          priority: 8,
+          character_id: playerCharacter?.id,
+          summary: `${playerCharacter?.name || "A hero"} rolled a natural 1`,
+          dice_value: 1,
+          shot_recipe: "reaction",
+        })
+        console.log("[v0] Beat: crit_fail")
+      }
+    }
+  } catch (e) {
+    console.error("[v0] crit beat detection failed", e)
   }
   
   // Get recent dialogue history for context (last 20 messages)
@@ -510,6 +594,18 @@ EXPERIENCE POINTS:
         })
         console.log("[v0] Created new inventory item:", itemName, "| icon_type:", iconType)
       }
+
+      // === BEAT: item award ===
+      await recordBeat({
+        beat_type: "item_award",
+        priority: 5,
+        character_id: playerCharacter?.id,
+        subject: itemName,
+        summary: `${playerCharacter?.name || "The hero"} acquires ${itemName}`,
+        image_ref: iconUrl || null,
+        shot_recipe: "reaction",
+      })
+      console.log("[v0] Beat: item_award")
     }
     
     // Handle DAMAGE tags - [DAMAGE: amount type]
@@ -523,7 +619,7 @@ EXPERIENCE POINTS:
         // Get current HP and apply damage
         const { data: char } = await supabase
           .from("characters")
-          .select("hp_current")
+          .select("hp_current, hp_max")
           .eq("id", playerCharacter.id)
           .single()
         
@@ -538,6 +634,30 @@ EXPERIENCE POINTS:
             console.error("[v0] Error applying damage:", error)
           } else {
             console.log("[v0] HP updated:", char.hp_current, "->", newHp)
+          }
+
+          // === BEATS: big hit and near-death ===
+          if (amount >= 8) {
+            await recordBeat({
+              beat_type: "big_hit",
+              priority: 6,
+              character_id: playerCharacter?.id,
+              subject: damageType,
+              summary: `${playerCharacter?.name || "The hero"} takes ${amount} ${damageType || ""} damage`,
+              shot_recipe: "impact",
+            })
+            console.log("[v0] Beat: big_hit")
+          }
+          const hpMax = char.hp_max || 0
+          if (hpMax > 0 && newHp <= hpMax * 0.25) {
+            await recordBeat({
+              beat_type: "near_death",
+              priority: 8,
+              character_id: playerCharacter?.id,
+              summary: `${playerCharacter?.name || "The hero"} is near death at ${newHp} HP`,
+              shot_recipe: "impact",
+            })
+            console.log("[v0] Beat: near_death")
           }
         }
       }
@@ -693,6 +813,18 @@ EXPERIENCE POINTS:
         }
       }
       
+      // === BEAT: NPC reveal ===
+      await recordBeat({
+        beat_type: "npc_reveal",
+        priority: 7,
+        subject: name,
+        summary: `${name} enters the scene`,
+        image_ref: portraitUrl,
+        narration: desc,
+        shot_recipe: "reveal",
+      })
+      console.log("[v0] Beat: npc_reveal")
+      
       // Check if this NPC already exists (might be returning)
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
@@ -830,6 +962,18 @@ EXPERIENCE POINTS:
               }
             }
           }
+        }
+        
+        // === BEAT: kill (NPC_LEAVE following damage that brought it to 0) ===
+        if ((npc.hp_current || 0) <= 0) {
+          await recordBeat({
+            beat_type: "kill",
+            priority: 9,
+            subject: name,
+            summary: `${name} is defeated`,
+            shot_recipe: "impact",
+          })
+          console.log("[v0] Beat: kill")
         }
       }
       
@@ -1027,6 +1171,17 @@ EXPERIENCE POINTS:
     } catch (err) {
       console.error("[v0] Location update error:", err)
     }
+
+    // === BEAT: location change ===
+    await recordBeat({
+      beat_type: "location_change",
+      priority: 6,
+      subject: updatedLocation,
+      summary: `The party moves to ${updatedLocation}`,
+      image_ref: locationImageUrl || null,
+      shot_recipe: "establishing",
+    })
+    console.log("[v0] Beat: location_change")
   }
 
   // Strip all tags from the displayed text
