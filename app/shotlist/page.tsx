@@ -10,6 +10,16 @@ interface SessionRow {
   started_at: string | null
 }
 
+interface Shot {
+  order: number
+  shot: "establishing" | "reaction" | "impact" | "reveal"
+  duration_s: number
+  image_ref: string | null
+  clip_prompt: string | null
+  motion: string
+  overlay: { template: string; params: Record<string, unknown> }
+}
+
 interface Beat {
   id: string
   session_id: string
@@ -22,6 +32,7 @@ interface Beat {
   image_ref: string | null
   narration: string | null
   shot_recipe: string | null
+  shots: Shot[] | null
   created_at: string | null
 }
 
@@ -64,6 +75,18 @@ function glyph(type: string | null): string {
 function formatBeatType(type: string | null): string {
   if (!type) return "beat"
   return type.replace(/_/g, " ")
+}
+
+// Chip colors keyed by shot type for the per-beat shot recipe row.
+const SHOT_CHIP: Record<string, string> = {
+  impact: "bg-amber-950/60 text-amber-200 border-amber-700/60",
+  establishing: "bg-blue-950/60 text-blue-200 border-blue-700/60",
+  reaction: "bg-green-950/60 text-green-200 border-green-700/60",
+  reveal: "bg-purple-950/60 text-purple-200 border-purple-700/60",
+}
+
+function shotChipClass(type: string): string {
+  return SHOT_CHIP[type] ?? "bg-stone-800/60 text-stone-300 border-stone-600/60"
 }
 
 export default function ShotListPage() {
@@ -287,6 +310,28 @@ export default function ShotListPage() {
                     <p className="mt-1 text-sm italic text-muted-foreground text-pretty">
                       {beat.narration}
                     </p>
+                  )}
+
+                  {Array.isArray(beat.shots) && beat.shots.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {beat.shots.map((shot, i) => (
+                        <span
+                          key={`${beat.id}-shot-${shot.order ?? i}`}
+                          className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] font-medium ${shotChipClass(
+                            shot.shot,
+                          )}`}
+                        >
+                          <span className="font-mono">
+                            {shot.order}. {shot.shot} {shot.duration_s}s
+                          </span>
+                          {shot.overlay && shot.overlay.template !== "none" && (
+                            <span className="rounded-sm border border-current/40 bg-black/20 px-1 py-px text-[10px] uppercase tracking-wide">
+                              {shot.overlay.template}
+                            </span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
               </li>

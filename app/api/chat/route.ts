@@ -21,6 +21,107 @@ if (!process.env.FAL_KEY) {
   console.warn("[v0] Warning: FAL_KEY environment variable not set. Image generation will fail.")
 }
 
+// === SHOT RECIPES =========================================================
+// Each captured beat also gets an ordered array of "shot" objects describing
+// how the highlight reel should be edited. These are stored in the existing
+// session_beats.shots jsonb column.
+type ShotType = "establishing" | "reaction" | "impact" | "reveal"
+type ShotMotion = "push_in" | "punch_in" | "slow_mo" | "shake" | "static"
+type OverlayTemplate = "dice" | "lower_third" | "damage" | "kill_banner" | "item_card" | "none"
+
+interface ShotOverlay {
+  template: OverlayTemplate
+  params: Record<string, unknown>
+}
+
+interface Shot {
+  order: number
+  shot: ShotType
+  duration_s: number
+  image_ref: string | null
+  clip_prompt: string | null
+  motion: ShotMotion
+  overlay: ShotOverlay
+}
+
+// Extra, non-DB context passed to recordBeat purely to build the shots array.
+interface ShotContext {
+  playerImage?: string | null
+  npcImage?: string | null
+  envImage?: string | null
+  malacharImage?: string | null
+  damage?: number | null
+  victim?: string | null
+  itemName?: string | null
+  rarity?: string | null
+  locationName?: string | null
+  descriptor?: string | null
+  roll?: number | null
+}
+
+const NO_OVERLAY: ShotOverlay = { template: "none", params: {} }
+
+// Build the ordered shot array for a beat. `clip_prompt` is only ever set on
+// impact shots and always instructs the renderer to match the reference image.
+function buildShots(beatType: string, ctx: ShotContext & { dice_value?: number | null }): Shot[] {
+  const player = ctx.playerImage ?? null
+  const npc = ctx.npcImage ?? null
+  const env = ctx.envImage ?? null
+  const malachar = ctx.malacharImage ?? null
+  const matchRef = "match the exact appearance, costume, and features of the character shown in the reference image"
+
+  switch (beatType) {
+    case "crit_success":
+      return [
+        { order: 1, shot: "establishing", duration_s: 0.5, image_ref: env, clip_prompt: null, motion: "push_in", overlay: NO_OVERLAY },
+        { order: 2, shot: "reaction", duration_s: 1, image_ref: player, clip_prompt: null, motion: "punch_in", overlay: NO_OVERLAY },
+        { order: 3, shot: "impact", duration_s: 2.5, image_ref: player, clip_prompt: `Cinematic slow-motion of the hero landing a flawless critical strike, sparks and dust flying; ${matchRef}.`, motion: "slow_mo", overlay: { template: "dice", params: { value: 20 } } },
+      ]
+    case "crit_fail":
+      return [
+        { order: 1, shot: "reaction", duration_s: 1, image_ref: player, clip_prompt: null, motion: "punch_in", overlay: NO_OVERLAY },
+        { order: 2, shot: "impact", duration_s: 2.5, image_ref: player, clip_prompt: `Cinematic slow-motion of the hero fumbling catastrophically, off-balance and exposed; ${matchRef}.`, motion: "slow_mo", overlay: { template: "dice", params: { value: 1 } } },
+      ]
+    case "kill":
+      return [
+        { order: 1, shot: "establishing", duration_s: 0.5, image_ref: env, clip_prompt: null, motion: "push_in", overlay: NO_OVERLAY },
+        { order: 2, shot: "impact", duration_s: 2.5, image_ref: player, clip_prompt: `Cinematic slow-motion of the killing blow that fells ${ctx.victim ?? "the foe"}, dramatic and final; ${matchRef}.`, motion: "slow_mo", overlay: { template: "kill_banner", params: { victim: ctx.victim ?? "" } } },
+        { order: 3, shot: "reaction", duration_s: 1, image_ref: player, clip_prompt: null, motion: "punch_in", overlay: NO_OVERLAY },
+      ]
+    case "near_death":
+      return [
+        { order: 1, shot: "impact", duration_s: 2, image_ref: player, clip_prompt: `Cinematic shaking camera as the hero reels from a near-fatal wound, barely standing; ${matchRef}.`, motion: "shake", overlay: { template: "dice", params: { value: ctx.roll ?? ctx.dice_value ?? 0 } } },
+        { order: 2, shot: "reaction", duration_s: 1.5, image_ref: player, clip_prompt: null, motion: "punch_in", overlay: NO_OVERLAY },
+      ]
+    case "big_hit":
+      return [
+        { order: 1, shot: "reaction", duration_s: 1, image_ref: player, clip_prompt: null, motion: "punch_in", overlay: NO_OVERLAY },
+        { order: 2, shot: "impact", duration_s: 2, image_ref: player, clip_prompt: `Cinematic shaking impact as the hero absorbs a brutal ${ctx.damage ?? ""}-point blow; ${matchRef}.`, motion: "shake", overlay: { template: "damage", params: { amount: ctx.damage ?? 0 } } },
+      ]
+    case "npc_reveal":
+      return [
+        { order: 1, shot: "establishing", duration_s: 0.5, image_ref: env, clip_prompt: null, motion: "push_in", overlay: NO_OVERLAY },
+        { order: 2, shot: "reveal", duration_s: 2, image_ref: npc, clip_prompt: null, motion: "push_in", overlay: { template: "lower_third", params: { name: ctx.victim ?? "", descriptor: ctx.descriptor ?? "" } } },
+      ]
+    case "item_award":
+      return [
+        { order: 1, shot: "reaction", duration_s: 1.5, image_ref: player, clip_prompt: null, motion: "punch_in", overlay: { template: "item_card", params: { name: ctx.itemName ?? "", rarity: ctx.rarity ?? "common" } } },
+      ]
+    case "location_change":
+      return [
+        { order: 1, shot: "establishing", duration_s: 3, image_ref: env, clip_prompt: null, motion: "push_in", overlay: { template: "lower_third", params: { name: ctx.locationName ?? "", descriptor: "" } } },
+      ]
+    case "soliloquy_open":
+    case "soliloquy_close":
+      return [
+        { order: 1, shot: "reveal", duration_s: 3, image_ref: malachar, clip_prompt: null, motion: "push_in", overlay: NO_OVERLAY },
+      ]
+    default:
+      return []
+  }
+}
+// === END SHOT RECIPES =====================================================
+
 export async function POST(req: Request) {
   const { message, campaignId = "abyss", characterId } = await req.json()
   
@@ -32,11 +133,11 @@ export async function POST(req: Request) {
   // Otherwise fall back to the oldest player. Never use .single() here, since
   // multiple rows can have is_player = true and .single() throws (which
   // silently skipped every item/damage/heal/condition write).
-  let playerCharacter: { id: string; name: string } | null = null
+  let playerCharacter: { id: string; name: string; avatar_image_url: string | null } | null = null
   if (characterId) {
     const { data } = await supabase
       .from("characters")
-      .select("id, name")
+      .select("id, name, avatar_image_url")
       .eq("id", characterId)
       .maybeSingle()
     playerCharacter = data
@@ -44,12 +145,44 @@ export async function POST(req: Request) {
   if (!playerCharacter) {
     const { data } = await supabase
       .from("characters")
-      .select("id, name")
+      .select("id, name, avatar_image_url")
       .eq("is_player", true)
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle()
     playerCharacter = data
+  }
+  const playerImage = playerCharacter?.avatar_image_url ?? null
+
+  // Track the active environment's background image so establishing shots can
+  // reference it. Seed from the latest environment; updated when a
+  // LOCATION_IMAGE/UPDATE_LOCATION tag resolves to a new background below.
+  let activeEnvImage: string | null = null
+  try {
+    const { data: latestEnv } = await supabase
+      .from("environments")
+      .select("background_image_url")
+      .not("background_image_url", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    activeEnvImage = latestEnv?.background_image_url ?? null
+  } catch (e) {
+    console.error("[v0] Active environment image lookup failed", e)
+  }
+
+  // Malachar's avatar (the lich DM) for soliloquy shots, if a character row exists.
+  let malacharImage: string | null = null
+  try {
+    const { data: malacharChar } = await supabase
+      .from("characters")
+      .select("avatar_image_url, portrait_image_url")
+      .ilike("name", "Malachar")
+      .limit(1)
+      .maybeSingle()
+    malacharImage = malacharChar?.avatar_image_url ?? malacharChar?.portrait_image_url ?? null
+  } catch {
+    malacharImage = null
   }
   
   // === HIGHLIGHT BEAT CAPTURE: resolve the active session for this campaign ===
@@ -85,21 +218,53 @@ export async function POST(req: Request) {
   }
 
   // Record a highlight "beat" for the current session. Wrapped so a failure
-  // never breaks the chat response.
-  async function recordBeat(beat: {
-    beat_type: string
-    priority: number
-    character_id?: string | null
-    subject?: string | null
-    summary?: string | null
-    dice_value?: number | null
-    image_ref?: string | null
-    narration?: string | null
-    shot_recipe?: string | null
-  }) {
+  // never breaks the chat response. Also builds and persists the ordered
+  // `shots` jsonb array describing how to edit this beat into the highlight reel.
+  async function recordBeat(
+    beat: {
+      beat_type: string
+      priority: number
+      character_id?: string | null
+      subject?: string | null
+      summary?: string | null
+      dice_value?: number | null
+      image_ref?: string | null
+      narration?: string | null
+      shot_recipe?: string | null
+    },
+    shotCtx: ShotContext = {},
+  ) {
     if (!sessionId) return
     try {
-      await supabase.from("session_beats").insert({ session_id: sessionId, ...beat })
+      // De-dup guard for npc_reveal: skip if a reveal beat for the same
+      // session + subject already exists (avoids the same NPC being revealed
+      // twice in one session).
+      if (beat.beat_type === "npc_reveal" && beat.subject) {
+        const { data: dup } = await supabase
+          .from("session_beats")
+          .select("id")
+          .eq("session_id", sessionId)
+          .eq("beat_type", "npc_reveal")
+          .eq("subject", beat.subject)
+          .limit(1)
+          .maybeSingle()
+        if (dup) {
+          console.log("[v0] Skipping duplicate npc_reveal beat for:", beat.subject)
+          return
+        }
+      }
+
+      const shots = buildShots(beat.beat_type, {
+        ...shotCtx,
+        dice_value: beat.dice_value ?? null,
+      })
+      // Keep writing the one-word shot_recipe label (first shot's type) so
+      // nothing downstream that relies on it breaks.
+      const shotRecipe = shots[0]?.shot ?? beat.shot_recipe ?? null
+
+      await supabase
+        .from("session_beats")
+        .insert({ session_id: sessionId, ...beat, shot_recipe: shotRecipe, shots })
     } catch (e) {
       console.error("[v0] recordBeat failed", e)
     }
@@ -128,8 +293,8 @@ export async function POST(req: Request) {
           character_id: playerCharacter?.id,
           summary: `${playerCharacter?.name || "A hero"} rolled a natural 20`,
           dice_value: 20,
-          shot_recipe: "reaction",
-        })
+          narration: `Fortune smiles on you, ${playerCharacter?.name || "mortal"}. Even a blind worm stumbles upon treasure now and then... do not mistake luck for skill.`,
+        }, { playerImage, envImage: activeEnvImage })
         console.log("[v0] Beat: crit_success")
       } else if (total === 1) {
         await recordBeat({
@@ -138,8 +303,8 @@ export async function POST(req: Request) {
           character_id: playerCharacter?.id,
           summary: `${playerCharacter?.name || "A hero"} rolled a natural 1`,
           dice_value: 1,
-          shot_recipe: "reaction",
-        })
+          narration: `Ha! How deliciously incompetent. I have watched corpses perform with greater grace than that, ${playerCharacter?.name || "fool"}.`,
+        }, { playerImage, envImage: activeEnvImage })
         console.log("[v0] Beat: crit_fail")
       }
     }
@@ -603,8 +768,7 @@ EXPERIENCE POINTS:
         subject: itemName,
         summary: `${playerCharacter?.name || "The hero"} acquires ${itemName}`,
         image_ref: iconUrl || null,
-        shot_recipe: "reaction",
-      })
+      }, { playerImage, itemName, rarity: "common" })
       console.log("[v0] Beat: item_award")
     }
     
@@ -644,8 +808,7 @@ EXPERIENCE POINTS:
               character_id: playerCharacter?.id,
               subject: damageType,
               summary: `${playerCharacter?.name || "The hero"} takes ${amount} ${damageType || ""} damage`,
-              shot_recipe: "impact",
-            })
+            }, { playerImage, damage: amount })
             console.log("[v0] Beat: big_hit")
           }
           const hpMax = char.hp_max || 0
@@ -655,8 +818,8 @@ EXPERIENCE POINTS:
               priority: 8,
               character_id: playerCharacter?.id,
               summary: `${playerCharacter?.name || "The hero"} is near death at ${newHp} HP`,
-              shot_recipe: "impact",
-            })
+              dice_value: amount,
+            }, { playerImage, roll: amount })
             console.log("[v0] Beat: near_death")
           }
         }
@@ -842,8 +1005,7 @@ EXPERIENCE POINTS:
         summary: `${name} enters the scene`,
         image_ref: portraitUrl,
         narration: desc,
-        shot_recipe: "reveal",
-      })
+      }, { npcImage: portraitUrl, envImage: activeEnvImage, victim: name, descriptor: desc })
       console.log("[v0] Beat: npc_reveal")
       
       // Check if this NPC already exists (might be returning).
@@ -993,8 +1155,8 @@ EXPERIENCE POINTS:
             priority: 9,
             subject: name,
             summary: `${name} is defeated`,
-            shot_recipe: "impact",
-          })
+            narration: `Farewell, ${name}. The Underdark devours all in time... your struggle merely amused me.`,
+          }, { playerImage, victim: name, envImage: activeEnvImage })
           console.log("[v0] Beat: kill")
         }
       }
@@ -1201,8 +1363,7 @@ EXPERIENCE POINTS:
       subject: updatedLocation,
       summary: `The party moves to ${updatedLocation}`,
       image_ref: locationImageUrl || null,
-      shot_recipe: "establishing",
-    })
+    }, { envImage: locationImageUrl || activeEnvImage, locationName: updatedLocation })
     console.log("[v0] Beat: location_change")
   }
 
