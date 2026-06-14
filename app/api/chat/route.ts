@@ -3,6 +3,12 @@ import { createClient } from "@/lib/supabase/server"
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import * as fal from "@fal-ai/serverless-client"
+import spellData from "@/lib/data/spells.json"
+
+// Spell library index: name -> spell object
+const SPELL_INDEX = new Map((spellData as any[]).map((s) => [s.name.toLowerCase(), s]))
+const SPELL_NAMES = (spellData as any[]).map((s) => s.name)
+
 // Use the official Anthropic SDK so requests hit api.anthropic.com directly
 // and never route through the Vercel AI Gateway (which blocks Anthropic
 // models for free-tier users with a 403).
@@ -162,6 +168,38 @@ function formatStatBlock(c: any): string {
     actions ? `  Actions:\n${actions}` : null,
     reactions ? `  Reactions:\n${reactions}` : null,
   ].filter(Boolean).join("\n")
+}
+
+// Find spells referenced in the current turn
+function findReferencedSpells(text: string, knownSpellNames: string[] = []) {
+  const hay = (text || "").toLowerCase()
+  const hits = new Set<string>()
+  // any spell name explicitly mentioned this turn
+  for (const name of SPELL_NAMES) {
+    if (hay.includes(name.toLowerCase())) hits.add(name.toLowerCase())
+  }
+  // plus the caster's known/prepared spells (so the Lich has them ready)
+  for (const n of knownSpellNames) {
+    const key = n.toLowerCase()
+    if (SPELL_INDEX.has(key)) hits.add(key)
+  }
+  return [...hits].map((k) => SPELL_INDEX.get(k)).filter(Boolean)
+}
+
+function formatSpell(s: any): string {
+  const dmg = (s.damage ?? []).map((d: any) => `${d.dice} ${d.type}`).join(" + ")
+  const res = s.attack_roll
+    ? `${s.attack_type} spell attack`
+    : s.save
+      ? `${s.save.ability} save (${s.save.on_success} on success)`
+      : "no roll"
+  const up = s.upcast?.type === "damage"
+    ? `; upcast +${s.upcast.per_slot} per slot above ${s.upcast.above_level}`
+    : s.upcast ? "; upcast: see effect" : ""
+  return [
+    `${s.name} — L${s.level} ${s.school}, ${s.cast_time}, range ${s.range}, ${s.duration}${s.concentration ? " (Concentration)" : ""}`,
+    `  resolve: ${res}${dmg ? "; damage " + dmg : ""}${s.area ? "; area " + s.area : ""}${s.conditions?.length ? "; conditions " + s.conditions.join(", ") : ""}${up}`,
+  ].join("\n")
 }
 
 export async function POST(req: Request) {
@@ -400,6 +438,24 @@ export async function POST(req: Request) {
     ? `=== BESTIARY — AUTHORITATIVE STATS (use these EXACTLY; never invent or alter monster stats) ===\n${relevant.map(formatStatBlock).join("\n\n")}\n=== END BESTIARY ===`
     : `=== BESTIARY ===\nNo bestiary creature is currently in the scene. If a monster appears, use its real D&D 5e stats; do NOT invent stat blocks.\n=== END BESTIARY ===`
 
+  // Gather the caster's known/prepared spells from the abilities table
+  let knownSpellNames: string[] = []
+  try {
+    const { data: known } = await supabase
+      .from("abilities")
+      .select("name")
+      .eq("character_id", playerCharacter?.id)
+    knownSpellNames = (known ?? []).map((a: any) => a.name)
+  } catch {
+    knownSpellNames = []
+  }
+
+  const turnText = `${message} ${recentDialogue?.map((d: any) => d.text).join(" ") ?? ""}`
+  const referencedSpells = findReferencedSpells(turnText, knownSpellNames)
+  const spellSection = referencedSpells.length
+    ? `=== SPELL MECHANICS — AUTHORITATIVE (resolve cast spells with these EXACT rules; never invent spell effects) ===\n${referencedSpells.map(formatSpell).join("\n")}\n=== END SPELL MECHANICS ===`
+    : ""
+
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
 
@@ -473,6 +529,8 @@ CRITICAL HITS:
 
 ${bestiarySection}
 
+${spellSection}
+
 WORKED EXAMPLE — TWO-TURN COMBAT:
 
 Turn 1:
@@ -505,6 +563,9 @@ Victory is yours—but beware what else might emerge from the darkness."
 
 BESTIARY RULE:
 - ALWAYS use the stats from the BESTIARY section above for any creature listed there. If a creature is not in the bestiary, use its official D&D 5e Monster Manual stats — never make up AC, HP, to-hit, or damage.
+
+SPELLS RULE:
+- SPELLS: When a spell is cast, resolve it using the SPELL MECHANICS block if the spell is listed there: for a save spell, call for the listed saving throw and apply damage/conditions (half on a successful save where noted); for an attack spell, call for the spell attack; roll the listed damage dice; enforce Concentration (a caster loses an existing concentration spell when they start a new one or fail a Con save after taking damage). Apply upcasting when cast with a higher-level slot. If a cast spell is NOT in the block, use its official D&D 5e rules — never invent numbers.
 
 === END COMBAT RULES ===
 
