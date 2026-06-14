@@ -1174,6 +1174,23 @@ EXPERIENCE POINTS:
           .eq("id", existingNpc.id)
         console.log("[v0] NPC reactivated:", canonicalName)
       } else {
+        // Resolve real HP from the bestiary (e.g. "Drow Guard" matches "Drow").
+        // Fall back to a CR-based estimate, never the old flat 75.
+        const CR_HP: Record<string, number> = {
+          "0": 5, "1/8": 7, "1/4": 13, "1/2": 22, "1": 33, "2": 52,
+          "3": 75, "4": 100, "5": 120, "6": 140, "7": 160, "8": 180,
+        }
+        let hpMax = CR_HP[String(cr)] ?? 20
+        try {
+          const all = await getBestiaryBlocks(supabase, [""]) // small table; returns all rows
+          const match =
+            (all ?? []).find((b: any) => b.name.toLowerCase() === canonicalName.toLowerCase()) ||
+            (all ?? []).find((b: any) => canonicalName.toLowerCase().includes(b.name.toLowerCase()))
+          if (match?.hp) hpMax = match.hp
+        } catch (e) {
+          console.error("[v0] bestiary HP lookup failed:", e)
+        }
+
         // Insert new NPC encounter
         const { error } = await supabase.from("npc_encounters").insert({
           character_id: playerCharacter.id,
@@ -1184,8 +1201,8 @@ EXPERIENCE POINTS:
           xp_value: xp,
           monster_type: type,
           is_active: true,
-          hp_max: 75, // Default HP - will be overridden if specific NPC stats are known
-          hp_current: 75,
+          hp_max: hpMax,
+          hp_current: hpMax,
         })
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
