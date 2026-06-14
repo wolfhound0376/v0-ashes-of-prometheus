@@ -352,7 +352,7 @@ export async function POST(req: Request) {
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
 
-=== CRITICAL OUTPUT RULES ����� READ FIRST ===
+=== CRITICAL OUTPUT RULES ������� READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
 
 1. LOCATION CHANGES: You MUST emit [UPDATE_LOCATION: <name>] AND [LOCATION_IMAGE: <scene description>] on their own lines at the END of any response where the character moves to a new area. If you describe entering a tunnel, ledge, chamber, or any new space — EMIT THE TAGS.
@@ -422,9 +422,9 @@ CRITICAL HITS:
 
 CURRENT NPC STATS (Hook Horror):
 - AC: 15
-- Attack: +7 to hit
-- Damage: 1d8+4 (bite or claw) + 2d6 (barbed leg, once per combat)
 - HP: 75 max
+- Multiattack: Two Hook attacks per turn
+- Hook: +6 to hit, 1d6+3 damage per hit
 - Conditions: none
 
 WORKED EXAMPLE — TWO-TURN COMBAT:
