@@ -121,6 +121,49 @@ function buildShots(beatType: string, ctx: ShotContext): Shot[] {
   }
 }
 
+// Fetch authoritative stat blocks for creatures relevant to the current scene.
+async function getBestiaryBlocks(supabase: any, names: string[]) {
+  if (!names.length) return []
+  try {
+    const { data, error } = await supabase
+      .from("bestiary")
+      .select("name, size, creature_type, alignment, ac, ac_note, hp, hp_formula, speed, str, dex, con, int, wis, cha, saving_throws, skills, senses, languages, damage_resistances, damage_immunities, condition_immunities, cr, xp, traits, actions, reactions, notes")
+    if (error) {
+      console.error("[v0] bestiary lookup error:", error)
+      return []
+    }
+    // Filter to creatures that match the search names
+    const filtered = (data ?? []).filter((c: any) =>
+      names.some(n => c.name.toLowerCase().includes(n.toLowerCase().replace(/[%,]/g, "")))
+    )
+    return filtered
+  } catch (err) {
+    console.error("[v0] bestiary fetch exception:", err)
+    return []
+  }
+}
+
+function formatStatBlock(c: any): string {
+  const ability = (s: number) => `${s} (${s >= 10 ? "+" : ""}${Math.floor((s - 10) / 2)})`
+  const traits = (c.traits ?? []).map((t: any) => `  - ${t.name}: ${t.desc}`).join("\n")
+  const actions = (c.actions ?? []).map((a: any) => `  - ${a.name}${a.to_hit ? " " + a.to_hit : ""}${a.reach ? " (" + a.reach + ")" : ""}: ${a.desc}`).join("\n")
+  const reactions = (c.reactions ?? []).map((r: any) => `  - ${r.name}: ${r.desc}`).join("\n")
+  return [
+    `${c.name} — ${c.size} ${c.creature_type}, ${c.alignment} — CR ${c.cr} (${c.xp} XP)`,
+    `  AC ${c.ac}${c.ac_note ? " (" + c.ac_note + ")" : ""} | HP ${c.hp} (${c.hp_formula}) | Speed ${c.speed}`,
+    `  STR ${ability(c.str)} DEX ${ability(c.dex)} CON ${ability(c.con)} INT ${ability(c.int)} WIS ${ability(c.wis)} CHA ${ability(c.cha)}`,
+    c.saving_throws ? `  Saves: ${c.saving_throws}` : null,
+    c.skills ? `  Skills: ${c.skills}` : null,
+    `  Senses: ${c.senses}`,
+    c.damage_resistances ? `  Resistances: ${c.damage_resistances}` : null,
+    c.damage_immunities ? `  Damage Immunities: ${c.damage_immunities}` : null,
+    c.condition_immunities ? `  Condition Immunities: ${c.condition_immunities}` : null,
+    traits ? `  Traits:\n${traits}` : null,
+    actions ? `  Actions:\n${actions}` : null,
+    reactions ? `  Reactions:\n${reactions}` : null,
+  ].filter(Boolean).join("\n")
+}
+
 export async function POST(req: Request) {
   const { message, campaignId = "abyss", characterId } = await req.json()
   
@@ -349,10 +392,18 @@ export async function POST(req: Request) {
     stageContext = "CURRENT STAGE: Underdark Tunnels (Stage 5+). The party has fled Velkynvelve. Describe vast caverns, bioluminescent fungi, distant echoes. They are beginning their journey through the Underdark."
   }
 
+  // Build bestiary section with creatures relevant to the current scene
+  const allBestiary = await getBestiaryBlocks(supabase, [""])
+  const haystack = `${currentLocation} ${recentDialogue?.map((d: any) => d.text).join(" ") ?? ""} ${message}`.toLowerCase()
+  const relevant = (allBestiary ?? []).filter((c: any) => haystack.includes(c.name.toLowerCase()))
+  const bestiarySection = relevant.length
+    ? `=== BESTIARY — AUTHORITATIVE STATS (use these EXACTLY; never invent or alter monster stats) ===\n${relevant.map(formatStatBlock).join("\n\n")}\n=== END BESTIARY ===`
+    : `=== BESTIARY ===\nNo bestiary creature is currently in the scene. If a monster appears, use its real D&D 5e stats; do NOT invent stat blocks.\n=== END BESTIARY ===`
+
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
 
-=== CRITICAL OUTPUT RULES ������� READ FIRST ===
+=== CRITICAL OUTPUT RULES ��������� READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
 
 1. LOCATION CHANGES: You MUST emit [UPDATE_LOCATION: <name>] AND [LOCATION_IMAGE: <scene description>] on their own lines at the END of any response where the character moves to a new area. If you describe entering a tunnel, ledge, chamber, or any new space — EMIT THE TAGS.
@@ -420,42 +471,40 @@ CRITICAL HITS:
 - On a natural 20 attack, double the damage DICE (not the modifier). Example: 1d8+4 becomes 2d8+4.
 - Roll the doubled dice and narrate the critical hit, then emit [NPC_DAMAGE:] with the total.
 
-CURRENT NPC STATS (Hook Horror):
-- AC: 15
-- HP: 75 max
-- Multiattack: Two Hook attacks per turn
-- Hook: +6 to hit, 1d6+3 damage per hit
-- Conditions: none
+${bestiarySection}
 
 WORKED EXAMPLE — TWO-TURN COMBAT:
 
 Turn 1:
-"The Hook Horror's mandibles snap. You have an opening. What do you do?"
-[Player: "I attack with my dagger"]
+"The creature looms before you, ready for combat. What do you do?"
+[Player: "I attack with my weapon"]
 "Roll 1d20 + your attack modifier."
 [Player: "I rolled 22"]
-"A solid hit! Roll 1d4+4 damage."
-[Player: "I rolled 6"]
-"Your dagger slides between its chitinous plates, drawing ichor. The creature shrills in pain.
+"A solid hit! Roll damage using the die for your weapon."
+[Player: "I rolled 8"]
+"Your blade connects with force. The creature snarls.
 
-[NPC_DAMAGE: Hook Horror 6]
-(Hook Horror: 69/75 HP)"
+[NPC_DAMAGE: [Creature Name] 8]
+([Creature Name]: [remaining HP]/[max HP] HP)"
 
 Turn 2:
-"The Hook Horror retaliates, its barbed leg whipping toward your face."
-"[[1d20+7]] for its attack. [rolling 16] Its leg catches your shoulder!
+"The creature retaliates, lashing out at you."
+"[[1d20+X]] for its attack. [rolling hit result] It connects!
 
-[DAMAGE: 5 piercing]
+[DAMAGE: X type]
 
-You take a glancing blow. What's your action?"
+You take the blow. What's your action?"
 
 When it dies:
-"Your final strike pierces the creature's core. It collapses, ichor pooling around its broken body.
+"Your final strike ends the combat. The creature falls.
 
-[NPC_DAMAGE: Hook Horror 10]
-[NPC_LEAVE: Hook Horror]
+[NPC_DAMAGE: [Creature Name] 10]
+[NPC_LEAVE: [Creature Name]]
 
-Victory is yours—but the sound of its death-screams echoes through the caverns. Something larger might have heard that."
+Victory is yours—but beware what else might emerge from the darkness."
+
+BESTIARY RULE:
+- ALWAYS use the stats from the BESTIARY section above for any creature listed there. If a creature is not in the bestiary, use its official D&D 5e Monster Manual stats — never make up AC, HP, to-hit, or damage.
 
 === END COMBAT RULES ===
 
