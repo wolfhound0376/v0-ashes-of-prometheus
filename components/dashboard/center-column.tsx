@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { quickAbilities, getClassSpellcasting } from "@/lib/game-data"
 import {
@@ -144,54 +144,15 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
         <div className="relative h-[260px] overflow-hidden rounded-sm">
+          <CombatFxKeyframes />
           {activeEncounters.length > 0 ? (
             <div className="h-full flex gap-2 p-2 overflow-x-auto">
               {activeEncounters.map((encounter) => (
-                <div key={encounter.id} className="flex-shrink-0 relative overflow-hidden rounded-sm" style={{ width: activeEncounters.length === 1 ? '100%' : '140px' }}>
-                  {/* Portrait Image: blurred fill behind, full uncropped portrait in front */}
-                  {encounter.portrait_url ? (
-                    <>
-                      <img
-                        src={encounter.portrait_url}
-                        alt=""
-                        aria-hidden="true"
-                        className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-40"
-                      />
-                      <img
-                        src={encounter.portrait_url}
-                        alt={encounter.name}
-                        className="absolute inset-0 w-full h-full object-contain object-top"
-                      />
-                    </>
-                  ) : (
-                    <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
-                      <span className="text-4xl text-stone-600">?</span>
-                    </div>
-                  )}
-                  {/* Gradient overlay for readability */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0a0908]/90 via-transparent to-transparent" />
-                  {/* Name & HP info overlay at bottom */}
-                  <div className="absolute bottom-0 left-0 right-0 p-1.5">
-                    <p className="text-xs text-[#c9a868] font-semibold text-center truncate drop-shadow">{encounter.name}</p>
-                    {encounter.hp_current != null && encounter.hp_max != null && encounter.hp_max > 0 && (
-                      <div className="mt-0.5">
-                        <div className="text-[9px] text-stone-400 text-center mb-0.5">{encounter.hp_current}/{encounter.hp_max} HP</div>
-                        <div className="h-1.5 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/60">
-                          <div
-                            className={cn(
-                              "h-full transition-all",
-                              encounter.hp_current <= 0 ? "bg-[#4a3a3a]" :
-                              encounter.hp_current <= encounter.hp_max * 0.3 ? "bg-[#c84a3a]" :
-                              encounter.hp_current <= encounter.hp_max * 0.6 ? "bg-[#d4a856]" :
-                              "bg-[#5ab85a]"
-                            )}
-                            style={{ width: `${Math.max(0, (encounter.hp_current / encounter.hp_max) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <NpcEncounterCard
+                  key={encounter.id}
+                  encounter={encounter}
+                  solo={activeEncounters.length === 1}
+                />
               ))}
             </div>
           ) : sceneImageUrl ? (
@@ -415,6 +376,115 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
         onSendToLich={onSendToLich}
         characterName={characterName}
       />
+    </div>
+  )
+}
+
+// Injects the combat animation keyframes once into the NPC panel.
+function CombatFxKeyframes() {
+  return (
+    <style>{`
+      @keyframes aopDmgFloat {
+        0%   { transform: translateY(8px) scale(0.6); opacity: 0; }
+        18%  { transform: translateY(0) scale(1.25); opacity: 1; }
+        100% { transform: translateY(-54px) scale(1); opacity: 0; }
+      }
+      @keyframes aopHpShake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-3px); }
+        40% { transform: translateX(3px); }
+        60% { transform: translateX(-2px); }
+        80% { transform: translateX(2px); }
+      }
+    `}</style>
+  )
+}
+
+// A single NPC portrait card that reacts to damage: when its HP drops, a red
+// "-N" floats up over the portrait and the HP bar shakes — BG3-style feedback.
+function NpcEncounterCard({ encounter, solo }: { encounter: NpcEncounter; solo: boolean }) {
+  const prevHp = useRef<number | null>(encounter.hp_current ?? null)
+  const hitKey = useRef(0)
+  const [hits, setHits] = useState<{ id: number; amount: number }[]>([])
+  const [shake, setShake] = useState(false)
+
+  useEffect(() => {
+    const cur = encounter.hp_current ?? null
+    const prev = prevHp.current
+    if (cur != null && prev != null && cur < prev) {
+      const id = ++hitKey.current
+      const amount = prev - cur
+      setHits((h) => [...h, { id, amount }])
+      setShake(true)
+      setTimeout(() => setHits((h) => h.filter((x) => x.id !== id)), 1100)
+      setTimeout(() => setShake(false), 500)
+    }
+    prevHp.current = cur
+  }, [encounter.hp_current])
+
+  const hp = encounter.hp_current
+  const hpMax = encounter.hp_max
+  const hasHp = hp != null && hpMax != null && hpMax > 0
+
+  return (
+    <div className="flex-shrink-0 relative overflow-hidden rounded-sm" style={{ width: solo ? "100%" : "140px" }}>
+      {encounter.portrait_url ? (
+        <>
+          {/* Blurred, zoomed copy fills the card edge-to-edge so there are no empty bars */}
+          <img
+            src={encounter.portrait_url}
+            aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-40"
+          />
+          {/* Full portrait, never cropped */}
+          <img
+            src={encounter.portrait_url}
+            alt={encounter.name}
+            className="absolute inset-0 w-full h-full object-contain object-top"
+          />
+        </>
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
+          <span className="text-4xl text-stone-600">?</span>
+        </div>
+      )}
+      {/* Gradient overlay for readability */}
+      <div className="absolute inset-0 bg-gradient-to-t from-[#0a0908]/90 via-transparent to-transparent" />
+
+      {/* Floating damage numbers */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        {hits.map((hit) => (
+          <span
+            key={hit.id}
+            className="absolute font-serif font-extrabold text-[#ff5a4a] drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]"
+            style={{ fontSize: solo ? "2.6rem" : "1.7rem", animation: "aopDmgFloat 1.1s ease-out forwards" }}
+          >
+            -{hit.amount}
+          </span>
+        ))}
+      </div>
+
+      {/* Name & HP info overlay at bottom */}
+      <div className="absolute bottom-0 left-0 right-0 p-1.5">
+        <p className="text-xs text-[#c9a868] font-semibold text-center truncate drop-shadow">{encounter.name}</p>
+        {hasHp && (
+          <div className="mt-0.5" style={shake ? { animation: "aopHpShake 0.45s ease-in-out" } : undefined}>
+            <div className="text-[9px] text-stone-400 text-center mb-0.5">{hp}/{hpMax} HP</div>
+            <div className="h-1.5 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/60">
+              <div
+                className={cn(
+                  "h-full transition-all duration-500",
+                  hp! <= 0 ? "bg-[#4a3a3a]" :
+                  hp! <= hpMax! * 0.3 ? "bg-[#c84a3a]" :
+                  hp! <= hpMax! * 0.6 ? "bg-[#d4a856]" :
+                  "bg-[#5ab85a]"
+                )}
+                style={{ width: `${Math.max(0, (hp! / hpMax!) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

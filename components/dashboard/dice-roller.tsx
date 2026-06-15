@@ -39,15 +39,24 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
   const [rollLabel, setRollLabel] = useState("")
   const [lastResult, setLastResult] = useState<DiceResult | null>(null)
   const [isRolling, setIsRolling] = useState(false)
+  const [rollingFace, setRollingFace] = useState(20)
+  const [flash, setFlash] = useState<"crit" | "fumble" | null>(null)
 
   const rollDice = useCallback(() => {
     const dieConfig = DICE_TYPES.find(d => d.die === selectedDie)
     if (!dieConfig) return
 
     setIsRolling(true)
+    setFlash(null)
 
-    // Simulate rolling animation delay
+    // Tumble: rapidly cycle the visible face while "rolling"
+    const cycle = setInterval(() => {
+      setRollingFace(Math.floor(Math.random() * dieConfig.sides) + 1)
+    }, 55)
+
     setTimeout(() => {
+      clearInterval(cycle)
+
       const rolls: number[] = []
       for (let i = 0; i < numDice; i++) {
         rolls.push(Math.floor(Math.random() * dieConfig.sides) + 1)
@@ -64,10 +73,19 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
         timestamp: new Date()
       }
 
+      // Crit / fumble drama only for a single d20
+      if (selectedDie === "d20" && numDice === 1) {
+        if (rolls[0] === 20) setFlash("crit")
+        else if (rolls[0] === 1) setFlash("fumble")
+        setRollingFace(rolls[0])
+      }
+
       setLastResult(result)
       setIsRolling(false)
       onRollResult?.(result)
-    }, 300)
+
+      setTimeout(() => setFlash(null), 1400)
+    }, 650)
   }, [selectedDie, numDice, modifier, rollLabel, onRollResult])
 
   const sendResultToLich = useCallback(() => {
@@ -204,6 +222,64 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
           >
             {isRolling ? "Rolling..." : `Roll ${numDice}${selectedDie}${modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ""}`}
           </button>
+
+          {/* Keyframes for the dice drama */}
+          <style>{`
+            @keyframes aopDiceSpin {
+              0%   { transform: rotate(0deg) scale(1); }
+              50%  { transform: rotate(180deg) scale(1.12); }
+              100% { transform: rotate(360deg) scale(1); }
+            }
+            @keyframes aopCritPulse {
+              0%   { transform: scale(0.85); box-shadow: 0 0 0 rgba(212,177,90,0); }
+              40%  { transform: scale(1.18); box-shadow: 0 0 28px rgba(212,177,90,0.85); }
+              100% { transform: scale(1); box-shadow: 0 0 8px rgba(212,177,90,0.3); }
+            }
+            @keyframes aopFumble {
+              0%, 100% { transform: translateX(0) rotate(0deg); }
+              20% { transform: translateX(-5px) rotate(-4deg); }
+              40% { transform: translateX(5px) rotate(4deg); }
+              60% { transform: translateX(-4px) rotate(-3deg); }
+              80% { transform: translateX(4px) rotate(3deg); }
+            }
+          `}</style>
+
+          {/* Animated d20 stage — tumbles while rolling, flashes on crit/fumble */}
+          {(isRolling || flash) && (
+            <div className="flex flex-col items-center justify-center py-1">
+              <div
+                className={cn(
+                  "relative w-20 h-20 flex items-center justify-center rounded-xl border-2 font-serif font-extrabold text-3xl select-none",
+                  "bg-gradient-to-br from-[#3a3320] to-[#1a1608]",
+                  isRolling && "border-[#8a8a4a] text-[#e8d89a]",
+                  flash === "crit" && "border-[#d4b15a] text-[#ffe9a8]",
+                  flash === "fumble" && "border-[#8a4a4a] text-[#ff8a7a]",
+                  !isRolling && !flash && "border-[#3d3428] text-stone-300"
+                )}
+                style={{
+                  animation: isRolling
+                    ? "aopDiceSpin 0.5s linear infinite"
+                    : flash === "crit"
+                    ? "aopCritPulse 1.4s ease-out"
+                    : flash === "fumble"
+                    ? "aopFumble 0.6s ease-in-out"
+                    : undefined,
+                }}
+              >
+                {rollingFace}
+              </div>
+              {flash === "crit" && (
+                <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ffd76a] drop-shadow">
+                  Critical Hit!
+                </span>
+              )}
+              {flash === "fumble" && (
+                <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ff7a6a] drop-shadow">
+                  Fumble!
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Last Result */}
           {lastResult && (
