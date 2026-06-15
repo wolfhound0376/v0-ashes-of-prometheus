@@ -1,22 +1,16 @@
-import Anthropic from "@anthropic-ai/sdk"
+import { generateText } from "ai"
+import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
+
+// Custom Anthropic provider — forces direct calls to api.anthropic.com using
+// ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
+// models on the free tier with a 403 GatewayInternalServerError).
+const anthropic = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+})
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import * as fal from "@fal-ai/serverless-client"
-import spellData from "@/lib/data/spells.json"
-
-// Spell library index: name -> spell object
-const SPELL_INDEX = new Map((spellData as any[]).map((s) => [s.name.toLowerCase(), s]))
-const SPELL_NAMES = (spellData as any[]).map((s) => s.name)
-
-// Use the official Anthropic SDK so requests hit api.anthropic.com directly
-// and never route through the Vercel AI Gateway (which blocks Anthropic
-// models for free-tier users with a 403).
-const anthropic = new Anthropic({
-  // This project provisions the key as ANTHROPIC_AUTH_TOKEN; fall back to the
-  // SDK's default ANTHROPIC_API_KEY name if that is set instead.
-  apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_AUTH_TOKEN,
-})
 
 // Configure Fal client
 fal.config({
@@ -27,373 +21,30 @@ if (!process.env.FAL_KEY) {
   console.warn("[v0] Warning: FAL_KEY environment variable not set. Image generation will fail.")
 }
 
-// === CINEMATIC SHOT RECIPES ===
-// Each highlight beat carries an ordered array of "shots" describing how an
-// editor/video pipeline should cut the moment. Stored in session_beats.shots (jsonb).
-type ShotType = "establishing" | "reaction" | "impact" | "reveal"
-type Motion = "push_in" | "punch_in" | "slow_mo" | "shake" | "static"
-type OverlayTemplate =
-  | "dice"
-  | "lower_third"
-  | "damage"
-  | "kill_banner"
-  | "item_card"
-  | "none"
-
-interface Shot {
-  order: number
-  shot: ShotType
-  duration_s: number
-  image_ref: string | null
-  clip_prompt: string | null
-  motion: Motion
-  overlay: { template: OverlayTemplate; params: Record<string, unknown> }
-}
-
-interface ShotContext {
-  envImage?: string | null
-  playerAvatar?: string | null
-  npcImage?: string | null
-  malacharAvatar?: string | null
-  diceValue?: number | null
-  damageAmount?: number | null
-  victimName?: string | null
-  itemName?: string | null
-  itemRarity?: string | null
-  itemImage?: string | null
-  locationName?: string | null
-  locationImage?: string | null
-  npcName?: string | null
-  descriptor?: string | null
-  actionDescription?: string | null
-}
-
-// Impact shots get a single cinematic sentence that ALWAYS instructs the
-// pipeline to preserve the reference image's appearance (never invent a look).
-function impactClip(action: string): string {
-  return `${action}, captured in dramatic slow motion. Match the exact appearance, costume, colors, and features of the reference image — do not invent a new appearance.`
-}
-
-function buildShots(beatType: string, ctx: ShotContext): Shot[] {
-  const none = { template: "none" as OverlayTemplate, params: {} as Record<string, unknown> }
-  switch (beatType) {
-    case "crit_success":
-      return [
-        { order: 1, shot: "establishing", duration_s: 0.5, image_ref: ctx.envImage ?? null, clip_prompt: null, motion: "push_in", overlay: none },
-        { order: 2, shot: "reaction", duration_s: 1, image_ref: ctx.playerAvatar ?? null, clip_prompt: null, motion: "punch_in", overlay: none },
-        { order: 3, shot: "impact", duration_s: 2.5, image_ref: ctx.playerAvatar ?? null, clip_prompt: impactClip(ctx.actionDescription || "A flawless critical strike lands"), motion: "slow_mo", overlay: { template: "dice", params: { value: ctx.diceValue ?? 20 } } },
-      ]
-    case "crit_fail":
-      return [
-        { order: 1, shot: "reaction", duration_s: 1, image_ref: ctx.playerAvatar ?? null, clip_prompt: null, motion: "punch_in", overlay: none },
-        { order: 2, shot: "impact", duration_s: 2.5, image_ref: ctx.playerAvatar ?? null, clip_prompt: impactClip(ctx.actionDescription || "A humiliating fumble unfolds"), motion: "slow_mo", overlay: { template: "dice", params: { value: ctx.diceValue ?? 1 } } },
-      ]
-    case "kill":
-      return [
-        { order: 1, shot: "establishing", duration_s: 0.5, image_ref: ctx.envImage ?? null, clip_prompt: null, motion: "push_in", overlay: none },
-        { order: 2, shot: "impact", duration_s: 2.5, image_ref: ctx.npcImage ?? null, clip_prompt: impactClip(ctx.actionDescription || `${ctx.victimName || "The foe"} is struck down`), motion: "slow_mo", overlay: { template: "kill_banner", params: { victim: ctx.victimName ?? null } } },
-        { order: 3, shot: "reaction", duration_s: 1, image_ref: ctx.playerAvatar ?? null, clip_prompt: null, motion: "punch_in", overlay: none },
-      ]
-    case "near_death":
-      return [
-        { order: 1, shot: "impact", duration_s: 2, image_ref: ctx.playerAvatar ?? null, clip_prompt: impactClip(ctx.actionDescription || "A near-fatal blow staggers the hero"), motion: "shake", overlay: { template: "dice", params: { value: ctx.diceValue ?? null } } },
-        { order: 2, shot: "reaction", duration_s: 1.5, image_ref: ctx.playerAvatar ?? null, clip_prompt: null, motion: "punch_in", overlay: none },
-      ]
-    case "big_hit":
-      return [
-        { order: 1, shot: "reaction", duration_s: 1, image_ref: ctx.playerAvatar ?? null, clip_prompt: null, motion: "punch_in", overlay: none },
-        { order: 2, shot: "impact", duration_s: 2, image_ref: ctx.playerAvatar ?? null, clip_prompt: impactClip(ctx.actionDescription || "A heavy blow connects"), motion: "shake", overlay: { template: "damage", params: { amount: ctx.damageAmount ?? null } } },
-      ]
-    case "npc_reveal":
-      return [
-        { order: 1, shot: "establishing", duration_s: 0.5, image_ref: ctx.envImage ?? null, clip_prompt: null, motion: "push_in", overlay: none },
-        { order: 2, shot: "reveal", duration_s: 2, image_ref: ctx.npcImage ?? null, clip_prompt: null, motion: "push_in", overlay: { template: "lower_third", params: { name: ctx.npcName ?? null, descriptor: ctx.descriptor ?? "" } } },
-      ]
-    case "item_award":
-      return [
-        { order: 1, shot: "reaction", duration_s: 1.5, image_ref: ctx.itemImage ?? null, clip_prompt: null, motion: "punch_in", overlay: { template: "item_card", params: { name: ctx.itemName ?? null, rarity: ctx.itemRarity || "common" } } },
-      ]
-    case "location_change":
-      return [
-        { order: 1, shot: "establishing", duration_s: 3, image_ref: ctx.locationImage ?? null, clip_prompt: null, motion: "push_in", overlay: { template: "lower_third", params: { name: ctx.locationName ?? null, descriptor: "" } } },
-      ]
-    case "soliloquy_open":
-    case "soliloquy_close":
-      return [
-        { order: 1, shot: "reveal", duration_s: 3, image_ref: ctx.malacharAvatar ?? null, clip_prompt: null, motion: "push_in", overlay: none },
-      ]
-    default:
-      return []
-  }
-}
-
-// Fetch authoritative stat blocks for creatures relevant to the current scene.
-async function getBestiaryBlocks(supabase: any, names: string[]) {
-  if (!names.length) return []
-  try {
-    const { data, error } = await supabase
-      .from("bestiary")
-      .select("name, size, creature_type, alignment, ac, ac_note, hp, hp_formula, speed, str, dex, con, int, wis, cha, saving_throws, skills, senses, languages, damage_resistances, damage_immunities, condition_immunities, cr, xp, traits, actions, reactions, notes")
-    if (error) {
-      console.error("[v0] bestiary lookup error:", error)
-      return []
-    }
-    // Filter to creatures that match the search names
-    const filtered = (data ?? []).filter((c: any) =>
-      names.some(n => c.name.toLowerCase().includes(n.toLowerCase().replace(/[%,]/g, "")))
-    )
-    return filtered
-  } catch (err) {
-    console.error("[v0] bestiary fetch exception:", err)
-    return []
-  }
-}
-
-function formatStatBlock(c: any): string {
-  const ability = (s: number) => `${s} (${s >= 10 ? "+" : ""}${Math.floor((s - 10) / 2)})`
-  const traits = (c.traits ?? []).map((t: any) => `  - ${t.name}: ${t.desc}`).join("\n")
-  const actions = (c.actions ?? []).map((a: any) => `  - ${a.name}${a.to_hit ? " " + a.to_hit : ""}${a.reach ? " (" + a.reach + ")" : ""}: ${a.desc}`).join("\n")
-  const reactions = (c.reactions ?? []).map((r: any) => `  - ${r.name}: ${r.desc}`).join("\n")
-  return [
-    `${c.name} — ${c.size} ${c.creature_type}, ${c.alignment} — CR ${c.cr} (${c.xp} XP)`,
-    `  AC ${c.ac}${c.ac_note ? " (" + c.ac_note + ")" : ""} | HP ${c.hp} (${c.hp_formula}) | Speed ${c.speed}`,
-    `  STR ${ability(c.str)} DEX ${ability(c.dex)} CON ${ability(c.con)} INT ${ability(c.int)} WIS ${ability(c.wis)} CHA ${ability(c.cha)}`,
-    c.saving_throws ? `  Saves: ${c.saving_throws}` : null,
-    c.skills ? `  Skills: ${c.skills}` : null,
-    `  Senses: ${c.senses}`,
-    c.damage_resistances ? `  Resistances: ${c.damage_resistances}` : null,
-    c.damage_immunities ? `  Damage Immunities: ${c.damage_immunities}` : null,
-    c.condition_immunities ? `  Condition Immunities: ${c.condition_immunities}` : null,
-    traits ? `  Traits:\n${traits}` : null,
-    actions ? `  Actions:\n${actions}` : null,
-    reactions ? `  Reactions:\n${reactions}` : null,
-  ].filter(Boolean).join("\n")
-}
-
-// Find spells referenced in the current turn
-function findReferencedSpells(text: string, knownSpellNames: string[] = []) {
-  const hay = (text || "").toLowerCase()
-  const hits = new Set<string>()
-  // any spell name explicitly mentioned this turn
-  for (const name of SPELL_NAMES) {
-    if (hay.includes(name.toLowerCase())) hits.add(name.toLowerCase())
-  }
-  // plus the caster's known/prepared spells (so the Lich has them ready)
-  for (const n of knownSpellNames) {
-    const key = n.toLowerCase()
-    if (SPELL_INDEX.has(key)) hits.add(key)
-  }
-  return [...hits].map((k) => SPELL_INDEX.get(k)).filter(Boolean)
-}
-
-function formatSpell(s: any): string {
-  const dmg = (s.damage ?? []).map((d: any) => `${d.dice} ${d.type}`).join(" + ")
-  const res = s.attack_roll
-    ? `${s.attack_type} spell attack`
-    : s.save
-      ? `${s.save.ability} save (${s.save.on_success} on success)`
-      : "no roll"
-  const up = s.upcast?.type === "damage"
-    ? `; upcast +${s.upcast.per_slot} per slot above ${s.upcast.above_level}`
-    : s.upcast ? "; upcast: see effect" : ""
-  return [
-    `${s.name} — L${s.level} ${s.school}, ${s.cast_time}, range ${s.range}, ${s.duration}${s.concentration ? " (Concentration)" : ""}`,
-    `  resolve: ${res}${dmg ? "; damage " + dmg : ""}${s.area ? "; area " + s.area : ""}${s.conditions?.length ? "; conditions " + s.conditions.join(", ") : ""}${up}`,
-  ].join("\n")
-}
-
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId } = await req.json()
-  
+  const { message, campaignId = "abyss" } = await req.json()
+
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
-  
-  // Resolve the active player character.
-  // If the frontend passed the currently selected character id, use it.
-  // Otherwise fall back to the oldest player. Never use .single() here, since
-  // multiple rows can have is_player = true and .single() throws (which
-  // silently skipped every item/damage/heal/condition write).
-  let playerCharacter: { id: string; name: string } | null = null
-  if (characterId) {
-    const { data } = await supabase
-      .from("characters")
-      .select("id, name")
-      .eq("id", characterId)
-      .maybeSingle()
-    playerCharacter = data
-  }
-  if (!playerCharacter) {
-    const { data } = await supabase
-      .from("characters")
-      .select("id, name")
-      .eq("is_player", true)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle()
-    playerCharacter = data
-  }
-  
-  // === HIGHLIGHT BEAT CAPTURE: resolve the active session for this campaign ===
-  // Never block chat if this fails - sessionId just stays null.
-  let sessionId: string | null = null
-  try {
-    const { data: activeSession } = await supabase
-      .from("sessions")
-      .select("id")
-      .eq("campaign_id", campaignId)
-      .eq("status", "active")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (activeSession?.id) {
-      sessionId = activeSession.id
-    } else {
-      const { data: newSession } = await supabase
-        .from("sessions")
-        .insert({
-          campaign_id: campaignId,
-          title: `Session ${new Date().toISOString().slice(0, 10)}`,
-          status: "active",
-        })
-        .select("id")
-        .maybeSingle()
-      sessionId = newSession?.id ?? null
-    }
-    console.log("[v0] Active session resolved:", sessionId)
-  } catch (e) {
-    console.error("[v0] Active session resolution failed", e)
-    sessionId = null
-  }
 
-  // Record a highlight "beat" for the current session. Wrapped so a failure
-  // never breaks the chat response.
-  async function recordBeat(beat: {
-    beat_type: string
-    priority: number
-    character_id?: string | null
-    subject?: string | null
-    summary?: string | null
-    dice_value?: number | null
-    image_ref?: string | null
-    narration?: string | null
-    shot_recipe?: string | null
-    shots?: Shot[] | null
-  }) {
-    if (!sessionId) return
-    try {
-      await supabase.from("session_beats").insert({ session_id: sessionId, ...beat })
-    } catch (e) {
-      console.error("[v0] recordBeat failed", e)
-    }
-  }
+  // Get the player character
+  const { data: playerCharacter } = await supabase
+    .from("characters")
+    .select("id, name")
+    .eq("is_player", true)
+    .single()
 
-  // De-dup guard: returns true if a beat with the same type + subject already
-  // exists in this session (used to avoid duplicate npc_reveal cards).
-  async function beatExists(beatType: string, subject: string | null): Promise<boolean> {
-    if (!sessionId) return false
-    try {
-      let q = supabase
-        .from("session_beats")
-        .select("id")
-        .eq("session_id", sessionId)
-        .eq("beat_type", beatType)
-        .limit(1)
-      q = subject == null ? q.is("subject", null) : q.eq("subject", subject)
-      const { data } = await q.maybeSingle()
-      return !!data
-    } catch (e) {
-      console.error("[v0] beatExists check failed", e)
-      return false
-    }
-  }
+  const playerName = playerCharacter?.name || "Player"
 
-  // Resolve the acting player's avatar once, for reaction/impact shots.
-  let playerAvatarUrl: string | null = null
-  if (playerCharacter?.id) {
-    const { data: pAvatar } = await supabase
-      .from("characters")
-      .select("avatar_image_url")
-      .eq("id", playerCharacter.id)
-      .maybeSingle()
-    playerAvatarUrl = pAvatar?.avatar_image_url ?? null
-  }
-
-  // Resolve the most recent environment background for establishing shots.
-  let activeEnvImage: string | null = null
-  {
-    const { data: env } = await supabase
-      .from("environments")
-      .select("background_image_url")
-      .not("background_image_url", "is", null)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    activeEnvImage = env?.background_image_url ?? null
-  }
-  
-  // Get recent dialogue history for context (last 20 messages) BEFORE inserting the
-  // player's current message, so the current message isn't duplicated in history.
+  // Get recent dialogue history for context (last 20 messages).
+  // Fetched BEFORE persisting the current message so history does not include
+  // this turn — the current message is appended once, explicitly, below.
   const { data: recentDialogue } = await supabase
     .from("dialogue")
     .select("speaker, text")
     .order("created_at", { ascending: false })
     .limit(20)
 
-  // Persist player's message to the dialogue table exactly once
-  const playerName = playerCharacter?.name || "Player"
-  const { error: playerDialogueError } = await supabase.from("dialogue").insert({
-    speaker: playerName,
-    speaker_type: "player",
-    text: message,
-  })
-  if (playerDialogueError) {
-    console.error("[v0] Error inserting player dialogue:", playerDialogueError)
-  }
-  
-  // === DICE CRITS: capture a natural 20 / natural 1 on a d20 from the player message ===
-  try {
-    if (/1d20/i.test(message)) {
-      const totalMatch = message.match(/=\s*\*\*\s*(\d+)\s*\*\*/)
-      const total = totalMatch ? parseInt(totalMatch[1]) : null
-      if (total === 20) {
-        await recordBeat({
-          beat_type: "crit_success",
-          priority: 8,
-          character_id: playerCharacter?.id,
-          summary: `${playerCharacter?.name || "A hero"} rolled a natural 20`,
-          dice_value: 20,
-          narration: `Twenty. Even a blind, drooling halfwit stumbles into glory once a century. Savor it, ${playerCharacter?.name || "mortal"} — the dice pity you, not I.`,
-          shot_recipe: "establishing",
-          shots: buildShots("crit_success", {
-            envImage: activeEnvImage,
-            playerAvatar: playerAvatarUrl,
-            diceValue: 20,
-            actionDescription: `${playerCharacter?.name || "The hero"} lands a perfect critical strike`,
-          }),
-        })
-        console.log("[v0] Beat: crit_success")
-      } else if (total === 1) {
-        await recordBeat({
-          beat_type: "crit_fail",
-          priority: 8,
-          character_id: playerCharacter?.id,
-          summary: `${playerCharacter?.name || "A hero"} rolled a natural 1`,
-          dice_value: 1,
-          narration: `A one. Ahhh, delicious. Watch the great ${playerCharacter?.name || "hero"} trip over their own feet — this is the only entertainment you reliably provide.`,
-          shot_recipe: "reaction",
-          shots: buildShots("crit_fail", {
-            playerAvatar: playerAvatarUrl,
-            diceValue: 1,
-            actionDescription: `${playerCharacter?.name || "The hero"} fumbles catastrophically`,
-          }),
-        })
-        console.log("[v0] Beat: crit_fail")
-      }
-    }
-  } catch (e) {
-    console.error("[v0] crit beat detection failed", e)
-  }
-  
   // Build world context with character data
   // Don't pass a hardcoded location - let buildWorldContext fetch the latest from database
   const worldContext = await buildWorldContext(
@@ -403,19 +54,29 @@ export async function POST(req: Request) {
     campaign.contexts.defaults.heat
   )
   const worldContextText = formatWorldContextForAI(worldContext)
-  
+
   // Build conversation history for the AI
   const conversationHistory = (recentDialogue || [])
     .reverse()
     .map(d => ({
-      role: (d.speaker === "Malachar" ? "assistant" : "user") as "assistant" | "user",
+      role: d.speaker === "Malachar" ? "assistant" : "user" as const,
       content: `${d.speaker}: ${d.text}`
     }))
-  
+
+  // Persist the player's message to the dialogue table (once).
+  const { error: playerDialogueError } = await supabase.from("dialogue").insert({
+    speaker: playerName,
+    speaker_type: "player",
+    text: message,
+  })
+  if (playerDialogueError) {
+    console.error("[v0] Error inserting player dialogue:", playerDialogueError)
+  }
+
   // Determine campaign stage based on location
   const currentLocation = worldContext.environment?.name || "Velkynvelve (slave pen)"
   let stageContext = ""
-  
+
   if (currentLocation.toLowerCase().includes("slave pen") || currentLocation.toLowerCase().includes("pen")) {
     stageContext = "CURRENT STAGE: Slave Pen (Stage 1-2). The party is imprisoned and manacled. Run the scavenging roll if not done, then describe their confinement and prisoner NPC introductions."
   } else if (currentLocation.toLowerCase().includes("outpost") || currentLocation.toLowerCase().includes("velkynvelve") && !currentLocation.toLowerCase().includes("pen")) {
@@ -424,43 +85,17 @@ export async function POST(req: Request) {
     stageContext = "CURRENT STAGE: Underdark Tunnels (Stage 5+). The party has fled Velkynvelve. Describe vast caverns, bioluminescent fungi, distant echoes. They are beginning their journey through the Underdark."
   }
 
-  // Build bestiary section with creatures relevant to the current scene
-  const allBestiary = await getBestiaryBlocks(supabase, [""])
-  const haystack = `${currentLocation} ${recentDialogue?.map((d: any) => d.text).join(" ") ?? ""} ${message}`.toLowerCase()
-  const relevant = (allBestiary ?? []).filter((c: any) => haystack.includes(c.name.toLowerCase()))
-  const bestiarySection = relevant.length
-    ? `=== BESTIARY — AUTHORITATIVE STATS (use these EXACTLY; never invent or alter monster stats) ===\n${relevant.map(formatStatBlock).join("\n\n")}\n=== END BESTIARY ===`
-    : `=== BESTIARY ===\nNo bestiary creature is currently in the scene. If a monster appears, use its real D&D 5e stats; do NOT invent stat blocks.\n=== END BESTIARY ===`
-
-  // Gather the caster's known/prepared spells from the abilities table
-  let knownSpellNames: string[] = []
-  try {
-    const { data: known } = await supabase
-      .from("abilities")
-      .select("name")
-      .eq("character_id", playerCharacter?.id)
-    knownSpellNames = (known ?? []).map((a: any) => a.name)
-  } catch {
-    knownSpellNames = []
-  }
-
-  const turnText = `${message} ${recentDialogue?.map((d: any) => d.text).join(" ") ?? ""}`
-  const referencedSpells = findReferencedSpells(turnText, knownSpellNames)
-  const spellSection = referencedSpells.length
-    ? `=== SPELL MECHANICS — AUTHORITATIVE (resolve cast spells with these EXACT rules; never invent spell effects) ===\n${referencedSpells.map(formatSpell).join("\n")}\n=== END SPELL MECHANICS ===`
-    : ""
-
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
 
 === CONTINUITY — READ BEFORE RESPONDING ===
-This is an ONGOING session that is already in progress. The conversation history above is real and continuous.
-- Do NOT open with a recap, a "days have passed" monologue, or a fresh scene/room description unless the player has JUST arrived at a NEW location, or there is no prior history at all.
-- NEVER reuse an opening line, greeting, or phrasing you have already used earlier in this session. Each reply must move the story forward, not restate where things stand.
-- Respond directly to what the player just did. Continue the moment in progress instead of re-establishing the setting.
-- If the player's latest message is a "[Dice Roll]" (or a bare roll result) with no stated action, do NOT re-describe the room. Resolve the action that roll was for, compare it to the relevant DC/AC, and narrate the OUTCOME of that roll.
+This is an ONGOING session already in progress. The conversation history above is real and continuous.
+- Do NOT open with a recap, a "days have passed" monologue, or a fresh scene-establishing description. Respond DIRECTLY to the player's MOST RECENT message and push the story forward from there.
+- Only set or re-establish a scene when the player has just ARRIVED at a new location, or when there is no prior history (a true session start).
+- NEVER reuse an opening line, sentence, or phrasing you have already used earlier in this session. Vary your response every single turn.
+- If the player's latest message is a "[Dice Roll]" with no stated action, resolve the action that roll was for and narrate the OUTCOME. Do NOT re-describe the room or restate the current situation.
 
-=== CRITICAL OUTPUT RULES ��������� READ FIRST ===
+=== CRITICAL OUTPUT RULES — READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
 
 1. LOCATION CHANGES: You MUST emit [UPDATE_LOCATION: <name>] AND [LOCATION_IMAGE: <scene description>] on their own lines at the END of any response where the character moves to a new area. If you describe entering a tunnel, ledge, chamber, or any new space — EMIT THE TAGS.
@@ -528,45 +163,42 @@ CRITICAL HITS:
 - On a natural 20 attack, double the damage DICE (not the modifier). Example: 1d8+4 becomes 2d8+4.
 - Roll the doubled dice and narrate the critical hit, then emit [NPC_DAMAGE:] with the total.
 
-${bestiarySection}
-
-${spellSection}
+CURRENT NPC STATS (Hook Horror):
+- AC: 15
+- Attack: +7 to hit
+- Damage: 1d8+4 (bite or claw) + 2d6 (barbed leg, once per combat)
+- HP: 75 max
+- Conditions: none
 
 WORKED EXAMPLE — TWO-TURN COMBAT:
 
 Turn 1:
-"The creature looms before you, ready for combat. What do you do?"
-[Player: "I attack with my weapon"]
+"The Hook Horror's mandibles snap. You have an opening. What do you do?"
+[Player: "I attack with my dagger"]
 "Roll 1d20 + your attack modifier."
 [Player: "I rolled 22"]
-"A solid hit! Roll damage using the die for your weapon."
-[Player: "I rolled 8"]
-"Your blade connects with force. The creature snarls.
+"A solid hit! Roll 1d4+4 damage."
+[Player: "I rolled 6"]
+"Your dagger slides between its chitinous plates, drawing ichor. The creature shrills in pain.
 
-[NPC_DAMAGE: [Creature Name] 8]
-([Creature Name]: [remaining HP]/[max HP] HP)"
+[NPC_DAMAGE: Hook Horror 6]
+(Hook Horror: 69/75 HP)"
 
 Turn 2:
-"The creature retaliates, lashing out at you."
-"[[1d20+X]] for its attack. [rolling hit result] It connects!
+"The Hook Horror retaliates, its barbed leg whipping toward your face."
+"[[1d20+7]] for its attack. [rolling 16] Its leg catches your shoulder!
 
-[DAMAGE: X type]
+[DAMAGE: 5 piercing]
 
-You take the blow. What's your action?"
+You take a glancing blow. What's your action?"
 
 When it dies:
-"Your final strike ends the combat. The creature falls.
+"Your final strike pierces the creature's core. It collapses, ichor pooling around its broken body.
 
-[NPC_DAMAGE: [Creature Name] 10]
-[NPC_LEAVE: [Creature Name]]
+[NPC_DAMAGE: Hook Horror 10]
+[NPC_LEAVE: Hook Horror]
 
-Victory is yours—but beware what else might emerge from the darkness."
-
-BESTIARY RULE:
-- ALWAYS use the stats from the BESTIARY section above for any creature listed there. If a creature is not in the bestiary, use its official D&D 5e Monster Manual stats — never make up AC, HP, to-hit, or damage.
-
-SPELLS RULE:
-- SPELLS: When a spell is cast, resolve it using the SPELL MECHANICS block if the spell is listed there: for a save spell, call for the listed saving throw and apply damage/conditions (half on a successful save where noted); for an attack spell, call for the spell attack; roll the listed damage dice; enforce Concentration (a caster loses an existing concentration spell when they start a new one or fail a Con save after taking damage). Apply upcasting when cast with a higher-level slot. If a cast spell is NOT in the block, use its official D&D 5e rules — never invent numbers.
+Victory is yours—but the sound of its death-screams echoes through the caverns. Something larger might have heard that."
 
 === END COMBAT RULES ===
 
@@ -582,30 +214,16 @@ FORMATTING — CRITICAL:
 - NEVER repeat your name "Malachar" in every response. Establish character once, then drop the name unless specifically needed.
 
 PROGRESSION TRIGGERS — ENFORCE THESE:
-- STAGE 1→2: Once the player rolls for their scavenged possession (1d20 + days imprisoned), transition to describing the slave pen with other prisoners.
-- STAGE 2→3: When the player attempts to escape, run it as official Out of the Abyss SKILL CHECKS — there is NO random "escape table" and NO 1d6 roll. Use the real DCs below.
+- STAGE 1→2: Once the player rolls d100 for scavenged item, transition to describing the slave pen with other prisoners.
+- STAGE 2→3: When the player attempts escape (attacks guard, breaks chains, negotiates, sneak attacks), immediately transition to the Escape Encounter. Roll [[1d6]] and describe the encounter.
 - STAGE 3→4: When the player succeeds at the escape encounter (defeats/evades the obstacle), move them to the Velkynvelve Outpost. Describe stone bridges, rope walkways, drow merchants, the vast cavern below. They are no longer in cells but hunted.
 - STAGE 4→5: When the player finds and uses an exit (secret tunnel, sewer grate, climbing down the web-covered walls), transition them to the Underdark Tunnels. Use [LOCATION_IMAGE: tag].
 - If a stage fails (party captured/killed), revert to that stage and run it again.
 - NEVER skip stages. Progression must feel earned through player actions.
 - You are running OUT OF THE ABYSS, Act 1: Escape Velkynvelve. The progression is strictly:
-  * STAGE 1 (Arrival): Determine the player's single scavenged possession using the OFFICIAL Out of the Abyss "Scavenged Possessions" rule. The character has been a prisoner for [[1d10]] days. Have the player roll [[1d20]], then ADD their number of days imprisoned. Look up the TOTAL on this table (do NOT invent results, do NOT use a d100, do NOT give more than one item, do NOT upgrade an item to something stronger):
-      - 2-9: Nothing
-      - 10-12: A gold coin
-      - 13-15: A living spider the size of a tarantula
-      - 16-18: A 5-foot-long strand of silk rope
-      - 19-21: A flawed carnelian gemstone worth 10 gp
-      - 22-24: A rusted iron bar that can be used as a club
-      - 25-27: A flint shard that can be used as a dagger
-      - 28-30: A hand crossbow bolt coated with drow poison (a single BOLT only — NOT a hand crossbow; it cannot be fired without a weapon)
-    When the player gives you their total, narrate finding ONLY the matching item, and emit the [ITEM_AWARD: ...] tag for it (skip the tag on a "Nothing" result). Do NOT skip this step. Do NOT assume the result.
-  * STAGE 2 (Slave Pen): After they provide their scavenged-possession total, describe waking in Velkynvelve slave pen. Introduce fellow prisoners (Eldeth, Jimjar, Topsy/Tulgy, Shuushar, Stool, Ront, Derendil). They are manacled and stripped of gear. You are in the pen, watching guards.
-  * STAGE 3 (Escape Attempt): When the player attempts to escape, adjudicate it with official Out of the Abyss skill checks. There is NO random escape table — do NOT invent one or roll 1d6 for it. The prisoners are restrained by manacles and an iron slave collar:
-      - Slip out of the manacles: DC 20 Dexterity check
-      - Break the manacles: DC 20 Strength check (manacles have 15 hit points)
-      - Unlock the manacles with thieves' tools: DC 15 Dexterity check
-      - Break the iron slave collar: DC 20 Strength check (collar has 12 hit points)
-    Ask for the relevant [[1d20]] + ability check and adjudicate against the DC. A character who FAILS a check to break a collar or escape manacles cannot attempt that same check again until after a long rest, though another character may use the Help action. Spellcasters have no components and CANNOT cast inside the slave pen (it is magically warded). Once a character is free and the party makes their move, transition them toward the Velkynvelve outpost. DO NOT skip the escape — make it earned through these checks.
+  * STAGE 1 (Arrival): Ask the player to roll [[1d100]] on the Scavenged Items table for their hidden item. Do NOT skip. Do NOT assume.
+  * STAGE 2 (Slave Pen): After they provide the d100 result, describe waking in Velkynvelve slave pen. Introduce fellow prisoners (Eldeth, Jimjar, Topsy/Tulgy, Shuushar, Stool, Ront, Derendil). They are manacled and stripped of gear. You are in the pen, watching guards.
+  * STAGE 3 (Escape Attempt): When the player attempts to escape (break chains, attack guards, negotiate, sneak out), run the Escape Encounter. Roll [[1d6]] on the Velkynvelve Escape table to determine what obstacle/NPC they face. DO NOT skip this encounter.
   * STAGE 4 (Outpost): After they overcome the escape encounter and reach the drow outpost proper, describe Velkynvelve's architecture, markets, bridges, and the danger above. Introduce key NPCs like Ilvara (drow priestess), merchants, guards. The slave pens are one level below. They are now loose in a hostile drow enclave.
   * STAGE 5 (Tunnels): When they flee Velkynvelve entirely (leaving the outpost through tunnels, sewers, or hidden passages), transition to the Underdark tunnels. Describe the vast caverns, bioluminescent fungi, distant sounds. This is the beginning of Act 2.
 - Track which STAGE the party is in based on their progress. If they backtrack or get captured, you may revert stages.
@@ -709,47 +327,46 @@ EXPERIENCE POINTS:
 - When players defeat monsters, complete quests, or achieve milestones, announce XP awards narratively
 - Follow D&D 5E XP values based on CR`
 
-  const result = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
+  const result = await generateText({
+    model: anthropic("claude-sonnet-4-6"),
     system: lichPrompt,
     messages: [
       ...conversationHistory,
-      { role: "user" as const, content: message }
+      { role: "user", content: message }
     ],
   })
 
-  const firstBlock = result.content[0]
-  const rawText = (firstBlock && firstBlock.type === "text") ? firstBlock.text : ""
-  
+  const rawText = result.text || ""
+
   // === WARNING LOG: Detect when Malachar describes state changes without tags ===
   const hasDamageTag = /\[DAMAGE:/i.test(rawText)
   const hasLocationTag = /\[UPDATE_LOCATION:/i.test(rawText)
   const hasNpcEncounterTag = /\[NPC_ENCOUNTER:/i.test(rawText)
   const hasConditionTag = /\[CONDITION_ADD:/i.test(rawText)
-  
+
   // Check for damage-like prose without tag
   if (!hasDamageTag && /\b(take|takes|dealt|deals|suffer|suffers)\s+\d+\s*(points?\s*(of\s*)?)?(damage|hit points?|hp)/i.test(rawText)) {
     console.warn("[v0] WARNING: Response describes damage but contains no [DAMAGE:] tag!")
   }
-  
+
   // Check for location change prose without tag
   if (!hasLocationTag && /\b(you\s+(arrive|enter|emerge|step|climb|crawl|squeeze|descend|ascend)\s+(at|into|onto|through|out|in))|(\binto\s+(a|the|an)\s+(chamber|cavern|tunnel|passage|room|corridor|ledge|chute))/i.test(rawText)) {
     console.warn("[v0] WARNING: Response describes location change but contains no [UPDATE_LOCATION:] tag!")
   }
-  
+
   // Check for NPC/monster introduction without tag
   if (!hasNpcEncounterTag && /\b(looms?|blocks?|confronts?|appears?|emerges?|attacks?|lunges?|approaches?)\s+(before|toward|at)\s+(you|the\s+party)/i.test(rawText)) {
     console.warn("[v0] WARNING: Response describes NPC/monster encounter but contains no [NPC_ENCOUNTER:] tag!")
   }
-  
+
   // Check for condition-like prose without tag
   if (!hasConditionTag && /\b(you\s+(are|feel|become)\s+(poisoned|paralyzed|frightened|charmed|grappled|restrained|prone|blinded|deafened|stunned|unconscious|incapacitated))/i.test(rawText)) {
     console.warn("[v0] WARNING: Response describes condition but contains no [CONDITION_ADD:] tag!")
   }
-  
-  // Track which NPCs the player actually interacted with this turn, so the NPC
-  // panel can show only the currently-relevant NPC(s) instead of every one ever met.
+
+  // Track which NPCs are present in THIS turn's scene. Any NPC not named here
+  // gets hidden from the panel below, so the player only sees who they're
+  // actually interacting with (e.g. talking to Eldeth shows only Eldeth).
   const encounteredThisTurn = new Set<string>()
 
   // Parse and process inventory tags from the response
@@ -762,14 +379,14 @@ EXPERIENCE POINTS:
       const quantity = parseInt(qty.trim()) || 1
       const itemType = type.trim()
       const desc = description.trim()
-      
+
       const { data: existing } = await supabase
         .from("inventory_items")
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
         .eq("name", itemName)
         .single()
-      
+
       if (existing) {
         await supabase.from("inventory_items")
           .update({ quantity: existing.quantity + quantity })
@@ -784,21 +401,21 @@ EXPERIENCE POINTS:
         })
       }
     }
-    
+
     // Handle ITEM_REMOVE tags
     const removeMatches = rawText.matchAll(/\[ITEM_REMOVE:\s*([^|]+)\|\s*(\d+)\s*\]/gi)
     for (const match of removeMatches) {
       const [, name, qty] = match
       const itemName = name.trim()
       const quantity = parseInt(qty.trim()) || 1
-      
+
       const { data: existing } = await supabase
         .from("inventory_items")
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
         .eq("name", itemName)
         .single()
-      
+
       if (existing) {
         if (existing.quantity <= quantity) {
           await supabase.from("inventory_items").delete().eq("id", existing.id)
@@ -809,7 +426,7 @@ EXPERIENCE POINTS:
         }
       }
     }
-    
+
     // Handle ITEM_AWARD tags - [ITEM_AWARD: name | qty | description | item_type | icon_hint]
     const awardMatches = rawText.matchAll(/\[ITEM_AWARD:\s*([^|]+)\|\s*(\d+)\s*\|\s*([^|]+)\|\s*(\w+)\s*\|\s*([^\]]+)\]/gi)
     for (const match of awardMatches) {
@@ -819,52 +436,37 @@ EXPERIENCE POINTS:
       const desc = description.trim()
       const type = itemType.trim() || "misc"
       const hint = iconHint.trim()
-      
+
       console.log("[v0] ITEM_AWARD tag found:", itemName, "| qty:", quantity, "| icon_hint:", hint)
-      
-      // Try to find an existing icon from dashboard_assets.
-      // Assets store their image at `file_url` and item icons use asset_type "icon".
-      // Search by the icon_hint first, then by the item name.
+
+      // Try to find an existing icon from dashboard_assets
       let iconUrl: string | null = null
       const { data: existingIcon } = await supabase
         .from("dashboard_assets")
-        .select("file_url")
-        .eq("asset_type", "icon")
+        .select("url")
+        .eq("asset_type", "item_icon")
         .or(`name.ilike.%${hint}%,name.ilike.%${itemName}%`)
-        .not("file_url", "is", null)
         .limit(1)
-        .maybeSingle()
-      
-      if (existingIcon?.file_url) {
-        iconUrl = existingIcon.file_url
+        .single()
+
+      if (existingIcon?.url) {
+        iconUrl = existingIcon.url
         console.log("[v0] Found existing icon for item:", iconUrl)
       }
 
-      // Fall back to a preset icon derived from the item_type when no custom
-      // asset matches, so the item still renders a meaningful glyph.
-      const ITEM_TYPE_PRESET: Record<string, string> = {
-        weapon: "backpack",
-        armor: "robe",
-        consumable: "potion",
-        currency: "gold",
-        misc: "backpack",
-      }
-      const presetIcon = ITEM_TYPE_PRESET[type] || type
-      const iconType: "custom" | "preset" = iconUrl ? "custom" : "preset"
-      
       // Check if item already exists in inventory
       const { data: existing } = await supabase
         .from("inventory_items")
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
         .eq("name", itemName)
-        .maybeSingle()
-      
+        .single()
+
       if (existing) {
         await supabase.from("inventory_items")
-          .update({ 
+          .update({
             quantity: existing.quantity + quantity,
-            ...(iconUrl ? { icon_url: iconUrl, icon_type: "custom" } : {}),
+            icon_url: iconUrl || undefined
           })
           .eq("id", existing.id)
         console.log("[v0] Updated existing item quantity:", itemName)
@@ -876,102 +478,49 @@ EXPERIENCE POINTS:
           description: desc,
           item_type: type,
           icon_url: iconUrl,
-          icon_type: iconType,
-          preset_icon: iconUrl ? null : presetIcon,
         })
-        console.log("[v0] Created new inventory item:", itemName, "| icon_type:", iconType)
+        console.log("[v0] Created new inventory item:", itemName)
       }
-
-      // === BEAT: item award ===
-      await recordBeat({
-        beat_type: "item_award",
-        priority: 5,
-        character_id: playerCharacter?.id,
-        subject: itemName,
-        summary: `${playerCharacter?.name || "The hero"} acquires ${itemName}`,
-        image_ref: iconUrl || null,
-        shot_recipe: "reaction",
-        shots: buildShots("item_award", {
-          itemName,
-          itemRarity: "common",
-          itemImage: iconUrl || playerAvatarUrl,
-        }),
-      })
-      console.log("[v0] Beat: item_award")
     }
-    
+
     // Handle DAMAGE tags - [DAMAGE: amount type]
     const damageMatches = rawText.matchAll(/\[DAMAGE:\s*(\d+)\s*(\w+)?\s*\]/gi)
     for (const match of damageMatches) {
       const [, amountStr, damageType] = match
       const amount = parseInt(amountStr) || 0
       console.log("[v0] DAMAGE tag found:", amount, damageType || "untyped")
-      
+
       if (amount > 0) {
         // Get current HP and apply damage
         const { data: char } = await supabase
           .from("characters")
-          .select("hp_current, hp_max")
+          .select("hp_current")
           .eq("id", playerCharacter.id)
           .single()
-        
+
         if (char) {
           const newHp = Math.max(0, (char.hp_current || 0) - amount)
           const { error } = await supabase
             .from("characters")
             .update({ hp_current: newHp })
             .eq("id", playerCharacter.id)
-          
+
           if (error) {
             console.error("[v0] Error applying damage:", error)
           } else {
             console.log("[v0] HP updated:", char.hp_current, "->", newHp)
           }
-
-          // === BEATS: big hit and near-death ===
-          if (amount >= 8) {
-            await recordBeat({
-              beat_type: "big_hit",
-              priority: 6,
-              character_id: playerCharacter?.id,
-              subject: damageType,
-              summary: `${playerCharacter?.name || "The hero"} takes ${amount} ${damageType || ""} damage`,
-              shot_recipe: "reaction",
-              shots: buildShots("big_hit", {
-                playerAvatar: playerAvatarUrl,
-                damageAmount: amount,
-                actionDescription: `${playerCharacter?.name || "The hero"} is hammered by a ${amount}-point ${damageType || ""} blow`.trim(),
-              }),
-            })
-            console.log("[v0] Beat: big_hit")
-          }
-          const hpMax = char.hp_max || 0
-          if (hpMax > 0 && newHp <= hpMax * 0.25) {
-            await recordBeat({
-              beat_type: "near_death",
-              priority: 8,
-              character_id: playerCharacter?.id,
-              summary: `${playerCharacter?.name || "The hero"} is near death at ${newHp} HP`,
-              shot_recipe: "impact",
-              shots: buildShots("near_death", {
-                playerAvatar: playerAvatarUrl,
-                diceValue: amount,
-                actionDescription: `${playerCharacter?.name || "The hero"} reels on the brink of death at ${newHp} HP`,
-              }),
-            })
-            console.log("[v0] Beat: near_death")
-          }
         }
       }
     }
-    
+
     // Handle HEAL tags - [HEAL: amount]
     const healMatches = rawText.matchAll(/\[HEAL:\s*(\d+)\s*\]/gi)
     for (const match of healMatches) {
       const [, amountStr] = match
       const amount = parseInt(amountStr) || 0
       console.log("[v0] HEAL tag found:", amount)
-      
+
       if (amount > 0) {
         // Get current HP and max HP, apply healing
         const { data: char } = await supabase
@@ -979,14 +528,14 @@ EXPERIENCE POINTS:
           .select("hp_current, hp_max")
           .eq("id", playerCharacter.id)
           .single()
-        
+
         if (char) {
           const newHp = Math.min(char.hp_max || 10, (char.hp_current || 0) + amount)
           const { error } = await supabase
             .from("characters")
             .update({ hp_current: newHp })
             .eq("id", playerCharacter.id)
-          
+
           if (error) {
             console.error("[v0] Error applying heal:", error)
           } else {
@@ -995,28 +544,28 @@ EXPERIENCE POINTS:
         }
       }
     }
-    
+
     // Handle CONDITION_ADD tags - [CONDITION_ADD: name]
     const conditionAddMatches = rawText.matchAll(/\[CONDITION_ADD:\s*([^\]]+)\]/gi)
     for (const match of conditionAddMatches) {
       const [, conditionName] = match
       const condition = conditionName.trim().toLowerCase()
       console.log("[v0] CONDITION_ADD tag found:", condition)
-      
+
       // Get current conditions array
       const { data: char } = await supabase
         .from("characters")
         .select("conditions")
         .eq("id", playerCharacter.id)
         .single()
-      
+
       const currentConditions: string[] = (char?.conditions as string[]) || []
       if (!currentConditions.includes(condition)) {
         const { error } = await supabase
           .from("characters")
           .update({ conditions: [...currentConditions, condition] })
           .eq("id", playerCharacter.id)
-        
+
         if (error) {
           console.error("[v0] Error adding condition:", error)
         } else {
@@ -1024,28 +573,28 @@ EXPERIENCE POINTS:
         }
       }
     }
-    
+
     // Handle CONDITION_REMOVE tags - [CONDITION_REMOVE: name]
     const conditionRemoveMatches = rawText.matchAll(/\[CONDITION_REMOVE:\s*([^\]]+)\]/gi)
     for (const match of conditionRemoveMatches) {
       const [, conditionName] = match
       const condition = conditionName.trim().toLowerCase()
       console.log("[v0] CONDITION_REMOVE tag found:", condition)
-      
+
       // Get current conditions array
       const { data: char } = await supabase
         .from("characters")
         .select("conditions")
         .eq("id", playerCharacter.id)
         .single()
-      
+
       const currentConditions: string[] = (char?.conditions as string[]) || []
       if (currentConditions.includes(condition)) {
         const { error } = await supabase
           .from("characters")
           .update({ conditions: currentConditions.filter(c => c !== condition) })
           .eq("id", playerCharacter.id)
-        
+
         if (error) {
           console.error("[v0] Error removing condition:", error)
         } else {
@@ -1053,172 +602,82 @@ EXPERIENCE POINTS:
         }
       }
     }
-    
+
     // Handle NPC_ENCOUNTER tags - [NPC_ENCOUNTER: name | description | portrait_prompt | CR=<n> | XP=<n> | type=<creature_type>]
     // Updated regex to capture optional CR/XP/type at the end
     const npcEncounterMatches = rawText.matchAll(/\[NPC_ENCOUNTER:\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)(?:\|\s*CR\s*=\s*([0-9.\/]+))?\s*(?:\|\s*XP\s*=\s*(\d+))?\s*(?:\|\s*type\s*=\s*([^\]]+))?\s*\]/gi)
     for (const match of npcEncounterMatches) {
       const [, npcName, description, portraitPrompt, crStr, xpStr, monsterType] = match
       const name = npcName.trim()
+      encounteredThisTurn.add(name)
       const desc = description.trim()
       const prompt = portraitPrompt.trim()
       const cr = crStr ? parseFloat(crStr.trim()) : undefined
       const xp = xpStr ? parseInt(xpStr.trim()) : undefined
       const type = monsterType ? monsterType.trim() : undefined
 
-      encounteredThisTurn.add(name)
-
       console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
-      
+
+      // Generate portrait image via Fal
       let portraitUrl: string | null = null
-
-      // First, try to reuse an uploaded portrait from a matching NPC character.
-      // Names don't always match the module exactly (e.g. "Turvey" vs "Turvy",
-      // trailing spaces, "Shuushar the Awakened" vs "Shuushar"), so try
-      // exact -> prefix -> contains and take the first hit.
-      let npcCharacter: { id: string; name: string; portrait_image_url: string | null; avatar_image_url: string | null } | null = null
-      for (const pattern of [name, `${name}%`, `%${name}%`]) {
-        const { data } = await supabase
-          .from("characters")
-          .select("id, name, portrait_image_url, avatar_image_url")
-          .eq("is_player", false)
-          .ilike("name", pattern)
-          .limit(1)
-          .maybeSingle()
-        if (data) {
-          npcCharacter = data
-          break
+      try {
+        const result = await fal.subscribe("fal-ai/flux/schnell", {
+          input: {
+            prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
+            image_size: "square_hd",
+            num_inference_steps: 4,
+            num_images: 1,
+          },
+        }) as any
+        if (result?.images && result.images.length > 0) {
+          portraitUrl = result.images[0].url
+          console.log("[v0] NPC portrait generated:", portraitUrl)
         }
+      } catch (err) {
+        console.error("[v0] NPC portrait generation failed:", err)
       }
 
-      // Final fallback: the encounter name is LONGER than the stored name
-      // (e.g. spoken "Prince Derendil" vs stored "Derendil"). Match when the
-      // stored character name is contained within the encounter name.
-      if (!npcCharacter) {
-        const { data: candidates } = await supabase
-          .from("characters")
-          .select("id, name, portrait_image_url, avatar_image_url")
-          .eq("is_player", false)
-        const lowerName = name.toLowerCase()
-        const found = (candidates || []).find(c => {
-          const stored = (c.name || "").trim().toLowerCase()
-          return stored.length > 0 && lowerName.includes(stored)
-        })
-        if (found) {
-          npcCharacter = found
-        }
-      }
-
-      // If a character matched, collapse every spoken variant to their proper name.
-      const canonicalName = npcCharacter ? npcCharacter.name.trim() : name
-
-      const uploadedPortrait = npcCharacter?.portrait_image_url || npcCharacter?.avatar_image_url || null
-
-      if (uploadedPortrait) {
-        // Reuse the uploaded art and skip Fal generation entirely.
-        portraitUrl = uploadedPortrait
-        console.log("[v0] Reusing uploaded NPC portrait for:", name)
-      } else {
-        // No uploaded image found - generate a portrait via Fal as before.
-        try {
-          const result = await fal.subscribe("fal-ai/flux/schnell", {
-            input: {
-              prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
-              image_size: "square_hd",
-              num_inference_steps: 4,
-              num_images: 1,
-            },
-          }) as any
-          if (result?.images && result.images.length > 0) {
-            portraitUrl = result.images[0].url
-            console.log("[v0] NPC portrait generated:", portraitUrl)
-          }
-        } catch (err) {
-          console.error("[v0] NPC portrait generation failed:", err)
-        }
-      }
-      
-      // === BEAT: NPC reveal (skip if we already revealed this NPC this session) ===
-      if (await beatExists("npc_reveal", canonicalName)) {
-        console.log("[v0] Beat: npc_reveal skipped (duplicate):", canonicalName)
-      } else {
-        await recordBeat({
-          beat_type: "npc_reveal",
-          priority: 7,
-          subject: canonicalName,
-          summary: `${canonicalName} enters the scene`,
-          image_ref: portraitUrl,
-          narration: desc,
-          shot_recipe: "establishing",
-          shots: buildShots("npc_reveal", {
-            envImage: activeEnvImage,
-            npcImage: portraitUrl,
-            npcName: canonicalName,
-            descriptor: desc,
-          }),
-        })
-        console.log("[v0] Beat: npc_reveal")
-      }
-      
-      // Check if this NPC already exists (might be returning).
-      // Use canonicalName so spoken variants collapse to ONE encounter card.
+      // Check if this NPC already exists (might be returning)
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
         .select("id")
-        .eq("name", canonicalName)
+        .eq("name", name)
         .eq("character_id", playerCharacter.id)
         .single()
-      
+
       if (existingNpc) {
         // Reactivate existing NPC
         await supabase
           .from("npc_encounters")
-          .update({ 
-            is_active: true, 
+          .update({
+            is_active: true,
             description: desc,
-            portrait_url: portraitUrl || undefined 
+            portrait_url: portraitUrl || undefined
           })
           .eq("id", existingNpc.id)
-        console.log("[v0] NPC reactivated:", canonicalName)
+        console.log("[v0] NPC reactivated:", name)
       } else {
-        // Resolve real HP from the bestiary (e.g. "Drow Guard" matches "Drow").
-        // Fall back to a CR-based estimate, never the old flat 75.
-        const CR_HP: Record<string, number> = {
-          "0": 5, "1/8": 7, "1/4": 13, "1/2": 22, "1": 33, "2": 52,
-          "3": 75, "4": 100, "5": 120, "6": 140, "7": 160, "8": 180,
-        }
-        let hpMax = CR_HP[String(cr)] ?? 20
-        try {
-          const all = await getBestiaryBlocks(supabase, [""]) // small table; returns all rows
-          const match =
-            (all ?? []).find((b: any) => b.name.toLowerCase() === canonicalName.toLowerCase()) ||
-            (all ?? []).find((b: any) => canonicalName.toLowerCase().includes(b.name.toLowerCase()))
-          if (match?.hp) hpMax = match.hp
-        } catch (e) {
-          console.error("[v0] bestiary HP lookup failed:", e)
-        }
-
         // Insert new NPC encounter
         const { error } = await supabase.from("npc_encounters").insert({
           character_id: playerCharacter.id,
-          name: canonicalName,
+          name,
           description: desc,
           portrait_url: portraitUrl,
           challenge_rating: cr,
           xp_value: xp,
           monster_type: type,
           is_active: true,
-          hp_max: hpMax,
-          hp_current: hpMax,
+          hp_max: 75, // Default HP - will be overridden if specific NPC stats are known
+          hp_current: 75,
         })
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
         } else {
-          console.log("[v0] NPC encounter created:", canonicalName, "| XP:", xp)
+          console.log("[v0] NPC encounter created:", name, "| XP:", xp)
         }
       }
     }
-    
+
     // Handle NPC_DAMAGE tags - [NPC_DAMAGE: Name amount]
     const npcDamageMatches = rawText.matchAll(/\[NPC_DAMAGE:\s*([^|\s]+)\s+(\d+)\s*\]/gi)
     for (const match of npcDamageMatches) {
@@ -1226,7 +685,7 @@ EXPERIENCE POINTS:
       const name = npcName.trim()
       const amount = parseInt(amountStr) || 0
       console.log("[v0] NPC_DAMAGE tag found:", name, "takes", amount, "damage")
-      
+
       if (amount > 0) {
         // Get NPC's current HP
         const { data: npc } = await supabase
@@ -1236,21 +695,21 @@ EXPERIENCE POINTS:
           .eq("character_id", playerCharacter.id)
           .eq("is_active", true)
           .single()
-        
+
         if (npc) {
           const newHp = Math.max(0, (npc.hp_current || 0) - amount)
           const isDefeated = newHp <= 0
-          
+
           // Update NPC HP
           const { error } = await supabase
             .from("npc_encounters")
-            .update({ 
+            .update({
               hp_current: newHp,
               is_active: !isDefeated  // Deactivate if HP reaches 0
             })
             .eq("name", name)
             .eq("character_id", playerCharacter.id)
-          
+
           if (error) {
             console.error("[v0] Error applying NPC damage:", error)
           } else {
@@ -1259,47 +718,47 @@ EXPERIENCE POINTS:
         }
       }
     }
-    
+
     // Handle NPC_LEAVE tags - [NPC_LEAVE: name]
     const npcLeaveMatches = rawText.matchAll(/\[NPC_LEAVE:\s*([^\]]+)\]/gi)
     for (const match of npcLeaveMatches) {
       const [, npcName] = match
       const name = npcName.trim()
       console.log("[v0] NPC_LEAVE tag found:", name)
-      
+
       // Fetch NPC to check if it's truly defeated (HP = 0) and get XP
       const { data: npc } = await supabase
         .from("npc_encounters")
-        .select("id, hp_current, hp_max, xp_value, is_active, portrait_url")
+        .select("id, hp_current, hp_max, xp_value, is_active")
         .eq("name", name)
         .eq("character_id", playerCharacter.id)
         .eq("is_active", true)
         .single()
-      
+
       if (npc) {
         // Check if NPC is defeated narratively without HP reaching 0 (missing damage tags)
         if ((npc.hp_current || 0) > 0) {
           console.warn("[v0] WARNING: [NPC_LEAVE:] emitted for", name, 'but hp_current is', npc.hp_current, '— NPC defeated narratively without [NPC_DAMAGE:] tags!')
         }
-        
+
         // Award XP if the NPC has xp_value (true defeat)
         if (npc.xp_value && (npc.hp_current || 0) <= 0) {
           console.log("[v0] Awarding", npc.xp_value, 'XP for defeating', name)
-          
+
           // Get current XP and level to check for level-up
           const { data: char } = await supabase
             .from("characters")
             .select("xp, level")
             .eq("id", playerCharacter.id)
             .single()
-          
+
           if (char) {
             const newXp = (char.xp || 0) + npc.xp_value
             const { error: xpError } = await supabase
               .from("characters")
               .update({ xp: newXp })
               .eq("id", playerCharacter.id)
-            
+
             if (xpError) {
               console.error("[v0] Error awarding XP:", xpError)
             } else {
@@ -1307,7 +766,7 @@ EXPERIENCE POINTS:
               const xpThresholds = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000]
               const currentLevel = xpThresholds.findIndex(xp => newXp < xp) || xpThresholds.length
               const leveledUp = currentLevel > (char.level || 1)
-              
+
               if (leveledUp) {
                 console.log("[v0] LEVEL UP! New level:", currentLevel, '| XP:', newXp)
               } else {
@@ -1316,36 +775,15 @@ EXPERIENCE POINTS:
             }
           }
         }
-        
-        // === BEAT: kill (NPC_LEAVE following damage that brought it to 0) ===
-        if ((npc.hp_current || 0) <= 0) {
-          await recordBeat({
-            beat_type: "kill",
-            priority: 9,
-            subject: name,
-            summary: `${name} is defeated`,
-            image_ref: npc.portrait_url || null,
-            narration: `And so ${name} is unmade — another flickering candle I shall not bother to remember. Mourn quickly, ${playerCharacter?.name || "hero"}; the dark is patient and you are next.`,
-            shot_recipe: "establishing",
-            shots: buildShots("kill", {
-              envImage: activeEnvImage,
-              npcImage: npc.portrait_url || null,
-              playerAvatar: playerAvatarUrl,
-              victimName: name,
-              actionDescription: `${name} falls, struck down by ${playerCharacter?.name || "the hero"}`,
-            }),
-          })
-          console.log("[v0] Beat: kill")
-        }
       }
-      
+
       const { error } = await supabase
         .from("npc_encounters")
         .update({ is_active: false })
         .eq("name", name)
         .eq("character_id", playerCharacter.id)
         .eq("is_active", true)
-      
+
       if (error) {
         console.error("[v0] Error deactivating NPC:", error)
       } else {
@@ -1353,7 +791,7 @@ EXPERIENCE POINTS:
       }
     }
   }
-  
+
   // Parse NPC_IMAGE tag and generate an image using Fal
   let npcImageUrl: string | null = null
   const npcImageMatch = rawText.match(/\[NPC_IMAGE:\s*([^\]]+)\]/)
@@ -1376,32 +814,22 @@ EXPERIENCE POINTS:
     }
   }
 
-  // Parse the new location name up-front so every image path can match an
-  // existing environment by NAME (e.g. reuse "Scene_1_Velkynvelve (slave pen)").
-  let updatedLocation: string | null = null
-  const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
-  if (updateLocationMatch) {
-    updatedLocation = updateLocationMatch[1].trim()
-  }
-
   // Parse LOCATION_IMAGE tag and generate scene image using Fal
   let locationImageUrl: string | null = null
   const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
   if (locationImageMatch) {
     const locationDescription = locationImageMatch[1].trim()
     console.log("[v0] Processing location image for:", locationDescription.substring(0, 60))
-    
-    // First, check if we have an existing environment with a background image
-    // that matches the location NAME (exact, case-insensitive, trimmed).
-    const envSearchTerm = (updatedLocation || locationDescription.split(" ")[0]).trim()
+
+    // First, check if we have an existing environment with a background image that matches
     const { data: existingEnv } = await supabase
       .from("environments")
       .select("background_image_url, name")
-      .ilike("name", envSearchTerm)
+      .ilike("name", `%${locationDescription.split(" ")[0]}%`)
       .not("background_image_url", "is", null)
       .limit(1)
-      .maybeSingle()
-    
+      .single()
+
     if (existingEnv?.background_image_url) {
       locationImageUrl = existingEnv.background_image_url
       console.log("[v0] Reusing existing environment image for:", existingEnv.name)
@@ -1429,23 +857,25 @@ EXPERIENCE POINTS:
     console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
   }
 
-  // Apply the parsed UPDATE_LOCATION tag to the campaign location
-  if (updatedLocation) {
+  // Parse UPDATE_LOCATION tag to update the campaign location
+  let updatedLocation: string | null = null
+  const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
+  if (updateLocationMatch) {
+    updatedLocation = updateLocationMatch[1].trim()
     console.log("[v0] Updating campaign location to:", updatedLocation)
     console.log("[v0] Current locationImageUrl:", locationImageUrl ? "SET" : "EMPTY", "| updatedLocation:", updatedLocation)
-    
+
     // If no LOCATION_IMAGE tag was provided, check for existing image first, then auto-generate
     if (!locationImageUrl && updatedLocation) {
-      // First check if there's an existing environment with a background image
-      // for this location (exact, case-insensitive, trimmed).
+      // First check if there's an existing environment with a background image for this location
       const { data: existingEnvImage } = await supabase
         .from("environments")
         .select("background_image_url, name")
-        .ilike("name", updatedLocation.trim())
+        .ilike("name", `%${updatedLocation}%`)
         .not("background_image_url", "is", null)
         .limit(1)
-        .maybeSingle()
-      
+        .single()
+
       if (existingEnvImage?.background_image_url) {
         locationImageUrl = existingEnvImage.background_image_url
         console.log("[v0] Reusing existing environment image for:", existingEnvImage.name)
@@ -1475,28 +905,21 @@ EXPERIENCE POINTS:
     } else {
       console.log("[v0] Skipping auto-generation: locationImageUrl exists or no updatedLocation")
     }
-    
+
     try {
-      // Create or update the environment record with the new location and image.
-      // Match existing rows by name (exact, case-insensitive, trimmed) so we
-      // never create duplicate rows for the same location.
+      // Create or update the environment record with the new location and image
       const { data: existingEnv } = await supabase
         .from("environments")
         .select("id")
-        .ilike("name", updatedLocation.trim())
-        .limit(1)
-        .maybeSingle()
-      
+        .eq("name", updatedLocation)
+        .single()
+
       if (existingEnv) {
-        // Location already exists - if we have an image (either from tag or auto-generated), update it.
-        // Always bump updated_at so the dashboard (newest updated_at) surfaces this location.
+        // Location already exists - if we have an image (either from tag or auto-generated), update it
         if (locationImageUrl) {
           const { error: updateErr } = await supabase
             .from("environments")
-            .update({
-              background_image_url: locationImageUrl,
-              updated_at: new Date().toISOString(),
-            })
+            .update({ background_image_url: locationImageUrl })
             .eq("id", existingEnv.id)
           if (updateErr) {
             console.error("[v0] Error updating environment image:", updateErr)
@@ -1504,25 +927,15 @@ EXPERIENCE POINTS:
             console.log("[v0] Updated existing environment with image URL:", locationImageUrl.substring(0, 80))
           }
         } else {
-          // No image, but still mark this location as the most recently visited.
-          const { error: touchErr } = await supabase
-            .from("environments")
-            .update({ updated_at: new Date().toISOString() })
-            .eq("id", existingEnv.id)
-          if (touchErr) {
-            console.error("[v0] Error touching environment updated_at:", touchErr)
-          } else {
-            console.log("[v0] No image URL; bumped updated_at for existing environment")
-          }
+          console.log("[v0] No image URL to update for existing environment")
         }
       } else {
         // Create new location environment with the image
         const { error: insertErr } = await supabase.from("environments").insert({
-          name: updatedLocation.trim(),
+          name: updatedLocation,
           time_of_day: "Unknown",
           description: `The party has arrived at ${updatedLocation}.`,
           background_image_url: locationImageUrl || undefined,
-          updated_at: new Date().toISOString(),
         })
         if (insertErr) {
           console.error("[v0] Error creating environment:", insertErr)
@@ -1533,21 +946,6 @@ EXPERIENCE POINTS:
     } catch (err) {
       console.error("[v0] Location update error:", err)
     }
-
-    // === BEAT: location change ===
-    await recordBeat({
-      beat_type: "location_change",
-      priority: 6,
-      subject: updatedLocation,
-      summary: `The party moves to ${updatedLocation}`,
-      image_ref: locationImageUrl || null,
-      shot_recipe: "establishing",
-      shots: buildShots("location_change", {
-        locationName: updatedLocation,
-        locationImage: locationImageUrl || null,
-      }),
-    })
-    console.log("[v0] Beat: location_change")
   }
 
   // Strip all tags from the displayed text
@@ -1566,7 +964,7 @@ EXPERIENCE POINTS:
     .replace(/\[NPC_DAMAGE:[^\]]+\]/gi, "")
     .replace(/\[NPC_LEAVE:[^\]]+\]/gi, "")
     .trim()
-  
+
   // Persist Malachar's response to the dialogue table
   if (responseText) {
     const { error: dialogueError } = await supabase.from("dialogue").insert({
@@ -1584,7 +982,7 @@ EXPERIENCE POINTS:
   // and automatically detect which NPC is speaking, then generate their portrait.
   const hadNpcEncounterTag = /\[NPC_ENCOUNTER:/i.test(rawText)
   if (!hadNpcEncounterTag && playerCharacter) {
-    const hasQuotes = /[\u201C\u201D""]/.test(responseText) || /"[^"]{3,}"/.test(responseText)
+    const hasQuotes = /[“”""]/.test(responseText) || /"[^"]{3,}"/.test(responseText)
     if (hasQuotes) {
       try {
         const detectionPrompt = `You are analyzing a D&D dungeon master's narration from "Out of the Abyss".
@@ -1600,15 +998,12 @@ Respond ONLY with valid JSON, no other text:
 - If a named NPC is speaking: {"npc": "Exact NPC Name", "description": "one sentence physical description"}
 - If speaker is unnamed or unclear: {"npc": null}`
 
-        const detectionResult = await anthropic.messages.create({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 256,
-          messages: [{ role: "user" as const, content: detectionPrompt }],
+        const detectionResult = await generateText({
+          model: anthropic("claude-haiku-4-5-20251001"),
+          messages: [{ role: "user", content: detectionPrompt }],
         })
 
-        const detectionBlock = detectionResult.content[0]
-        const detectionText = (detectionBlock && detectionBlock.type === "text") ? detectionBlock.text : ""
-        const parsed = JSON.parse(detectionText.trim())
+        const parsed = JSON.parse(detectionResult.text.trim())
 
         if (parsed.npc) {
           const npcName: string = parsed.npc
@@ -1694,37 +1089,37 @@ Respond ONLY with valid JSON, no other text:
   }
   // === END AUTO NPC DETECTION ===
 
-  // Keep the NPC panel focused on who the player is interacting with right now.
-  // Only prune when at least one NPC was referenced this turn, so turns with no
-  // NPC tags (e.g. ongoing combat narration) leave active NPCs untouched.
+  // === FOCUS THE NPC PANEL ON THE CURRENT SCENE ===
+  // If this turn introduced/involved any NPCs, deactivate every OTHER active NPC
+  // so the dashboard only shows who the player is interacting with right now.
+  // Turns with no NPC tags (e.g. pure narration or combat damage rounds) leave
+  // the existing active NPCs untouched.
   if (playerCharacter?.id && encounteredThisTurn.size > 0) {
-    const currentNames = [...encounteredThisTurn].map((n) => n.toLowerCase())
-    const { data: activeNpcs } = await supabase
+    const focus = new Set(Array.from(encounteredThisTurn).map(n => n.toLowerCase()))
+    const { data: actives } = await supabase
       .from("npc_encounters")
       .select("id, name")
       .eq("character_id", playerCharacter.id)
       .eq("is_active", true)
-
-    const staleIds = (activeNpcs ?? [])
-      .filter((npc: any) => !currentNames.includes((npc.name ?? "").toLowerCase()))
-      .map((npc: any) => npc.id)
-
-    if (staleIds.length > 0) {
-      const { error: deactivateError } = await supabase
+    const toHide = (actives || [])
+      .filter(n => !focus.has((n.name || "").toLowerCase()))
+      .map(n => n.id)
+    if (toHide.length > 0) {
+      const { error: focusErr } = await supabase
         .from("npc_encounters")
         .update({ is_active: false })
-        .in("id", staleIds)
-      if (deactivateError) {
-        console.error("[v0] Error deactivating stale NPC encounters:", deactivateError)
+        .in("id", toHide)
+      if (focusErr) {
+        console.error("[v0] Error focusing NPC panel:", focusErr)
       } else {
-        console.log("[v0] Deactivated stale NPC encounters:", staleIds.length)
+        console.log("[v0] NPC panel focused on:", Array.from(encounteredThisTurn).join(", "), "| hid", toHide.length, "others")
       }
     }
   }
 
-  return Response.json({ 
-    text: responseText || "", 
-    npcImageUrl, 
+  return Response.json({
+    text: responseText || "",
+    npcImageUrl,
     locationImageUrl,
     updatedLocation: updatedLocation || undefined,
   })
