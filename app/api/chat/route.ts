@@ -331,7 +331,15 @@ export async function POST(req: Request) {
     activeEnvImage = env?.background_image_url ?? null
   }
   
-  // Persist player's message to the dialogue table FIRST
+  // Get recent dialogue history for context (last 20 messages) BEFORE inserting the
+  // player's current message, so the current message isn't duplicated in history.
+  const { data: recentDialogue } = await supabase
+    .from("dialogue")
+    .select("speaker, text")
+    .order("created_at", { ascending: false })
+    .limit(20)
+
+  // Persist player's message to the dialogue table exactly once
   const playerName = playerCharacter?.name || "Player"
   const { error: playerDialogueError } = await supabase.from("dialogue").insert({
     speaker: playerName,
@@ -386,13 +394,6 @@ export async function POST(req: Request) {
     console.error("[v0] crit beat detection failed", e)
   }
   
-  // Get recent dialogue history for context (last 20 messages)
-  const { data: recentDialogue } = await supabase
-    .from("dialogue")
-    .select("speaker, text")
-    .order("created_at", { ascending: false })
-    .limit(20)
-  
   // Build world context with character data
   // Don't pass a hardcoded location - let buildWorldContext fetch the latest from database
   const worldContext = await buildWorldContext(
@@ -410,13 +411,6 @@ export async function POST(req: Request) {
       role: (d.speaker === "Malachar" ? "assistant" : "user") as "assistant" | "user",
       content: `${d.speaker}: ${d.text}`
     }))
-  
-  // Save player message to dialogue
-  await supabase.from("dialogue").insert({
-    speaker: worldContext.characters[0]?.name || "Player",
-    text: message,
-    source: "player"
-  })
   
   // Determine campaign stage based on location
   const currentLocation = worldContext.environment?.name || "Velkynvelve (slave pen)"
@@ -458,6 +452,13 @@ export async function POST(req: Request) {
 
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
+
+=== CONTINUITY — READ BEFORE RESPONDING ===
+This is an ONGOING session that is already in progress. The conversation history above is real and continuous.
+- Do NOT open with a recap, a "days have passed" monologue, or a fresh scene/room description unless the player has JUST arrived at a NEW location, or there is no prior history at all.
+- NEVER reuse an opening line, greeting, or phrasing you have already used earlier in this session. Each reply must move the story forward, not restate where things stand.
+- Respond directly to what the player just did. Continue the moment in progress instead of re-establishing the setting.
+- If the player's latest message is a "[Dice Roll]" (or a bare roll result) with no stated action, do NOT re-describe the room. Resolve the action that roll was for, compare it to the relevant DC/AC, and narrate the OUTCOME of that roll.
 
 === CRITICAL OUTPUT RULES ��������� READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
