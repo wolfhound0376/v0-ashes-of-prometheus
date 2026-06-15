@@ -148,13 +148,21 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
             <div className="h-full flex gap-2 p-2 overflow-x-auto">
               {activeEncounters.map((encounter) => (
                 <div key={encounter.id} className="flex-shrink-0 relative overflow-hidden rounded-sm" style={{ width: activeEncounters.length === 1 ? '100%' : '140px' }}>
-                  {/* Portrait Image as Background */}
+                  {/* Portrait Image: blurred fill behind, full uncropped portrait in front */}
                   {encounter.portrait_url ? (
-                    <img
-                      src={encounter.portrait_url}
-                      alt={encounter.name}
-                      className="absolute inset-0 w-full h-full object-cover object-top"
-                    />
+                    <>
+                      <img
+                        src={encounter.portrait_url}
+                        alt=""
+                        aria-hidden="true"
+                        className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-40"
+                      />
+                      <img
+                        src={encounter.portrait_url}
+                        alt={encounter.name}
+                        className="absolute inset-0 w-full h-full object-contain object-top"
+                      />
+                    </>
                   ) : (
                     <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
                       <span className="text-4xl text-stone-600">?</span>
