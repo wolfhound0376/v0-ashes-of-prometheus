@@ -143,7 +143,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
-        <div className="relative h-[140px] overflow-hidden rounded-sm">
+        <div className="relative h-[260px] overflow-hidden rounded-sm">
           {activeEncounters.length > 0 ? (
             <div className="h-full flex gap-2 p-2 overflow-x-auto">
               {activeEncounters.map((encounter) => (
