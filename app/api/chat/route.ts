@@ -748,6 +748,10 @@ EXPERIENCE POINTS:
     console.warn("[v0] WARNING: Response describes condition but contains no [CONDITION_ADD:] tag!")
   }
   
+  // Track which NPCs the player actually interacted with this turn, so the NPC
+  // panel can show only the currently-relevant NPC(s) instead of every one ever met.
+  const encounteredThisTurn = new Set<string>()
+
   // Parse and process inventory tags from the response
   if (playerCharacter?.id) {
     // Handle ITEM_ADD tags
@@ -1061,7 +1065,9 @@ EXPERIENCE POINTS:
       const cr = crStr ? parseFloat(crStr.trim()) : undefined
       const xp = xpStr ? parseInt(xpStr.trim()) : undefined
       const type = monsterType ? monsterType.trim() : undefined
-      
+
+      encounteredThisTurn.add(name)
+
       console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
       
       let portraitUrl: string | null = null
@@ -1606,6 +1612,7 @@ Respond ONLY with valid JSON, no other text:
 
         if (parsed.npc) {
           const npcName: string = parsed.npc
+          encounteredThisTurn.add(npcName)
           console.log("[v0] Auto-detected speaking NPC:", npcName)
 
           const portraitPrompts: Record<string, string> = {
@@ -1686,6 +1693,34 @@ Respond ONLY with valid JSON, no other text:
     }
   }
   // === END AUTO NPC DETECTION ===
+
+  // Keep the NPC panel focused on who the player is interacting with right now.
+  // Only prune when at least one NPC was referenced this turn, so turns with no
+  // NPC tags (e.g. ongoing combat narration) leave active NPCs untouched.
+  if (playerCharacter?.id && encounteredThisTurn.size > 0) {
+    const currentNames = [...encounteredThisTurn].map((n) => n.toLowerCase())
+    const { data: activeNpcs } = await supabase
+      .from("npc_encounters")
+      .select("id, name")
+      .eq("character_id", playerCharacter.id)
+      .eq("is_active", true)
+
+    const staleIds = (activeNpcs ?? [])
+      .filter((npc: any) => !currentNames.includes((npc.name ?? "").toLowerCase()))
+      .map((npc: any) => npc.id)
+
+    if (staleIds.length > 0) {
+      const { error: deactivateError } = await supabase
+        .from("npc_encounters")
+        .update({ is_active: false })
+        .in("id", staleIds)
+      if (deactivateError) {
+        console.error("[v0] Error deactivating stale NPC encounters:", deactivateError)
+      } else {
+        console.log("[v0] Deactivated stale NPC encounters:", staleIds.length)
+      }
+    }
+  }
 
   return Response.json({ 
     text: responseText || "", 
