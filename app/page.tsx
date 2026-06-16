@@ -8,6 +8,7 @@ import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
+import { DynamicMusic } from "@/components/dashboard/dynamic-music"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
@@ -18,21 +19,21 @@ import type { Campaign } from "@/lib/world-ai/campaigns"
 
 export default function DashboardPage() {
   const supabase = createClient()
-  
+
   // Character selection state
   const [characters, setCharacters] = useState<Character[]>([])
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
-  const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null }[]>([])
+  const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: number | null }[]>([])
   const [loadingCharacters, setLoadingCharacters] = useState(true)
-  
+
   // Current environment from database
   const [currentEnvironment, setCurrentEnvironment] = useState<Environment | null>(null)
 
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
-  const [dialogue, setDialogue] = useState<{ id?: string; speaker: string; text: string }[]>([])
+  const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
   const [npcImageUrl, setNpcImageUrl] = useState<string | null>(null)
   const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
   // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
@@ -47,75 +48,75 @@ export default function DashboardPage() {
       return next
     })
   }, [])
-  
+
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
   const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
   const [pendingCampaignChange, setPendingCampaignChange] = useState<Campaign | null>(null)
-  
+
   // Save/Restart campaign state
   const [showRestartDialog, setShowRestartDialog] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  
+
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
-  
+
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
-  
-  
+
+
   // Handle campaign change with confirmation
   const handleCampaignChange = (newCampaign: Campaign) => {
     if (newCampaign.id === activeCampaign.id) return
     setPendingCampaignChange(newCampaign)
     setShowCampaignChangeDialog(true)
   }
-  
+
   // Confirm campaign change - clears dialogue and restarts
   const confirmCampaignChange = async () => {
     if (!pendingCampaignChange) return
-    
+
     // Clear all dialogue from the database
     const { error } = await supabase
       .from('dialogue')
       .delete()
       .neq('id', '00000000-0000-0000-0000-000000000000') // Delete all
-    
+
     if (error) {
       console.error('Error clearing dialogue:', error)
     }
-    
+
     // Clear local dialogue state
     setDialogue([])
-    
+
     // Set the new campaign
     setActiveCampaign(pendingCampaignChange)
-    
+
     // Close dialog
     setShowCampaignChangeDialog(false)
     setPendingCampaignChange(null)
   }
-  
+
   const cancelCampaignChange = () => {
     setShowCampaignChangeDialog(false)
     setPendingCampaignChange(null)
   }
-  
+
   // Save campaign - stores dialogue, inventory, and character state
   const handleSaveCampaign = async () => {
     if (!selectedCharacter) return
-    
+
     setIsSaving(true)
     setSaveMessage(null)
-    
+
     try {
       // Get current inventory
       const { data: inventoryData } = await supabase
         .from('inventory_items')
         .select('*')
         .eq('character_id', selectedCharacter.id)
-      
+
       // Create save
       const { error } = await supabase
         .from('campaign_saves')
@@ -136,9 +137,9 @@ export default function DashboardPage() {
             savedAt: new Date().toISOString(),
           }
         })
-      
+
       if (error) throw error
-      
+
       setSaveMessage("Campaign saved!")
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (err) {
@@ -149,39 +150,39 @@ export default function DashboardPage() {
       setIsSaving(false)
     }
   }
-  
+
   // Restart campaign - confirms then clears dialogue and inventory
   const handleRestartCampaign = () => {
     setShowRestartDialog(true)
   }
-  
+
   const confirmRestartCampaign = async () => {
     if (!selectedCharacter) return
-    
+
     try {
       // Clear all dialogue
       await supabase
         .from('dialogue')
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000')
-      
+
       // Clear character inventory
       await supabase
         .from('inventory_items')
         .delete()
         .eq('character_id', selectedCharacter.id)
-      
+
       // Reset local state
       setDialogue([])
       setCharacterInventory([])
-      
+
       // Close dialog
       setShowRestartDialog(false)
     } catch (err) {
       console.error('Error restarting campaign:', err)
     }
   }
-  
+
   const cancelRestartCampaign = () => {
     setShowRestartDialog(false)
   }
@@ -207,7 +208,7 @@ export default function DashboardPage() {
         .select('*')
         .order('character_type', { ascending: false })
         .order('name')
-      
+
       if (error) {
         console.error('Error fetching characters:', error)
       } else if (data && data.length > 0) {
@@ -217,7 +218,7 @@ export default function DashboardPage() {
       }
       setLoadingCharacters(false)
     }
-    
+
     async function fetchEnvironment() {
       // Fetch the current/active environment
       const { data, error } = await supabase
@@ -226,14 +227,14 @@ export default function DashboardPage() {
         .order('updated_at', { ascending: false })
         .limit(1)
         .single()
-      
+
       if (error) {
         console.error('Error fetching environment:', error)
       } else if (data) {
         setCurrentEnvironment(data)
       }
     }
-    
+
     fetchCharacters()
     fetchEnvironment()
   }, [])
@@ -244,14 +245,14 @@ export default function DashboardPage() {
     async function fetchDialogue() {
       const { data, error } = await supabase
         .from('dialogue')
-        .select('id, speaker, text')
+        .select('speaker, text')
         .order('created_at', { ascending: true })
         .limit(50)
-      
+
 if (error) {
         console.error('Error fetching dialogue:', error)
       } else if (data) {
-        setDialogue(data.map(row => ({ id: row.id, speaker: row.speaker, text: row.text })))
+        setDialogue(data)
       }
     }
     fetchDialogue()
@@ -263,12 +264,12 @@ if (error) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'dialogue' },
         (payload) => {
-          const newEntry = payload.new as { id: string; speaker: string; text: string }
-          setDialogue(prev => prev.some(m => m.id && m.id === newEntry.id) ? prev : [...prev, { id: newEntry.id, speaker: newEntry.speaker, text: newEntry.text }])
+          const newEntry = payload.new as { speaker: string; text: string }
+          setDialogue(prev => [...prev, { speaker: newEntry.speaker, text: newEntry.text }])
         }
       )
       .subscribe()
-    
+
     // Subscribe to environment changes (when Malachar or admin changes location)
     const environmentChannel = supabase
       .channel('environment-changes')
@@ -283,7 +284,7 @@ if (error) {
             .order('updated_at', { ascending: false })
             .limit(1)
             .single()
-          
+
           if (data) {
             setCurrentEnvironment(data)
           }
@@ -307,7 +308,7 @@ if (error) {
       .select('*')
       .eq('character_id', selectedCharacterId)
       .order('name')
-    
+
     if (invData) setCharacterInventory(invData)
 
     // Fetch equipment
@@ -315,7 +316,7 @@ if (error) {
       .from('equipment_items')
       .select('*')
       .eq('character_id', selectedCharacterId)
-    
+
     if (equipData) setCharacterEquipment(equipData)
 
     // Refresh character to get updated XP
@@ -324,18 +325,18 @@ if (error) {
       .select('*')
       .eq('id', selectedCharacterId)
       .single()
-    
+
     if (charData) {
       setCharacters(prev => prev.map(c => c.id === selectedCharacterId ? charData : c))
     }
-    
+
     // Fetch active NPC encounters
     const { data: npcData } = await supabase
       .from('npc_encounters')
-      .select('id, name, description, portrait_url, is_active, hp_current, hp_max')
+      .select('id, name, description, portrait_url, is_active, hp_current, hp_max, challenge_rating')
       .eq('character_id', selectedCharacterId)
       .eq('is_active', true)
-    
+
     if (npcData) setNpcEncounters(npcData)
   }, [selectedCharacterId])
 
@@ -376,9 +377,12 @@ if (error) {
   // Get the currently selected character
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
 
+  // In combat when any active NPC has a Challenge Rating above 0 (monsters, not friendly prisoners).
+  const inCombat = npcEncounters.some(n => n.is_active && (n.challenge_rating ?? 0) > 0)
+
   // Get available actions based on character class
-  const availableActionIds = selectedCharacter 
-    ? getClassActions(selectedCharacter.class) 
+  const availableActionIds = selectedCharacter
+    ? getClassActions(selectedCharacter.class)
     : getClassActions('Fighter')
 
   // Telemetry hook for AI-assisted game state tracking
@@ -390,14 +394,14 @@ if (error) {
   // Handle telemetry push on action/intent
   const handleTelemetryPush = async (actionType: string, intent: string, roll?: number) => {
     if (!selectedCharacter) return
-    
+
     const payload = buildPayload(
       selectedCharacter,
       { type: actionType, intent, roll },
       { name: environmentData.location, description: environmentData.description },
       { action: resources.action > 0, bonusAction: resources.bonusAction > 0, reaction: resources.reaction > 0 }
     )
-    
+
     try {
       await pushTelemetry(payload)
       console.log('[Telemetry] Pushed game state:', actionType)
@@ -414,11 +418,17 @@ if (error) {
     if (dialogueInput.trim()) {
       const text = dialogueInput.trim()
       setDialogueInput("")
-      
-      // Send to the Lich (pass the selected character so server writes target it)
-      // Realtime subscription is the single source of truth for dialogue rendering.
-      const response = await sendToLich(text, selectedCharacterId)
+
+      // Optimistically add player message to dialogue immediately
+      const playerName = selectedCharacter?.name || "Player"
+      setDialogue(prev => [...prev, { speaker: playerName, text }])
+
+      // Send to the Lich
+      const response = await sendToLich(text)
       if (response?.text) {
+        // Optimistically add Malachar's response
+        setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
+
         // Update images if returned
         if (response.npcImageUrl) {
           setNpcImageUrl(response.npcImageUrl)
@@ -499,7 +509,7 @@ if (error) {
             {saveMessage}
           </div>
         )}
-        
+
         {/* Save Campaign */}
         <button
           onClick={handleSaveCampaign}
@@ -509,7 +519,7 @@ if (error) {
         >
           <Save className={`w-5 h-5 transition-transform duration-300 ${isSaving ? 'animate-pulse' : 'group-hover:scale-110'}`} />
         </button>
-        
+
         {/* Restart Campaign */}
         <button
           onClick={handleRestartCampaign}
@@ -518,22 +528,22 @@ if (error) {
         >
           <RotateCcw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
         </button>
-        
+
         {/* World AI Toggle */}
         <button
           onClick={() => setWorldAIPanelOpen(!worldAIPanelOpen)}
           className={`p-2 bg-[#1a1614]/90 border rounded-lg transition-all group ${
-            worldAIPanelOpen 
-              ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]" 
+            worldAIPanelOpen
+              ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]"
               : "border-[#3d3428]/60 text-stone-500 hover:text-[#d4b15a] hover:border-[#d4b15a]/30"
           }`}
           title="World AI - Campaign Engine"
         >
           <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
         </button>
-        
+
         {/* Admin link */}
-        <Link 
+        <Link
           href="/admin"
           className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
           title="Content Manager"
@@ -548,7 +558,7 @@ if (error) {
       </div>
 
       {/* World AI Slide-out Panel */}
-      <div 
+      <div
         className={`fixed top-0 right-0 h-full w-[420px] max-w-[90vw] z-[55] transition-transform duration-300 ease-in-out ${
           worldAIPanelOpen ? "translate-x-0" : "translate-x-full"
         }`}
@@ -561,10 +571,9 @@ if (error) {
           >
             <X className="w-4 h-4" />
           </button>
-          
-          <WorldAIPanel 
+
+          <WorldAIPanel
             campaign={activeCampaign}
-            activeCharacterId={selectedCharacterId}
             onCampaignChange={handleCampaignChange}
             onLocationChange={(location) => {
               // Update environment data when location changes in World AI
@@ -608,10 +617,17 @@ if (error) {
             sceneImageUrl={npcImageUrl || undefined}
             npcEncounters={npcEncounters}
           onSendToLich={async (message) => {
-            // Send to Lich (pass the selected character so server writes target it)
-            // Realtime subscription is the single source of truth for dialogue rendering.
-            const response = await sendToLich(message, selectedCharacterId)
+            // Optimistically add player message to dialogue immediately
+            const playerName = selectedCharacter?.name || "Player"
+            setDialogue(prev => [...prev, { speaker: playerName, text: message }])
+
+            // Send to Lich
+            const response = await sendToLich(message)
             if (response) {
+              // Optimistically add Malachar's response to dialogue
+              if (response.text) {
+                setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
+              }
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {
                 setNpcImageUrl(response.npcImageUrl)
@@ -696,9 +712,9 @@ if (error) {
       if (!error) {
         fetchCharacterData()
         // Notify the Lich
-        setDialogue(prev => [...prev, { 
-          speaker: "System", 
-          text: `${character.name} has reached Level ${character.level + 1}!` 
+        setDialogue(prev => [...prev, {
+          speaker: "System",
+          text: `${character.name} has reached Level ${character.level + 1}!`
         }])
       }
     }
@@ -768,6 +784,12 @@ if (error) {
       <MusicPlayer
         isTTSMuted={isTTSMuted}
         onToggleTTSMute={toggleTTSMute}
+      />
+
+      {/* Scene-driven background music */}
+      <DynamicMusic
+        location={currentEnvironment?.name || environmentData.location}
+        inCombat={inCombat}
       />
     </div>
   )
