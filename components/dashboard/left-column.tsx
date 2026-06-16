@@ -1,9 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
-
-// Module-level set survives HMR remounts - tracks which texts have already been sent to TTS
-const ttsPlayedTexts = new Set<string>()
+import { useEffect, useRef, useState } from "react"
 
 /** Strip markdown / special chars that ElevenLabs reads aloud */
 function sanitizeForTTS(text: string): string {
@@ -13,8 +10,8 @@ function sanitizeForTTS(text: string): string {
     .replace(/#{1,6}\s*/g, "")     // markdown headers
     .replace(/`{1,3}/g, "")        // backticks
     .replace(/~{2}/g, "")          // strikethrough
-    .replace(/[""\u201C\u201D]/g, "") // smart & straight double quotes
-    .replace(/['\u2018\u2019]/g, "") // smart single quotes
+    .replace(/[""“”]/g, "") // smart & straight double quotes
+    .replace(/['‘’]/g, "") // smart single quotes
     .replace(/\[ITEM_ADD:[^\]]*\]/g, "") // inventory tags
     .replace(/\[ITEM_REMOVE:[^\]]*\]/g, "")
     .replace(/--+/g, ", ")         // em-dashes to pause
@@ -23,10 +20,10 @@ function sanitizeForTTS(text: string): string {
     .trim()
 }
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { Sun, MessageSquare } from "lucide-react"
+import { Sun, MessageSquare, Volume2, Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface DialogueEntry {
-  id?: string
   speaker: string
   text: string
 }
@@ -65,126 +62,67 @@ export function LeftColumn({
 }: LeftColumnProps) {
   const dialogueEndRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const audioUnlockedRef = useRef(false)
-  const prevDialogueLenRef = useRef<number | null>(null)
-  const isTTSMutedRef = useRef(isTTSMuted)
-  isTTSMutedRef.current = isTTSMuted
-
-  // Unlock audio playback on any user interaction (browser autoplay policy).
-  // Creates and resumes an AudioContext which globally unlocks HTMLAudioElement.play().
-  useEffect(() => {
-    const unlock = () => {
-      if (audioUnlockedRef.current) return
-      const ctx = new AudioContext()
-      ctx.resume().then(() => {
-        audioUnlockedRef.current = true
-        console.log("[v0] Audio unlocked via user interaction")
-      })
-    }
-    document.addEventListener("click", unlock)
-    document.addEventListener("keydown", unlock)
-    return () => {
-      document.removeEventListener("click", unlock)
-      document.removeEventListener("keydown", unlock)
-    }
-  }, [])
+  // Which Malachar line is currently loading / playing (keyed by its text).
+  const [loadingText, setLoadingText] = useState<string | null>(null)
+  const [playingText, setPlayingText] = useState<string | null>(null)
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     dialogueEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [dialogue, isWorldAIThinking])
 
-  // TTS auto-play: only plays lines added AFTER the first render with dialogue data.
-  // prevDialogueLenRef starts null. First time dialogue has entries, we snapshot the length
-  // and mark all existing entries as played. Subsequent additions are genuinely new.
-  useEffect(() => {
-    // First time we see dialogue data, snapshot it as "historical" and skip
-    if (prevDialogueLenRef.current === null) {
-      if (dialogue.length > 0) {
-        for (const entry of dialogue) {
-          if (entry.speaker === "Malachar") {
-            ttsPlayedTexts.add(entry.text)
-          }
-        }
-        prevDialogueLenRef.current = dialogue.length
-        console.log("[v0] TTS initialized, marked", dialogue.length, "historical entries")
-      }
-      return
-    }
-
-    // No new entries
-    if (dialogue.length <= prevDialogueLenRef.current) {
-      prevDialogueLenRef.current = dialogue.length
-      return
-    }
-
-    const prevLen = prevDialogueLenRef.current
-    prevDialogueLenRef.current = dialogue.length
-
-    if (isTTSMuted) return
-
-    // Only look at entries added since last render
-    const newTexts: string[] = []
-    for (let i = prevLen; i < dialogue.length; i++) {
-      const entry = dialogue[i]
-      if (entry.speaker === "Malachar" && !ttsPlayedTexts.has(entry.text)) {
-        ttsPlayedTexts.add(entry.text)
-        newTexts.push(entry.text)
-      }
-    }
-
-    if (newTexts.length === 0) return
-
-    console.log("[v0] TTS queuing", newTexts.length, "new line(s)")
-
-    const play = async () => {
-      for (const rawText of newTexts) {
-        if (isTTSMutedRef.current) break
-        const text = sanitizeForTTS(rawText)
-        if (!text) continue
-        try {
-          console.log("[v0] TTS fetching:", text.substring(0, 60))
-          const res = await fetch("/api/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text, voice: "onyx" }),
-          })
-          if (!res.ok) {
-            console.log("[v0] TTS fetch failed:", res.status)
-            continue
-          }
-          const blob = await res.blob()
-          console.log("[v0] TTS blob size:", blob.size)
-          const url = URL.createObjectURL(blob)
-          await new Promise<void>((resolve) => {
-            const audio = new Audio(url)
-            audioRef.current = audio
-            audio.onended = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
-            audio.onerror = () => { audioRef.current = null; URL.revokeObjectURL(url); resolve() }
-            audio.play().then(() => {
-              console.log("[v0] TTS playing audio")
-            }).catch((err) => {
-              console.log("[v0] TTS play() blocked:", err.message)
-              audioRef.current = null
-              URL.revokeObjectURL(url)
-              resolve()
-            })
-          })
-        } catch (err) {
-          console.log("[v0] TTS error:", err)
-        }
-      }
-    }
-    play()
-  }, [dialogue, isTTSMuted])
-
-  // Stop audio immediately when muted
-  useEffect(() => {
-    if (isTTSMuted && audioRef.current) {
+  // Click-to-play: speak a single Malachar line in his lich voice on demand.
+  // Because this is triggered by a click (a user gesture), browser autoplay
+  // policy never blocks it — no unlock dance required.
+  const playLine = async (rawText: string) => {
+    // Stop anything currently playing first.
+    if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current = null
     }
-  }, [isTTSMuted])
+    // Clicking the line that's already playing just stops it.
+    if (playingText === rawText) {
+      setPlayingText(null)
+      return
+    }
+
+    const text = sanitizeForTTS(rawText)
+    if (!text) return
+
+    setLoadingText(rawText)
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: "onyx" }),
+      })
+      if (!res.ok) {
+        console.log("[v0] TTS fetch failed:", res.status)
+        setLoadingText(null)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      audioRef.current = audio
+      setLoadingText(null)
+      setPlayingText(rawText)
+      const cleanup = () => {
+        setPlayingText(null)
+        audioRef.current = null
+        URL.revokeObjectURL(url)
+      }
+      audio.onended = cleanup
+      audio.onerror = cleanup
+      await audio.play().catch((err) => {
+        console.log("[v0] TTS play() failed:", err?.message)
+        cleanup()
+      })
+    } catch (err) {
+      console.log("[v0] TTS error:", err)
+      setLoadingText(null)
+    }
+  }
 
   // Cleanup on unmount
   useEffect(() => {
@@ -205,17 +143,17 @@ export function LeftColumn({
             {environment.backgroundImageUrl ? (
               <>
                 {/* Actual environment background image */}
-                <img 
-                  src={environment.backgroundImageUrl} 
+                <img
+                  src={environment.backgroundImageUrl}
                   alt={environment.location}
                   className="absolute inset-0 w-full h-full object-cover"
                 />
                 {/* Time of day overlay tints */}
                 <div className={`absolute inset-0 pointer-events-none transition-colors duration-1000 ${
-                  environment.timeOfDay === 'Night' 
-                    ? 'bg-indigo-950/50' 
-                    : environment.timeOfDay === 'Evening' 
-                    ? 'bg-orange-900/30' 
+                  environment.timeOfDay === 'Night'
+                    ? 'bg-indigo-950/50'
+                    : environment.timeOfDay === 'Evening'
+                    ? 'bg-orange-900/30'
                     : environment.timeOfDay === 'Morning'
                     ? 'bg-amber-200/10'
                     : 'bg-transparent'
@@ -233,16 +171,16 @@ export function LeftColumn({
                 <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-[#0a1015] via-[#152025] to-transparent" />
               </div>
             )}
-            
+
             {/* Fog/atmosphere overlay layer */}
             {environment.fogOverlayUrl && (
-              <img 
-                src={environment.fogOverlayUrl} 
+              <img
+                src={environment.fogOverlayUrl}
                 alt=""
                 className={`absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none mix-blend-overlay ${environment.ambientAnimation || ''}`}
               />
             )}
-            
+
             {/* Bottom vignette */}
             <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
           </div>
@@ -265,19 +203,35 @@ export function LeftColumn({
       {/* Dialogue Log */}
       <FantasyPanel title="Dialogue Log" className="flex-1 min-h-0 flex flex-col">
         <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-[#3d3428] scrollbar-track-transparent">
-          {dialogue.map((entry, index) => (
-            <div key={entry.id ?? index} className="text-sm">
-              <span
-                className={`font-serif font-semibold ${
-                  entry.speaker === "You" ? "text-[#7aa8c8]" : 
-                  entry.speaker === "Malachar" ? "text-[#8b5cf6]" : "text-[#c9a868]"
-                }`}
-              >
-                {entry.speaker}:
-              </span>
-              <span className="text-stone-300 ml-2">{entry.text}</span>
-            </div>
-          ))}
+          {dialogue.map((entry, index) => {
+            const isMalachar = entry.speaker === "Malachar"
+            return (
+              <div key={index} className="text-sm">
+                <span
+                  className={`font-serif font-semibold ${
+                    entry.speaker === "You" ? "text-[#7aa8c8]" :
+                    isMalachar ? "text-[#8b5cf6]" : "text-[#c9a868]"
+                  }`}
+                >
+                  {entry.speaker}:
+                </span>
+                <span className="text-stone-300 ml-2">{entry.text}</span>
+                {isMalachar && (
+                  <button
+                    onClick={() => playLine(entry.text)}
+                    title={playingText === entry.text ? "Stop" : "Hear Malachar speak this"}
+                    className="ml-1.5 inline-flex items-center align-middle text-[#8b5cf6]/60 hover:text-[#8b5cf6] transition-colors"
+                  >
+                    {loadingText === entry.text ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Volume2 className={cn("w-3.5 h-3.5", playingText === entry.text && "text-[#8b5cf6] animate-pulse")} />
+                    )}
+                  </button>
+                )}
+              </div>
+            )
+          })}
           {isWorldAIThinking && (
             <div className="text-sm animate-pulse">
               <span className="font-serif font-semibold text-[#8b5cf6]">Malachar:</span>
