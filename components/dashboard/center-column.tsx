@@ -111,6 +111,21 @@ function detectActiveSpeaker(text: string, roster: NpcEncounter[]): string | nul
   return best?.id ?? null
 }
 
+// Pull the most recent quoted speech out of a DM message so it can be shown as
+// the featured speaker's caption. Handles straight and curly quotes and joins
+// multiple quoted spans (e.g. dialogue interrupted by narration) into one line.
+function extractSpokenLine(text: string): string | null {
+  if (!text) return null
+  const re = /["“„]([^"“”„]+)["”]/g
+  const parts: string[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const s = m[1].trim()
+    if (s) parts.push(s)
+  }
+  return parts.length ? parts.join(" ") : null
+}
+
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
   "cast-spell": SpellbookIcon,
   "use-ability": AbilityIcon,
@@ -166,6 +181,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   // Watch the dialogue log. When a new DM message arrives we parse it for NPC
   // dialogue; a player (or system) message clears the featured speaker.
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null)
+  const [activeLine, setActiveLine] = useState<string | null>(null)
   const lastProcessed = useRef(0)
 
   useEffect(() => {
@@ -173,6 +189,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
     if (dialogue.length < lastProcessed.current) {
       lastProcessed.current = dialogue.length
       setActiveSpeakerId(null)
+      setActiveLine(null)
       return
     }
     // No new entries since last run.
@@ -184,10 +201,13 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
 
     if (last.speaker === DM_SPEAKER) {
       // New DM message: feature the speaking NPC, or clear if none is talking.
-      setActiveSpeakerId(detectActiveSpeaker(last.text, npcEncounters))
+      const speakerId = detectActiveSpeaker(last.text, npcEncounters)
+      setActiveSpeakerId(speakerId)
+      setActiveLine(speakerId ? extractSpokenLine(last.text) : null)
     } else {
       // Player response (or system message) — revert to the normal tile grid.
       setActiveSpeakerId(null)
+      setActiveLine(null)
     }
   }, [dialogue, npcEncounters])
 
@@ -212,11 +232,11 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
-        <div className="relative h-[260px] overflow-hidden rounded-sm">
+        <div className={`relative overflow-hidden rounded-sm transition-[height] duration-300 ease-in-out ${activeSpeaker ? "h-[46vh] min-h-[380px]" : "h-[260px]"}`}>
           <CombatFxKeyframes />
           {activeSpeaker ? (
             <div className="h-full flex flex-col gap-2 p-2">
-              <FeaturedSpeaker speaker={activeSpeaker} />
+              <FeaturedSpeaker speaker={activeSpeaker} line={activeLine} hasOthers={otherEncounters.length > 0} />
               {otherEncounters.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto flex-shrink-0 h-[64px] opacity-60">
                   {otherEncounters.map((encounter) => (
@@ -486,40 +506,54 @@ function CombatFxKeyframes() {
           border-color: rgba(240,196,110,0.95);
         }
       }
+      @keyframes aopCaptionFade {
+        0%   { opacity: 0; transform: translateY(6px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
     `}</style>
   )
 }
 
-// Large featured close-up of the NPC who is currently speaking. Uses a
-// dedicated face_url when available, otherwise crops the full-body portrait to
-// the top ~30% so the face fills the frame. An amber/gold border pulse signals
-// that this character is talking.
-function FeaturedSpeaker({ speaker }: { speaker: NpcEncounter }) {
+// Large featured close-up of the NPC who is currently speaking. Portraits are
+// square head-and-shoulders images. The featured box itself is wide-and-short,
+// so instead of cropping the square into that wide box (which would zoom in and
+// clip the face to a thin forehead-to-eyes band) we place the sharp face inside
+// a CENTERED PORTRAIT-ASPECT frame. Because that frame is taller than it is
+// wide, object-cover becomes height-driven and always shows the full image
+// height (forehead to chin), cropping only the sides — the whole face stays in
+// view and vertically centered regardless of the panel width. A blurred copy
+// fills the full width behind it as atmosphere. An amber/gold border pulse
+// signals that this character is talking.
+function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEncounter; line?: string | null; hasOthers?: boolean }) {
   const face = speaker.face_url || speaker.portrait_url
-  const hasFace = !!speaker.face_url
 
   return (
-    <div className="relative flex-1 min-h-0">
+    <div className="relative w-full min-h-0 flex-1">
       <div
         className="relative w-full h-full overflow-hidden rounded-sm border-2"
         style={{ animation: "aopSpeakerPulse 2s ease-in-out infinite", borderColor: "rgba(201,168,104,0.55)" }}
       >
         {face ? (
           <>
-            {/* Blurred fill so any letterboxing reads as atmosphere, not empty bars */}
+            {/* Blurred fill spanning the full width so the sides read as
+                atmosphere rather than empty letterbox bars. */}
             <img
               src={face}
               aria-hidden="true"
               className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl opacity-40"
             />
-            {/* Featured face. Dedicated face_url is centered; full-body portraits
-                are cropped to the top so the head/face fills the frame. */}
-            <img
-              src={face}
-              alt={speaker.name}
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{ objectPosition: hasFace ? "center" : "top" }}
-            />
+            {/* Sharp face in a centered portrait frame. aspect-[4/5] is narrower
+                than the square source, forcing object-cover to fit by height and
+                reveal the entire face top-to-bottom. object-position keeps the
+                head/face (upper portion of the square) in frame. */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <img
+                src={face}
+                alt={speaker.name}
+                className="h-full w-auto aspect-[4/5] object-cover"
+                style={{ objectPosition: "50% 30%" }}
+              />
+            </div>
           </>
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
@@ -536,13 +570,24 @@ function FeaturedSpeaker({ speaker }: { speaker: NpcEncounter }) {
           <span className="text-[9px] uppercase tracking-widest text-[#c9a868]/90 drop-shadow">Speaking</span>
         </div>
 
-        {/* Name beneath the portrait */}
-        <div className="absolute bottom-0 left-0 right-0 p-2 flex items-center justify-center gap-2">
-          <span className="h-px w-8 bg-[#c9a868]/40" />
-          <p className="text-sm font-serif font-semibold text-[#e6c878] text-center tracking-wide drop-shadow truncate">
-            {speaker.name}
-          </p>
-          <span className="h-px w-8 bg-[#c9a868]/40" />
+        {/* Name + current spoken line beneath the portrait */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 flex flex-col items-center gap-1.5">
+          <div className="flex items-center justify-center gap-2 max-w-full">
+            <span className="h-px w-8 bg-[#c9a868]/40 flex-shrink-0" />
+            <p className="text-sm font-serif font-semibold text-[#e6c878] text-center tracking-wide drop-shadow truncate">
+              {speaker.name}
+            </p>
+            <span className="h-px w-8 bg-[#c9a868]/40 flex-shrink-0" />
+          </div>
+          {line && (
+            <p
+              key={line}
+              className="max-w-[94%] text-center font-serif italic text-[13px] leading-snug text-[#e6c878]/90 drop-shadow-lg line-clamp-3"
+              style={{ animation: "aopCaptionFade 0.5s ease-out" }}
+            >
+              {`\u201C${line}\u201D`}
+            </p>
+          )}
         </div>
       </div>
     </div>
