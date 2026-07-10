@@ -616,6 +616,7 @@ if (error) {
             characterName={selectedCharacter?.name}
             sceneImageUrl={npcImageUrl || undefined}
             npcEncounters={npcEncounters}
+            dialogue={dialogue}
           onSendToLich={async (message) => {
             // Optimistically add player message to dialogue immediately
             const playerName = selectedCharacter?.name || "Player"

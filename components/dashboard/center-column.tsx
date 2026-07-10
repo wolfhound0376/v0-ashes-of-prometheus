@@ -59,9 +59,17 @@ interface NpcEncounter {
   name: string
   description: string | null
   portrait_url: string | null
+  // Optional dedicated face close-up. When present it is used for the featured
+  // "active speaker" view instead of cropping the full-body portrait_url.
+  face_url?: string | null
   is_active: boolean
   hp_current?: number | null
   hp_max?: number | null
+}
+
+interface DialogueEntry {
+  speaker: string
+  text: string
 }
 
 interface CenterColumnProps {
@@ -77,6 +85,30 @@ interface CenterColumnProps {
   onSendToLich?: (message: string) => void
   sceneImageUrl?: string
   npcEncounters?: NpcEncounter[]
+  dialogue?: DialogueEntry[]
+}
+
+// The DM / narrator speaks under this name in the dialogue log.
+const DM_SPEAKER = "Malachar"
+
+// Parse a DM message for NPC dialogue. A known NPC name from the roster that
+// appears *before* a run of quoted speech is treated as the active speaker
+// (e.g. `Eldeth Feldrun grips her axe. "We have to move."`). When several NPC
+// names precede the quote, the one closest to the quote wins.
+function detectActiveSpeaker(text: string, roster: NpcEncounter[]): string | null {
+  if (!text) return null
+  // Support straight and curly quote characters.
+  const quoteMatch = text.match(/["“”„]/)
+  if (!quoteMatch || quoteMatch.index == null) return null
+  const quotePos = quoteMatch.index
+  let best: { id: string; pos: number } | null = null
+  for (const npc of roster) {
+    if (!npc.name) continue
+    const idx = text.indexOf(npc.name)
+    if (idx === -1 || idx >= quotePos) continue
+    if (!best || idx > best.pos) best = { id: npc.id, pos: idx }
+  }
+  return best?.id ?? null
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -126,9 +158,46 @@ const actionTypeColors = {
 
 type ActionTab = "action" | "bonus" | "reaction"
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich, sceneImageUrl, npcEncounters = [] }: CenterColumnProps) {
+export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich, sceneImageUrl, npcEncounters = [], dialogue = [] }: CenterColumnProps) {
   // Filter active encounters
   const activeEncounters = npcEncounters.filter(e => e.is_active)
+
+  // --- Active speaker detection ---------------------------------------------
+  // Watch the dialogue log. When a new DM message arrives we parse it for NPC
+  // dialogue; a player (or system) message clears the featured speaker.
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null)
+  const lastProcessed = useRef(0)
+
+  useEffect(() => {
+    // Log was cleared / restarted — reset.
+    if (dialogue.length < lastProcessed.current) {
+      lastProcessed.current = dialogue.length
+      setActiveSpeakerId(null)
+      return
+    }
+    // No new entries since last run.
+    if (dialogue.length === lastProcessed.current) return
+
+    const last = dialogue[dialogue.length - 1]
+    lastProcessed.current = dialogue.length
+    if (!last) return
+
+    if (last.speaker === DM_SPEAKER) {
+      // New DM message: feature the speaking NPC, or clear if none is talking.
+      setActiveSpeakerId(detectActiveSpeaker(last.text, npcEncounters))
+    } else {
+      // Player response (or system message) — revert to the normal tile grid.
+      setActiveSpeakerId(null)
+    }
+  }, [dialogue, npcEncounters])
+
+  const activeSpeaker = activeSpeakerId
+    ? npcEncounters.find(n => n.id === activeSpeakerId) ?? null
+    : null
+  // Remaining active encounters shown dimmed/shrunk beneath the featured speaker.
+  const otherEncounters = activeSpeaker
+    ? activeEncounters.filter(e => e.id !== activeSpeaker.id)
+    : activeEncounters
   
   // Check if character can cast spells based on D&D 5E rules
   const spellcasting = getClassSpellcasting(characterClass || "", characterLevel || 1)
@@ -145,7 +214,18 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
         <div className="relative h-[260px] overflow-hidden rounded-sm">
           <CombatFxKeyframes />
-          {activeEncounters.length > 0 ? (
+          {activeSpeaker ? (
+            <div className="h-full flex flex-col gap-2 p-2">
+              <FeaturedSpeaker speaker={activeSpeaker} />
+              {otherEncounters.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto flex-shrink-0 h-[64px] opacity-60">
+                  {otherEncounters.map((encounter) => (
+                    <NpcEncounterCard key={encounter.id} encounter={encounter} solo={false} compact />
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeEncounters.length > 0 ? (
             <div className="h-full flex gap-2 p-2 overflow-x-auto">
               {activeEncounters.map((encounter) => (
                 <NpcEncounterCard
@@ -167,7 +247,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-[#1a1614] via-[#2a2018] to-[#1a1614]" />
           )}
-          {activeEncounters.length === 0 && (
+          {!activeSpeaker && activeEncounters.length === 0 && (
             <div className="relative h-full flex items-end justify-center p-3">
               <p className="text-stone-400 italic text-sm drop-shadow-lg">
                 {sceneImageUrl ? "" : "No one is interacting with you right now."}
@@ -396,13 +476,82 @@ function CombatFxKeyframes() {
         60% { transform: translateX(-2px); }
         80% { transform: translateX(2px); }
       }
+      @keyframes aopSpeakerPulse {
+        0%, 100% {
+          box-shadow: 0 0 8px 2px rgba(201,168,104,0.35), inset 0 0 14px rgba(201,168,104,0.18);
+          border-color: rgba(201,168,104,0.55);
+        }
+        50% {
+          box-shadow: 0 0 24px 7px rgba(212,168,86,0.75), inset 0 0 20px rgba(212,168,86,0.3);
+          border-color: rgba(240,196,110,0.95);
+        }
+      }
     `}</style>
+  )
+}
+
+// Large featured close-up of the NPC who is currently speaking. Uses a
+// dedicated face_url when available, otherwise crops the full-body portrait to
+// the top ~30% so the face fills the frame. An amber/gold border pulse signals
+// that this character is talking.
+function FeaturedSpeaker({ speaker }: { speaker: NpcEncounter }) {
+  const face = speaker.face_url || speaker.portrait_url
+  const hasFace = !!speaker.face_url
+
+  return (
+    <div className="relative flex-1 min-h-0">
+      <div
+        className="relative w-full h-full overflow-hidden rounded-sm border-2"
+        style={{ animation: "aopSpeakerPulse 2s ease-in-out infinite", borderColor: "rgba(201,168,104,0.55)" }}
+      >
+        {face ? (
+          <>
+            {/* Blurred fill so any letterboxing reads as atmosphere, not empty bars */}
+            <img
+              src={face}
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl opacity-40"
+            />
+            {/* Featured face. Dedicated face_url is centered; full-body portraits
+                are cropped to the top so the head/face fills the frame. */}
+            <img
+              src={face}
+              alt={speaker.name}
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ objectPosition: hasFace ? "center" : "top" }}
+            />
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
+            <span className="text-5xl text-stone-600">?</span>
+          </div>
+        )}
+
+        {/* Readability gradient */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0908]/95 via-transparent to-transparent" />
+
+        {/* Speaking indicator */}
+        <div className="absolute top-1.5 right-2 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#e6c878] animate-pulse" />
+          <span className="text-[9px] uppercase tracking-widest text-[#c9a868]/90 drop-shadow">Speaking</span>
+        </div>
+
+        {/* Name beneath the portrait */}
+        <div className="absolute bottom-0 left-0 right-0 p-2 flex items-center justify-center gap-2">
+          <span className="h-px w-8 bg-[#c9a868]/40" />
+          <p className="text-sm font-serif font-semibold text-[#e6c878] text-center tracking-wide drop-shadow truncate">
+            {speaker.name}
+          </p>
+          <span className="h-px w-8 bg-[#c9a868]/40" />
+        </div>
+      </div>
+    </div>
   )
 }
 
 // A single NPC portrait card that reacts to damage: when its HP drops, a red
 // "-N" floats up over the portrait and the HP bar shakes — BG3-style feedback.
-function NpcEncounterCard({ encounter, solo }: { encounter: NpcEncounter; solo: boolean }) {
+function NpcEncounterCard({ encounter, solo, compact = false }: { encounter: NpcEncounter; solo: boolean; compact?: boolean }) {
   const prevHp = useRef<number | null>(encounter.hp_current ?? null)
   const hitKey = useRef(0)
   const [hits, setHits] = useState<{ id: number; amount: number }[]>([])
@@ -427,7 +576,7 @@ function NpcEncounterCard({ encounter, solo }: { encounter: NpcEncounter; solo: 
   const hasHp = hp != null && hpMax != null && hpMax > 0
 
   return (
-    <div className="flex-shrink-0 relative overflow-hidden rounded-sm" style={{ width: solo ? "100%" : "140px" }}>
+    <div className="flex-shrink-0 relative overflow-hidden rounded-sm" style={{ width: solo ? "100%" : compact ? "84px" : "140px" }}>
       {encounter.portrait_url ? (
         <>
           {/* Blurred, zoomed copy fills the card edge-to-edge so there are no empty bars */}
