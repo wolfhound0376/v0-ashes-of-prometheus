@@ -490,15 +490,18 @@ function CombatFxKeyframes() {
   )
 }
 
-// Large featured close-up of the NPC who is currently speaking. Uses a
-// dedicated face_url when available, otherwise crops the full-body portrait so
-// the head-and-shoulders sit in frame. The box is kept tall (~230-260px) so
-// object-cover reveals a wide enough vertical slice to show the whole face
-// (forehead to chin) rather than clipping to just the top of the head. An
-// amber/gold border pulse signals that this character is talking.
+// Large featured close-up of the NPC who is currently speaking. Portraits are
+// square head-and-shoulders images. The featured box itself is wide-and-short,
+// so instead of cropping the square into that wide box (which would zoom in and
+// clip the face to a thin forehead-to-eyes band) we place the sharp face inside
+// a CENTERED PORTRAIT-ASPECT frame. Because that frame is taller than it is
+// wide, object-cover becomes height-driven and always shows the full image
+// height (forehead to chin), cropping only the sides — the whole face stays in
+// view and vertically centered regardless of the panel width. A blurred copy
+// fills the full width behind it as atmosphere. An amber/gold border pulse
+// signals that this character is talking.
 function FeaturedSpeaker({ speaker, hasOthers = false }: { speaker: NpcEncounter; hasOthers?: boolean }) {
   const face = speaker.face_url || speaker.portrait_url
-  const hasFace = !!speaker.face_url
 
   return (
     <div className={`relative w-full min-h-0 ${hasOthers ? "flex-1" : "flex-1 max-h-[260px]"}`}>
@@ -508,21 +511,25 @@ function FeaturedSpeaker({ speaker, hasOthers = false }: { speaker: NpcEncounter
       >
         {face ? (
           <>
-            {/* Blurred fill so any letterboxing reads as atmosphere, not empty bars */}
+            {/* Blurred fill spanning the full width so the sides read as
+                atmosphere rather than empty letterbox bars. */}
             <img
               src={face}
               aria-hidden="true"
               className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl opacity-40"
             />
-            {/* Featured face. A dedicated face_url is centered; full-body
-                portraits are cropped just below the top so the full head and
-                shoulders (forehead to upper chest) sit centered in frame. */}
-            <img
-              src={face}
-              alt={speaker.name}
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{ objectPosition: hasFace ? "center" : "50% 8%" }}
-            />
+            {/* Sharp face in a centered portrait frame. aspect-[4/5] is narrower
+                than the square source, forcing object-cover to fit by height and
+                reveal the entire face top-to-bottom. object-position keeps the
+                head/face (upper portion of the square) in frame. */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <img
+                src={face}
+                alt={speaker.name}
+                className="h-full w-auto aspect-[4/5] object-cover"
+                style={{ objectPosition: "50% 30%" }}
+              />
+            </div>
           </>
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
