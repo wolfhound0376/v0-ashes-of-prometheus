@@ -212,11 +212,11 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
       <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
-        <div className="relative h-[260px] overflow-hidden rounded-sm">
+        <div className={`relative overflow-hidden rounded-sm ${activeSpeaker ? "h-[324px]" : "h-[260px]"}`}>
           <CombatFxKeyframes />
           {activeSpeaker ? (
             <div className="h-full flex flex-col gap-2 p-2">
-              <FeaturedSpeaker speaker={activeSpeaker} />
+              <FeaturedSpeaker speaker={activeSpeaker} hasOthers={otherEncounters.length > 0} />
               {otherEncounters.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto flex-shrink-0 h-[64px] opacity-60">
                   {otherEncounters.map((encounter) => (
@@ -491,15 +491,17 @@ function CombatFxKeyframes() {
 }
 
 // Large featured close-up of the NPC who is currently speaking. Uses a
-// dedicated face_url when available, otherwise crops the full-body portrait to
-// the top ~30% so the face fills the frame. An amber/gold border pulse signals
-// that this character is talking.
-function FeaturedSpeaker({ speaker }: { speaker: NpcEncounter }) {
+// dedicated face_url when available, otherwise crops the full-body portrait so
+// the head-and-shoulders sit in frame. The box is kept tall (~230-260px) so
+// object-cover reveals a wide enough vertical slice to show the whole face
+// (forehead to chin) rather than clipping to just the top of the head. An
+// amber/gold border pulse signals that this character is talking.
+function FeaturedSpeaker({ speaker, hasOthers = false }: { speaker: NpcEncounter; hasOthers?: boolean }) {
   const face = speaker.face_url || speaker.portrait_url
   const hasFace = !!speaker.face_url
 
   return (
-    <div className="relative flex-1 min-h-0">
+    <div className={`relative w-full min-h-0 ${hasOthers ? "flex-1" : "flex-1 max-h-[260px]"}`}>
       <div
         className="relative w-full h-full overflow-hidden rounded-sm border-2"
         style={{ animation: "aopSpeakerPulse 2s ease-in-out infinite", borderColor: "rgba(201,168,104,0.55)" }}
@@ -512,13 +514,14 @@ function FeaturedSpeaker({ speaker }: { speaker: NpcEncounter }) {
               aria-hidden="true"
               className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl opacity-40"
             />
-            {/* Featured face. Dedicated face_url is centered; full-body portraits
-                are cropped to the top so the head/face fills the frame. */}
+            {/* Featured face. A dedicated face_url is centered; full-body
+                portraits are cropped just below the top so the full head and
+                shoulders (forehead to upper chest) sit centered in frame. */}
             <img
               src={face}
               alt={speaker.name}
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ objectPosition: hasFace ? "center" : "top" }}
+              style={{ objectPosition: hasFace ? "center" : "50% 8%" }}
             />
           </>
         ) : (
