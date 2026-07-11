@@ -62,6 +62,10 @@ interface NpcEncounter {
   // Optional dedicated face close-up. When present it is used for the featured
   // "active speaker" view instead of cropping the full-body portrait_url.
   face_url?: string | null
+  // Per-NPC voice. voice_id is a resolved ElevenLabs voice id; voice_description
+  // is the free-text description used to resolve one when voice_id is unset.
+  voice_id?: string | null
+  voice_description?: string | null
   is_active: boolean
   hp_current?: number | null
   hp_max?: number | null

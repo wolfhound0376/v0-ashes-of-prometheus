@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
-  const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: number | null }[]>([])
+  const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: number | null }[]>([])
   const [loadingCharacters, setLoadingCharacters] = useState(true)
 
   // Current environment from database
@@ -333,7 +333,7 @@ if (error) {
     // Fetch active NPC encounters
     const { data: npcData } = await supabase
       .from('npc_encounters')
-      .select('id, name, description, portrait_url, is_active, hp_current, hp_max, challenge_rating')
+      .select('id, name, description, portrait_url, face_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating')
       .eq('character_id', selectedCharacterId)
       .eq('is_active', true)
 
