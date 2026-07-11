@@ -383,3 +383,49 @@ export function getCampaign(id: string): Campaign | undefined {
 export function getAllCampaigns(): Campaign[] {
   return Object.values(CAMPAIGNS)
 }
+
+// === REFERENCE ROLL TABLES ===================================================
+// Structured, machine-readable versions of the campaign's d100 roll tables so
+// the narrator can be handed exact numeric ranges and the awarded item can be
+// resolved deterministically. This is the SINGLE SOURCE OF TRUTH for the
+// "Out of the Abyss" opening fortune roll. It mirrors the SCAVENGED ITEMS line
+// in abyss.systemPrompt — if you edit one, edit the other.
+export interface RollTableEntry {
+  min: number
+  max: number
+  item: string
+  // Sensible defaults for the [ITEM_AWARD:] tag when the narrator awards this entry.
+  itemType: "weapon" | "armor" | "consumable" | "misc" | "currency"
+  iconHint: string
+}
+
+export const ABYSS_SCAVENGED_ITEMS_TABLE: RollTableEntry[] = [
+  { min: 1, max: 10, item: "Gold coin", itemType: "currency", iconHint: "coin" },
+  { min: 11, max: 16, item: "Carnelian gem (10gp)", itemType: "misc", iconHint: "gem" },
+  { min: 17, max: 22, item: "Obsidian flake dagger (1d4 slashing)", itemType: "weapon", iconHint: "dagger" },
+  { min: 23, max: 28, item: "Crossbow bolt", itemType: "misc", iconHint: "bolt" },
+  { min: 29, max: 34, item: "1d4 mushrooms (edible)", itemType: "consumable", iconHint: "mushroom" },
+  { min: 35, max: 40, item: "Coil of silk rope (50ft)", itemType: "misc", iconHint: "rope" },
+  { min: 41, max: 46, item: "Belt pouch with 1d4 cp", itemType: "currency", iconHint: "pouch" },
+  { min: 47, max: 52, item: "Drow poison (unconscious 1hr on fail DC 13 CON)", itemType: "consumable", iconHint: "vial" },
+  { min: 53, max: 58, item: "Flask of lamp oil", itemType: "consumable", iconHint: "flask" },
+  { min: 59, max: 64, item: "Waterskin", itemType: "consumable", iconHint: "waterskin" },
+  { min: 65, max: 70, item: "Hand crossbow", itemType: "weapon", iconHint: "crossbow" },
+  { min: 71, max: 76, item: "Shattered spellbook pages (contains 1 random cantrip)", itemType: "misc", iconHint: "scroll" },
+  { min: 77, max: 82, item: "Iron key (fits manacles)", itemType: "misc", iconHint: "key" },
+  { min: 83, max: 88, item: "Bag of caltrops", itemType: "misc", iconHint: "caltrops" },
+  { min: 89, max: 94, item: "Tin mess kit", itemType: "misc", iconHint: "kit" },
+  { min: 95, max: 100, item: "Nothing", itemType: "misc", iconHint: "none" },
+]
+
+// Format a roll table as an exact, unambiguous numeric list for prompt injection.
+export function formatRollTable(table: RollTableEntry[]): string {
+  return table
+    .map((r) => `${String(r.min).padStart(2, "0")}-${String(r.max).padStart(2, "0")}: ${r.item}`)
+    .join("\n")
+}
+
+// Resolve which table entry a rolled number maps to (null if out of range).
+export function resolveRollTableEntry(table: RollTableEntry[], roll: number): RollTableEntry | null {
+  return table.find((r) => roll >= r.min && roll <= r.max) || null
+}

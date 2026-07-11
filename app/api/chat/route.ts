@@ -9,7 +9,7 @@ const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
-import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
+import { CAMPAIGNS, ABYSS_SCAVENGED_ITEMS_TABLE, formatRollTable } from "@/lib/world-ai/campaigns"
 import * as fal from "@fal-ai/serverless-client"
 
 // Configure Fal client
@@ -35,6 +35,52 @@ export async function POST(req: Request) {
     .single()
 
   const playerName = playerCharacter?.name || "Player"
+
+  // Fetch the character's CURRENT inventory so it can be injected into the
+  // narrator prompt as the authoritative list of what they possess this turn.
+  const { data: currentInventory } = playerCharacter?.id
+    ? await supabase
+        .from("inventory_items")
+        .select("name, quantity, item_type")
+        .eq("character_id", playerCharacter.id)
+        .order("created_at", { ascending: true })
+    : { data: null }
+
+  const inventoryLines = (currentInventory || []).map((i: { name: string; quantity: number }) =>
+    i.quantity > 1 ? `- ${i.name} x${i.quantity}` : `- ${i.name}`
+  )
+
+  // Authoritative inventory block: the character possesses ONLY these items, and
+  // any newly awarded item MUST be tagged so it is written to inventory_items.
+  const inventoryBlock = `=== ${playerName.toUpperCase()}'S CURRENT INVENTORY — AUTHORITATIVE (live from database) ===
+${playerName} currently possesses ONLY the following items. This list is the single source of truth for what the character is carrying right now:
+${inventoryLines.length > 0 ? inventoryLines.join("\n") : "- (empty — the character is currently carrying nothing)"}
+
+INVENTORY RULES — ENFORCE STRICTLY:
+- The character possesses ONLY the items listed above. Do NOT invent, assume, reference, or let the player use any item that is not on this list (aside from an item you award this turn).
+- Whenever you award, grant, or let the character pick up a NEW item, you MUST emit an [ITEM_AWARD: name | qty | description | item_type | icon_hint] tag (or [ITEM_ADD: ...]) so it is inserted into inventory_items. Narrating an item without the tag does NOT actually give it to the player.
+- When an item is consumed, dropped, or lost, emit [ITEM_REMOVE: name | quantity].
+=== END INVENTORY ===`
+
+  // Authoritative d100 scavenged-items table with a hard binding rule so the
+  // opening fortune roll (and any roll against this table) awards the EXACT
+  // entry matching the rolled number — no substitutions, no invented items.
+  const scavengedTableBlock = `=== OPENING FORTUNE ROLL — SCAVENGED ITEMS (d100) — ABSOLUTE, NON-NEGOTIABLE RULE ===
+When the player rolls d100 for their starting scavenged possession (the opening fortune roll), OR whenever any roll is resolved against this table, you MUST award the SINGLE entry whose numeric range contains the rolled number. This number-to-item mapping is LAW.
+- Read the rolled total, find the range it falls within, and award THAT item verbatim.
+- Do NOT substitute, approximate, re-flavor, upgrade, or invent a different item.
+- Do NOT choose a "nearby", "cooler", or thematically-preferred item. The rolled number alone dictates the result.
+- Unless the awarded entry is "Nothing", immediately emit an [ITEM_AWARD: ...] tag for that exact item so it is written to the character's inventory.
+
+d100 SCAVENGED ITEMS TABLE (rolled range : item awarded):
+${formatRollTable(ABYSS_SCAVENGED_ITEMS_TABLE)}
+
+WORKED EXAMPLES (follow this mapping exactly):
+- A roll of 73 falls in 71-76 -> award "Shattered spellbook pages (contains 1 random cantrip)". It is NOT a hand crossbow.
+- A roll of 45 falls in 41-46 -> award "Belt pouch with 1d4 cp".
+- A roll of 12 falls in 11-16 -> award "Carnelian gem (10gp)".
+- A roll of 98 falls in 95-100 -> award "Nothing" (do not invent an item; narrate the empty-handed result).
+=== END SCAVENGED ITEMS RULE ===`
 
   // Get recent dialogue history for context (last 20 messages).
   // Fetched BEFORE persisting the current message so history does not include
@@ -205,6 +251,10 @@ Victory is yours—but the sound of its death-screams echoes through the caverns
 ${worldContextText}
 
 ${stageContext}
+
+${scavengedTableBlock}
+
+${inventoryBlock}
 
 FORMATTING — CRITICAL:
 - NEVER use asterisks (*), underscores (_), backticks, or any markdown formatting in your responses
