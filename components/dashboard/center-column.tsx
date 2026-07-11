@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { quickAbilities, getClassSpellcasting } from "@/lib/game-data"
 import {
@@ -91,22 +91,54 @@ interface CenterColumnProps {
 // The DM / narrator speaks under this name in the dialogue log.
 const DM_SPEAKER = "Malachar"
 
-// Parse a DM message for NPC dialogue. A known NPC name from the roster that
-// appears *before* a run of quoted speech is treated as the active speaker
-// (e.g. `Eldeth Feldrun grips her axe. "We have to move."`). When several NPC
-// names precede the quote, the one closest to the quote wins.
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+// Index of the first word-boundary occurrence of `needle` in `text`, or -1.
+function findNameIndex(text: string, needle: string): number {
+  if (!needle) return -1
+  const m = new RegExp(`\\b${escapeRegExp(needle)}\\b`).exec(text)
+  return m ? m.index : -1
+}
+
+// Parse a DM message for NPC dialogue and return the speaking NPC's id.
+//
+// The message must contain quoted speech (someone is talking). A roster NPC is
+// considered the active speaker if their name appears ANYWHERE in that message
+// — not only before the quote. Real DM narration frequently refers to an NPC by
+// epithet ("the dwarf woman"), lets them speak, and only names them afterward
+// (e.g. a self-introduction *inside* the quote: `"...Eldeth Feldrun, scout of
+// Gauntlgrym..."`). We also match on the first-name token so later lines that
+// drop the surname (`Eldeth says, "..."`) still attribute correctly. When
+// several NPCs are named, the one whose mention sits closest to any quote wins.
 function detectActiveSpeaker(text: string, roster: NpcEncounter[]): string | null {
   if (!text) return null
-  // Support straight and curly quote characters.
-  const quoteMatch = text.match(/["“”„]/)
-  if (!quoteMatch || quoteMatch.index == null) return null
-  const quotePos = quoteMatch.index
-  let best: { id: string; pos: number } | null = null
+  // Collect every quote-character position (straight and curly).
+  const quotePositions: number[] = []
+  const quoteRe = /["“”„]/g
+  let qm: RegExpExecArray | null
+  while ((qm = quoteRe.exec(text)) !== null) quotePositions.push(qm.index)
+  if (quotePositions.length === 0) return null
+
+  const nearestQuoteDist = (idx: number) =>
+    Math.min(...quotePositions.map((q) => Math.abs(q - idx)))
+
+  let best: { id: string; dist: number } | null = null
   for (const npc of roster) {
     if (!npc.name) continue
-    const idx = text.indexOf(npc.name)
-    if (idx === -1 || idx >= quotePos) continue
-    if (!best || idx > best.pos) best = { id: npc.id, pos: idx }
+    // Try the full name, then the first-name token (>=3 chars to avoid noise).
+    const candidates = [npc.name]
+    const firstToken = npc.name.trim().split(/\s+/)[0]
+    if (firstToken && firstToken.length >= 3 && firstToken !== npc.name) {
+      candidates.push(firstToken)
+    }
+    let idx = -1
+    for (const c of candidates) {
+      const found = findNameIndex(text, c)
+      if (found !== -1 && (idx === -1 || found < idx)) idx = found
+    }
+    if (idx === -1) continue
+    const dist = nearestQuoteDist(idx)
+    if (!best || dist < best.dist) best = { id: npc.id, dist }
   }
   return best?.id ?? null
 }
@@ -178,36 +210,25 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   const activeEncounters = npcEncounters.filter(e => e.is_active)
 
   // --- Active speaker detection ---------------------------------------------
-  // Watch the dialogue log. When a new DM message arrives we parse it for NPC
-  // dialogue; a player (or system) message clears the featured speaker.
-  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null)
-  const [activeLine, setActiveLine] = useState<string | null>(null)
-  const lastProcessed = useRef(0)
-
-  useEffect(() => {
-    // Log was cleared / restarted — reset.
-    if (dialogue.length < lastProcessed.current) {
-      lastProcessed.current = dialogue.length
-      setActiveSpeakerId(null)
-      setActiveLine(null)
-      return
-    }
-    // No new entries since last run.
-    if (dialogue.length === lastProcessed.current) return
-
+  // The featured speaker is DERIVED from the last dialogue entry rather than
+  // tracked via append-counting. Deriving is resilient to every way the real
+  // app mutates `dialogue`: optimistic appends, realtime INSERT appends, a full
+  // array replace on initial fetch / campaign restore, and — critically — the
+  // npc roster arriving AFTER the message (an append-counter would early-return
+  // and never re-evaluate; a memo re-runs whenever `npcEncounters` changes).
+  //
+  // Rule: if the most recent entry is a DM message containing NPC dialogue,
+  // feature that NPC; a player/system message (or a DM message with no NPC
+  // dialogue) clears the featured view back to the normal tile grid.
+  const { activeSpeakerId, activeLine } = useMemo(() => {
     const last = dialogue[dialogue.length - 1]
-    lastProcessed.current = dialogue.length
-    if (!last) return
-
-    if (last.speaker === DM_SPEAKER) {
-      // New DM message: feature the speaking NPC, or clear if none is talking.
-      const speakerId = detectActiveSpeaker(last.text, npcEncounters)
-      setActiveSpeakerId(speakerId)
-      setActiveLine(speakerId ? extractSpokenLine(last.text) : null)
-    } else {
-      // Player response (or system message) — revert to the normal tile grid.
-      setActiveSpeakerId(null)
-      setActiveLine(null)
+    if (!last || last.speaker !== DM_SPEAKER) {
+      return { activeSpeakerId: null as string | null, activeLine: null as string | null }
+    }
+    const speakerId = detectActiveSpeaker(last.text, npcEncounters)
+    return {
+      activeSpeakerId: speakerId,
+      activeLine: speakerId ? extractSpokenLine(last.text) : null,
     }
   }, [dialogue, npcEncounters])
 
