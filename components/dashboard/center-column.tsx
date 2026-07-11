@@ -549,8 +549,83 @@ function CombatFxKeyframes() {
 // view and vertically centered regardless of the panel width. A blurred copy
 // fills the full width behind it as atmosphere. An amber/gold border pulse
 // signals that this character is talking.
+// Mute preference + line dedup live at module scope so they survive
+// FeaturedSpeaker unmounting whenever the active speaker changes/clears.
+let ttsMuted = false
+let lastSpokenKey: string | null = null
+let activeNpcAudio: HTMLAudioElement | null = null
+
+function stopNpcAudio() {
+  if (activeNpcAudio) {
+    activeNpcAudio.pause()
+    activeNpcAudio.src = ""
+    activeNpcAudio = null
+  }
+}
+
 function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEncounter; line?: string | null; hasOthers?: boolean }) {
   const face = speaker.face_url || speaker.portrait_url
+  const [muted, setMuted] = useState(ttsMuted)
+  const [speaking, setSpeaking] = useState(false)
+
+  // Auto-play the quoted line (dialogue only — narration is never passed here)
+  // through the per-NPC voice. Each unique speaker+line plays at most once.
+  useEffect(() => {
+    if (!line || !speaker.id) return
+    const key = `${speaker.id}::${line}`
+    if (key === lastSpokenKey) return // never speak the same line twice
+    if (ttsMuted) {
+      lastSpokenKey = key // honor "played once" even while muted
+      return
+    }
+    lastSpokenKey = key
+    let cancelled = false
+    stopNpcAudio()
+    setSpeaking(true)
+    ;(async () => {
+      try {
+        const res = await fetch("/api/npc-tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ npcId: speaker.id, text: line }),
+        })
+        if (!res.ok || cancelled) {
+          setSpeaking(false)
+          return
+        }
+        const blob = await res.blob()
+        if (cancelled) return
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        activeNpcAudio = audio
+        audio.onended = () => {
+          setSpeaking(false)
+          URL.revokeObjectURL(url)
+          if (activeNpcAudio === audio) activeNpcAudio = null
+        }
+        audio.onerror = () => setSpeaking(false)
+        await audio.play().catch(() => setSpeaking(false))
+      } catch {
+        if (!cancelled) setSpeaking(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [line, speaker.id])
+
+  // Stop any in-flight audio when the featured speaker unmounts (speaker clears).
+  useEffect(() => () => stopNpcAudio(), [])
+
+  const toggleMute = () => {
+    const next = !muted
+    ttsMuted = next
+    setMuted(next)
+    if (next) {
+      stopNpcAudio()
+      setSpeaking(false)
+    }
+  }
 
   return (
     <div className="relative w-full min-h-0 flex-1">
@@ -589,10 +664,35 @@ function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEnc
         {/* Readability gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0908]/95 via-transparent to-transparent" />
 
-        {/* Speaking indicator */}
-        <div className="absolute top-1.5 right-2 flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#e6c878] animate-pulse" />
-          <span className="text-[9px] uppercase tracking-widest text-[#c9a868]/90 drop-shadow">Speaking</span>
+        {/* Speaking indicator + mute/stop toggle */}
+        <div className="absolute top-1.5 right-2 flex items-center gap-1.5">
+          {speaking && !muted && (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-[#e6c878] animate-pulse" />
+              <span className="text-[9px] uppercase tracking-widest text-[#c9a868]/90 drop-shadow">Speaking</span>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={toggleMute}
+            aria-label={muted ? "Unmute NPC voice" : "Mute / stop NPC voice"}
+            title={muted ? "Unmute NPC voice" : "Mute / stop NPC voice"}
+            className="flex items-center justify-center w-6 h-6 rounded-sm bg-[#0a0908]/70 border border-[#c9a868]/40 text-[#c9a868] hover:text-[#e6c878] hover:border-[#c9a868]/70 transition-colors"
+          >
+            {muted ? (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+                <line x1="23" y1="9" x2="17" y2="15" />
+                <line x1="17" y1="9" x2="23" y2="15" />
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+            )}
+          </button>
         </div>
 
         {/* Name + current spoken line beneath the portrait */}
