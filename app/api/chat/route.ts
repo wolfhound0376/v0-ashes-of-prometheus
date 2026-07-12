@@ -27,12 +27,35 @@ export async function POST(req: Request) {
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
 
-  // Get the player character
-  const { data: playerCharacter, error: playerError } = await supabase
+  // Get the player character.
+  // NOTE: This previously used .single(), which returns NULL (and an error) if
+  // there is anything other than EXACTLY one is_player=true row. With stale or
+  // duplicate player rows that made playerCharacter null, so the entire item
+  // award block below was skipped and nothing was ever inserted. We now fetch
+  // all candidates and pick deterministically (most recently updated), logging
+  // when more than one exists.
+  const { data: playerRows, error: playerError } = await supabase
     .from("characters")
-    .select("id, name")
+    .select("id, name, character_type, updated_at")
     .eq("is_player", true)
-    .single()
+    .order("updated_at", { ascending: false })
+
+  const candidates = (playerRows ?? []) as {
+    id: string
+    name: string
+    character_type: string | null
+    updated_at: string | null
+  }[]
+  if (candidates.length > 1) {
+    console.warn(
+      "[v0] chat: multiple is_player=true rows found:",
+      candidates.map((c) => `${c.name} (${c.id})`).join(", "),
+      "— using most recently updated",
+    )
+  }
+  // Prefer a row explicitly typed as 'player', else the most recently updated.
+  const playerCharacter =
+    candidates.find((c) => c.character_type === "player") ?? candidates[0] ?? null
 
   const playerName = playerCharacter?.name || "Player"
 
