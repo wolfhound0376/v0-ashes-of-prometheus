@@ -637,7 +637,16 @@ function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEnc
         const res = await fetch("/api/npc-tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ npcId: speaker.id, text: line }),
+          // Send the full voice contract the route expects: an explicit voice_id
+          // if the NPC already has one, else the voice_description so the route
+          // can resolve + persist a voice. npcName drives the write-back across
+          // all rows sharing this NPC's name.
+          body: JSON.stringify({
+            text: line,
+            voiceId: speaker.voice_id ?? undefined,
+            voiceDescription: speaker.voice_description ?? undefined,
+            npcName: speaker.name,
+          }),
         })
         if (!res.ok || cancelled) {
           setSpeaking(false)
