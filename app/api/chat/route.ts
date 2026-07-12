@@ -27,31 +27,66 @@ export async function POST(req: Request) {
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
 
-  // Get the player character
-  const { data: playerCharacter, error: playerError } = await supabase
-    .from("characters")
-    .select("id, name")
-    .eq("is_player", true)
-    .single()
-
-  const playerName = playerCharacter?.name || "Player"
-
-  // Resolve the current session up-front so item awards can also be logged as
-  // session_beats. status='active' preferred, else the most recent session.
+  // Resolve the active session FIRST — it carries active_character_id, which is
+  // the authoritative pointer to the current player character. Prefer a session
+  // with status='active', else the most recently started one.
+  // NOTE: never use an unfiltered .single() here. Production had 12 characters
+  // (2 players + 10 NPCs) and the old `.eq("is_player", true).single()` threw
+  // "Cannot coerce the result to a single JSON object", nulling playerCharacter
+  // and silently skipping the entire item-award insert block.
   let activeSessionId: string | null = null
+  let sessionCharacterId: string | null = null
   {
     const { data: sess } = await supabase
       .from("sessions")
-      .select("id, status, started_at")
+      .select("id, status, started_at, active_character_id")
       .order("started_at", { ascending: false })
-    const rows = (sess ?? []) as { id: string; status: string | null }[]
-    activeSessionId = (rows.find((s) => s.status === "active") ?? rows[0])?.id ?? null
+    const rows = (sess ?? []) as {
+      id: string
+      status: string | null
+      active_character_id: string | null
+    }[]
+    const activeSession = rows.find((s) => s.status === "active") ?? rows[0] ?? null
+    activeSessionId = activeSession?.id ?? null
+    sessionCharacterId = activeSession?.active_character_id ?? null
   }
+
+  // Resolve the player character: session.active_character_id first, then fall
+  // back to the newest is_player=true row. Both paths use limit(1)/maybeSingle
+  // so extra player or NPC rows can never throw or null out the result.
+  let playerCharacter: { id: string; name: string } | null = null
+  let playerResolveVia = "none"
+  if (sessionCharacterId) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name")
+      .eq("id", sessionCharacterId)
+      .maybeSingle()
+    if (data) {
+      playerCharacter = data as { id: string; name: string }
+      playerResolveVia = "session.active_character_id"
+    }
+  }
+  if (!playerCharacter) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name")
+      .eq("is_player", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+    const rows = (data ?? []) as { id: string; name: string }[]
+    if (rows[0]) {
+      playerCharacter = rows[0]
+      playerResolveVia = "is_player fallback"
+    }
+  }
+
+  const playerName = playerCharacter?.name || "Player"
 
   console.log(
     "[v0] chat: playerCharacter resolved:",
     playerCharacter ? `${playerCharacter.name} (${playerCharacter.id})` : "NULL",
-    playerError ? `| error: ${playerError.message}` : "",
+    `| via: ${playerResolveVia}`,
     "| activeSessionId:", activeSessionId ?? "NONE",
   )
 
