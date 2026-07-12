@@ -28,13 +28,32 @@ export async function POST(req: Request) {
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
 
   // Get the player character
-  const { data: playerCharacter } = await supabase
+  const { data: playerCharacter, error: playerError } = await supabase
     .from("characters")
     .select("id, name")
     .eq("is_player", true)
     .single()
 
   const playerName = playerCharacter?.name || "Player"
+
+  // Resolve the current session up-front so item awards can also be logged as
+  // session_beats. status='active' preferred, else the most recent session.
+  let activeSessionId: string | null = null
+  {
+    const { data: sess } = await supabase
+      .from("sessions")
+      .select("id, status, started_at")
+      .order("started_at", { ascending: false })
+    const rows = (sess ?? []) as { id: string; status: string | null }[]
+    activeSessionId = (rows.find((s) => s.status === "active") ?? rows[0])?.id ?? null
+  }
+
+  console.log(
+    "[v0] chat: playerCharacter resolved:",
+    playerCharacter ? `${playerCharacter.name} (${playerCharacter.id})` : "NULL",
+    playerError ? `| error: ${playerError.message}` : "",
+    "| activeSessionId:", activeSessionId ?? "NONE",
+  )
 
   // Fetch the character's CURRENT inventory so it can be injected into the
   // narrator prompt as the authoritative list of what they possess this turn.
@@ -419,52 +438,140 @@ EXPERIENCE POINTS:
   // actually interacting with (e.g. talking to Eldeth shows only Eldeth).
   const encounteredThisTurn = new Set<string>()
 
+  // === ITEM TAG DIAGNOSTICS ===
+  // Log every item-ish tag the narrator emitted (even malformed ones) so the
+  // server logs show exactly what was produced vs. what parsed. This is the
+  // step that reveals whether the model under-emits tags or emits near-miss
+  // formats that the old strict regex silently dropped.
+  const rawItemTags = rawText.match(/\[ITEM_[A-Z]+:[^\]]*\]/gi) || []
+  console.log(
+    "[v0] item tag scan:",
+    rawItemTags.length ? rawItemTags.join(" ") : "NO [ITEM_*] TAGS IN RESPONSE",
+  )
+
   // Parse and process inventory tags from the response
   if (playerCharacter?.id) {
-    // Handle ITEM_ADD tags
-    const addMatches = rawText.matchAll(/\[ITEM_ADD:\s*([^|]+)\|\s*(\d+)\s*\|\s*(\w+)\s*\|\s*([^\]]+)\]/g)
-    for (const match of addMatches) {
-      const [, name, qty, type, description] = match
-      const itemName = name.trim()
-      const quantity = parseInt(qty.trim()) || 1
-      const itemType = type.trim()
-      const desc = description.trim()
+    const KNOWN_TYPES = new Set(["weapon", "armor", "consumable", "misc", "currency"])
+
+    // Write a session_beats row mirroring the old pipeline so awarded items show
+    // up on the shotlist timeline. Best-effort: never let it break the award.
+    const writeItemAwardBeat = async (itemName: string, quantity: number, desc: string) => {
+      if (!activeSessionId) {
+        console.warn("[v0] item_award beat skipped: no active session")
+        return
+      }
+      const { error: beatError } = await supabase.from("session_beats").insert({
+        session_id: activeSessionId,
+        beat_type: "item_award",
+        character_id: playerCharacter.id,
+        subject: itemName,
+        summary: `${playerName} received ${itemName}${quantity > 1 ? ` x${quantity}` : ""}`,
+        narration: desc || null,
+        priority: 5,
+      })
+      if (beatError) {
+        console.error("[v0] Error writing item_award session_beat:", beatError.message)
+      } else {
+        console.log("[v0] item_award session_beat written for:", itemName)
+      }
+    }
+
+    // Shared award/pickup handler: insert or bump quantity, resolve an icon, and
+    // record a session beat. Used for BOTH [ITEM_ADD] and [ITEM_AWARD].
+    const awardItem = async (itemName: string, quantity: number, desc: string, type: string, hint: string) => {
+      // Resolve an existing icon from dashboard_assets by hint or name.
+      let iconUrl: string | null = null
+      const { data: existingIcon } = await supabase
+        .from("dashboard_assets")
+        .select("url")
+        .eq("asset_type", "item_icon")
+        .or(`name.ilike.%${hint || itemName}%,name.ilike.%${itemName}%`)
+        .limit(1)
+        .maybeSingle()
+      if (existingIcon?.url) iconUrl = existingIcon.url
 
       const { data: existing } = await supabase
         .from("inventory_items")
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
         .eq("name", itemName)
-        .single()
+        .maybeSingle()
 
       if (existing) {
-        await supabase.from("inventory_items")
-          .update({ quantity: existing.quantity + quantity })
+        const { error } = await supabase.from("inventory_items")
+          .update({ quantity: existing.quantity + quantity, icon_url: iconUrl || undefined })
           .eq("id", existing.id)
+        if (error) console.error("[v0] Error updating inventory item:", itemName, error.message)
+        else console.log("[v0] Updated existing item quantity:", itemName, "->", existing.quantity + quantity)
       } else {
-        await supabase.from("inventory_items").insert({
+        const { error } = await supabase.from("inventory_items").insert({
           character_id: playerCharacter.id,
           name: itemName,
           quantity,
           description: desc,
-          item_type: itemType,
+          item_type: type,
+          icon_url: iconUrl,
         })
+        if (error) console.error("[v0] Error inserting inventory item:", itemName, error.message)
+        else console.log("[v0] Created new inventory item:", itemName)
       }
+      await writeItemAwardBeat(itemName, quantity, desc)
+    }
+
+    // Tolerant parser for [ITEM_ADD: ...] and [ITEM_AWARD: ...]. Rather than
+    // trust a rigid field order (ADD and AWARD historically used DIFFERENT
+    // orders, which the model constantly confused), we split on "|" and infer
+    // each field: name is first; quantity is the first purely-numeric field; the
+    // item type is any field matching a known type; the description is the
+    // longest remaining field; the icon hint is a leftover short word.
+    const itemMatches = rawText.matchAll(/\[ITEM_(ADD|AWARD):\s*([^\]]+)\]/gi)
+    for (const match of itemMatches) {
+      const fields = match[2].split("|").map((f) => f.trim()).filter((f) => f.length > 0)
+      if (fields.length === 0) continue
+      const itemName = fields[0]
+      const rest = fields.slice(1)
+
+      let quantity = 1
+      const qtyIdx = rest.findIndex((f) => /^\d+$/.test(f))
+      if (qtyIdx !== -1) quantity = parseInt(rest[qtyIdx]) || 1
+
+      let type = "misc"
+      const typeIdx = rest.findIndex((f) => KNOWN_TYPES.has(f.toLowerCase()))
+      if (typeIdx !== -1) type = rest[typeIdx].toLowerCase()
+
+      // Remaining fields (excluding qty and type) are description / icon hint.
+      const leftovers = rest.filter((_, i) => i !== qtyIdx && i !== typeIdx)
+      // Description = longest leftover; icon hint = a short single-word leftover.
+      let desc = ""
+      let hint = ""
+      if (leftovers.length) {
+        const sorted = [...leftovers].sort((a, b) => b.length - a.length)
+        desc = sorted[0]
+        const shortWord = leftovers.find((f) => f !== desc && /^\w[\w-]*$/.test(f))
+        hint = shortWord || ""
+      }
+
+      console.log(
+        `[v0] parsed ${match[1]} ->`,
+        `name="${itemName}" qty=${quantity} type=${type} hint="${hint}" desc="${desc.slice(0, 40)}"`,
+      )
+      await awardItem(itemName, quantity, desc, type, hint)
     }
 
     // Handle ITEM_REMOVE tags
-    const removeMatches = rawText.matchAll(/\[ITEM_REMOVE:\s*([^|]+)\|\s*(\d+)\s*\]/gi)
+    const removeMatches = rawText.matchAll(/\[ITEM_REMOVE:\s*([^|\]]+?)(?:\|\s*(\d+))?\s*\]/gi)
     for (const match of removeMatches) {
       const [, name, qty] = match
       const itemName = name.trim()
-      const quantity = parseInt(qty.trim()) || 1
+      const quantity = qty ? parseInt(qty.trim()) || 1 : 1
+      console.log("[v0] ITEM_REMOVE tag found:", itemName, "| qty:", quantity)
 
       const { data: existing } = await supabase
         .from("inventory_items")
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
         .eq("name", itemName)
-        .single()
+        .maybeSingle()
 
       if (existing) {
         if (existing.quantity <= quantity) {
@@ -474,62 +581,6 @@ EXPERIENCE POINTS:
             .update({ quantity: existing.quantity - quantity })
             .eq("id", existing.id)
         }
-      }
-    }
-
-    // Handle ITEM_AWARD tags - [ITEM_AWARD: name | qty | description | item_type | icon_hint]
-    const awardMatches = rawText.matchAll(/\[ITEM_AWARD:\s*([^|]+)\|\s*(\d+)\s*\|\s*([^|]+)\|\s*(\w+)\s*\|\s*([^\]]+)\]/gi)
-    for (const match of awardMatches) {
-      const [, name, qty, description, itemType, iconHint] = match
-      const itemName = name.trim()
-      const quantity = parseInt(qty.trim()) || 1
-      const desc = description.trim()
-      const type = itemType.trim() || "misc"
-      const hint = iconHint.trim()
-
-      console.log("[v0] ITEM_AWARD tag found:", itemName, "| qty:", quantity, "| icon_hint:", hint)
-
-      // Try to find an existing icon from dashboard_assets
-      let iconUrl: string | null = null
-      const { data: existingIcon } = await supabase
-        .from("dashboard_assets")
-        .select("url")
-        .eq("asset_type", "item_icon")
-        .or(`name.ilike.%${hint}%,name.ilike.%${itemName}%`)
-        .limit(1)
-        .single()
-
-      if (existingIcon?.url) {
-        iconUrl = existingIcon.url
-        console.log("[v0] Found existing icon for item:", iconUrl)
-      }
-
-      // Check if item already exists in inventory
-      const { data: existing } = await supabase
-        .from("inventory_items")
-        .select("id, quantity")
-        .eq("character_id", playerCharacter.id)
-        .eq("name", itemName)
-        .single()
-
-      if (existing) {
-        await supabase.from("inventory_items")
-          .update({
-            quantity: existing.quantity + quantity,
-            icon_url: iconUrl || undefined
-          })
-          .eq("id", existing.id)
-        console.log("[v0] Updated existing item quantity:", itemName)
-      } else {
-        await supabase.from("inventory_items").insert({
-          character_id: playerCharacter.id,
-          name: itemName,
-          quantity,
-          description: desc,
-          item_type: type,
-          icon_url: iconUrl,
-        })
-        console.log("[v0] Created new inventory item:", itemName)
       }
     }
 

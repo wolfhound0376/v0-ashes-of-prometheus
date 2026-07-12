@@ -147,19 +147,68 @@ function detectActiveSpeaker(text: string, roster: NpcEncounter[]): string | nul
   return best?.id ?? null
 }
 
-// Pull the most recent quoted speech out of a DM message so it can be shown as
-// the featured speaker's caption. Handles straight and curly quotes and joins
-// multiple quoted spans (e.g. dialogue interrupted by narration) into one line.
-function extractSpokenLine(text: string): string | null {
+// All word-boundary indices where any name token (full name + first-name token,
+// >=3 chars) appears in the text. Used to attribute a quote to a speaker.
+function allNameIndices(text: string, name: string | undefined | null): number[] {
+  if (!name) return []
+  const tokens = [name.trim()]
+  const first = name.trim().split(/\s+/)[0]
+  if (first && first.length >= 3 && first !== name.trim()) tokens.push(first)
+  const indices: number[] = []
+  for (const tok of tokens) {
+    const re = new RegExp(`\\b${escapeRegExp(tok)}\\b`, "g")
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) indices.push(m.index)
+  }
+  return indices
+}
+
+// Distance from a quote to the closest name mention, strongly preferring a
+// mention that appears BEFORE the quote (the "X says, '...'" pattern). Returns
+// Infinity when the name never appears. Preceding mentions always beat trailing
+// ones so "Fifi leans closer. '...'" attributes to Fifi, not a later NPC name.
+function attributionScore(nameIdx: number[], quotePos: number): number {
+  let bestPreceding = Infinity
+  let bestFollowing = Infinity
+  for (const idx of nameIdx) {
+    if (idx <= quotePos) bestPreceding = Math.min(bestPreceding, quotePos - idx)
+    else bestFollowing = Math.min(bestFollowing, idx - quotePos)
+  }
+  if (bestPreceding !== Infinity) return bestPreceding
+  // No preceding mention: fall back to a following one, but penalized so any
+  // preceding mention of the other speaker wins.
+  return bestFollowing === Infinity ? Infinity : bestFollowing + 100000
+}
+
+// Pull the featured NPC's spoken line out of a DM message for the caption.
+// Only quotes attributable to `npcName` are kept — quotes the narrator frames as
+// the player character (`playerName`) speaking are excluded — and when the NPC
+// has several quotes we keep only the LAST one or two, never a concatenation of
+// the whole message. Handles straight and curly quotes.
+function extractSpokenLine(text: string, npcName?: string | null, playerName?: string | null): string | null {
   if (!text) return null
+  const player = playerName || "Fifi of Copperas Cove"
+  const npcIdx = allNameIndices(text, npcName)
+  const playerIdx = allNameIndices(text, player)
+
   const re = /["“„]([^"“”„]+)["”]/g
-  const parts: string[] = []
+  const npcQuotes: string[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     const s = m[1].trim()
-    if (s) parts.push(s)
+    if (!s) continue
+    const quotePos = m.index
+    const npcScore = attributionScore(npcIdx, quotePos)
+    const playerScore = attributionScore(playerIdx, quotePos)
+    // Exclude quotes the player is speaking. When neither name is anywhere in
+    // the text we still show the quote (the featured NPC is the only speaker).
+    if (playerScore < npcScore) continue
+    npcQuotes.push(s)
   }
-  return parts.length ? parts.join(" ") : null
+
+  if (!npcQuotes.length) return null
+  // Keep only the last one or two NPC quotes.
+  return npcQuotes.slice(-2).join(" ")
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -230,11 +279,12 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
       return { activeSpeakerId: null as string | null, activeLine: null as string | null }
     }
     const speakerId = detectActiveSpeaker(last.text, npcEncounters)
+    const speakerNpc = speakerId ? npcEncounters.find(n => n.id === speakerId) : null
     return {
       activeSpeakerId: speakerId,
-      activeLine: speakerId ? extractSpokenLine(last.text) : null,
+      activeLine: speakerId ? extractSpokenLine(last.text, speakerNpc?.name, characterName) : null,
     }
-  }, [dialogue, npcEncounters])
+  }, [dialogue, npcEncounters, characterName])
 
   const activeSpeaker = activeSpeakerId
     ? npcEncounters.find(n => n.id === activeSpeakerId) ?? null
