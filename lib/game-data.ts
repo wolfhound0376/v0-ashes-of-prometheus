@@ -523,8 +523,14 @@ export const inventoryData = [
   { id: "gold", name: "Gold", quantity: 1250, icon: "coins" },
 ]
 
+// Canonical session start location for the "Out of the Abyss" campaign. MUST
+// match the chat route's fallback (app/api/chat/route.ts: `worldContext.
+// environment?.name || "Velkynvelve (slave pen)"`) so the client never diverges
+// from the server's canonical location before the environments row hydrates.
+export const CANONICAL_START_LOCATION = "Velkynvelve (slave pen)"
+
 export const environmentData = {
-  location: "Greenmere Village",
+  location: CANONICAL_START_LOCATION,
   timeOfDay: "Afternoon",
 }
 

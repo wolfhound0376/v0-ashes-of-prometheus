@@ -9,7 +9,7 @@ import { RightColumn } from "@/components/dashboard/right-column"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
-import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions } from "@/lib/game-data"
+import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions, CANONICAL_START_LOCATION } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { useLich } from "@/lib/hooks/use-lich"
@@ -804,11 +804,12 @@ if (error) {
         onToggleTTSMute={toggleTTSMute}
       />
 
-      {/* Scene-driven background music. Pass ONLY the canonical DB location
-          (never the client-side environmentData default) so music keys off the
-          session's real location and defers to neutral until it hydrates. */}
+      {/* Scene-driven background music. Mirror the chat route's canonical
+          location source exactly: the hydrated DB environment name, falling
+          back to the shared canonical start (Velkynvelve) — never the old
+          "Greenmere Village" client default that caused village music. */}
       <DynamicMusic
-        location={currentEnvironment?.name ?? null}
+        location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
         inCombat={inCombat}
       />
     </div>
