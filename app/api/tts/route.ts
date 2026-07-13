@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           text,
-          model_id: "eleven_monolingual_v1",
+          model_id: "eleven_multilingual_v2",
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
@@ -48,6 +48,21 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const errorText = await response.text()
       console.error("[TTS] ElevenLabs error:", errorText)
+
+      // Graceful handling if ElevenLabs rejects the model (e.g. another
+      // deprecation). Log the exact error and return a clear 502 so the failure
+      // is distinguishable from a generic server error.
+      if (/unsupported_model/i.test(errorText)) {
+        console.error(
+          "[TTS] ElevenLabs reported unsupported_model. Current model_id: eleven_multilingual_v2. Full error:",
+          errorText,
+        )
+        return NextResponse.json(
+          { error: "TTS provider rejected the voice model (unsupported_model)", detail: errorText },
+          { status: 502 },
+        )
+      }
+
       return NextResponse.json({ error: "TTS generation failed" }, { status: 500 })
     }
 
