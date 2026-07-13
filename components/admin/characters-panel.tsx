@@ -3,9 +3,11 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
-import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield, Dices, Heart, ListOrdered } from "lucide-react"
+import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield, Dices, Heart, ListOrdered, Sparkles, Wand2 } from "lucide-react"
 import type { Character } from "@/lib/types/database"
 import { getDefaultAbilityScores } from "@/lib/game-data"
+import { BestiaryAutopopulate } from "./bestiary-autopopulate"
+import { type BestiaryEntry, matchBestiary, buildStatDiff, buildPatch } from "@/lib/bestiary-match"
 
 const CLASSES = ['Wizard', 'Fighter', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Sorcerer', 'Druid', 'Monk', 'Barbarian']
 
@@ -44,6 +46,8 @@ export function CharactersPanel() {
   const [editing, setEditing] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [formData, setFormData] = useState<Partial<Character>>({})
+  const [bestiary, setBestiary] = useState<BestiaryEntry[]>([])
+  const [bulkRunning, setBulkRunning] = useState(false)
 
   const supabase = createClient()
 
@@ -65,15 +69,86 @@ export function CharactersPanel() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchCharacters() }, [])
+  // Bestiary is the stat-block reference used by Autopopulate. Select('*') so we
+  // pick up whatever columns the live table has (slug/role/source may exist
+  // beyond the seed) without assuming a rigid shape.
+  const fetchBestiary = async () => {
+    const { data, error } = await supabase.from('bestiary').select('*').order('name')
+    if (error) {
+      console.error('[v0] Error fetching bestiary:', error)
+    } else {
+      console.log('[v0] Fetched bestiary entries:', data?.length || 0)
+      setBestiary((data as BestiaryEntry[]) || [])
+    }
+  }
+
+  useEffect(() => { fetchCharacters(); fetchBestiary() }, [])
+
+  // Bulk: fill every NPC/monster whose stats are still at defaults, using only
+  // confident matches, and only writing default/empty fields (canon-safe).
+  const handleBulkPopulate = async () => {
+    if (bestiary.length === 0) {
+      alert('No bestiary entries loaded to populate from.')
+      return
+    }
+    const targets = characters.filter((c) => {
+      const type = c.character_type ?? (c.is_player ? 'player' : 'npc')
+      if (type !== 'npc' && type !== 'monster') return false
+      // "Unstatted" = AC, HP and all six scores still at defaults.
+      const scoresDefault = ['str', 'dex', 'con', 'int', 'wis', 'cha'].every(
+        (s) => ((c as any)[`${s}_score`] ?? 10) === 10,
+      )
+      return (c.ac ?? 10) === 10 && (c.hp_max ?? 10) <= 10 && scoresDefault
+    })
+
+    if (targets.length === 0) {
+      alert('No unstatted NPCs or monsters found. (Characters with any manual stats are skipped.)')
+      return
+    }
+
+    const planned = targets
+      .map((c) => ({ c, match: matchBestiary(c.name, bestiary).best }))
+      .filter((p) => p.match)
+
+    if (planned.length === 0) {
+      alert(`Found ${targets.length} unstatted NPC(s)/monster(s) but no confident bestiary match for any of them.`)
+      return
+    }
+
+    const summary = planned.map((p) => `• ${p.c.name} → ${p.match!.entry.name}`).join('\n')
+    if (!confirm(`Populate ${planned.length} of ${targets.length} unstatted entries from the bestiary?\n\n${summary}`)) {
+      return
+    }
+
+    setBulkRunning(true)
+    let ok = 0
+    for (const { c, match } of planned) {
+      const { writable } = buildStatDiff(c as unknown as Record<string, unknown>, match!.entry)
+      // Only fill fields that are not already manually set.
+      const patch = buildPatch(writable.filter((f) => f.proposed !== null && !f.isManuallySet))
+      if (Object.keys(patch).length === 0) continue
+      const { error } = await supabase
+        .from('characters')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', c.id)
+      if (error) console.error('[v0] Bulk populate error for', c.name, error.message)
+      else ok++
+    }
+    setBulkRunning(false)
+    alert(`Populated ${ok} character(s) from the bestiary.`)
+    fetchCharacters()
+  }
 
   const handleCreate = async () => {
     if (!formData.name) return
     console.log('[v0] Creating character:', formData.name)
+    const createType = formData.character_type || 'npc'
+    // Class is meaningless for monsters (stored empty) and optional for NPCs.
+    const createClass = createType === 'monster' ? '' : createType === 'player' ? (formData.class || 'Wizard') : (formData.class || '')
     const { data, error } = await supabase.from('characters').insert({
       name: formData.name,
       level: formData.level || 1,
-      class: formData.class || 'Wizard',
+      class: createClass,
       xp: formData.xp || 0,
       xp_to_next: formData.xp_to_next || 300,
       avatar_image_url: formData.avatar_image_url,
@@ -113,8 +188,11 @@ export function CharactersPanel() {
   }
 
   const handleUpdate = async (id: string) => {
+    // Force monster class empty even if a stale value is in formData.
+    const updateType = formData.character_type || 'npc'
     const { error } = await supabase.from('characters').update({
       ...formData,
+      class: updateType === 'monster' ? '' : (formData.class ?? ''),
       str_modifier: Math.floor(((formData.str_score || 10) - 10) / 2),
       dex_modifier: Math.floor(((formData.dex_score || 10) - 10) / 2),
       con_modifier: Math.floor(((formData.con_score || 10) - 10) / 2),
@@ -141,16 +219,23 @@ export function CharactersPanel() {
   return (
     <div className="space-y-6">
       {!creating && (
-        <button onClick={() => { setCreating(true); setEditing(null); setFormData({ level: 1, class: 'Wizard', character_type: 'npc' }) }}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#3d3428] to-[#2a2520] border border-[#c4a777]/30 rounded-lg text-[#c4a777] text-sm hover:border-[#c4a777]/50">
-          <Plus className="w-4 h-4" />Add Character
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={() => { setCreating(true); setEditing(null); setFormData({ level: 1, class: 'Wizard', character_type: 'npc' }) }}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#3d3428] to-[#2a2520] border border-[#c4a777]/30 rounded-lg text-[#c4a777] text-sm hover:border-[#c4a777]/50">
+            <Plus className="w-4 h-4" />Add Character
+          </button>
+          <button onClick={handleBulkPopulate} disabled={bulkRunning}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#2a3320] to-[#20281a] border border-green-600/30 rounded-lg text-green-300 text-sm hover:border-green-600/50 disabled:opacity-50">
+            {bulkRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+            Populate all unstatted NPCs &amp; Monsters
+          </button>
+        </div>
       )}
 
       {creating && (
         <div className="bg-gradient-to-br from-[#1a1614] to-[#0f0d0b] border border-[#c4a777]/30 rounded-lg p-6">
           <h3 className="font-serif text-lg text-[#c4a777] mb-4">New Character</h3>
-          <CharacterForm formData={formData} setFormData={setFormData} onSave={handleCreate} onCancel={() => { setCreating(false); setFormData({}) }} />
+          <CharacterForm formData={formData} setFormData={setFormData} onSave={handleCreate} onCancel={() => { setCreating(false); setFormData({}) }} bestiary={bestiary} />
         </div>
       )}
 
@@ -168,7 +253,7 @@ export function CharactersPanel() {
                     {editing === char.id ? (
                       <div className="p-6">
                         <h3 className="font-serif text-lg text-[#c4a777] mb-4">Edit Character</h3>
-                        <CharacterForm formData={formData} setFormData={setFormData} onSave={() => handleUpdate(char.id)} onCancel={() => { setEditing(null); setFormData({}) }} />
+                        <CharacterForm formData={formData} setFormData={setFormData} onSave={() => handleUpdate(char.id)} onCancel={() => { setEditing(null); setFormData({}) }} bestiary={bestiary} />
                       </div>
                     ) : (
                       <div className="flex">
@@ -186,7 +271,7 @@ export function CharactersPanel() {
                                 <h4 className="font-serif text-[#e8dcc4]">{char.name}</h4>
                                 {char.is_player && <Crown className="w-4 h-4 text-[#c4a777]" />}
                               </div>
-                              <p className="text-sm text-stone-500">Level {char.level} {char.class}</p>
+                              <p className="text-sm text-stone-500">Level {char.level}{char.class ? ` ${char.class}` : ''}</p>
                               <div className="flex items-center gap-4 mt-2 text-xs text-stone-600">
                                 <span>HP: {char.hp_current}/{char.hp_max}</span>
                                 <span>AC: {char.ac}</span>
@@ -219,8 +304,11 @@ export function CharactersPanel() {
   )
 }
 
-function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: Partial<Character>; setFormData: (d: Partial<Character>) => void; onSave: () => void; onCancel: () => void }) {
+function CharacterForm({ formData, setFormData, onSave, onCancel, bestiary }: { formData: Partial<Character>; setFormData: (d: Partial<Character>) => void; onSave: () => void; onCancel: () => void; bestiary: BestiaryEntry[] }) {
   const [isRolling, setIsRolling] = useState(false)
+  const [showAutopopulate, setShowAutopopulate] = useState(false)
+  const charType = formData.character_type || 'npc'
+  const isMonster = charType === 'monster'
   
   const updateScore = (stat: string, value: number) => {
     setFormData({ ...formData, [`${stat}_score`]: value, [`${stat}_modifier`]: Math.floor((value - 10) / 2) })
@@ -293,23 +381,42 @@ function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: 
                 <input type="number" min={1} max={20} value={formData.level || 1} onChange={(e) => setFormData({ ...formData, level: parseInt(e.target.value) })}
                   className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none focus:border-[#c4a777]/50" />
               </div>
-              <div className="flex-1">
-                <label className="block text-sm text-stone-400 mb-2">Class</label>
-                <select value={formData.class || 'Wizard'} onChange={(e) => setFormData({ ...formData, class: e.target.value })}
-                  className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none focus:border-[#c4a777]/50">
-                  {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
+              {/* Class is hidden for monsters (meaningless) and optional for NPCs. */}
+              {!isMonster && (
+                <div className="flex-1">
+                  <label className="block text-sm text-stone-400 mb-2">
+                    Class{charType === 'npc' ? ' (optional)' : ''}
+                  </label>
+                  <select value={formData.class || ''} onChange={(e) => setFormData({ ...formData, class: e.target.value })}
+                    className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none focus:border-[#c4a777]/50">
+                    {charType === 'npc' && <option value="">— None —</option>}
+                    {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
-          <div>
-            <label className="block text-sm text-stone-400 mb-2">Type</label>
-            <select value={formData.character_type || 'npc'} onChange={(e) => setFormData({ ...formData, character_type: e.target.value as 'player' | 'npc' | 'monster' })}
-              className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none focus:border-[#c4a777]/50">
-              <option value="player">Player</option>
-              <option value="npc">NPC</option>
-              <option value="monster">Monster</option>
-            </select>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="block text-sm text-stone-400 mb-2">Type</label>
+              <select value={formData.character_type || 'npc'} onChange={(e) => setFormData({ ...formData, character_type: e.target.value as 'player' | 'npc' | 'monster' })}
+                className="w-full px-4 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] focus:outline-none focus:border-[#c4a777]/50">
+                <option value="player">Player</option>
+                <option value="npc">NPC</option>
+                <option value="monster">Monster</option>
+              </select>
+            </div>
+            {(charType === 'npc' || charType === 'monster') && (
+              <button
+                type="button"
+                onClick={() => setShowAutopopulate(true)}
+                title="Match this character to a bestiary stat block"
+                className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-[#3d3428] to-[#2a2520] border border-[#c4a777]/30 rounded-lg text-[#c4a777] text-sm hover:border-[#c4a777]/50 whitespace-nowrap"
+              >
+                <Sparkles className="w-4 h-4" />
+                Autopopulate from Bestiary
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -396,6 +503,16 @@ function CharacterForm({ formData, setFormData, onSave, onCancel }: { formData: 
         <button onClick={onCancel} className="flex items-center gap-2 px-4 py-2 border border-[#3d3428]/60 rounded-lg text-stone-400"><X className="w-4 h-4" />Cancel</button>
         <button onClick={onSave} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#3d3428] to-[#2a2520] border border-[#c4a777]/30 rounded-lg text-[#c4a777]"><Save className="w-4 h-4" />Save</button>
       </div>
+
+      {showAutopopulate && (
+        <BestiaryAutopopulate
+          characterName={formData.name || ''}
+          currentStats={formData as Record<string, unknown>}
+          entries={bestiary}
+          onApply={(patch) => setFormData({ ...formData, ...patch })}
+          onClose={() => setShowAutopopulate(false)}
+        />
+      )}
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
-import { Plus, Pencil, Trash2, Save, X, Loader2, Image, Layers, Sparkles, Frame, Minus } from "lucide-react"
+import { Plus, Pencil, Trash2, Save, X, Loader2, Image, Layers, Sparkles, Frame, Minus, Package } from "lucide-react"
 import type { DashboardAsset } from "@/lib/types/database"
 
 const ASSET_TYPES = [
@@ -13,6 +13,8 @@ const ASSET_TYPES = [
   { value: 'animation', label: 'Animation', icon: Sparkles },
   { value: 'border', label: 'Border', icon: Frame },
   { value: 'divider', label: 'Divider', icon: Minus },
+  // Consumed by the chat route's item-award icon lookup (asset_type = "item_icon").
+  { value: 'item_icon', label: 'Item Icon', icon: Package },
 ]
 
 const PANEL_TYPES = [
