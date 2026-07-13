@@ -69,8 +69,29 @@ const TIMBRE_KEYWORDS = new Set(["gravelly", "raspy", "husky", "low", "deep", "h
  * keyword overlap with timbre words weighted 2x. Deterministic: the same
  * description always resolves to the same voice id.
  */
-export function resolveVoiceFromDescription(description?: string | null): string {
-  if (!description) return DEFAULT_NPC_VOICE_ID
+export interface VoiceResolution {
+  /** The voice id to speak with (always populated). */
+  voiceId: string
+  /**
+   * True ONLY when voiceId was genuinely matched from a non-empty description
+   * via keyword/timbre overlap. When false, voiceId is a generic fallback
+   * default and MUST NOT be persisted back to the database as canon.
+   */
+  matchedFromDescription: boolean
+}
+
+/**
+ * Match-aware voice resolution. Returns both the chosen voice id and whether it
+ * was a genuine keyword match. Callers use `matchedFromDescription` to decide
+ * whether the result is safe to persist as the NPC's canon voice — a generic
+ * default fallback (empty description, or a description with zero keyword
+ * overlap) must never be written back.
+ */
+export function resolveVoice(description?: string | null): VoiceResolution {
+  // No description at all → generic default, never persist.
+  if (!description || !description.trim()) {
+    return { voiceId: DEFAULT_NPC_VOICE_ID, matchedFromDescription: false }
+  }
   const desc = description.toLowerCase()
 
   let genderFilter: "female" | "male" | null = null
@@ -89,10 +110,20 @@ export function resolveVoiceFromDescription(description?: string | null): string
     }
     if (!best || score > best.score) best = { id: voice.id, score }
   }
-  // If nothing matched at all, fall back to the first candidate of the right
-  // gender (or the global default) so a voice is always chosen.
+
+  // Zero keyword overlap → the description told us nothing matchable, so the
+  // best we can do is a gender-appropriate (or global) default. Treat this as a
+  // NON-match so it is used one-off but never persisted.
   if (!best || best.score === 0) {
-    return candidates[0]?.id ?? DEFAULT_NPC_VOICE_ID
+    return { voiceId: candidates[0]?.id ?? DEFAULT_NPC_VOICE_ID, matchedFromDescription: false }
   }
-  return best.id
+  return { voiceId: best.id, matchedFromDescription: true }
+}
+
+/**
+ * Backwards-compatible thin wrapper returning just the voice id. Prefer
+ * `resolveVoice` when you need to know whether the result is safe to persist.
+ */
+export function resolveVoiceFromDescription(description?: string | null): string {
+  return resolveVoice(description).voiceId
 }

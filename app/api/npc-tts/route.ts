@@ -1,22 +1,26 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { resolveVoiceFromDescription, sanitizeForTTS } from "@/lib/tts"
+import { resolveVoice, sanitizeForTTS } from "@/lib/tts"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 /**
  * Text-to-speech for a named NPC line.
  *
  * Voice resolution order:
- *   1. An explicit `voiceId` already stored on the NPC (voice_id column).
- *   2. Otherwise, match the closest ElevenLabs voice from `voiceDescription`
- *      and write that id back to voice_id on ALL rows sharing the NPC name so
- *      the character keeps the same voice from then on.
+ *   1. An explicit `voiceId` already stored on the NPC (voice_id column) — used
+ *      verbatim, never re-resolved or overwritten.
+ *   2. Otherwise, match the closest ElevenLabs voice from `voiceDescription`.
+ *      The resolved id is persisted back to voice_id ONLY when it was a genuine
+ *      keyword match from that NPC's own description — never a generic default
+ *      fallback — and the write is scoped to exactly the NPC being resolved.
+ *   3. If there is neither a voiceId nor a matchable description, a sensible
+ *      default is chosen for this request only and is NOT persisted.
  *
  * Returns MPEG audio; the resolved voice id is echoed in the `X-Resolved-Voice`
  * response header for debugging.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { text, voiceId, voiceDescription, npcName } = await request.json()
+    const { text, voiceId, voiceDescription, npcName, npcId } = await request.json()
 
     const clean = sanitizeForTTS(text || "")
     if (!clean) {
@@ -29,19 +33,40 @@ export async function POST(request: NextRequest) {
     }
 
     // 1) Resolve the voice.
-    let resolvedVoiceId: string | undefined = typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : undefined
-    let didResolveFromDescription = false
-    if (!resolvedVoiceId) {
-      resolvedVoiceId = resolveVoiceFromDescription(voiceDescription)
-      didResolveFromDescription = true
+    const explicitVoiceId = typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : undefined
+    let resolvedVoiceId: string
+    // Only a genuine keyword match from THIS NPC's description may be persisted.
+    let persistable = false
+    if (explicitVoiceId) {
+      resolvedVoiceId = explicitVoiceId
+    } else {
+      const resolution = resolveVoice(voiceDescription)
+      resolvedVoiceId = resolution.voiceId
+      persistable = resolution.matchedFromDescription
+      console.log(
+        "[v0] npc-tts resolved voice:",
+        resolvedVoiceId,
+        "| matchedFromDescription:", persistable,
+        "| npc:", npcName ?? "(unknown)",
+      )
     }
 
-    // 2) Persist a freshly-resolved voice so it stays consistent. Best-effort:
-    // never fail playback if the DB write can't happen (e.g. missing creds).
-    if (didResolveFromDescription && npcName) {
+    // 2) Persist a freshly-resolved voice ONLY when it was genuinely matched
+    // from the NPC's own description (never a generic default), and scope the
+    // write to exactly the NPC being resolved (by id when available, else name)
+    // and only where voice_id is still empty so a canon voice is never replaced.
+    // Best-effort: never fail playback if the DB write can't happen.
+    if (persistable && (npcId || npcName)) {
       try {
         const admin = createAdminClient()
-        await admin.from("npc_encounters").update({ voice_id: resolvedVoiceId }).eq("name", npcName)
+        let q = admin.from("npc_encounters").update({ voice_id: resolvedVoiceId }).is("voice_id", null)
+        q = npcId ? q.eq("id", npcId) : q.eq("name", npcName)
+        const { error } = await q
+        if (error) {
+          console.log("[v0] npc-tts voice_id write-back error:", error.message)
+        } else {
+          console.log("[v0] npc-tts voice_id persisted for:", npcId ? `id=${npcId}` : `name=${npcName}`)
+        }
       } catch (err) {
         console.log("[v0] npc-tts voice_id write-back skipped:", (err as Error).message)
       }
