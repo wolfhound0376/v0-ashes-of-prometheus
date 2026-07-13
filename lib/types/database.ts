@@ -43,6 +43,16 @@ export interface Character {
   weight_max: number
   is_player: boolean
   character_type: 'player' | 'npc' | 'monster'
+  // Reference stat-block fields (nullable text) populated from the bestiary.
+  speed: string | null
+  senses: string | null
+  skills: string | null
+  size: string | null
+  cr: string | null
+  languages: string | null
+  damage_resistances: string | null
+  damage_immunities: string | null
+  condition_immunities: string | null
   created_at: string
   updated_at: string
 }

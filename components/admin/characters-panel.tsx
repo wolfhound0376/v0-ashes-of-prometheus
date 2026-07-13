@@ -175,6 +175,16 @@ export function CharactersPanel() {
       weight_max: formData.weight_max || 150,
       character_type: formData.character_type || 'npc',
       is_player: (formData.character_type || 'npc') === 'player',
+      // Reference stat-block fields (nullable). CR is only meaningful for NPC/monster.
+      speed: formData.speed || null,
+      senses: formData.senses || null,
+      skills: formData.skills || null,
+      size: formData.size || null,
+      cr: createType === 'player' ? null : (formData.cr || null),
+      languages: formData.languages || null,
+      damage_resistances: formData.damage_resistances || null,
+      damage_immunities: formData.damage_immunities || null,
+      condition_immunities: formData.condition_immunities || null,
     })
     if (error) {
       console.error('[v0] Error creating character:', error)
@@ -193,6 +203,8 @@ export function CharactersPanel() {
     const { error } = await supabase.from('characters').update({
       ...formData,
       class: updateType === 'monster' ? '' : (formData.class ?? ''),
+      // CR is only meaningful for NPCs/monsters; never store it on a player.
+      cr: updateType === 'player' ? null : (formData.cr ?? null),
       str_modifier: Math.floor(((formData.str_score || 10) - 10) / 2),
       dex_modifier: Math.floor(((formData.dex_score || 10) - 10) / 2),
       con_modifier: Math.floor(((formData.con_score || 10) - 10) / 2),
@@ -496,6 +508,61 @@ function CharacterForm({ formData, setFormData, onSave, onCancel, bestiary }: { 
               </p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Reference Stats (speed/senses/skills/size/cr + resistances/immunities). */}
+      <div>
+        <label className="text-sm text-stone-400">Reference Stats</label>
+        <div className="grid grid-cols-2 gap-4 mt-2">
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Speed</label>
+            <input type="text" placeholder="e.g. 30 ft." value={formData.speed || ''} onChange={(e) => setFormData({ ...formData, speed: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Size</label>
+            <input type="text" placeholder="e.g. Medium" value={formData.size || ''} onChange={(e) => setFormData({ ...formData, size: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs text-stone-500 mb-1">Senses</label>
+            <input type="text" placeholder="e.g. darkvision 120 ft., passive Perception 12" value={formData.senses || ''} onChange={(e) => setFormData({ ...formData, senses: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs text-stone-500 mb-1">Skills</label>
+            <input type="text" placeholder="e.g. Perception +3, Stealth +5" value={formData.skills || ''} onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
+          {/* CR is meaningful only for NPCs/monsters. */}
+          {charType !== 'player' && (
+            <div>
+              <label className="block text-xs text-stone-500 mb-1">Challenge Rating</label>
+              <input type="text" placeholder="e.g. 1/2" value={formData.cr || ''} onChange={(e) => setFormData({ ...formData, cr: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+            </div>
+          )}
+          <div className={charType !== 'player' ? '' : 'col-span-2'}>
+            <label className="block text-xs text-stone-500 mb-1">Languages</label>
+            <input type="text" placeholder="e.g. Common, Elvish" value={formData.languages || ''} onChange={(e) => setFormData({ ...formData, languages: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Damage Resistances</label>
+            <input type="text" value={formData.damage_resistances || ''} onChange={(e) => setFormData({ ...formData, damage_resistances: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Damage Immunities</label>
+            <input type="text" value={formData.damage_immunities || ''} onChange={(e) => setFormData({ ...formData, damage_immunities: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs text-stone-500 mb-1">Condition Immunities</label>
+            <input type="text" value={formData.condition_immunities || ''} onChange={(e) => setFormData({ ...formData, condition_immunities: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
+          </div>
         </div>
       </div>
 

@@ -27,7 +27,7 @@ export function BestiaryAutopopulate({
   characterName: string
   currentStats: Record<string, unknown>
   entries: BestiaryEntry[]
-  onApply: (patch: Record<string, number>) => void
+  onApply: (patch: Record<string, string | number>) => void
   onClose: () => void
 }) {
   const { best, ranked } = useMemo(() => matchBestiary(characterName, entries), [characterName, entries])
@@ -135,11 +135,15 @@ export function BestiaryAutopopulate({
                             onChange={(e) => toggle(f.key, e.target.checked)}
                             className="accent-[#c4a777] w-4 h-4"
                           />
-                          <span className="w-20 text-sm text-[#e8dcc4]">{f.label}</span>
-                          <span className="flex-1 flex items-center gap-2 text-sm">
-                            <span className="text-stone-500 tabular-nums">{f.current ?? "—"}</span>
-                            <span className="text-stone-600">→</span>
-                            <span className="text-[#c4a777] font-semibold tabular-nums">{f.proposed}</span>
+                          <span className="w-24 flex-shrink-0 text-sm text-[#e8dcc4]">{f.label}</span>
+                          <span className="flex-1 flex items-baseline gap-2 text-sm min-w-0">
+                            <span className={`text-stone-500 ${f.kind === "number" ? "tabular-nums" : "break-words"}`}>
+                              {f.current ?? "—"}
+                            </span>
+                            <span className="text-stone-600 flex-shrink-0">→</span>
+                            <span className={`text-[#c4a777] font-semibold ${f.kind === "number" ? "tabular-nums" : "break-words"}`}>
+                              {f.proposed}
+                            </span>
                           </span>
                           {f.isManuallySet && (
                             <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-amber-400/90">

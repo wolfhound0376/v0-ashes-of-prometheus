@@ -146,7 +146,9 @@ age: (selectedCharacter as any).age,
     },
     ac: selectedCharacter.ac,
     initiative: selectedCharacter.initiative,
-    speed: (selectedCharacter as any).speed || 30,
+    speed: selectedCharacter.speed || 30,
+    senses: selectedCharacter.senses || null,
+    skills: selectedCharacter.skills || null,
     proficiencyBonus: selectedCharacter.proficiency_bonus,
     passivePerception: selectedCharacter.passive_perception,
     conditions: ((selectedCharacter as any).conditions || []) as ConditionKey[],
@@ -186,6 +188,8 @@ age: (selectedCharacter as any).age,
     ac: 10,
     initiative: 0,
     speed: 30,
+    senses: null,
+    skills: null,
     proficiencyBonus: 2,
     passivePerception: 10,
     conditions: [] as ConditionKey[],
@@ -407,6 +411,25 @@ age: (selectedCharacter as any).age,
                 </div>
               )}
             </div>
+
+            {/* Reference stats: senses & skills (shown when present). Speed
+                already appears in the core stats row above. */}
+            {(character.senses || character.skills) && (
+              <div className="mt-2 space-y-1 text-xs">
+                {character.senses && (
+                  <div className="flex gap-2">
+                    <span className="text-stone-500 uppercase tracking-wider w-14 flex-shrink-0">Senses</span>
+                    <span className="text-stone-300 flex-1">{character.senses}</span>
+                  </div>
+                )}
+                {character.skills && (
+                  <div className="flex gap-2">
+                    <span className="text-stone-500 uppercase tracking-wider w-14 flex-shrink-0">Skills</span>
+                    <span className="text-stone-300 flex-1">{character.skills}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Equipped Items Button - Opens Full Window */}
