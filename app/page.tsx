@@ -28,6 +28,9 @@ export default function DashboardPage() {
   // Character selection state
   const [characters, setCharacters] = useState<Character[]>([])
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
+  // The active game session whose active_character_id is the canonical player
+  // selection shared with the chat route (narrator / item awards / sheet).
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
   const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; idle_url: string | null; talking_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: number | null }[]>([])
@@ -216,10 +219,32 @@ export default function DashboardPage() {
 
       if (error) {
         console.error('Error fetching characters:', error)
-      } else if (data && data.length > 0) {
+        setLoadingCharacters(false)
+        return
+      }
+      if (data && data.length > 0) {
         setCharacters(data)
-        // Auto-select first character (usually the player)
-        setSelectedCharacterId(data[0].id)
+        const players = data.filter((c: any) => c.is_player)
+
+        // Initialize the selected character from the active session's
+        // active_character_id — the same canonical pointer the chat route uses.
+        // Mirror its session resolution: prefer status='active', else the most
+        // recently started session. Fall back to the first player when unset or
+        // pointing at a non-player/missing row.
+        const { data: sess } = await supabase
+          .from('sessions')
+          .select('id, status, started_at, active_character_id')
+          .order('started_at', { ascending: false })
+        const rows = (sess ?? []) as { id: string; status: string | null; active_character_id: string | null }[]
+        const activeSession = rows.find((s) => s.status === 'active') ?? rows[0] ?? null
+        setActiveSessionId(activeSession?.id ?? null)
+
+        const sessionCharId = activeSession?.active_character_id ?? null
+        const initialId =
+          sessionCharId && players.some((p: any) => p.id === sessionCharId)
+            ? sessionCharId
+            : players[0]?.id ?? data[0].id
+        setSelectedCharacterId(initialId)
       }
       setLoadingCharacters(false)
     }
@@ -381,6 +406,25 @@ if (error) {
 
   // Get the currently selected character
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
+
+  // Only player characters are selectable in the dashboard dropdown.
+  const players = characters.filter((c: any) => c.is_player)
+
+  // Change the active player: update local state AND persist to the active
+  // session's active_character_id so the narrator, item awards, and the sheet
+  // all follow the same canonical selection (see app/api/chat/route.ts).
+  const handleCharacterSelect = async (characterId: string) => {
+    setSelectedCharacterId(characterId)
+    if (!activeSessionId) {
+      console.warn('[v0] No active session; active_character_id not persisted.')
+      return
+    }
+    const { error } = await supabase
+      .from('sessions')
+      .update({ active_character_id: characterId })
+      .eq('id', activeSessionId)
+    if (error) console.error('Error updating session active_character_id:', error)
+  }
 
   // In combat when any active NPC has a Challenge Rating above 0 (monsters, not friendly prisoners).
   const inCombat = npcEncounters.some(n => n.is_active && (n.challenge_rating ?? 0) > 0)
@@ -668,9 +712,9 @@ if (error) {
           }}
         />
 <RightColumn
-  characters={characters}
+  characters={players}
   selectedCharacterId={selectedCharacterId}
-  onCharacterSelect={setSelectedCharacterId}
+  onCharacterSelect={handleCharacterSelect}
   selectedCharacter={selectedCharacter}
   characterInventory={characterInventory}
   characterEquipment={characterEquipment}
