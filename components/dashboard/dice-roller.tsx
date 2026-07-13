@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { Dices, Send, ChevronDown, ChevronUp } from "lucide-react"
@@ -12,6 +13,14 @@ interface DiceResult {
   total: number
   label?: string
   timestamp: Date
+}
+
+// A roll request: everything needed to build a notation and resolve locally.
+interface RollSpec {
+  die: string
+  numDice: number
+  modifier: number
+  label?: string
 }
 
 interface DiceRollerProps {
@@ -31,12 +40,30 @@ const DICE_TYPES = [
   { die: "d100", sides: 100, color: "from-[#2a2a2a] to-[#0a0a0a]", border: "border-[#6a6a6a]" },
 ]
 
-// URL of the external animated dice app embedded as the default visual roller.
+// URL + origin of the external animated dice app used as the cinematic visual.
 const EMBED_URL = "https://rosebud.ai/play/trayroll-dice"
+const EMBED_ORIGIN = "https://rosebud.ai"
 // Only trust postMessage events originating from this host (or a subdomain).
 const TRUSTED_HOST = "rosebud.ai"
-// If the iframe hasn't loaded within this window, fall back to the classic roller.
+// If the iframe hasn't loaded within this window, treat it as failed and the
+// overlay will silently fall back to the classic roller.
 const IFRAME_LOAD_TIMEOUT_MS = 8000
+// Max time to wait for the animated app to post its result before falling back.
+const RESPONSE_TIMEOUT_MS = 6000
+// How long the total lingers prominently in the overlay before auto-dismiss.
+const RESULT_DISPLAY_MS = 1500
+
+function sidesOf(die: string): number {
+  const m = /d\s*(\d+)/i.exec(die)
+  return m ? Number.parseInt(m[1], 10) : 20
+}
+
+// Build a dice notation string like "2d20+3" / "1d6-1" / "1d20".
+function buildNotation(spec: RollSpec): string {
+  const mod = spec.modifier
+  const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : ""
+  return `${spec.numDice}${spec.die}${modStr}`
+}
 
 // Derive a single-die descriptor from a dice notation string like "2d20+3".
 function dieFromNotation(notation: string): { die: string; sides: number } | null {
@@ -57,17 +84,30 @@ function isTrustedOrigin(origin: string): boolean {
   }
 }
 
+// Compute a roll locally — the classic roller, used as the silent fallback.
+function resolveClassic(spec: RollSpec): DiceResult {
+  const sides = sidesOf(spec.die)
+  const rolls: number[] = []
+  for (let i = 0; i < spec.numDice; i++) {
+    rolls.push(Math.floor(Math.random() * sides) + 1)
+  }
+  const total = rolls.reduce((sum, r) => sum + r, 0) + spec.modifier
+  return { die: spec.die, rolls, modifier: spec.modifier, total, label: spec.label, timestamp: new Date() }
+}
+
 /**
- * Validate + normalize an incoming { type:'dice-roll', notation, rolls,
- * modifier, total } payload from the external app. Returns a DiceResult only
- * when every field is sane (correct types, per-die ranges, and a total that is
- * consistent with the rolls + modifier). Returns null otherwise so bogus or
- * spoofed messages are ignored.
+ * Validate + normalize an incoming { type:'dice-roll', requestId, notation,
+ * rolls, modifier, total } payload from the external app. Returns the requestId
+ * plus a DiceResult only when every field is sane (correct types, per-die
+ * ranges, and a total consistent with rolls + modifier). Returns null otherwise
+ * so bogus, spoofed, or stale messages are ignored.
  */
-function parseIncomingRoll(data: unknown): DiceResult | null {
+function parseIncomingRoll(data: unknown): { requestId: string; result: DiceResult } | null {
   if (!data || typeof data !== "object") return null
   const d = data as Record<string, unknown>
   if (d.type !== "dice-roll") return null
+
+  if (typeof d.requestId !== "string" || d.requestId.length === 0) return null
 
   const notation = d.notation
   if (typeof notation !== "string") return null
@@ -90,12 +130,14 @@ function parseIncomingRoll(data: unknown): DiceResult | null {
   if (typeof d.total === "number" && Number.isFinite(d.total) && d.total !== expected) return null
 
   return {
-    die: parsed.die,
-    rolls: rolls as number[],
-    modifier,
-    total: expected,
-    label: "Animated Roll",
-    timestamp: new Date(),
+    requestId: d.requestId,
+    result: {
+      die: parsed.die,
+      rolls: rolls as number[],
+      modifier,
+      total: expected,
+      timestamp: new Date(),
+    },
   }
 }
 
@@ -106,105 +148,154 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
   const [modifier, setModifier] = useState(0)
   const [rollLabel, setRollLabel] = useState("")
   const [lastResult, setLastResult] = useState<DiceResult | null>(null)
-  const [isRolling, setIsRolling] = useState(false)
-  const [rollingFace, setRollingFace] = useState(20)
-  const [flash, setFlash] = useState<"crit" | "fumble" | null>(null)
 
-  // Roller mode. Default to the embedded animated app; the classic built-in
-  // roller stays available behind a toggle and as an automatic fallback.
-  const [useClassic, setUseClassic] = useState(false)
+  // Portal readiness (avoid SSR document access).
+  const [mounted, setMounted] = useState(false)
+
+  // Iframe lifecycle. The iframe is mounted permanently (preloaded, hidden) so
+  // the overlay opens instantly; iframeFailed flips the whole flow to the
+  // silent classic fallback.
+  const [iframeReady, setIframeReady] = useState(false)
   const [iframeFailed, setIframeFailed] = useState(false)
-  const [iframeLoaded, setIframeLoaded] = useState(false)
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+
+  // Overlay state.
+  const [overlayOpen, setOverlayOpen] = useState(false)
+  const [overlayPhase, setOverlayPhase] = useState<"rolling" | "result">("rolling")
+  const [overlayLabel, setOverlayLabel] = useState<string>("")
+  const [overlayNotation, setOverlayNotation] = useState<string>("")
+  const [overlayResult, setOverlayResult] = useState<DiceResult | null>(null)
+
+  // The in-flight request (kept in a ref so the message handler always reads
+  // the latest without re-registering).
+  const pendingRef = useRef<{ requestId: string; spec: RollSpec; notation: string } | null>(null)
+  const responseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Effective view: embedded unless the user chose classic or the iframe failed.
-  const showEmbedded = !useClassic && !iframeFailed
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
-  // Apply a finished roll to the shared roll-handling path: crit/fumble drama,
-  // the result log, and the telemetry callback. Used by BOTH the built-in
-  // roller and rolls received from the embedded animated app, so the external
-  // app becomes the visual while the dashboard stays the system of record.
+  // Apply a finished roll to the shared roll-handling path: the result log and
+  // the telemetry callback. Used by BOTH the animated app's response and the
+  // classic fallback, so the dashboard stays the single system of record.
   const applyResult = useCallback(
     (result: DiceResult) => {
-      if (result.die === "d20" && result.rolls.length === 1) {
-        if (result.rolls[0] === 20) setFlash("crit")
-        else if (result.rolls[0] === 1) setFlash("fumble")
-        setRollingFace(result.rolls[0])
-      }
       setLastResult(result)
       onRollResult?.(result)
-      setTimeout(() => setFlash(null), 1400)
     },
     [onRollResult],
   )
 
-  const rollDice = useCallback(() => {
-    const dieConfig = DICE_TYPES.find((d) => d.die === selectedDie)
-    if (!dieConfig) return
+  const closeOverlay = useCallback(() => {
+    setOverlayOpen(false)
+    setOverlayResult(null)
+    setOverlayPhase("rolling")
+  }, [])
 
-    setIsRolling(true)
-    setFlash(null)
+  // Initiate ANY roll. Opens the cinematic overlay and drives the animated app
+  // two-way; if the app is unavailable or never answers, resolves silently with
+  // the classic roller so gameplay never blocks.
+  const initiateRoll = useCallback(
+    (spec: RollSpec) => {
+      // A roll is already in flight — ignore re-entrancy.
+      if (pendingRef.current) return
 
-    // Tumble: rapidly cycle the visible face while "rolling"
-    const cycle = setInterval(() => {
-      setRollingFace(Math.floor(Math.random() * dieConfig.sides) + 1)
-    }, 55)
+      const notation = buildNotation(spec)
 
-    setTimeout(() => {
-      clearInterval(cycle)
-
-      const rolls: number[] = []
-      for (let i = 0; i < numDice; i++) {
-        rolls.push(Math.floor(Math.random() * dieConfig.sides) + 1)
+      // Iframe unusable → resolve classic immediately, no overlay.
+      const win = iframeRef.current?.contentWindow
+      if (iframeFailed || !iframeReady || !win) {
+        applyResult(resolveClassic(spec))
+        return
       }
 
-      const total = rolls.reduce((sum, r) => sum + r, 0) + modifier
+      const requestId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `roll-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
-      const result: DiceResult = {
-        die: selectedDie,
-        rolls,
-        modifier,
-        total,
-        label: rollLabel || undefined,
-        timestamp: new Date(),
+      pendingRef.current = { requestId, spec, notation }
+
+      // Open the overlay in the rolling phase.
+      setOverlayResult(null)
+      setOverlayPhase("rolling")
+      setOverlayLabel(spec.label || "Dice roll")
+      setOverlayNotation(notation)
+      setOverlayOpen(true)
+
+      // Ask the animated app to play this exact roll.
+      try {
+        win.postMessage({ type: "roll-request", requestId, notation, label: spec.label || "Dice roll" }, EMBED_ORIGIN)
+      } catch {
+        // If posting fails, fall through to the timeout fallback below.
       }
 
-      setIsRolling(false)
-      applyResult(result)
-    }, 650)
-  }, [selectedDie, numDice, modifier, rollLabel, applyResult])
+      // Safety net: no valid response within the window → silent classic result.
+      responseTimerRef.current = setTimeout(() => {
+        const pend = pendingRef.current
+        pendingRef.current = null
+        closeOverlay()
+        if (pend) applyResult(resolveClassic(pend.spec))
+      }, RESPONSE_TIMEOUT_MS)
+    },
+    [iframeFailed, iframeReady, applyResult, closeOverlay],
+  )
 
-  // Listen for roll events posted by the embedded animated dice app. Validates
-  // the origin and sanity-checks the payload before feeding it into the shared
-  // roll-handling path. The external app may not post messages yet — this is
-  // built to spec regardless.
+  // Listen for roll results posted by the embedded animated dice app. Validates
+  // origin, matches requestId, and sanity-checks the payload before feeding it
+  // into the shared roll-handling path. Built to spec even though the external
+  // app's postMessage support is being added separately.
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (!isTrustedOrigin(event.origin)) return
-      const result = parseIncomingRoll(event.data)
-      if (!result) {
-        // Origin was trusted but the payload was malformed — surface it so the
-        // external app's postMessage shape can be diagnosed while wiring it up.
+      const pend = pendingRef.current
+      if (!pend) return // no roll in flight
+
+      const parsed = parseIncomingRoll(event.data)
+      if (!parsed) {
         console.warn("[DiceRoller] Ignored malformed dice-roll message from", event.origin, event.data)
         return
       }
-      applyResult(result)
+      if (parsed.requestId !== pend.requestId) return // stale / mismatched request
+
+      // Matched a live request — cancel the fallback timer and consume it.
+      if (responseTimerRef.current) clearTimeout(responseTimerRef.current)
+      pendingRef.current = null
+
+      const result: DiceResult = { ...parsed.result, label: pend.spec.label }
+
+      // Show the total prominently, then auto-dismiss and commit to the log.
+      setOverlayResult(result)
+      setOverlayPhase("result")
+      resultTimerRef.current = setTimeout(() => {
+        closeOverlay()
+        applyResult(result)
+      }, RESULT_DISPLAY_MS)
     }
     window.addEventListener("message", handler)
     return () => window.removeEventListener("message", handler)
-  }, [applyResult])
+  }, [applyResult, closeOverlay])
 
-  // Auto-fallback: if the embedded app never loads, switch to the classic roller.
+  // Detect an iframe that never loads and mark it failed (drives silent fallback).
   useEffect(() => {
-    if (!showEmbedded) return
-    if (iframeLoaded) return
+    if (iframeReady || iframeFailed) return
     loadTimerRef.current = setTimeout(() => {
-      if (!iframeLoaded) setIframeFailed(true)
+      setIframeFailed(true)
     }, IFRAME_LOAD_TIMEOUT_MS)
     return () => {
       if (loadTimerRef.current) clearTimeout(loadTimerRef.current)
     }
-  }, [showEmbedded, iframeLoaded])
+  }, [iframeReady, iframeFailed])
+
+  // Clean up any pending timers on unmount.
+  useEffect(() => {
+    return () => {
+      if (responseTimerRef.current) clearTimeout(responseTimerRef.current)
+      if (resultTimerRef.current) clearTimeout(resultTimerRef.current)
+    }
+  }, [])
 
   const sendResultToLich = useCallback(() => {
     if (!lastResult || !onSendToLich) return
@@ -218,19 +309,28 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
 
     const rollDescription = lastResult.label ? `${lastResult.label}: ` : ""
 
-    // Base the notation on the actual result (works for embedded rolls too).
     const message = `[Dice Roll] ${characterName} rolled ${lastResult.rolls.length}${lastResult.die}${modifierStr}${rollDescription ? ` for ${rollDescription}` : ""}: [${lastResult.rolls.join(", ")}]${modifierStr} = **${lastResult.total}**`
 
     onSendToLich(message)
   }, [lastResult, onSendToLich, characterName])
 
-  // Quick roll buttons for common checks
-  const quickRolls = [
-    { label: "Attack", die: "d20", mod: 0 },
-    { label: "Damage", die: "d6", mod: 0 },
-    { label: "Initiative", die: "d20", mod: 0 },
-    { label: "Saving Throw", die: "d20", mod: 0 },
+  // Quick rolls initiate a roll immediately through the cinematic overlay.
+  // Attack / Initiative / Saving Throw are d20 checks; Damage uses the currently
+  // selected die + count. All carry the current modifier.
+  const quickRolls: { label: string; spec: RollSpec }[] = [
+    { label: "Attack", spec: { die: "d20", numDice: 1, modifier, label: "Attack roll" } },
+    { label: "Damage", spec: { die: selectedDie, numDice, modifier, label: "Damage roll" } },
+    { label: "Initiative", spec: { die: "d20", numDice: 1, modifier, label: "Initiative" } },
+    { label: "Saving Throw", spec: { die: "d20", numDice: 1, modifier, label: "Saving throw" } },
   ]
+
+  const busy = overlayOpen
+
+  // Crit/fumble accent for the overlay total (single d20 only).
+  const overlayCrit =
+    overlayResult && overlayResult.die === "d20" && overlayResult.rolls.length === 1 && overlayResult.rolls[0] === 20
+  const overlayFumble =
+    overlayResult && overlayResult.die === "d20" && overlayResult.rolls.length === 1 && overlayResult.rolls[0] === 1
 
   return (
     <FantasyPanel className="flex-shrink-0">
@@ -253,198 +353,105 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
       {/* Collapsible Content */}
       {isExpanded && (
         <div className="px-3 pb-3 space-y-3">
-          {/* Roller mode toggle */}
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] uppercase tracking-wider text-stone-600">
-              {showEmbedded ? "Animated roller" : "Classic roller"}
-            </span>
-            <button
-              onClick={() => {
-                // Toggling back to embedded resets the failure/load state for a retry.
-                if (useClassic) {
-                  setIframeFailed(false)
-                  setIframeLoaded(false)
-                }
-                setUseClassic((v) => !v)
-              }}
-              className="px-2 py-0.5 text-[10px] uppercase tracking-wider rounded bg-[#2a2420] border border-[#3d3428]/60 text-stone-400 hover:text-stone-200 hover:border-[#5d5448] transition-colors"
-            >
-              {useClassic ? "Use animated" : "Classic roller"}
-            </button>
-          </div>
-
-          {iframeFailed && !useClassic && (
-            <p className="text-[10px] text-[#c87a7a]">Animated roller unavailable — using classic roller.</p>
+          {iframeFailed && (
+            <p className="text-[10px] text-stone-600">Animated roller unavailable — rolling locally.</p>
           )}
 
-          {showEmbedded ? (
-            /* Embedded animated dice app (the visual roller). Responsive to the
-               panel width; dark border matching the dashboard style. */
-            <div className="relative w-full aspect-square rounded border-2 border-[#3d3428] overflow-hidden bg-[#0f0d0c]">
-              <iframe
-                src={EMBED_URL}
-                title="Animated Dice Roller"
-                className="absolute inset-0 h-full w-full"
-                allow="autoplay; fullscreen"
-                onLoad={() => setIframeLoaded(true)}
-                onError={() => setIframeFailed(true)}
-              />
-            </div>
-          ) : (
-            <>
-              {/* Dice Selection */}
-              <div className="flex gap-1 justify-center flex-wrap">
-                {DICE_TYPES.map((dieType) => (
-                  <button
-                    key={dieType.die}
-                    onClick={() => setSelectedDie(dieType.die)}
-                    className={cn(
-                      "w-10 h-10 rounded border-2 flex items-center justify-center text-xs font-bold transition-all",
-                      "bg-gradient-to-br",
-                      dieType.color,
-                      selectedDie === dieType.die
-                        ? cn(dieType.border, "ring-2 ring-[#d4b15a]/60 shadow-lg")
-                        : "border-[#3d3428]/60 hover:border-[#5d5448]",
-                      selectedDie === dieType.die ? "text-white" : "text-stone-400",
-                    )}
-                  >
-                    {dieType.die}
-                  </button>
-                ))}
-              </div>
-
-              {/* Number of Dice & Modifier */}
-              <div className="flex gap-2 items-center justify-center">
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setNumDice(Math.max(1, numDice - 1))}
-                    className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-                  >
-                    -
-                  </button>
-                  <span className="w-8 text-center text-sm font-bold text-[#c9a868]">{numDice}</span>
-                  <button
-                    onClick={() => setNumDice(Math.min(10, numDice + 1))}
-                    className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-                  >
-                    +
-                  </button>
-                </div>
-
-                <span className="text-stone-500 text-lg font-bold">{selectedDie}</span>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setModifier(modifier - 1)}
-                    className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-                  >
-                    -
-                  </button>
-                  <span
-                    className={cn(
-                      "w-10 text-center text-sm font-bold",
-                      modifier > 0 ? "text-[#7ac87a]" : modifier < 0 ? "text-[#c87a7a]" : "text-stone-500",
-                    )}
-                  >
-                    {modifier >= 0 ? `+${modifier}` : modifier}
-                  </span>
-                  <button
-                    onClick={() => setModifier(modifier + 1)}
-                    className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Roll Label */}
-              <input
-                type="text"
-                value={rollLabel}
-                onChange={(e) => setRollLabel(e.target.value)}
-                placeholder="Roll label (optional)"
-                className="w-full px-2 py-1 text-xs bg-[#1a1614] border border-[#3d3428] rounded text-stone-300 placeholder:text-stone-600 focus:outline-none focus:border-[#5d5448]"
-              />
-
-              {/* Roll Button */}
+          {/* Dice Selection */}
+          <div className="flex gap-1 justify-center flex-wrap">
+            {DICE_TYPES.map((dieType) => (
               <button
-                onClick={rollDice}
-                disabled={isRolling}
+                key={dieType.die}
+                onClick={() => setSelectedDie(dieType.die)}
                 className={cn(
-                  "w-full py-2 rounded font-bold uppercase tracking-wider text-sm transition-all",
-                  "bg-gradient-to-r from-[#4a3a2a] via-[#5a4a3a] to-[#4a3a2a]",
-                  "border border-[#8a6a4a] hover:border-[#c9a868]",
-                  "text-[#c9a868] hover:text-white",
-                  "shadow-[0_0_15px_rgba(200,150,80,0.2)] hover:shadow-[0_0_20px_rgba(200,150,80,0.4)]",
-                  isRolling && "animate-pulse",
+                  "w-10 h-10 rounded border-2 flex items-center justify-center text-xs font-bold transition-all",
+                  "bg-gradient-to-br",
+                  dieType.color,
+                  selectedDie === dieType.die
+                    ? cn(dieType.border, "ring-2 ring-[#d4b15a]/60 shadow-lg")
+                    : "border-[#3d3428]/60 hover:border-[#5d5448]",
+                  selectedDie === dieType.die ? "text-white" : "text-stone-400",
                 )}
               >
-                {isRolling
-                  ? "Rolling..."
-                  : `Roll ${numDice}${selectedDie}${modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ""}`}
+                {dieType.die}
               </button>
+            ))}
+          </div>
 
-              {/* Keyframes for the dice drama */}
-              <style>{`
-                @keyframes aopDiceSpin {
-                  0%   { transform: rotate(0deg) scale(1); }
-                  50%  { transform: rotate(180deg) scale(1.12); }
-                  100% { transform: rotate(360deg) scale(1); }
-                }
-                @keyframes aopCritPulse {
-                  0%   { transform: scale(0.85); box-shadow: 0 0 0 rgba(212,177,90,0); }
-                  40%  { transform: scale(1.18); box-shadow: 0 0 28px rgba(212,177,90,0.85); }
-                  100% { transform: scale(1); box-shadow: 0 0 8px rgba(212,177,90,0.3); }
-                }
-                @keyframes aopFumble {
-                  0%, 100% { transform: translateX(0) rotate(0deg); }
-                  20% { transform: translateX(-5px) rotate(-4deg); }
-                  40% { transform: translateX(5px) rotate(4deg); }
-                  60% { transform: translateX(-4px) rotate(-3deg); }
-                  80% { transform: translateX(4px) rotate(3deg); }
-                }
-              `}</style>
+          {/* Number of Dice & Modifier */}
+          <div className="flex gap-2 items-center justify-center">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setNumDice(Math.max(1, numDice - 1))}
+                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
+              >
+                -
+              </button>
+              <span className="w-8 text-center text-sm font-bold text-[#c9a868]">{numDice}</span>
+              <button
+                onClick={() => setNumDice(Math.min(10, numDice + 1))}
+                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
+              >
+                +
+              </button>
+            </div>
 
-              {/* Animated d20 stage — tumbles while rolling, flashes on crit/fumble */}
-              {(isRolling || flash) && (
-                <div className="flex flex-col items-center justify-center py-1">
-                  <div
-                    className={cn(
-                      "relative w-20 h-20 flex items-center justify-center rounded-xl border-2 font-serif font-extrabold text-3xl select-none",
-                      "bg-gradient-to-br from-[#3a3320] to-[#1a1608]",
-                      isRolling && "border-[#8a8a4a] text-[#e8d89a]",
-                      flash === "crit" && "border-[#d4b15a] text-[#ffe9a8]",
-                      flash === "fumble" && "border-[#8a4a4a] text-[#ff8a7a]",
-                      !isRolling && !flash && "border-[#3d3428] text-stone-300",
-                    )}
-                    style={{
-                      animation: isRolling
-                        ? "aopDiceSpin 0.5s linear infinite"
-                        : flash === "crit"
-                          ? "aopCritPulse 1.4s ease-out"
-                          : flash === "fumble"
-                            ? "aopFumble 0.6s ease-in-out"
-                            : undefined,
-                    }}
-                  >
-                    {rollingFace}
-                  </div>
-                  {flash === "crit" && (
-                    <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ffd76a] drop-shadow">
-                      Critical Hit!
-                    </span>
-                  )}
-                  {flash === "fumble" && (
-                    <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ff7a6a] drop-shadow">
-                      Fumble!
-                    </span>
-                  )}
-                </div>
-              )}
-            </>
-          )}
+            <span className="text-stone-500 text-lg font-bold">{selectedDie}</span>
 
-          {/* Last Result — shared between both roller modes (the roll log) */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setModifier(modifier - 1)}
+                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
+              >
+                -
+              </button>
+              <span
+                className={cn(
+                  "w-10 text-center text-sm font-bold",
+                  modifier > 0 ? "text-[#7ac87a]" : modifier < 0 ? "text-[#c87a7a]" : "text-stone-500",
+                )}
+              >
+                {modifier >= 0 ? `+${modifier}` : modifier}
+              </span>
+              <button
+                onClick={() => setModifier(modifier + 1)}
+                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Roll Label */}
+          <input
+            type="text"
+            value={rollLabel}
+            onChange={(e) => setRollLabel(e.target.value)}
+            placeholder="Roll label (optional)"
+            className="w-full px-2 py-1 text-xs bg-[#1a1614] border border-[#3d3428] rounded text-stone-300 placeholder:text-stone-600 focus:outline-none focus:border-[#5d5448]"
+          />
+
+          {/* Roll Button — routes through the cinematic overlay */}
+          <button
+            onClick={() =>
+              initiateRoll({ die: selectedDie, numDice, modifier, label: rollLabel || undefined })
+            }
+            disabled={busy}
+            className={cn(
+              "w-full py-2 rounded font-bold uppercase tracking-wider text-sm transition-all",
+              "bg-gradient-to-r from-[#4a3a2a] via-[#5a4a3a] to-[#4a3a2a]",
+              "border border-[#8a6a4a] hover:border-[#c9a868]",
+              "text-[#c9a868] hover:text-white",
+              "shadow-[0_0_15px_rgba(200,150,80,0.2)] hover:shadow-[0_0_20px_rgba(200,150,80,0.4)]",
+              busy && "opacity-60 cursor-not-allowed",
+            )}
+          >
+            {busy
+              ? "Rolling..."
+              : `Roll ${numDice}${selectedDie}${modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ""}`}
+          </button>
+
+          {/* Last Result — the roll log (shared by overlay + fallback results) */}
           {lastResult && (
             <div className="p-2 bg-[#0f0d0c] border border-[#3d3428] rounded">
               <div className="flex items-center justify-between mb-1">
@@ -506,26 +513,99 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
             </div>
           )}
 
-          {/* Quick Roll Buttons — classic roller only (they configure the built-in roll) */}
-          {!showEmbedded && (
-            <div className="flex gap-1 flex-wrap">
-              {quickRolls.map((qr) => (
-                <button
-                  key={qr.label}
-                  onClick={() => {
-                    setSelectedDie(qr.die)
-                    setRollLabel(qr.label)
-                    setNumDice(1)
-                  }}
-                  className="px-2 py-1 text-[10px] uppercase tracking-wider rounded bg-[#2a2420] border border-[#3d3428]/60 text-stone-500 hover:text-stone-300 hover:border-[#5d5448] transition-colors"
-                >
-                  {qr.label}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Quick Roll Buttons — each initiates a cinematic roll */}
+          <div className="flex gap-1 flex-wrap">
+            {quickRolls.map((qr) => (
+              <button
+                key={qr.label}
+                onClick={() => initiateRoll(qr.spec)}
+                disabled={busy}
+                className={cn(
+                  "px-2 py-1 text-[10px] uppercase tracking-wider rounded bg-[#2a2420] border border-[#3d3428]/60 text-stone-500 hover:text-stone-300 hover:border-[#5d5448] transition-colors",
+                  busy && "opacity-60 cursor-not-allowed",
+                )}
+              >
+                {qr.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* Cinematic roll overlay + permanently-mounted (preloaded) iframe.
+          Rendered via portal at body level so it's centered over the whole
+          dashboard and immune to panel stacking contexts. The container stays
+          mounted so the iframe never reloads; visibility toggles via opacity. */}
+      {mounted &&
+        createPortal(
+          <div
+            className={cn(
+              "fixed inset-0 z-[100] flex items-center justify-center transition-opacity duration-200",
+              overlayOpen ? "opacity-100" : "pointer-events-none opacity-0",
+            )}
+            aria-hidden={!overlayOpen}
+            role="dialog"
+            aria-label="Dice roll"
+          >
+            {/* Dimmed backdrop */}
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+
+            {/* Dark fantasy frame */}
+            <div className="relative z-10 rounded-lg border-2 border-[#8a6a4a] bg-gradient-to-b from-[#1a1614] to-[#0f0d0c] p-4 shadow-[0_0_40px_rgba(0,0,0,0.7),0_0_24px_rgba(200,150,80,0.15)]">
+              <div className="mb-2 flex items-center justify-center gap-2 text-center">
+                <Dices className="h-4 w-4 text-[#c9a868]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-[#c9b896]">
+                  {overlayLabel}
+                </span>
+                <span className="text-[10px] text-stone-500">{overlayNotation}</span>
+              </div>
+
+              <div className="relative aspect-square w-[min(78vw,420px)] overflow-hidden rounded border-2 border-[#3d3428] bg-[#0a0908]">
+                {/* The animated dice app (permanently mounted / preloaded). */}
+                <iframe
+                  ref={iframeRef}
+                  src={EMBED_URL}
+                  title="Animated Dice Roller"
+                  className="absolute inset-0 h-full w-full"
+                  allow="autoplay; fullscreen"
+                  onLoad={() => setIframeReady(true)}
+                  onError={() => setIframeFailed(true)}
+                />
+
+                {/* Prominent total reveal (result phase). */}
+                {overlayPhase === "result" && overlayResult && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/70 backdrop-blur-[2px]">
+                    <span className="text-[11px] uppercase tracking-[0.25em] text-stone-400">
+                      {overlayResult.label || "Result"}
+                    </span>
+                    <span
+                      className={cn(
+                        "font-serif text-7xl font-extrabold drop-shadow-[0_0_18px_rgba(212,177,90,0.5)]",
+                        overlayCrit ? "text-[#ffe9a8]" : overlayFumble ? "text-[#ff8a7a]" : "text-[#d4b15a]",
+                      )}
+                    >
+                      {overlayResult.total}
+                    </span>
+                    <span className="text-xs text-stone-400">
+                      [{overlayResult.rolls.join(", ")}]
+                      {overlayResult.modifier !== 0 &&
+                        (overlayResult.modifier > 0 ? ` +${overlayResult.modifier}` : ` ${overlayResult.modifier}`)}
+                    </span>
+                    {overlayCrit && (
+                      <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ffd76a]">
+                        Critical Hit!
+                      </span>
+                    )}
+                    {overlayFumble && (
+                      <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ff7a6a]">Fumble!</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </FantasyPanel>
   )
 }
