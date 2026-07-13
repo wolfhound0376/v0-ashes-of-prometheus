@@ -62,6 +62,11 @@ interface NpcEncounter {
   // Optional dedicated face close-up. When present it is used for the featured
   // "active speaker" view instead of cropping the full-body portrait_url.
   face_url?: string | null
+  // Optional looping face videos for the animated talking-head. idle_url plays
+  // while the NPC is silent (blinking/breathing); talking_url plays while TTS
+  // audio is playing (lips moving). Both are muted, looped, object-cover.
+  idle_url?: string | null
+  talking_url?: string | null
   // Per-NPC voice. voice_id is a resolved ElevenLabs voice id; voice_description
   // is the free-text description used to resolve one when voice_id is unset.
   voice_id?: string | null
@@ -618,6 +623,30 @@ function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEnc
   const [muted, setMuted] = useState(ttsMuted)
   const [speaking, setSpeaking] = useState(false)
 
+  // Animated talking-head: looping muted videos layered over the static face.
+  // talking_url plays while TTS audio is playing; idle_url plays while silent.
+  // Both are always mounted (preloaded) and crossfade via opacity so switching
+  // states never pops. The static <img> beneath is the graceful fallback for
+  // whichever video is missing (or both — exact legacy behavior).
+  const idleUrl = speaker.idle_url || null
+  const talkingUrl = speaker.talking_url || null
+  const idleVideoRef = useRef<HTMLVideoElement | null>(null)
+  const talkingVideoRef = useRef<HTMLVideoElement | null>(null)
+  // Which video should be visible right now.
+  const showTalking = speaking && !!talkingUrl
+  const showIdle = !showTalking && !!idleUrl
+
+  // Force muted + playing whenever sources change (React's muted prop and
+  // autoplay can be unreliable; TTS must remain the ONLY audio source).
+  useEffect(() => {
+    for (const v of [idleVideoRef.current, talkingVideoRef.current]) {
+      if (!v) continue
+      v.muted = true
+      v.defaultMuted = true
+      v.play().catch(() => {})
+    }
+  }, [idleUrl, talkingUrl])
+
   // Auto-play the quoted line (dialogue only — narration is never passed here)
   // through the per-NPC voice. Each unique speaker+line plays at most once.
   useEffect(() => {
@@ -705,14 +734,44 @@ function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEnc
             {/* Sharp face in a centered portrait frame. aspect-[4/5] is narrower
                 than the square source, forcing object-cover to fit by height and
                 reveal the entire face top-to-bottom. object-position keeps the
-                head/face (upper portion of the square) in frame. */}
+                head/face (upper portion of the square) in frame. The static
+                image is the base layer; talking/idle videos crossfade above it
+                when present, and fall back to this image when absent. */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <img
-                src={face}
-                alt={speaker.name}
-                className="h-full w-auto aspect-[4/5] object-cover"
-                style={{ objectPosition: "50% 30%" }}
-              />
+              <div className="relative h-full aspect-[4/5]">
+                <img
+                  src={face}
+                  alt={speaker.name}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  style={{ objectPosition: "50% 30%" }}
+                />
+                {idleUrl && (
+                  <video
+                    ref={idleVideoRef}
+                    src={idleUrl}
+                    muted
+                    loop
+                    autoPlay
+                    playsInline
+                    aria-hidden="true"
+                    className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-in-out"
+                    style={{ objectPosition: "50% 30%", opacity: showIdle ? 1 : 0 }}
+                  />
+                )}
+                {talkingUrl && (
+                  <video
+                    ref={talkingVideoRef}
+                    src={talkingUrl}
+                    muted
+                    loop
+                    autoPlay
+                    playsInline
+                    aria-hidden="true"
+                    className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-in-out"
+                    style={{ objectPosition: "50% 30%", opacity: showTalking ? 1 : 0 }}
+                  />
+                )}
+              </div>
             </div>
           </>
         ) : (
