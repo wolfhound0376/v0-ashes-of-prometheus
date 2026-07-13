@@ -10,6 +10,7 @@ const anthropic = createAnthropic({
 })
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS, ABYSS_SCAVENGED_ITEMS_TABLE, formatRollTable } from "@/lib/world-ai/campaigns"
+import { canonicalizeCondition } from "@/lib/conditions"
 import * as fal from "@fal-ai/serverless-client"
 
 // Configure Fal client
@@ -19,6 +20,43 @@ fal.config({
 
 if (!process.env.FAL_KEY) {
   console.warn("[v0] Warning: FAL_KEY environment variable not set. Image generation will fail.")
+}
+
+// Canon asset fields that define an NPC's persistent identity. These are keyed
+// by NAME (not character_id / session) so a known NPC always keeps the same
+// face and voice across sessions.
+const NPC_CANON_FIELDS = [
+  "portrait_url",
+  "face_url",
+  "voice_id",
+  "voice_description",
+  "idle_url",
+  "talking_url",
+] as const
+
+// Collect canon identity for an NPC name from EVERY existing row that shares it.
+// For each asset field we take the most recent non-empty value; conditions come
+// from the most recent row that has any. A brand-new row is seeded from this so
+// generation never re-synthesizes a face/voice that already exists on an older
+// row (the Jimjar bug). Returns nulls when the NPC has never been seen.
+async function fetchNpcCanonByName(
+  supabase: any,
+  name: string,
+): Promise<{ canon: Record<string, any>; rowCount: number }> {
+  const { data } = await supabase
+    .from("npc_encounters")
+    .select("portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
+    .eq("name", name)
+    .order("created_at", { ascending: false })
+  const rows: any[] = data || []
+  const canon: Record<string, any> = {}
+  for (const f of NPC_CANON_FIELDS) {
+    const found = rows.find((r) => typeof r?.[f] === "string" && r[f].trim())
+    canon[f] = found ? found[f] : null
+  }
+  const condRow = rows.find((r) => Array.isArray(r?.conditions) && r.conditions.length > 0)
+  canon.conditions = condRow ? condRow.conditions : []
+  return { canon, rowCount: rows.length }
 }
 
 export async function POST(req: Request) {
@@ -204,7 +242,7 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 3. HEALING: You MUST emit [HEAL: <amount>] whenever HP is restored.
 
-4. CONDITIONS: You MUST emit [CONDITION_ADD: <name>] when the player gains ANY condition (poisoned, grappled, prone, restrained, frightened, exhaustion, bleeding, acid_burn, manacled, etc.). Emit [CONDITION_REMOVE: <name>] when it clears.
+4. CONDITIONS: You MUST emit [CONDITION_ADD: <target> | <condition>] when ANY character or NPC gains a condition (Manacled, Magical Barrier, Poisoned, Restrained, Frightened, Prone, Invisible, Exhaustion, etc.), and [CONDITION_REMOVE: <target> | <condition>] when it clears. <target> is the exact name of the affected character or NPC (e.g. "Jimjar", "Eldeth"); omit the "<target> |" part to target the player character. Honor every condition already listed in the world context — never narrate a manacled or barriered creature acting freely, and only change a condition by emitting these tags. Examples: [CONDITION_ADD: Jimjar | Frightened] or, for the player, [CONDITION_ADD: Poisoned].
 
 5. NPC/MONSTER ENCOUNTERS: You MUST emit [NPC_ENCOUNTER: <Name> | <description> | <portrait_prompt>] the FIRST time any NPC or monster meaningfully interacts with the player. If you describe a gray ooze blocking passage, a drow guard confronting them, or any creature entering the scene — EMIT THE TAG.
 
@@ -363,12 +401,13 @@ HEALTH & CONDITIONS:
   - Example: [DAMAGE: 4 acid] or [DAMAGE: 8 slashing]
 - [HEAL: amount] — when player is healed
   - Example: [HEAL: 5]
-- [CONDITION_ADD: name] — when player gains a condition
+- [CONDITION_ADD: target | condition] — when a character/NPC gains a condition ("target |" optional; defaults to the player)
+  - Presets: Manacled, Magical Barrier, Poisoned, Restrained, Frightened, Prone, Invisible, Exhaustion
   - Standard D&D 5e: prone, poisoned, charmed, frightened, grappled, incapacitated, invisible, paralyzed, petrified, restrained, stunned, unconscious, blinded, deafened, exhaustion
-  - Narrative: acid_burn, bleeding, manacled, etc.
-  - Example: [CONDITION_ADD: poisoned]
-- [CONDITION_REMOVE: name] — when a condition clears
-  - Example: [CONDITION_REMOVE: prone]
+  - Narrative free-text also allowed: acid_burn, bleeding, etc.
+  - Examples: [CONDITION_ADD: Jimjar | Frightened]  or  [CONDITION_ADD: Poisoned]
+- [CONDITION_REMOVE: target | condition] — when a condition clears ("target |" optional; defaults to the player)
+  - Examples: [CONDITION_REMOVE: Jimjar | Manacled]  or  [CONDITION_REMOVE: Prone]
 
   NPC/MONSTER ENCOUNTERS:
   - [NPC_ENCOUNTER: name | description | portrait_prompt | CR=<n> | XP=<n> | type=<creature_type>] — when an NPC/monster enters active combat or interaction
@@ -687,61 +726,126 @@ EXPERIENCE POINTS:
       }
     }
 
-    // Handle CONDITION_ADD tags - [CONDITION_ADD: name]
-    const conditionAddMatches = rawText.matchAll(/\[CONDITION_ADD:\s*([^\]]+)\]/gi)
-    for (const match of conditionAddMatches) {
-      const [, conditionName] = match
-      const condition = conditionName.trim().toLowerCase()
-      console.log("[v0] CONDITION_ADD tag found:", condition)
+    // === CONDITION TAGS ===
+    // [CONDITION_ADD: name | condition] and [CONDITION_REMOVE: name | condition]
+    // `name` is the target character/NPC (matched by name, case-insensitive);
+    // when the `name |` part is omitted it defaults to the player character.
+    // Conditions are stored with their canonical display case and deduped
+    // case-insensitively. Every change is persisted like item awards and writes
+    // a session_beats row so the change shows on the shotlist timeline.
 
-      // Get current conditions array
-      const { data: char } = await supabase
+    // Resolve a condition target by name. Returns the table + row id + current
+    // conditions, checking the player character and characters first, then the
+    // most recent npc_encounters row with that name. Null if nothing matches.
+    const resolveConditionTarget = async (
+      rawName: string | undefined,
+    ): Promise<{ table: "characters" | "npc_encounters"; id: string; name: string; conditions: string[] } | null> => {
+      const wanted = (rawName || "").trim()
+      // Default target: the player character.
+      if (!wanted || (playerCharacter && wanted.toLowerCase() === playerName.toLowerCase())) {
+        if (!playerCharacter?.id) return null
+        const { data } = await supabase.from("characters").select("conditions, name").eq("id", playerCharacter.id).single()
+        return { table: "characters", id: playerCharacter.id, name: playerName, conditions: (data?.conditions as string[]) || [] }
+      }
+      // Try characters (players + NPC character sheets) by name, case-insensitive.
+      const { data: charRow } = await supabase
         .from("characters")
-        .select("conditions")
-        .eq("id", playerCharacter.id)
-        .single()
+        .select("id, name, conditions")
+        .ilike("name", wanted)
+        .limit(1)
+        .maybeSingle()
+      if (charRow?.id) {
+        return { table: "characters", id: charRow.id, name: charRow.name, conditions: (charRow.conditions as string[]) || [] }
+      }
+      // Fall back to the most recent npc_encounters row with this name.
+      const { data: npcRow } = await supabase
+        .from("npc_encounters")
+        .select("id, name, conditions")
+        .ilike("name", wanted)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (npcRow?.id) {
+        return { table: "npc_encounters", id: npcRow.id, name: npcRow.name, conditions: (npcRow.conditions as string[]) || [] }
+      }
+      return null
+    }
 
-      const currentConditions: string[] = (char?.conditions as string[]) || []
-      if (!currentConditions.includes(condition)) {
-        const { error } = await supabase
-          .from("characters")
-          .update({ conditions: [...currentConditions, condition] })
-          .eq("id", playerCharacter.id)
+    // For NPCs, apply the update to EVERY row sharing the name (identity is by
+    // name); for characters, just the single row.
+    const persistConditions = async (
+      target: { table: "characters" | "npc_encounters"; id: string; name: string },
+      next: string[],
+    ) => {
+      if (target.table === "npc_encounters") {
+        return supabase.from("npc_encounters").update({ conditions: next }).ilike("name", target.name)
+      }
+      return supabase.from("characters").update({ conditions: next }).eq("id", target.id)
+    }
 
-        if (error) {
-          console.error("[v0] Error adding condition:", error)
-        } else {
-          console.log("[v0] Condition added:", condition)
-        }
+    // Best-effort session beat, mirroring the item-award beat writer.
+    const writeConditionBeat = async (subjectName: string, verb: "gained" | "lost", condition: string, charId: string | null) => {
+      if (!activeSessionId) return
+      const { error: beatError } = await supabase.from("session_beats").insert({
+        session_id: activeSessionId,
+        beat_type: "condition_change",
+        character_id: charId,
+        subject: condition,
+        summary: `${subjectName} ${verb} condition: ${condition}`,
+        narration: null,
+        priority: 5,
+      })
+      if (beatError) console.error("[v0] Error writing condition session_beat:", beatError.message)
+    }
+
+    // Split "name | condition" (or just "condition") from a tag body.
+    const parseConditionArgs = (body: string): { name?: string; condition: string } => {
+      const parts = body.split("|")
+      if (parts.length >= 2) return { name: parts[0].trim(), condition: parts.slice(1).join("|").trim() }
+      return { condition: parts[0].trim() }
+    }
+
+    // CONDITION_ADD
+    for (const match of rawText.matchAll(/\[CONDITION_ADD:\s*([^\]]+)\]/gi)) {
+      const { name, condition } = parseConditionArgs(match[1])
+      if (!condition) continue
+      const canonical = canonicalizeCondition(condition)
+      console.log("[v0] CONDITION_ADD:", { name: name || `(player: ${playerName})`, condition: canonical })
+      const target = await resolveConditionTarget(name)
+      if (!target) {
+        console.warn("[v0] CONDITION_ADD target not found:", name)
+        continue
+      }
+      if (target.conditions.some((c) => c.toLowerCase() === canonical.toLowerCase())) continue
+      const next = [...target.conditions, canonical]
+      const { error } = await persistConditions(target, next)
+      if (error) {
+        console.error("[v0] Error adding condition:", error.message)
+      } else {
+        console.log("[v0] Condition added to", target.name, ":", canonical)
+        await writeConditionBeat(target.name, "gained", canonical, target.table === "characters" ? target.id : playerCharacter?.id || null)
       }
     }
 
-    // Handle CONDITION_REMOVE tags - [CONDITION_REMOVE: name]
-    const conditionRemoveMatches = rawText.matchAll(/\[CONDITION_REMOVE:\s*([^\]]+)\]/gi)
-    for (const match of conditionRemoveMatches) {
-      const [, conditionName] = match
-      const condition = conditionName.trim().toLowerCase()
-      console.log("[v0] CONDITION_REMOVE tag found:", condition)
-
-      // Get current conditions array
-      const { data: char } = await supabase
-        .from("characters")
-        .select("conditions")
-        .eq("id", playerCharacter.id)
-        .single()
-
-      const currentConditions: string[] = (char?.conditions as string[]) || []
-      if (currentConditions.includes(condition)) {
-        const { error } = await supabase
-          .from("characters")
-          .update({ conditions: currentConditions.filter(c => c !== condition) })
-          .eq("id", playerCharacter.id)
-
-        if (error) {
-          console.error("[v0] Error removing condition:", error)
-        } else {
-          console.log("[v0] Condition removed:", condition)
-        }
+    // CONDITION_REMOVE
+    for (const match of rawText.matchAll(/\[CONDITION_REMOVE:\s*([^\]]+)\]/gi)) {
+      const { name, condition } = parseConditionArgs(match[1])
+      if (!condition) continue
+      const canonical = canonicalizeCondition(condition)
+      console.log("[v0] CONDITION_REMOVE:", { name: name || `(player: ${playerName})`, condition: canonical })
+      const target = await resolveConditionTarget(name)
+      if (!target) {
+        console.warn("[v0] CONDITION_REMOVE target not found:", name)
+        continue
+      }
+      if (!target.conditions.some((c) => c.toLowerCase() === canonical.toLowerCase())) continue
+      const next = target.conditions.filter((c) => c.toLowerCase() !== canonical.toLowerCase())
+      const { error } = await persistConditions(target, next)
+      if (error) {
+        console.error("[v0] Error removing condition:", error.message)
+      } else {
+        console.log("[v0] Condition removed from", target.name, ":", canonical)
+        await writeConditionBeat(target.name, "lost", canonical, target.table === "characters" ? target.id : playerCharacter?.id || null)
       }
     }
 
@@ -760,18 +864,22 @@ EXPERIENCE POINTS:
 
       console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
 
-      // CANON PROTECTION: check for an existing portrait BEFORE generating.
-      // A canon portrait_url is the source of truth and must never be replaced
-      // by a freshly generated fal.media image, so we only generate when the
-      // NPC is new or its portrait_url is null/empty.
+      // CANON IDENTITY SEEDING: NPC identity is keyed by NAME. Gather canon
+      // assets from every row sharing this name so a new row inherits the
+      // existing face/voice/videos/conditions instead of generating fresh ones.
+      // A canon portrait is the source of truth and must never be replaced by a
+      // freshly generated fal.media image, so we only generate when NO row with
+      // this name has a portrait.
+      const { canon } = await fetchNpcCanonByName(supabase, name)
+      const hasCanonPortrait = !!(canon.portrait_url && String(canon.portrait_url).trim())
+
+      // The row to reactivate for THIS player character (if one already exists).
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
-        .select("id, portrait_url")
+        .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
         .eq("name", name)
         .eq("character_id", playerCharacter.id)
         .maybeSingle()
-
-      const hasCanonPortrait = !!existingNpc?.portrait_url?.trim()
 
       let portraitUrl: string | null = null
       if (hasCanonPortrait) {
@@ -796,13 +904,19 @@ EXPERIENCE POINTS:
       }
 
       if (existingNpc) {
-        // Reactivate existing NPC. NEVER include portrait_url when a canon image
-        // already exists; only set it when we just generated one for an NPC that
-        // had none.
+        // Reactivate existing NPC and backfill any canon asset this row is
+        // missing from other rows with the same name. NEVER overwrite a canon
+        // portrait; only set a freshly generated one when none exists anywhere.
         const update: Record<string, unknown> = {
           is_active: true,
           description: desc,
         }
+        for (const f of NPC_CANON_FIELDS) {
+          const cur = (existingNpc as any)[f]
+          if ((!cur || !String(cur).trim()) && canon[f]) update[f] = canon[f]
+        }
+        const curConds = Array.isArray((existingNpc as any).conditions) ? (existingNpc as any).conditions : []
+        if (curConds.length === 0 && canon.conditions?.length) update.conditions = canon.conditions
         if (!hasCanonPortrait && portraitUrl) {
           update.portrait_url = portraitUrl
         }
@@ -810,14 +924,21 @@ EXPERIENCE POINTS:
           .from("npc_encounters")
           .update(update)
           .eq("id", existingNpc.id)
-        console.log("[v0] NPC reactivated:", name)
+        console.log("[v0] NPC reactivated:", name, "| seeded canon fields:", Object.keys(update).filter(k => k !== "is_active" && k !== "description"))
       } else {
-        // Insert new NPC encounter
+        // Insert new NPC encounter, SEEDED from the canon identity for this name
+        // so the portrait/face/voice/videos/conditions match older rows.
         const { error } = await supabase.from("npc_encounters").insert({
           character_id: playerCharacter.id,
           name,
           description: desc,
-          portrait_url: portraitUrl,
+          portrait_url: canon.portrait_url || portraitUrl,
+          face_url: canon.face_url,
+          voice_id: canon.voice_id,
+          voice_description: canon.voice_description,
+          idle_url: canon.idle_url,
+          talking_url: canon.talking_url,
+          conditions: canon.conditions || [],
           challenge_rating: cr,
           xp_value: xp,
           monster_type: type,
@@ -828,7 +949,7 @@ EXPERIENCE POINTS:
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
         } else {
-          console.log("[v0] NPC encounter created:", name, "| XP:", xp)
+          console.log("[v0] NPC encounter created (seeded from canon):", name, "| XP:", xp, "| hadCanonPortrait:", hasCanonPortrait)
         }
       }
     }
@@ -1182,16 +1303,18 @@ Respond ONLY with valid JSON, no other text:
           const portraitPrompt = portraitPrompts[npcName] ||
             `dark fantasy portrait of ${parsed.description || npcName}, dramatic Underdark lighting, detailed RPG character art`
 
-          // CANON PROTECTION: query first; only generate when there is no
-          // existing canon portrait, and never overwrite one.
+          // CANON IDENTITY SEEDING: gather canon assets across every row with
+          // this name; only generate when NO row has a portrait, and never
+          // overwrite one. The per-character row (if any) is reactivated below.
+          const { canon: npcCanon } = await fetchNpcCanonByName(supabase, npcName)
           const { data: existingNpc } = await supabase
             .from("npc_encounters")
-            .select("id, portrait_url")
+            .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
             .eq("name", npcName)
             .eq("character_id", playerCharacter.id)
             .maybeSingle()
 
-          const canonPortrait = existingNpc?.portrait_url?.trim() ? existingNpc.portrait_url : null
+          const canonPortrait = npcCanon.portrait_url && String(npcCanon.portrait_url).trim() ? npcCanon.portrait_url : null
 
           // Generate portrait via Fal only when no canon portrait exists.
           let autoPortraitUrl: string | null = null
@@ -1221,6 +1344,13 @@ Respond ONLY with valid JSON, no other text:
               is_active: true,
               description: parsed.description || undefined,
             }
+            // Backfill any canon asset this row is missing from other rows.
+            for (const f of NPC_CANON_FIELDS) {
+              const cur = (existingNpc as any)[f]
+              if ((!cur || !String(cur).trim()) && npcCanon[f]) update[f] = npcCanon[f]
+            }
+            const curConds = Array.isArray((existingNpc as any).conditions) ? (existingNpc as any).conditions : []
+            if (curConds.length === 0 && npcCanon.conditions?.length) update.conditions = npcCanon.conditions
             // Only set portrait_url when we generated one for an NPC that had none.
             if (!canonPortrait && autoPortraitUrl) {
               update.portrait_url = autoPortraitUrl
@@ -1230,11 +1360,18 @@ Respond ONLY with valid JSON, no other text:
               .update(update)
               .eq("id", existingNpc.id)
           } else {
+            // Seed the new row from the canon identity for this name.
             await supabase.from("npc_encounters").insert({
               character_id: playerCharacter.id,
               name: npcName,
               description: parsed.description || `${npcName} is speaking`,
-              portrait_url: autoPortraitUrl,
+              portrait_url: canonPortrait || autoPortraitUrl,
+              face_url: npcCanon.face_url,
+              voice_id: npcCanon.voice_id,
+              voice_description: npcCanon.voice_description,
+              idle_url: npcCanon.idle_url,
+              talking_url: npcCanon.talking_url,
+              conditions: npcCanon.conditions || [],
               is_active: true,
               hp_max: null,
               hp_current: null,

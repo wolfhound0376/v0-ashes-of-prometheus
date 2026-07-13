@@ -53,6 +53,8 @@ export interface Character {
   damage_resistances: string | null
   damage_immunities: string | null
   condition_immunities: string | null
+  // Active conditions affecting this character (jsonb string[]).
+  conditions: string[] | null
   created_at: string
   updated_at: string
 }

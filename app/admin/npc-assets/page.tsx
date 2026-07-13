@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic"
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { ConditionsEditor } from "@/components/conditions/conditions-editor"
 
 interface NpcRow {
   id: string
@@ -14,6 +15,7 @@ interface NpcRow {
   talking_url: string | null
   voice_id: string | null
   voice_description: string | null
+  conditions: string[] | null
 }
 
 // One card per unique NPC name (rows are deduped by name for display).
@@ -26,6 +28,7 @@ interface NpcGroup {
   talking_url: string | null
   voice_id: string | null
   voice_description: string | null
+  conditions: string[]
 }
 
 function groupByName(rows: NpcRow[]): NpcGroup[] {
@@ -41,6 +44,9 @@ function groupByName(rows: NpcRow[]): NpcGroup[] {
       existing.talking_url ||= r.talking_url
       existing.voice_id ||= r.voice_id
       existing.voice_description ||= r.voice_description
+      if (existing.conditions.length === 0 && Array.isArray(r.conditions) && r.conditions.length > 0) {
+        existing.conditions = r.conditions
+      }
     } else {
       map.set(key, {
         name: r.name,
@@ -51,6 +57,7 @@ function groupByName(rows: NpcRow[]): NpcGroup[] {
         talking_url: r.talking_url,
         voice_id: r.voice_id,
         voice_description: r.voice_description,
+        conditions: Array.isArray(r.conditions) ? r.conditions : [],
       })
     }
   }
@@ -70,7 +77,7 @@ export default function NpcAssetsAdmin() {
     const supabase = createClient()
     const { data, error } = await supabase
       .from("npc_encounters")
-      .select("id, name, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description")
+      .select("id, name, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, conditions")
       .order("name")
     if (error) console.error("[v0] fetch npcs error:", error)
     setGroups(groupByName((data as NpcRow[]) || []))
@@ -124,6 +131,20 @@ export default function NpcAssetsAdmin() {
     }
   }
 
+  // Persist conditions to EVERY row sharing this NPC name (identity is by name).
+  const saveConditions = async (name: string, ids: string[], next: string[]) => {
+    setStatus((s) => ({ ...s, [name]: "Saving conditions…" }))
+    const supabase = createClient()
+    const { error } = await supabase.from("npc_encounters").update({ conditions: next }).in("id", ids)
+    if (error) {
+      setStatus((s) => ({ ...s, [name]: error.message }))
+      return
+    }
+    setStatus((s) => ({ ...s, [name]: `Conditions saved to ${ids.length} row(s).` }))
+    // Optimistically update local state so the editor reflects the save.
+    setGroups((gs) => gs.map((g) => (g.name === name ? { ...g, conditions: next } : g)))
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0908] text-[#e8dcc4] p-6">
       <header className="mb-6">
@@ -143,7 +164,7 @@ export default function NpcAssetsAdmin() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {groups.map((g) => (
-            <NpcCard key={g.name} group={g} status={status[g.name]} onUpload={uploadFace} onUploadVideo={uploadVideo} />
+            <NpcCard key={g.name} group={g} status={status[g.name]} onUpload={uploadFace} onUploadVideo={uploadVideo} onSaveConditions={saveConditions} />
           ))}
         </div>
       )}
@@ -156,11 +177,13 @@ function NpcCard({
   status,
   onUpload,
   onUploadVideo,
+  onSaveConditions,
 }: {
   group: NpcGroup
   status?: string
   onUpload: (name: string, file: File) => void
   onUploadVideo: (name: string, kind: "idle" | "talking", file: File) => void
+  onSaveConditions: (name: string, ids: string[], next: string[]) => void
 }) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -195,6 +218,15 @@ function NpcCard({
           {group.voice_id ? <span className="text-stone-600"> ({group.voice_id})</span> : null}
         </p>
       )}
+
+      {/* Conditions editor — persists to every row sharing this NPC name. */}
+      <div>
+        <p className="text-[11px] text-stone-400 mb-1">Conditions</p>
+        <ConditionsEditor
+          value={group.conditions}
+          onChange={(next) => onSaveConditions(group.name, group.ids, next)}
+        />
+      </div>
 
       {/* Drop zone */}
       <div

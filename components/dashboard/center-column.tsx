@@ -24,6 +24,7 @@ import { BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DiceRoller } from "./dice-roller"
 import { ReactionsPanel } from "./reactions-panel"
+import { ConditionBadges } from "@/components/conditions/condition-badges"
 
 interface Action {
   id: string
@@ -74,6 +75,8 @@ interface NpcEncounter {
   is_active: boolean
   hp_current?: number | null
   hp_max?: number | null
+  // Active conditions (jsonb string[]) affecting this NPC.
+  conditions?: string[] | null
 }
 
 interface DialogueEntry {
@@ -185,11 +188,11 @@ function attributionScore(nameIdx: number[], quotePos: number): number {
   return bestFollowing === Infinity ? Infinity : bestFollowing + 100000
 }
 
-// Pull the featured NPC's spoken line out of a DM message for the caption.
+// Pull EVERY quote attributed to the featured NPC out of a DM message, in order.
 // Only quotes attributable to `npcName` are kept — quotes the narrator frames as
-// the player character (`playerName`) speaking are excluded — and when the NPC
-// has several quotes we keep only the LAST one or two, never a concatenation of
-// the whole message. Handles straight and curly quotes.
+// the player character (`playerName`) speaking are excluded. This is the SPEECH
+// text: the full concatenation of all of the NPC's lines, so TTS reads the whole
+// message rather than just the final line. Handles straight and curly quotes.
 function extractSpokenLine(text: string, npcName?: string | null, playerName?: string | null): string | null {
   if (!text) return null
   const player = playerName || "Fifi of Copperas Cove"
@@ -206,14 +209,24 @@ function extractSpokenLine(text: string, npcName?: string | null, playerName?: s
     const npcScore = attributionScore(npcIdx, quotePos)
     const playerScore = attributionScore(playerIdx, quotePos)
     // Exclude quotes the player is speaking. When neither name is anywhere in
-    // the text we still show the quote (the featured NPC is the only speaker).
+    // the text we still keep the quote (the featured NPC is the only speaker).
     if (playerScore < npcScore) continue
     npcQuotes.push(s)
   }
 
   if (!npcQuotes.length) return null
-  // Keep only the last one or two NPC quotes.
-  return npcQuotes.slice(-2).join(" ")
+  // Speak ALL attributed quotes, in order, concatenated.
+  return npcQuotes.join(" ")
+}
+
+// Minimal on-screen caption derived from the spoken line. The dialogue log
+// already shows the full text, so the featured panel only teases the opening
+// words followed by an ellipsis (keeps the portrait uncluttered).
+function captionPreview(speech: string | null, wordCount = 4): string | null {
+  if (!speech) return null
+  const words = speech.trim().split(/\s+/)
+  if (words.length <= wordCount) return speech.trim()
+  return words.slice(0, wordCount).join(" ") + "…"
 }
 
 const actionIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -278,16 +291,19 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   // Rule: if the most recent entry is a DM message containing NPC dialogue,
   // feature that NPC; a player/system message (or a DM message with no NPC
   // dialogue) clears the featured view back to the normal tile grid.
-  const { activeSpeakerId, activeLine } = useMemo(() => {
+  const { activeSpeakerId, activeLine, activeCaption } = useMemo(() => {
     const last = dialogue[dialogue.length - 1]
     if (!last || last.speaker !== DM_SPEAKER) {
-      return { activeSpeakerId: null as string | null, activeLine: null as string | null }
+      return { activeSpeakerId: null as string | null, activeLine: null as string | null, activeCaption: null as string | null }
     }
     const speakerId = detectActiveSpeaker(last.text, npcEncounters)
     const speakerNpc = speakerId ? npcEncounters.find(n => n.id === speakerId) : null
+    // activeLine = full speech (all quotes) for TTS; activeCaption = minimal preview for display.
+    const speech = speakerId ? extractSpokenLine(last.text, speakerNpc?.name, characterName) : null
     return {
       activeSpeakerId: speakerId,
-      activeLine: speakerId ? extractSpokenLine(last.text, speakerNpc?.name, characterName) : null,
+      activeLine: speech,
+      activeCaption: captionPreview(speech),
     }
   }, [dialogue, npcEncounters, characterName])
 
@@ -316,7 +332,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
           <CombatFxKeyframes />
           {activeSpeaker ? (
             <div className="h-full flex flex-col gap-2 p-2">
-              <FeaturedSpeaker speaker={activeSpeaker} line={activeLine} hasOthers={otherEncounters.length > 0} />
+              <FeaturedSpeaker speaker={activeSpeaker} line={activeLine} caption={activeCaption} hasOthers={otherEncounters.length > 0} />
               {otherEncounters.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto flex-shrink-0 h-[64px] opacity-60">
                   {otherEncounters.map((encounter) => (
@@ -618,7 +634,7 @@ function stopNpcAudio() {
   }
 }
 
-function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEncounter; line?: string | null; hasOthers?: boolean }) {
+function FeaturedSpeaker({ speaker, line, caption, hasOthers = false }: { speaker: NpcEncounter; line?: string | null; caption?: string | null; hasOthers?: boolean }) {
   const face = speaker.face_url || speaker.portrait_url
   const [muted, setMuted] = useState(ttsMuted)
   const [speaking, setSpeaking] = useState(false)
@@ -823,13 +839,18 @@ function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEnc
             </p>
             <span className="h-px w-8 bg-[#c9a868]/40 flex-shrink-0" />
           </div>
-          {line && (
+          {speaker.conditions && speaker.conditions.length > 0 && (
+            <div className="flex justify-center max-w-full">
+              <ConditionBadges conditions={speaker.conditions} size="sm" />
+            </div>
+          )}
+          {caption && (
             <p
-              key={line}
-              className="max-w-[94%] text-center font-serif italic text-[13px] leading-snug text-[#e6c878]/90 drop-shadow-lg line-clamp-3"
+              key={caption}
+              className="max-w-[94%] text-center font-serif italic text-[13px] leading-snug text-[#e6c878]/90 drop-shadow-lg line-clamp-2"
               style={{ animation: "aopCaptionFade 0.5s ease-out" }}
             >
-              {`\u201C${line}\u201D`}
+              {`\u201C${caption}\u201D`}
             </p>
           )}
         </div>
