@@ -514,16 +514,22 @@ EXPERIENCE POINTS:
     // Shared award/pickup handler: insert or bump quantity, resolve an icon, and
     // record a session beat. Used for BOTH [ITEM_ADD] and [ITEM_AWARD].
     const awardItem = async (itemName: string, quantity: number, desc: string, type: string, hint: string) => {
-      // Resolve an existing icon from dashboard_assets by hint or name.
+      // Resolve an existing icon from dashboard_assets by hint or name. The
+      // column is file_url (not "url"); selecting the wrong column previously
+      // made this lookup error out and never resolve an icon.
       let iconUrl: string | null = null
-      const { data: existingIcon } = await supabase
+      const { data: existingIcon, error: iconError } = await supabase
         .from("dashboard_assets")
-        .select("url")
+        .select("file_url")
         .eq("asset_type", "item_icon")
         .or(`name.ilike.%${hint || itemName}%,name.ilike.%${itemName}%`)
         .limit(1)
         .maybeSingle()
-      if (existingIcon?.url) iconUrl = existingIcon.url
+      if (iconError) console.log("[v0] item_icon lookup error:", iconError.message)
+      if (existingIcon?.file_url) {
+        iconUrl = existingIcon.file_url
+        console.log("[v0] resolved item_icon for", itemName, "->", iconUrl)
+      }
 
       const { data: existing } = await supabase
         .from("inventory_items")

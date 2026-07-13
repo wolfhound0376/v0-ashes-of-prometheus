@@ -132,7 +132,7 @@ export interface MagicalResource {
 
 export interface DashboardAsset {
   id: string
-  asset_type: 'background' | 'overlay' | 'icon' | 'animation' | 'border' | 'divider'
+  asset_type: 'background' | 'overlay' | 'icon' | 'animation' | 'border' | 'divider' | 'item_icon'
   panel_type: string | null
   name: string
   file_url: string | null

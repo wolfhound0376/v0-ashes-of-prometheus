@@ -13,12 +13,17 @@ import { characterData, dialogueData, actionsData, inventoryData, environmentDat
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { useLich } from "@/lib/hooks/use-lich"
+import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
 
 export default function DashboardPage() {
   const supabase = createClient()
+
+  // Admin-managed per-panel background/overlay overrides (dashboard_assets).
+  // Environments remain the primary source; these only apply when a row matches.
+  const { resolvePanelAsset } = usePanelAssets()
 
   // Character selection state
   const [characters, setCharacters] = useState<Character[]>([])
@@ -587,14 +592,26 @@ if (error) {
       {/* Main dashboard grid */}
       <div className="h-screen p-2 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
 <LeftColumn
-  environment={{
-    location: currentEnvironment?.name || environmentData.location,
-    timeOfDay: currentEnvironment?.time_of_day || environmentData.timeOfDay,
-    backgroundImageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
-    fogOverlayUrl: currentEnvironment?.fog_overlay_url,
-    ambientAnimation: currentEnvironment?.ambient_animation,
-    description: currentEnvironment?.description,
-  }}
+  environment={(() => {
+    // dashboard_assets override for the environment scene (panel_type "left_column").
+    // Precedence: live in-play scene image > admin dashboard override > environment
+    // table > static fallback. Overlay/animation override the environment's fog.
+    const bgOverride = resolvePanelAsset("left_column", "background")
+    const overlayOverride = resolvePanelAsset("left_column", "overlay")
+    return {
+      location: currentEnvironment?.name || environmentData.location,
+      timeOfDay: currentEnvironment?.time_of_day || environmentData.timeOfDay,
+      backgroundImageUrl:
+        sceneImageUrl ||
+        bgOverride?.fileUrl ||
+        currentEnvironment?.background_image_url ||
+        "/images/scenes/velkynvelve-slave-pen.jpg",
+      fogOverlayUrl: overlayOverride?.fileUrl || currentEnvironment?.fog_overlay_url,
+      ambientAnimation:
+        overlayOverride?.animationCss || currentEnvironment?.ambient_animation,
+      description: currentEnvironment?.description,
+    }
+  })()}
   dialogue={dialogue}
   dialogueInput={dialogueInput}
   setDialogueInput={setDialogueInput}
