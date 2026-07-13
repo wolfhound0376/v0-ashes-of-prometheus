@@ -38,7 +38,10 @@ export interface WorldContext {
     abilities: string[]
     equipment: string[]
     inventory: string[]
+    conditions: string[]
   }>
+  // Active conditions on NPCs currently present in the scene, keyed by name.
+  npcConditions: Array<{ name: string; conditions: string[] }>
   environment: {
     name: string
     timeOfDay: string
@@ -149,13 +152,42 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
         equipment: equipment?.map((e: { name: string; slot: string }) => `${e.name} (${e.slot})`) || [],
         inventory: inventory?.map((i: { name: string; quantity: number }) => 
           i.quantity > 1 ? `${i.name} x${i.quantity}` : i.name
-        ) || []
+        ) || [],
+        conditions: Array.isArray((char as Character & { conditions?: string[] }).conditions)
+          ? ((char as Character & { conditions?: string[] }).conditions as string[])
+          : [],
       }
     }))
 
     return result
   } catch (error) {
     console.error("[WorldContext] Error in fetchCharacters:", error)
+    return []
+  }
+}
+
+// Fetch active NPCs' conditions (present in the current scene).
+export async function fetchNpcConditions(): Promise<WorldContext["npcConditions"]> {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from("npc_encounters")
+      .select("name, conditions, is_active")
+      .eq("is_active", true)
+    if (error || !data) return []
+    // Dedupe by name; keep the first non-empty conditions set per NPC name.
+    const byName = new Map<string, string[]>()
+    for (const row of data as { name: string; conditions: string[] | null }[]) {
+      const conds = Array.isArray(row.conditions) ? row.conditions : []
+      if (!byName.has(row.name) || (byName.get(row.name)!.length === 0 && conds.length > 0)) {
+        byName.set(row.name, conds)
+      }
+    }
+    return Array.from(byName.entries())
+      .filter(([, conds]) => conds.length > 0)
+      .map(([name, conditions]) => ({ name, conditions }))
+  } catch (error) {
+    console.error("[WorldContext] Error fetching NPC conditions:", error)
     return []
   }
 }
@@ -272,10 +304,11 @@ export async function buildWorldContext(
   const currentLocation = latestEnv?.name || location
   console.log("[WorldContext] Using location:", currentLocation)
 
-  const [characters, environment, recentDialogue] = await Promise.all([
+  const [characters, environment, recentDialogue, npcConditions] = await Promise.all([
     fetchCharacters(),
     fetchEnvironment(campaignId, currentLocation),
-    fetchRecentDialogue()
+    fetchRecentDialogue(),
+    fetchNpcConditions()
   ])
 
   const campaign = buildCampaignContext(campaignId, episode, currentLocation, heat)
@@ -294,6 +327,7 @@ export async function buildWorldContext(
       maps: []
     },
     characters,
+    npcConditions,
     environment,
     recentDialogue
   }
@@ -351,6 +385,7 @@ export function formatWorldContextForAI(context: WorldContext): string {
       lines.push(`  HP: ${char.hp}, AC: ${char.ac}, Speed: ${char.speed}ft`)
       lines.push(`  Proficiency Bonus: +${char.proficiencyBonus}`)
       lines.push(`  Ability Scores: STR ${char.abilityScores.strength}, DEX ${char.abilityScores.dexterity}, CON ${char.abilityScores.constitution}, INT ${char.abilityScores.intelligence}, WIS ${char.abilityScores.wisdom}, CHA ${char.abilityScores.charisma}`)
+      lines.push(`  Active Conditions: ${char.conditions.length > 0 ? char.conditions.join(", ") : "None"}`)
       if (char.savingThrows.length > 0) {
         lines.push(`  Saving Throw Proficiencies: ${char.savingThrows.join(", ")}`)
       }
@@ -371,6 +406,22 @@ export function formatWorldContextForAI(context: WorldContext): string {
     }
     lines.push("")
   }
+
+  // NPC conditions currently in effect
+  if (context.npcConditions.length > 0) {
+    lines.push(`=== NPC CONDITIONS ===`)
+    for (const npc of context.npcConditions) {
+      lines.push(`- ${npc.name}: ${npc.conditions.join(", ")}`)
+    }
+    lines.push("")
+  }
+
+  // HARD RULE: conditions are binding constraints on the narrative.
+  lines.push(`=== CONDITIONS RULE (MANDATORY) ===`)
+  lines.push(
+    `The "Active Conditions" listed for each player character and the "NPC CONDITIONS" above are BINDING facts about the current scene. You MUST honor them in every response: a Manacled or Restrained creature cannot move freely or use its hands; behind a Magical Barrier it cannot physically cross or reach through; Prone, Poisoned, Frightened, Invisible, and Exhaustion impose their standard D&D 5e effects. NEVER narrate a character acting in a way their conditions forbid, and never silently drop a condition. A condition only changes when you emit the appropriate [CONDITION_ADD:] or [CONDITION_REMOVE:] tag.`
+  )
+  lines.push("")
 
   // Environment
   if (context.environment) {

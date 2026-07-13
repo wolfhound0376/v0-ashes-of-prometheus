@@ -42,6 +42,20 @@ export function conditionColor(name: string): string {
   return CONDITION_COLORS[name.trim().toLowerCase()] ?? "text-stone-300"
 }
 
+// Return the canonical display casing for a condition: if it matches a known
+// preset (case-insensitively) use the preset's casing, otherwise Title-Case the
+// free-text value so stored conditions read consistently.
+export function canonicalizeCondition(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) return trimmed
+  const preset = CONDITION_PRESETS.find((p) => p.toLowerCase() === trimmed.toLowerCase())
+  if (preset) return preset
+  return trimmed
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ")
+}
+
 // Coerce arbitrary jsonb / array / string input into a clean, de-duplicated
 // (case-insensitive) string list, preserving the first-seen display casing.
 export function normalizeConditions(input: unknown): string[] {

@@ -24,6 +24,7 @@ import { BookOpen } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DiceRoller } from "./dice-roller"
 import { ReactionsPanel } from "./reactions-panel"
+import { ConditionBadges } from "@/components/conditions/condition-badges"
 
 interface Action {
   id: string
@@ -838,6 +839,11 @@ function FeaturedSpeaker({ speaker, line, caption, hasOthers = false }: { speake
             </p>
             <span className="h-px w-8 bg-[#c9a868]/40 flex-shrink-0" />
           </div>
+          {speaker.conditions && speaker.conditions.length > 0 && (
+            <div className="flex justify-center max-w-full">
+              <ConditionBadges conditions={speaker.conditions} size="sm" />
+            </div>
+          )}
           {caption && (
             <p
               key={caption}

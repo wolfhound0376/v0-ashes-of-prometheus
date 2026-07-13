@@ -10,6 +10,7 @@ const anthropic = createAnthropic({
 })
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
 import { CAMPAIGNS, ABYSS_SCAVENGED_ITEMS_TABLE, formatRollTable } from "@/lib/world-ai/campaigns"
+import { canonicalizeCondition } from "@/lib/conditions"
 import * as fal from "@fal-ai/serverless-client"
 
 // Configure Fal client
@@ -241,7 +242,7 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 3. HEALING: You MUST emit [HEAL: <amount>] whenever HP is restored.
 
-4. CONDITIONS: You MUST emit [CONDITION_ADD: <name>] when the player gains ANY condition (poisoned, grappled, prone, restrained, frightened, exhaustion, bleeding, acid_burn, manacled, etc.). Emit [CONDITION_REMOVE: <name>] when it clears.
+4. CONDITIONS: You MUST emit [CONDITION_ADD: <target> | <condition>] when ANY character or NPC gains a condition (Manacled, Magical Barrier, Poisoned, Restrained, Frightened, Prone, Invisible, Exhaustion, etc.), and [CONDITION_REMOVE: <target> | <condition>] when it clears. <target> is the exact name of the affected character or NPC (e.g. "Jimjar", "Eldeth"); omit the "<target> |" part to target the player character. Honor every condition already listed in the world context — never narrate a manacled or barriered creature acting freely, and only change a condition by emitting these tags. Examples: [CONDITION_ADD: Jimjar | Frightened] or, for the player, [CONDITION_ADD: Poisoned].
 
 5. NPC/MONSTER ENCOUNTERS: You MUST emit [NPC_ENCOUNTER: <Name> | <description> | <portrait_prompt>] the FIRST time any NPC or monster meaningfully interacts with the player. If you describe a gray ooze blocking passage, a drow guard confronting them, or any creature entering the scene — EMIT THE TAG.
 
@@ -400,12 +401,13 @@ HEALTH & CONDITIONS:
   - Example: [DAMAGE: 4 acid] or [DAMAGE: 8 slashing]
 - [HEAL: amount] — when player is healed
   - Example: [HEAL: 5]
-- [CONDITION_ADD: name] — when player gains a condition
+- [CONDITION_ADD: target | condition] — when a character/NPC gains a condition ("target |" optional; defaults to the player)
+  - Presets: Manacled, Magical Barrier, Poisoned, Restrained, Frightened, Prone, Invisible, Exhaustion
   - Standard D&D 5e: prone, poisoned, charmed, frightened, grappled, incapacitated, invisible, paralyzed, petrified, restrained, stunned, unconscious, blinded, deafened, exhaustion
-  - Narrative: acid_burn, bleeding, manacled, etc.
-  - Example: [CONDITION_ADD: poisoned]
-- [CONDITION_REMOVE: name] — when a condition clears
-  - Example: [CONDITION_REMOVE: prone]
+  - Narrative free-text also allowed: acid_burn, bleeding, etc.
+  - Examples: [CONDITION_ADD: Jimjar | Frightened]  or  [CONDITION_ADD: Poisoned]
+- [CONDITION_REMOVE: target | condition] — when a condition clears ("target |" optional; defaults to the player)
+  - Examples: [CONDITION_REMOVE: Jimjar | Manacled]  or  [CONDITION_REMOVE: Prone]
 
   NPC/MONSTER ENCOUNTERS:
   - [NPC_ENCOUNTER: name | description | portrait_prompt | CR=<n> | XP=<n> | type=<creature_type>] — when an NPC/monster enters active combat or interaction
@@ -724,61 +726,126 @@ EXPERIENCE POINTS:
       }
     }
 
-    // Handle CONDITION_ADD tags - [CONDITION_ADD: name]
-    const conditionAddMatches = rawText.matchAll(/\[CONDITION_ADD:\s*([^\]]+)\]/gi)
-    for (const match of conditionAddMatches) {
-      const [, conditionName] = match
-      const condition = conditionName.trim().toLowerCase()
-      console.log("[v0] CONDITION_ADD tag found:", condition)
+    // === CONDITION TAGS ===
+    // [CONDITION_ADD: name | condition] and [CONDITION_REMOVE: name | condition]
+    // `name` is the target character/NPC (matched by name, case-insensitive);
+    // when the `name |` part is omitted it defaults to the player character.
+    // Conditions are stored with their canonical display case and deduped
+    // case-insensitively. Every change is persisted like item awards and writes
+    // a session_beats row so the change shows on the shotlist timeline.
 
-      // Get current conditions array
-      const { data: char } = await supabase
+    // Resolve a condition target by name. Returns the table + row id + current
+    // conditions, checking the player character and characters first, then the
+    // most recent npc_encounters row with that name. Null if nothing matches.
+    const resolveConditionTarget = async (
+      rawName: string | undefined,
+    ): Promise<{ table: "characters" | "npc_encounters"; id: string; name: string; conditions: string[] } | null> => {
+      const wanted = (rawName || "").trim()
+      // Default target: the player character.
+      if (!wanted || (playerCharacter && wanted.toLowerCase() === playerName.toLowerCase())) {
+        if (!playerCharacter?.id) return null
+        const { data } = await supabase.from("characters").select("conditions, name").eq("id", playerCharacter.id).single()
+        return { table: "characters", id: playerCharacter.id, name: playerName, conditions: (data?.conditions as string[]) || [] }
+      }
+      // Try characters (players + NPC character sheets) by name, case-insensitive.
+      const { data: charRow } = await supabase
         .from("characters")
-        .select("conditions")
-        .eq("id", playerCharacter.id)
-        .single()
+        .select("id, name, conditions")
+        .ilike("name", wanted)
+        .limit(1)
+        .maybeSingle()
+      if (charRow?.id) {
+        return { table: "characters", id: charRow.id, name: charRow.name, conditions: (charRow.conditions as string[]) || [] }
+      }
+      // Fall back to the most recent npc_encounters row with this name.
+      const { data: npcRow } = await supabase
+        .from("npc_encounters")
+        .select("id, name, conditions")
+        .ilike("name", wanted)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (npcRow?.id) {
+        return { table: "npc_encounters", id: npcRow.id, name: npcRow.name, conditions: (npcRow.conditions as string[]) || [] }
+      }
+      return null
+    }
 
-      const currentConditions: string[] = (char?.conditions as string[]) || []
-      if (!currentConditions.includes(condition)) {
-        const { error } = await supabase
-          .from("characters")
-          .update({ conditions: [...currentConditions, condition] })
-          .eq("id", playerCharacter.id)
+    // For NPCs, apply the update to EVERY row sharing the name (identity is by
+    // name); for characters, just the single row.
+    const persistConditions = async (
+      target: { table: "characters" | "npc_encounters"; id: string; name: string },
+      next: string[],
+    ) => {
+      if (target.table === "npc_encounters") {
+        return supabase.from("npc_encounters").update({ conditions: next }).ilike("name", target.name)
+      }
+      return supabase.from("characters").update({ conditions: next }).eq("id", target.id)
+    }
 
-        if (error) {
-          console.error("[v0] Error adding condition:", error)
-        } else {
-          console.log("[v0] Condition added:", condition)
-        }
+    // Best-effort session beat, mirroring the item-award beat writer.
+    const writeConditionBeat = async (subjectName: string, verb: "gained" | "lost", condition: string, charId: string | null) => {
+      if (!activeSessionId) return
+      const { error: beatError } = await supabase.from("session_beats").insert({
+        session_id: activeSessionId,
+        beat_type: "condition_change",
+        character_id: charId,
+        subject: condition,
+        summary: `${subjectName} ${verb} condition: ${condition}`,
+        narration: null,
+        priority: 5,
+      })
+      if (beatError) console.error("[v0] Error writing condition session_beat:", beatError.message)
+    }
+
+    // Split "name | condition" (or just "condition") from a tag body.
+    const parseConditionArgs = (body: string): { name?: string; condition: string } => {
+      const parts = body.split("|")
+      if (parts.length >= 2) return { name: parts[0].trim(), condition: parts.slice(1).join("|").trim() }
+      return { condition: parts[0].trim() }
+    }
+
+    // CONDITION_ADD
+    for (const match of rawText.matchAll(/\[CONDITION_ADD:\s*([^\]]+)\]/gi)) {
+      const { name, condition } = parseConditionArgs(match[1])
+      if (!condition) continue
+      const canonical = canonicalizeCondition(condition)
+      console.log("[v0] CONDITION_ADD:", { name: name || `(player: ${playerName})`, condition: canonical })
+      const target = await resolveConditionTarget(name)
+      if (!target) {
+        console.warn("[v0] CONDITION_ADD target not found:", name)
+        continue
+      }
+      if (target.conditions.some((c) => c.toLowerCase() === canonical.toLowerCase())) continue
+      const next = [...target.conditions, canonical]
+      const { error } = await persistConditions(target, next)
+      if (error) {
+        console.error("[v0] Error adding condition:", error.message)
+      } else {
+        console.log("[v0] Condition added to", target.name, ":", canonical)
+        await writeConditionBeat(target.name, "gained", canonical, target.table === "characters" ? target.id : playerCharacter?.id || null)
       }
     }
 
-    // Handle CONDITION_REMOVE tags - [CONDITION_REMOVE: name]
-    const conditionRemoveMatches = rawText.matchAll(/\[CONDITION_REMOVE:\s*([^\]]+)\]/gi)
-    for (const match of conditionRemoveMatches) {
-      const [, conditionName] = match
-      const condition = conditionName.trim().toLowerCase()
-      console.log("[v0] CONDITION_REMOVE tag found:", condition)
-
-      // Get current conditions array
-      const { data: char } = await supabase
-        .from("characters")
-        .select("conditions")
-        .eq("id", playerCharacter.id)
-        .single()
-
-      const currentConditions: string[] = (char?.conditions as string[]) || []
-      if (currentConditions.includes(condition)) {
-        const { error } = await supabase
-          .from("characters")
-          .update({ conditions: currentConditions.filter(c => c !== condition) })
-          .eq("id", playerCharacter.id)
-
-        if (error) {
-          console.error("[v0] Error removing condition:", error)
-        } else {
-          console.log("[v0] Condition removed:", condition)
-        }
+    // CONDITION_REMOVE
+    for (const match of rawText.matchAll(/\[CONDITION_REMOVE:\s*([^\]]+)\]/gi)) {
+      const { name, condition } = parseConditionArgs(match[1])
+      if (!condition) continue
+      const canonical = canonicalizeCondition(condition)
+      console.log("[v0] CONDITION_REMOVE:", { name: name || `(player: ${playerName})`, condition: canonical })
+      const target = await resolveConditionTarget(name)
+      if (!target) {
+        console.warn("[v0] CONDITION_REMOVE target not found:", name)
+        continue
+      }
+      if (!target.conditions.some((c) => c.toLowerCase() === canonical.toLowerCase())) continue
+      const next = target.conditions.filter((c) => c.toLowerCase() !== canonical.toLowerCase())
+      const { error } = await persistConditions(target, next)
+      if (error) {
+        console.error("[v0] Error removing condition:", error.message)
+      } else {
+        console.log("[v0] Condition removed from", target.name, ":", canonical)
+        await writeConditionBeat(target.name, "lost", canonical, target.table === "characters" ? target.id : playerCharacter?.id || null)
       }
     }
 

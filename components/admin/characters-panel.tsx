@@ -8,6 +8,7 @@ import type { Character } from "@/lib/types/database"
 import { getDefaultAbilityScores } from "@/lib/game-data"
 import { BestiaryAutopopulate } from "./bestiary-autopopulate"
 import { type BestiaryEntry, matchBestiary, buildStatDiff, buildPatch } from "@/lib/bestiary-match"
+import { ConditionsEditor } from "@/components/conditions/conditions-editor"
 
 const CLASSES = ['Wizard', 'Fighter', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Sorcerer', 'Druid', 'Monk', 'Barbarian']
 
@@ -185,6 +186,7 @@ export function CharactersPanel() {
       damage_resistances: formData.damage_resistances || null,
       damage_immunities: formData.damage_immunities || null,
       condition_immunities: formData.condition_immunities || null,
+      conditions: (formData.conditions as string[] | undefined) || [],
     })
     if (error) {
       console.error('[v0] Error creating character:', error)
@@ -563,6 +565,17 @@ function CharacterForm({ formData, setFormData, onSave, onCancel, bestiary }: { 
             <input type="text" value={formData.condition_immunities || ''} onChange={(e) => setFormData({ ...formData, condition_immunities: e.target.value })}
               className="w-full px-3 py-2 bg-[#0f0d0b] border border-[#3d3428]/60 rounded-lg text-[#e8dcc4] text-sm focus:outline-none focus:border-[#c4a777]/50" />
           </div>
+        </div>
+      </div>
+
+      {/* Active conditions (jsonb string[]). Presets + free text. */}
+      <div>
+        <label className="text-sm text-stone-400">Active Conditions</label>
+        <div className="mt-2">
+          <ConditionsEditor
+            value={(formData.conditions as string[] | undefined) || []}
+            onChange={(next) => setFormData({ ...formData, conditions: next } as Partial<Character>)}
+          />
         </div>
       </div>
 

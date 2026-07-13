@@ -172,7 +172,7 @@ age: (selectedCharacter as any).age,
     skills: null,
     proficiencyBonus: 2,
     passivePerception: 10,
-    conditions: [] as ConditionKey[],
+    conditions: [] as string[],
     abilities: {
       str: { base: 10, score: 10, modifier: 0 },
       dex: { base: 10, score: 10, modifier: 0 },
