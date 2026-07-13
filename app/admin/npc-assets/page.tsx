@@ -10,6 +10,8 @@ interface NpcRow {
   name: string
   portrait_url: string | null
   face_url: string | null
+  idle_url: string | null
+  talking_url: string | null
   voice_id: string | null
   voice_description: string | null
 }
@@ -20,6 +22,8 @@ interface NpcGroup {
   ids: string[]
   portrait_url: string | null
   face_url: string | null
+  idle_url: string | null
+  talking_url: string | null
   voice_id: string | null
   voice_description: string | null
 }
@@ -33,6 +37,8 @@ function groupByName(rows: NpcRow[]): NpcGroup[] {
       existing.ids.push(r.id)
       existing.portrait_url ||= r.portrait_url
       existing.face_url ||= r.face_url
+      existing.idle_url ||= r.idle_url
+      existing.talking_url ||= r.talking_url
       existing.voice_id ||= r.voice_id
       existing.voice_description ||= r.voice_description
     } else {
@@ -41,6 +47,8 @@ function groupByName(rows: NpcRow[]): NpcGroup[] {
         ids: [r.id],
         portrait_url: r.portrait_url,
         face_url: r.face_url,
+        idle_url: r.idle_url,
+        talking_url: r.talking_url,
         voice_id: r.voice_id,
         voice_description: r.voice_description,
       })
@@ -62,7 +70,7 @@ export default function NpcAssetsAdmin() {
     const supabase = createClient()
     const { data, error } = await supabase
       .from("npc_encounters")
-      .select("id, name, portrait_url, face_url, voice_id, voice_description")
+      .select("id, name, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description")
       .order("name")
     if (error) console.error("[v0] fetch npcs error:", error)
     setGroups(groupByName((data as NpcRow[]) || []))
@@ -93,13 +101,38 @@ export default function NpcAssetsAdmin() {
     }
   }
 
+  // Upload a looping face video (idle or talking) to /api/npc-video.
+  const uploadVideo = async (name: string, kind: "idle" | "talking", file: File) => {
+    const okTypes = ["video/mp4", "video/webm"]
+    if (!okTypes.includes(file.type)) {
+      setStatus((s) => ({ ...s, [name]: "Please choose an MP4 or WebM video." }))
+      return
+    }
+    setStatus((s) => ({ ...s, [name]: `Uploading ${kind} video…` }))
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      fd.append("npcName", name)
+      fd.append("kind", kind)
+      const res = await fetch("/api/npc-video", { method: "POST", body: fd })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Upload failed")
+      setStatus((s) => ({ ...s, [name]: `${kind} video saved to ${json.updatedCount} row(s).` }))
+      await fetchNpcs()
+    } catch (err) {
+      setStatus((s) => ({ ...s, [name]: (err as Error).message }))
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0908] text-[#e8dcc4] p-6">
       <header className="mb-6">
         <h1 className="font-serif text-2xl text-[#c4a777] tracking-wide">NPC Canon Assets</h1>
         <p className="text-sm text-stone-500 mt-1">
-          Drag-and-drop or pick an image to set each NPC&apos;s canon face. Saved to{" "}
-          <code className="text-[#c4a777]">faces/&lt;npc-name&gt;.png</code> and applied to every row sharing that name.
+          Set each NPC&apos;s canon face image plus optional looping{" "}
+          <span className="text-stone-400">idle</span> and <span className="text-stone-400">talking</span> videos (MP4/WebM).
+          Face saves to <code className="text-[#c4a777]">faces/&lt;npc-name&gt;.png</code>, videos to{" "}
+          <code className="text-[#c4a777]">videos/&lt;npc-name&gt;-idle|talking.mp4</code>, applied to every row sharing that name.
         </p>
       </header>
 
@@ -110,7 +143,7 @@ export default function NpcAssetsAdmin() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {groups.map((g) => (
-            <NpcCard key={g.name} group={g} status={status[g.name]} onUpload={uploadFace} />
+            <NpcCard key={g.name} group={g} status={status[g.name]} onUpload={uploadFace} onUploadVideo={uploadVideo} />
           ))}
         </div>
       )}
@@ -122,10 +155,12 @@ function NpcCard({
   group,
   status,
   onUpload,
+  onUploadVideo,
 }: {
   group: NpcGroup
   status?: string
   onUpload: (name: string, file: File) => void
+  onUploadVideo: (name: string, kind: "idle" | "talking", file: File) => void
 }) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -147,9 +182,11 @@ function NpcCard({
       </div>
 
       {/* Current thumbnails */}
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-wrap">
         <Thumb label="Portrait" src={group.portrait_url} />
         <Thumb label="Canon face" src={group.face_url} highlight />
+        <VideoThumb label="Idle" src={group.idle_url} />
+        <VideoThumb label="Talking" src={group.talking_url} />
       </div>
 
       {group.voice_description && (
@@ -188,7 +225,68 @@ function NpcCard({
         />
       </div>
 
+      {/* Looping face-video slots (idle + talking). */}
+      <div className="grid grid-cols-2 gap-2">
+        <VideoDrop label="Idle video" onFile={(f) => onUploadVideo(group.name, "idle", f)} />
+        <VideoDrop label="Talking video" onFile={(f) => onUploadVideo(group.name, "talking", f)} />
+      </div>
+
       {status && <p className="text-[11px] text-[#c4a777]">{status}</p>}
+    </div>
+  )
+}
+
+// Compact drop/pick zone for a single looping video slot (MP4/WebM).
+function VideoDrop({ label, onFile }: { label: string; onFile: (file: File) => void }) {
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault()
+        setDragOver(true)
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragOver(false)
+        const file = e.dataTransfer.files?.[0]
+        if (file) onFile(file)
+      }}
+      onClick={() => inputRef.current?.click()}
+      className={`cursor-pointer rounded-sm border-2 border-dashed px-2 py-3 text-center text-[11px] leading-snug transition-colors ${
+        dragOver ? "border-[#c4a777] bg-[#c4a777]/10 text-[#e8dcc4]" : "border-[#3d3428]/70 text-stone-500 hover:border-[#c4a777]/60"
+      }`}
+    >
+      {label}
+      <span className="block text-[9px] text-stone-600">MP4 / WebM</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="video/mp4,video/webm"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) onFile(file)
+          e.target.value = ""
+        }}
+      />
+    </div>
+  )
+}
+
+// Looping muted preview of an idle/talking clip (or "none" placeholder).
+function VideoThumb({ label, src }: { label: string; src: string | null }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="w-20 h-20 rounded-sm overflow-hidden bg-[#0a0908] border border-[#3d3428]/60 flex items-center justify-center">
+        {src ? (
+          <video src={src} muted loop autoPlay playsInline className="w-full h-full object-cover object-top" />
+        ) : (
+          <span className="text-[10px] text-stone-600">none</span>
+        )}
+      </div>
+      <span className="text-[10px] text-stone-500">{label}</span>
     </div>
   )
 }

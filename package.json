@@ -9,6 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@3d-dice/dice-box": "^1.1.4",
     "@ai-sdk/anthropic": "^2.0.0",
     "@ai-sdk/openai": "^3.0.63",
     "@ai-sdk/react": "^3.0.184",
