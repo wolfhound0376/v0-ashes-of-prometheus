@@ -21,6 +21,43 @@ if (!process.env.FAL_KEY) {
   console.warn("[v0] Warning: FAL_KEY environment variable not set. Image generation will fail.")
 }
 
+// Canon asset fields that define an NPC's persistent identity. These are keyed
+// by NAME (not character_id / session) so a known NPC always keeps the same
+// face and voice across sessions.
+const NPC_CANON_FIELDS = [
+  "portrait_url",
+  "face_url",
+  "voice_id",
+  "voice_description",
+  "idle_url",
+  "talking_url",
+] as const
+
+// Collect canon identity for an NPC name from EVERY existing row that shares it.
+// For each asset field we take the most recent non-empty value; conditions come
+// from the most recent row that has any. A brand-new row is seeded from this so
+// generation never re-synthesizes a face/voice that already exists on an older
+// row (the Jimjar bug). Returns nulls when the NPC has never been seen.
+async function fetchNpcCanonByName(
+  supabase: any,
+  name: string,
+): Promise<{ canon: Record<string, any>; rowCount: number }> {
+  const { data } = await supabase
+    .from("npc_encounters")
+    .select("portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
+    .eq("name", name)
+    .order("created_at", { ascending: false })
+  const rows: any[] = data || []
+  const canon: Record<string, any> = {}
+  for (const f of NPC_CANON_FIELDS) {
+    const found = rows.find((r) => typeof r?.[f] === "string" && r[f].trim())
+    canon[f] = found ? found[f] : null
+  }
+  const condRow = rows.find((r) => Array.isArray(r?.conditions) && r.conditions.length > 0)
+  canon.conditions = condRow ? condRow.conditions : []
+  return { canon, rowCount: rows.length }
+}
+
 export async function POST(req: Request) {
   const { message, campaignId = "abyss" } = await req.json()
 
@@ -760,18 +797,22 @@ EXPERIENCE POINTS:
 
       console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
 
-      // CANON PROTECTION: check for an existing portrait BEFORE generating.
-      // A canon portrait_url is the source of truth and must never be replaced
-      // by a freshly generated fal.media image, so we only generate when the
-      // NPC is new or its portrait_url is null/empty.
+      // CANON IDENTITY SEEDING: NPC identity is keyed by NAME. Gather canon
+      // assets from every row sharing this name so a new row inherits the
+      // existing face/voice/videos/conditions instead of generating fresh ones.
+      // A canon portrait is the source of truth and must never be replaced by a
+      // freshly generated fal.media image, so we only generate when NO row with
+      // this name has a portrait.
+      const { canon } = await fetchNpcCanonByName(supabase, name)
+      const hasCanonPortrait = !!(canon.portrait_url && String(canon.portrait_url).trim())
+
+      // The row to reactivate for THIS player character (if one already exists).
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
-        .select("id, portrait_url")
+        .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
         .eq("name", name)
         .eq("character_id", playerCharacter.id)
         .maybeSingle()
-
-      const hasCanonPortrait = !!existingNpc?.portrait_url?.trim()
 
       let portraitUrl: string | null = null
       if (hasCanonPortrait) {
@@ -796,13 +837,19 @@ EXPERIENCE POINTS:
       }
 
       if (existingNpc) {
-        // Reactivate existing NPC. NEVER include portrait_url when a canon image
-        // already exists; only set it when we just generated one for an NPC that
-        // had none.
+        // Reactivate existing NPC and backfill any canon asset this row is
+        // missing from other rows with the same name. NEVER overwrite a canon
+        // portrait; only set a freshly generated one when none exists anywhere.
         const update: Record<string, unknown> = {
           is_active: true,
           description: desc,
         }
+        for (const f of NPC_CANON_FIELDS) {
+          const cur = (existingNpc as any)[f]
+          if ((!cur || !String(cur).trim()) && canon[f]) update[f] = canon[f]
+        }
+        const curConds = Array.isArray((existingNpc as any).conditions) ? (existingNpc as any).conditions : []
+        if (curConds.length === 0 && canon.conditions?.length) update.conditions = canon.conditions
         if (!hasCanonPortrait && portraitUrl) {
           update.portrait_url = portraitUrl
         }
@@ -810,14 +857,21 @@ EXPERIENCE POINTS:
           .from("npc_encounters")
           .update(update)
           .eq("id", existingNpc.id)
-        console.log("[v0] NPC reactivated:", name)
+        console.log("[v0] NPC reactivated:", name, "| seeded canon fields:", Object.keys(update).filter(k => k !== "is_active" && k !== "description"))
       } else {
-        // Insert new NPC encounter
+        // Insert new NPC encounter, SEEDED from the canon identity for this name
+        // so the portrait/face/voice/videos/conditions match older rows.
         const { error } = await supabase.from("npc_encounters").insert({
           character_id: playerCharacter.id,
           name,
           description: desc,
-          portrait_url: portraitUrl,
+          portrait_url: canon.portrait_url || portraitUrl,
+          face_url: canon.face_url,
+          voice_id: canon.voice_id,
+          voice_description: canon.voice_description,
+          idle_url: canon.idle_url,
+          talking_url: canon.talking_url,
+          conditions: canon.conditions || [],
           challenge_rating: cr,
           xp_value: xp,
           monster_type: type,
@@ -828,7 +882,7 @@ EXPERIENCE POINTS:
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
         } else {
-          console.log("[v0] NPC encounter created:", name, "| XP:", xp)
+          console.log("[v0] NPC encounter created (seeded from canon):", name, "| XP:", xp, "| hadCanonPortrait:", hasCanonPortrait)
         }
       }
     }
@@ -1182,16 +1236,18 @@ Respond ONLY with valid JSON, no other text:
           const portraitPrompt = portraitPrompts[npcName] ||
             `dark fantasy portrait of ${parsed.description || npcName}, dramatic Underdark lighting, detailed RPG character art`
 
-          // CANON PROTECTION: query first; only generate when there is no
-          // existing canon portrait, and never overwrite one.
+          // CANON IDENTITY SEEDING: gather canon assets across every row with
+          // this name; only generate when NO row has a portrait, and never
+          // overwrite one. The per-character row (if any) is reactivated below.
+          const { canon: npcCanon } = await fetchNpcCanonByName(supabase, npcName)
           const { data: existingNpc } = await supabase
             .from("npc_encounters")
-            .select("id, portrait_url")
+            .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
             .eq("name", npcName)
             .eq("character_id", playerCharacter.id)
             .maybeSingle()
 
-          const canonPortrait = existingNpc?.portrait_url?.trim() ? existingNpc.portrait_url : null
+          const canonPortrait = npcCanon.portrait_url && String(npcCanon.portrait_url).trim() ? npcCanon.portrait_url : null
 
           // Generate portrait via Fal only when no canon portrait exists.
           let autoPortraitUrl: string | null = null
@@ -1221,6 +1277,13 @@ Respond ONLY with valid JSON, no other text:
               is_active: true,
               description: parsed.description || undefined,
             }
+            // Backfill any canon asset this row is missing from other rows.
+            for (const f of NPC_CANON_FIELDS) {
+              const cur = (existingNpc as any)[f]
+              if ((!cur || !String(cur).trim()) && npcCanon[f]) update[f] = npcCanon[f]
+            }
+            const curConds = Array.isArray((existingNpc as any).conditions) ? (existingNpc as any).conditions : []
+            if (curConds.length === 0 && npcCanon.conditions?.length) update.conditions = npcCanon.conditions
             // Only set portrait_url when we generated one for an NPC that had none.
             if (!canonPortrait && autoPortraitUrl) {
               update.portrait_url = autoPortraitUrl
@@ -1230,11 +1293,18 @@ Respond ONLY with valid JSON, no other text:
               .update(update)
               .eq("id", existingNpc.id)
           } else {
+            // Seed the new row from the canon identity for this name.
             await supabase.from("npc_encounters").insert({
               character_id: playerCharacter.id,
               name: npcName,
               description: parsed.description || `${npcName} is speaking`,
-              portrait_url: autoPortraitUrl,
+              portrait_url: canonPortrait || autoPortraitUrl,
+              face_url: npcCanon.face_url,
+              voice_id: npcCanon.voice_id,
+              voice_description: npcCanon.voice_description,
+              idle_url: npcCanon.idle_url,
+              talking_url: npcCanon.talking_url,
+              conditions: npcCanon.conditions || [],
               is_active: true,
               hp_max: null,
               hp_current: null,

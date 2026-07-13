@@ -14,27 +14,7 @@ import { DetailedStats } from "./panels/detailed-stats"
 import { XPTracker } from "./xp-tracker"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
-
-// D&D 5E Conditions
-const DND_CONDITIONS = {
-  blinded: { name: "Blinded", color: "text-stone-400" },
-  charmed: { name: "Charmed", color: "text-pink-400" },
-  deafened: { name: "Deafened", color: "text-stone-400" },
-  frightened: { name: "Frightened", color: "text-purple-400" },
-  grappled: { name: "Grappled", color: "text-orange-400" },
-  incapacitated: { name: "Incapacitated", color: "text-red-400" },
-  invisible: { name: "Invisible", color: "text-cyan-400" },
-  paralyzed: { name: "Paralyzed", color: "text-yellow-400" },
-  petrified: { name: "Petrified", color: "text-stone-500" },
-  poisoned: { name: "Poisoned", color: "text-green-400" },
-  prone: { name: "Prone", color: "text-amber-400" },
-  restrained: { name: "Restrained", color: "text-orange-400" },
-  stunned: { name: "Stunned", color: "text-yellow-400" },
-  unconscious: { name: "Unconscious", color: "text-red-500" },
-  exhaustion: { name: "Exhaustion", color: "text-amber-600" },
-} as const
-
-type ConditionKey = keyof typeof DND_CONDITIONS
+import { ConditionBadges } from "@/components/conditions/condition-badges"
 
 interface RightColumnProps {
   characters: DBCharacter[]
@@ -151,7 +131,7 @@ age: (selectedCharacter as any).age,
     skills: selectedCharacter.skills || null,
     proficiencyBonus: selectedCharacter.proficiency_bonus,
     passivePerception: selectedCharacter.passive_perception,
-    conditions: ((selectedCharacter as any).conditions || []) as ConditionKey[],
+      conditions: ((selectedCharacter as any).conditions || []) as string[],
     abilities: {
       str: { base: (selectedCharacter as any).str_base || selectedCharacter.str_score, score: selectedCharacter.str_score, modifier: selectedCharacter.str_modifier },
       dex: { base: (selectedCharacter as any).dex_base || selectedCharacter.dex_score, score: selectedCharacter.dex_score, modifier: selectedCharacter.dex_modifier },
@@ -389,27 +369,7 @@ age: (selectedCharacter as any).age,
 
             {/* Conditions */}
             <div className="mt-2">
-              {character.conditions.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {character.conditions.map((condition) => (
-                    <span
-                      key={condition}
-                      className={cn(
-                        "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border",
-                        DND_CONDITIONS[condition]?.color || "text-stone-400",
-                        "border-current/30 bg-current/10"
-                      )}
-                    >
-                      {DND_CONDITIONS[condition]?.name || condition}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-400/70">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  <span>No conditions</span>
-                </div>
-              )}
+              <ConditionBadges conditions={character.conditions} emptyLabel="No conditions" />
             </div>
 
             {/* Reference stats: senses & skills (shown when present). Speed
