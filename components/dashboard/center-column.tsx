@@ -639,13 +639,14 @@ function FeaturedSpeaker({ speaker, line, hasOthers = false }: { speaker: NpcEnc
           headers: { "Content-Type": "application/json" },
           // Send the full voice contract the route expects: an explicit voice_id
           // if the NPC already has one, else the voice_description so the route
-          // can resolve + persist a voice. npcName drives the write-back across
-          // all rows sharing this NPC's name.
+          // can resolve a voice. npcId scopes any write-back to exactly this NPC
+          // row so a resolved voice is never smeared onto other characters.
           body: JSON.stringify({
             text: line,
             voiceId: speaker.voice_id ?? undefined,
             voiceDescription: speaker.voice_description ?? undefined,
             npcName: speaker.name,
+            npcId: speaker.id,
           }),
         })
         if (!res.ok || cancelled) {

@@ -754,42 +754,55 @@ EXPERIENCE POINTS:
 
       console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
 
-      // Generate portrait image via Fal
-      let portraitUrl: string | null = null
-      try {
-        const result = await fal.subscribe("fal-ai/flux/schnell", {
-          input: {
-            prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
-            image_size: "square_hd",
-            num_inference_steps: 4,
-            num_images: 1,
-          },
-        }) as any
-        if (result?.images && result.images.length > 0) {
-          portraitUrl = result.images[0].url
-          console.log("[v0] NPC portrait generated:", portraitUrl)
-        }
-      } catch (err) {
-        console.error("[v0] NPC portrait generation failed:", err)
-      }
-
-      // Check if this NPC already exists (might be returning)
+      // CANON PROTECTION: check for an existing portrait BEFORE generating.
+      // A canon portrait_url is the source of truth and must never be replaced
+      // by a freshly generated fal.media image, so we only generate when the
+      // NPC is new or its portrait_url is null/empty.
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
-        .select("id")
+        .select("id, portrait_url")
         .eq("name", name)
         .eq("character_id", playerCharacter.id)
-        .single()
+        .maybeSingle()
+
+      const hasCanonPortrait = !!existingNpc?.portrait_url?.trim()
+
+      let portraitUrl: string | null = null
+      if (hasCanonPortrait) {
+        console.log("[v0] Skipping portrait generation — canon portrait exists for:", name)
+      } else {
+        try {
+          const result = await fal.subscribe("fal-ai/flux/schnell", {
+            input: {
+              prompt: `Dark fantasy portrait: ${prompt}. Style: detailed RPG character/creature art, dramatic fantasy lighting, painterly, professional illustration.`,
+              image_size: "square_hd",
+              num_inference_steps: 4,
+              num_images: 1,
+            },
+          }) as any
+          if (result?.images && result.images.length > 0) {
+            portraitUrl = result.images[0].url
+            console.log("[v0] NPC portrait generated:", portraitUrl)
+          }
+        } catch (err) {
+          console.error("[v0] NPC portrait generation failed:", err)
+        }
+      }
 
       if (existingNpc) {
-        // Reactivate existing NPC
+        // Reactivate existing NPC. NEVER include portrait_url when a canon image
+        // already exists; only set it when we just generated one for an NPC that
+        // had none.
+        const update: Record<string, unknown> = {
+          is_active: true,
+          description: desc,
+        }
+        if (!hasCanonPortrait && portraitUrl) {
+          update.portrait_url = portraitUrl
+        }
         await supabase
           .from("npc_encounters")
-          .update({
-            is_active: true,
-            description: desc,
-            portrait_url: portraitUrl || undefined
-          })
+          .update(update)
           .eq("id", existingNpc.id)
         console.log("[v0] NPC reactivated:", name)
       } else {
@@ -1163,41 +1176,52 @@ Respond ONLY with valid JSON, no other text:
           const portraitPrompt = portraitPrompts[npcName] ||
             `dark fantasy portrait of ${parsed.description || npcName}, dramatic Underdark lighting, detailed RPG character art`
 
-          // Generate portrait via Fal
-          let autoPortraitUrl: string | null = null
-          try {
-            const result = await fal.subscribe("fal-ai/flux/schnell", {
-              input: {
-                prompt: `Dark fantasy portrait: ${portraitPrompt}. Style: detailed RPG character art, dramatic fantasy lighting, painterly, professional illustration.`,
-                image_size: "square_hd",
-                num_inference_steps: 4,
-                num_images: 1,
-              },
-            }) as any
-            if (result?.images?.[0]?.url) {
-              autoPortraitUrl = result.images[0].url
-              console.log("[v0] Auto-generated portrait for:", npcName)
-            }
-          } catch (err) {
-            console.error("[v0] Auto portrait generation failed:", err)
-          }
-
-          // Upsert NPC encounter in Supabase
+          // CANON PROTECTION: query first; only generate when there is no
+          // existing canon portrait, and never overwrite one.
           const { data: existingNpc } = await supabase
             .from("npc_encounters")
-            .select("id")
+            .select("id, portrait_url")
             .eq("name", npcName)
             .eq("character_id", playerCharacter.id)
-            .single()
+            .maybeSingle()
+
+          const canonPortrait = existingNpc?.portrait_url?.trim() ? existingNpc.portrait_url : null
+
+          // Generate portrait via Fal only when no canon portrait exists.
+          let autoPortraitUrl: string | null = null
+          if (canonPortrait) {
+            console.log("[v0] Skipping auto portrait — canon portrait exists for:", npcName)
+          } else {
+            try {
+              const result = await fal.subscribe("fal-ai/flux/schnell", {
+                input: {
+                  prompt: `Dark fantasy portrait: ${portraitPrompt}. Style: detailed RPG character art, dramatic fantasy lighting, painterly, professional illustration.`,
+                  image_size: "square_hd",
+                  num_inference_steps: 4,
+                  num_images: 1,
+                },
+              }) as any
+              if (result?.images?.[0]?.url) {
+                autoPortraitUrl = result.images[0].url
+                console.log("[v0] Auto-generated portrait for:", npcName)
+              }
+            } catch (err) {
+              console.error("[v0] Auto portrait generation failed:", err)
+            }
+          }
 
           if (existingNpc) {
+            const update: Record<string, unknown> = {
+              is_active: true,
+              description: parsed.description || undefined,
+            }
+            // Only set portrait_url when we generated one for an NPC that had none.
+            if (!canonPortrait && autoPortraitUrl) {
+              update.portrait_url = autoPortraitUrl
+            }
             await supabase
               .from("npc_encounters")
-              .update({
-                is_active: true,
-                portrait_url: autoPortraitUrl || undefined,
-                description: parsed.description || undefined,
-              })
+              .update(update)
               .eq("id", existingNpc.id)
           } else {
             await supabase.from("npc_encounters").insert({
@@ -1214,9 +1238,8 @@ Respond ONLY with valid JSON, no other text:
             })
           }
 
-          if (autoPortraitUrl) {
-            npcImageUrl = autoPortraitUrl
-          }
+          // Surface whichever portrait is authoritative (canon wins) to the UI.
+          npcImageUrl = canonPortrait || autoPortraitUrl || npcImageUrl
         }
       } catch (err) {
         console.error("[v0] NPC auto-detection failed:", err)
