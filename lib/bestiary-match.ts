@@ -113,8 +113,10 @@ export interface StatFieldDiff {
   /** characters-table column being written (score fields; modifiers derived). */
   key: string
   label: string
-  current: number | null
-  proposed: number | null
+  /** Numeric ability/AC/HP fields vs. free-text reference fields. */
+  kind: "number" | "text"
+  current: string | number | null
+  proposed: string | number | null
   /** True when the current value is a real, non-default (manually set) value. */
   isManuallySet: boolean
   /** True when the characters schema stores this field. */
@@ -140,11 +142,18 @@ function isSet(key: string, value: number | null | undefined): boolean {
   return def === undefined ? true : value !== def
 }
 
+/** A text reference field is "manually set" when it holds a non-empty string. */
+function isTextSet(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0
+}
+
 /**
  * Build the field-by-field diff between a character's current stats and a
- * bestiary entry. Supported fields are AC, HP, and the six ability scores.
- * Unsupported reference fields (speed/senses/skills/CR/XP) are included as
- * informational, non-writable rows so the DM can see them.
+ * bestiary entry. Numeric fields are AC, HP, and the six ability scores. The
+ * characters table now also stores reference text fields (speed, senses,
+ * skills, size, cr, languages, damage_resistances, damage_immunities,
+ * condition_immunities) which are mapped as writable text rows. XP is not a
+ * characters column, so it stays informational only.
  */
 export function buildStatDiff(
   current: Record<string, unknown>,
@@ -154,6 +163,10 @@ export function buildStatDiff(
     const v = current[k]
     return typeof v === "number" ? v : null
   }
+  const curText = (k: string): string | null => {
+    const v = current[k]
+    return typeof v === "string" && v.trim() ? v : null
+  }
 
   const writable: StatFieldDiff[] = []
 
@@ -161,9 +174,25 @@ export function buildStatDiff(
     writable.push({
       key,
       label,
+      kind: "number",
       current: cur(key),
       proposed: typeof proposed === "number" ? proposed : null,
       isManuallySet: isSet(key, cur(key)),
+      supported: true,
+    })
+  }
+
+  // Free-text reference field. Only proposes a value when the bestiary entry
+  // actually has a non-empty one, so blank source fields never overwrite.
+  const pushText = (key: string, label: string, source: unknown) => {
+    const proposed = typeof source === "string" && source.trim() ? source.trim() : null
+    writable.push({
+      key,
+      label,
+      kind: "text",
+      current: curText(key),
+      proposed,
+      isManuallySet: isTextSet(current[key]),
       supported: true,
     })
   }
@@ -178,33 +207,42 @@ export function buildStatDiff(
   pushScore("wis_score", "WIS", entry.wis ?? null)
   pushScore("cha_score", "CHA", entry.cha ?? null)
 
+  // Direct-map reference fields.
+  pushText("speed", "Speed", entry.speed)
+  pushText("senses", "Senses", entry.senses)
+  pushText("skills", "Skills", entry.skills)
+  pushText("size", "Size", entry.size)
+  pushText("cr", "CR", entry.cr)
+  // Optional fields: only mapped when the bestiary row provides them.
+  pushText("languages", "Languages", entry.languages)
+  pushText("damage_resistances", "Damage Resist.", entry.damage_resistances)
+  pushText("damage_immunities", "Damage Immun.", entry.damage_immunities)
+  pushText("condition_immunities", "Condition Immun.", entry.condition_immunities)
+
   const info: { label: string; value: string }[] = []
-  const addInfo = (label: string, value: unknown) => {
-    if (value !== null && value !== undefined && `${value}`.trim()) {
-      info.push({ label, value: `${value}` })
-    }
+  if (entry.xp !== null && entry.xp !== undefined && `${entry.xp}`.trim()) {
+    info.push({ label: "XP", value: `${entry.xp}` })
   }
-  addInfo("CR", entry.cr)
-  addInfo("XP", entry.xp)
-  addInfo("Speed", entry.speed)
-  addInfo("Senses", entry.senses)
-  addInfo("Skills", entry.skills)
 
   return { writable, info }
 }
 
 /**
  * Given the set of writable diffs the user approved (by key), produce the
- * partial character patch, deriving ability modifiers from scores.
+ * partial character patch, deriving ability modifiers from numeric scores.
+ * Numeric fields yield numbers (plus derived modifiers); text fields yield
+ * strings.
  */
-export function buildPatch(approved: StatFieldDiff[]): Record<string, number> {
-  const patch: Record<string, number> = {}
+export function buildPatch(approved: StatFieldDiff[]): Record<string, string | number> {
+  const patch: Record<string, string | number> = {}
   for (const field of approved) {
     if (field.proposed === null) continue
     patch[field.key] = field.proposed
-    const scoreMatch = field.key.match(/^(str|dex|con|int|wis|cha)_score$/)
-    if (scoreMatch) {
-      patch[`${scoreMatch[1]}_modifier`] = abilityModifier(field.proposed)
+    if (field.kind === "number" && typeof field.proposed === "number") {
+      const scoreMatch = field.key.match(/^(str|dex|con|int|wis|cha)_score$/)
+      if (scoreMatch) {
+        patch[`${scoreMatch[1]}_modifier`] = abilityModifier(field.proposed)
+      }
     }
   }
   return patch
