@@ -6,51 +6,124 @@ import { cn } from "@/lib/utils"
 import { MUSIC_LIBRARY, getTrackById, type MusicTrack } from "@/lib/music-library"
 
 interface DynamicMusicProps {
-  /** Current location/environment name (drives track selection) */
+  /** Canonical session location name (drives the base track pool). */
   location?: string | null
   /** True when an active hostile NPC is present (switches to combat music) */
   inCombat?: boolean
+  /**
+   * Non-combat mood within the location pool. When location hasn't hydrated
+   * from the session yet (null/undefined), audio selection is deferred so it
+   * never keys off a client-side default like "Greenmere Village".
+   */
+  mood?: MusicMood
   className?: string
 }
 
-// Location keyword → track id. First match wins. All ids exist in MUSIC_LIBRARY.
-const LOCATION_TRACKS: { match: RegExp; trackId: string }[] = [
-  { match: /slave pen|\bjail\b|\bcell\b|prison|captiv|manacl/i, trackId: "castle-jail" },
-  { match: /velkynvelve|outpost|drow|spider/i, trackId: "spiders-den" },
-  { match: /sewer/i, trackId: "sewers" },
-  { match: /tunnel|underdark|cavern|\bcave\b|abyss|wastes|deep/i, trackId: "cavern-of-lost-souls" },
-  { match: /forest|wood|grove|fey/i, trackId: "forest-night" },
-  { match: /temple|shrine|altar/i, trackId: "defiled-temple" },
-  { match: /tavern|\binn\b|hearth/i, trackId: "the-hearth-inn" },
-  { match: /town|village|market|hamlet/i, trackId: "country-village" },
-  { match: /tomb|crypt|grave|barrow/i, trackId: "graveyard" },
-  { match: /throne|court|palace|castle/i, trackId: "court-of-the-count" },
+// Each location maps to a POOL of thematically-consistent tracks. Mood/combat
+// selection happens WITHIN a pool (base vs tense vs combat) so the music never
+// jumps to another location's theme. First match wins; all ids exist in
+// MUSIC_LIBRARY. `combat`/`tense` fall back to `base` when omitted.
+interface LocationPool {
+  label: string
+  match: RegExp
+  base: string
+  tense?: string
+  combat?: string
+}
+
+// Shared dark combat theme for pools with no location-specific battle track.
+const DEFAULT_COMBAT_TRACK = "there-be-dragons"
+// Neutral dark-ambient default when the location is unknown or unmapped — never
+// a village/tavern track. Fits the Underdark campaign's baseline dread.
+const DEFAULT_TRACK = "dungeon-i"
+
+const LOCATION_POOLS: LocationPool[] = [
+  { label: "prison", match: /slave pen|\bjail\b|\bcell\b|prison|captiv|manacl/i, base: "castle-jail", tense: "castle-jail", combat: DEFAULT_COMBAT_TRACK },
+  { label: "velkynvelve", match: /velkynvelve|outpost|drow|spider/i, base: "spiders-den", tense: "sleeping-ogre", combat: DEFAULT_COMBAT_TRACK },
+  { label: "sewer", match: /sewer/i, base: "sewers", combat: DEFAULT_COMBAT_TRACK },
+  { label: "underdark", match: /tunnel|underdark|cavern|\bcave\b|abyss|wastes|deep|darklake/i, base: "cavern-of-lost-souls", tense: "sleeping-dragon", combat: DEFAULT_COMBAT_TRACK },
+  { label: "shadowfell", match: /shadowfell|shadow realm/i, base: "shadowfell", combat: DEFAULT_COMBAT_TRACK },
+  { label: "forest", match: /forest|wood|grove|fey/i, base: "forest-night", tense: "dusk-of-the-dryad", combat: DEFAULT_COMBAT_TRACK },
+  { label: "temple", match: /temple|shrine|altar/i, base: "defiled-temple", combat: DEFAULT_COMBAT_TRACK },
+  { label: "tavern", match: /tavern|\binn\b|hearth/i, base: "the-hearth-inn", combat: DEFAULT_COMBAT_TRACK },
+  { label: "village", match: /town|village|market|hamlet/i, base: "country-village", tense: "dark-and-stormy", combat: "burning-village" },
+  { label: "tomb", match: /tomb|crypt|grave|barrow/i, base: "graveyard", combat: DEFAULT_COMBAT_TRACK },
+  { label: "court", match: /throne|court|palace|castle/i, base: "court-of-the-count", combat: DEFAULT_COMBAT_TRACK },
 ]
 
-const COMBAT_TRACK = "there-be-dragons"
-const DEFAULT_TRACK = "dungeon-i" // dark underground ambience — fits the Underdark campaign
+export type MusicMood = "ambient" | "tense" | "combat"
 
-function pickTrack(location: string | null | undefined, inCombat: boolean): MusicTrack {
-  if (inCombat) return getTrackById(COMBAT_TRACK) || MUSIC_LIBRARY[0]
-  const loc = location || ""
-  for (const entry of LOCATION_TRACKS) {
-    if (entry.match.test(loc)) {
-      return getTrackById(entry.trackId) || getTrackById(DEFAULT_TRACK)!
+export interface MusicSelection {
+  track: MusicTrack
+  /** Location pool label used, or "neutral" when no pool matched. */
+  locationLabel: string
+  mood: MusicMood
+}
+
+/**
+ * Resolve the music track from the canonical location and mood.
+ * HIERARCHY:
+ *   1. The location string selects the base pool (never a client default).
+ *   2. Mood/combat picks a track WITHIN that pool only.
+ *   3. If no pool matches, fall back to a neutral dark-ambient default —
+ *      never a random or village track.
+ */
+export function selectMusic(
+  location: string | null | undefined,
+  inCombat: boolean,
+  mood: MusicMood = "ambient",
+): MusicSelection {
+  const loc = (location || "").trim()
+  const effectiveMood: MusicMood = inCombat ? "combat" : mood
+
+  if (loc) {
+    for (const pool of LOCATION_POOLS) {
+      if (pool.match.test(loc)) {
+        const trackId =
+          effectiveMood === "combat"
+            ? pool.combat || pool.base
+            : effectiveMood === "tense"
+              ? pool.tense || pool.base
+              : pool.base
+        const track = getTrackById(trackId) || getTrackById(pool.base) || getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
+        return { track, locationLabel: pool.label, mood: effectiveMood }
+      }
     }
   }
-  return getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
+
+  // No location or no mapped pool → neutral dark-ambient (or shared combat theme).
+  const fallbackId = effectiveMood === "combat" ? DEFAULT_COMBAT_TRACK : DEFAULT_TRACK
+  const track = getTrackById(fallbackId) || getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
+  return { track, locationLabel: "neutral", mood: effectiveMood }
 }
 
 const BASE_VOLUME = 0.45
 
-export function DynamicMusic({ location, inCombat = false, className }: DynamicMusicProps) {
+export function DynamicMusic({ location, inCombat = false, mood = "ambient", className }: DynamicMusicProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const fadeTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const [enabled, setEnabled] = useState(false) // user must start playback (browser autoplay policy)
   const [muted, setMuted] = useState(false)
-  const [current, setCurrent] = useState<MusicTrack>(() => pickTrack(location, inCombat))
 
-  const target = pickTrack(location, inCombat)
+  // Location must hydrate from the active session before we choose audio.
+  // Until then, selectMusic holds at the neutral dark-ambient default rather
+  // than keying off any client-side default (the root cause of village music).
+  const selection = selectMusic(location, inCombat, mood)
+  const target = selection.track
+
+  const [current, setCurrent] = useState<MusicTrack>(target)
+
+  // Log every resolved selection so future misfires are diagnosable.
+  const lastLogged = useRef<string>("")
+  useEffect(() => {
+    const sig = `${selection.locationLabel}|${selection.mood}|${target.id}`
+    if (sig !== lastLogged.current) {
+      lastLogged.current = sig
+      console.log(
+        `[Music] location=${location ?? "(unhydrated)"} pool=${selection.locationLabel} mood=${selection.mood} track=${target.id}`,
+      )
+    }
+  }, [selection.locationLabel, selection.mood, target.id, location])
 
   // Smoothly ramp the audio volume to a target level, then run an optional callback.
   function fade(to: number, ms: number, done?: () => void) {
