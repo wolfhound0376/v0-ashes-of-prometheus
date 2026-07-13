@@ -804,9 +804,11 @@ if (error) {
         onToggleTTSMute={toggleTTSMute}
       />
 
-      {/* Scene-driven background music */}
+      {/* Scene-driven background music. Pass ONLY the canonical DB location
+          (never the client-side environmentData default) so music keys off the
+          session's real location and defers to neutral until it hydrates. */}
       <DynamicMusic
-        location={currentEnvironment?.name || environmentData.location}
+        location={currentEnvironment?.name ?? null}
         inCombat={inCombat}
       />
     </div>
