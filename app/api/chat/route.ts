@@ -752,6 +752,23 @@ EXPERIENCE POINTS:
   // panel can show only the currently-relevant NPC(s) instead of every one ever met.
   const encounteredThisTurn = new Set<string>()
 
+  // Build a set of PLAYER character names (there can be several party members,
+  // all with is_player = true) so we never spawn an NPC encounter card for a
+  // player character when Malachar narrates them speaking or acting.
+  const playerNames = new Set<string>()
+  {
+    const { data: playerRows } = await supabase
+      .from("characters")
+      .select("name")
+      .eq("is_player", true)
+    for (const row of playerRows ?? []) {
+      const n = (row?.name ?? "").trim().toLowerCase()
+      if (n) playerNames.add(n)
+    }
+  }
+  // True when the given name belongs to a player character (case-insensitive).
+  const isPlayerName = (candidate: string) => playerNames.has(candidate.trim().toLowerCase())
+
   // Parse and process inventory tags from the response
   if (playerCharacter?.id) {
     // Handle ITEM_ADD tags
@@ -1065,6 +1082,13 @@ EXPERIENCE POINTS:
       const cr = crStr ? parseFloat(crStr.trim()) : undefined
       const xp = xpStr ? parseInt(xpStr.trim()) : undefined
       const type = monsterType ? monsterType.trim() : undefined
+
+      // Never treat a player character as an NPC, even if Malachar mistakenly
+      // emits an encounter tag for a party member.
+      if (isPlayerName(name)) {
+        console.log("[v0] Skipping NPC_ENCOUNTER for player character:", name)
+        continue
+      }
 
       encounteredThisTurn.add(name)
 
@@ -1610,7 +1634,9 @@ Respond ONLY with valid JSON, no other text:
         const detectionText = (detectionBlock && detectionBlock.type === "text") ? detectionBlock.text : ""
         const parsed = JSON.parse(detectionText.trim())
 
-        if (parsed.npc) {
+        if (parsed.npc && isPlayerName(parsed.npc)) {
+          console.log("[v0] Skipping auto-detected speaker (player character):", parsed.npc)
+        } else if (parsed.npc) {
           const npcName: string = parsed.npc
           encounteredThisTurn.add(npcName)
           console.log("[v0] Auto-detected speaking NPC:", npcName)
