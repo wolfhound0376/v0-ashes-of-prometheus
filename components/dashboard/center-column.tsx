@@ -80,6 +80,7 @@ interface NpcEncounter {
 }
 
 interface DialogueEntry {
+  id?: string
   speaker: string
   text: string
 }

@@ -18,6 +18,36 @@ import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
 
+// A dialogue message carries the DB row `id` so we can dedupe. Optimistic
+// entries added before the row exists get a temporary id and `pending: true`.
+type DialogueMessage = { id: string; speaker: string; text: string; pending?: boolean }
+
+// Merge one dialogue row into state with id-based dedupe. This is the single
+// funnel every append goes through so a message can never render twice:
+//   1. If a message with the same id is already present (e.g. the realtime
+//      echo of a row we already have, or a duplicate delivery from a stacked
+//      channel), state is returned unchanged.
+//   2. If a still-pending optimistic entry matches the same speaker+text, it is
+//      upgraded in place — its temporary id is swapped for the real DB id —
+//      instead of being appended a second time.
+//   3. Otherwise the message is appended.
+function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): DialogueMessage[] {
+  if (prev.some((m) => m.id === incoming.id)) return prev
+  const pendingIdx = prev.findIndex(
+    (m) => m.pending && m.speaker === incoming.speaker && m.text === incoming.text,
+  )
+  if (pendingIdx !== -1) {
+    const next = prev.slice()
+    next[pendingIdx] = { id: incoming.id, speaker: incoming.speaker, text: incoming.text }
+    return next
+  }
+  return [...prev, incoming]
+}
+
+// Stable unique id for optimistic / client-only entries.
+const tempId = () =>
+  `optimistic-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random()}`
+
 export default function DashboardPage() {
   const supabase = createClient()
 
@@ -41,7 +71,7 @@ export default function DashboardPage() {
 
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
-  const [dialogue, setDialogue] = useState<{ speaker: string; text: string }[]>([])
+  const [dialogue, setDialogue] = useState<DialogueMessage[]>([])
   const [npcImageUrl, setNpcImageUrl] = useState<string | null>(null)
   const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
   // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
@@ -275,27 +305,32 @@ export default function DashboardPage() {
     async function fetchDialogue() {
       const { data, error } = await supabase
         .from('dialogue')
-        .select('speaker, text')
+        .select('id, speaker, text')
         .order('created_at', { ascending: true })
         .limit(50)
 
 if (error) {
         console.error('Error fetching dialogue:', error)
       } else if (data) {
-        setDialogue(data)
+        setDialogue(data as DialogueMessage[])
       }
     }
     fetchDialogue()
 
-    // Subscribe to real-time updates for dialogue and environment
+    // Subscribe to real-time updates for dialogue and environment.
+    // Every INSERT is funneled through mergeDialogue so an echo of a row we
+    // already have (optimistic append, or a duplicate delivery) never
+    // double-appends. Dedupe is by the row's real `id`.
     const dialogueChannel = supabase
       .channel('dialogue-changes')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'dialogue' },
-        (payload) => {
-          const newEntry = payload.new as { speaker: string; text: string }
-          setDialogue(prev => [...prev, { speaker: newEntry.speaker, text: newEntry.text }])
+        (payload: { new: Record<string, any> }) => {
+          const newEntry = payload.new as { id: string; speaker: string; text: string }
+          setDialogue(prev =>
+            mergeDialogue(prev, { id: newEntry.id, speaker: newEntry.speaker, text: newEntry.text }),
+          )
         }
       )
       .subscribe()
@@ -468,15 +503,17 @@ if (error) {
       const text = dialogueInput.trim()
       setDialogueInput("")
 
-      // Optimistically add player message to dialogue immediately
+      // Optimistically add player message to dialogue immediately. It is marked
+      // pending so the realtime echo of the persisted row reconciles onto it by
+      // id instead of appending a duplicate.
       const playerName = selectedCharacter?.name || "Player"
-      setDialogue(prev => [...prev, { speaker: playerName, text }])
+      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
 
       // Send to the Lich
       const response = await sendToLich(text)
       if (response?.text) {
-        // Optimistically add Malachar's response
-        setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
+        // Optimistically add Malachar's response (also pending → reconciled by id)
+        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
 
         // Update images if returned
         if (response.npcImageUrl) {
@@ -679,16 +716,17 @@ if (error) {
             npcEncounters={npcEncounters}
             dialogue={dialogue}
           onSendToLich={async (message) => {
-            // Optimistically add player message to dialogue immediately
+            // Optimistically add player message to dialogue immediately (pending
+            // → reconciled by id when the realtime echo of the row arrives).
             const playerName = selectedCharacter?.name || "Player"
-            setDialogue(prev => [...prev, { speaker: playerName, text: message }])
+            setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
 
             // Send to Lich
             const response = await sendToLich(message)
             if (response) {
-              // Optimistically add Malachar's response to dialogue
+              // Optimistically add Malachar's response to dialogue (also pending)
               if (response.text) {
-                setDialogue(prev => [...prev, { speaker: "Malachar", text: response.text }])
+                setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
               }
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {
@@ -773,11 +811,14 @@ if (error) {
         .eq('id', characterId)
       if (!error) {
         fetchCharacterData()
-        // Notify the Lich
-        setDialogue(prev => [...prev, {
+        // Notify the Lich. This is a client-only notice (never written to the
+        // dialogue table), so it gets a stable id and is NOT pending — there is
+        // no realtime echo to reconcile it against.
+        setDialogue(prev => mergeDialogue(prev, {
+          id: tempId(),
           speaker: "System",
-          text: `${character.name} has reached Level ${character.level + 1}!`
-        }])
+          text: `${character.name} has reached Level ${character.level + 1}!`,
+        }))
       }
     }
   }}
