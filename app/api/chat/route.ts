@@ -59,6 +59,43 @@ async function fetchNpcCanonByName(
   return { canon, rowCount: rows.length }
 }
 
+// Look up a character row by name (case-insensitive) with NO is_player filter,
+// so PLAYER rows are visible. Tiered match: exact -> prefix -> contains. Returns
+// the matched row's identity flags, or null when no character shares the name.
+// This is the gate that stops Malachar from turning a player character (e.g.
+// "Scott") into an NPC encounter with invented stats and generated art.
+async function findCharacterByName(
+  supabase: any,
+  name: string,
+): Promise<{ id: string; name: string; is_player: boolean | null; character_type: string | null } | null> {
+  const raw = (name || "").trim()
+  if (!raw) return null
+  // Escape LIKE wildcards so a stray % or _ in a name can't broaden the match.
+  const esc = raw.replace(/[\\%_]/g, (m) => `\\${m}`)
+  const patterns = [esc, `${esc}%`, `%${esc}%`]
+  for (const pattern of patterns) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name, is_player, character_type")
+      .ilike("name", pattern)
+      .limit(1)
+      .maybeSingle()
+    if (data) {
+      return data as {
+        id: string
+        name: string
+        is_player: boolean | null
+        character_type: string | null
+      }
+    }
+  }
+  return null
+}
+
+const isPlayerCharacterRow = (
+  row: { is_player: boolean | null; character_type: string | null } | null,
+): boolean => !!row && (row.is_player === true || row.character_type === "player")
+
 export async function POST(req: Request) {
   const { message, campaignId = "abyss" } = await req.json()
 
@@ -127,6 +164,30 @@ export async function POST(req: Request) {
     `| via: ${playerResolveVia}`,
     "| activeSessionId:", activeSessionId ?? "NONE",
   )
+
+  // Fetch the full player roster (every character_type='player' row) so Malachar
+  // knows which names belong to real humans. This is injected into the system
+  // prompt with a hard rule forbidding him from inventing their dialogue,
+  // backstory, images, or stats — or spawning encounters for them.
+  const { data: playerRosterRows } = await supabase
+    .from("characters")
+    .select("name")
+    .eq("character_type", "player")
+  const playerRoster = Array.from(
+    new Set(
+      (playerRosterRows || [])
+        .map((r: { name: string | null }) => (r.name || "").trim())
+        .filter((n: string) => n.length > 0),
+    ),
+  )
+  const playerRosterBlock =
+    playerRoster.length > 0
+      ? `=== PLAYER CHARACTERS — REAL HUMANS, NEVER NPCs ===
+These are player characters controlled by real humans: ${playerRoster.join(", ")}. You must NEVER invent their dialogue, backstory, images, or statistics, and never create encounters for them. When one player addresses another player, narrate the scene briefly as DM and leave the addressed player to answer for themselves — they have their own dashboard.
+=== END PLAYER CHARACTERS ===`
+      : ""
+
+  console.log("[v0] chat: player roster:", playerRoster.length ? playerRoster.join(", ") : "(none)")
 
   // Fetch the character's CURRENT inventory so it can be injected into the
   // narrator prompt as the authoritative list of what they possess this turn.
@@ -232,6 +293,8 @@ This is an ONGOING session already in progress. The conversation history above i
 - Only set or re-establish a scene when the player has just ARRIVED at a new location, or when there is no prior history (a true session start).
 - NEVER reuse an opening line, sentence, or phrasing you have already used earlier in this session. Vary your response every single turn.
 - If the player's latest message is a "[Dice Roll]" with no stated action, resolve the action that roll was for and narrate the OUTCOME. Do NOT re-describe the room or restate the current situation.
+
+${playerRosterBlock}
 
 === CRITICAL OUTPUT RULES — READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
@@ -855,6 +918,18 @@ EXPERIENCE POINTS:
     for (const match of npcEncounterMatches) {
       const [, npcName, description, portraitPrompt, crStr, xpStr, monsterType] = match
       const name = npcName.trim()
+
+      // PLAYER GUARD: before touching npc_encounters or generating any art, check
+      // the characters table for a name match with NO is_player filter. If the
+      // matched row is a real player character, skip the encounter entirely — no
+      // insert, no stat generation, no Fal image call. This stops Malachar from
+      // turning another player (e.g. "Scott") into an NPC with invented HP/art.
+      const matchedCharacter = await findCharacterByName(supabase, name)
+      if (isPlayerCharacterRow(matchedCharacter)) {
+        console.log("[v0] NPC_ENCOUNTER ignored — name matches a PLAYER character:", name)
+        continue
+      }
+
       encounteredThisTurn.add(name)
       const desc = description.trim()
       const prompt = portraitPrompt.trim()
@@ -1281,7 +1356,13 @@ Respond ONLY with valid JSON, no other text:
 
         const parsed = JSON.parse(detectionResult.text.trim())
 
-        if (parsed.npc) {
+        // PLAYER GUARD: the auto-detector can latch onto a player's name in
+        // quoted speech. Match the characters table (no is_player filter) and
+        // bail before any insert or art generation if it's a real player.
+        const autoMatchedCharacter = parsed.npc ? await findCharacterByName(supabase, parsed.npc) : null
+        if (parsed.npc && isPlayerCharacterRow(autoMatchedCharacter)) {
+          console.log("[v0] Auto-detected speaker is a PLAYER character — skipping encounter:", parsed.npc)
+        } else if (parsed.npc) {
           const npcName: string = parsed.npc
           encounteredThisTurn.add(npcName)
           console.log("[v0] Auto-detected speaking NPC:", npcName)
