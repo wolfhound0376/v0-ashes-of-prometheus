@@ -24,6 +24,7 @@ import { Sun, MessageSquare, Volume2, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface DialogueEntry {
+  id?: string
   speaker: string
   text: string
 }
@@ -206,7 +207,7 @@ export function LeftColumn({
           {dialogue.map((entry, index) => {
             const isMalachar = entry.speaker === "Malachar"
             return (
-              <div key={index} className="text-sm">
+              <div key={entry.id ?? index} className="text-sm">
                 <span
                   className={`font-serif font-semibold ${
                     entry.speaker === "You" ? "text-[#7aa8c8]" :

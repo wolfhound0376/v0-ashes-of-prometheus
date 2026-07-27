@@ -9,7 +9,14 @@ const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 import { buildWorldContext, formatWorldContextForAI } from "@/lib/world-ai/world-context"
-import { CAMPAIGNS, ABYSS_SCAVENGED_ITEMS_TABLE, formatRollTable } from "@/lib/world-ai/campaigns"
+import {
+  CAMPAIGNS,
+  ABYSS_SCAVENGED_ITEMS_TABLE,
+  formatRollTable,
+  getCampaignNpcStats,
+  crAppropriateHp,
+  type NpcStatBlock,
+} from "@/lib/world-ai/campaigns"
 import { canonicalizeCondition } from "@/lib/conditions"
 import * as fal from "@fal-ai/serverless-client"
 
@@ -58,6 +65,136 @@ async function fetchNpcCanonByName(
   canon.conditions = condRow ? condRow.conditions : []
   return { canon, rowCount: rows.length }
 }
+
+// Resolved stat block for an encounter, plus provenance so callers know whether
+// the numbers are authoritative or improvised, and whether the NPC is a
+// non-combatant ally/neutral (who should NOT get a monster HP bar by default).
+type ResolvedNpcStats = {
+  ac: number | null
+  hp: number | null
+  cr: number | null
+  xp: number | null
+  creatureType: string | null
+  ally: boolean
+  source: "bestiary" | "campaign" | "improvised"
+}
+
+// Resolve real creature stats in strict priority order — this is the fix for
+// the "every NPC has 75 HP" bug. There is NO silent default:
+//   (a) the `bestiary` table by name (case-insensitive);
+//   (b) the named campaign stat blocks (Eldeth AC12/HP16, Derendil AC13/HP45…);
+//   (c) only if truly unknown, a CR-appropriate improvised value, flagged so
+//       Malachar can state he is improvising the stat block.
+// `crHint`/`xpHint` come from an explicit [NPC_ENCOUNTER:] tag and seed the
+// improvised tier only.
+async function resolveNpcStats(
+  supabase: any,
+  name: string,
+  crHint?: number,
+  xpHint?: number,
+): Promise<ResolvedNpcStats> {
+  // (a) Bestiary — authoritative Monster Manual stats.
+  const { data: beast } = await supabase
+    .from("bestiary")
+    .select("ac, hp, cr, xp, creature_type")
+    .ilike("name", name)
+    .limit(1)
+    .maybeSingle()
+  if (beast) {
+    const crNum = typeof beast.cr === "string" ? parseFloat(beast.cr) : beast.cr
+    return {
+      ac: beast.ac ?? null,
+      hp: beast.hp ?? null,
+      cr: Number.isFinite(crNum) ? crNum : null,
+      xp: beast.xp ?? null,
+      creatureType: beast.creature_type ?? null,
+      // Bestiary prisoner-allies (e.g. deep dwarf/gnome/myconid entries) are not
+      // inherently combatants, but bestiary combat creatures are.
+      ally: false,
+      source: "bestiary",
+    }
+  }
+
+  // (b) Named campaign NPCs.
+  const campaign: NpcStatBlock | null = getCampaignNpcStats(name)
+  if (campaign) {
+    return {
+      ac: campaign.ac,
+      hp: campaign.hp,
+      cr: campaign.cr ?? null,
+      xp: campaign.xp ?? null,
+      creatureType: campaign.creatureType ?? null,
+      ally: !!campaign.ally,
+      source: "campaign",
+    }
+  }
+
+  // (c) Improvised — CR-appropriate, never a silent 75.
+  const cr = crHint
+  return {
+    ac: null,
+    hp: crAppropriateHp(cr),
+    cr: cr ?? null,
+    xp: xpHint ?? null,
+    creatureType: null,
+    ally: false,
+    source: "improvised",
+  }
+}
+
+// Find the single SHARED active encounter row for a name (case-insensitive),
+// regardless of which character engaged it. This is the read used by the
+// damage/leave handlers so all players act on one truth row.
+async function findSharedActiveEncounter(supabase: any, name: string) {
+  const { data } = await supabase
+    .from("npc_encounters")
+    .select("id, hp_current, hp_max, xp_value, is_active, name")
+    .ilike("name", name)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data as
+    | { id: string; hp_current: number | null; hp_max: number | null; xp_value: number | null; is_active: boolean; name: string }
+    | null
+}
+
+// Look up a character row by name (case-insensitive) with NO is_player filter,
+// so PLAYER rows are visible. Tiered match: exact -> prefix -> contains. Returns
+// the matched row's identity flags, or null when no character shares the name.
+// This is the gate that stops Malachar from turning a player character (e.g.
+// "Scott") into an NPC encounter with invented stats and generated art.
+async function findCharacterByName(
+  supabase: any,
+  name: string,
+): Promise<{ id: string; name: string; is_player: boolean | null; character_type: string | null } | null> {
+  const raw = (name || "").trim()
+  if (!raw) return null
+  // Escape LIKE wildcards so a stray % or _ in a name can't broaden the match.
+  const esc = raw.replace(/[\\%_]/g, (m) => `\\${m}`)
+  const patterns = [esc, `${esc}%`, `%${esc}%`]
+  for (const pattern of patterns) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name, is_player, character_type")
+      .ilike("name", pattern)
+      .limit(1)
+      .maybeSingle()
+    if (data) {
+      return data as {
+        id: string
+        name: string
+        is_player: boolean | null
+        character_type: string | null
+      }
+    }
+  }
+  return null
+}
+
+const isPlayerCharacterRow = (
+  row: { is_player: boolean | null; character_type: string | null } | null,
+): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
   const { message, campaignId = "abyss" } = await req.json()
@@ -128,6 +265,30 @@ export async function POST(req: Request) {
     "| activeSessionId:", activeSessionId ?? "NONE",
   )
 
+  // Fetch the full player roster (every character_type='player' row) so Malachar
+  // knows which names belong to real humans. This is injected into the system
+  // prompt with a hard rule forbidding him from inventing their dialogue,
+  // backstory, images, or stats — or spawning encounters for them.
+  const { data: playerRosterRows } = await supabase
+    .from("characters")
+    .select("name")
+    .eq("character_type", "player")
+  const playerRoster = Array.from(
+    new Set(
+      (playerRosterRows || [])
+        .map((r: { name: string | null }) => (r.name || "").trim())
+        .filter((n: string) => n.length > 0),
+    ),
+  )
+  const playerRosterBlock =
+    playerRoster.length > 0
+      ? `=== PLAYER CHARACTERS — REAL HUMANS, NEVER NPCs ===
+These are player characters controlled by real humans: ${playerRoster.join(", ")}. You must NEVER invent their dialogue, backstory, images, or statistics, and never create encounters for them. When one player addresses another player, narrate the scene briefly as DM and leave the addressed player to answer for themselves — they have their own dashboard.
+=== END PLAYER CHARACTERS ===`
+      : ""
+
+  console.log("[v0] chat: player roster:", playerRoster.length ? playerRoster.join(", ") : "(none)")
+
   // Fetch the character's CURRENT inventory so it can be injected into the
   // narrator prompt as the authoritative list of what they possess this turn.
   const { data: currentInventory } = playerCharacter?.id
@@ -193,6 +354,29 @@ WORKED EXAMPLES (follow this mapping exactly):
   )
   const worldContextText = formatWorldContextForAI(worldContext)
 
+  // Per-encounter stat injection (replaces the old hardcoded Hook Horror block).
+  // Read the SHARED active encounters — no character_id filter — so every
+  // player's narrator sees the same combatants with the same real HP/AC. Only
+  // rows that actually carry an HP bar (combatants) are listed as stat blocks.
+  const { data: activeNpcRows } = await supabase
+    .from("npc_encounters")
+    .select("name, hp_current, hp_max, challenge_rating, monster_type")
+    .eq("is_active", true)
+  const combatantRows = (activeNpcRows || []).filter(
+    (n: any) => n.hp_max !== null && n.hp_max !== undefined,
+  )
+  const activeNpcStatsBlock = combatantRows.length
+    ? `=== CURRENT NPC STATS — AUTHORITATIVE (live from database) ===
+These are the ONLY stat blocks in play. Never invent HP/AC for an NPC not listed here; if a new creature enters combat, emit an [NPC_ENCOUNTER:] tag and the system injects its real stats next turn. Never assume a default like 75 HP.
+${combatantRows
+  .map(
+    (n: any) =>
+      `- ${n.name}${n.monster_type ? ` (${n.monster_type})` : ""}: ${n.hp_current ?? n.hp_max}/${n.hp_max} HP${n.challenge_rating ? ` | CR ${n.challenge_rating}` : ""}`,
+  )
+  .join("\n")}
+=== END CURRENT NPC STATS ===`
+    : ""
+
   // Build conversation history for the AI
   const conversationHistory = (recentDialogue || [])
     .reverse()
@@ -232,6 +416,8 @@ This is an ONGOING session already in progress. The conversation history above i
 - Only set or re-establish a scene when the player has just ARRIVED at a new location, or when there is no prior history (a true session start).
 - NEVER reuse an opening line, sentence, or phrasing you have already used earlier in this session. Vary your response every single turn.
 - If the player's latest message is a "[Dice Roll]" with no stated action, resolve the action that roll was for and narrate the OUTCOME. Do NOT re-describe the room or restate the current situation.
+
+${playerRosterBlock}
 
 === CRITICAL OUTPUT RULES — READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
@@ -301,17 +487,12 @@ CRITICAL HITS:
 - On a natural 20 attack, double the damage DICE (not the modifier). Example: 1d8+4 becomes 2d8+4.
 - Roll the doubled dice and narrate the critical hit, then emit [NPC_DAMAGE:] with the total.
 
-CURRENT NPC STATS (Hook Horror):
-- AC: 15
-- Attack: +7 to hit
-- Damage: 1d8+4 (bite or claw) + 2d6 (barbed leg, once per combat)
-- HP: 75 max
-- Conditions: none
+${activeNpcStatsBlock}
 
-WORKED EXAMPLE — TWO-TURN COMBAT:
+WORKED EXAMPLE — TWO-TURN COMBAT (illustrative mechanics only; use the CURRENT NPC STATS above for real numbers):
 
 Turn 1:
-"The Hook Horror's mandibles snap. You have an opening. What do you do?"
+"The creature's mandibles snap. You have an opening. What do you do?"
 [Player: "I attack with my dagger"]
 "Roll 1d20 + your attack modifier."
 [Player: "I rolled 22"]
@@ -320,7 +501,7 @@ Turn 1:
 "Your dagger slides between its chitinous plates, drawing ichor. The creature shrills in pain.
 
 [NPC_DAMAGE: Hook Horror 6]
-(Hook Horror: 69/75 HP)"
+(Report its new current HP out of its real max, e.g. Hook Horror: 69/75 HP)"
 
 Turn 2:
 "The Hook Horror retaliates, its barbed leg whipping toward your face."
@@ -855,6 +1036,18 @@ EXPERIENCE POINTS:
     for (const match of npcEncounterMatches) {
       const [, npcName, description, portraitPrompt, crStr, xpStr, monsterType] = match
       const name = npcName.trim()
+
+      // PLAYER GUARD: before touching npc_encounters or generating any art, check
+      // the characters table for a name match with NO is_player filter. If the
+      // matched row is a real player character, skip the encounter entirely — no
+      // insert, no stat generation, no Fal image call. This stops Malachar from
+      // turning another player (e.g. "Scott") into an NPC with invented HP/art.
+      const matchedCharacter = await findCharacterByName(supabase, name)
+      if (isPlayerCharacterRow(matchedCharacter)) {
+        console.log("[v0] NPC_ENCOUNTER ignored — name matches a PLAYER character:", name)
+        continue
+      }
+
       encounteredThisTurn.add(name)
       const desc = description.trim()
       const prompt = portraitPrompt.trim()
@@ -873,13 +1066,39 @@ EXPERIENCE POINTS:
       const { canon } = await fetchNpcCanonByName(supabase, name)
       const hasCanonPortrait = !!(canon.portrait_url && String(canon.portrait_url).trim())
 
-      // The row to reactivate for THIS player character (if one already exists).
+      // SHARED, SINGLE-TRUTH ROW: find ANY existing row for this name
+      // (case-insensitive), regardless of which character engaged it, preferring
+      // the most recent. We UPSERT onto it instead of inserting a new
+      // per-character row — this is the fix for the "Jimjar ×3" duplication.
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
-        .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
-        .eq("name", name)
-        .eq("character_id", playerCharacter.id)
+        .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions, hp_max, hp_current")
+        .ilike("name", name)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle()
+
+      // Resolve REAL stats: bestiary → campaign stat block → CR-appropriate
+      // improvised value. Never the old silent 75 default.
+      const stats = await resolveNpcStats(supabase, name, cr, xp)
+      // Prisoner-allies / neutrals do not get a monster HP bar unless the tag
+      // explicitly carries a combat CR (i.e. combat actually involves them).
+      const isCombat = typeof cr === "number" && cr > 0
+      const wantsHpBar = !stats.ally || isCombat
+      const resolvedHpMax = wantsHpBar ? stats.hp : null
+      // A non-combat ally/neutral gets CR/XP 0 so the dashboard never renders a
+      // combat bar or awards XP for them. Combatants use the real/hinted values.
+      const resolvedCr = wantsHpBar ? (cr ?? stats.cr ?? undefined) : 0
+      const resolvedXp = wantsHpBar ? (xp ?? stats.xp ?? undefined) : 0
+      const resolvedType = type ?? stats.creatureType ?? undefined
+      console.log(
+        "[v0] Resolved stats for",
+        name,
+        "| source:", stats.source,
+        "| ally:", stats.ally,
+        "| hp:", resolvedHpMax,
+        "| ac:", stats.ac,
+      )
 
       let portraitUrl: string | null = null
       if (hasCanonPortrait) {
@@ -904,12 +1123,15 @@ EXPERIENCE POINTS:
       }
 
       if (existingNpc) {
-        // Reactivate existing NPC and backfill any canon asset this row is
-        // missing from other rows with the same name. NEVER overwrite a canon
-        // portrait; only set a freshly generated one when none exists anywhere.
+        // UPSERT onto the SHARED row: reactivate it, seed missing canon assets,
+        // and set real stats. character_id records who last engaged (bookkeeping
+        // only — it no longer scopes reads). Only fill HP if this row has none
+        // yet (a fresh reactivation) or a combat CR was supplied, so an ongoing
+        // fight's current HP is never reset mid-combat.
         const update: Record<string, unknown> = {
           is_active: true,
           description: desc,
+          character_id: playerCharacter.id,
         }
         for (const f of NPC_CANON_FIELDS) {
           const cur = (existingNpc as any)[f]
@@ -920,14 +1142,29 @@ EXPERIENCE POINTS:
         if (!hasCanonPortrait && portraitUrl) {
           update.portrait_url = portraitUrl
         }
+        if (resolvedCr !== undefined) update.challenge_rating = resolvedCr
+        if (resolvedXp !== undefined) update.xp_value = resolvedXp
+        if (resolvedType !== undefined) update.monster_type = resolvedType
+        const existingHpMax = (existingNpc as any).hp_max
+        if (resolvedHpMax !== null && (existingHpMax === null || existingHpMax === undefined || isCombat)) {
+          update.hp_max = resolvedHpMax
+          update.hp_current = resolvedHpMax
+        }
         await supabase
           .from("npc_encounters")
           .update(update)
           .eq("id", existingNpc.id)
-        console.log("[v0] NPC reactivated:", name, "| seeded canon fields:", Object.keys(update).filter(k => k !== "is_active" && k !== "description"))
+        // Deactivate any OTHER rows sharing this name so only one active truth
+        // row survives (defends against pre-existing duplicates in the table).
+        await supabase
+          .from("npc_encounters")
+          .update({ is_active: false })
+          .ilike("name", name)
+          .neq("id", existingNpc.id)
+        console.log("[v0] NPC upserted (shared row):", name, "| hp_max:", update.hp_max ?? existingHpMax, "| source:", stats.source)
       } else {
-        // Insert new NPC encounter, SEEDED from the canon identity for this name
-        // so the portrait/face/voice/videos/conditions match older rows.
+        // Insert the FIRST shared row for this name, seeded from canon identity
+        // and real resolved stats (never a silent 75).
         const { error } = await supabase.from("npc_encounters").insert({
           character_id: playerCharacter.id,
           name,
@@ -939,17 +1176,17 @@ EXPERIENCE POINTS:
           idle_url: canon.idle_url,
           talking_url: canon.talking_url,
           conditions: canon.conditions || [],
-          challenge_rating: cr,
-          xp_value: xp,
-          monster_type: type,
+          challenge_rating: resolvedCr ?? null,
+          xp_value: resolvedXp ?? null,
+          monster_type: resolvedType ?? null,
           is_active: true,
-          hp_max: 75, // Default HP - will be overridden if specific NPC stats are known
-          hp_current: 75,
+          hp_max: resolvedHpMax,
+          hp_current: resolvedHpMax,
         })
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
         } else {
-          console.log("[v0] NPC encounter created (seeded from canon):", name, "| XP:", xp, "| hadCanonPortrait:", hasCanonPortrait)
+          console.log("[v0] NPC encounter created (shared, real stats):", name, "| hp_max:", resolvedHpMax, "| source:", stats.source, "| ally:", stats.ally)
         }
       }
     }
@@ -963,33 +1200,27 @@ EXPERIENCE POINTS:
       console.log("[v0] NPC_DAMAGE tag found:", name, "takes", amount, "damage")
 
       if (amount > 0) {
-        // Get NPC's current HP
-        const { data: npc } = await supabase
-          .from("npc_encounters")
-          .select("hp_current, hp_max")
-          .eq("name", name)
-          .eq("character_id", playerCharacter.id)
-          .eq("is_active", true)
-          .single()
+        // Operate on the SHARED active row (no character_id scope) so damage
+        // dealt on one screen updates the single truth row every client reads.
+        const npc = await findSharedActiveEncounter(supabase, name)
 
         if (npc) {
           const newHp = Math.max(0, (npc.hp_current || 0) - amount)
           const isDefeated = newHp <= 0
 
-          // Update NPC HP
+          // Update the shared row by its id.
           const { error } = await supabase
             .from("npc_encounters")
             .update({
               hp_current: newHp,
               is_active: !isDefeated  // Deactivate if HP reaches 0
             })
-            .eq("name", name)
-            .eq("character_id", playerCharacter.id)
+            .eq("id", npc.id)
 
           if (error) {
             console.error("[v0] Error applying NPC damage:", error)
           } else {
-            console.log("[v0] NPC HP updated:", npc.hp_current, "->", newHp, "| Defeated:", isDefeated)
+            console.log("[v0] NPC HP updated (shared):", npc.hp_current, "->", newHp, "| Defeated:", isDefeated)
           }
         }
       }
@@ -1002,14 +1233,8 @@ EXPERIENCE POINTS:
       const name = npcName.trim()
       console.log("[v0] NPC_LEAVE tag found:", name)
 
-      // Fetch NPC to check if it's truly defeated (HP = 0) and get XP
-      const { data: npc } = await supabase
-        .from("npc_encounters")
-        .select("id, hp_current, hp_max, xp_value, is_active")
-        .eq("name", name)
-        .eq("character_id", playerCharacter.id)
-        .eq("is_active", true)
-        .single()
+      // Fetch the SHARED active row (no character_id scope) to check defeat + XP.
+      const npc = await findSharedActiveEncounter(supabase, name)
 
       if (npc) {
         // Check if NPC is defeated narratively without HP reaching 0 (missing damage tags)
@@ -1053,17 +1278,18 @@ EXPERIENCE POINTS:
         }
       }
 
+      // Deactivate EVERY active row with this name (case-insensitive) so the
+      // shared world clears the encounter for all players at once.
       const { error } = await supabase
         .from("npc_encounters")
         .update({ is_active: false })
-        .eq("name", name)
-        .eq("character_id", playerCharacter.id)
+        .ilike("name", name)
         .eq("is_active", true)
 
       if (error) {
         console.error("[v0] Error deactivating NPC:", error)
       } else {
-        console.log("[v0] NPC deactivated:", name)
+        console.log("[v0] NPC deactivated (shared):", name)
       }
     }
   }
@@ -1281,7 +1507,13 @@ Respond ONLY with valid JSON, no other text:
 
         const parsed = JSON.parse(detectionResult.text.trim())
 
-        if (parsed.npc) {
+        // PLAYER GUARD: the auto-detector can latch onto a player's name in
+        // quoted speech. Match the characters table (no is_player filter) and
+        // bail before any insert or art generation if it's a real player.
+        const autoMatchedCharacter = parsed.npc ? await findCharacterByName(supabase, parsed.npc) : null
+        if (parsed.npc && isPlayerCharacterRow(autoMatchedCharacter)) {
+          console.log("[v0] Auto-detected speaker is a PLAYER character — skipping encounter:", parsed.npc)
+        } else if (parsed.npc) {
           const npcName: string = parsed.npc
           encounteredThisTurn.add(npcName)
           console.log("[v0] Auto-detected speaking NPC:", npcName)
@@ -1307,11 +1539,15 @@ Respond ONLY with valid JSON, no other text:
           // this name; only generate when NO row has a portrait, and never
           // overwrite one. The per-character row (if any) is reactivated below.
           const { canon: npcCanon } = await fetchNpcCanonByName(supabase, npcName)
+          // SHARED row: match ANY existing row for this name (case-insensitive),
+          // most recent first — a speaking NPC is one shared entry, not one per
+          // player. No character_id scope.
           const { data: existingNpc } = await supabase
             .from("npc_encounters")
             .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions")
-            .eq("name", npcName)
-            .eq("character_id", playerCharacter.id)
+            .ilike("name", npcName)
+            .order("created_at", { ascending: false })
+            .limit(1)
             .maybeSingle()
 
           const canonPortrait = npcCanon.portrait_url && String(npcCanon.portrait_url).trim() ? npcCanon.portrait_url : null
@@ -1343,6 +1579,7 @@ Respond ONLY with valid JSON, no other text:
             const update: Record<string, unknown> = {
               is_active: true,
               description: parsed.description || undefined,
+              character_id: playerCharacter.id, // bookkeeping: who last engaged
             }
             // Backfill any canon asset this row is missing from other rows.
             for (const f of NPC_CANON_FIELDS) {
@@ -1359,6 +1596,12 @@ Respond ONLY with valid JSON, no other text:
               .from("npc_encounters")
               .update(update)
               .eq("id", existingNpc.id)
+            // Collapse any duplicate rows for this name down to the one shared row.
+            await supabase
+              .from("npc_encounters")
+              .update({ is_active: false })
+              .ilike("name", npcName)
+              .neq("id", existingNpc.id)
           } else {
             // Seed the new row from the canon identity for this name.
             await supabase.from("npc_encounters").insert({
@@ -1393,15 +1636,14 @@ Respond ONLY with valid JSON, no other text:
 
   // === FOCUS THE NPC PANEL ON THE CURRENT SCENE ===
   // If this turn introduced/involved any NPCs, deactivate every OTHER active NPC
-  // so the dashboard only shows who the player is interacting with right now.
-  // Turns with no NPC tags (e.g. pure narration or combat damage rounds) leave
-  // the existing active NPCs untouched.
+  // so the SHARED dashboard shows who the party is interacting with right now.
+  // Operates across all rows (no character_id scope) so the scene is consistent
+  // for every player. Turns with no NPC tags leave active NPCs untouched.
   if (playerCharacter?.id && encounteredThisTurn.size > 0) {
     const focus = new Set(Array.from(encounteredThisTurn).map(n => n.toLowerCase()))
     const { data: actives } = await supabase
       .from("npc_encounters")
       .select("id, name")
-      .eq("character_id", playerCharacter.id)
       .eq("is_active", true)
     const toHide = (actives || [])
       .filter(n => !focus.has((n.name || "").toLowerCase()))
