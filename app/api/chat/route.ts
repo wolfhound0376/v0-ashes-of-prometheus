@@ -349,6 +349,28 @@ export async function POST(req: Request) {
   if (playerDialogueError) {
     console.error("[v0] Error inserting player dialogue:", playerDialogueError)
   }
+
+  // Build a set of PLAYER character names (there can be several party members,
+  // all with is_player = true) so Malachar never treats a player character as an
+  // NPC — neither in its narration/tags nor when we persist NPC encounter cards.
+  const playerNames = new Set<string>()
+  {
+    const { data: playerRows } = await supabase
+      .from("characters")
+      .select("name")
+      .eq("is_player", true)
+    for (const row of playerRows ?? []) {
+      const n = (row?.name ?? "").trim().toLowerCase()
+      if (n) playerNames.add(n)
+    }
+  }
+  // True when the given name belongs to a player character (case-insensitive).
+  const isPlayerName = (candidate: string) => playerNames.has(candidate.trim().toLowerCase())
+  // Human-readable list of PC names for injecting into prompts.
+  const playerRoster = [...playerNames]
+  const playerNamesList = playerRoster.length
+    ? playerRoster.map((n) => n.replace(/\b\w/g, (c) => c.toUpperCase())).join(", ")
+    : (playerCharacter?.name || "the player character")
   
   // === DICE CRITS: capture a natural 20 / natural 1 on a d20 from the player message ===
   try {
@@ -472,6 +494,7 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 4. CONDITIONS: You MUST emit [CONDITION_ADD: <name>] when the player gains ANY condition (poisoned, grappled, prone, restrained, frightened, exhaustion, bleeding, acid_burn, manacled, etc.). Emit [CONDITION_REMOVE: <name>] when it clears.
 
 5. NPC/MONSTER ENCOUNTERS: You MUST emit [NPC_ENCOUNTER: <Name> | <description> | <portrait_prompt>] the FIRST time any NPC or monster meaningfully interacts with the player. If you describe a gray ooze blocking passage, a drow guard confronting them, or any creature entering the scene — EMIT THE TAG.
+   PLAYER CHARACTERS ARE NOT NPCs. The following are PLAYER CHARACTERS (the party controlled by the player): ${playerNamesList}. NEVER emit [NPC_ENCOUNTER:], [NPC_DAMAGE:], or [NPC_LEAVE:] for any of these names, and never treat them as NPCs, monsters, or creatures to be spawned in the NPC panel — they are the heroes, not encounters. NPC tags are ONLY for creatures and non-player characters the party meets.
 
 6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends.
 
@@ -751,23 +774,6 @@ EXPERIENCE POINTS:
   // Track which NPCs the player actually interacted with this turn, so the NPC
   // panel can show only the currently-relevant NPC(s) instead of every one ever met.
   const encounteredThisTurn = new Set<string>()
-
-  // Build a set of PLAYER character names (there can be several party members,
-  // all with is_player = true) so we never spawn an NPC encounter card for a
-  // player character when Malachar narrates them speaking or acting.
-  const playerNames = new Set<string>()
-  {
-    const { data: playerRows } = await supabase
-      .from("characters")
-      .select("name")
-      .eq("is_player", true)
-    for (const row of playerRows ?? []) {
-      const n = (row?.name ?? "").trim().toLowerCase()
-      if (n) playerNames.add(n)
-    }
-  }
-  // True when the given name belongs to a player character (case-insensitive).
-  const isPlayerName = (candidate: string) => playerNames.has(candidate.trim().toLowerCase())
 
   // Parse and process inventory tags from the response
   if (playerCharacter?.id) {
@@ -1620,9 +1626,11 @@ ${responseText}
 
 Is a specific named NPC speaking the quoted dialogue? Known NPCs: Ilvara Mizzrym, Jorlan Duskryn, Sarith Kzekarit, Eldeth Feldrun, Jimjar, Ront, Stool, Topsy, Turvy, Shuushar, Derendil.
 
+IMPORTANT: These are PLAYER CHARACTERS, not NPCs — never return any of them: ${playerNamesList}. If the quoted dialogue is spoken by a player character, respond with {"npc": null}.
+
 Respond ONLY with valid JSON, no other text:
 - If a named NPC is speaking: {"npc": "Exact NPC Name", "description": "one sentence physical description"}
-- If speaker is unnamed or unclear: {"npc": null}`
+- If speaker is unnamed, unclear, or a player character: {"npc": null}`
 
         const detectionResult = await anthropic.messages.create({
           model: "claude-haiku-4-5-20251001",
