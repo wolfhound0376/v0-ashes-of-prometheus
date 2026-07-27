@@ -299,6 +299,18 @@ export default function DashboardPage() {
     fetchEnvironment()
   }, [])
 
+  // Fetch the SHARED active NPC encounters — NO character_id filter — so every
+  // client renders the same world state (one truth row per NPC). Independent of
+  // the selected character; driven by a realtime subscription below.
+  const fetchNpcEncounters = useCallback(async () => {
+    const { data: npcData } = await supabase
+      .from('npc_encounters')
+      .select('id, name, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions')
+      .eq('is_active', true)
+
+    if (npcData) setNpcEncounters(npcData)
+  }, [])
+
   // Fetch dialogue from Supabase and subscribe to real-time updates
   useEffect(() => {
     // Initial fetch
@@ -357,11 +369,28 @@ if (error) {
       )
       .subscribe()
 
+    // Subscribe to SHARED NPC encounter changes. Listening to INSERT, UPDATE and
+    // DELETE means an HP change (or a new/leaving NPC) on ANY player's screen
+    // refetches the shared active set here, so every dashboard stays in sync
+    // within a second. Created once per mount with cleanup — no channel stacking.
+    const npcChannel = supabase
+      .channel('npc-encounters-shared')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'npc_encounters' },
+        () => { fetchNpcEncounters() }
+      )
+      .subscribe()
+
+    // Initial shared fetch so encounters render before any realtime event.
+    fetchNpcEncounters()
+
     return () => {
       supabase.removeChannel(dialogueChannel)
       supabase.removeChannel(environmentChannel)
+      supabase.removeChannel(npcChannel)
     }
-  }, [])
+  }, [fetchNpcEncounters])
 
   // Fetch character data function - callable from multiple places
   const fetchCharacterData = useCallback(async () => {
@@ -395,15 +424,10 @@ if (error) {
       setCharacters(prev => prev.map(c => c.id === selectedCharacterId ? charData : c))
     }
 
-    // Fetch active NPC encounters
-    const { data: npcData } = await supabase
-      .from('npc_encounters')
-      .select('id, name, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions')
-      .eq('character_id', selectedCharacterId)
-      .eq('is_active', true)
-
-    if (npcData) setNpcEncounters(npcData)
-  }, [selectedCharacterId])
+    // NPC encounters are SHARED world state — fetched unscoped via
+    // fetchNpcEncounters (kept live by its own realtime subscription).
+    await fetchNpcEncounters()
+  }, [selectedCharacterId, fetchNpcEncounters])
 
   // Fetch inventory and equipment when character changes
   useEffect(() => {

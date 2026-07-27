@@ -429,3 +429,72 @@ export function formatRollTable(table: RollTableEntry[]): string {
 export function resolveRollTableEntry(table: RollTableEntry[], roll: number): RollTableEntry | null {
   return table.find((r) => roll >= r.min && roll <= r.max) || null
 }
+
+// ============================================================================
+// NAMED NPC STAT BLOCKS
+// ----------------------------------------------------------------------------
+// Authoritative per-NPC stats for named campaign characters. This is the SECOND
+// resolution tier (after the `bestiary` table) used when creating an encounter,
+// so an NPC never silently inherits a bogus default (the "everyone has 75 HP"
+// Hook Horror contamination). Keyed by lowercase name for case-insensitive
+// lookup. `ally: true` marks prisoners/neutrals who must NOT be spawned as a
+// combat encounter with an HP bar unless real combat involves them.
+// ============================================================================
+export interface NpcStatBlock {
+  ac: number
+  hp: number
+  cr?: number
+  xp?: number
+  creatureType?: string
+  ally?: boolean
+}
+
+export const CAMPAIGN_NPC_STATS: Record<string, NpcStatBlock> = {
+  // --- Act 1 prisoner-allies / neutrals (Out of the Abyss) ---
+  "eldeth feldrun": { ac: 12, hp: 16, cr: 0.25, xp: 50, creatureType: "Humanoid", ally: true },
+  eldeth: { ac: 12, hp: 16, cr: 0.25, xp: 50, creatureType: "Humanoid", ally: true },
+  stool: { ac: 10, hp: 7, cr: 0, xp: 0, creatureType: "Plant", ally: true },
+  "prince derendil": { ac: 13, hp: 45, cr: 2, xp: 450, creatureType: "Monstrosity", ally: true },
+  derendil: { ac: 13, hp: 45, cr: 2, xp: 450, creatureType: "Monstrosity", ally: true },
+  jimjar: { ac: 15, hp: 16, cr: 0.5, xp: 100, creatureType: "Humanoid", ally: true },
+  ront: { ac: 13, hp: 15, cr: 0.5, xp: 100, creatureType: "Humanoid", ally: true },
+  shuushar: { ac: 12, hp: 18, cr: 0.25, xp: 50, creatureType: "Humanoid", ally: true },
+  sarith: { ac: 15, hp: 13, cr: 0.125, xp: 25, creatureType: "Humanoid", ally: true },
+  "sarith kzekarit": { ac: 15, hp: 13, cr: 0.125, xp: 25, creatureType: "Humanoid", ally: true },
+  buppido: { ac: 13, hp: 13, cr: 0.25, xp: 50, creatureType: "Humanoid", ally: true },
+  topsy: { ac: 12, hp: 33, cr: 2, xp: 450, creatureType: "Humanoid", ally: true },
+  turvy: { ac: 12, hp: 33, cr: 2, xp: 450, creatureType: "Humanoid", ally: true },
+  // --- Act 1 drow pursuers (enemies) ---
+  "ilvara mizzrym": { ac: 16, hp: 71, cr: 4, xp: 1100, creatureType: "Humanoid" },
+  ilvara: { ac: 16, hp: 71, cr: 4, xp: 1100, creatureType: "Humanoid" },
+  "shoor vandree": { ac: 15, hp: 71, cr: 3, xp: 700, creatureType: "Humanoid" },
+  shoor: { ac: 15, hp: 71, cr: 3, xp: 700, creatureType: "Humanoid" },
+  "jorlan duskryn": { ac: 16, hp: 71, cr: 3, xp: 700, creatureType: "Humanoid", ally: true },
+  jorlan: { ac: 16, hp: 71, cr: 3, xp: 700, creatureType: "Humanoid", ally: true },
+}
+
+// Case-insensitive lookup of a named NPC's authoritative stat block.
+export function getCampaignNpcStats(name: string): NpcStatBlock | null {
+  if (!name) return null
+  return CAMPAIGN_NPC_STATS[name.trim().toLowerCase()] || null
+}
+
+// A CR-appropriate HP fallback used ONLY when an NPC is unknown to both the
+// bestiary and the named stat blocks. Never a silent 75 — these are the middle
+// of the Monster Manual HP band for each CR so improvised foes feel plausible.
+export function crAppropriateHp(cr: number | undefined): number {
+  const table: Record<string, number> = {
+    "0": 4,
+    "0.125": 9,
+    "0.25": 13,
+    "0.5": 22,
+    "1": 33,
+    "2": 45,
+    "3": 65,
+    "4": 90,
+    "5": 110,
+  }
+  if (cr === undefined || Number.isNaN(cr)) return 22 // ~CR 1/2 default for a nameless foe
+  const key = String(cr)
+  return table[key] ?? Math.max(10, Math.round(cr * 22))
+}
