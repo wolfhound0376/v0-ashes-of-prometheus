@@ -350,22 +350,48 @@ export async function POST(req: Request) {
     console.error("[v0] Error inserting player dialogue:", playerDialogueError)
   }
 
-  // Build a set of PLAYER character names (there can be several party members,
-  // all with is_player = true) so Malachar never treats a player character as an
-  // NPC — neither in its narration/tags nor when we persist NPC encounter cards.
+  // Build a set of PLAYER character names so Malachar never treats a party member
+  // as an NPC. A character counts as a player if EITHER is_player = true OR
+  // character_type = 'player' — some rows only set one of the two, and relying on
+  // is_player alone let player characters slip through and get spawned as NPCs.
   const playerNames = new Set<string>()
   {
     const { data: playerRows } = await supabase
       .from("characters")
       .select("name")
-      .eq("is_player", true)
+      .or("is_player.eq.true,character_type.eq.player")
     for (const row of playerRows ?? []) {
       const n = (row?.name ?? "").trim().toLowerCase()
       if (n) playerNames.add(n)
     }
   }
-  // True when the given name belongs to a player character (case-insensitive).
+  // Fast case-insensitive exact match against the known player roster.
   const isPlayerName = (candidate: string) => playerNames.has(candidate.trim().toLowerCase())
+  // Robust, DB-backed player check for names Malachar produces. Uses the in-memory
+  // roster first, then a fuzzy lookup (exact -> prefix -> contains) against ALL
+  // player rows so variant/partial spellings (e.g. "Scott" vs "Scott the Bold",
+  // trailing spaces) are still recognized as player characters, not NPCs.
+  const isPlayerCharacterName = async (candidate: string): Promise<boolean> => {
+    const trimmed = (candidate ?? "").trim()
+    if (!trimmed) return false
+    const lower = trimmed.toLowerCase()
+    if (playerNames.has(lower)) return true
+    // Stored player name contained within a longer spoken name.
+    for (const n of playerNames) {
+      if (n.length > 0 && (lower.includes(n) || n.includes(lower))) return true
+    }
+    for (const pattern of [trimmed, `${trimmed}%`, `%${trimmed}%`]) {
+      const { data } = await supabase
+        .from("characters")
+        .select("id")
+        .or("is_player.eq.true,character_type.eq.player")
+        .ilike("name", pattern)
+        .limit(1)
+        .maybeSingle()
+      if (data) return true
+    }
+    return false
+  }
   // Human-readable list of PC names for injecting into prompts.
   const playerRoster = [...playerNames]
   const playerNamesList = playerRoster.length
@@ -1090,8 +1116,11 @@ EXPERIENCE POINTS:
       const type = monsterType ? monsterType.trim() : undefined
 
       // Never treat a player character as an NPC, even if Malachar mistakenly
-      // emits an encounter tag for a party member.
-      if (isPlayerName(name)) {
+      // emits an encounter tag for a party member. This DB-backed check sees
+      // player rows (is_player = true OR character_type = 'player'), which the
+      // NPC portrait lookup below deliberately does not, so it catches PCs like
+      // "Scott" before any portrait art, HP, or backstory is invented.
+      if (await isPlayerCharacterName(name)) {
         console.log("[v0] Skipping NPC_ENCOUNTER for player character:", name)
         continue
       }
@@ -1642,7 +1671,7 @@ Respond ONLY with valid JSON, no other text:
         const detectionText = (detectionBlock && detectionBlock.type === "text") ? detectionBlock.text : ""
         const parsed = JSON.parse(detectionText.trim())
 
-        if (parsed.npc && isPlayerName(parsed.npc)) {
+        if (parsed.npc && (await isPlayerCharacterName(parsed.npc))) {
           console.log("[v0] Skipping auto-detected speaker (player character):", parsed.npc)
         } else if (parsed.npc) {
           const npcName: string = parsed.npc
