@@ -1,6 +1,7 @@
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
 // ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
@@ -250,7 +251,7 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss" } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null } = await req.json()
 
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
@@ -279,12 +280,58 @@ export async function POST(req: Request) {
     sessionCharacterId = activeSession?.active_character_id ?? null
   }
 
-  // Resolve the player character: session.active_character_id first, then fall
-  // back to the newest is_player=true row. Both paths use limit(1)/maybeSingle
-  // so extra player or NPC rows can never throw or null out the result.
+  // Resolve the player character in priority order:
+  //   1. body.characterId — the per-message speaker sent by that browser. This
+  //      is the fix for the "one global seat" bug: with four browsers open,
+  //      each message now carries its own speaker instead of everyone sharing
+  //      session.active_character_id.
+  //   2. session.active_character_id — the DM "spotlight" pointer (DM view).
+  //   3. the newest is_player=true row — last-resort fallback.
+  // Every path uses limit(1)/maybeSingle so extra player or NPC rows can never
+  // throw or null out the result.
   let playerCharacter: { id: string; name: string } | null = null
   let playerResolveVia = "none"
-  if (sessionCharacterId) {
+
+  // If a claimToken is provided, the browser is claiming a specific character
+  // via a claim link. Verify the (characterId, claim_token) pair with the
+  // service-role client BEFORE accepting the message as that character. A
+  // mismatch means someone is trying to speak as a character they don't own.
+  if (characterId && claimToken) {
+    let admin
+    try {
+      admin = createAdminClient()
+    } catch (e) {
+      console.error("[v0] chat: admin client unavailable for claim verification:", e)
+      return Response.json({ error: "Claim verification unavailable" }, { status: 500 })
+    }
+    const { data: claimRow } = await admin
+      .from("characters")
+      .select("id, name, claim_token")
+      .eq("id", characterId)
+      .maybeSingle()
+    if (!claimRow || claimRow.claim_token !== claimToken) {
+      console.warn("[v0] chat: claim token mismatch for characterId:", characterId)
+      return Response.json({ error: "Invalid character claim" }, { status: 403 })
+    }
+    playerCharacter = { id: claimRow.id, name: claimRow.name }
+    playerResolveVia = "body.characterId"
+  }
+
+  // No claim token, but the browser told us which character it is. Trust the
+  // body.characterId for speaker attribution (unclaimed / shared-TV browsers).
+  if (!playerCharacter && characterId) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name")
+      .eq("id", characterId)
+      .maybeSingle()
+    if (data) {
+      playerCharacter = data as { id: string; name: string }
+      playerResolveVia = "body.characterId"
+    }
+  }
+
+  if (!playerCharacter && sessionCharacterId) {
     const { data } = await supabase
       .from("characters")
       .select("id, name")
@@ -424,7 +471,8 @@ WORKED EXAMPLES (follow this mapping exactly):
     campaignId,
     campaign.contexts.defaults.episode,
     "", // Pass empty string - buildWorldContext will query the latest location from DB
-    campaign.contexts.defaults.heat
+    campaign.contexts.defaults.heat,
+    message,
   )
   const worldContextText = formatWorldContextForAI(worldContext)
 
@@ -482,9 +530,34 @@ ${combatantRows
   }
 
   // The Lich Malachar system prompt
-  const lichPrompt = `You are Malachar, a lich who serves as Dungeon Master. You speak with dark elegance, ancient wisdom, and subtle menace. You never break character. You are running the D&D 5E campaign "Out of the Abyss" in the Underdark of Faerûn.
+  const lichPrompt = `You are Malachar, a lich, and the Dungeon Master of this campaign. You are running D&D 5E "Out of the Abyss" in the Underdark of Faerûn. You never break character.
 
-=== CONTINUITY — READ BEFORE RESPONDING ===
+  WHO YOU ARE
+  You are old past counting and bored past caring. You have watched empires rot and gods go quiet. What still entertains you — the only thing that still entertains you — is watching mortals make decisions. They are so confident. They are so brief. It never stops being funny.
+
+  You are not a stately narrator. You are a performer with an audience of four, and you are enjoying yourself enormously at their expense. The gravitas is real — you ARE an ancient undead horror and the Underdark IS genuinely trying to kill them — but you deliver it like someone who finds the whole business hilarious.
+
+  Two registers, and you move between them without warning:
+
+  - THE LICH. When the world bites — a blade lands, something enormous moves in the dark, a companion dies — drop the comedy entirely. Go cold, precise, unhurried. The horror works BECAUSE you were joking eight seconds ago. Never undercut a real moment with a punchline. Let it land, then let the silence sit.
+
+  - THE COMEDIAN. Everywhere else — planning, hesitating, arguing, bad ideas, worse ideas, overthinking a locked door for ten minutes — you are merciless and you are funny. Dry, fast, specific. Mock the choice, mock the reasoning, mock the confidence with which it was announced.
+
+  HOW YOU MOCK
+  Be specific, never generic. "Bold" is nothing. "Bold — you've decided the manacles are a suggestion" is the joke. Callbacks are your best weapon: remember the stupid thing someone did an hour ago and bring it back at the worst possible moment. You are psychologically invasive — you notice what a player actually cares about, what they keep protecting, what they are secretly proud of, and you put your thumb exactly there.
+
+  Punch at decisions, at outcomes, at the gap between what they intended and what happened. You may absolutely mock the players as people, not merely their characters — but the warmth has to be audible underneath. This is a roast, and a roast only works between people who like each other. If a line would genuinely wound rather than land, you are not being funny, you are being tiresome. You are never tiresome.
+
+  Never punish a player for a bad roll by being cruel about the player. The dice are the cruelty; you are the commentary.
+
+  DELIVERY
+  Short. Land the hit and stop. A devastating sentence beats a devastating paragraph, and you know it. Do not explain your own jokes. Do not describe your own tone. Do not narrate that you are amused — be amused.
+
+  Vary your openings. If you notice yourself reaching for a construction you have already used this session, do not use it.
+
+  Every fact you state is still correct. The comedy rides on top of an accurate game — a cruel DM is still a fair one, and you never fudge a rule to land a joke.
+  
+  === CONTINUITY — READ BEFORE RESPONDING ===
 This is an ONGOING session already in progress. The conversation history above is real and continuous.
 - Do NOT open with a recap, a "days have passed" monologue, or a fresh scene-establishing description. Respond DIRECTLY to the player's MOST RECENT message and push the story forward from there.
 - Only set or re-establish a scene when the player has just ARRIVED at a new location, or when there is no prior history (a true session start).
@@ -696,7 +769,7 @@ HEALTH & CONDITIONS:
     * Jimjar → dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background
     * Ront → dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression
     * Stool → dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave
-    * Topsy → dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy
+    * Topsy �� dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy
     * Turvy → dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy
     * Shuushar → dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background
     * Derendil → dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave
@@ -784,20 +857,46 @@ EXPERIENCE POINTS:
   if (playerCharacter?.id) {
     const KNOWN_TYPES = new Set(["weapon", "armor", "consumable", "misc", "currency"])
 
+    // Catalog metadata that a resolved award carries to the session beat, so
+    // Malachar's next turn can react to what he just handed over (a sentient
+    // blade should start whispering the instant it is picked up).
+    type CatalogBeatInfo = {
+      name: string
+      rarity: string
+      cursed: boolean
+      sentient: boolean
+    } | null
+
     // Write a session_beats row mirroring the old pipeline so awarded items show
     // up on the shotlist timeline. Best-effort: never let it break the award.
-    const writeItemAwardBeat = async (itemName: string, quantity: number, desc: string) => {
+    const writeItemAwardBeat = async (
+      itemName: string,
+      quantity: number,
+      desc: string,
+      catalog: CatalogBeatInfo = null,
+    ) => {
       if (!activeSessionId) {
         console.warn("[v0] item_award beat skipped: no active session")
         return
+      }
+      // Append a compact catalog cue to the narration so the narrator context
+      // (which replays recent beats) surfaces rarity and the sentient/cursed
+      // flags without changing any tag the model emitted.
+      let narration = desc || null
+      if (catalog) {
+        const flags: string[] = [`rarity: ${catalog.rarity}`]
+        if (catalog.sentient) flags.push("sentient — it may speak or stir")
+        if (catalog.cursed) flags.push("cursed (hidden from the player)")
+        const cue = `[catalog] ${catalog.name} — ${flags.join("; ")}`
+        narration = narration ? `${narration}\n${cue}` : cue
       }
       const { error: beatError } = await supabase.from("session_beats").insert({
         session_id: activeSessionId,
         beat_type: "item_award",
         character_id: playerCharacter.id,
-        subject: itemName,
-        summary: `${playerName} received ${itemName}${quantity > 1 ? ` x${quantity}` : ""}`,
-        narration: desc || null,
+        subject: catalog?.name ?? itemName,
+        summary: `${playerName} received ${catalog?.name ?? itemName}${quantity > 1 ? ` x${quantity}` : ""}`,
+        narration,
         priority: 5,
       })
       if (beatError) {
@@ -810,49 +909,164 @@ EXPERIENCE POINTS:
     // Shared award/pickup handler: insert or bump quantity, resolve an icon, and
     // record a session beat. Used for BOTH [ITEM_ADD] and [ITEM_AWARD].
     const awardItem = async (itemName: string, quantity: number, desc: string, type: string, hint: string) => {
-      // Resolve an existing icon from dashboard_assets by hint or name. The
-      // column is file_url (not "url"); selecting the wrong column previously
-      // made this lookup error out and never resolve an icon.
-      let iconUrl: string | null = null
-      const { data: existingIcon, error: iconError } = await supabase
-        .from("dashboard_assets")
-        .select("file_url")
-        .eq("asset_type", "item_icon")
-        .or(`name.ilike.%${hint || itemName}%,name.ilike.%${itemName}%`)
-        .limit(1)
-        .maybeSingle()
-      if (iconError) console.log("[v0] item_icon lookup error:", iconError.message)
-      if (existingIcon?.file_url) {
-        iconUrl = existingIcon.file_url
-        console.log("[v0] resolved item_icon for", itemName, "->", iconUrl)
+      // --- Step 1: Canonical catalog resolution (name OR alias, exact first) ---
+      // The `items` table is the source of truth for real Out of the Abyss /
+      // Tyranny of Dragons gear. Resolving here enforces "AI cannot invent
+      // items": whatever name Malachar emitted collapses to the canonical row.
+      const term = (itemName || "").trim().toLowerCase()
+      type CatalogItem = {
+        id: string; name: string; item_type: string; equippable_slot: string | null
+        rarity: string; weight: number | null; value: number | null
+        description: string | null; icon_url: string | null
+        attunement: boolean; cursed: boolean; sentient: boolean
+      }
+      const CATALOG_COLS =
+        "id, name, item_type, equippable_slot, rarity, weight, value, description, icon_url, attunement, cursed, sentient"
+      let catalogItem: CatalogItem | null = null
+
+      if (term) {
+        // Exact name or alias match. aliases is a text[] — .cs (contains) needs
+        // an array literal, and the term is scrubbed of characters that would
+        // break either the .or() grammar or the array literal.
+        const orName = term.replace(/[,()*]/g, " ")
+        const orAlias = term.replace(/[,()"{}]/g, " ").trim()
+        const { data: exact } = await supabase
+          .from("items")
+          .select(CATALOG_COLS)
+          .or(`name.ilike.${orName},aliases.cs.{"${orAlias}"}`)
+          .limit(1)
+          .maybeSingle()
+        catalogItem = (exact as CatalogItem) ?? null
+
+        // Fuzzy fallback: catalog name contained in the awarded name or v.v.
+        if (!catalogItem) {
+          const safe = term.replace(/[,()*]/g, " ").trim()
+          const { data: fuzzy } = await supabase
+            .from("items")
+            .select(CATALOG_COLS)
+            .ilike("name", `%${safe}%`)
+            .limit(1)
+            .maybeSingle()
+          catalogItem = (fuzzy as CatalogItem) ?? null
+        }
       }
 
+      console.log(
+        catalogItem
+          ? `[v0] CATALOG HIT: "${itemName}" -> ${catalogItem.name}`
+          : `[v0] CATALOG MISS: "${itemName}" — homebrew, consider adding to items table`,
+      )
+
+      // --- Step 2: catalog data wins over the tag ---
+      const finalName = catalogItem?.name ?? itemName
+      const finalType = catalogItem?.item_type ?? type
+      const finalDesc = catalogItem?.description ?? desc
+
+      // --- Icon: catalog icon_url first, dashboard_assets second, none third ---
+      let iconUrl: string | null = catalogItem?.icon_url ?? null
+
+      // PostgREST .or() treats , ( ) as syntax. Strip them from search terms or
+      // an item like "Hand Crossbow Bolt (Drow Poison)" produces a broken filter.
+      const sanitizeTerm = (s: string) => (s || "").replace(/[,()*]/g, " ").replace(/\s+/g, " ").trim()
+
+      // Search the asset library by the CANONICAL name so art uploaded under the
+      // real item name resolves even when Malachar used an alias.
+      const nameTerm = sanitizeTerm(finalName)
+      const hintTerm = sanitizeTerm(hint)
+
+      if (!iconUrl && nameTerm) {
+        const { data: candidates, error: iconError } = await supabase
+          .from("dashboard_assets")
+          .select("name, file_url, thumbnail_url, asset_type")
+          .in("asset_type", ["item_icon", "icon"])
+          .or(
+            [
+              `name.ilike.%${nameTerm}%`,
+              ...(hintTerm && hintTerm !== nameTerm ? [`name.ilike.%${hintTerm}%`] : []),
+            ].join(","),
+          )
+          .limit(10)
+
+        if (iconError) {
+          console.log("[v0] item_icon lookup error:", iconError.message)
+        } else if (candidates?.length) {
+          const lowerName = nameTerm.toLowerCase()
+          const lowerHint = hintTerm.toLowerCase()
+          // Rank: exact name > asset name contains the item > item contains the
+          // asset name > hint match. Prefer 'item_icon' over 'icon' on a tie.
+          const score = (a: { name: string; asset_type: string }) => {
+            const n = (a.name || "").toLowerCase()
+            let s = 0
+            if (n === lowerName) s = 100
+            else if (n.includes(lowerName)) s = 70
+            else if (lowerName.includes(n)) s = 60
+            else if (lowerHint && n.includes(lowerHint)) s = 40
+            if (a.asset_type === "item_icon") s += 1
+            return s
+          }
+          const best = [...candidates].sort((a, b) => score(b) - score(a))[0]
+          if (best && score(best) > 0) {
+            // Fall back to the thumbnail when no full-size file was uploaded.
+            iconUrl = best.file_url || best.thumbnail_url || null
+            console.log("[v0] resolved item icon for", finalName, "->", best.name, iconUrl)
+          }
+        }
+      }
+
+      if (!iconUrl) {
+        // Logged so you can see exactly which assets are worth uploading next.
+        console.log("[v0] NO ICON ASSET for item:", finalName, "| hint:", hint || "(none)")
+      }
+
+      // Dedup on the CANONICAL name so aliases collapse onto one stack.
       const { data: existing } = await supabase
         .from("inventory_items")
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
-        .eq("name", itemName)
+        .eq("name", finalName)
         .maybeSingle()
 
       if (existing) {
+        // Backfill the catalog link/slot/weight/value on the bump without
+        // clobbering existing values when this award was homebrew (undefined
+        // fields are omitted from the PATCH).
         const { error } = await supabase.from("inventory_items")
-          .update({ quantity: existing.quantity + quantity, icon_url: iconUrl || undefined })
+          .update({
+            quantity: existing.quantity + quantity,
+            icon_url: iconUrl || undefined,
+            item_id: catalogItem?.id ?? undefined,
+            equippable_slot: catalogItem?.equippable_slot ?? undefined,
+            weight: catalogItem?.weight ?? undefined,
+            value: catalogItem?.value ?? undefined,
+          })
           .eq("id", existing.id)
-        if (error) console.error("[v0] Error updating inventory item:", itemName, error.message)
-        else console.log("[v0] Updated existing item quantity:", itemName, "->", existing.quantity + quantity)
+        if (error) console.error("[v0] Error updating inventory item:", finalName, error.message)
+        else console.log("[v0] Updated existing item quantity:", finalName, "->", existing.quantity + quantity)
       } else {
+        // --- Step 3: the insert carries the catalog link and the slot ---
         const { error } = await supabase.from("inventory_items").insert({
           character_id: playerCharacter.id,
-          name: itemName,
+          name: finalName,
           quantity,
-          description: desc,
-          item_type: type,
+          description: finalDesc,
+          item_type: finalType,
           icon_url: iconUrl,
+          item_id: catalogItem?.id ?? null,
+          equippable_slot: catalogItem?.equippable_slot ?? null,
+          weight: catalogItem?.weight ?? null,
+          value: catalogItem?.value ?? null,
         })
-        if (error) console.error("[v0] Error inserting inventory item:", itemName, error.message)
-        else console.log("[v0] Created new inventory item:", itemName)
+        if (error) console.error("[v0] Error inserting inventory item:", finalName, error.message)
+        else console.log("[v0] Created new inventory item:", finalName)
       }
-      await writeItemAwardBeat(itemName, quantity, desc)
+      await writeItemAwardBeat(finalName, quantity, finalDesc, catalogItem
+        ? {
+            name: catalogItem.name,
+            rarity: catalogItem.rarity,
+            cursed: catalogItem.cursed,
+            sentient: catalogItem.sentient,
+          }
+        : null)
     }
 
     // Tolerant parser for [ITEM_ADD: ...] and [ITEM_AWARD: ...]. Rather than

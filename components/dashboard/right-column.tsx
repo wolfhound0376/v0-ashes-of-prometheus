@@ -20,6 +20,9 @@ interface RightColumnProps {
   characters: DBCharacter[]
   selectedCharacterId: string | null
   onCharacterSelect: (id: string) => void
+  // When true (claim-locked browser), hide the character picker entirely so a
+  // player can't switch to someone else's sheet.
+  disableCharacterSelect?: boolean
   selectedCharacter?: DBCharacter
   characterInventory: DBInventoryItem[]
   characterEquipment: DBEquipmentItem[]
@@ -87,6 +90,7 @@ export function RightColumn({
   characters,
   selectedCharacterId,
   onCharacterSelect,
+  disableCharacterSelect = false,
   selectedCharacter,
   characterInventory,
   characterEquipment,
@@ -262,17 +266,21 @@ age: (selectedCharacter as any).age,
                 </div>
                 <div>
                   <button
-                    onClick={() => setShowCharacterDropdown(!showCharacterDropdown)}
-                    className="flex items-center gap-1.5 font-serif text-lg text-[#e8dcc8] hover:text-[#7aa8c8] transition-colors"
-                    disabled={loading || characters.length === 0}
+                    onClick={() => !disableCharacterSelect && setShowCharacterDropdown(!showCharacterDropdown)}
+                    className={cn(
+                      "flex items-center gap-1.5 font-serif text-lg text-[#e8dcc8] transition-colors",
+                      !disableCharacterSelect && "hover:text-[#7aa8c8]",
+                      disableCharacterSelect && "cursor-default",
+                    )}
+                    disabled={loading || characters.length === 0 || disableCharacterSelect}
                   >
                     {loading ? 'Loading...' : character.name}
-                    {characters.length > 0 && (
+                    {!disableCharacterSelect && characters.length > 0 && (
                       <ChevronDown className={cn("w-4 h-4 transition-transform", showCharacterDropdown && "rotate-180")} />
                     )}
                   </button>
                   
-                  {showCharacterDropdown && characters.length > 0 && (
+                  {!disableCharacterSelect && showCharacterDropdown && characters.length > 0 && (
                     <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px] bg-[#1a1614] border border-[#3d3428] rounded-lg shadow-xl overflow-hidden">
                       {characters.map((char) => (
                         <button
@@ -673,6 +681,14 @@ age: (selectedCharacter as any).age,
                   <div className="flex-1">
                     <div className="text-sm text-stone-200">{item.name}</div>
                     {item.quantity > 1 && <div className="text-xs text-stone-500">Quantity: {item.quantity}</div>}
+                    {/* Slot badge: shows where an equippable item can go. Never
+                        reveals cursed status — cursed items must look ordinary. */}
+                    {item.equippable_slot && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded border border-[#d4b15a]/40 bg-[#d4b15a]/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#d4b15a]">
+                        <Swords className="w-2.5 h-2.5" />
+                        {EQUIPMENT_SLOTS.find(s => s.id === item.equippable_slot)?.label ?? "Equippable"}
+                      </span>
+                    )}
                   </div>
                 </button>
               ))}
