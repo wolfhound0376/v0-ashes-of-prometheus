@@ -27,7 +27,8 @@ export async function POST(
           context.campaignId,
           context.currentEpisode || "",
           context.currentLocation || "",
-          context.currentHeat || ""
+          context.currentHeat || "",
+          content,
         )
         worldContextText = formatWorldContextForAI(worldContext)
       } catch (err) {

@@ -2,6 +2,13 @@
 import { createClient } from "@/lib/supabase/server"
 import { CAMPAIGNS, Campaign } from "./campaigns"
 import type { Character, InventoryItem, EquipmentItem, Ability, Environment, Dialogue } from "@/lib/types/database"
+import {
+  retrieveBookPassages,
+  formatBookPassages,
+  formatPersonality,
+  type BookRetrieval,
+  type LichPersonality,
+} from "./book-retrieval"
 
 export interface WorldContext {
   campaign: {
@@ -59,6 +66,8 @@ export interface WorldContext {
     speaker: string
     text: string
   }>
+  book: BookRetrieval
+  personality: LichPersonality | null
 }
 
 // Build campaign context from the campaigns.ts data
@@ -283,12 +292,37 @@ export async function fetchRecentDialogue(limit = 10): Promise<WorldContext["rec
   }
 }
 
+async function fetchPersonality(): Promise<LichPersonality | null> {
+  try {
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from("lich_personality")
+      .select("snark, cruelty, crassness, swearing, fourth_wall, roast_target")
+      .limit(1)
+      .maybeSingle()
+    return (data as LichPersonality) ?? null
+  } catch (err) {
+    console.warn("[WorldContext] personality fetch failed:", err)
+    return null
+  }
+}
+
+// "1" -> "Act 1 - Prisoners of the Drow". The act label is half of what makes
+// retrieval land in the right chapter, so resolve it properly rather than
+// passing the bare episode number.
+function episodeLabelFor(campaignId: string, episode: string): string {
+  const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS]
+  const match = campaign?.contexts?.episodes?.find(([value]) => value === episode)
+  return match ? match[1] : ""
+}
+
 // Build the full world context
 export async function buildWorldContext(
   campaignId: string,
   episode: string,
   location: string,
-  heat: string
+  heat: string,
+  playerMessage: string = ""
 ): Promise<WorldContext> {
   const supabase = await createClient()
 
@@ -304,12 +338,18 @@ export async function buildWorldContext(
   const currentLocation = latestEnv?.name || location
   console.log("[WorldContext] Using location:", currentLocation)
 
-  const [characters, environment, recentDialogue, npcConditions] = await Promise.all([
-    fetchCharacters(),
-    fetchEnvironment(campaignId, currentLocation),
-    fetchRecentDialogue(),
-    fetchNpcConditions()
-  ])
+  const [characters, environment, recentDialogue, npcConditions, personality, book] =
+    await Promise.all([
+      fetchCharacters(),
+      fetchEnvironment(campaignId, currentLocation),
+      fetchRecentDialogue(),
+      fetchNpcConditions(),
+      fetchPersonality(),
+      retrieveBookPassages(campaignId, playerMessage, {
+        episodeLabel: episodeLabelFor(campaignId, episode),
+        location: currentLocation,
+      }),
+    ])
 
   const campaign = buildCampaignContext(campaignId, episode, currentLocation, heat)
 
@@ -329,7 +369,9 @@ export async function buildWorldContext(
     characters,
     npcConditions,
     environment,
-    recentDialogue
+    recentDialogue,
+    personality,
+    book,
   }
 }
 
@@ -352,6 +394,12 @@ export function formatWorldContextForAI(context: WorldContext): string {
   lines.push(`=== DM INSTRUCTIONS ===`)
   lines.push(context.campaign.systemPrompt)
   lines.push("")
+
+  const bookBlock = formatBookPassages(context.book)
+  if (bookBlock) lines.push(bookBlock)
+
+  const personalityBlock = formatPersonality(context.personality)
+  if (personalityBlock) lines.push(personalityBlock)
 
   // Lore
   if (context.campaign.lore.length > 0) {

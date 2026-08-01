@@ -397,7 +397,8 @@ WORKED EXAMPLES (follow this mapping exactly):
     campaignId,
     campaign.contexts.defaults.episode,
     "", // Pass empty string - buildWorldContext will query the latest location from DB
-    campaign.contexts.defaults.heat
+    campaign.contexts.defaults.heat,
+    message,
   )
   const worldContextText = formatWorldContextForAI(worldContext)
 
