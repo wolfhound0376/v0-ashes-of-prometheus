@@ -1,6 +1,7 @@
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
 // ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
@@ -197,7 +198,7 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss" } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null } = await req.json()
 
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
@@ -226,12 +227,58 @@ export async function POST(req: Request) {
     sessionCharacterId = activeSession?.active_character_id ?? null
   }
 
-  // Resolve the player character: session.active_character_id first, then fall
-  // back to the newest is_player=true row. Both paths use limit(1)/maybeSingle
-  // so extra player or NPC rows can never throw or null out the result.
+  // Resolve the player character in priority order:
+  //   1. body.characterId — the per-message speaker sent by that browser. This
+  //      is the fix for the "one global seat" bug: with four browsers open,
+  //      each message now carries its own speaker instead of everyone sharing
+  //      session.active_character_id.
+  //   2. session.active_character_id — the DM "spotlight" pointer (DM view).
+  //   3. the newest is_player=true row — last-resort fallback.
+  // Every path uses limit(1)/maybeSingle so extra player or NPC rows can never
+  // throw or null out the result.
   let playerCharacter: { id: string; name: string } | null = null
   let playerResolveVia = "none"
-  if (sessionCharacterId) {
+
+  // If a claimToken is provided, the browser is claiming a specific character
+  // via a claim link. Verify the (characterId, claim_token) pair with the
+  // service-role client BEFORE accepting the message as that character. A
+  // mismatch means someone is trying to speak as a character they don't own.
+  if (characterId && claimToken) {
+    let admin
+    try {
+      admin = createAdminClient()
+    } catch (e) {
+      console.error("[v0] chat: admin client unavailable for claim verification:", e)
+      return Response.json({ error: "Claim verification unavailable" }, { status: 500 })
+    }
+    const { data: claimRow } = await admin
+      .from("characters")
+      .select("id, name, claim_token")
+      .eq("id", characterId)
+      .maybeSingle()
+    if (!claimRow || claimRow.claim_token !== claimToken) {
+      console.warn("[v0] chat: claim token mismatch for characterId:", characterId)
+      return Response.json({ error: "Invalid character claim" }, { status: 403 })
+    }
+    playerCharacter = { id: claimRow.id, name: claimRow.name }
+    playerResolveVia = "body.characterId"
+  }
+
+  // No claim token, but the browser told us which character it is. Trust the
+  // body.characterId for speaker attribution (unclaimed / shared-TV browsers).
+  if (!playerCharacter && characterId) {
+    const { data } = await supabase
+      .from("characters")
+      .select("id, name")
+      .eq("id", characterId)
+      .maybeSingle()
+    if (data) {
+      playerCharacter = data as { id: string; name: string }
+      playerResolveVia = "body.characterId"
+    }
+  }
+
+  if (!playerCharacter && sessionCharacterId) {
     const { data } = await supabase
       .from("characters")
       .select("id, name")
@@ -350,7 +397,8 @@ WORKED EXAMPLES (follow this mapping exactly):
     campaignId,
     campaign.contexts.defaults.episode,
     "", // Pass empty string - buildWorldContext will query the latest location from DB
-    campaign.contexts.defaults.heat
+    campaign.contexts.defaults.heat,
+    message,
   )
   const worldContextText = formatWorldContextForAI(worldContext)
 
@@ -620,7 +668,7 @@ HEALTH & CONDITIONS:
     * Jimjar → dark fantasy portrait of a wiry deep gnome, large curious eyes, wide infectious grin, messy dark hair, nimble fingers, prisoner rags, Underdark cave background
     * Ront → dark fantasy portrait of a hulking orc, heavily scarred face, tusks, greasy black hair, prisoner rags straining over massive frame, sullen aggressive expression
     * Stool → dark fantasy illustration of a small myconid sprout, rounded mushroom cap head, glowing bioluminescent spores, childlike innocent posture, soft purple-blue glow, Underdark cave
-    * Topsy → dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy
+    * Topsy �� dark fantasy portrait of a deep gnome girl, dark eyes, nervous expression, slightly feral look, messy hair, prisoner rags, subtle signs of lycanthropy
     * Turvy → dark fantasy portrait of a deep gnome boy, twin to Topsy, nervous darting eyes, fidgety posture, prisoner rags, subtle signs of lycanthropy
     * Shuushar → dark fantasy portrait of a kuo-toa monk, blue-grey fish-like humanoid, large bulbous eyes, calm serene expression, prisoner rags, Underdark cave background
     * Derendil → dark fantasy portrait of a quaggoth, large white-furred ape-like humanoid, intelligent sad eyes, claims to be an elven prince, prisoner rags, Underdark cave

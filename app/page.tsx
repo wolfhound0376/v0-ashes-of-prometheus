@@ -48,6 +48,11 @@ function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): Dial
 const tempId = () =>
   `optimistic-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random()}`
 
+// localStorage key for the per-browser player character selection. This is what
+// makes four browsers each keep their own character instead of sharing one
+// global session pointer.
+const CHARACTER_LS_KEY = "aop_character_id"
+
 export default function DashboardPage() {
   const supabase = createClient()
 
@@ -58,8 +63,17 @@ export default function DashboardPage() {
   // Character selection state
   const [characters, setCharacters] = useState<Character[]>([])
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
-  // The active game session whose active_character_id is the canonical player
-  // selection shared with the chat route (narrator / item awards / sheet).
+  // Per-browser character claim. When a player opens a claim link
+  // (/?c=<characterId>&k=<claimToken>) and it verifies server-side, the picker
+  // is locked to that character and the token is sent with every message so the
+  // chat route can prove the browser owns that sheet. `null` = DM / shared-TV.
+  const [claimToken, setClaimToken] = useState<string | null>(null)
+  const [claimLocked, setClaimLocked] = useState(false)
+  // Set only when a claim link is present but the pair is invalid — we show a
+  // plain error state instead of silently exposing the full picker.
+  const [claimInvalid, setClaimInvalid] = useState(false)
+  // The active game session. active_character_id is now a DM-only "spotlight"
+  // pointer — players persist their own selection to localStorage instead.
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
@@ -256,11 +270,8 @@ export default function DashboardPage() {
         setCharacters(data)
         const players = data.filter((c: any) => c.is_player)
 
-        // Initialize the selected character from the active session's
-        // active_character_id — the same canonical pointer the chat route uses.
-        // Mirror its session resolution: prefer status='active', else the most
-        // recently started session. Fall back to the first player when unset or
-        // pointing at a non-player/missing row.
+        // Resolve the session pointer (DM "spotlight") so the DM view can still
+        // display it. Players no longer follow this pointer for their own seat.
         const { data: sess } = await supabase
           .from('sessions')
           .select('id, status, started_at, active_character_id')
@@ -269,12 +280,23 @@ export default function DashboardPage() {
         const activeSession = rows.find((s) => s.status === 'active') ?? rows[0] ?? null
         setActiveSessionId(activeSession?.id ?? null)
 
-        const sessionCharId = activeSession?.active_character_id ?? null
-        const initialId =
-          sessionCharId && players.some((p: any) => p.id === sessionCharId)
+        // 1. Claim link takes precedence. If /?c=&k= verified server-side, we've
+        //    already locked selectedCharacterId in the claim effect — respect it.
+        // 2. Otherwise prefer this browser's own localStorage selection.
+        // 3. Only when localStorage is empty (first visit) fall back to the
+        //    session spotlight pointer, then the first player.
+        const stored =
+          typeof window !== 'undefined' ? window.localStorage.getItem(CHARACTER_LS_KEY) : null
+
+        setSelectedCharacterId((current) => {
+          // A claim effect already picked a character for this browser.
+          if (current) return current
+          if (stored && data.some((c: any) => c.id === stored)) return stored
+          const sessionCharId = activeSession?.active_character_id ?? null
+          return sessionCharId && players.some((p: any) => p.id === sessionCharId)
             ? sessionCharId
             : players[0]?.id ?? data[0].id
-        setSelectedCharacterId(initialId)
+        })
       }
       setLoadingCharacters(false)
     }
@@ -297,6 +319,51 @@ export default function DashboardPage() {
 
     fetchCharacters()
     fetchEnvironment()
+  }, [])
+
+  // Claim-link handling. A URL shaped /?c=<characterId>&k=<claimToken> locks
+  // this browser to a single character:
+  //   - Both params present  -> verify the pair SERVER-SIDE (/api/verify-claim,
+  //     service-role). On valid: lock + persist to localStorage + hide picker.
+  //     On invalid: show a plain error state, never fall back to the picker.
+  //   - No params            -> DM / shared-TV mode; leave the picker alone.
+  // Runs once on mount and sets selectedCharacterId ahead of the roster fetch,
+  // which respects an already-set selection.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const c = params.get('c')
+    const k = params.get('k')
+    if (!c || !k) return // No claim params = DM / shared-TV mode.
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/verify-claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ characterId: c, claimToken: k }),
+        })
+        const result = await res.json()
+        if (cancelled) return
+        if (res.ok && result?.valid) {
+          setSelectedCharacterId(c)
+          setClaimToken(k)
+          setClaimLocked(true)
+          setClaimInvalid(false)
+          window.localStorage.setItem(CHARACTER_LS_KEY, c)
+        } else {
+          setClaimInvalid(true)
+        }
+      } catch (err) {
+        console.error('[v0] claim verification failed:', err)
+        if (!cancelled) setClaimInvalid(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Fetch the SHARED active NPC encounters — NO character_id filter — so every
@@ -469,20 +536,16 @@ if (error) {
   // Only player characters are selectable in the dashboard dropdown.
   const players = characters.filter((c: any) => c.is_player)
 
-  // Change the active player: update local state AND persist to the active
-  // session's active_character_id so the narrator, item awards, and the sheet
-  // all follow the same canonical selection (see app/api/chat/route.ts).
-  const handleCharacterSelect = async (characterId: string) => {
+  // Change the active player for THIS browser only. Selection is per-browser
+  // now: it lives in local state and persists to localStorage so a reload keeps
+  // the same seat. It is NEVER written to sessions.active_character_id — that
+  // pointer is the DM-only "spotlight" and writing it here is exactly the bug
+  // that made the last picker the speaker for everyone.
+  const handleCharacterSelect = (characterId: string) => {
     setSelectedCharacterId(characterId)
-    if (!activeSessionId) {
-      console.warn('[v0] No active session; active_character_id not persisted.')
-      return
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(CHARACTER_LS_KEY, characterId)
     }
-    const { error } = await supabase
-      .from('sessions')
-      .update({ active_character_id: characterId })
-      .eq('id', activeSessionId)
-    if (error) console.error('Error updating session active_character_id:', error)
   }
 
   // In combat when any active NPC has a Challenge Rating above 0 (monsters, not friendly prisoners).
@@ -533,8 +596,9 @@ if (error) {
       const playerName = selectedCharacter?.name || "Player"
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
 
-      // Send to the Lich
-      const response = await sendToLich(text)
+      // Send to the Lich, carrying THIS browser's character + claim token so
+      // the chat route attributes the message to the right player.
+      const response = await sendToLich(text, selectedCharacterId, claimToken)
       if (response?.text) {
         // Optimistically add Malachar's response (also pending → reconciled by id)
         setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
@@ -607,6 +671,21 @@ if (error) {
     } catch (error) {
       console.error('Error populating starting gear:', error)
     }
+  }
+
+  // Invalid claim link: do NOT fall back to the full picker — show a plain
+  // "that link isn't valid" state so a bad/expired token can't reveal the roster.
+  if (claimInvalid) {
+    return (
+      <div className="min-h-screen bg-[#0a0908] text-stone-200 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-[#1a1614] border border-[#3d3428] rounded-lg p-8 text-center shadow-2xl">
+          <h1 className="text-2xl font-serif text-[#d4b15a] mb-3 text-balance">That link isn&apos;t valid</h1>
+          <p className="text-stone-400 leading-relaxed">
+            This character claim link is invalid or has expired. Ask your Dungeon Master for a fresh link to join the session.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -745,8 +824,8 @@ if (error) {
             const playerName = selectedCharacter?.name || "Player"
             setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
 
-            // Send to Lich
-            const response = await sendToLich(message)
+            // Send to Lich, carrying THIS browser's character + claim token.
+            const response = await sendToLich(message, selectedCharacterId, claimToken)
             if (response) {
               // Optimistically add Malachar's response to dialogue (also pending)
               if (response.text) {
@@ -777,6 +856,7 @@ if (error) {
   characters={players}
   selectedCharacterId={selectedCharacterId}
   onCharacterSelect={handleCharacterSelect}
+  disableCharacterSelect={claimLocked}
   selectedCharacter={selectedCharacter}
   characterInventory={characterInventory}
   characterEquipment={characterEquipment}
