@@ -159,6 +159,59 @@ async function findSharedActiveEncounter(supabase: any, name: string) {
     | null
 }
 
+// ALIAS-AWARE IDENTITY RESOLUTION. An LLM never uses NPC names consistently — it
+// emits [NPC_ENCOUNTER: Derendil] for the row "Prince Derendil" — so an exact /
+// wildcardless-ilike lookup misses and the app regenerates a face/voice that
+// already exists (paying Fal for nothing). This maps a raw tag name to its
+// canonical npc_encounters row via three tiers, then auto-learns the variant as
+// an alias so the next occurrence is a direct hit. Returns null ONLY when the
+// NPC is genuinely new (the sole case where portrait generation is allowed).
+async function resolveNpcByName(
+  supabase: any,
+  rawName: string,
+): Promise<{ id: string; name: string; aliases: string[]; created_at: string } | null> {
+  const name = (rawName || "").trim().toLowerCase()
+  if (!name) return null
+  const { data } = await supabase
+    .from("npc_encounters")
+    .select("id, name, aliases, created_at")
+    .order("created_at", { ascending: false })
+  const rows: any[] = data ?? []
+
+  // 1. Exact canonical name (case-insensitive).
+  let hit = rows.find((r) => (r.name || "").trim().toLowerCase() === name)
+  // 2. Known alias.
+  if (!hit) hit = rows.find((r) => (r.aliases ?? []).some((a: string) => (a || "").trim().toLowerCase() === name))
+  // 3. Token containment: every token of the shorter name appears in the longer
+  //    name, and at least one shared token is distinctive (length >= 4). Catches
+  //    "Derendil" inside "Prince Derendil" without letting "Drow Guard" claim
+  //    "Drow Priestess".
+  if (!hit) {
+    const toks = (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean)
+    const a = toks(name)
+    hit = rows.find((r) => {
+      const b = toks(r.name || "")
+      const [small, big] = a.length <= b.length ? [a, b] : [b, a]
+      return small.length > 0 && small.every((t) => big.includes(t)) && small.some((t) => t.length >= 4)
+    })
+  }
+
+  // Auto-learn: remember this variant so next time it is a direct alias hit.
+  if (
+    hit &&
+    (hit.name || "").trim().toLowerCase() !== name &&
+    !(hit.aliases ?? []).some((a: string) => (a || "").trim().toLowerCase() === name)
+  ) {
+    const nextAliases = [...(hit.aliases ?? []), rawName.trim()]
+    const { error } = await supabase.from("npc_encounters").update({ aliases: nextAliases }).eq("id", hit.id)
+    if (error) console.error("[v0] Failed to auto-learn NPC alias:", error.message)
+    else console.log("[v0] Learned NPC alias:", rawName.trim(), "->", hit.name)
+    hit = { ...hit, aliases: nextAliases }
+  }
+
+  return hit ?? null
+}
+
 // Look up a character row by name (case-insensitive) with NO is_player filter,
 // so PLAYER rows are visible. Tiered match: exact -> prefix -> contains. Returns
 // the matched row's identity flags, or null when no character shares the name.
@@ -289,6 +342,27 @@ These are player characters controlled by real humans: ${playerRoster.join(", ")
 
   console.log("[v0] chat: player roster:", playerRoster.length ? playerRoster.join(", ") : "(none)")
 
+  // Build the CANONICAL NPC roster dynamically from npc_encounters. Injected
+  // into the narrator prompt so Malachar emits tags with the exact stored names
+  // ("Prince Derendil", not "Derendil") — cutting off name-variant misses at the
+  // source so identity resolution rarely has to fall back to fuzzy matching.
+  const { data: npcNameRows } = await supabase.from("npc_encounters").select("name")
+  const knownNpcNames = Array.from(
+    new Set(
+      (npcNameRows || [])
+        .map((r: { name: string | null }) => (r.name || "").trim())
+        .filter((n: string) => n.length > 0),
+    ),
+  )
+  const knownNpcRosterBlock =
+    knownNpcNames.length > 0
+      ? `=== KNOWN NPCs — CANONICAL NAMES ===
+When emitting [NPC_ENCOUNTER:], [NPC_DAMAGE:], [NPC_LEAVE:], [CONDITION_ADD:] or ANY NPC tag, you MUST use these EXACT canonical names for these characters: ${knownNpcNames.join(", ")}. Never shorten, expand, or vary them inside tags (your prose narration can refer to them however you like).
+=== END KNOWN NPCs ===`
+      : ""
+
+  console.log("[v0] chat: known NPC roster:", knownNpcNames.length ? knownNpcNames.join(", ") : "(none)")
+
   // Fetch the character's CURRENT inventory so it can be injected into the
   // narrator prompt as the authoritative list of what they possess this turn.
   const { data: currentInventory } = playerCharacter?.id
@@ -418,6 +492,8 @@ This is an ONGOING session already in progress. The conversation history above i
 - If the player's latest message is a "[Dice Roll]" with no stated action, resolve the action that roll was for and narrate the OUTCOME. Do NOT re-describe the room or restate the current situation.
 
 ${playerRosterBlock}
+
+${knownNpcRosterBlock}
 
 === CRITICAL OUTPUT RULES — READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
@@ -938,11 +1014,14 @@ EXPERIENCE POINTS:
       if (charRow?.id) {
         return { table: "characters", id: charRow.id, name: charRow.name, conditions: (charRow.conditions as string[]) || [] }
       }
-      // Fall back to the most recent npc_encounters row with this name.
+      // Fall back to the npc_encounters row for this name — alias-aware, so a
+      // condition on "Derendil" lands on the "Prince Derendil" row. Persisting
+      // by the canonical name then updates every row sharing that identity.
+      const canonicalNpcName = (await resolveNpcByName(supabase, wanted))?.name || wanted
       const { data: npcRow } = await supabase
         .from("npc_encounters")
         .select("id, name, conditions")
-        .ilike("name", wanted)
+        .ilike("name", canonicalNpcName)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -1048,39 +1127,51 @@ EXPERIENCE POINTS:
         continue
       }
 
-      encounteredThisTurn.add(name)
+      // ALIAS-AWARE RESOLUTION FIRST: map the raw tag name to the canonical row
+      // if this NPC already exists under any name variant. When resolved, use
+      // the CANONICAL name for everything downstream (canon fetch, shared-row
+      // upsert, stats, dialogue attribution) so a variant never spawns a new
+      // identity. `isKnownNpc` gates portrait generation — only a genuinely new
+      // NPC (resolver returned null) may generate art.
+      const resolvedNpc = await resolveNpcByName(supabase, name)
+      const canonicalName = resolvedNpc?.name?.trim() || name
+      const isKnownNpc = !!resolvedNpc
+      if (resolvedNpc && canonicalName.toLowerCase() !== name.toLowerCase()) {
+        console.log("[v0] NPC name resolved:", name, "->", canonicalName)
+      }
+
+      encounteredThisTurn.add(canonicalName)
       const desc = description.trim()
       const prompt = portraitPrompt.trim()
       const cr = crStr ? parseFloat(crStr.trim()) : undefined
       const xp = xpStr ? parseInt(xpStr.trim()) : undefined
       const type = monsterType ? monsterType.trim() : undefined
 
-      console.log("[v0] NPC_ENCOUNTER tag found:", name, "| CR:", cr, "| XP:", xp, "| Type:", type)
+      console.log("[v0] NPC_ENCOUNTER tag found:", canonicalName, "| CR:", cr, "| XP:", xp, "| Type:", type)
 
-      // CANON IDENTITY SEEDING: NPC identity is keyed by NAME. Gather canon
-      // assets from every row sharing this name so a new row inherits the
+      // CANON IDENTITY SEEDING: NPC identity is keyed by the CANONICAL NAME.
+      // Gather canon assets from every row sharing it so a new row inherits the
       // existing face/voice/videos/conditions instead of generating fresh ones.
       // A canon portrait is the source of truth and must never be replaced by a
-      // freshly generated fal.media image, so we only generate when NO row with
-      // this name has a portrait.
-      const { canon } = await fetchNpcCanonByName(supabase, name)
+      // freshly generated fal.media image.
+      const { canon } = await fetchNpcCanonByName(supabase, canonicalName)
       const hasCanonPortrait = !!(canon.portrait_url && String(canon.portrait_url).trim())
 
-      // SHARED, SINGLE-TRUTH ROW: find ANY existing row for this name
+      // SHARED, SINGLE-TRUTH ROW: find ANY existing row for the canonical name
       // (case-insensitive), regardless of which character engaged it, preferring
       // the most recent. We UPSERT onto it instead of inserting a new
       // per-character row — this is the fix for the "Jimjar ×3" duplication.
       const { data: existingNpc } = await supabase
         .from("npc_encounters")
         .select("id, portrait_url, face_url, voice_id, voice_description, idle_url, talking_url, conditions, hp_max, hp_current")
-        .ilike("name", name)
+        .ilike("name", canonicalName)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle()
 
       // Resolve REAL stats: bestiary → campaign stat block → CR-appropriate
       // improvised value. Never the old silent 75 default.
-      const stats = await resolveNpcStats(supabase, name, cr, xp)
+      const stats = await resolveNpcStats(supabase, canonicalName, cr, xp)
       // Prisoner-allies / neutrals do not get a monster HP bar unless the tag
       // explicitly carries a combat CR (i.e. combat actually involves them).
       const isCombat = typeof cr === "number" && cr > 0
@@ -1101,8 +1192,11 @@ EXPERIENCE POINTS:
       )
 
       let portraitUrl: string | null = null
-      if (hasCanonPortrait) {
-        console.log("[v0] Skipping portrait generation — canon portrait exists for:", name)
+      if (isKnownNpc || hasCanonPortrait) {
+        // Known NPC (resolved by name/alias/token) OR a canon portrait already
+        // exists — never regenerate. This is the fix: an alias hit now short-
+        // circuits generation instead of paying Fal to remake an existing face.
+        console.log("[v0] Skipping portrait generation — existing NPC identity for:", canonicalName)
       } else {
         try {
           const result = await fal.subscribe("fal-ai/flux/schnell", {
@@ -1159,15 +1253,15 @@ EXPERIENCE POINTS:
         await supabase
           .from("npc_encounters")
           .update({ is_active: false })
-          .ilike("name", name)
+          .ilike("name", canonicalName)
           .neq("id", existingNpc.id)
-        console.log("[v0] NPC upserted (shared row):", name, "| hp_max:", update.hp_max ?? existingHpMax, "| source:", stats.source)
+        console.log("[v0] NPC upserted (shared row):", canonicalName, "| hp_max:", update.hp_max ?? existingHpMax, "| source:", stats.source)
       } else {
-        // Insert the FIRST shared row for this name, seeded from canon identity
-        // and real resolved stats (never a silent 75).
+        // Insert the FIRST shared row for this NPC, seeded from canon identity
+        // and real resolved stats (never a silent 75). Uses the canonical name.
         const { error } = await supabase.from("npc_encounters").insert({
           character_id: playerCharacter.id,
-          name,
+          name: canonicalName,
           description: desc,
           portrait_url: canon.portrait_url || portraitUrl,
           face_url: canon.face_url,
@@ -1186,7 +1280,7 @@ EXPERIENCE POINTS:
         if (error) {
           console.error("[v0] Error creating NPC encounter:", error)
         } else {
-          console.log("[v0] NPC encounter created (shared, real stats):", name, "| hp_max:", resolvedHpMax, "| source:", stats.source, "| ally:", stats.ally)
+          console.log("[v0] NPC encounter created (shared, real stats):", canonicalName, "| hp_max:", resolvedHpMax, "| source:", stats.source, "| ally:", stats.ally)
         }
       }
     }
@@ -1200,9 +1294,11 @@ EXPERIENCE POINTS:
       console.log("[v0] NPC_DAMAGE tag found:", name, "takes", amount, "damage")
 
       if (amount > 0) {
-        // Operate on the SHARED active row (no character_id scope) so damage
-        // dealt on one screen updates the single truth row every client reads.
-        const npc = await findSharedActiveEncounter(supabase, name)
+        // Resolve the canonical identity first so damage to "Jorlan" lands on
+        // "Jorlan Duskryn", then operate on the SHARED active row (no
+        // character_id scope) so every client reads the single truth row.
+        const canonicalName = (await resolveNpcByName(supabase, name))?.name || name
+        const npc = await findSharedActiveEncounter(supabase, canonicalName)
 
         if (npc) {
           const newHp = Math.max(0, (npc.hp_current || 0) - amount)
@@ -1230,8 +1326,10 @@ EXPERIENCE POINTS:
     const npcLeaveMatches = rawText.matchAll(/\[NPC_LEAVE:\s*([^\]]+)\]/gi)
     for (const match of npcLeaveMatches) {
       const [, npcName] = match
-      const name = npcName.trim()
-      console.log("[v0] NPC_LEAVE tag found:", name)
+      const rawLeaveName = npcName.trim()
+      // Resolve to canonical identity so a variant clears the right encounter.
+      const name = (await resolveNpcByName(supabase, rawLeaveName))?.name || rawLeaveName
+      console.log("[v0] NPC_LEAVE tag found:", rawLeaveName, name !== rawLeaveName ? `(-> ${name})` : "")
 
       // Fetch the SHARED active row (no character_id scope) to check defeat + XP.
       const npc = await findSharedActiveEncounter(supabase, name)
@@ -1514,9 +1612,14 @@ Respond ONLY with valid JSON, no other text:
         if (parsed.npc && isPlayerCharacterRow(autoMatchedCharacter)) {
           console.log("[v0] Auto-detected speaker is a PLAYER character — skipping encounter:", parsed.npc)
         } else if (parsed.npc) {
-          const npcName: string = parsed.npc
+          // Alias-aware resolution so a name variant reuses the existing row and
+          // never regenerates a portrait for an NPC that already exists.
+          const rawNpcName: string = parsed.npc
+          const resolvedSpeaker = await resolveNpcByName(supabase, rawNpcName)
+          const npcName: string = resolvedSpeaker?.name?.trim() || rawNpcName
+          const isKnownSpeaker = !!resolvedSpeaker
           encounteredThisTurn.add(npcName)
-          console.log("[v0] Auto-detected speaking NPC:", npcName)
+          console.log("[v0] Auto-detected speaking NPC:", rawNpcName, npcName !== rawNpcName ? `(-> ${npcName})` : "")
 
           const portraitPrompts: Record<string, string> = {
             "Ilvara Mizzrym": "dark fantasy portrait of a tall elegant drow priestess, stark white hair, obsidian skin, crimson spider-silk robes, cruel violet eyes, silver holy symbol of Lolth, dramatic Underdark lighting",
@@ -1552,10 +1655,11 @@ Respond ONLY with valid JSON, no other text:
 
           const canonPortrait = npcCanon.portrait_url && String(npcCanon.portrait_url).trim() ? npcCanon.portrait_url : null
 
-          // Generate portrait via Fal only when no canon portrait exists.
+          // Generate portrait via Fal only when this NPC is genuinely new AND
+          // no canon portrait exists — a resolved/known speaker never regenerates.
           let autoPortraitUrl: string | null = null
-          if (canonPortrait) {
-            console.log("[v0] Skipping auto portrait — canon portrait exists for:", npcName)
+          if (isKnownSpeaker || canonPortrait) {
+            console.log("[v0] Skipping auto portrait — existing NPC identity for:", npcName)
           } else {
             try {
               const result = await fal.subscribe("fal-ai/flux/schnell", {
