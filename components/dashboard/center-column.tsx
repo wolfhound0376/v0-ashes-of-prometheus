@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import { DiceRoller } from "./dice-roller"
 import { ReactionsPanel } from "./reactions-panel"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
+import { createClient } from "@/lib/supabase/client"
 
 interface Action {
   id: string
@@ -58,6 +59,7 @@ interface Resources {
 interface NpcEncounter {
   id: string
   name: string
+  aliases?: string[] | null
   description: string | null
   portrait_url: string | null
   // Optional dedicated face close-up. When present it is used for the featured
@@ -79,10 +81,18 @@ interface NpcEncounter {
   conditions?: string[] | null
 }
 
+interface PersistedSpeechSegment {
+  speaker: string
+  line: string
+  npc_id: string | null
+  voice_id: string | null
+}
+
 interface DialogueEntry {
   id?: string
   speaker: string
   text: string
+  speech_segments?: PersistedSpeechSegment[] | null
 }
 
 interface CenterColumnProps {
@@ -117,6 +127,7 @@ export interface SpeakerSegment {
   npcId: string | null   // null = pure narration
   line: string           // the spoken text (quotes stripped) for TTS
   raw: string            // the full slice, for captions
+  voiceId?: string | null // server-persisted voice for this resolved NPC row
 }
 
 // Describes-but-never-names fallbacks. Attribution by name fails for NPCs the
@@ -166,13 +177,17 @@ export function segmentBySpeaker(text: string, roster: NpcEncounter[]): SpeakerS
     let best: { id: string; idx: number } | null = null
     for (const npc of roster) {
       if (!npc.name) continue
-      let idx = findNameIndex(window, npc.name)
-      if (idx === -1) {
-        const first = npc.name.trim().split(/\s+/)[0]
-        if (first && first.length >= 3) idx = findNameIndex(window, first)
+      const canonicalFirst = npc.name.trim().split(/\s+/)[0]
+      const names = [npc.name, ...(Array.isArray(npc.aliases) ? npc.aliases : [])]
+      let idx = -1
+      for (const name of names) {
+        const exactIdx = findNameIndex(window, name)
+        const first = name.trim().split(/\s+/)[0]
+        const firstIdx = first && first.length >= 3 ? findNameIndex(window, first) : -1
+        idx = Math.max(idx, exactIdx, firstIdx)
       }
       if (idx === -1) {
-        const alias = NPC_ALIASES[npc.name.trim().split(/\s+/)[0]]
+        const alias = NPC_ALIASES[canonicalFirst]
         if (alias) {
           const am = window.match(alias)
           if (am && am.index !== undefined) idx = am.index
@@ -182,6 +197,23 @@ export function segmentBySpeaker(text: string, roster: NpcEncounter[]): SpeakerS
       if (idx !== -1 && (!best || idx > best.idx)) best = { id: npc.id, idx }
     }
     return best?.id ?? null
+  }
+
+  // A leading parenthetical or dash-delimited phrase after a closing quote is
+  // descriptive prose, not speaker attribution. Remove only that leading aside
+  // before applying the weaker post-quote name rule.
+  const withoutLeadingAside = (window: string): string => {
+    const trimmed = window.trimStart()
+    if (trimmed.startsWith("(")) {
+      const close = trimmed.indexOf(")")
+      if (close !== -1) return trimmed.slice(close + 1)
+    }
+    if (/^[—–-]/.test(trimmed)) {
+      const close = trimmed.slice(1).search(/[—–-]/)
+      if (close !== -1) return trimmed.slice(close + 2)
+      return ""
+    }
+    return window
   }
 
   const segments: SpeakerSegment[] = []
@@ -195,7 +227,7 @@ export function segmentBySpeaker(text: string, roster: NpcEncounter[]): SpeakerS
 
     const speaker =
       matchIn(before) ??
-      matchIn(after) ??
+      matchIn(withoutLeadingAside(after)) ??
       (before.trim().length < 3 ? previousSpeaker : null) ??
       matchIn(inside)
 
@@ -292,27 +324,73 @@ const actionTypeColors = {
 type ActionTab = "action" | "bonus" | "reaction"
 
 export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich, sceneImageUrl, npcEncounters = [], dialogue = [] }: CenterColumnProps) {
-  // Filter active encounters
+  // Filter active encounters for the tile strip, but attribution uses a separate
+  // one-time fetch of the FULL roster so inactive NPCs remain resolvable.
   const activeEncounters = npcEncounters.filter(e => e.is_active)
+  const supabase = useMemo(() => createClient(), [])
+  const [fullNpcRoster, setFullNpcRoster] = useState<NpcEncounter[]>([])
+  const [persistedSegments, setPersistedSegments] = useState<PersistedSpeechSegment[] | null | undefined>(undefined)
 
-  // --- Active speaker sequencing --------------------------------------------
-  // The featured speaker is DERIVED from the last dialogue entry rather than
-  // tracked via append-counting. Deriving is resilient to every way the real
-  // app mutates `dialogue`: optimistic appends, realtime INSERT appends, a full
-  // array replace on initial fetch / campaign restore, and — critically — the
-  // npc roster arriving AFTER the message (a memo re-runs whenever
-  // `npcEncounters` changes).
-  //
-  // A single DM message can contain SEVERAL NPCs speaking in turn. We split it
-  // into ordered speaker segments and play through them one beat at a time —
-  // each NPC gets its own portrait and its own voice for its own line. A
-  // player/system message (or a DM message with no NPC dialogue) yields no
-  // segments and clears the featured view back to the normal tile grid.
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from("npc_encounters")
+      .select("id, name, aliases, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, conditions")
+      .then(({ data }: { data: NpcEncounter[] | null }) => {
+        if (!cancelled) setFullNpcRoster(data || [])
+      })
+    return () => { cancelled = true }
+  }, [supabase])
+
+  const lastDialogue = dialogue[dialogue.length - 1]
+  useEffect(() => {
+    let cancelled = false
+    if (!lastDialogue || lastDialogue.speaker !== DM_SPEAKER) {
+      setPersistedSegments(undefined)
+      return () => { cancelled = true }
+    }
+    if (lastDialogue.speech_segments !== undefined) {
+      setPersistedSegments(lastDialogue.speech_segments)
+      return () => { cancelled = true }
+    }
+
+    // The parent keeps a lightweight dialogue shape. Read the just-inserted DM
+    // row so its persisted server attribution is available before any TTS plays.
+    setPersistedSegments(undefined)
+    supabase
+      .from("dialogue")
+      .select("speech_segments")
+      .eq("speaker", DM_SPEAKER)
+      .eq("text", lastDialogue.text)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }: { data: { speech_segments?: PersistedSpeechSegment[] | null } | null }) => {
+        if (!cancelled) setPersistedSegments(data?.speech_segments ?? null)
+      })
+    return () => { cancelled = true }
+  }, [lastDialogue, supabase])
+
+  // Server segments are authoritative. Only a persisted null (old row or failed
+  // model pass) enables the regex fallback; undefined means the DB read is still
+  // pending, so no potentially misattributed voice is allowed to start.
   const segments = useMemo(() => {
-    const last = dialogue[dialogue.length - 1]
-    if (!last || last.speaker !== DM_SPEAKER) return []
-    return segmentBySpeaker(last.text, npcEncounters)
-  }, [dialogue, npcEncounters])
+    if (!lastDialogue || lastDialogue.speaker !== DM_SPEAKER) return []
+    if (Array.isArray(persistedSegments)) {
+      return persistedSegments
+        .filter((segment) => segment.npc_id && segment.line)
+        .map((segment) => ({
+          npcId: segment.npc_id,
+          line: segment.line,
+          raw: segment.line,
+          voiceId: segment.voice_id,
+        }))
+    }
+    if (persistedSegments === null) {
+      return segmentBySpeaker(lastDialogue.text, fullNpcRoster)
+    }
+    return []
+  }, [lastDialogue, persistedSegments, fullNpcRoster])
 
   const [segIndex, setSegIndex] = useState(0)
 
@@ -337,7 +415,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   }, [current, segIndex, segments.length, activeLine])
 
   const activeSpeaker = activeSpeakerId
-    ? npcEncounters.find(n => n.id === activeSpeakerId) ?? null
+    ? fullNpcRoster.find(n => n.id === activeSpeakerId) ?? npcEncounters.find(n => n.id === activeSpeakerId) ?? null
     : null
   // Remaining active encounters shown dimmed/shrunk beneath the featured speaker.
   const otherEncounters = activeSpeaker
@@ -364,6 +442,7 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
               <FeaturedSpeaker
                 speaker={activeSpeaker}
                 line={activeLine}
+                voiceId={current?.voiceId ?? activeSpeaker.voice_id ?? null}
                 caption={activeCaption}
                 hasOthers={otherEncounters.length > 0}
                 onLineComplete={() => setSegIndex(i => Math.min(i + 1, segments.length - 1))}
@@ -669,7 +748,7 @@ function stopNpcAudio() {
   }
 }
 
-function FeaturedSpeaker({ speaker, line, caption, hasOthers = false, onLineComplete }: { speaker: NpcEncounter; line?: string | null; caption?: string | null; hasOthers?: boolean; onLineComplete?: () => void }) {
+function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, onLineComplete }: { speaker: NpcEncounter; line?: string | null; voiceId?: string | null; caption?: string | null; hasOthers?: boolean; onLineComplete?: () => void }) {
   const face = speaker.face_url || speaker.portrait_url
   const [muted, setMuted] = useState(ttsMuted)
   const [speaking, setSpeaking] = useState(false)
@@ -729,8 +808,10 @@ function FeaturedSpeaker({ speaker, line, caption, hasOthers = false, onLineComp
           // row so a resolved voice is never smeared onto other characters.
           body: JSON.stringify({
             text: line,
-            voiceId: speaker.voice_id ?? undefined,
-            voiceDescription: speaker.voice_description ?? undefined,
+            // Never inherit a voice from the featured panel or previous beat.
+            // This id and description belong only to the resolved NPC row.
+            voiceId: voiceId ?? undefined,
+            voiceDescription: voiceId ? undefined : speaker.voice_description ?? undefined,
             npcName: speaker.name,
             npcId: speaker.id,
           }),
@@ -762,7 +843,7 @@ function FeaturedSpeaker({ speaker, line, caption, hasOthers = false, onLineComp
     return () => {
       cancelled = true
     }
-  }, [line, speaker.id])
+  }, [line, speaker.id, speaker.name, speaker.voice_description, voiceId])
 
   // Stop any in-flight audio when the featured speaker unmounts (speaker clears).
   useEffect(() => () => stopNpcAudio(), [])
