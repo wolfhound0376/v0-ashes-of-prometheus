@@ -113,47 +113,109 @@ function findNameIndex(text: string, needle: string): number {
   return m ? m.index : -1
 }
 
-// Parse a DM message for NPC dialogue and return the speaking NPC's id.
-//
-// The message must contain quoted speech (someone is talking). A roster NPC is
-// considered the active speaker if their name appears ANYWHERE in that message
-// — not only before the quote. Real DM narration frequently refers to an NPC by
-// epithet ("the dwarf woman"), lets them speak, and only names them afterward
-// (e.g. a self-introduction *inside* the quote: `"...Eldeth Feldrun, scout of
-// Gauntlgrym..."`). We also match on the first-name token so later lines that
-// drop the surname (`Eldeth says, "..."`) still attribute correctly. When
-// several NPCs are named, the one whose mention sits closest to any quote wins.
-function detectActiveSpeaker(text: string, roster: NpcEncounter[]): string | null {
-  if (!text) return null
-  // Collect every quote-character position (straight and curly).
-  const quotePositions: number[] = []
+export interface SpeakerSegment {
+  npcId: string | null   // null = pure narration
+  line: string           // the spoken text (quotes stripped) for TTS
+  raw: string            // the full slice, for captions
+}
+
+// Describes-but-never-names fallbacks. Attribution by name fails for NPCs the
+// DM refers to obliquely ("the glowing mushroom-creature"), so match on
+// distinguishing words too. Keys are matched case-insensitively against the
+// NARRATION around a quote, never against the quote itself.
+const NPC_ALIASES: Record<string, RegExp> = {
+  Stool: /myconid|mushroom[- ]creature|fungal (?:child|sprout)|glowing (?:cap|fungus)/i,
+  Eldeth: /dwarf(?: woman)?|shield dwarf/i,
+  Jimjar: /deep gnome|gnome|svirfneblin/i,
+  Ront: /\borc\b/i,
+  Derendil: /quaggoth/i,
+  Shuushar: /kuo-toa|fish[- ]like/i,
+  Sarith: /drow soldier/i,
+}
+
+/**
+ * Split a DM message into ordered speaker segments.
+ *
+ * Attribution priority for each quote, strongest first:
+ *   1. A name or alias in the NARRATION immediately BEFORE the quote
+ *      ("The dwarf woman doesn't look over, but she speaks. \"...\"")
+ *   2. A name or alias in the narration immediately AFTER the quote
+ *      ("\"...\" He rattles his manacles.")
+ *   3. The previous quote's speaker — consecutive quotes with no intervening
+ *      attribution belong to whoever spoke last.
+ *   4. Names appearing INSIDE the quote — weakest, and only when nothing else
+ *      resolved. This is the rule whose absence caused the bug.
+ */
+export function segmentBySpeaker(text: string, roster: NpcEncounter[]): SpeakerSegment[] {
+  if (!text) return []
+
+  // Pair up quotes: odd-indexed quote chars close, even-indexed open.
   const quoteRe = /["“”„]/g
-  let qm: RegExpExecArray | null
-  while ((qm = quoteRe.exec(text)) !== null) quotePositions.push(qm.index)
-  if (quotePositions.length === 0) return null
+  const positions: number[] = []
+  let m: RegExpExecArray | null
+  while ((m = quoteRe.exec(text)) !== null) positions.push(m.index)
+  if (positions.length < 2) return []
 
-  const nearestQuoteDist = (idx: number) =>
-    Math.min(...quotePositions.map((q) => Math.abs(q - idx)))
-
-  let best: { id: string; dist: number } | null = null
-  for (const npc of roster) {
-    if (!npc.name) continue
-    // Try the full name, then the first-name token (>=3 chars to avoid noise).
-    const candidates = [npc.name]
-    const firstToken = npc.name.trim().split(/\s+/)[0]
-    if (firstToken && firstToken.length >= 3 && firstToken !== npc.name) {
-      candidates.push(firstToken)
-    }
-    let idx = -1
-    for (const c of candidates) {
-      const found = findNameIndex(text, c)
-      if (found !== -1 && (idx === -1 || found < idx)) idx = found
-    }
-    if (idx === -1) continue
-    const dist = nearestQuoteDist(idx)
-    if (!best || dist < best.dist) best = { id: npc.id, dist }
+  const quotes: Array<{ start: number; end: number }> = []
+  for (let i = 0; i + 1 < positions.length; i += 2) {
+    quotes.push({ start: positions[i], end: positions[i + 1] })
   }
-  return best?.id ?? null
+
+  const matchIn = (window: string): string | null => {
+    if (!window.trim()) return null
+    let best: { id: string; idx: number } | null = null
+    for (const npc of roster) {
+      if (!npc.name) continue
+      let idx = findNameIndex(window, npc.name)
+      if (idx === -1) {
+        const first = npc.name.trim().split(/\s+/)[0]
+        if (first && first.length >= 3) idx = findNameIndex(window, first)
+      }
+      if (idx === -1) {
+        const alias = NPC_ALIASES[npc.name.trim().split(/\s+/)[0]]
+        if (alias) {
+          const am = window.match(alias)
+          if (am && am.index !== undefined) idx = am.index
+        }
+      }
+      // Latest match wins in the "before" window (closest to the quote).
+      if (idx !== -1 && (!best || idx > best.idx)) best = { id: npc.id, idx }
+    }
+    return best?.id ?? null
+  }
+
+  const segments: SpeakerSegment[] = []
+  let previousSpeaker: string | null = null
+
+  quotes.forEach((q, i) => {
+    const prevEnd = i === 0 ? 0 : quotes[i - 1].end + 1
+    const before = text.slice(prevEnd, q.start)
+    const after = text.slice(q.end + 1, quotes[i + 1]?.start ?? text.length)
+    const inside = text.slice(q.start + 1, q.end)
+
+    const speaker =
+      matchIn(before) ??
+      matchIn(after) ??
+      (before.trim().length < 3 ? previousSpeaker : null) ??
+      matchIn(inside)
+
+    if (speaker) previousSpeaker = speaker
+    segments.push({ npcId: speaker, line: inside.trim(), raw: inside.trim() })
+  })
+
+  // Merge consecutive segments from the same speaker so one NPC saying two
+  // sentences in a row is a single beat, not two portrait flashes.
+  const merged: SpeakerSegment[] = []
+  for (const seg of segments) {
+    const last = merged[merged.length - 1]
+    if (last && last.npcId === seg.npcId) {
+      last.line = `${last.line} ${seg.line}`.trim()
+      last.raw = `${last.raw} ${seg.raw}`.trim()
+    } else {
+      merged.push({ ...seg })
+    }
+  }
+  return merged.filter((s) => s.npcId && s.line)
 }
 
 // All word-boundary indices where any name token (full name + first-name token,
@@ -170,54 +232,6 @@ function allNameIndices(text: string, name: string | undefined | null): number[]
     while ((m = re.exec(text)) !== null) indices.push(m.index)
   }
   return indices
-}
-
-// Distance from a quote to the closest name mention, strongly preferring a
-// mention that appears BEFORE the quote (the "X says, '...'" pattern). Returns
-// Infinity when the name never appears. Preceding mentions always beat trailing
-// ones so "Fifi leans closer. '...'" attributes to Fifi, not a later NPC name.
-function attributionScore(nameIdx: number[], quotePos: number): number {
-  let bestPreceding = Infinity
-  let bestFollowing = Infinity
-  for (const idx of nameIdx) {
-    if (idx <= quotePos) bestPreceding = Math.min(bestPreceding, quotePos - idx)
-    else bestFollowing = Math.min(bestFollowing, idx - quotePos)
-  }
-  if (bestPreceding !== Infinity) return bestPreceding
-  // No preceding mention: fall back to a following one, but penalized so any
-  // preceding mention of the other speaker wins.
-  return bestFollowing === Infinity ? Infinity : bestFollowing + 100000
-}
-
-// Pull EVERY quote attributed to the featured NPC out of a DM message, in order.
-// Only quotes attributable to `npcName` are kept — quotes the narrator frames as
-// the player character (`playerName`) speaking are excluded. This is the SPEECH
-// text: the full concatenation of all of the NPC's lines, so TTS reads the whole
-// message rather than just the final line. Handles straight and curly quotes.
-function extractSpokenLine(text: string, npcName?: string | null, playerName?: string | null): string | null {
-  if (!text) return null
-  const player = playerName || "Fifi of Copperas Cove"
-  const npcIdx = allNameIndices(text, npcName)
-  const playerIdx = allNameIndices(text, player)
-
-  const re = /["“„]([^"“”„]+)["”]/g
-  const npcQuotes: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    const s = m[1].trim()
-    if (!s) continue
-    const quotePos = m.index
-    const npcScore = attributionScore(npcIdx, quotePos)
-    const playerScore = attributionScore(playerIdx, quotePos)
-    // Exclude quotes the player is speaking. When neither name is anywhere in
-    // the text we still keep the quote (the featured NPC is the only speaker).
-    if (playerScore < npcScore) continue
-    npcQuotes.push(s)
-  }
-
-  if (!npcQuotes.length) return null
-  // Speak ALL attributed quotes, in order, concatenated.
-  return npcQuotes.join(" ")
 }
 
 // Minimal on-screen caption derived from the spoken line. The dialogue log
@@ -281,32 +295,46 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   // Filter active encounters
   const activeEncounters = npcEncounters.filter(e => e.is_active)
 
-  // --- Active speaker detection ---------------------------------------------
+  // --- Active speaker sequencing --------------------------------------------
   // The featured speaker is DERIVED from the last dialogue entry rather than
   // tracked via append-counting. Deriving is resilient to every way the real
   // app mutates `dialogue`: optimistic appends, realtime INSERT appends, a full
   // array replace on initial fetch / campaign restore, and — critically — the
-  // npc roster arriving AFTER the message (an append-counter would early-return
-  // and never re-evaluate; a memo re-runs whenever `npcEncounters` changes).
+  // npc roster arriving AFTER the message (a memo re-runs whenever
+  // `npcEncounters` changes).
   //
-  // Rule: if the most recent entry is a DM message containing NPC dialogue,
-  // feature that NPC; a player/system message (or a DM message with no NPC
-  // dialogue) clears the featured view back to the normal tile grid.
-  const { activeSpeakerId, activeLine, activeCaption } = useMemo(() => {
+  // A single DM message can contain SEVERAL NPCs speaking in turn. We split it
+  // into ordered speaker segments and play through them one beat at a time —
+  // each NPC gets its own portrait and its own voice for its own line. A
+  // player/system message (or a DM message with no NPC dialogue) yields no
+  // segments and clears the featured view back to the normal tile grid.
+  const segments = useMemo(() => {
     const last = dialogue[dialogue.length - 1]
-    if (!last || last.speaker !== DM_SPEAKER) {
-      return { activeSpeakerId: null as string | null, activeLine: null as string | null, activeCaption: null as string | null }
-    }
-    const speakerId = detectActiveSpeaker(last.text, npcEncounters)
-    const speakerNpc = speakerId ? npcEncounters.find(n => n.id === speakerId) : null
-    // activeLine = full speech (all quotes) for TTS; activeCaption = minimal preview for display.
-    const speech = speakerId ? extractSpokenLine(last.text, speakerNpc?.name, characterName) : null
-    return {
-      activeSpeakerId: speakerId,
-      activeLine: speech,
-      activeCaption: captionPreview(speech),
-    }
-  }, [dialogue, npcEncounters, characterName])
+    if (!last || last.speaker !== DM_SPEAKER) return []
+    return segmentBySpeaker(last.text, npcEncounters)
+  }, [dialogue, npcEncounters])
+
+  const [segIndex, setSegIndex] = useState(0)
+
+  // Reset to the first beat whenever a new DM message arrives (segments change).
+  useEffect(() => { setSegIndex(0) }, [segments])
+
+  const current = segments[segIndex] ?? null
+  const activeSpeakerId = current?.npcId ?? null
+  const activeLine = current?.line ?? null
+  const activeCaption = captionPreview(activeLine)
+
+  // Safety timer: if a beat is featured but never reports completion (TTS can
+  // fail silently, or be muted), advance anyway so the sequence never stalls.
+  useEffect(() => {
+    if (!current || segments.length <= 1) return
+    if (segIndex >= segments.length - 1) return
+    const ms = Math.max(3000, (activeLine?.length ?? 0) * 55)
+    const t = setTimeout(() => {
+      setSegIndex(i => Math.min(i + 1, segments.length - 1))
+    }, ms)
+    return () => clearTimeout(t)
+  }, [current, segIndex, segments.length, activeLine])
 
   const activeSpeaker = activeSpeakerId
     ? npcEncounters.find(n => n.id === activeSpeakerId) ?? null
@@ -333,7 +361,13 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
           <CombatFxKeyframes />
           {activeSpeaker ? (
             <div className="h-full flex flex-col gap-2 p-2">
-              <FeaturedSpeaker speaker={activeSpeaker} line={activeLine} caption={activeCaption} hasOthers={otherEncounters.length > 0} />
+              <FeaturedSpeaker
+                speaker={activeSpeaker}
+                line={activeLine}
+                caption={activeCaption}
+                hasOthers={otherEncounters.length > 0}
+                onLineComplete={() => setSegIndex(i => Math.min(i + 1, segments.length - 1))}
+              />
               {otherEncounters.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto flex-shrink-0 h-[64px] opacity-60">
                   {otherEncounters.map((encounter) => (
@@ -635,10 +669,16 @@ function stopNpcAudio() {
   }
 }
 
-function FeaturedSpeaker({ speaker, line, caption, hasOthers = false }: { speaker: NpcEncounter; line?: string | null; caption?: string | null; hasOthers?: boolean }) {
+function FeaturedSpeaker({ speaker, line, caption, hasOthers = false, onLineComplete }: { speaker: NpcEncounter; line?: string | null; caption?: string | null; hasOthers?: boolean; onLineComplete?: () => void }) {
   const face = speaker.face_url || speaker.portrait_url
   const [muted, setMuted] = useState(ttsMuted)
   const [speaking, setSpeaking] = useState(false)
+
+  // Keep the completion callback in a ref so the audio effect (which only
+  // depends on [line, speaker.id]) always calls the freshest version without
+  // re-running and re-triggering TTS.
+  const onLineCompleteRef = useRef(onLineComplete)
+  useEffect(() => { onLineCompleteRef.current = onLineComplete }, [onLineComplete])
 
   // Animated talking-head: looping muted videos layered over the static face.
   // talking_url plays while TTS audio is playing; idle_url plays while silent.
@@ -708,8 +748,12 @@ function FeaturedSpeaker({ speaker, line, caption, hasOthers = false }: { speake
           setSpeaking(false)
           URL.revokeObjectURL(url)
           if (activeNpcAudio === audio) activeNpcAudio = null
+          onLineCompleteRef.current?.() // advance to the next speaker beat
         }
-        audio.onerror = () => setSpeaking(false)
+        audio.onerror = () => {
+          setSpeaking(false)
+          onLineCompleteRef.current?.() // don't strand the sequence on a TTS failure
+        }
         await audio.play().catch(() => setSpeaking(false))
       } catch {
         if (!cancelled) setSpeaking(false)

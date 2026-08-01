@@ -54,13 +54,48 @@ export const ELEVEN_VOICE_LIBRARY: ElevenVoice[] = [
   { id: "nPczCjzI2devNBz1zQrb", name: "Brian", gender: "male", tags: ["american", "deep", "gravelly", "narration", "mature"] },
   { id: "N2lVS1w4EtoT3dr4eOWO", name: "Callum", gender: "male", tags: ["gravelly", "hoarse", "intense", "low"] },
   { id: "pqHfZKP75CvOlQylNhV4", name: "Bill", gender: "male", tags: ["american", "old", "gravelly", "weathered", "low"] },
+  // Male — additions (all verified present on the ElevenLabs account). The
+  // spec's suggested legacy ids (Antoni, Arnold, Josh, Sam, Clyde, Fin) are NOT
+  // on this account, so they are replaced with account-confirmed equivalents.
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", gender: "male", tags: ["american", "dominant", "firm", "commanding", "deep"] },
+  { id: "cjVigY5qzO86Huf0OWal", name: "Eric", gender: "male", tags: ["american", "smooth", "clipped", "cold", "trustworthy"] },
+  { id: "IKne3meq5aSn9XLyUdCD", name: "Charlie", gender: "male", tags: ["american", "deep", "confident", "energetic"] },
+  { id: "SOYHLrjzK2X1ezoPC6cr", name: "Harry", gender: "male", tags: ["american", "fierce", "intense", "harsh", "warrior"] },
+  { id: "CwhRBWXzGAHq8TQ4Fs17", name: "Roger", gender: "male", tags: ["american", "laid-back", "casual", "resonant", "low"] },
+  // Female — additions (account-confirmed). Substitutes for the spec's Gigi /
+  // Dorothy, which are not on this account.
+  { id: "FGY2WhTYpPnrIDTdsKH5", name: "Laura", gender: "female", tags: ["american", "quirky", "expressive", "young", "light"] },
+  { id: "XrExE9yKIg1WjnnlVkGX", name: "Matilda", gender: "female", tags: ["british", "knowledgeable", "professional", "clear", "pleasant"] },
 ]
 
-/** The Malachar lich voice — also the ultimate fallback for NPCs. */
-export const DEFAULT_NPC_VOICE_ID = "pFZP5JQG7iQjIQuC4Bku" // Lily
+/** Fallbacks used only when a voice cannot be resolved. None of these may be a
+ *  voice assigned to a named NPC, or the unresolved cast collides with canon. */
+export const DEFAULT_NPC_VOICE_ID = "XB0fDUnXU5powFXDhCwa" // Charlotte — unassigned
+export const DEFAULT_MALE_VOICE_ID = "pNInz6obpgDQGcFmaJgB" // Adam — unassigned, account-verified
+export const DEFAULT_FEMALE_VOICE_ID = "XB0fDUnXU5powFXDhCwa" // Charlotte — unassigned
 
 // Distinctive timbre words carry more signal than generic descriptors.
 const TIMBRE_KEYWORDS = new Set(["gravelly", "raspy", "husky", "low", "deep", "hoarse", "weathered", "commanding", "clipped"])
+
+// Body and species words imply timbre: big things sound low, small things sound light.
+const SIZE_KEYWORDS = new Set([
+  "hulking", "massive", "huge", "large", "barrel-chested", "burly", "towering",
+  "tiny", "small", "wiry", "slight", "childlike", "young", "little",
+])
+
+// Map species → implied vocal qualities, appended to the description before scoring.
+const SPECIES_TIMBRE: Record<string, string[]> = {
+  orc: ["deep", "gravelly", "hoarse", "low"],
+  quaggoth: ["deep", "low", "commanding"],
+  dwarf: ["gravelly", "low", "weathered"],
+  gnome: ["light", "quick", "raspy"],
+  svirfneblin: ["light", "quick", "raspy"],
+  myconid: ["soft", "gentle", "young"],
+  "kuo-toa": ["deep", "calm", "narration"],
+  derro: ["old", "gravelly", "weathered"],
+  drow: ["clipped", "cold", "commanding", "smooth"],
+  duergar: ["gravelly", "low", "harsh"],
+}
 
 /**
  * Pick the closest ElevenLabs premade voice for a free-text voice description.
@@ -92,11 +127,17 @@ export function resolveVoice(description?: string | null): VoiceResolution {
   if (!description || !description.trim()) {
     return { voiceId: DEFAULT_NPC_VOICE_ID, matchedFromDescription: false }
   }
-  const desc = description.toLowerCase()
+  let desc = description.toLowerCase()
 
   let genderFilter: "female" | "male" | null = null
   if (/\b(female|woman|women|she|her|girl|lady|matron)\b/.test(desc)) genderFilter = "female"
   else if (/\b(male|man|men|\bhe\b|his|boy|guy)\b/.test(desc)) genderFilter = "male"
+
+  // Enrich the description with implied timbre for any species word present, so
+  // "hulking male orc" resolves sensibly even without explicit timbre words.
+  for (const [species, qualities] of Object.entries(SPECIES_TIMBRE)) {
+    if (desc.includes(species)) desc += " " + qualities.join(" ")
+  }
 
   const candidates = genderFilter
     ? ELEVEN_VOICE_LIBRARY.filter((v) => v.gender === genderFilter)
@@ -106,16 +147,23 @@ export function resolveVoice(description?: string | null): VoiceResolution {
   for (const voice of candidates) {
     let score = 0
     for (const tag of voice.tags) {
-      if (desc.includes(tag)) score += TIMBRE_KEYWORDS.has(tag) ? 2 : 1
+      if (desc.includes(tag)) {
+        // Timbre and size/build words both carry 2× weight over generic tags.
+        score += TIMBRE_KEYWORDS.has(tag) || SIZE_KEYWORDS.has(tag) ? 2 : 1
+      }
     }
     if (!best || score > best.score) best = { id: voice.id, score }
   }
 
-  // Zero keyword overlap → the description told us nothing matchable, so the
-  // best we can do is a gender-appropriate (or global) default. Treat this as a
-  // NON-match so it is used one-off but never persisted.
+  // Zero keyword overlap → the description told us nothing matchable, so return
+  // a gender-appropriate default that is NOT any named NPC's canon voice. Treat
+  // this as a NON-match so it is used one-off but never persisted.
   if (!best || best.score === 0) {
-    return { voiceId: candidates[0]?.id ?? DEFAULT_NPC_VOICE_ID, matchedFromDescription: false }
+    const fallback =
+      genderFilter === "male" ? DEFAULT_MALE_VOICE_ID
+      : genderFilter === "female" ? DEFAULT_FEMALE_VOICE_ID
+      : DEFAULT_NPC_VOICE_ID
+    return { voiceId: fallback, matchedFromDescription: false }
   }
   return { voiceId: best.id, matchedFromDescription: true }
 }
