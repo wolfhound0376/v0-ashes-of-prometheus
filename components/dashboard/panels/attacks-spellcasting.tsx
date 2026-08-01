@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Sword, Wand2, ChevronRight } from "lucide-react"
+import { Sword, Wand2, ChevronRight, Dices } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useDice, describeRoll, parseDamage } from "@/components/dice/dice-provider"
 
 interface Attack {
   id: string
@@ -76,6 +77,21 @@ export function AttacksSpellcasting({
   characterLevel = 1
 }: AttacksSpellcastingProps) {
   const [activeTab, setActiveTab] = useState<"attacks" | "spells">("attacks")
+  const { roll, announce, busy } = useDice()
+
+  // Spell attack rolls go through the shared dice roller and to Malachar.
+  // Save-DC spells display the DC instead — the monster's save is not the
+  // player's die to roll.
+  const rollSpellAttack = async () => {
+    if (spellAttackBonus === undefined) return
+    const result = await roll({
+      die: "d20",
+      numDice: 1,
+      modifier: spellAttackBonus,
+      label: "Spell Attack",
+    })
+    announce(describeRoll(result), { toLich: true })
+  }
 
   // Filter equipped weapons
   const equippedAttacks = attacks.filter(a => a.isEquipped !== false)
@@ -173,12 +189,20 @@ export function AttacksSpellcasting({
                 <div className="text-xs text-stone-500 uppercase tracking-wider">Save DC</div>
                 <div className="text-sm font-medium text-purple-300">{spellSaveDC || "—"}</div>
               </div>
-              <div className="p-1.5 bg-[#2a2a3a]/30 border border-purple-500/20 rounded">
-                <div className="text-xs text-stone-500 uppercase tracking-wider">Attack</div>
+              <button
+                onClick={rollSpellAttack}
+                disabled={busy || spellAttackBonus === undefined}
+                title={spellAttackBonus !== undefined ? `Roll spell attack (1d20+${spellAttackBonus})` : undefined}
+                className="group p-1.5 bg-[#2a2a3a]/30 border border-purple-500/20 rounded hover:border-purple-400/60 transition-colors disabled:opacity-60"
+              >
+                <div className="flex items-center justify-center gap-1 text-xs text-stone-500 uppercase tracking-wider">
+                  Attack
+                  <Dices className="w-3 h-3 text-purple-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
                 <div className="text-sm font-medium text-purple-300">
                   {spellAttackBonus !== undefined ? `+${spellAttackBonus}` : "—"}
                 </div>
-              </div>
+              </button>
             </div>
 
             {/* Spell Slots */}
@@ -229,10 +253,46 @@ export function AttacksSpellcasting({
 
 function AttackRow({ attack }: { attack: Attack }) {
   const damageColor = DAMAGE_TYPE_COLORS[attack.damageType.toLowerCase()] || "text-stone-300"
+  const { roll, announce, busy } = useDice()
+
+  // Click = full attack sequence through the SHARED dice roller: attack roll
+  // first, then the damage roll (dice doubled on a nat 20, per 5E crits).
+  // The combined result is announced to the table AND sent to Malachar so the
+  // DM narrates the outcome of these exact numbers — he never re-rolls.
+  const rollAttack = async () => {
+    const attackResult = await roll({
+      die: "d20",
+      numDice: 1,
+      modifier: attack.attackBonus,
+      label: `${attack.name} — Attack`,
+    })
+
+    let line = describeRoll(attackResult)
+
+    const damageSpec = parseDamage(
+      attack.damage,
+      attackResult.isCrit ? `${attack.name} — CRIT Damage` : `${attack.name} — Damage`,
+    )
+    if (damageSpec && !attackResult.isFail) {
+      const critSpec = attackResult.isCrit
+        ? { ...damageSpec, numDice: damageSpec.numDice * 2 }
+        : damageSpec
+      const damageResult = await roll(critSpec)
+      line += ` | ${describeRoll(damageResult)} ${attack.damageType}`
+    }
+
+    announce(line, { toLich: true })
+  }
 
   return (
-    <div className="flex items-center gap-2 p-2 bg-[#1a1614]/60 border border-[#3d3428]/40 rounded hover:border-[#3d3428] transition-colors">
-      <Sword className="w-4 h-4 text-stone-500 flex-shrink-0" />
+    <button
+      onClick={rollAttack}
+      disabled={busy}
+      title={`Roll ${attack.name}: 1d20+${attack.attackBonus} to hit, ${attack.damage} ${attack.damageType}`}
+      className="group w-full flex items-center gap-2 p-2 bg-[#1a1614]/60 border border-[#3d3428]/40 rounded hover:border-[#8a6a4a] transition-colors text-left disabled:opacity-60"
+    >
+      <Sword className="w-4 h-4 text-stone-500 flex-shrink-0 group-hover:hidden" />
+      <Dices className="w-4 h-4 text-[#c9a868] flex-shrink-0 hidden group-hover:block" />
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-stone-200 truncate">{attack.name}</div>
         {attack.range && (
@@ -245,7 +305,7 @@ function AttackRow({ attack }: { attack: Attack }) {
           {attack.damage} {attack.damageType}
         </div>
       </div>
-    </div>
+    </button>
   )
 }
 

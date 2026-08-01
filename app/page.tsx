@@ -6,6 +6,7 @@ import { Settings, Sparkles, X, Save, RotateCcw } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
+import { DiceProvider } from "@/components/dice/dice-provider"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -616,6 +617,40 @@ if (error) {
     }
   }
 
+  // Announce a completed sheet roll to the table. Every browser sees the roll
+  // line in the shared dialogue feed (realtime on the dialogue table); action
+  // rolls (attacks, spell attacks) additionally go to Malachar as this
+  // browser's character so the DM narrates the outcome of these EXACT numbers
+  // — the roll already happened, he never re-rolls.
+  const handleDiceAnnounce = useCallback(
+    async (text: string, opts: { toLich: boolean }) => {
+      const playerName = selectedCharacter?.name || "Player"
+      const line = `🎲 ${text}`
+
+      // Feed line, visible on all browsers. Optimistic → reconciled by the
+      // realtime echo of the inserted row.
+      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: line, pending: true }))
+      const { error } = await supabase.from("dialogue").insert({ speaker: playerName, text: line })
+      if (error) console.error("[Dice] failed to persist roll announcement:", error)
+
+      // Action rolls also go to the DM for narration.
+      if (opts.toLich) {
+        const response = await sendToLich(
+          `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`,
+          selectedCharacterId,
+          claimToken,
+        )
+        if (response?.text) {
+          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+          if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
+          if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
+          await fetchCharacterData()
+        }
+      }
+    },
+    [selectedCharacter, selectedCharacterId, claimToken, sendToLich],
+  )
+
   // Handler for populating starting equipment (D&D 5E standard gear)
   const handlePopulateStartingGear = async (equipment: any[], inventory: any[], gold: number) => {
     if (!selectedCharacterId) return
@@ -689,6 +724,7 @@ if (error) {
   }
 
   return (
+    <DiceProvider onAnnounce={handleDiceAnnounce}>
     <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
       {/* Campaign Controls */}
       <div className="fixed top-4 right-4 z-[60] flex items-center gap-2">
@@ -1002,5 +1038,6 @@ if (error) {
         inCombat={inCombat}
       />
     </div>
+    </DiceProvider>
   )
 }

@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, Check, User, Dumbbell, Sparkles } from "lucide-react"
+import { ChevronDown, Check, User, Dumbbell, Sparkles, Dices } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useDice, describeRoll, type RollSpec } from "@/components/dice/dice-provider"
 
 // D&D 5E Skills mapped to abilities
 const SKILLS = {
@@ -65,12 +66,21 @@ interface DetailedStatsProps {
   onClassAbilityChange?: (abilityName: string, selected: string) => void
 }
 
-export function DetailedStats({ 
-  character, 
+export function DetailedStats({
+  character,
   classAbilities = {},
-  onClassAbilityChange 
+  onClassAbilityChange
 }: DetailedStatsProps) {
   const [showAppearance, setShowAppearance] = useState(false)
+
+  // Every sheet roll goes through the SHARED dice roller (DiceProvider) — the
+  // sheet never computes results itself. Completed rolls are announced to the
+  // table's dialogue feed.
+  const { roll, announce, busy } = useDice()
+  const sheetRoll = async (spec: RollSpec) => {
+    const result = await roll(spec)
+    announce(describeRoll(result))
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -182,9 +192,22 @@ export function DetailedStats({
 
           return (
             <div key={ability} className="border border-[#3d3428]/40 rounded overflow-hidden">
-              {/* Ability Header */}
-              <div className="flex items-center gap-2 p-2 bg-[#1a1614]/60">
-                <Dumbbell className="w-4 h-4 text-stone-500" />
+              {/* Ability Header — click to roll an ability check through the shared dice roller */}
+              <button
+                onClick={() =>
+                  sheetRoll({
+                    die: "d20",
+                    numDice: 1,
+                    modifier: abilityData.modifier,
+                    label: `${ABILITY_NAMES[ability]} Check`,
+                  })
+                }
+                disabled={busy}
+                title={`Roll ${ABILITY_NAMES[ability]} check (1d20${abilityData.modifier >= 0 ? "+" : ""}${abilityData.modifier})`}
+                className="group w-full flex items-center gap-2 p-2 bg-[#1a1614]/60 hover:bg-[#2a2420]/60 transition-colors text-left disabled:opacity-60"
+              >
+                <Dumbbell className="w-4 h-4 text-stone-500 group-hover:hidden" />
+                <Dices className="w-4 h-4 text-[#c9a868] hidden group-hover:block" />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-[#c9b896]">{ABILITY_NAMES[ability]}</span>
@@ -202,12 +225,24 @@ export function DetailedStats({
                     </span>
                   </div>
                 </div>
-              </div>
+              </button>
 
               {/* Saving Throw & Skills */}
               <div className="p-2 space-y-1 text-sm">
-                {/* Saving Throw */}
-                <div className="flex items-center gap-2">
+                {/* Saving Throw — click to roll through the shared dice roller */}
+                <button
+                  onClick={() =>
+                    sheetRoll({
+                      die: "d20",
+                      numDice: 1,
+                      modifier: saveBonus,
+                      label: `${ABILITY_NAMES[ability]} Save`,
+                    })
+                  }
+                  disabled={busy}
+                  title={`Roll ${ABILITY_NAMES[ability]} saving throw (1d20${saveBonus >= 0 ? "+" : ""}${saveBonus})`}
+                  className="group w-full flex items-center gap-2 rounded px-1 -mx-1 hover:bg-[#2a2420]/50 transition-colors text-left disabled:opacity-60"
+                >
                   <div className={cn(
                     "w-3 h-3 rounded-full border flex items-center justify-center",
                     hasSaveProf ? "bg-emerald-400 border-emerald-400" : "border-stone-500"
@@ -215,13 +250,14 @@ export function DetailedStats({
                     {hasSaveProf && <Check className="w-2 h-2 text-[#1a1614]" />}
                   </div>
                   <span className="flex-1 text-stone-400">Saving Throw</span>
+                  <Dices className="w-3 h-3 text-[#c9a868] opacity-0 group-hover:opacity-100 transition-opacity" />
                   <span className={cn(
                     "font-medium",
                     hasSaveProf ? "text-emerald-400" : "text-stone-400"
                   )}>
                     {saveBonus >= 0 ? "+" : ""}{saveBonus}
                   </span>
-                </div>
+                </button>
 
                 {/* Skills */}
                 {skills.map((skill) => {
@@ -233,7 +269,20 @@ export function DetailedStats({
                      hasProf ? character.proficiencyBonus : 0)
 
                   return (
-                    <div key={skill} className="flex items-center gap-2">
+                    <button
+                      key={skill}
+                      onClick={() =>
+                        sheetRoll({
+                          die: "d20",
+                          numDice: 1,
+                          modifier: bonus,
+                          label: skill,
+                        })
+                      }
+                      disabled={busy}
+                      title={`Roll ${skill} (1d20${bonus >= 0 ? "+" : ""}${bonus})`}
+                      className="group w-full flex items-center gap-2 rounded px-1 -mx-1 hover:bg-[#2a2420]/50 transition-colors text-left disabled:opacity-60"
+                    >
                       <div className={cn(
                         "w-3 h-3 rounded-full border flex items-center justify-center",
                         hasExpertise ? "bg-yellow-400 border-yellow-400" :
@@ -249,6 +298,7 @@ export function DetailedStats({
                         {skill}
                         {hasExpertise && <span className="text-[10px] ml-1">(E)</span>}
                       </span>
+                      <Dices className="w-3 h-3 text-[#c9a868] opacity-0 group-hover:opacity-100 transition-opacity" />
                       <span className={cn(
                         "font-medium",
                         hasExpertise ? "text-yellow-400" :
@@ -256,7 +306,7 @@ export function DetailedStats({
                       )}>
                         {bonus >= 0 ? "+" : ""}{bonus}
                       </span>
-                    </div>
+                    </button>
                   )
                 })}
               </div>

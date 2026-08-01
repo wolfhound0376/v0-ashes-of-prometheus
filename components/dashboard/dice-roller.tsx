@@ -1,28 +1,15 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
-import { createPortal } from "react-dom"
+// The dashboard dice tray. UI ONLY — the actual dice engine (3D renderer,
+// cinematic overlay, physics results, fallback) lives in the shared
+// DiceProvider (components/dice/dice-provider.tsx), which this component rolls
+// through exactly like the character sheet does. One roller, one truth.
+
+import { useState, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { Dices, Send, ChevronDown, ChevronUp } from "lucide-react"
-import type DiceBox from "@3d-dice/dice-box"
-
-interface DiceResult {
-  die: string
-  rolls: number[]
-  modifier: number
-  total: number
-  label?: string
-  timestamp: Date
-}
-
-// A roll request: everything needed to build a notation and resolve locally.
-interface RollSpec {
-  die: string
-  numDice: number
-  modifier: number
-  label?: string
-}
+import { useDice, type DiceResult, type RollSpec } from "@/components/dice/dice-provider"
 
 interface DiceRollerProps {
   onRollResult?: (result: DiceResult) => void
@@ -41,48 +28,9 @@ const DICE_TYPES = [
   { die: "d100", sides: 100, color: "from-[#2a2a2a] to-[#0a0a0a]", border: "border-[#6a6a6a]" },
 ]
 
-// --- 3D dice renderer (@3d-dice/dice-box) config -------------------------------
-// Static assets copied to /public/assets/dice-box (see copyAssets in the pkg).
-const DICE_ASSET_PATH = "/assets/dice-box/"
-// Query selector for the persistent canvas mount inside the overlay.
-const DICE_MOUNT_SELECTOR = "dice-box-mount"
-// Deep bronze/gold base color for the dice bodies (parchment pips come baked
-// into the default theme's diffuse texture).
-const DICE_THEME_COLOR = "#9c7238"
-// If the renderer can't initialize within this window, treat it as failed so
-// rolls fall back silently to the classic (local) roller.
-const DICE_INIT_TIMEOUT_MS = 8000
-// Max time to wait for the physics simulation to settle before falling back.
-const RESPONSE_TIMEOUT_MS = 6000
-// How long the total lingers prominently in the overlay before auto-dismiss.
-const RESULT_DISPLAY_MS = 1500
-
-function sidesOf(die: string): number {
-  const m = /d\s*(\d+)/i.exec(die)
-  return m ? Number.parseInt(m[1], 10) : 20
-}
-
-// Build a display notation string like "2d20+3" / "1d6-1" / "1d20".
-function buildNotation(spec: RollSpec): string {
-  const mod = spec.modifier
-  const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : ""
-  return `${spec.numDice}${spec.die}${modStr}`
-}
-
-// Compute a roll locally — the classic roller, used as the silent fallback ONLY
-// when the 3D renderer is unavailable, fails, or never settles. When the 3D
-// dice do roll, THEIR values are authoritative and this is never invoked.
-function resolveClassic(spec: RollSpec): DiceResult {
-  const sides = sidesOf(spec.die)
-  const rolls: number[] = []
-  for (let i = 0; i < spec.numDice; i++) {
-    rolls.push(Math.floor(Math.random() * sides) + 1)
-  }
-  const total = rolls.reduce((sum, r) => sum + r, 0) + spec.modifier
-  return { die: spec.die, rolls, modifier: spec.modifier, total, label: spec.label, timestamp: new Date() }
-}
-
 export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player" }: DiceRollerProps) {
+  const { roll, busy, ready } = useDice()
+
   const [isExpanded, setIsExpanded] = useState(true)
   const [selectedDie, setSelectedDie] = useState<string>("d20")
   const [numDice, setNumDice] = useState(1)
@@ -90,193 +38,16 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
   const [rollLabel, setRollLabel] = useState("")
   const [lastResult, setLastResult] = useState<DiceResult | null>(null)
 
-  // Portal readiness (avoid SSR document access).
-  const [mounted, setMounted] = useState(false)
-
-  // 3D renderer lifecycle. The DiceBox instance + its canvas are created once
-  // into a permanently-mounted container so the overlay opens instantly.
-  // diceFailed flips the whole flow to the silent classic fallback.
-  const [diceReady, setDiceReady] = useState(false)
-  const [diceFailed, setDiceFailed] = useState(false)
-  const diceBoxRef = useRef<DiceBox | null>(null)
-
-  // Overlay state.
-  const [overlayOpen, setOverlayOpen] = useState(false)
-  const [overlayPhase, setOverlayPhase] = useState<"rolling" | "result">("rolling")
-  const [overlayLabel, setOverlayLabel] = useState<string>("")
-  const [overlayNotation, setOverlayNotation] = useState<string>("")
-  const [overlayResult, setOverlayResult] = useState<DiceResult | null>(null)
-
-  // The in-flight request. token disambiguates a live roll from one that has
-  // already timed out (so a late-settling simulation is ignored).
-  const pendingRef = useRef<{ token: number; spec: RollSpec } | null>(null)
-  const tokenRef = useRef(0)
-  const responseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  // Initialize the 3D dice renderer once the portal (and its mount node) exist.
-  useEffect(() => {
-    if (!mounted || diceBoxRef.current) return
-    let cancelled = false
-    const initTimer = setTimeout(() => {
-      if (!diceBoxRef.current && !cancelled) {
-        console.warn("[DiceRoller] 3D dice init timed out; using classic roller.")
-        setDiceFailed(true)
-      }
-    }, DICE_INIT_TIMEOUT_MS)
-    ;(async () => {
-      try {
-        const mod = await import("@3d-dice/dice-box")
-        const DiceBoxCtor = mod.default
-        const box = new DiceBoxCtor({
-          id: "dice-canvas",
-          assetPath: DICE_ASSET_PATH,
-          container: `#${DICE_MOUNT_SELECTOR}`,
-          theme: "default",
-          themeColor: DICE_THEME_COLOR,
-          scale: 6,
-          gravity: 2,
-          enableShadows: true,
-          shadowTransparency: 0.75,
-          lightIntensity: 1.1,
-        })
-        await box.init()
-        if (cancelled) return
-        diceBoxRef.current = box
-        setDiceReady(true)
-      } catch (err) {
-        console.warn("[DiceRoller] 3D dice failed to initialize; using classic roller.", err)
-        if (!cancelled) setDiceFailed(true)
-      } finally {
-        clearTimeout(initTimer)
-      }
-    })()
-    return () => {
-      cancelled = true
-      clearTimeout(initTimer)
-    }
-  }, [mounted])
-
-  // Apply a finished roll to the shared roll-handling path: the result log and
-  // the telemetry callback. Used by BOTH the 3D result and the classic
-  // fallback, so the dashboard stays the single system of record.
-  const applyResult = useCallback(
-    (result: DiceResult) => {
+  // Initiate ANY tray roll through the shared engine, then commit the result
+  // to the tray's log + telemetry callback.
+  const initiateRoll = useCallback(
+    async (spec: RollSpec) => {
+      const result = await roll(spec)
       setLastResult(result)
       onRollResult?.(result)
     },
-    [onRollResult],
+    [roll, onRollResult],
   )
-
-  const closeOverlay = useCallback(() => {
-    setOverlayOpen(false)
-    setOverlayResult(null)
-    setOverlayPhase("rolling")
-  }, [])
-
-  // Initiate ANY roll. Opens the cinematic overlay and tumbles the 3D dice;
-  // dice-box's own simulation produces the authoritative values. If the
-  // renderer is unavailable or never settles, resolves silently with the
-  // classic roller so gameplay never blocks.
-  const initiateRoll = useCallback(
-    (spec: RollSpec) => {
-      // A roll is already in flight — ignore re-entrancy.
-      if (pendingRef.current) return
-
-      const notation = buildNotation(spec)
-      const box = diceBoxRef.current
-
-      // Renderer unusable → resolve classic immediately, no overlay.
-      if (diceFailed || !diceReady || !box) {
-        applyResult(resolveClassic(spec))
-        return
-      }
-
-      const token = ++tokenRef.current
-      pendingRef.current = { token, spec }
-
-      // Open the overlay in the rolling phase.
-      setOverlayResult(null)
-      setOverlayPhase("rolling")
-      setOverlayLabel(spec.label || "Dice roll")
-      setOverlayNotation(notation)
-      setOverlayOpen(true)
-
-      // Roll the dice portion only (modifier is applied to the total by us);
-      // dice-box notation does not include modifiers.
-      const diceNotation = `${spec.numDice}${spec.die}`
-
-      box
-        .roll(diceNotation)
-        .then((results) => {
-          const pend = pendingRef.current
-          if (!pend || pend.token !== token) return // stale — already timed out
-          if (responseTimerRef.current) clearTimeout(responseTimerRef.current)
-          pendingRef.current = null
-
-          // Trust dice-box's simulated values as authoritative (never re-roll).
-          const values = Array.isArray(results)
-            ? results.map((r) => r.value).filter((v) => typeof v === "number" && Number.isFinite(v))
-            : []
-
-          if (values.length === 0) {
-            // Unexpected empty result — fall back silently.
-            closeOverlay()
-            applyResult(resolveClassic(spec))
-            return
-          }
-
-          const sum = values.reduce((a, b) => a + b, 0)
-          const result: DiceResult = {
-            die: spec.die,
-            rolls: values,
-            modifier: spec.modifier,
-            total: sum + spec.modifier,
-            label: spec.label,
-            timestamp: new Date(),
-          }
-
-          // Reveal the total prominently, then auto-dismiss and commit to the log.
-          setOverlayResult(result)
-          setOverlayPhase("result")
-          resultTimerRef.current = setTimeout(() => {
-            closeOverlay()
-            applyResult(result)
-          }, RESULT_DISPLAY_MS)
-        })
-        .catch((err) => {
-          const pend = pendingRef.current
-          if (!pend || pend.token !== token) return
-          if (responseTimerRef.current) clearTimeout(responseTimerRef.current)
-          pendingRef.current = null
-          console.warn("[DiceRoller] 3D roll failed; using classic result.", err)
-          closeOverlay()
-          applyResult(resolveClassic(spec))
-        })
-
-      // Safety net: dice never settle within the window → silent classic result.
-      responseTimerRef.current = setTimeout(() => {
-        const pend = pendingRef.current
-        if (!pend || pend.token !== token) return
-        pendingRef.current = null
-        closeOverlay()
-        applyResult(resolveClassic(spec))
-      }, RESPONSE_TIMEOUT_MS)
-    },
-    [diceFailed, diceReady, applyResult, closeOverlay],
-  )
-
-  // Clean up any pending timers on unmount.
-  useEffect(() => {
-    return () => {
-      if (responseTimerRef.current) clearTimeout(responseTimerRef.current)
-      if (resultTimerRef.current) clearTimeout(resultTimerRef.current)
-    }
-  }, [])
 
   const sendResultToLich = useCallback(() => {
     if (!lastResult || !onSendToLich) return
@@ -305,14 +76,6 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
     { label: "Saving Throw", spec: { die: "d20", numDice: 1, modifier, label: "Saving throw" } },
   ]
 
-  const busy = overlayOpen
-
-  // Crit/fumble accent for the overlay total (single d20 only).
-  const overlayCrit =
-    overlayResult && overlayResult.die === "d20" && overlayResult.rolls.length === 1 && overlayResult.rolls[0] === 20
-  const overlayFumble =
-    overlayResult && overlayResult.die === "d20" && overlayResult.rolls.length === 1 && overlayResult.rolls[0] === 1
-
   return (
     <FantasyPanel className="flex-shrink-0">
       {/* Header - Always visible */}
@@ -334,8 +97,8 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
       {/* Collapsible Content */}
       {isExpanded && (
         <div className="px-3 pb-3 space-y-3">
-          {diceFailed && (
-            <p className="text-[10px] text-stone-600">3D dice unavailable — rolling locally.</p>
+          {!ready && (
+            <p className="text-[10px] text-stone-600">3D dice warming up — rolls fall back locally if unavailable.</p>
           )}
 
           {/* Dice Selection */}
@@ -412,7 +175,7 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
             className="w-full px-2 py-1 text-xs bg-[#1a1614] border border-[#3d3428] rounded text-stone-300 placeholder:text-stone-600 focus:outline-none focus:border-[#5d5448]"
           />
 
-          {/* Roll Button — routes through the cinematic overlay */}
+          {/* Roll Button — routes through the shared cinematic overlay */}
           <button
             onClick={() => initiateRoll({ die: selectedDie, numDice, modifier, label: rollLabel || undefined })}
             disabled={busy}
@@ -510,82 +273,6 @@ export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player
           </div>
         </div>
       )}
-
-      {/* Cinematic roll overlay + permanently-mounted (preloaded) 3D canvas.
-          Rendered via portal at body level so it's centered over the whole
-          dashboard and immune to panel stacking contexts. The dice canvas mount
-          stays in the DOM so the renderer never re-initializes; visibility
-          toggles via opacity so the overlay opens instantly. */}
-      {mounted &&
-        createPortal(
-          <div
-            className={cn(
-              "fixed inset-0 z-[100] flex items-center justify-center transition-opacity duration-200",
-              overlayOpen ? "opacity-100" : "pointer-events-none opacity-0",
-            )}
-            aria-hidden={!overlayOpen}
-            role="dialog"
-            aria-label="Dice roll"
-          >
-            {/* Dimmed backdrop */}
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-
-            {/* Dark fantasy frame */}
-            <div className="relative z-10 rounded-lg border-2 border-[#8a6a4a] bg-gradient-to-b from-[#1a1614] to-[#0f0d0c] p-4 shadow-[0_0_40px_rgba(0,0,0,0.7),0_0_24px_rgba(200,150,80,0.15)]">
-              {/* Roll label — serif, above the tray */}
-              <div className="mb-2 flex items-center justify-center gap-2 text-center">
-                <Dices className="h-4 w-4 text-[#c9a868]" />
-                <span className="font-serif text-sm font-semibold tracking-[0.12em] text-[#e0cfa0]">
-                  {overlayLabel}
-                </span>
-                <span className="text-[10px] text-stone-500">{overlayNotation}</span>
-              </div>
-
-              {/* Near-black felt tray holding the tumbling 3D dice */}
-              <div className="relative aspect-square w-[min(78vw,420px)] overflow-hidden rounded border-2 border-[#3d3428] bg-[#0a0908]">
-                {/* Persistent 3D dice canvas mount (preloaded). */}
-                <div
-                  id={DICE_MOUNT_SELECTOR}
-                  className="absolute inset-0 h-full w-full [&_canvas]:!absolute [&_canvas]:!inset-0 [&_canvas]:!h-full [&_canvas]:!w-full"
-                />
-
-                {/* Subtle amber rim light around the felt. */}
-                <div className="pointer-events-none absolute inset-0 rounded shadow-[inset_0_0_46px_rgba(212,177,90,0.16)]" />
-
-                {/* Prominent total reveal (result phase). */}
-                {overlayPhase === "result" && overlayResult && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/70 backdrop-blur-[2px]">
-                    <span className="text-[11px] uppercase tracking-[0.25em] text-stone-400">
-                      {overlayResult.label || "Result"}
-                    </span>
-                    <span
-                      className={cn(
-                        "font-serif text-7xl font-extrabold drop-shadow-[0_0_18px_rgba(212,177,90,0.5)]",
-                        overlayCrit ? "text-[#ffe9a8]" : overlayFumble ? "text-[#ff8a7a]" : "text-[#d4b15a]",
-                      )}
-                    >
-                      {overlayResult.total}
-                    </span>
-                    <span className="text-xs text-stone-400">
-                      [{overlayResult.rolls.join(", ")}]
-                      {overlayResult.modifier !== 0 &&
-                        (overlayResult.modifier > 0 ? ` +${overlayResult.modifier}` : ` ${overlayResult.modifier}`)}
-                    </span>
-                    {overlayCrit && (
-                      <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ffd76a]">
-                        Critical Hit!
-                      </span>
-                    )}
-                    {overlayFumble && (
-                      <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ff7a6a]">Fumble!</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
     </FantasyPanel>
   )
 }

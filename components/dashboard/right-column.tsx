@@ -4,8 +4,14 @@ import { useState } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { FloatingWindow } from "@/components/ui/floating-window"
 import { BackpackIcon, IconFrame } from "@/components/ui/fantasy-icons"
-import { Sparkles, ChevronDown, Package, Swords, BookOpen, User2, Shield, Heart, Zap, Eye, Star } from "lucide-react"
+import { Sparkles, ChevronDown, Package, Swords, BookOpen, User2, Shield, Heart, Zap, Eye, Star, Dices } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useDice, describeRoll } from "@/components/dice/dice-provider"
+import {
+  characterVisualState,
+  VISUAL_STATE_FILTER,
+  VISUAL_STATE_OVERLAY,
+} from "@/lib/character-visual-state"
 
 // Import panel content components
 import { ProficienciesPanel } from "./panels/proficiencies-panel"
@@ -101,6 +107,9 @@ export function RightColumn({
   onLevelUp
 }: RightColumnProps) {
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
+
+  // Sheet rolls go through the SHARED dice roller — never a local RNG.
+  const { roll: sharedRoll, announce: announceRoll, busy: diceBusy } = useDice()
   
 // Floating window states
   const [equippedItemsOpen, setEquippedItemsOpen] = useState(false)
@@ -354,11 +363,25 @@ age: (selectedCharacter as any).age,
                 <div className="text-lg font-bold text-stone-200">{character.ac}</div>
                 <div className="text-[9px] uppercase tracking-wider text-stone-500">AC</div>
               </div>
-              <div className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30">
-                <Star className="w-4 h-4 mx-auto mb-1 text-yellow-400" />
+              <button
+                onClick={async () => {
+                  const result = await sharedRoll({
+                    die: "d20",
+                    numDice: 1,
+                    modifier: character.initiative,
+                    label: "Initiative",
+                  })
+                  announceRoll(describeRoll(result))
+                }}
+                disabled={diceBusy}
+                title={`Roll initiative (1d20+${character.initiative})`}
+                className="group bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30 hover:border-[#8a6a4a] transition-colors disabled:opacity-60"
+              >
+                <Star className="w-4 h-4 mx-auto mb-1 text-yellow-400 group-hover:hidden" />
+                <Dices className="w-4 h-4 mx-auto mb-1 text-[#c9a868] hidden group-hover:block" />
                 <div className="text-lg font-bold text-stone-200">+{character.initiative}</div>
                 <div className="text-[9px] uppercase tracking-wider text-stone-500">Init</div>
-              </div>
+              </button>
               <div className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30">
                 <Zap className="w-4 h-4 mx-auto mb-1 text-cyan-400" />
                 <div className="text-lg font-bold text-stone-200">{character.speed}</div>
@@ -523,17 +546,62 @@ age: (selectedCharacter as any).age,
               </div>
             </div>
             
-            {/* Center - Character Image */}
-            <div className="h-full max-h-[600px] aspect-[3/4] mx-8 border border-[#3d3428] rounded-lg overflow-hidden bg-[#0a0908]">
-              <img 
-                src={(character as any).avatarUrl || (character.gender === "female" 
-                  ? "/icons/paperdoll/silhouette-female.jpg" 
-                  : "/icons/paperdoll/silhouette-male.jpg"
-                )}
-                alt={character.name}
-                className="w-full h-full object-cover"
-              />
-            </div>
+            {/* Center - Character Image. The portrait reacts to game state
+                (conditions + HP) via the shared visual-state rules — Phase 1
+                of the living character sheet. */}
+            {(() => {
+              const visualState = characterVisualState({
+                hp_current: character.hp.current,
+                hp_max: character.hp.max,
+                conditions: (character as any).conditions,
+              })
+              const overlayTint = VISUAL_STATE_OVERLAY[visualState]
+              return (
+                <div className="relative h-full max-h-[600px] aspect-[3/4] mx-8 border border-[#3d3428] rounded-lg overflow-hidden bg-[#0a0908]">
+                  <img
+                    src={(character as any).avatarUrl || (character.gender === "female"
+                      ? "/icons/paperdoll/silhouette-female.jpg"
+                      : "/icons/paperdoll/silhouette-male.jpg"
+                    )}
+                    alt={character.name}
+                    className="w-full h-full object-cover transition-[filter] duration-700"
+                    style={{ filter: VISUAL_STATE_FILTER[visualState] }}
+                  />
+                  {/* Flat condition tint (poisoned / restrained / downed). */}
+                  {overlayTint && (
+                    <div
+                      className="pointer-events-none absolute inset-0 transition-opacity duration-700"
+                      style={{ backgroundColor: overlayTint }}
+                    />
+                  )}
+                  {/* Injured: pulsing red vignette (respects reduced motion). */}
+                  {visualState === "injured" && (
+                    <div className="pointer-events-none absolute inset-0 aop-injured-vignette" />
+                  )}
+                  {/* Downed: quiet label so the state reads at a glance. */}
+                  {visualState === "downed" && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[10px] font-bold uppercase tracking-[0.3em] text-red-300/80">
+                      Downed
+                    </div>
+                  )}
+                  <style>{`
+                    @keyframes aopInjuredPulse {
+                      0%, 100% { box-shadow: inset 0 0 60px 18px rgba(160, 30, 30, 0.35); }
+                      50% { box-shadow: inset 0 0 90px 30px rgba(190, 40, 40, 0.55); }
+                    }
+                    .aop-injured-vignette {
+                      animation: aopInjuredPulse 2.4s ease-in-out infinite;
+                    }
+                    @media (prefers-reduced-motion: reduce) {
+                      .aop-injured-vignette {
+                        animation: none;
+                        box-shadow: inset 0 0 70px 22px rgba(175, 35, 35, 0.45);
+                      }
+                    }
+                  `}</style>
+                </div>
+              )
+            })()}
             
             {/* Right Column - Main Hand, Off Hand, Ring, Ring */}
             <div className="flex flex-col gap-6 ml-8">
