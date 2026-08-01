@@ -1779,12 +1779,99 @@ EXPERIENCE POINTS:
     .replace(/\[NPC_LEAVE:[^\]]+\]/gi, "")
     .trim()
 
-  // Persist Malachar's response to the dialogue table
+  // === SERVER-ATTRIBUTED SPEECH SEGMENTS ===
+  // Literary-prose regexes cannot reliably attribute speech (a name in an aside
+  // after a quote can steal the line). Segment once on the server while the full
+  // canonical roster is available, persist the result with the DM row, and let
+  // every client replay the same permanent handoff.
+  type PersistedSpeechSegment = {
+    speaker: string
+    line: string
+    npc_id: string | null
+    voice_id: string | null
+  }
+  let speechSegments: PersistedSpeechSegment[] | null = null
+  if (responseText && /[“”"„]/.test(responseText)) {
+    try {
+      const { data: speechNpcRows } = await supabase
+        .from("npc_encounters")
+        .select("id, name, aliases, voice_id")
+        .order("created_at", { ascending: false })
+      const npcRosterForPrompt = (speechNpcRows || []).map((npc: any) => ({
+        name: npc.name,
+        aliases: Array.isArray(npc.aliases) ? npc.aliases : [],
+      }))
+      const segmentationPrompt = `You attribute quoted speech in a D&D dungeon master's narration.
+
+NARRATION:
+"""
+${responseText}
+"""
+
+CANONICAL NPC ROSTER (use the exact canonical name in \"name\"):
+${JSON.stringify(npcRosterForPrompt)}
+
+PLAYER NAMES: ${JSON.stringify(playerRoster)}
+
+Return ONLY strict valid JSON: an ordered array covering EVERY quoted span in the narration:
+[{"speaker":"<exact canonical NPC name, or PLAYER, or NARRATOR>","line":"<quote text verbatim, without quote marks>"}]
+
+Rules:
+- An NPC named in narration BEFORE the quote is the speaker.
+- A name appearing after the closing quote in a descriptive aside (for example \"- Prince Derendil, if you catch his name later -\") is NOT the speaker.
+- Consecutive quotes with no new attribution keep the previous speaker.
+- Resolve aliases to the exact canonical NPC name from the roster.
+- Use PLAYER when a player character speaks; use NARRATOR only when no NPC/player speaker can be identified.
+- Preserve each quoted line verbatim and preserve quote order. Do not omit any quoted span.`
+
+      const segmentationResult = await generateText({
+        model: anthropic("claude-haiku-4-5-20251001"),
+        messages: [{ role: "user", content: segmentationPrompt }],
+      })
+      const jsonText = segmentationResult.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
+      const parsedSegments = JSON.parse(jsonText)
+      if (!Array.isArray(parsedSegments)) throw new Error("Speech segmentation response was not an array")
+
+      const resolvedSegments: PersistedSpeechSegment[] = []
+      for (const segment of parsedSegments) {
+        const line = typeof segment?.line === "string" ? segment.line.trim() : ""
+        const rawSpeaker = typeof segment?.speaker === "string" ? segment.speaker.trim() : "NARRATOR"
+        if (!line || rawSpeaker.toUpperCase() === "PLAYER") continue
+        if (rawSpeaker.toUpperCase() === "NARRATOR") {
+          resolvedSegments.push({ speaker: "NARRATOR", line, npc_id: null, voice_id: null })
+          continue
+        }
+        const resolved = await resolveNpcByName(supabase, rawSpeaker)
+        if (!resolved) {
+          resolvedSegments.push({ speaker: "NARRATOR", line, npc_id: null, voice_id: null })
+          continue
+        }
+        const npcRow = (speechNpcRows || []).find((row: any) => row.id === resolved.id)
+        resolvedSegments.push({
+          speaker: resolved.name,
+          line,
+          npc_id: resolved.id,
+          // Permanence: voice comes only from THIS resolved NPC row. Null stays
+          // null so /api/npc-tts can description-match this NPC at speak time.
+          voice_id: npcRow?.voice_id || null,
+        })
+      }
+      speechSegments = resolvedSegments
+    } catch (error) {
+      // Segmentation is best-effort. Persist null so the client deliberately
+      // uses its legacy fallback for old/failed messages.
+      console.error("[v0] Speech segmentation failed:", error)
+      speechSegments = null
+    }
+  }
+
+  // Persist Malachar's response and its permanent server attribution together.
   if (responseText) {
     const { error: dialogueError } = await supabase.from("dialogue").insert({
       speaker: "Malachar",
       speaker_type: "dm",
       text: responseText,
+      speech_segments: speechSegments,
     })
     if (dialogueError) {
       console.error("[v0] Error inserting Malachar dialogue:", dialogueError)
@@ -1799,25 +1886,15 @@ EXPERIENCE POINTS:
     const hasQuotes = /[“”""]/.test(responseText) || /"[^"]{3,}"/.test(responseText)
     if (hasQuotes) {
       try {
-        const detectionPrompt = `You are analyzing a D&D dungeon master's narration from "Out of the Abyss".
-
-Narration:
-"""
-${responseText}
-"""
-
-Is a specific named NPC speaking the quoted dialogue? Known NPCs: Ilvara Mizzrym, Jorlan Duskryn, Sarith Kzekarit, Eldeth Feldrun, Jimjar, Ront, Stool, Topsy, Turvy, Shuushar, Derendil.
-
-Respond ONLY with valid JSON, no other text:
-- If a named NPC is speaking: {"npc": "Exact NPC Name", "description": "one sentence physical description"}
-- If speaker is unnamed or unclear: {"npc": null}`
-
-        const detectionResult = await generateText({
-          model: anthropic("claude-haiku-4-5-20251001"),
-          messages: [{ role: "user", content: detectionPrompt }],
-        })
-
-        const parsed = JSON.parse(detectionResult.text.trim())
+        // Reuse the full segmentation pass above instead of making a second
+        // Haiku call. The first resolved NPC speech beat is sufficient for the
+        // existing encounter/portrait surfacing behavior; all beats remain in
+        // dialogue.speech_segments for the client handoff sequence.
+        const firstNpcSpeech = speechSegments?.find((segment) => segment.npc_id)
+        const parsed = {
+          npc: firstNpcSpeech?.speaker ?? null,
+          description: firstNpcSpeech ? `${firstNpcSpeech.speaker} is speaking` : null,
+        }
 
         // PLAYER GUARD: the auto-detector can latch onto a player's name in
         // quoted speech. Match the characters table (no is_player filter) and
@@ -1981,6 +2058,7 @@ Respond ONLY with valid JSON, no other text:
 
   return Response.json({
     text: responseText || "",
+    speechSegments,
     npcImageUrl,
     locationImageUrl,
     updatedLocation: updatedLocation || undefined,
