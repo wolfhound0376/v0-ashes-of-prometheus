@@ -781,20 +781,46 @@ EXPERIENCE POINTS:
   if (playerCharacter?.id) {
     const KNOWN_TYPES = new Set(["weapon", "armor", "consumable", "misc", "currency"])
 
+    // Catalog metadata that a resolved award carries to the session beat, so
+    // Malachar's next turn can react to what he just handed over (a sentient
+    // blade should start whispering the instant it is picked up).
+    type CatalogBeatInfo = {
+      name: string
+      rarity: string
+      cursed: boolean
+      sentient: boolean
+    } | null
+
     // Write a session_beats row mirroring the old pipeline so awarded items show
     // up on the shotlist timeline. Best-effort: never let it break the award.
-    const writeItemAwardBeat = async (itemName: string, quantity: number, desc: string) => {
+    const writeItemAwardBeat = async (
+      itemName: string,
+      quantity: number,
+      desc: string,
+      catalog: CatalogBeatInfo = null,
+    ) => {
       if (!activeSessionId) {
         console.warn("[v0] item_award beat skipped: no active session")
         return
+      }
+      // Append a compact catalog cue to the narration so the narrator context
+      // (which replays recent beats) surfaces rarity and the sentient/cursed
+      // flags without changing any tag the model emitted.
+      let narration = desc || null
+      if (catalog) {
+        const flags: string[] = [`rarity: ${catalog.rarity}`]
+        if (catalog.sentient) flags.push("sentient — it may speak or stir")
+        if (catalog.cursed) flags.push("cursed (hidden from the player)")
+        const cue = `[catalog] ${catalog.name} — ${flags.join("; ")}`
+        narration = narration ? `${narration}\n${cue}` : cue
       }
       const { error: beatError } = await supabase.from("session_beats").insert({
         session_id: activeSessionId,
         beat_type: "item_award",
         character_id: playerCharacter.id,
-        subject: itemName,
-        summary: `${playerName} received ${itemName}${quantity > 1 ? ` x${quantity}` : ""}`,
-        narration: desc || null,
+        subject: catalog?.name ?? itemName,
+        summary: `${playerName} received ${catalog?.name ?? itemName}${quantity > 1 ? ` x${quantity}` : ""}`,
+        narration,
         priority: 5,
       })
       if (beatError) {
@@ -807,19 +833,72 @@ EXPERIENCE POINTS:
     // Shared award/pickup handler: insert or bump quantity, resolve an icon, and
     // record a session beat. Used for BOTH [ITEM_ADD] and [ITEM_AWARD].
     const awardItem = async (itemName: string, quantity: number, desc: string, type: string, hint: string) => {
-      // Resolve an icon from the admin-uploaded dashboard_assets before falling
-      // back to no icon. Assets live under BOTH asset_type 'item_icon' and
-      // 'icon' (the admin panel writes either), so match on both.
-      let iconUrl: string | null = null
+      // --- Step 1: Canonical catalog resolution (name OR alias, exact first) ---
+      // The `items` table is the source of truth for real Out of the Abyss /
+      // Tyranny of Dragons gear. Resolving here enforces "AI cannot invent
+      // items": whatever name Malachar emitted collapses to the canonical row.
+      const term = (itemName || "").trim().toLowerCase()
+      type CatalogItem = {
+        id: string; name: string; item_type: string; equippable_slot: string | null
+        rarity: string; weight: number | null; value: number | null
+        description: string | null; icon_url: string | null
+        attunement: boolean; cursed: boolean; sentient: boolean
+      }
+      const CATALOG_COLS =
+        "id, name, item_type, equippable_slot, rarity, weight, value, description, icon_url, attunement, cursed, sentient"
+      let catalogItem: CatalogItem | null = null
+
+      if (term) {
+        // Exact name or alias match. aliases is a text[] — .cs (contains) needs
+        // an array literal, and the term is scrubbed of characters that would
+        // break either the .or() grammar or the array literal.
+        const orName = term.replace(/[,()*]/g, " ")
+        const orAlias = term.replace(/[,()"{}]/g, " ").trim()
+        const { data: exact } = await supabase
+          .from("items")
+          .select(CATALOG_COLS)
+          .or(`name.ilike.${orName},aliases.cs.{"${orAlias}"}`)
+          .limit(1)
+          .maybeSingle()
+        catalogItem = (exact as CatalogItem) ?? null
+
+        // Fuzzy fallback: catalog name contained in the awarded name or v.v.
+        if (!catalogItem) {
+          const safe = term.replace(/[,()*]/g, " ").trim()
+          const { data: fuzzy } = await supabase
+            .from("items")
+            .select(CATALOG_COLS)
+            .ilike("name", `%${safe}%`)
+            .limit(1)
+            .maybeSingle()
+          catalogItem = (fuzzy as CatalogItem) ?? null
+        }
+      }
+
+      console.log(
+        catalogItem
+          ? `[v0] CATALOG HIT: "${itemName}" -> ${catalogItem.name}`
+          : `[v0] CATALOG MISS: "${itemName}" — homebrew, consider adding to items table`,
+      )
+
+      // --- Step 2: catalog data wins over the tag ---
+      const finalName = catalogItem?.name ?? itemName
+      const finalType = catalogItem?.item_type ?? type
+      const finalDesc = catalogItem?.description ?? desc
+
+      // --- Icon: catalog icon_url first, dashboard_assets second, none third ---
+      let iconUrl: string | null = catalogItem?.icon_url ?? null
 
       // PostgREST .or() treats , ( ) as syntax. Strip them from search terms or
       // an item like "Hand Crossbow Bolt (Drow Poison)" produces a broken filter.
       const sanitizeTerm = (s: string) => (s || "").replace(/[,()*]/g, " ").replace(/\s+/g, " ").trim()
 
-      const nameTerm = sanitizeTerm(itemName)
+      // Search the asset library by the CANONICAL name so art uploaded under the
+      // real item name resolves even when Malachar used an alias.
+      const nameTerm = sanitizeTerm(finalName)
       const hintTerm = sanitizeTerm(hint)
 
-      if (nameTerm) {
+      if (!iconUrl && nameTerm) {
         const { data: candidates, error: iconError } = await supabase
           .from("dashboard_assets")
           .select("name, file_url, thumbnail_url, asset_type")
@@ -853,42 +932,65 @@ EXPERIENCE POINTS:
           if (best && score(best) > 0) {
             // Fall back to the thumbnail when no full-size file was uploaded.
             iconUrl = best.file_url || best.thumbnail_url || null
-            console.log("[v0] resolved item icon for", itemName, "->", best.name, iconUrl)
+            console.log("[v0] resolved item icon for", finalName, "->", best.name, iconUrl)
           }
         }
       }
 
       if (!iconUrl) {
         // Logged so you can see exactly which assets are worth uploading next.
-        console.log("[v0] NO ICON ASSET for item:", itemName, "| hint:", hint || "(none)")
+        console.log("[v0] NO ICON ASSET for item:", finalName, "| hint:", hint || "(none)")
       }
 
+      // Dedup on the CANONICAL name so aliases collapse onto one stack.
       const { data: existing } = await supabase
         .from("inventory_items")
         .select("id, quantity")
         .eq("character_id", playerCharacter.id)
-        .eq("name", itemName)
+        .eq("name", finalName)
         .maybeSingle()
 
       if (existing) {
+        // Backfill the catalog link/slot/weight/value on the bump without
+        // clobbering existing values when this award was homebrew (undefined
+        // fields are omitted from the PATCH).
         const { error } = await supabase.from("inventory_items")
-          .update({ quantity: existing.quantity + quantity, icon_url: iconUrl || undefined })
+          .update({
+            quantity: existing.quantity + quantity,
+            icon_url: iconUrl || undefined,
+            item_id: catalogItem?.id ?? undefined,
+            equippable_slot: catalogItem?.equippable_slot ?? undefined,
+            weight: catalogItem?.weight ?? undefined,
+            value: catalogItem?.value ?? undefined,
+          })
           .eq("id", existing.id)
-        if (error) console.error("[v0] Error updating inventory item:", itemName, error.message)
-        else console.log("[v0] Updated existing item quantity:", itemName, "->", existing.quantity + quantity)
+        if (error) console.error("[v0] Error updating inventory item:", finalName, error.message)
+        else console.log("[v0] Updated existing item quantity:", finalName, "->", existing.quantity + quantity)
       } else {
+        // --- Step 3: the insert carries the catalog link and the slot ---
         const { error } = await supabase.from("inventory_items").insert({
           character_id: playerCharacter.id,
-          name: itemName,
+          name: finalName,
           quantity,
-          description: desc,
-          item_type: type,
+          description: finalDesc,
+          item_type: finalType,
           icon_url: iconUrl,
+          item_id: catalogItem?.id ?? null,
+          equippable_slot: catalogItem?.equippable_slot ?? null,
+          weight: catalogItem?.weight ?? null,
+          value: catalogItem?.value ?? null,
         })
-        if (error) console.error("[v0] Error inserting inventory item:", itemName, error.message)
-        else console.log("[v0] Created new inventory item:", itemName)
+        if (error) console.error("[v0] Error inserting inventory item:", finalName, error.message)
+        else console.log("[v0] Created new inventory item:", finalName)
       }
-      await writeItemAwardBeat(itemName, quantity, desc)
+      await writeItemAwardBeat(finalName, quantity, finalDesc, catalogItem
+        ? {
+            name: catalogItem.name,
+            rarity: catalogItem.rarity,
+            cursed: catalogItem.cursed,
+            sentient: catalogItem.sentient,
+          }
+        : null)
     }
 
     // Tolerant parser for [ITEM_ADD: ...] and [ITEM_AWARD: ...]. Rather than

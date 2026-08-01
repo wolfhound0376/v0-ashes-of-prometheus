@@ -681,6 +681,14 @@ age: (selectedCharacter as any).age,
                   <div className="flex-1">
                     <div className="text-sm text-stone-200">{item.name}</div>
                     {item.quantity > 1 && <div className="text-xs text-stone-500">Quantity: {item.quantity}</div>}
+                    {/* Slot badge: shows where an equippable item can go. Never
+                        reveals cursed status — cursed items must look ordinary. */}
+                    {item.equippable_slot && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded border border-[#d4b15a]/40 bg-[#d4b15a]/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#d4b15a]">
+                        <Swords className="w-2.5 h-2.5" />
+                        {EQUIPMENT_SLOTS.find(s => s.id === item.equippable_slot)?.label ?? "Equippable"}
+                      </span>
+                    )}
                   </div>
                 </button>
               ))}
