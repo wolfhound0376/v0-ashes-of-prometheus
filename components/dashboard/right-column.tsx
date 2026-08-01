@@ -20,6 +20,9 @@ interface RightColumnProps {
   characters: DBCharacter[]
   selectedCharacterId: string | null
   onCharacterSelect: (id: string) => void
+  // When true (claim-locked browser), hide the character picker entirely so a
+  // player can't switch to someone else's sheet.
+  disableCharacterSelect?: boolean
   selectedCharacter?: DBCharacter
   characterInventory: DBInventoryItem[]
   characterEquipment: DBEquipmentItem[]
@@ -87,6 +90,7 @@ export function RightColumn({
   characters,
   selectedCharacterId,
   onCharacterSelect,
+  disableCharacterSelect = false,
   selectedCharacter,
   characterInventory,
   characterEquipment,
@@ -262,17 +266,21 @@ age: (selectedCharacter as any).age,
                 </div>
                 <div>
                   <button
-                    onClick={() => setShowCharacterDropdown(!showCharacterDropdown)}
-                    className="flex items-center gap-1.5 font-serif text-lg text-[#e8dcc8] hover:text-[#7aa8c8] transition-colors"
-                    disabled={loading || characters.length === 0}
+                    onClick={() => !disableCharacterSelect && setShowCharacterDropdown(!showCharacterDropdown)}
+                    className={cn(
+                      "flex items-center gap-1.5 font-serif text-lg text-[#e8dcc8] transition-colors",
+                      !disableCharacterSelect && "hover:text-[#7aa8c8]",
+                      disableCharacterSelect && "cursor-default",
+                    )}
+                    disabled={loading || characters.length === 0 || disableCharacterSelect}
                   >
                     {loading ? 'Loading...' : character.name}
-                    {characters.length > 0 && (
+                    {!disableCharacterSelect && characters.length > 0 && (
                       <ChevronDown className={cn("w-4 h-4 transition-transform", showCharacterDropdown && "rotate-180")} />
                     )}
                   </button>
                   
-                  {showCharacterDropdown && characters.length > 0 && (
+                  {!disableCharacterSelect && showCharacterDropdown && characters.length > 0 && (
                     <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px] bg-[#1a1614] border border-[#3d3428] rounded-lg shadow-xl overflow-hidden">
                       {characters.map((char) => (
                         <button
