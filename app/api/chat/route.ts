@@ -807,21 +807,60 @@ EXPERIENCE POINTS:
     // Shared award/pickup handler: insert or bump quantity, resolve an icon, and
     // record a session beat. Used for BOTH [ITEM_ADD] and [ITEM_AWARD].
     const awardItem = async (itemName: string, quantity: number, desc: string, type: string, hint: string) => {
-      // Resolve an existing icon from dashboard_assets by hint or name. The
-      // column is file_url (not "url"); selecting the wrong column previously
-      // made this lookup error out and never resolve an icon.
+      // Resolve an icon from the admin-uploaded dashboard_assets before falling
+      // back to no icon. Assets live under BOTH asset_type 'item_icon' and
+      // 'icon' (the admin panel writes either), so match on both.
       let iconUrl: string | null = null
-      const { data: existingIcon, error: iconError } = await supabase
-        .from("dashboard_assets")
-        .select("file_url")
-        .eq("asset_type", "item_icon")
-        .or(`name.ilike.%${hint || itemName}%,name.ilike.%${itemName}%`)
-        .limit(1)
-        .maybeSingle()
-      if (iconError) console.log("[v0] item_icon lookup error:", iconError.message)
-      if (existingIcon?.file_url) {
-        iconUrl = existingIcon.file_url
-        console.log("[v0] resolved item_icon for", itemName, "->", iconUrl)
+
+      // PostgREST .or() treats , ( ) as syntax. Strip them from search terms or
+      // an item like "Hand Crossbow Bolt (Drow Poison)" produces a broken filter.
+      const sanitizeTerm = (s: string) => (s || "").replace(/[,()*]/g, " ").replace(/\s+/g, " ").trim()
+
+      const nameTerm = sanitizeTerm(itemName)
+      const hintTerm = sanitizeTerm(hint)
+
+      if (nameTerm) {
+        const { data: candidates, error: iconError } = await supabase
+          .from("dashboard_assets")
+          .select("name, file_url, thumbnail_url, asset_type")
+          .in("asset_type", ["item_icon", "icon"])
+          .or(
+            [
+              `name.ilike.%${nameTerm}%`,
+              ...(hintTerm && hintTerm !== nameTerm ? [`name.ilike.%${hintTerm}%`] : []),
+            ].join(","),
+          )
+          .limit(10)
+
+        if (iconError) {
+          console.log("[v0] item_icon lookup error:", iconError.message)
+        } else if (candidates?.length) {
+          const lowerName = nameTerm.toLowerCase()
+          const lowerHint = hintTerm.toLowerCase()
+          // Rank: exact name > asset name contains the item > item contains the
+          // asset name > hint match. Prefer 'item_icon' over 'icon' on a tie.
+          const score = (a: { name: string; asset_type: string }) => {
+            const n = (a.name || "").toLowerCase()
+            let s = 0
+            if (n === lowerName) s = 100
+            else if (n.includes(lowerName)) s = 70
+            else if (lowerName.includes(n)) s = 60
+            else if (lowerHint && n.includes(lowerHint)) s = 40
+            if (a.asset_type === "item_icon") s += 1
+            return s
+          }
+          const best = [...candidates].sort((a, b) => score(b) - score(a))[0]
+          if (best && score(best) > 0) {
+            // Fall back to the thumbnail when no full-size file was uploaded.
+            iconUrl = best.file_url || best.thumbnail_url || null
+            console.log("[v0] resolved item icon for", itemName, "->", best.name, iconUrl)
+          }
+        }
+      }
+
+      if (!iconUrl) {
+        // Logged so you can see exactly which assets are worth uploading next.
+        console.log("[v0] NO ICON ASSET for item:", itemName, "| hint:", hint || "(none)")
       }
 
       const { data: existing } = await supabase
