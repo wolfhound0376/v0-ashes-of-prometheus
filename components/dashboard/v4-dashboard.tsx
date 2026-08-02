@@ -5,6 +5,7 @@ import { Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
+import { classDefaults } from "@/lib/game-data"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
 type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
@@ -60,6 +61,61 @@ function toSheetCharacter(c: Character) {
     spellSaveDC: raw.sheet_spellcasting?.save_dc ?? null,
     spellAttackBonus: raw.sheet_spellcasting?.attack_bonus ?? null,
   }
+}
+
+const SKILL_ABILITY: Record<string, AbilityKey> = {
+  acrobatics: "dex", animal_handling: "wis", arcana: "int", athletics: "str",
+  deception: "cha", history: "int", insight: "wis", intimidation: "cha",
+  investigation: "int", medicine: "wis", nature: "int", perception: "wis",
+  performance: "cha", persuasion: "cha", religion: "int", sleight_of_hand: "dex",
+  stealth: "dex", survival: "wis",
+}
+const SAVE_LABEL: Record<AbilityKey, string> = {
+  str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA",
+}
+const titleCaseSkill = (key: string) =>
+  key.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+
+export function formatSigned(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n}`
+}
+
+/** Everything the Character Stats rail shows, derived from the row rather than
+ *  transcribed from the design mock. `sheet_skill_proficiencies` is a jsonb
+ *  OBJECT keyed by snake_case skill name ("proficient" | "expertise"); a skill
+ *  counts as class-granted when it also appears in that class's skill list. */
+function buildRailStats(c: Character | undefined) {
+  const raw = (c ?? {}) as unknown as Record<string, any>
+  const pb: number = raw.proficiency_bonus ?? 2
+  const mod = (k: AbilityKey): number => raw[`${k}_modifier`] ?? 0
+
+  const saveProfs: string[] = Array.isArray(raw.sheet_save_proficiencies) ? raw.sheet_save_proficiencies : []
+  const saves = ABILITY_KEYS.map((k) => {
+    const proficient = saveProfs.includes(k)
+    return { key: k, label: SAVE_LABEL[k], proficient, bonus: mod(k) + (proficient ? pb : 0) }
+  }).sort((a, b) => Number(b.proficient) - Number(a.proficient) || b.bonus - a.bonus)
+
+  const classSkills: string[] = (classDefaults[raw.class as string]?.skillChoices?.options ?? [])
+    .map((s: string) => s.toLowerCase().replace(/ /g, "_"))
+
+  const skillMap: Record<string, string> = raw.sheet_skill_proficiencies ?? {}
+  const skills = Object.entries(skillMap)
+    .filter(([key]) => SKILL_ABILITY[key])
+    .map(([key, level]) => {
+      const ability = SKILL_ABILITY[key]
+      const multiplier = level === "expertise" ? 2 : 1
+      return {
+        name: titleCaseSkill(key),
+        bonus: mod(ability) + pb * multiplier,
+        fromClass: classSkills.includes(key),
+        expertise: level === "expertise",
+      }
+    })
+    .sort((a, b) => b.bonus - a.bonus || a.name.localeCompare(b.name))
+
+  const passiveInsight = 10 + mod("wis") + (skillMap.insight === "expertise" ? pb * 2 : skillMap.insight ? pb : 0)
+
+  return { saves, skills, passiveInsight, passivePerception: raw.passive_perception ?? 10 + mod("wis") }
 }
 
 type DialogueEntry = { id?: string; speaker: string; text: string }
@@ -162,6 +218,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     Object.entries(item.stats_bonus ?? {}).forEach(([key, value]) => { totals[key.toLowerCase()] = (totals[key.toLowerCase()] ?? 0) + Number(value || 0) })
     return totals
   }, {})
+  const rail = buildRailStats(selected)
   const displayedAc = (selected?.ac ?? 10) + (equipmentBonus.ac ?? 0)
   const displayedInitiative = (selected?.initiative ?? 0) + (equipmentBonus.initiative ?? 0)
   const activeNpc = props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
@@ -238,7 +295,41 @@ export function V4Dashboard(props: V4DashboardProps) {
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
           <div className="mt-2 grid grid-cols-6 gap-1">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} />)}</div>
-          <div className="mt-2 grid grid-cols-2 gap-3"><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>{[["WIS",4],["CHA",3],["CON",2],["STR",1]].map(([name,value]) => <div key={name} className="flex justify-between text-[#b6a685]"><span>{name}</span><b className="text-white">+{value}</b></div>)}<h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3><div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{selected?.passive_perception ?? 12}</b></div><div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">14</b></div></div><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>{[["Insight",4],["Medicine",4],["Religion",1],["History",1]].map(([name,value], index) => <div key={name} className={cn("flex justify-between px-1 text-[#b6a685]", index < 2 && "border border-[#725c2f] bg-[#251c0d]")}><span>{name}</span><b className="text-white">+{value}</b></div>)}<p className="mt-1 text-[8px] text-[#8f8061]">□ Cleric class skill</p></div></div>
+          {/* Saves, skills and passive Insight are DERIVED. They were previously
+              transcribed from the v4.1 mock image, which meant every character —
+              Fifi the Rogue included — showed Sam the Cleric's numbers and the
+              literal legend "Cleric class skill". */}
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <div>
+              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>
+              {rail.saves.map((save) => (
+                <div key={save.key} className="flex items-center gap-1.5 text-[#b6a685]">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", save.proficient ? "bg-[#d9232e]" : "border border-[#6b5a35]")} />
+                  <span>{save.label}</span>
+                  <b className="ml-auto text-white">{formatSigned(save.bonus)}</b>
+                </div>
+              ))}
+              <h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3>
+              <div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{rail.passivePerception}</b></div>
+              <div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">{rail.passiveInsight}</b></div>
+            </div>
+            <div>
+              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>
+              {rail.skills.length === 0 ? (
+                <p className="text-[9px] text-[#8f8061]">No skill proficiencies recorded for {selected?.name ?? "this character"}.</p>
+              ) : (
+                rail.skills.map((skill) => (
+                  <div key={skill.name} className={cn("flex items-center justify-between px-1 text-[#b6a685]", skill.fromClass && "border border-[#725c2f] bg-[#251c0d]")}>
+                    <span className="truncate">{skill.name}</span>
+                    <b className="ml-1 shrink-0 text-white">{formatSigned(skill.bonus)}</b>
+                  </div>
+                ))
+              )}
+              {rail.skills.some((skill) => skill.fromClass) && (
+                <p className="mt-1 text-[8px] text-[#8f8061]">□ {selected?.class ?? "Class"} class skill</p>
+              )}
+            </div>
+          </div>
           <button onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
       </Frame>
