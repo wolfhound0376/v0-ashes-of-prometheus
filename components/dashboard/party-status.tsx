@@ -114,15 +114,6 @@ export function PartyStatus({ members, selectedCharacterId, onSelect, onViewAll 
           </div>
         )}
 
-        {onViewAll && (
-          <button
-            type="button"
-            onClick={onViewAll}
-            className="mt-2 w-full rounded-[3px] border border-[#7a5f33]/50 bg-[#120e0a] py-1.5 text-[11px] text-stone-400 transition-colors hover:border-[#c9a868]/60 hover:text-[#e0cfa0]"
-          >
-            View All Characters
-          </button>
-        )}
       </div>
     </FantasyPanel>
   )

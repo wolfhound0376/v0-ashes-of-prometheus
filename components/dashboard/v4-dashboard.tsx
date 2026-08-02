@@ -324,17 +324,33 @@ function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: stri
   </div>
 }
 
+const PHB2014_CLERIC_DOMAINS: Record<string, Array<{ level: number; spells: string[] }>> = {
+  Knowledge: [{ level: 1, spells: ["Command", "Identify"] }, { level: 3, spells: ["Augury", "Suggestion"] }, { level: 5, spells: ["Nondetection", "Speak with Dead"] }, { level: 7, spells: ["Arcane Eye", "Confusion"] }, { level: 9, spells: ["Legend Lore", "Scrying"] }],
+  Life: [{ level: 1, spells: ["Bless", "Cure Wounds"] }, { level: 3, spells: ["Lesser Restoration", "Spiritual Weapon"] }, { level: 5, spells: ["Beacon of Hope", "Revivify"] }, { level: 7, spells: ["Death Ward", "Guardian of Faith"] }, { level: 9, spells: ["Mass Cure Wounds", "Raise Dead"] }],
+  Light: [{ level: 1, spells: ["Burning Hands", "Faerie Fire"] }, { level: 3, spells: ["Flaming Sphere", "Scorching Ray"] }, { level: 5, spells: ["Daylight", "Fireball"] }, { level: 7, spells: ["Guardian of Faith", "Wall of Fire"] }, { level: 9, spells: ["Flame Strike", "Scrying"] }],
+  Nature: [{ level: 1, spells: ["Animal Friendship", "Speak with Animals"] }, { level: 3, spells: ["Barkskin", "Spike Growth"] }, { level: 5, spells: ["Plant Growth", "Wind Wall"] }, { level: 7, spells: ["Dominate Beast", "Grasping Vine"] }, { level: 9, spells: ["Insect Plague", "Tree Stride"] }],
+  Tempest: [{ level: 1, spells: ["Fog Cloud", "Thunderwave"] }, { level: 3, spells: ["Gust of Wind", "Shatter"] }, { level: 5, spells: ["Call Lightning", "Sleet Storm"] }, { level: 7, spells: ["Control Water", "Ice Storm"] }, { level: 9, spells: ["Destructive Wave", "Insect Plague"] }],
+  Trickery: [{ level: 1, spells: ["Charm Person", "Disguise Self"] }, { level: 3, spells: ["Mirror Image", "Pass without Trace"] }, { level: 5, spells: ["Blink", "Dispel Magic"] }, { level: 7, spells: ["Dimension Door", "Polymorph"] }, { level: 9, spells: ["Dominate Person", "Modify Memory"] }],
+  War: [{ level: 1, spells: ["Divine Favor", "Shield of Faith"] }, { level: 3, spells: ["Magic Weapon", "Spiritual Weapon"] }, { level: 5, spells: ["Crusader's Mantle", "Spirit Guardians"] }, { level: 7, spells: ["Freedom of Movement", "Stoneskin"] }, { level: 9, spells: ["Flame Strike", "Hold Monster"] }],
+}
+
 function SpellbookModal({ character, onClose }: { character: Character; onClose: () => void }) {
+  const [page, setPage] = useState(0)
+  const [closing, setClosing] = useState(false)
   const extra = character as Character & { subclass?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
   const spellcasting = extra.sheet_spellcasting ?? {}
   const names = (value: unknown): string[] => Array.isArray(value)
     ? value.map((entry) => typeof entry === "string" ? entry : entry && typeof entry === "object" && "name" in entry ? String((entry as { name: unknown }).name) : "").filter(Boolean)
     : []
   const cantrips = names(spellcasting.cantrips)
-  const domainSpells = names(spellcasting.domain_spells ?? spellcasting.domainSpells)
+  const recordedDomainSpells = names(spellcasting.domain_spells ?? spellcasting.domainSpells)
   const prepared = names(spellcasting.prepared)
   const known = names(spellcasting.known ?? spellcasting.spellbook)
   const className = character.class.toLowerCase()
+  const clericDomain = className === "cleric" ? Object.keys(PHB2014_CLERIC_DOMAINS).find((domain) => extra.subclass?.toLowerCase().includes(domain.toLowerCase())) : undefined
+  const domainProgression = clericDomain ? PHB2014_CLERIC_DOMAINS[clericDomain] : []
+  const gainedDomainSpells = domainProgression.filter((entry) => character.level >= entry.level).flatMap((entry) => entry.spells)
+  const domainSpells = recordedDomainSpells.length ? recordedDomainSpells : gainedDomainSpells
   const ruleNote = className === "cleric" || className === "druid"
     ? "Prepared caster: choose prepared spells after a long rest. Domain or circle spells remain prepared when granted."
     : className === "wizard"
@@ -343,23 +359,47 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
         ? "Prepared caster: choose prepared paladin spells after a long rest; oath spells remain prepared."
         : "Known-spell caster: spells change only when the class rules or a level increase permit it."
 
-  return <div className="fixed inset-0 z-[78] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`${character.name}'s Book of Spells`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className="aop-dice-modal max-h-[90vh] w-full max-w-4xl overflow-y-auto p-5">
-      <header className="flex items-start border-b border-purple-900/60 pb-4"><BookOpen className="mr-3 h-8 w-8 text-purple-300" /><div><h2 className="font-serif text-2xl text-[#efd8aa]">{character.name}&apos;s Book of Spells</h2><p className="text-xs text-purple-300">Level {character.level} {character.class}</p><p className="mt-0.5 text-[10px] text-[#9c8562]">{character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p></div><button type="button" onClick={onClose} className="ml-auto text-[#b89557] hover:text-white" aria-label="Close Book of Spells"><X className="h-5 w-5" /></button></header>
-      <p className="my-4 rounded border border-purple-900/50 bg-purple-950/20 p-3 text-xs leading-relaxed text-[#b7a37d]">D&amp;D 5E spell handling: {ruleNote}</p>
-      <div className="grid gap-3 md:grid-cols-2">
-        <SpellList title="Cantrips" spells={cantrips} empty="No cantrips recorded." />
-        <SpellList title={character.class === "Cleric" ? "Domain Spells" : "Subclass Spells"} spells={domainSpells} empty="No subclass spells recorded." />
-        <SpellList title="Prepared / Memorized" spells={prepared} empty="No prepared spells recorded." />
-        <SpellList title={className === "wizard" ? "Spellbook" : "Known / Available"} spells={known} empty="No known spell records attached." />
+  const requestClose = () => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 900)
+  }
+  const maxPage = className === "cleric" ? 2 : 1
+
+  return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s Book of Spells`} onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
+    <section className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
+      <div className="aop-arcane-book">
+        <div className="aop-spellbook-cover" aria-hidden><div className="aop-cover-sigil">{className === "cleric" ? "☀" : "✦"}</div><p>{character.name}</p><strong>Book of Spells</strong></div>
+        <div key={page} className="aop-spellbook-spread">
+          <div className="aop-spell-page">
+            <span className="aop-rune-ring" aria-hidden>ᚨ ᚱ ᚲ ᚨ ᚾ ᚨ</span>
+            <header><BookOpen className="mx-auto h-7 w-7" /><h2>{character.name}&apos;s Book of Spells</h2><p>Level {character.level} {character.class} · {character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p></header>
+            {page === 0 ? <SpellList title="Cantrips" spells={cantrips} empty="No cantrips recorded." /> : page === 1 ? <SpellList title="Prepared / Memorized" spells={prepared} empty="No prepared spells recorded." /> : <DomainIndex selected={clericDomain} />}
+          </div>
+          <div className="aop-spell-page">
+            <button type="button" onClick={requestClose} className="absolute right-5 top-4 z-10 text-[#6b3e25] hover:text-black" aria-label="Close Book of Spells"><X className="h-5 w-5" /></button>
+            <p className="mb-4 rounded border border-[#7f5d3c]/45 bg-[#7d5223]/10 p-3 text-xs leading-relaxed">D&amp;D 5E: {ruleNote}</p>
+            {page === 0 ? <SpellList title={character.class === "Cleric" ? "Domain Spells · Always Prepared" : "Subclass Spells"} spells={domainSpells} empty={className === "cleric" ? "Choose and record a Player's Handbook domain in The Forge." : "No subclass spells recorded."} /> : page === 1 ? <SpellList title={className === "wizard" ? "Spellbook" : "Known / Available"} spells={known} empty="No known spell records attached." /> : <DomainProgression domain={clericDomain} progression={domainProgression} />}
+            <p className="absolute bottom-12 left-8 right-8 text-center text-[10px] italic text-[#725038]">Only recorded choices and level-eligible 2014 Player&apos;s Handbook domain spells are shown.</p>
+          </div>
+        </div>
       </div>
-      <div className="mt-5 flex items-center justify-between border-t border-[#4f3c1d] pt-4"><p className="text-[10px] text-[#806f52]">Only spells recorded on this character are shown.</p><a href="/forge" className="rounded border border-purple-800 px-3 py-2 text-[10px] uppercase tracking-wider text-purple-300 hover:bg-purple-950/40">Manage in The Forge</a></div>
+      <div className="aop-page-controls"><button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>← Previous</button><span>Leaves {page + 1} / {maxPage + 1}</span><button type="button" disabled={page === maxPage} onClick={() => setPage((current) => Math.min(maxPage, current + 1))}>Next →</button></div>
+      <a href="/forge" className="aop-spellbook-forge">Manage recorded spells in The Forge</a>
     </section>
   </div>
 }
 
 function SpellList({ title, spells, empty }: { title: string; spells: string[]; empty: string }) {
-  return <section className="overflow-hidden rounded border border-[#4f3c1d] bg-black/30"><h3 className="border-b border-[#4f3c1d] px-3 py-2 font-serif text-xs uppercase tracking-wider text-purple-300">{title}</h3>{spells.length ? <ul className="divide-y divide-[#2d2416]">{spells.map((spell) => <li key={spell} className="px-3 py-2 text-xs text-[#d9c9a8]">{spell}</li>)}</ul> : <p className="p-4 text-xs italic text-[#77684f]">{empty}</p>}</section>
+  return <section className="overflow-hidden rounded border border-[#76502e]/55 bg-[#8c5d27]/5"><h3 className="border-b border-[#76502e]/45 px-3 py-2 font-serif text-xs uppercase tracking-wider text-[#653a24]">{title}</h3>{spells.length ? <ul className="divide-y divide-[#76502e]/25">{spells.map((spell) => <li key={spell} className="px-3 py-2 font-serif text-sm text-[#40271a]">✧ {spell}</li>)}</ul> : <p className="p-4 text-xs italic text-[#77604a]">{empty}</p>}</section>
+}
+
+function DomainIndex({ selected }: { selected?: string }) {
+  return <section><h3 className="mb-3 text-center font-serif text-lg text-[#53301e]">Player&apos;s Handbook Domains</h3><div className="grid grid-cols-2 gap-2">{Object.keys(PHB2014_CLERIC_DOMAINS).map((domain) => <div key={domain} className={cn("rounded border px-3 py-2 text-center font-serif", selected === domain ? "border-[#935f24] bg-amber-900/15 font-bold" : "border-[#846344]/35")}>{domain}</div>)}</div></section>
+}
+
+function DomainProgression({ domain, progression }: { domain?: string; progression: Array<{ level: number; spells: string[] }> }) {
+  return <section><h3 className="mb-3 text-center font-serif text-lg text-[#53301e]">{domain ? `${domain} Domain` : "Select a Domain in The Forge"}</h3>{progression.length ? progression.map((entry) => <div key={entry.level} className="flex border-b border-[#76502e]/30 py-2 text-sm"><b>Cleric {entry.level}</b><span className="ml-auto text-right">{entry.spells.join(" · ")}</span></div>) : <p className="text-center text-sm italic text-[#765941]">No domain is recorded, so no domain spell list has been assigned.</p>}</section>
 }
 
 type StatKind = "ac" | "initiative" | "proficiency" | "speed"

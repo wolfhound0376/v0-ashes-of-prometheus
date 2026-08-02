@@ -84,7 +84,7 @@ export function DiceRoller({
               className={cn("aop-die-choice group", selectedDie === die && "is-selected")}
               aria-pressed={selectedDie === die}
             >
-              <span className="aop-die-model" style={{ backgroundPosition: position }} aria-hidden />
+              <span className={cn("aop-die-model", die === "d100" && "is-percentile")} data-face={die.slice(1)} style={{ backgroundPosition: position }} aria-hidden />
               <span className="mt-1 block text-[10px] text-[#d7bd86]">{die}</span>
             </button>
           ))}
