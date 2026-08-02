@@ -18,6 +18,8 @@ import {
 import { ProficienciesPanel } from "./panels/proficiencies-panel"
 import { AttacksSpellcasting } from "./panels/attacks-spellcasting"
 import { DetailedStats } from "./panels/detailed-stats"
+import { AcBreakdownModal, AbilityDetailModal, type AbilityKey } from "./panels/stat-modals"
+import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { XPTracker } from "./xp-tracker"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
@@ -119,6 +121,10 @@ export function RightColumn({
   const [proficienciesOpen, setProficienciesOpen] = useState(false)
   const [statsOpen, setStatsOpen] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
+  // v3.0 stat inspection + full-sheet slide-over.
+  const [acModalOpen, setAcModalOpen] = useState(false)
+  const [abilityModal, setAbilityModal] = useState<AbilityKey | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   // Transform character data
   const character = selectedCharacter ? {
@@ -167,6 +173,7 @@ age: (selectedCharacter as any).age,
     spellAttackBonus: (selectedCharacter as any).spell_attack_bonus,
     avatarUrl: selectedCharacter.avatar_image_url,
     experiencePoints: (selectedCharacter as any).experience_points || 0,
+    personality: (selectedCharacter as any).sheet_personality ?? null,
   } : {
     name: "No Character",
     race: "Unknown",
@@ -208,6 +215,7 @@ age: (selectedCharacter as any).age,
     spellAttackBonus: null,
     avatarUrl: null,
     experiencePoints: 0,
+    personality: null,
   }
 
   // Transform inventory
@@ -359,11 +367,15 @@ age: (selectedCharacter as any).age,
 
             {/* Core Stats Row */}
             <div className="grid grid-cols-5 gap-2 text-center">
-              <div className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30">
+              <button
+                onClick={() => setAcModalOpen(true)}
+                title="View Armor Class breakdown"
+                className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30 hover:border-amber-600/60 transition-colors"
+              >
                 <Shield className="w-4 h-4 mx-auto mb-1 text-amber-600" />
                 <div className="text-lg font-bold text-stone-200">{character.ac}</div>
                 <div className="text-[9px] uppercase tracking-wider text-stone-500">AC</div>
-              </div>
+              </button>
               <button
                 onClick={async () => {
                   const result = await sharedRoll({
@@ -412,17 +424,8 @@ age: (selectedCharacter as any).age,
                 return (
                   <button
                     key={ab}
-                    onClick={async () => {
-                      const result = await sharedRoll({
-                        die: "d20",
-                        numDice: 1,
-                        modifier: data.modifier,
-                        label: `${ab.toUpperCase()} Check`,
-                      })
-                      announceRoll(describeRoll(result))
-                    }}
-                    disabled={diceBusy}
-                    title={`Roll ${ab.toUpperCase()} check (1d20${data.modifier >= 0 ? "+" : ""}${data.modifier})`}
+                    onClick={() => setAbilityModal(ab)}
+                    title={`View ${ab.toUpperCase()} details`}
                     className="rounded-[3px] border border-[#7a5f33]/45 bg-[#12100c] px-0.5 py-1.5 text-center transition-colors hover:border-[#c9a868]/80 disabled:opacity-60"
                   >
                     <div className="text-[9px] uppercase tracking-wider text-stone-500">{ab}</div>
@@ -497,9 +500,9 @@ age: (selectedCharacter as any).age,
               </div>
             </div>
 
-            {/* View Full Character Sheet */}
+            {/* View Full Character Sheet — opens the slide-over across the centre. */}
             <button
-              onClick={() => setStatsOpen(true)}
+              onClick={() => setSheetOpen(true)}
               className="mt-2 w-full rounded-[3px] border border-[#7a5f33]/60 bg-gradient-to-b from-[#1d1710] to-[#120e0a] py-1.5 text-[11px] text-stone-300 transition-colors hover:border-[#c9a868] hover:text-[#e0cfa0]"
             >
               View Full Character Sheet
@@ -908,6 +911,52 @@ age: (selectedCharacter as any).age,
           character={character}
         />
       </FloatingWindow>
+
+      {/* AC breakdown modal */}
+      {acModalOpen && (
+        <AcBreakdownModal
+          character={{
+            class: character.class,
+            ac: character.ac,
+            abilities: character.abilities,
+            savingThrowProficiencies: character.savingThrowProficiencies,
+            skillProficiencies: character.skillProficiencies,
+            skillExpertises: character.skillExpertises,
+            proficiencyBonus: character.proficiencyBonus,
+          }}
+          equipped={equippedItems.map((e) => ({ name: e.name, slot: e.slot }))}
+          onClose={() => setAcModalOpen(false)}
+        />
+      )}
+
+      {/* Ability detail modal */}
+      {abilityModal && (
+        <AbilityDetailModal
+          ability={abilityModal}
+          character={{
+            class: character.class,
+            ac: character.ac,
+            abilities: character.abilities,
+            savingThrowProficiencies: character.savingThrowProficiencies,
+            skillProficiencies: character.skillProficiencies,
+            skillExpertises: character.skillExpertises,
+            proficiencyBonus: character.proficiencyBonus,
+          }}
+          onClose={() => setAbilityModal(null)}
+          onRoll={async (label, modifier) => {
+            const result = await sharedRoll({ die: "d20", numDice: 1, modifier, label })
+            announceRoll(describeRoll(result))
+            setAbilityModal(null)
+          }}
+        />
+      )}
+
+      {/* Full character sheet slide-over */}
+      <CharacterSheetSlideOver
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        character={character}
+      />
     </>
   )
 }

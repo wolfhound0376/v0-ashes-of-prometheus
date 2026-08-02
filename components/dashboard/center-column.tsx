@@ -79,6 +79,11 @@ interface NpcEncounter {
   hp_max?: number | null
   // Active conditions (jsonb string[]) affecting this NPC.
   conditions?: string[] | null
+  // Optional social state. These columns may or may not exist on the table; the
+  // roster fetch below is defensive so a missing column never breaks the query.
+  // When absent, the featured window renders no disposition/attitude rows.
+  disposition?: string | null
+  attitude?: string | null
 }
 
 interface PersistedSpeechSegment {
@@ -333,12 +338,20 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
 
   useEffect(() => {
     let cancelled = false
-    supabase
-      .from("npc_encounters")
-      .select("id, name, aliases, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, conditions")
-      .then(({ data }: { data: NpcEncounter[] | null }) => {
-        if (!cancelled) setFullNpcRoster(data || [])
-      })
+    const BASE_COLS =
+      "id, name, aliases, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, conditions"
+    // Prefer selecting the optional social columns. If they don't exist on the
+    // table, Postgres errors — so retry with the base column list. Either way
+    // the roster loads; disposition/attitude simply stay undefined when absent.
+    ;(async () => {
+      let { data, error } = await supabase
+        .from("npc_encounters")
+        .select(`${BASE_COLS}, disposition, attitude`)
+      if (error) {
+        ;({ data } = await supabase.from("npc_encounters").select(BASE_COLS))
+      }
+      if (!cancelled) setFullNpcRoster((data as NpcEncounter[] | null) || [])
+    })()
     return () => { cancelled = true }
   }, [supabase])
 
@@ -965,6 +978,24 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
             </p>
             <span className="h-px w-8 bg-[#c9a868]/40 flex-shrink-0" />
           </div>
+          {/* Disposition / Attitude — only when the encounter record carries them.
+              No placeholders are ever invented for a record that lacks these. */}
+          {(speaker.disposition || speaker.attitude) && (
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
+              {speaker.disposition && (
+                <span className="inline-flex items-center gap-1 rounded-sm border border-[#c9a868]/40 bg-[#0a0908]/70 px-1.5 py-0.5 text-[10px] text-[#e6c878]/90 drop-shadow">
+                  <span className="uppercase tracking-wider text-stone-500">Disposition</span>
+                  <span className="font-medium">{speaker.disposition}</span>
+                </span>
+              )}
+              {speaker.attitude && (
+                <span className="inline-flex items-center gap-1 rounded-sm border border-[#c9a868]/40 bg-[#0a0908]/70 px-1.5 py-0.5 text-[10px] text-[#e6c878]/90 drop-shadow">
+                  <span className="uppercase tracking-wider text-stone-500">Attitude</span>
+                  <span className="font-medium">{speaker.attitude}</span>
+                </span>
+              )}
+            </div>
+          )}
           {speaker.conditions && speaker.conditions.length > 0 && (
             <div className="flex justify-center max-w-full">
               <ConditionBadges conditions={speaker.conditions} size="sm" />

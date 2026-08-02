@@ -4,6 +4,11 @@ import { useState } from "react"
 import { ChevronDown, Check, User, Dumbbell, Sparkles, Dices } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll, type RollSpec } from "@/components/dice/dice-provider"
+import { classDefaults } from "@/lib/game-data"
+
+// Normalize a skill display name ("Sleight of Hand") to the stored key
+// ("sleight_of_hand") used throughout the character sheet.
+const toSkillKey = (skill: string) => skill.toLowerCase().replace(/ /g, "_")
 
 // D&D 5E Skills mapped to abilities
 const SKILLS = {
@@ -72,6 +77,18 @@ export function DetailedStats({
   onClassAbilityChange
 }: DetailedStatsProps) {
   const [showAppearance, setShowAppearance] = useState(false)
+
+  // A proficient skill counts as "granted by class" when it also appears in the
+  // class's skill-choice list. Background/species skills the character is
+  // proficient in fall outside this set and stay unboxed. Derived, never guessed.
+  const classSkillOptions = new Set(
+    (classDefaults[character.class]?.skillChoices.options ?? []).map(toSkillKey),
+  )
+  const isClassSkill = (skill: string) => {
+    const key = toSkillKey(skill)
+    return character.skillProficiencies.includes(key) && classSkillOptions.has(key)
+  }
+  const anyClassSkills = Object.values(SKILLS).some((skills) => skills.some(isClassSkill))
 
   // Every sheet roll goes through the SHARED dice roller (DiceProvider) — the
   // sheet never computes results itself. Completed rolls are announced to the
@@ -264,6 +281,7 @@ export function DetailedStats({
                   const skillKey = skill.toLowerCase().replace(/ /g, '_')
                   const hasProf = character.skillProficiencies.includes(skillKey)
                   const hasExpertise = character.skillExpertises.includes(skillKey)
+                  const classSkill = isClassSkill(skill)
                   const bonus = abilityData.modifier + 
                     (hasExpertise ? character.proficiencyBonus * 2 : 
                      hasProf ? character.proficiencyBonus : 0)
@@ -280,8 +298,11 @@ export function DetailedStats({
                         })
                       }
                       disabled={busy}
-                      title={`Roll ${skill} (1d20${bonus >= 0 ? "+" : ""}${bonus})`}
-                      className="group w-full flex items-center gap-2 rounded px-1 -mx-1 hover:bg-[#2a2420]/50 transition-colors text-left disabled:opacity-60"
+                      title={`Roll ${skill} (1d20${bonus >= 0 ? "+" : ""}${bonus})${classSkill ? " — class skill" : ""}`}
+                      className={cn(
+                        "group w-full flex items-center gap-2 rounded px-1 -mx-1 hover:bg-[#2a2420]/50 transition-colors text-left disabled:opacity-60",
+                        classSkill && "border border-[#c9a868]/50 bg-[#c9a868]/[0.07] px-1.5",
+                      )}
                     >
                       <div className={cn(
                         "w-3 h-3 rounded-full border flex items-center justify-center",
@@ -313,6 +334,16 @@ export function DetailedStats({
             </div>
           )
         })}
+
+        {/* Legend for the class-skill boxes above. */}
+        {anyClassSkills && (
+          <div className="flex items-center gap-1.5 px-1 text-[11px] text-stone-500">
+            <span className="flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border border-[#c9a868]/50 bg-[#c9a868]/[0.07] text-[8px] text-[#c9a868]">
+              {"\u25C8"}
+            </span>
+            <span>class skill</span>
+          </div>
+        )}
 
         {/* Class-Specific Abilities (Domains, etc.) */}
         {Object.keys(classAbilities).length > 0 && (

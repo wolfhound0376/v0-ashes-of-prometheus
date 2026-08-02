@@ -39,6 +39,29 @@ import {
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
 
+// Deterministic per-speaker color for the Interactive Log. Malachar (DM) and the
+// active player keep their dedicated colors elsewhere; every OTHER named speaker
+// is hashed into this fixed palette so the same NPC keeps one consistent color
+// for the whole session. Hues deliberately avoid the reserved blue (player),
+// purple (Malachar) and gold (combat) so speakers stay visually distinct.
+const SPEAKER_PALETTE = [
+  "#e0956a", // warm orange
+  "#5fbaa6", // teal
+  "#d98aa8", // rose
+  "#a3c46a", // lime
+  "#e07a6a", // coral
+  "#58b8c4", // muted cyan
+  "#c79a5f", // bronze
+] as const
+
+function speakerColorFor(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+  }
+  return SPEAKER_PALETTE[hash % SPEAKER_PALETTE.length]
+}
+
 interface DialogueEntry {
   id?: string
   speaker: string
@@ -307,6 +330,10 @@ export function LeftColumn({
               const isMalachar = entry.speaker === "Malachar"
               const kind = categorize(entry)
               const isSelf = characterName ? entry.speaker === characterName : entry.speaker === "You"
+              // Reserved speakers keep their dedicated colors; any other named NPC
+              // gets a stable hashed color so it never changes between beats.
+              const usesHashedColor = kind !== "system" && kind !== "combat" && !isSelf && !isMalachar
+              const hashedColor = usesHashedColor ? speakerColorFor(entry.speaker) : undefined
               return (
                 <div key={entry.id ?? index} className="text-sm leading-relaxed">
                   <span
@@ -320,8 +347,9 @@ export function LeftColumn({
                             ? "text-[#6aa8e0]"
                             : isMalachar
                               ? "text-[#a06be8]"
-                              : "text-[#b07ad8]",
+                              : undefined,
                     )}
+                    style={hashedColor ? { color: hashedColor } : undefined}
                   >
                     {entry.speaker}:
                   </span>
