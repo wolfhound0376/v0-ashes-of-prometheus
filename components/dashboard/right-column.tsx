@@ -604,16 +604,47 @@ age: (selectedCharacter as any).age,
                       <span className="text-stone-400">Passive Perception</span>
                       <span className="text-stone-200">{character.passivePerception}</span>
                     </div>
-                    {character.senses && <div className="text-stone-400">{character.senses}</div>}
+                    <div className="flex items-center justify-between">
+                      <span className="text-stone-400">Passive Investigation</span>
+                      <span className="text-stone-200">{passiveInvestigation}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-stone-400">Passive Insight</span>
+                      <span className="text-stone-200">{passiveInsight}</span>
+                    </div>
+                    {character.senses && <div className="pt-0.5 text-stone-500">{character.senses}</div>}
                   </div>
                 </div>
 
-                {character.skills && (
-                  <div className="rounded-[3px] border border-[#7a5f33]/40 bg-[#12100c] p-2">
-                    <div className="mb-1 font-serif text-[11px] text-[#d9bd7e]">Skills</div>
-                    <div className="text-[11px] leading-relaxed text-stone-400">{character.skills}</div>
-                  </div>
-                )}
+                <div className="rounded-[3px] border border-[#7a5f33]/40 bg-[#12100c] p-2">
+                  <div className="mb-1 font-serif text-[11px] text-[#d9bd7e]">Skills</div>
+                  {proficientSkills.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {proficientSkills.map((s) => (
+                        <button
+                          key={s.key}
+                          onClick={async () => {
+                            const result = await sharedRoll({
+                              die: "d20",
+                              numDice: 1,
+                              modifier: s.bonus,
+                              label: s.label,
+                            })
+                            announceRoll(describeRoll(result))
+                          }}
+                          disabled={diceBusy}
+                          title={`Roll ${s.label} (1d20${fmtBonus(s.bonus)})`}
+                          className="flex w-full items-center justify-between rounded px-1 text-[11px] transition-colors hover:bg-[#241a10] disabled:opacity-60"
+                        >
+                          <span className="text-stone-300">{s.label}</span>
+                          <span className="font-medium text-emerald-400">{fmtBonus(s.bonus)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] italic text-stone-500">No proficient skills</div>
+                  )}
+                </div>
               </div>
             </div>
 
