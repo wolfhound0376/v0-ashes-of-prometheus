@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useDice } from "@/components/dice/dice-provider"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
 type DialogueEntry = { id?: string; speaker: string; text: string }
@@ -145,12 +146,12 @@ export function V4Dashboard(props: V4DashboardProps) {
     </div>
 
     <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col">
-      <div className="grid h-[180px] shrink-0 grid-cols-[160px_minmax(220px,1fr)_140px] gap-3 p-3">
+      <div className="grid h-[205px] shrink-0 grid-cols-[160px_minmax(220px,1fr)_140px] gap-3 p-3 pb-4">
         <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote></div>
         <div className="relative overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div>
         <div className="space-y-2 text-[10px]"><div className="rounded border border-[#695326] p-2 text-[#d9c492]">Speaking… ▮▮▯▯</div><div className="rounded border border-[#4b3a19] p-2"><span className="block text-[#847557]">Disposition</span>Wary</div><div className="rounded border border-[#4b3a19] p-2"><span className="block text-[#847557]">Attitude</span>Guarded</div><button className="w-full rounded border border-[#695326] py-2 text-[#cdb276]">View NPC Sheet</button></div>
       </div>
-      <div className="relative mx-3 min-h-[220px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
+      <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
         <img src={props.environment.imageUrl} alt="Current scene" className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
         <div className="absolute left-3 top-3 flex gap-1 rounded border border-[#6b5123] bg-[#080705]/85 p-1 text-[8px] uppercase tracking-wider">
           <button onClick={() => setStageMode("scene")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "scene" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Compass className="h-3 w-3" />Character View</button>
@@ -215,28 +216,54 @@ function ModalShell({ title, children, onClose, wide = false }: { title: string;
   </div>
 }
 
+type SheetTab = "actions" | "spells" | "inventory" | "features" | "background" | "notes"
+
 function CharacterSheetModal({ character, abilities, inventory, equipment, displayedAc, displayedInitiative, onClose }: { character: Character; abilities: Array<{ key: string; score: number; mod: number }>; inventory: InventoryItem[]; equipment: EquipmentItem[]; displayedAc: number; displayedInitiative: number; onClose: () => void }) {
+  const [tab, setTab] = useState<SheetTab>("actions")
+  const [notes, setNotes] = useState("")
+  const { roll, busy } = useDice()
   const portrait = character.portrait_image_url || character.avatar_image_url
-  const facts = [
-    ["Speed", character.speed || "30 ft."], ["Proficiency", signed(character.proficiency_bonus)], ["Passive Perception", String(character.passive_perception)], ["Languages", character.languages || "Not recorded"],
-  ]
+  const extra = character as Character & { race?: string; background?: string; subclass?: string; alignment?: string; personality_traits?: string; ideals?: string; bonds?: string; flaws?: string; faith?: string }
+  const speed = character.speed || "30 ft."
+  const carriedWeight = inventory.reduce((sum, item) => sum + Number(item.weight || 0) * item.quantity, 0)
+  const abilityRoll = (ability: { key: string; mod: number }) => void roll({ die: "d20", numDice: 1, modifier: ability.mod, label: `${abilityNames[ability.key]} Check` })
+  const initiativeRoll = () => void roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
   return <ModalShell title="Full Character Sheet" onClose={onClose} wide>
-    <div className="grid gap-4 p-5 lg:grid-cols-[220px_1fr]">
-      <aside className="space-y-3">
-        <div className="overflow-hidden rounded-lg border border-[#765a2a] bg-black/45"><div className="aspect-[3/4]">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-contain object-top" /> : <div className="flex h-full items-center justify-center font-serif text-6xl text-[#8c6d36]">{character.name[0]}</div>}</div></div>
-        <div className="rounded border border-[#4f3c1d] bg-black/30 p-3"><h3 className="font-serif text-xl text-[#f0dfba]">{character.name}</h3><p className="text-xs text-[#a99670]">Level {character.level} {character.class}</p><div className="mt-2 h-1.5 bg-[#2b1b12]"><div className="h-full bg-[#aa2a34]" style={{ width: `${Math.min(100, character.hp_current / Math.max(1, character.hp_max) * 100)}%` }} /></div><p className="mt-1 text-[10px] text-[#c8b690]">HP {character.hp_current} / {character.hp_max}</p></div>
-        <div className="rounded border border-[#4f3c1d] bg-black/30 p-3 text-[11px]"><h4 className="mb-2 font-serif uppercase tracking-wider text-[#d7b56f]">Conditions</h4><div className="flex flex-wrap gap-1">{character.conditions?.length ? character.conditions.map((condition) => <span key={condition} className="rounded-full border border-[#755429] px-2 py-1 text-[#d6c29a]">{condition}</span>) : <span className="text-[#786b52]">No active conditions</span>}</div></div>
-      </aside>
-      <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-3"><SheetCoreStat label="Armor Class" value={String(displayedAc)} /><SheetCoreStat label="Initiative" value={signed(displayedInitiative)} /><SheetCoreStat label="Hit Points" value={`${character.hp_current}/${character.hp_max}`} /></div>
-        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-3 gap-2 sm:grid-cols-6">{abilities.map((ability) => <div key={ability.key} className="rounded border border-[#604923] bg-[#130f09] p-2 text-center"><span className="text-[9px] uppercase text-[#ad9362]">{abilityNames[ability.key]}</span><b className="block font-serif text-2xl text-[#f1dfb8]">{ability.score}</b><span className="text-xs text-[#c79c54]">{signed(ability.mod)}</span></div>)}</div></section>
-        <div className="grid gap-3 md:grid-cols-2"><SheetList title="Character Details" rows={facts} /><SheetList title="Defenses & Senses" rows={[["Senses", character.senses || "Not recorded"], ["Resistances", character.damage_resistances || "None recorded"], ["Immunities", character.damage_immunities || "None recorded"], ["Condition Immunities", character.condition_immunities || "None recorded"]]} /></div>
-        <div className="grid gap-3 md:grid-cols-2"><SheetList title="Equipped Items" rows={equipment.length ? equipment.map((item) => [equipmentSlots.find((slot) => slot.id === item.slot)?.label || item.slot, item.name]) : [["Equipment", "Nothing equipped"]]} /><SheetList title="Carried Inventory" rows={inventory.length ? inventory.map((item) => [item.name, `×${item.quantity} · ${item.weight} lb`]) : [["Inventory", "Nothing carried"]]} /></div>
-        <SheetList title="Skills" rows={[["Recorded proficiencies", character.skills || "Not recorded"]]} />
+    <div className="p-4">
+      <header className="flex flex-wrap items-center gap-4 rounded-xl border border-[#765a2a] bg-[linear-gradient(100deg,#25170b,#090705_68%)] p-4 shadow-[inset_0_0_20px_#000]">
+        <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-[#ad8341] bg-black/50">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-4xl text-[#b78b45]">{character.name[0]}</div>}</div>
+        <div><h3 className="font-serif text-3xl text-[#f2dfb7]">{character.name}</h3><p className="text-xs text-[#ac966d]">Level {character.level} {extra.race || "Human"} {character.class}{extra.subclass ? ` · ${extra.subclass}` : ""}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-[#76694f]">{extra.background || "Background not recorded"} · {extra.alignment || "Alignment not recorded"}</p></div>
+        <div className="ml-auto min-w-52"><div className="flex justify-between text-[9px] uppercase text-[#887653]"><span>Experience</span><span>{character.xp} / {character.xp_to_next}</span></div><div className="mt-1 h-2 rounded bg-black"><div className="h-full rounded bg-[#aa2a34]" style={{ width: `${Math.min(100, character.xp / Math.max(1, character.xp_to_next) * 100)}%` }} /></div><div className="mt-2 flex gap-2"><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Short Rest</button><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Long Rest</button></div></div>
+      </header>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(390px,1fr)_250px]">
+        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif text-xs uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-2 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet onClick={() => abilityRoll(ability)} />)}</div><p className="mt-2 text-center text-[8px] text-[#75674d]">Click an ability to roll a check</p></section>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2"><SheetCoreStat label="Armor Class" value={String(displayedAc)} /><button disabled={busy} onClick={initiativeRoll}><SheetCoreStat label="Initiative · Roll" value={signed(displayedInitiative)} /></button><SheetCoreStat label="Speed" value={speed} /></div>
+          <div className="grid gap-3 md:grid-cols-2"><SheetList title="Saving Throws" rows={abilities.map((ability) => [abilityNames[ability.key], signed(ability.mod)])} /><SheetList title="Senses" rows={[["Passive Perception", String(character.passive_perception)], ["Senses", character.senses || "Not recorded"], ["Languages", character.languages || "Not recorded"]]} /></div>
+          <section className="overflow-hidden rounded border border-[#4f3c1d] bg-black/25"><h3 className="border-b border-[#4f3c1d] px-3 py-2 font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Skills & Proficiencies</h3><p className="min-h-24 whitespace-pre-wrap p-3 text-[11px] leading-relaxed text-[#c9b895]">{character.skills || "No skill proficiency records are attached to this character."}</p></section>
+        </div>
+
+        <aside className="space-y-3">
+          <section className="rounded border border-[#6a4d22] bg-[radial-gradient(circle_at_top,#402411,#110b07_70%)] p-4 text-center"><h4 className="text-[9px] uppercase tracking-wider text-[#a58a5b]">Hit Points</h4><b className="font-serif text-4xl text-[#f1dcae]">{character.hp_current}<span className="text-xl text-[#887653]"> / {character.hp_max}</span></b><div className="mt-2 h-2 bg-black"><div className="h-full bg-[#b72f3c]" style={{ width: `${Math.min(100, character.hp_current / Math.max(1, character.hp_max) * 100)}%` }} /></div></section>
+          <div className="grid grid-cols-2 gap-2"><SheetCoreStat label="Proficiency" value={signed(character.proficiency_bonus)} /><SheetCoreStat label="Hit Dice" value="Not recorded" /></div>
+          <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h4 className="mb-2 font-serif text-[10px] uppercase tracking-wider text-[#d7b56f]">Conditions</h4><div className="flex flex-wrap gap-1">{character.conditions?.length ? character.conditions.map((condition) => <span key={condition} className="rounded-full border border-[#755429] px-2 py-1 text-[9px] text-[#d6c29a]">{condition}</span>) : <span className="text-[10px] text-[#786b52]">No active conditions</span>}</div></section>
+          <SheetList title="Defenses" rows={[["Resistances", character.damage_resistances || "None recorded"], ["Immunities", character.damage_immunities || "None recorded"], ["Condition Immunities", character.condition_immunities || "None recorded"]]} />
+        </aside>
       </div>
+
+      <section className="mt-4 overflow-hidden rounded border border-[#5c431e] bg-black/25">
+        <nav className="flex overflow-x-auto border-b border-[#5c431e] bg-black/30">{([['actions','Actions'],['spells','Spells'],['inventory','Inventory'],['features','Features & Traits'],['background','Background'],['notes','Notes']] as Array<[SheetTab,string]>).map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={cn("whitespace-nowrap border-b-2 px-4 py-3 text-[10px] font-bold uppercase tracking-wider", tab === id ? "border-[#c59443] bg-[#2b1e0d] text-[#f1d59e]" : "border-transparent text-[#837354] hover:text-[#c9ad77]")}>{label}</button>)}</nav>
+        <div className="min-h-52 p-4">{tab === "actions" ? <SheetActions equipment={equipment} /> : tab === "spells" ? <SheetEmpty title="Spellcasting" text="No spell records are attached to this character in the current dashboard data." /> : tab === "inventory" ? <div className="grid gap-3 md:grid-cols-2"><SheetList title={`Inventory · ${carriedWeight.toFixed(1)} / ${character.weight_max} lb`} rows={inventory.length ? inventory.map((item) => [item.name, `×${item.quantity} · ${item.weight} lb`]) : [["Inventory", "Nothing carried"]]} /><SheetList title="Equipped" rows={equipment.length ? equipment.map((item) => [equipmentSlots.find((slot) => slot.id === item.slot)?.label || item.slot, item.name]) : [["Equipment", "Nothing equipped"]]} /></div> : tab === "features" ? <div className="grid gap-3 md:grid-cols-2"><SheetList title="Proficiencies" rows={[["Skills", character.skills || "Not recorded"], ["Languages", character.languages || "Not recorded"]]} /><SheetList title="Traits & Defenses" rows={[["Senses", character.senses || "Not recorded"], ["Resistances", character.damage_resistances || "None recorded"], ["Immunities", character.damage_immunities || "None recorded"]]} /></div> : tab === "background" ? <div className="grid gap-3 md:grid-cols-2"><SheetList title="Identity" rows={[["Race", extra.race || "Not recorded"], ["Background", extra.background || "Not recorded"], ["Alignment", extra.alignment || "Not recorded"], ["Faith", extra.faith || "Not recorded"]]} /><SheetList title="Personality" rows={[["Traits", extra.personality_traits || "Not recorded"], ["Ideals", extra.ideals || "Not recorded"], ["Bonds", extra.bonds || "Not recorded"], ["Flaws", extra.flaws || "Not recorded"]]} /></div> : <div><label className="mb-2 block text-[10px] uppercase tracking-wider text-[#b29461]">Session Notes · local draft</label><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-44 w-full rounded border border-[#5b431f] bg-[#0b0906] p-3 text-sm text-[#d7c7a5] outline-none focus:border-[#c29040]" placeholder="Record temporary session notes here…" /></div>}</div>
+      </section>
     </div>
   </ModalShell>
 }
+
+function SheetActions({ equipment }: { equipment: EquipmentItem[] }) { const weapons = equipment.filter((item) => item.slot === "main_hand" || item.slot === "off_hand"); return <div><h3 className="mb-3 font-serif text-sm uppercase tracking-wider text-[#d7b56f]">Actions in Combat</h3><div className="grid gap-2 md:grid-cols-2">{weapons.length ? weapons.map((weapon) => <div key={weapon.id} className="rounded border border-[#49371b] bg-[#120e08] p-3"><b className="font-serif text-[#e1c995]">{weapon.name}</b><p className="mt-1 text-[10px] text-[#817154]">{weapon.description || "Equipped weapon · attack details not recorded"}</p></div>) : <SheetEmpty title="Attacks" text="No equipped weapon records are available." />}<div className="rounded border border-[#49371b] bg-[#120e08] p-3"><b className="font-serif text-[#e1c995]">Standard Actions</b><p className="mt-1 text-[10px] leading-relaxed text-[#9d8b68]">Attack · Dash · Disengage · Dodge · Help · Hide · Ready · Search · Use an Object</p></div></div></div> }
+
+function SheetEmpty({ title, text }: { title: string; text: string }) { return <div className="rounded border border-[#49371b] bg-[#120e08] p-4"><h3 className="font-serif text-[#d7b56f]">{title}</h3><p className="mt-2 text-xs text-[#817154]">{text}</p></div> }
 
 function SheetCoreStat({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-[#80602b] bg-[radial-gradient(circle_at_top,#493316,#130d07_70%)] p-3 text-center shadow-[inset_0_0_12px_#000]"><b className="block font-serif text-2xl text-[#f1deb2]">{value}</b><span className="text-[9px] uppercase tracking-[.13em] text-[#b59a66]">{label}</span></div> }
 
@@ -287,12 +314,12 @@ type StatKind = "ac" | "initiative" | "proficiency" | "speed"
 
 const abilityNames: Record<string, string> = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" }
 
-function AbilityScoreCard({ ability }: { ability: { key: string; score: number; mod: number } }) {
+function AbilityScoreCard({ ability, onClick, sheet = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean }) {
   const order = ["str", "dex", "con", "int", "wis", "cha"]
   const index = Math.max(0, order.indexOf(ability.key.toLowerCase()))
   const x = index === 0 ? "0%" : index === 5 ? "100%" : `${index * 20}%`
   const name = abilityNames[ability.key.toLowerCase()] ?? ability.key
-  return <button type="button" className="group relative h-[132px] min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:scale-125 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:scale-125 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
+  return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : "h-[132px] hover:scale-125 focus-visible:scale-125")} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
     <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
     <span className="absolute inset-x-0 top-2 z-10 bg-black/0 px-0.5 py-1 text-center font-serif text-[6px] font-bold uppercase tracking-[.04em] text-[#d3ae6b]/0 transition-[color,background-color,text-shadow] duration-200 delay-0 group-hover:bg-black/80 group-hover:text-[#ffe4a8] group-hover:[text-shadow:0_0_7px_#d79b3a] group-hover:delay-500">{name}</span>
     <span className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black via-black/90 to-transparent" />
