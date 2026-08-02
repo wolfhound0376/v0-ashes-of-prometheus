@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { BookOpen, Compass, Dices, Footprints, Gauge, Map, Medal, Mic, Package, Plus, Shield, Users, X } from "lucide-react"
+import { BookOpen, Compass, Dices, Map, Mic, Package, Plus, Users, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
@@ -155,10 +155,10 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
           <div className="mt-2 flex items-center rounded border border-[#4b3a19] px-2 py-1 text-[8px]"><span className="text-purple-400">SPELL SLOTS · LV 1　◉ ◉</span><span className="ml-auto text-[#8f8061]">2 / 2</span></div>
           <div className="mt-2 grid grid-cols-4 gap-1.5">
-            <StatShield kind="ac" label="Armor" value={String(selected?.ac ?? 10)} icon={Shield} onClick={() => setStatDetail("ac")} />
-            <StatShield kind="initiative" label="Initiative" value={`${(selected?.initiative ?? 0) >= 0 ? "+" : ""}${selected?.initiative ?? 0}`} icon={Gauge} onClick={() => setStatDetail("initiative")} />
-            <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} icon={Medal} onClick={() => setStatDetail("proficiency")} />
-            <StatShield kind="speed" label="Speed" value="30" icon={Footprints} onClick={() => setStatDetail("speed")} />
+            <StatShield kind="ac" label="Armor Class" value={String(selected?.ac ?? 10)} onClick={() => setStatDetail("ac")} />
+            <StatShield kind="initiative" label="Initiative" value={`${(selected?.initiative ?? 0) >= 0 ? "+" : ""}${selected?.initiative ?? 0}`} onClick={() => setStatDetail("initiative")} />
+            <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
+            <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
           <div className="mt-2 grid grid-cols-6 gap-1">{abilities.map((ability) => <div key={ability.key} className="rounded border border-[#4b3a19] p-1 text-center"><span className="text-[7px] uppercase text-[#9b8251]">{ability.key}</span><b className="block text-sm text-[#e2d4b9]">{ability.score}</b><span className="text-[8px] text-[#a4916d]">{ability.mod >= 0 ? "+" : ""}{ability.mod}</span></div>)}</div>
           <div className="mt-2 grid grid-cols-2 gap-3"><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>{[["WIS",4],["CHA",3],["CON",2],["STR",1]].map(([name,value]) => <div key={name} className="flex justify-between text-[#b6a685]"><span>{name}</span><b className="text-white">+{value}</b></div>)}<h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3><div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{selected?.passive_perception ?? 12}</b></div><div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">14</b></div></div><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>{[["Insight",4],["Medicine",4],["Religion",1],["History",1]].map(([name,value], index) => <div key={name} className={cn("flex justify-between px-1 text-[#b6a685]", index < 2 && "border border-[#725c2f] bg-[#251c0d]")}><span>{name}</span><b className="text-white">+{value}</b></div>)}<p className="mt-1 text-[8px] text-[#8f8061]">□ Cleric class skill</p></div></div>
@@ -187,20 +187,19 @@ function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: stri
 
 type StatKind = "ac" | "initiative" | "proficiency" | "speed"
 
-function StatShield({ kind, label, value, icon: Icon, onClick }: { kind: StatKind; label: string; value: string; icon: typeof Shield; onClick: () => void }) {
-  const colors: Record<StatKind, string> = {
-    ac: "from-[#77511f] via-[#c69a45] to-[#422b13] text-amber-100",
-    initiative: "from-[#264c55] via-[#55a3a7] to-[#152f36] text-cyan-50",
-    proficiency: "from-[#56336d] via-[#9b69b6] to-[#301d3e] text-purple-50",
-    speed: "from-[#315d35] via-[#69a867] to-[#1b3820] text-emerald-50",
+function StatShield({ kind, label, value, onClick }: { kind: StatKind; label: string; value: string; onClick: () => void }) {
+  const spritePosition: Record<StatKind, string> = {
+    ac: "0% 40%",
+    speed: "33.333% 40%",
+    initiative: "66.666% 40%",
+    proficiency: "100% 40%",
   }
-  return <button type="button" onClick={onClick} className="group relative h-[66px] overflow-hidden rounded-t-[45%] rounded-b-[28%] border border-[#80632f] bg-[#0a0805] p-[2px] shadow-[inset_0_0_8px_#000,0_3px_8px_#000] transition-transform hover:-translate-y-0.5 hover:border-[#d2ad61]" title={`Open ${label} details`}>
-    <div className={cn("flex h-full flex-col items-center justify-center rounded-t-[44%] rounded-b-[27%] bg-gradient-to-br", colors[kind])}>
-      <Icon className="h-4 w-4 drop-shadow" />
-      <b className="text-base leading-none drop-shadow">{value}</b>
-      <span className="mt-0.5 text-[6px] font-bold uppercase tracking-[.14em] opacity-90">{label}</span>
-    </div>
-    <span className="absolute inset-x-2 top-1 h-px bg-white/35" />
+  return <button type="button" onClick={onClick} className="group relative flex h-[82px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={`Open ${label} details`}>
+    <span className="absolute inset-x-1 top-0 h-[66px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
+      <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
+    </span>
+    <b className="absolute bottom-[14px] z-10 rounded-full border border-[#c49b4f] bg-[#080604]/90 px-1.5 py-0.5 font-serif text-[9px] leading-none text-[#f3dfb4] shadow-[0_1px_5px_#000]">{value}</b>
+    <span className="relative z-10 max-w-full truncate px-0.5 text-[6px] font-bold uppercase tracking-[.08em] text-[#cdb276]">{label}</span>
   </button>
 }
 
