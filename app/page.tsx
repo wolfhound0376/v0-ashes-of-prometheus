@@ -11,6 +11,7 @@ import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
+import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -129,6 +130,7 @@ export default function DashboardPage() {
 
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
+  const [campaignBook, setCampaignBook] = useState<CampaignBookSection | null>(null)
   const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
   const [pendingCampaignChange, setPendingCampaignChange] = useState<Campaign | null>(null)
 
@@ -807,7 +809,7 @@ if (error) {
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
-        activeSection={worldAIPanelOpen ? "lore" : null}
+        activeSection={campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // Sections that already have a home route there; the rest open the
           // World AI panel, which is where that content lives today.
@@ -815,9 +817,16 @@ if (error) {
             window.location.href = "/admin"
             return
           }
+          if (section === "journal" || section === "quests" || section === "maps" || section === "lore") {
+            setWorldAIPanelOpen(false)
+            setCampaignBook(section)
+            return
+          }
           setWorldAIPanelOpen(true)
         }}
       />
+
+      {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} onClose={() => setCampaignBook(null)} /> : null}
 
       {/* Save toast */}
       {saveMessage && (

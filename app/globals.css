@@ -362,6 +362,65 @@
 .aop-roll-mode.is-normal.is-selected { border-color: #c18b38; color: #f1d492; background: linear-gradient(180deg, #36240e, #120b05); }
 .aop-roll-mode:disabled { cursor: not-allowed; opacity: .32; }
 
+.aop-log-d20 {
+  width: 54px;
+  height: 54px;
+  border: 1px solid #b98432;
+  border-radius: 9px;
+  background: radial-gradient(circle, #35100c, #090604 72%);
+  box-shadow: inset 0 0 12px #000, 0 5px 14px #000, 0 0 14px rgba(157, 35, 22, .22);
+  overflow: hidden;
+}
+.aop-log-d20 span {
+  display: block;
+  width: 58px;
+  height: 58px;
+  transform: translate(-3px, -3px) scale(1.08);
+  background: url('/images/ui/dice-roller-reference.png') -915px -457px / 1536px 1024px no-repeat;
+  filter: saturate(1.25) contrast(1.12) drop-shadow(0 4px 3px #000);
+}
+.aop-log-d20:hover { border-color: #f0c56f; box-shadow: inset 0 0 12px #000, 0 5px 14px #000, 0 0 20px rgba(208, 70, 34, .42); }
+
+.aop-campaign-book {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 13px solid #2b160c;
+  border-radius: 18px 24px 24px 18px;
+  background: #321b0e;
+  box-shadow: inset 0 0 0 2px #9a6835, 0 30px 90px #000, 0 0 0 2px #120904;
+  animation: aop-book-open 420ms cubic-bezier(.2,.8,.2,1) both;
+  transform-origin: center;
+}
+.aop-book-page {
+  position: relative;
+  overflow: hidden;
+  padding: 28px 38px;
+  background:
+    linear-gradient(90deg, rgba(72,38,18,.16), transparent 12%, transparent 88%, rgba(72,38,18,.12)),
+    radial-gradient(circle at 45% 28%, #e4c997, #caa66c 72%, #a67b45);
+  box-shadow: inset 0 0 34px rgba(64,34,14,.42);
+}
+.aop-book-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .18;
+  background: repeating-linear-gradient(0deg, transparent 0 25px, #795530 26px 27px);
+  mix-blend-mode: multiply;
+}
+.aop-book-page-left { border-radius: 5px 0 0 8px; border-right: 1px solid #74502e; }
+.aop-book-page-right { border-radius: 0 9px 8px 0; border-left: 1px solid #e0c28e; }
+.aop-book-page-left::before,
+.aop-book-page-right::before { content: ""; position: absolute; inset-block: 0; width: 34px; z-index: 2; pointer-events: none; }
+.aop-book-page-left::before { right: 0; background: linear-gradient(90deg, transparent, rgba(49,25,10,.32)); }
+.aop-book-page-right::before { left: 0; background: linear-gradient(90deg, rgba(49,25,10,.3), transparent); }
+@keyframes aop-book-open { from { opacity: 0; transform: perspective(1200px) rotateX(10deg) scale(.88); } to { opacity: 1; transform: perspective(1200px) rotateX(0) scale(1); } }
+@media (max-width: 720px) {
+  .aop-campaign-book { grid-template-columns: 1fr; overflow-y: auto; }
+  .aop-book-page { min-height: 540px; }
+}
+
 .aop-mini-control {
   width: 30px;
   height: 28px;

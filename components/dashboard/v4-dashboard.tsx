@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Compass, Dices, Map, Mic, Plus, X } from "lucide-react"
+import { Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice } from "@/components/dice/dice-provider"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
@@ -93,6 +93,7 @@ function Frame({ title, children, className }: { title: string; children: React.
 }
 
 export function V4Dashboard(props: V4DashboardProps) {
+  const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [equipmentOpen, setEquipmentOpen] = useState(false)
@@ -127,6 +128,11 @@ export function V4Dashboard(props: V4DashboardProps) {
     score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
     mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
   }))
+  const rollInitiative = async () => {
+    const result = await roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
+    const modifierText = displayedInitiative >= 0 ? `+${displayedInitiative}` : String(displayedInitiative)
+    announce(`Initiative — ${result.total} (d20: ${result.rolls[0]} ${modifierText})`, { toLich: true })
+  }
 
   return <main className="aop-lich-dashboard grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
     <div className="flex min-h-0 flex-col gap-2">
@@ -141,9 +147,10 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="mt-2 flex gap-1.5 text-[9px] text-[#aa9874]"><span className="rounded-full border border-[#4b3a19] px-2">◐ Dim Light</span><span className="rounded-full border border-[#4b3a19] px-2">◒ Stone Floor</span><span className="rounded-full border border-[#4b3a19] px-2">💧 Damp</span></div>
         </div>
       </Frame>
-      <Frame title="Interactive Log" className="flex min-h-[330px] flex-1 flex-col">
+      <Frame title="Interactive Log" className="relative flex min-h-[330px] flex-1 flex-col">
         <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 text-[11px] leading-[1.45]">{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        <button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-3 right-3" title="Open Dice Roller" aria-label="Open Dice Roller"><span aria-hidden /></button>
       </Frame>
     </div>
 
@@ -151,7 +158,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       <div className="grid h-[205px] shrink-0 grid-cols-[160px_minmax(220px,1fr)_140px] gap-3 p-3 pb-4">
         <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote></div>
         <div className="relative overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div>
-        <div className="space-y-2 text-[10px]"><div className="rounded border border-[#695326] p-2 text-[#d9c492]">Speaking… ▮▮▯▯</div><div className="rounded border border-[#4b3a19] p-2"><span className="block text-[#847557]">Disposition</span>Wary</div><div className="rounded border border-[#4b3a19] p-2"><span className="block text-[#847557]">Attitude</span>Guarded</div><button className="w-full rounded border border-[#695326] py-2 text-[#cdb276]">View NPC Sheet</button></div>
+        <div className="flex flex-col gap-2 text-[10px]"><div className="rounded border border-[#695326] p-2 text-[#d9c492]">Speaking… ▮▮▯▯</div><button className="mt-auto w-full rounded border border-[#695326] py-2 text-[#cdb276]">View NPC Sheet</button></div>
       </div>
       <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
         <img src={props.environment.imageUrl} alt="Current scene" className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
@@ -166,7 +173,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 pt-2">{quickReplies.map((reply) => <button key={reply} onClick={() => props.onQuickReply?.(reply)} className="rounded-full border border-[#695326] bg-[#171109] px-3 py-1 text-[9px] text-[#cdb276] hover:bg-[#251a0d]">{reply}</button>)}</div>
-      <div className="flex items-center gap-2 px-3 py-2"><button className="aop-square-action h-8 w-8"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled className="aop-square-action h-8 w-8 opacity-50" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button onClick={() => setDiceOpen(true)} className="aop-square-action h-10 w-10" title="Open Dice Roller"><Dices className="m-auto h-4 w-4" /></button><button onClick={() => setStatDetail("initiative")} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px]" title="Roll for initiative and view initiative details"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
+      <div className="flex items-center gap-2 px-3 py-2"><button className="aop-square-action h-8 w-8"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled className="aop-square-action h-8 w-8 opacity-50" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
       <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{party.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div><button className="mx-auto mt-2 block rounded border border-[#695326] px-3 py-1 text-[9px] text-[#cdb276]">View All Characters</button></div>
     </Frame>
 
