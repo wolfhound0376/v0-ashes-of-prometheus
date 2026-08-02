@@ -1100,6 +1100,7 @@ age: (selectedCharacter as any).age,
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         character={character}
+        inventory={characterInventory}
       />
     </>
   )
