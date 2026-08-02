@@ -833,6 +833,32 @@ if (error) {
     )
   }
 
+  const handleEquipItem = async (itemId: string, slot: EquipmentItem['slot']) => {
+    if (!selectedCharacterId) return
+    const item = characterInventory.find((entry) => entry.id === itemId)
+    if (!item || item.equippable_slot !== slot) return
+    await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
+    const itemWithBonuses = item as InventoryItem & { stats_bonus?: Record<string, number> }
+    const { error } = await supabase.from('equipment_items').insert({
+      character_id: selectedCharacterId,
+      slot,
+      name: item.name,
+      icon_url: item.icon_url,
+      equipped: true,
+      description: item.description,
+      stats_bonus: itemWithBonuses.stats_bonus ?? {},
+    })
+    if (error) console.error('[equip] insert failed:', error)
+    await fetchCharacterData()
+  }
+
+  const handleUnequipItem = async (slot: EquipmentItem['slot']) => {
+    if (!selectedCharacterId) return
+    const { error } = await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
+    if (error) console.error('[unequip] delete failed:', error)
+    await fetchCharacterData()
+  }
+
   return (
     <DiceProvider onAnnounce={handleDiceAnnounce}>
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
@@ -911,6 +937,8 @@ if (error) {
         onCharacterSelect={claimLocked ? undefined : handleCharacterSelect}
         inventory={characterInventory}
         equipment={characterEquipment}
+        onEquipItem={handleEquipItem}
+        onUnequipItem={handleUnequipItem}
         npcEncounters={npcEncounters}
         isThinking={lichLoading}
       />
@@ -1027,38 +1055,8 @@ if (error) {
   characterInventory={characterInventory}
   characterEquipment={characterEquipment}
   loading={loadingCharacters}
-  onEquipItem={async (itemId, slot) => {
-    if (!selectedCharacterId) return
-    const item = characterInventory.find(i => i.id === itemId)
-    if (!item) return
-    // Replace anything already in this slot (one item per slot)
-    await supabase
-      .from('equipment_items')
-      .delete()
-      .eq('character_id', selectedCharacterId)
-      .eq('slot', slot)
-    const { error } = await supabase.from('equipment_items').insert({
-      character_id: selectedCharacterId,
-      slot,
-      name: item.name,
-      icon_url: item.icon_url,
-      equipped: true,
-      description: item.description,
-      stats_bonus: {},
-    })
-    if (error) console.error('[equip] insert failed:', error)
-    fetchCharacterData()
-  }}
-  onUnequipItem={async (slot) => {
-    if (!selectedCharacterId) return
-    const { error } = await supabase
-      .from('equipment_items')
-      .delete()
-      .eq('character_id', selectedCharacterId)
-      .eq('slot', slot)
-    if (error) console.error('[unequip] delete failed:', error)
-    fetchCharacterData()
-  }}
+  onEquipItem={(itemId, slot) => handleEquipItem(itemId, slot as EquipmentItem['slot'])}
+  onUnequipItem={(slot) => handleUnequipItem(slot as EquipmentItem['slot'])}
   onAddXP={async (characterId, amount, reason) => {
     // Add XP to character and record in history
     const { error } = await supabase.rpc('add_character_xp', {

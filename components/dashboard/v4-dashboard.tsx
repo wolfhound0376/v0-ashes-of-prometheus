@@ -39,6 +39,8 @@ interface V4DashboardProps {
   onCharacterSelect?: (id: string) => void
   inventory: InventoryItem[]
   equipment: EquipmentItem[]
+  onEquipItem?: (itemId: string, slot: EquipmentItem["slot"]) => void | Promise<void>
+  onUnequipItem?: (slot: EquipmentItem["slot"]) => void | Promise<void>
   npcEncounters: NpcEncounter[]
   isThinking?: boolean
 }
@@ -60,6 +62,18 @@ const previewCharacters = [
   { id: "preview-scott", name: "Scott", class: "Bard", level: 1, hp_current: 9, hp_max: 9, ac: 10, initiative: 0, avatar_image_url: null },
 ]
 
+const previewSelectedCharacter: Character = {
+  id: "preview-sam", name: "Sam", level: 1, class: "Cleric", xp: 0, xp_to_next: 300,
+  avatar_image_url: null, portrait_image_url: null, hp_current: 10, hp_max: 10, ac: 10,
+  initiative: 0, proficiency_bonus: 2, passive_perception: 12,
+  str_score: 13, str_modifier: 1, dex_score: 10, dex_modifier: 0, con_score: 14, con_modifier: 2,
+  int_score: 8, int_modifier: -1, wis_score: 15, wis_modifier: 2, cha_score: 12, cha_modifier: 1,
+  weight_current: 0, weight_max: 105, is_player: true, character_type: "player", speed: "30 ft.",
+  senses: null, skills: null, size: null, cr: null, languages: null, damage_resistances: null,
+  damage_immunities: null, condition_immunities: null, conditions: ["Poisoned", "Exhaustion 1"],
+  created_at: "", updated_at: "",
+}
+
 const abilityKeys = ["str", "dex", "con", "int", "wis", "cha"] as const
 const conditionColor: Record<string, string> = {
   poisoned: "border-emerald-700 bg-emerald-950/70 text-emerald-400",
@@ -80,12 +94,19 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [logFilter, setLogFilter] = useState("All")
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [equipmentOpen, setEquipmentOpen] = useState(false)
+  const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   const dialogue = props.dialogue.length ? props.dialogue : previewDialogue
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
-  const selected = props.selectedCharacter ?? livePlayers[0]
+  const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
+  const equipmentBonus = props.equipment.reduce<Record<string, number>>((totals, item) => {
+    Object.entries(item.stats_bonus ?? {}).forEach(([key, value]) => { totals[key.toLowerCase()] = (totals[key.toLowerCase()] ?? 0) + Number(value || 0) })
+    return totals
+  }, {})
+  const displayedAc = (selected?.ac ?? 10) + (equipmentBonus.ac ?? 0)
+  const displayedInitiative = (selected?.initiative ?? 0) + (equipmentBonus.initiative ?? 0)
   const activeNpc = props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
   const npcName = activeNpc?.name ?? "Eldeth Feldrun"
   const npcPortrait = activeNpc?.idle_url || activeNpc?.face_url || activeNpc?.portrait_url
@@ -100,11 +121,11 @@ export function V4Dashboard(props: V4DashboardProps) {
   ]
   const abilities = abilityKeys.map((key) => ({
     key,
-    score: selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key]),
-    mod: selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key]),
+    score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
+    mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
   }))
 
-  return <main className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(520px,1fr)_282px] xl:grid-cols-[252px_minmax(650px,1fr)_282px]">
+  return <main className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
     <div className="flex min-h-0 flex-col gap-2">
       <Frame title="Current Environment" className="shrink-0">
         <div className="p-2.5">
@@ -142,7 +163,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 pt-2">{quickReplies.map((reply) => <button key={reply} onClick={() => props.onQuickReply?.(reply)} className="rounded-full border border-[#695326] bg-[#171109] px-3 py-1 text-[9px] text-[#cdb276] hover:bg-[#251a0d]">{reply}</button>)}</div>
-      <div className="flex items-center gap-2 px-3 py-2"><button className="h-8 w-8 rounded border border-[#4b3a19] text-[#b69b63]"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="h-8 min-w-0 flex-1 rounded border border-[#4b3a19] bg-[#0b0906] px-3 text-[11px] outline-none focus:border-[#a88745]" /><button disabled className="h-8 w-8 rounded border border-[#4b3a19] text-[#62583f]" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button onClick={() => setStatDetail("initiative")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded border border-[#a88745] bg-[#120c07] pr-3 text-[10px] text-[#d9c492] shadow-[inset_0_0_10px_#000]" title="Roll for initiative and view initiative details"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{signed(selected?.initiative ?? 0)} modifier</small></span></button></div>
+      <div className="flex items-center gap-2 px-3 py-2"><button className="h-8 w-8 rounded border border-[#4b3a19] text-[#b69b63]"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="h-8 min-w-0 flex-1 rounded border border-[#4b3a19] bg-[#0b0906] px-3 text-[11px] outline-none focus:border-[#a88745]" /><button disabled className="h-8 w-8 rounded border border-[#4b3a19] text-[#62583f]" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button onClick={() => setStatDetail("initiative")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded border border-[#a88745] bg-[#120c07] pr-3 text-[10px] text-[#d9c492] shadow-[inset_0_0_10px_#000]" title="Roll for initiative and view initiative details"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
       <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{party.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div><button className="mx-auto mt-2 block rounded border border-[#695326] px-3 py-1 text-[9px] text-[#cdb276]">View All Characters</button></div>
     </Frame>
 
@@ -155,22 +176,100 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
           <div className="mt-2 flex items-center rounded border border-[#4b3a19] px-2 py-1 text-[8px]"><span className="text-purple-400">SPELL SLOTS · LV 1　◉ ◉</span><span className="ml-auto text-[#8f8061]">2 / 2</span></div>
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <StatShield kind="ac" label="Armor Class" value={String(selected?.ac ?? 10)} onClick={() => setStatDetail("ac")} />
+            <StatShield kind="ac" label="Armor Class" value={String(displayedAc)} onClick={() => setStatDetail("ac")} />
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
           <div className="mt-2 grid grid-cols-6 gap-1">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} />)}</div>
           <div className="mt-2 grid grid-cols-2 gap-3"><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>{[["WIS",4],["CHA",3],["CON",2],["STR",1]].map(([name,value]) => <div key={name} className="flex justify-between text-[#b6a685]"><span>{name}</span><b className="text-white">+{value}</b></div>)}<h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3><div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{selected?.passive_perception ?? 12}</b></div><div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">14</b></div></div><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>{[["Insight",4],["Medicine",4],["Religion",1],["History",1]].map(([name,value], index) => <div key={name} className={cn("flex justify-between px-1 text-[#b6a685]", index < 2 && "border border-[#725c2f] bg-[#251c0d]")}><span>{name}</span><b className="text-white">+{value}</b></div>)}<p className="mt-1 text-[8px] text-[#8f8061]">□ Cleric class skill</p></div></div>
-          <button className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492]">⌁ View Full Character Sheet</button>
+          <button onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
       </Frame>
-      <button onClick={() => setInventoryOpen((open) => !open)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Basic Inventory <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb　▶</span></button>
-      {inventoryOpen && <div className="rounded border border-[#4b3a19] bg-[#100e09] p-2 text-[9px]">{props.inventory.length ? props.inventory.map((item) => <div key={item.id} className="flex border-b border-[#2c2417] py-1"><span>{item.name} ×{item.quantity}</span><span className="ml-auto text-[#8f8061]">{item.weight} lb</span></div>) : <p className="text-[#8f8061]">No carried items.</p>}</div>}
-      <button onClick={() => setEquipmentOpen((open) => !open)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Equipped Items <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.equipment.length} equipped　▶</span></button>
-      {equipmentOpen && <div className="rounded border border-[#4b3a19] bg-[#100e09] p-2 text-[9px]">{props.equipment.length ? props.equipment.map((item) => <div key={item.id}>{item.slot}: {item.name}</div>) : <p className="text-[#8f8061]">Nothing equipped.</p>}</div>}
+      <button onClick={() => setInventoryOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Basic Inventory <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb　▶</span></button>
+      <button onClick={() => setEquipmentOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Equipped Items <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.equipment.length} equipped　▶</span></button>
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
+    {characterSheetOpen ? <CharacterSheetModal character={selected} abilities={abilities} inventory={props.inventory} equipment={props.equipment} displayedAc={displayedAc} displayedInitiative={displayedInitiative} onClose={() => setCharacterSheetOpen(false)} /> : null}
+    {(inventoryOpen || equipmentOpen) ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => { setInventoryOpen(false); setEquipmentOpen(false) }} /> : null}
   </main>
+}
+
+const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string }> = [
+  { id: "head", label: "Head", position: "left-[4%] top-[5%]" },
+  { id: "neck", label: "Neck", position: "right-[4%] top-[5%]" },
+  { id: "torso", label: "Torso", position: "right-[4%] top-[30%]" },
+  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[31%]" },
+  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[56%]" },
+  { id: "legs", label: "Legs", position: "left-[4%] top-[58%]" },
+  { id: "feet", label: "Feet", position: "left-[28%] bottom-[2%]" },
+  { id: "ring1", label: "Ring I", position: "right-[28%] bottom-[2%]" },
+  { id: "ring2", label: "Ring II", position: "right-[4%] bottom-[2%]" },
+]
+
+function ModalShell({ title, children, onClose, wide = false }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
+  return <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section role="dialog" aria-modal="true" aria-label={title} className={cn("flex max-h-[94vh] w-full flex-col overflow-hidden rounded-xl border border-[#8a672d] bg-[radial-gradient(circle_at_top,#2a1d0c,#090705_62%)] shadow-[0_25px_90px_#000]", wide ? "max-w-6xl" : "max-w-4xl")}>
+      <header className="flex h-12 shrink-0 items-center border-b border-[#5a421d] bg-black/35 px-5"><h2 className="font-serif text-base uppercase tracking-[.16em] text-[#ead39e]">{title}</h2><button aria-label={`Close ${title}`} onClick={onClose} className="ml-auto rounded border border-[#58421f] p-1.5 text-[#aa9162] hover:border-[#bd9143] hover:text-white"><X className="h-4 w-4" /></button></header>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </section>
+  </div>
+}
+
+function CharacterSheetModal({ character, abilities, inventory, equipment, displayedAc, displayedInitiative, onClose }: { character: Character; abilities: Array<{ key: string; score: number; mod: number }>; inventory: InventoryItem[]; equipment: EquipmentItem[]; displayedAc: number; displayedInitiative: number; onClose: () => void }) {
+  const portrait = character.portrait_image_url || character.avatar_image_url
+  const facts = [
+    ["Speed", character.speed || "30 ft."], ["Proficiency", signed(character.proficiency_bonus)], ["Passive Perception", String(character.passive_perception)], ["Languages", character.languages || "Not recorded"],
+  ]
+  return <ModalShell title="Full Character Sheet" onClose={onClose} wide>
+    <div className="grid gap-4 p-5 lg:grid-cols-[220px_1fr]">
+      <aside className="space-y-3">
+        <div className="overflow-hidden rounded-lg border border-[#765a2a] bg-black/45"><div className="aspect-[3/4]">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-contain object-top" /> : <div className="flex h-full items-center justify-center font-serif text-6xl text-[#8c6d36]">{character.name[0]}</div>}</div></div>
+        <div className="rounded border border-[#4f3c1d] bg-black/30 p-3"><h3 className="font-serif text-xl text-[#f0dfba]">{character.name}</h3><p className="text-xs text-[#a99670]">Level {character.level} {character.class}</p><div className="mt-2 h-1.5 bg-[#2b1b12]"><div className="h-full bg-[#aa2a34]" style={{ width: `${Math.min(100, character.hp_current / Math.max(1, character.hp_max) * 100)}%` }} /></div><p className="mt-1 text-[10px] text-[#c8b690]">HP {character.hp_current} / {character.hp_max}</p></div>
+        <div className="rounded border border-[#4f3c1d] bg-black/30 p-3 text-[11px]"><h4 className="mb-2 font-serif uppercase tracking-wider text-[#d7b56f]">Conditions</h4><div className="flex flex-wrap gap-1">{character.conditions?.length ? character.conditions.map((condition) => <span key={condition} className="rounded-full border border-[#755429] px-2 py-1 text-[#d6c29a]">{condition}</span>) : <span className="text-[#786b52]">No active conditions</span>}</div></div>
+      </aside>
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-3"><SheetCoreStat label="Armor Class" value={String(displayedAc)} /><SheetCoreStat label="Initiative" value={signed(displayedInitiative)} /><SheetCoreStat label="Hit Points" value={`${character.hp_current}/${character.hp_max}`} /></div>
+        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-3 gap-2 sm:grid-cols-6">{abilities.map((ability) => <div key={ability.key} className="rounded border border-[#604923] bg-[#130f09] p-2 text-center"><span className="text-[9px] uppercase text-[#ad9362]">{abilityNames[ability.key]}</span><b className="block font-serif text-2xl text-[#f1dfb8]">{ability.score}</b><span className="text-xs text-[#c79c54]">{signed(ability.mod)}</span></div>)}</div></section>
+        <div className="grid gap-3 md:grid-cols-2"><SheetList title="Character Details" rows={facts} /><SheetList title="Defenses & Senses" rows={[["Senses", character.senses || "Not recorded"], ["Resistances", character.damage_resistances || "None recorded"], ["Immunities", character.damage_immunities || "None recorded"], ["Condition Immunities", character.condition_immunities || "None recorded"]]} /></div>
+        <div className="grid gap-3 md:grid-cols-2"><SheetList title="Equipped Items" rows={equipment.length ? equipment.map((item) => [equipmentSlots.find((slot) => slot.id === item.slot)?.label || item.slot, item.name]) : [["Equipment", "Nothing equipped"]]} /><SheetList title="Carried Inventory" rows={inventory.length ? inventory.map((item) => [item.name, `×${item.quantity} · ${item.weight} lb`]) : [["Inventory", "Nothing carried"]]} /></div>
+        <SheetList title="Skills" rows={[["Recorded proficiencies", character.skills || "Not recorded"]]} />
+      </div>
+    </div>
+  </ModalShell>
+}
+
+function SheetCoreStat({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-[#80602b] bg-[radial-gradient(circle_at_top,#493316,#130d07_70%)] p-3 text-center shadow-[inset_0_0_12px_#000]"><b className="block font-serif text-2xl text-[#f1deb2]">{value}</b><span className="text-[9px] uppercase tracking-[.13em] text-[#b59a66]">{label}</span></div> }
+
+function SheetList({ title, rows }: { title: string; rows: Array<Array<string>> }) { return <section className="overflow-hidden rounded border border-[#4f3c1d] bg-black/25"><h3 className="border-b border-[#4f3c1d] px-3 py-2 font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">{title}</h3>{rows.map(([label, value], index) => <div key={`${label}-${index}`} className="flex gap-3 border-b border-[#2d2416] px-3 py-2 text-[11px] last:border-0"><span className="text-[#8f8061]">{label}</span><b className="ml-auto text-right text-[#d9c9a8]">{value}</b></div>)}</section> }
+
+function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, onUnequip, onClose }: { character: Character; inventory: InventoryItem[]; equipment: EquipmentItem[]; bonuses: Record<string, number>; onEquip?: V4DashboardProps["onEquipItem"]; onUnequip?: V4DashboardProps["onUnequipItem"]; onClose: () => void }) {
+  const [selectedSlot, setSelectedSlot] = useState<EquipmentItem["slot"] | null>(null)
+  const [busySlot, setBusySlot] = useState<EquipmentItem["slot"] | null>(null)
+  const [message, setMessage] = useState("Drag an eligible item onto a slot, or click Equip.")
+  const portrait = character.portrait_image_url || character.avatar_image_url
+  const equippedAt = (slot: EquipmentItem["slot"]) => equipment.find((item) => item.slot === slot && item.equipped !== false)
+  const equip = async (item: InventoryItem, slot: EquipmentItem["slot"]) => {
+    if (!item.equippable_slot || item.equippable_slot !== slot) { setMessage(`${item.name} cannot be equipped in ${equipmentSlots.find((entry) => entry.id === slot)?.label || slot}.`); return }
+    if (!onEquip) { setMessage("Equipment changes are unavailable for this character."); return }
+    setBusySlot(slot); setMessage(`Equipping ${item.name}…`)
+    try { await onEquip(item.id, slot); setMessage(`${item.name} equipped. Live stats refresh from the campaign database.`) } finally { setBusySlot(null) }
+  }
+  const unequip = async (slot: EquipmentItem["slot"]) => { if (!onUnequip) return; setBusySlot(slot); try { await onUnequip(slot); setMessage(`${equipmentSlots.find((entry) => entry.id === slot)?.label || slot} cleared.`) } finally { setBusySlot(null) } }
+  const eligible = selectedSlot ? inventory.filter((item) => item.equippable_slot === selectedSlot) : inventory
+  return <ModalShell title={`${character.name} · Inventory & Equipped Items`} onClose={onClose} wide>
+    <div className="grid min-h-[650px] gap-4 p-4 lg:grid-cols-[minmax(400px,1.05fr)_minmax(330px,.95fr)]">
+      <section className="relative min-h-[610px] overflow-hidden rounded-xl border border-[#5e471f] bg-[radial-gradient(circle_at_50%_32%,#27302e,#0a0907_67%)]">
+        <div className="absolute inset-x-[21%] bottom-4 top-8 overflow-hidden border-x border-[#4f3c1d] bg-black/20">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-contain object-bottom" /> : <div className="flex h-full items-center justify-center font-serif text-8xl text-[#765a2b]">{character.name[0]}</div>}</div>
+        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item?.icon_url ? <img src={item.icon_url} alt="" className="h-10 w-10 object-contain" /> : <span className="text-xl text-[#9b7740]">◇</span>}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
+        <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1">{Object.entries(bonuses).length ? Object.entries(bonuses).map(([key, value]) => <span key={key} className="rounded-full border border-emerald-800 bg-emerald-950/80 px-2 py-1 text-[8px] uppercase text-emerald-300">{key} {signed(value)}</span>) : <span className="rounded border border-[#4d3a1d] bg-black/70 px-2 py-1 text-[8px] text-[#8e7b57]">No recorded equipment stat bonuses</span>}</div>
+      </section>
+      <section className="flex min-h-0 flex-col rounded-xl border border-[#5e471f] bg-[#0d0b07]">
+        <div className="border-b border-[#49371c] p-3"><div className="flex items-center"><div><h3 className="font-serif text-sm uppercase tracking-[.14em] text-[#e0bf7c]">{selectedSlot ? `Eligible for ${equipmentSlots.find((slot) => slot.id === selectedSlot)?.label}` : "Basic Inventory"}</h3><p className="mt-1 text-[9px] text-[#817154]">{message}</p></div>{selectedSlot && <button onClick={() => setSelectedSlot(null)} className="ml-auto rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162]">Show all</button>}</div></div>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">{eligible.length ? eligible.map((item) => { const slot = item.equippable_slot; const equipped = slot ? equippedAt(slot)?.name === item.name : false; return <article key={item.id} draggable={Boolean(slot)} onDragStart={(event) => { event.dataTransfer.setData("application/aop-inventory-item", item.id); event.dataTransfer.effectAllowed = "move" }} className={cn("flex items-center gap-3 rounded border p-2", slot ? "cursor-grab border-[#51401f] bg-[#171109] active:cursor-grabbing" : "border-[#2e281e] bg-[#100e0b] opacity-70")}><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[#55411f] bg-black/50">{item.icon_url ? <img src={item.icon_url} alt="" className="h-9 w-9 object-contain" /> : <span className="text-[#94713b]">◆</span>}</div><div className="min-w-0 flex-1"><h4 className="font-serif text-xs text-[#e1d0a8]">{item.name}</h4><p className="truncate text-[9px] text-[#817154]">{item.description || `${item.item_type} · ${item.weight} lb`}</p><span className="text-[8px] uppercase text-[#aa8b52]">{slot ? equipmentSlots.find((entry) => entry.id === slot)?.label : "Not equippable"}</span></div>{slot && <button disabled={equipped || busySlot === slot} onClick={() => void equip(item, slot)} className={cn("rounded border px-2 py-1 text-[9px]", equipped ? "border-emerald-700 bg-emerald-900/60 text-emerald-200" : "border-[#8a672d] text-[#d8b873] hover:bg-[#2a1e0d]")}>{equipped ? "Equipped" : "Equip"}</button>}</article> }) : <p className="p-8 text-center text-xs italic text-[#76694f]">No eligible inventory items for this slot.</p>}</div>
+        {selectedSlot && equippedAt(selectedSlot) ? <button onClick={() => void unequip(selectedSlot)} className="m-3 rounded border border-red-900/70 bg-red-950/30 py-2 text-[10px] uppercase tracking-wider text-red-300">Unequip {equippedAt(selectedSlot)?.name}</button> : null}
+      </section>
+    </div>
+  </ModalShell>
 }
 
 function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: string; name: string }>; enemies: NpcEncounter[] }) {
