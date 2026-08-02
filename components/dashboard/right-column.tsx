@@ -42,29 +42,44 @@ interface RightColumnProps {
   onLevelUp?: (characterId: string) => void
 }
 
-// Equipment Slot Button Component
+// Equipment Slot Button Component. Doubles as a drag-and-drop target: pass
+// `dropState` to render hover ("over"), accept ("valid") or reject ("reject")
+// feedback, and the onDrag* handlers to wire native HTML5 drop events.
 function EquipmentSlotButton({ 
   slot, 
   equipped, 
   isSelected, 
   onClick, 
-  className 
+  className,
+  dropState = "idle",
+  onDragOver,
+  onDragLeave,
+  onDrop,
 }: { 
   slot: { id: string; label: string; icon: string }
-  equipped: { id: string; name: string; iconUrl?: string } | null
+  equipped: { id: string; name: string; iconUrl?: string | null; slot?: string } | null | undefined
   isSelected: boolean
   onClick: () => void
   className?: string
+  dropState?: "idle" | "valid" | "reject"
+  onDragOver?: (e: React.DragEvent) => void
+  onDragLeave?: (e: React.DragEvent) => void
+  onDrop?: (e: React.DragEvent) => void
 }) {
   return (
     <button
       onClick={onClick}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       className={cn(
         "rounded border transition-all flex items-center justify-center group",
         equipped 
           ? "border-[#4a7a9a]/60 bg-[#1a2a35]/60 shadow-[0_0_10px_rgba(100,150,200,0.3)]" 
           : "border-[#3d3428]/60 bg-[#1a1614]/90 hover:border-[#5d5448] hover:bg-[#2a2420]/80",
         isSelected && "ring-2 ring-[#d4b15a]/60 border-[#d4b15a]/40",
+        dropState === "valid" && "ring-2 ring-emerald-400/80 border-emerald-400/60 bg-emerald-500/10",
+        dropState === "reject" && "ring-2 ring-red-500/80 border-red-500/70 bg-red-500/15 animate-pulse",
         className
       )}
       title={equipped ? equipped.name : slot.label}
@@ -247,6 +262,59 @@ age: (selectedCharacter as any).age,
       setInventoryOpen(false)
     }
   }
+
+  // --- Drag-and-drop equipping (v3.0) ---
+  // `dragValidSlot` highlights the slot currently hovered by a compatible item;
+  // `dragRejectSlot` briefly flashes a slot red when an incompatible item is
+  // dropped. Both the drag path and the click path funnel through onEquipItem,
+  // so equipping a slot that's already filled replaces it (the mutation on the
+  // page swaps the old item back to inventory).
+  const [dragValidSlot, setDragValidSlot] = useState<string | null>(null)
+  const [dragRejectSlot, setDragRejectSlot] = useState<string | null>(null)
+
+  const handleSlotDragOver = (slotId: string) => (e: React.DragEvent) => {
+    // Must preventDefault so the browser fires a drop event.
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (dragValidSlot !== slotId) setDragValidSlot(slotId)
+  }
+
+  const handleSlotDragLeave = (slotId: string) => () => {
+    setDragValidSlot((cur) => (cur === slotId ? null : cur))
+  }
+
+  const handleSlotDrop = (slotId: string) => (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragValidSlot(null)
+    let itemId = ""
+    let itemSlot: string | null = null
+    const raw = e.dataTransfer.getData("application/x-aop-item") || e.dataTransfer.getData("text/plain")
+    try {
+      const parsed = JSON.parse(raw) as { id?: string; equippableSlot?: string }
+      itemId = parsed.id ?? ""
+      itemSlot = parsed.equippableSlot ?? null
+    } catch {
+      /* malformed payload — treated as a rejected drop below */
+    }
+    if (itemId && itemSlot === slotId && onEquipItem) {
+      onEquipItem(itemId, slotId)
+      setSelectedSlot(null)
+    } else {
+      // Incompatible slot: brief red flash, no mutation.
+      setDragRejectSlot(slotId)
+      setTimeout(() => setDragRejectSlot((cur) => (cur === slotId ? null : cur)), 600)
+    }
+  }
+
+  const makeItemDragStart = (item: { id: string; equippable_slot?: string | null }) => (e: React.DragEvent) => {
+    const payload = JSON.stringify({ id: item.id, equippableSlot: item.equippable_slot ?? null })
+    e.dataTransfer.setData("application/x-aop-item", payload)
+    e.dataTransfer.setData("text/plain", payload)
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  const slotDropState = (slotId: string): "idle" | "valid" | "reject" =>
+    dragRejectSlot === slotId ? "reject" : dragValidSlot === slotId ? "valid" : "idle"
 
   // Mock attacks based on equipped weapons
   const attacks = equippedItems
@@ -594,6 +662,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("head")}
                   isSelected={selectedSlot === "head"}
                   onClick={() => setSelectedSlot(selectedSlot === "head" ? null : "head")}
+                  dropState={slotDropState("head")}
+                  onDragOver={handleSlotDragOver("head")}
+                  onDragLeave={handleSlotDragLeave("head")}
+                  onDrop={handleSlotDrop("head")}
                   className="w-28 h-28"
                 />
                 <span className="text-base text-stone-400 font-medium">Head</span>
@@ -606,6 +678,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("neck")}
                   isSelected={selectedSlot === "neck"}
                   onClick={() => setSelectedSlot(selectedSlot === "neck" ? null : "neck")}
+                  dropState={slotDropState("neck")}
+                  onDragOver={handleSlotDragOver("neck")}
+                  onDragLeave={handleSlotDragLeave("neck")}
+                  onDrop={handleSlotDrop("neck")}
                   className="w-28 h-28"
                 />
                 <span className="text-base text-stone-400 font-medium">Neck</span>
@@ -618,6 +694,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("torso")}
                   isSelected={selectedSlot === "torso"}
                   onClick={() => setSelectedSlot(selectedSlot === "torso" ? null : "torso")}
+                  dropState={slotDropState("torso")}
+                  onDragOver={handleSlotDragOver("torso")}
+                  onDragLeave={handleSlotDragLeave("torso")}
+                  onDrop={handleSlotDrop("torso")}
                   className="w-28 h-28"
                 />
                 <span className="text-base text-stone-400 font-medium">Torso</span>
@@ -630,6 +710,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("legs")}
                   isSelected={selectedSlot === "legs"}
                   onClick={() => setSelectedSlot(selectedSlot === "legs" ? null : "legs")}
+                  dropState={slotDropState("legs")}
+                  onDragOver={handleSlotDragOver("legs")}
+                  onDragLeave={handleSlotDragLeave("legs")}
+                  onDrop={handleSlotDrop("legs")}
                   className="w-28 h-28"
                 />
                 <span className="text-base text-stone-400 font-medium">Legs</span>
@@ -642,6 +726,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("feet")}
                   isSelected={selectedSlot === "feet"}
                   onClick={() => setSelectedSlot(selectedSlot === "feet" ? null : "feet")}
+                  dropState={slotDropState("feet")}
+                  onDragOver={handleSlotDragOver("feet")}
+                  onDragLeave={handleSlotDragLeave("feet")}
+                  onDrop={handleSlotDrop("feet")}
                   className="w-28 h-28"
                 />
                 <span className="text-base text-stone-400 font-medium">Feet</span>
@@ -715,6 +803,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("main_hand")}
                   isSelected={selectedSlot === "main_hand"}
                   onClick={() => setSelectedSlot(selectedSlot === "main_hand" ? null : "main_hand")}
+                  dropState={slotDropState("main_hand")}
+                  onDragOver={handleSlotDragOver("main_hand")}
+                  onDragLeave={handleSlotDragLeave("main_hand")}
+                  onDrop={handleSlotDrop("main_hand")}
                   className="w-28 h-28"
                 />
               </div>
@@ -727,6 +819,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("off_hand")}
                   isSelected={selectedSlot === "off_hand"}
                   onClick={() => setSelectedSlot(selectedSlot === "off_hand" ? null : "off_hand")}
+                  dropState={slotDropState("off_hand")}
+                  onDragOver={handleSlotDragOver("off_hand")}
+                  onDragLeave={handleSlotDragLeave("off_hand")}
+                  onDrop={handleSlotDrop("off_hand")}
                   className="w-28 h-28"
                 />
               </div>
@@ -739,6 +835,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("ring1")}
                   isSelected={selectedSlot === "ring1"}
                   onClick={() => setSelectedSlot(selectedSlot === "ring1" ? null : "ring1")}
+                  dropState={slotDropState("ring1")}
+                  onDragOver={handleSlotDragOver("ring1")}
+                  onDragLeave={handleSlotDragLeave("ring1")}
+                  onDrop={handleSlotDrop("ring1")}
                   className="w-28 h-28"
                 />
               </div>
@@ -751,6 +851,10 @@ age: (selectedCharacter as any).age,
                   equipped={getEquippedItem("ring2")}
                   isSelected={selectedSlot === "ring2"}
                   onClick={() => setSelectedSlot(selectedSlot === "ring2" ? null : "ring2")}
+                  dropState={slotDropState("ring2")}
+                  onDragOver={handleSlotDragOver("ring2")}
+                  onDragLeave={handleSlotDragLeave("ring2")}
+                  onDrop={handleSlotDrop("ring2")}
                   className="w-28 h-28"
                 />
               </div>
@@ -785,11 +889,13 @@ age: (selectedCharacter as any).age,
                     .map(item => (
                       <button
                         key={item.id}
+                        draggable
+                        onDragStart={makeItemDragStart(item)}
                         onClick={() => {
                           handleEquipFromInventory(item.id)
                           setSelectedSlot(null)
                         }}
-                        className="w-full flex items-center gap-3 p-2 rounded border border-[#3d3428]/60 hover:border-[#d4b15a]/50 hover:bg-[#2a2420]/60 transition-all text-left"
+                        className="w-full flex items-center gap-3 p-2 rounded border border-[#3d3428]/60 hover:border-[#d4b15a]/50 hover:bg-[#2a2420]/60 transition-all text-left cursor-grab active:cursor-grabbing"
                       >
                         <div className="w-10 h-10 rounded border border-[#3d3428]/60 bg-[#1a1614] overflow-hidden flex items-center justify-center">
                           {item.iconUrl ? (
@@ -810,9 +916,47 @@ age: (selectedCharacter as any).age,
                 )}
               </div>
             ) : (
-              <div className="text-center py-8 text-stone-500 text-sm italic">
-                Click an equipment slot to equip items
-              </div>
+              /* No slot selected: list every equippable item as a drag source so
+                 items can be dragged straight onto a matching slot. */
+              (() => {
+                const equippable = inventory.filter(item => item.equippable_slot)
+                if (equippable.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-stone-500 text-sm italic">
+                      No equippable items — click a slot to browse
+                    </div>
+                  )
+                }
+                return (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-stone-500 leading-relaxed">
+                      Drag an item onto a matching slot, or click a slot to browse.
+                    </p>
+                    {equippable.map(item => (
+                      <div
+                        key={item.id}
+                        draggable
+                        onDragStart={makeItemDragStart(item)}
+                        className="w-full flex items-center gap-3 p-2 rounded border border-[#3d3428]/60 hover:border-[#d4b15a]/50 hover:bg-[#2a2420]/60 transition-all text-left cursor-grab active:cursor-grabbing"
+                      >
+                        <div className="w-10 h-10 rounded border border-[#3d3428]/60 bg-[#1a1614] overflow-hidden flex items-center justify-center flex-shrink-0">
+                          {item.iconUrl ? (
+                            <img src={item.iconUrl} alt={item.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <BackpackIcon className="w-6 h-6 text-stone-600" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-stone-200 truncate">{item.name}</div>
+                          <div className="text-[10px] uppercase tracking-wide text-[#d4b15a]/80">
+                            {EQUIPMENT_SLOTS.find(s => s.id === item.equippable_slot)?.label ?? "Equippable"}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()
             )}
           </div>
         </div>
