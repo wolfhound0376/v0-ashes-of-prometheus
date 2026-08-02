@@ -7,6 +7,7 @@ import { BackpackIcon, IconFrame } from "@/components/ui/fantasy-icons"
 import { Sparkles, ChevronDown, Package, Swords, BookOpen, User2, Shield, Heart, Zap, Eye, Star, Dices } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
+import { BasicInventory } from "./basic-inventory"
 import {
   characterVisualState,
   VISUAL_STATE_FILTER,
@@ -403,24 +404,106 @@ age: (selectedCharacter as any).age,
               <ConditionBadges conditions={character.conditions} emptyLabel="No conditions" />
             </div>
 
-            {/* Reference stats: senses & skills (shown when present). Speed
-                already appears in the core stats row above. */}
-            {(character.senses || character.skills) && (
-              <div className="mt-2 space-y-1 text-xs">
-                {character.senses && (
-                  <div className="flex gap-2">
-                    <span className="text-stone-500 uppercase tracking-wider w-14 flex-shrink-0">Senses</span>
-                    <span className="text-stone-300 flex-1">{character.senses}</span>
+            {/* Ability score boxes (v3.0 design) — each rolls a check through
+                the SHARED dice roller. */}
+            <div className="mt-3 grid grid-cols-6 gap-1">
+              {(["str", "dex", "con", "int", "wis", "cha"] as const).map((ab) => {
+                const data = character.abilities[ab]
+                return (
+                  <button
+                    key={ab}
+                    onClick={async () => {
+                      const result = await sharedRoll({
+                        die: "d20",
+                        numDice: 1,
+                        modifier: data.modifier,
+                        label: `${ab.toUpperCase()} Check`,
+                      })
+                      announceRoll(describeRoll(result))
+                    }}
+                    disabled={diceBusy}
+                    title={`Roll ${ab.toUpperCase()} check (1d20${data.modifier >= 0 ? "+" : ""}${data.modifier})`}
+                    className="rounded-[3px] border border-[#7a5f33]/45 bg-[#12100c] px-0.5 py-1.5 text-center transition-colors hover:border-[#c9a868]/80 disabled:opacity-60"
+                  >
+                    <div className="text-[9px] uppercase tracking-wider text-stone-500">{ab}</div>
+                    <div className="text-base font-bold leading-tight text-stone-200">{data.score}</div>
+                    <div
+                      className={cn(
+                        "text-[10px] font-medium",
+                        data.modifier >= 0 ? "text-emerald-400" : "text-red-400",
+                      )}
+                    >
+                      {data.modifier >= 0 ? "+" : ""}
+                      {data.modifier}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Saving Throws · Senses · Skills (v3.0 two-column reference block) */}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="rounded-[3px] border border-[#7a5f33]/40 bg-[#12100c] p-2">
+                <div className="mb-1 font-serif text-[11px] text-[#d9bd7e]">Saving Throws</div>
+                <div className="space-y-0.5">
+                  {(["str", "dex", "con", "int", "wis", "cha"] as const).map((ab) => {
+                    const prof = character.savingThrowProficiencies.includes(ab)
+                    const bonus = character.abilities[ab].modifier + (prof ? character.proficiencyBonus : 0)
+                    return (
+                      <button
+                        key={ab}
+                        onClick={async () => {
+                          const result = await sharedRoll({
+                            die: "d20",
+                            numDice: 1,
+                            modifier: bonus,
+                            label: `${ab.toUpperCase()} Save`,
+                          })
+                          announceRoll(describeRoll(result))
+                        }}
+                        disabled={diceBusy}
+                        title={`Roll ${ab.toUpperCase()} save (1d20${bonus >= 0 ? "+" : ""}${bonus})`}
+                        className="flex w-full items-center justify-between rounded px-1 text-[11px] transition-colors hover:bg-[#241a10] disabled:opacity-60"
+                      >
+                        <span className="uppercase text-stone-400">{ab}</span>
+                        <span className={prof ? "font-medium text-emerald-400" : "text-stone-400"}>
+                          {bonus >= 0 ? "+" : ""}
+                          {bonus}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="rounded-[3px] border border-[#7a5f33]/40 bg-[#12100c] p-2">
+                  <div className="mb-1 font-serif text-[11px] text-[#d9bd7e]">Senses</div>
+                  <div className="space-y-0.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-stone-400">Passive Perception</span>
+                      <span className="text-stone-200">{character.passivePerception}</span>
+                    </div>
+                    {character.senses && <div className="text-stone-400">{character.senses}</div>}
                   </div>
-                )}
+                </div>
+
                 {character.skills && (
-                  <div className="flex gap-2">
-                    <span className="text-stone-500 uppercase tracking-wider w-14 flex-shrink-0">Skills</span>
-                    <span className="text-stone-300 flex-1">{character.skills}</span>
+                  <div className="rounded-[3px] border border-[#7a5f33]/40 bg-[#12100c] p-2">
+                    <div className="mb-1 font-serif text-[11px] text-[#d9bd7e]">Skills</div>
+                    <div className="text-[11px] leading-relaxed text-stone-400">{character.skills}</div>
                   </div>
                 )}
               </div>
-            )}
+            </div>
+
+            {/* View Full Character Sheet */}
+            <button
+              onClick={() => setStatsOpen(true)}
+              className="mt-2 w-full rounded-[3px] border border-[#7a5f33]/60 bg-gradient-to-b from-[#1d1710] to-[#120e0a] py-1.5 text-[11px] text-stone-300 transition-colors hover:border-[#c9a868] hover:text-[#e0cfa0]"
+            >
+              View Full Character Sheet
+            </button>
           </div>
 
           {/* Equipped Items Button - Opens Full Window */}
@@ -471,6 +554,22 @@ age: (selectedCharacter as any).age,
             </button>
           </div>
         </FantasyPanel>
+
+        {/* Basic Inventory (v3.0 design) */}
+        <BasicInventory
+          items={characterInventory.map((i) => ({
+            id: i.id,
+            name: i.name,
+            quantity: i.quantity,
+            weight: (i as any).weight,
+            item_type: (i as any).item_type,
+            iconUrl: i.icon_url,
+          }))}
+          weightCurrent={(selectedCharacter as any)?.weight_current}
+          weightMax={(selectedCharacter as any)?.weight_max}
+          currency={(selectedCharacter as any)?.sheet_currency}
+          onManage={() => setInventoryOpen(true)}
+        />
       </div>
 
       {/* Equipped Items - Large Paper Doll Window */}

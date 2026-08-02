@@ -7,6 +7,9 @@ import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
 import { DiceProvider } from "@/components/dice/dice-provider"
+import { TopNav } from "@/components/dashboard/top-nav"
+import { StatusBar } from "@/components/dashboard/status-bar"
+import { PartyStatus } from "@/components/dashboard/party-status"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -112,6 +115,12 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
+  // Status-bar state (v3.0 design): last successful save, auto-save preference,
+  // and the DM-mode flag shown at the bottom of the dashboard.
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
+  const [autoSave, setAutoSave] = useState(true)
+  const [dmMode, setDmMode] = useState(false)
+
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
 
@@ -193,6 +202,7 @@ export default function DashboardPage() {
 
       if (error) throw error
 
+      setLastSavedAt(Date.now())
       setSaveMessage("Campaign saved!")
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (err) {
@@ -617,6 +627,24 @@ if (error) {
     }
   }
 
+  // Send a quick-reply line straight through the normal player-message path
+  // (same optimistic insert + speaker attribution as typing it by hand).
+  const handleQuickReply = useCallback(
+    async (text: string) => {
+      const playerName = selectedCharacter?.name || "Player"
+      setDialogueInput("")
+      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
+      const response = await sendToLich(text, selectedCharacterId, claimToken)
+      if (response?.text) {
+        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+        if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
+        if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
+        await fetchCharacterData()
+      }
+    },
+    [selectedCharacter, selectedCharacterId, claimToken, sendToLich],
+  )
+
   // Announce a completed sheet roll to the table. Every browser sees the roll
   // line in the shared dialogue feed (realtime on the dialogue table); action
   // rolls (attacks, spell attacks) additionally go to Malachar as this
@@ -725,57 +753,30 @@ if (error) {
 
   return (
     <DiceProvider onAnnounce={handleDiceAnnounce}>
-    <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
-      {/* Campaign Controls */}
-      <div className="fixed top-4 right-4 z-[60] flex items-center gap-2">
-        {/* Save message toast */}
-        {saveMessage && (
-          <div className="px-3 py-1.5 bg-[#1a1614]/95 border border-[#3d3428] rounded-lg text-sm text-[#d4b15a] animate-in fade-in slide-in-from-right-2">
-            {saveMessage}
-          </div>
-        )}
+    <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
+      {/* Top command bar (v3.0 design) */}
+      <TopNav
+        sessionNumber={1}
+        level={selectedCharacter?.level ?? 1}
+        campaignName={activeCampaign.name}
+        activeSection={worldAIPanelOpen ? "lore" : null}
+        onSection={(section) => {
+          // Sections that already have a home route there; the rest open the
+          // World AI panel, which is where that content lives today.
+          if (section === "settings") {
+            window.location.href = "/admin"
+            return
+          }
+          setWorldAIPanelOpen(true)
+        }}
+      />
 
-        {/* Save Campaign */}
-        <button
-          onClick={handleSaveCampaign}
-          disabled={isSaving}
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-emerald-400 hover:border-emerald-400/30 transition-all group disabled:opacity-50"
-          title="Save Campaign"
-        >
-          <Save className={`w-5 h-5 transition-transform duration-300 ${isSaving ? 'animate-pulse' : 'group-hover:scale-110'}`} />
-        </button>
-
-        {/* Restart Campaign */}
-        <button
-          onClick={handleRestartCampaign}
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-red-400 hover:border-red-400/30 transition-all group"
-          title="Restart Campaign"
-        >
-          <RotateCcw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
-        </button>
-
-        {/* World AI Toggle */}
-        <button
-          onClick={() => setWorldAIPanelOpen(!worldAIPanelOpen)}
-          className={`p-2 bg-[#1a1614]/90 border rounded-lg transition-all group ${
-            worldAIPanelOpen
-              ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]"
-              : "border-[#3d3428]/60 text-stone-500 hover:text-[#d4b15a] hover:border-[#d4b15a]/30"
-          }`}
-          title="World AI - Campaign Engine"
-        >
-          <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-        </button>
-
-        {/* Admin link */}
-        <Link
-          href="/admin"
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
-          title="Content Manager"
-        >
-          <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-        </Link>
-      </div>
+      {/* Save toast */}
+      {saveMessage && (
+        <div className="fixed right-4 top-16 z-[60] animate-in fade-in slide-in-from-right-2 rounded-lg border border-[#3d3428] bg-[#1a1614]/95 px-3 py-1.5 text-sm text-[#d4b15a]">
+          {saveMessage}
+        </div>
+      )}
 
       {/* Smoke/fog overlay */}
       <div className="fixed inset-0 pointer-events-none z-50 opacity-20">
@@ -810,7 +811,7 @@ if (error) {
       </div>
 
       {/* Main dashboard grid */}
-      <div className="h-screen p-2 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
@@ -840,7 +841,14 @@ if (error) {
   characterName={selectedCharacter?.name}
   isWorldAIThinking={lichLoading}
   isTTSMuted={isTTSMuted}
+  initiativeModifier={selectedCharacter?.initiative ?? 0}
+  onQuickReply={(text) => {
+    setDialogueInput(text)
+    // Send immediately so a quick reply is one click, not two.
+    void handleQuickReply(text)
+  }}
 />
+          <div className="flex min-h-0 flex-col gap-2">
           <CenterColumn
             selectedAction={selectedAction}
             onActionSelect={handleActionSelect}
@@ -888,6 +896,22 @@ if (error) {
             }
           }}
         />
+
+          {/* Party Status row (v3.0 design) sits under the center column */}
+          <PartyStatus
+            members={players.map((p) => ({
+              id: p.id,
+              name: p.name,
+              level: p.level,
+              hp_current: p.hp_current,
+              hp_max: p.hp_max,
+              avatar_image_url: p.avatar_image_url,
+              conditions: (p as any).conditions,
+            }))}
+            selectedCharacterId={selectedCharacterId}
+            onSelect={claimLocked ? undefined : handleCharacterSelect}
+          />
+        </div>
 <RightColumn
   characters={players}
   selectedCharacterId={selectedCharacterId}
@@ -1036,6 +1060,17 @@ if (error) {
       <DynamicMusic
         location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
         inCombat={inCombat}
+      />
+
+      {/* Bottom status strip (v3.0 design) */}
+      <StatusBar
+        lastSavedAt={lastSavedAt}
+        autoSave={autoSave}
+        onToggleAutoSave={() => setAutoSave((v) => !v)}
+        dmMode={dmMode}
+        onToggleDmMode={() => setDmMode((v) => !v)}
+        onExport={handleSaveCampaign}
+        exporting={isSaving}
       />
     </div>
     </DiceProvider>
