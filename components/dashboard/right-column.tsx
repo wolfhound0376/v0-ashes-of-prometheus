@@ -8,6 +8,7 @@ import { Sparkles, ChevronDown, Package, Swords, BookOpen, User2, Shield, Heart,
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
 import { BasicInventory } from "./basic-inventory"
+import { EquippedItemsPanel } from "./equipped-items-panel"
 import {
   characterVisualState,
   VISUAL_STATE_FILTER,
@@ -657,16 +658,17 @@ age: (selectedCharacter as any).age,
             </button>
           </div>
 
-          {/* Equipped Items Button - Opens Full Window */}
+          {/* Full-screen paper-doll equipment editor (the inline bar below the
+              inventory is the quick view; this opens the large editor). */}
           <button
             onClick={() => setEquippedItemsOpen(true)}
             className="w-full p-3 border-b border-[#3d3428]/40 flex items-center justify-between hover:bg-[#2a2420]/40 transition-colors group"
           >
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-[#7aa8c8]" />
-              <span className="text-sm text-stone-300">Equipped Items</span>
+              <span className="text-sm text-stone-300">Equipment Editor</span>
             </div>
-            <span className="text-xs text-stone-500 group-hover:text-stone-400">Click to open</span>
+            <span className="text-xs text-stone-500 group-hover:text-stone-400">Full screen</span>
           </button>
 
           {/* Window Toggle Buttons */}
@@ -720,6 +722,17 @@ age: (selectedCharacter as any).age,
           weightMax={(selectedCharacter as any)?.weight_max}
           currency={(selectedCharacter as any)?.sheet_currency}
           onManage={() => setInventoryOpen(true)}
+        />
+
+        {/* Collapsible Equipped Items bar (v3.0 reference image 3) */}
+        <EquippedItemsPanel
+          slots={EQUIPMENT_SLOTS}
+          equipped={equippedItems}
+          eligible={inventory.filter((i) => !!i.equippable_slot)}
+          portraitUrl={character.avatarUrl}
+          characterName={character.name}
+          onEquip={(itemId, slotId) => onEquipItem?.(itemId, slotId)}
+          onUnequip={(slotId) => onUnequipItem?.(slotId)}
         />
       </div>
 

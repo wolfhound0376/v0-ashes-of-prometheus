@@ -476,40 +476,72 @@ export function CharacterSheetSlideOver({
           ))}
         </div>
 
-        <div className="grid gap-3 p-4 lg:grid-cols-[210px_minmax(0,1fr)_280px]">
-          {/* ---- Column A: ability medallions + senses ---- */}
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-2.5">
-              {ABILS.map((ab) => {
-                const d = character.abilities[ab]
-                const savep = character.savingThrowProficiencies.includes(ab)
-                return (
-                  <button
-                    key={ab}
-                    onClick={() => doD20(`${ABILITY_NAMES[ab]} Check`, d.modifier)}
-                    title={`Roll ${ABILITY_NAMES[ab]} check`}
-                    className="group flex items-center gap-2.5 text-left"
-                  >
-                    <span
-                      className={cn(
-                        "flex h-14 w-14 flex-none items-center justify-center rounded-full border-2 bg-[radial-gradient(circle_at_38%_32%,#2c241c,#100c0a_78%)] font-serif text-2xl text-[#f2e8d5] shadow-[0_0_0_3px_rgba(0,0,0,0.55)] transition-shadow",
-                        savep ? "border-[#d9232e]" : "border-[#8a6f3c]",
-                        "group-hover:border-[#c9a868] group-hover:shadow-[0_0_0_3px_rgba(0,0,0,0.55),0_0_16px_rgba(201,168,104,0.55)]",
-                      )}
-                    >
-                      {d.score}
-                    </span>
-                    <span className="flex-1 rounded-md border border-[#c9a868]/45 bg-[#0b0807]/80 px-3 py-1.5">
-                      <span className="block font-serif text-lg text-[#f2e8d5]">{signed(d.modifier)}</span>
-                      <span className="block text-[9px] uppercase tracking-[0.12em] text-[#cbb27e]">
-                        {ABILITY_NAMES[ab]}
-                      </span>
-                    </span>
-                  </button>
-                )
-              })}
+        {/* ---- Top band: ability scores + core stats (image 1 layout) ---- */}
+        <div className="border-b border-[#3d3428]/60 px-4 py-5">
+          <div className="flex flex-wrap items-end justify-center gap-2 lg:justify-start">
+            {ABILS.map((ab) => {
+              const d = character.abilities[ab]
+              const savep = character.savingThrowProficiencies.includes(ab)
+              return (
+                <button
+                  key={ab}
+                  onClick={() => doD20(`${ABILITY_NAMES[ab]} Check`, d.modifier)}
+                  title={`Roll ${ABILITY_NAMES[ab]} check`}
+                  className={cn(
+                    "relative mb-3 flex w-[72px] flex-col items-center rounded-lg border-2 bg-[#12100c] px-1 pb-4 pt-2 transition-shadow",
+                    savep ? "border-[#d9232e]" : "border-[#8a6f3c]",
+                    "hover:shadow-[0_0_14px_rgba(201,168,104,0.5)]",
+                  )}
+                >
+                  <span className="text-[9px] uppercase tracking-[0.1em] text-[#c9a868]">{ABILITY_SHORT[ab]}</span>
+                  <span className="font-serif text-2xl leading-none text-[#f2e8d5]">{signed(d.modifier)}</span>
+                  <span className="absolute -bottom-3 flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#8a6f3c] bg-[#0a0908] font-serif text-sm text-[#f2e8d5]">
+                    {d.score}
+                  </span>
+                </button>
+              )
+            })}
+            {/* Core stat boxes */}
+            <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              <StatCell label="Proficiency" value={signed(pb)} />
+              <StatCell label="Walking Speed" value={`${character.speed ?? 30} ft`} />
+              <StatCell
+                label="Initiative"
+                value={signed(character.initiative ?? character.abilities.dex.modifier)}
+                onClick={() => doD20("Initiative", character.initiative ?? character.abilities.dex.modifier)}
+                title="Roll initiative"
+              />
+              <StatCell label="Armor Class" value={character.ac} />
+              <button
+                onClick={() => setInspiration((v) => !v)}
+                title="Toggle Heroic Inspiration"
+                className={cn(
+                  "flex flex-col items-center justify-center rounded-md border py-2 transition-colors",
+                  inspiration
+                    ? "border-[#c9a868] bg-[#c9a868]/10 shadow-[0_0_14px_rgba(201,168,104,0.4)]"
+                    : "border-[#c9a868]/45 bg-[#0b0807]/80",
+                )}
+              >
+                {inspiration ? <Flame className="h-5 w-5 text-[#ff6b35]" /> : <Sparkles className="h-5 w-5 text-stone-600" />}
+                <span className="mt-1 text-[9px] uppercase tracking-[0.1em] text-[#c9a868]">Inspiration</span>
+              </button>
+              {/* HP readout (interactive Heal/Dmg lives in the Hit Points panel below) */}
+              <div className="col-span-2 flex flex-col items-center justify-center rounded-md border border-[#c9a868]/45 bg-[#0b0807]/80 px-3 py-2">
+                <div className="font-serif text-xl">
+                  <span className={hpTone}>{hpCurrent}</span>
+                  <span className="text-sm text-stone-500"> / {hpMax}</span>
+                </div>
+                <div className="text-[9px] uppercase tracking-wider text-[#c9a868]">
+                  Hit Points{tempHp > 0 ? ` · +${tempHp} temp` : ""}
+                </div>
+              </div>
             </div>
+          </div>
+        </div>
 
+        <div className="grid gap-3 p-4 lg:grid-cols-[220px_minmax(0,1fr)_260px]">
+          {/* ---- Column A: senses ---- */}
+          <div className="flex flex-col gap-3">
             <Panel>
               <PanelHead>Senses</PanelHead>
               <div className="flex flex-col gap-1 text-[13px] text-stone-300">
@@ -533,34 +565,6 @@ export function CharacterSheetSlideOver({
 
           {/* ---- Column B: stats, saves/skills, vitals ---- */}
           <div className="flex flex-col gap-3">
-            {/* stat strip */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-              <StatCell label="Armor Class" value={character.ac} />
-              <StatCell
-                label="Initiative"
-                value={signed(character.initiative ?? character.abilities.dex.modifier)}
-                onClick={() => doD20("Initiative", character.initiative ?? character.abilities.dex.modifier)}
-                title="Roll initiative"
-              />
-              <StatCell label="Speed" value={`${character.speed ?? 30} ft`} />
-              <StatCell label="Prof. Bonus" value={signed(pb)} />
-              <button
-                onClick={() => setInspiration((v) => !v)}
-                title="Toggle Heroic Inspiration"
-                className={cn(
-                  "flex flex-col items-center justify-center rounded-md border py-2 transition-colors",
-                  inspiration
-                    ? "border-[#c9a868] bg-[#c9a868]/10 shadow-[0_0_14px_rgba(201,168,104,0.4)]"
-                    : "border-[#c9a868]/45 bg-[#0b0807]/80",
-                )}
-              >
-                <span className="text-xl leading-none">
-                  {inspiration ? <Flame className="h-5 w-5 text-[#ff6b35]" /> : <Sparkles className="h-5 w-5 text-stone-600" />}
-                </span>
-                <span className="mt-1 text-[9px] uppercase tracking-[0.12em] text-[#c9a868]">Inspiration</span>
-              </button>
-            </div>
-
             {/* saves + skills */}
             <Panel>
               <div className="grid gap-4 sm:grid-cols-2">
