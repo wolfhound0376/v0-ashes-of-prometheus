@@ -10,6 +10,7 @@ import { DiceProvider } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
+import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -269,66 +270,6 @@ export default function DashboardPage() {
 
   const cancelRestartCampaign = () => {
     setShowRestartDialog(false)
-  }
-
-  // DM Mode -> Refresh Dashboard. Re-pulls character/inventory/equipment via the
-  // existing loader. If the loader isn't reachable for any reason, fall back to a
-  // hard reload so the DM always gets a fresh view.
-  const refreshDashboard = () => {
-    setDmMenuOpen(false)
-    try {
-      fetchCharacterData()
-    } catch {
-      if (typeof window !== "undefined") window.location.reload()
-    }
-  }
-
-  // Bottom bar -> Export Campaign. Client-side JSON download built from the
-  // already-loaded players plus a one-off inventory pull. Claim tokens are
-  // explicitly stripped so an exported file can never leak a character's
-  // ownership secret.
-  const handleExportCampaign = async () => {
-    if (isExporting) return
-    setIsExporting(true)
-    try {
-      const playerIds = players.map((p) => p.id)
-      let inventory: InventoryItem[] = []
-      if (playerIds.length > 0) {
-        const { data } = await supabase
-          .from("inventory_items")
-          .select("*")
-          .in("character_id", playerIds)
-        inventory = data || []
-      }
-
-      // Strip claim_token / token-ish fields from every character before export.
-      const sanitizedCharacters = players.map((character) => {
-        const { claim_token, ...safe } = character as unknown as Record<string, unknown>
-        return safe
-      })
-
-      const payload = {
-        campaign: { id: activeCampaign.id, name: activeCampaign.name },
-        exportedAt: new Date().toISOString(),
-        characters: sanitizedCharacters,
-        inventory,
-        dialogue: dialogue.map(({ speaker, text }) => ({ speaker, text })),
-      }
-
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement("a")
-      anchor.href = url
-      anchor.download = `ashes-of-prometheus-${activeCampaign.id}-${new Date().toISOString().slice(0, 10)}.json`
-      document.body.appendChild(anchor)
-      anchor.click()
-      document.body.removeChild(anchor)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error("Error exporting campaign:", err)
-    } finally {
-      setIsExporting(false)
-    }
   }
 
   const [resources, setResources] = useState({
@@ -661,7 +602,7 @@ if (error) {
     const payload = buildPayload(
       selectedCharacter,
       { type: actionType, intent, roll },
-      { name: environmentData.location, description: environmentData.description },
+      { name: environmentData.location, description: currentEnvironment?.description ?? undefined },
       { action: resources.action > 0, bonusAction: resources.bonusAction > 0, reaction: resources.reaction > 0 }
     )
 
@@ -832,6 +773,32 @@ if (error) {
     )
   }
 
+  const handleEquipItem = async (itemId: string, slot: EquipmentItem['slot']) => {
+    if (!selectedCharacterId) return
+    const item = characterInventory.find((entry) => entry.id === itemId)
+    if (!item || item.equippable_slot !== slot) return
+    await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
+    const itemWithBonuses = item as InventoryItem & { stats_bonus?: Record<string, number> }
+    const { error } = await supabase.from('equipment_items').insert({
+      character_id: selectedCharacterId,
+      slot,
+      name: item.name,
+      icon_url: item.icon_url,
+      equipped: true,
+      description: item.description,
+      stats_bonus: itemWithBonuses.stats_bonus ?? {},
+    })
+    if (error) console.error('[equip] insert failed:', error)
+    await fetchCharacterData()
+  }
+
+  const handleUnequipItem = async (slot: EquipmentItem['slot']) => {
+    if (!selectedCharacterId) return
+    const { error } = await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
+    if (error) console.error('[unequip] delete failed:', error)
+    await fetchCharacterData()
+  }
+
   return (
     <DiceProvider onAnnounce={handleDiceAnnounce}>
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
@@ -891,8 +858,34 @@ if (error) {
         </div>
       </div>
 
-      {/* Main dashboard grid */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
+      <V4Dashboard
+        environment={{
+          name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
+          region: "The Underdark",
+          timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
+          imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
+          description: currentEnvironment?.description,
+        }}
+        dialogue={dialogue}
+        dialogueInput={dialogueInput}
+        setDialogueInput={setDialogueInput}
+        onDialogueSubmit={handleDialogueSubmit}
+        onQuickReply={(text) => void handleQuickReply(text)}
+        characters={players}
+        selectedCharacter={selectedCharacter}
+        selectedCharacterId={selectedCharacterId}
+        onCharacterSelect={claimLocked ? undefined : handleCharacterSelect}
+        inventory={characterInventory}
+        equipment={characterEquipment}
+        onEquipItem={handleEquipItem}
+        onUnequipItem={handleUnequipItem}
+        npcEncounters={npcEncounters}
+        isThinking={lichLoading}
+      />
+
+      {/* Legacy dashboard remains mounted out of view during the v4.1 migration
+          so its existing handlers can be compared without losing code. */}
+      <div className="hidden grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
@@ -1002,38 +995,8 @@ if (error) {
   characterInventory={characterInventory}
   characterEquipment={characterEquipment}
   loading={loadingCharacters}
-  onEquipItem={async (itemId, slot) => {
-    if (!selectedCharacterId) return
-    const item = characterInventory.find(i => i.id === itemId)
-    if (!item) return
-    // Replace anything already in this slot (one item per slot)
-    await supabase
-      .from('equipment_items')
-      .delete()
-      .eq('character_id', selectedCharacterId)
-      .eq('slot', slot)
-    const { error } = await supabase.from('equipment_items').insert({
-      character_id: selectedCharacterId,
-      slot,
-      name: item.name,
-      icon_url: item.icon_url,
-      equipped: true,
-      description: item.description,
-      stats_bonus: {},
-    })
-    if (error) console.error('[equip] insert failed:', error)
-    fetchCharacterData()
-  }}
-  onUnequipItem={async (slot) => {
-    if (!selectedCharacterId) return
-    const { error } = await supabase
-      .from('equipment_items')
-      .delete()
-      .eq('character_id', selectedCharacterId)
-      .eq('slot', slot)
-    if (error) console.error('[unequip] delete failed:', error)
-    fetchCharacterData()
-  }}
+  onEquipItem={(itemId, slot) => handleEquipItem(itemId, slot as EquipmentItem['slot'])}
+  onUnequipItem={(slot) => handleUnequipItem(slot as EquipmentItem['slot'])}
   onAddXP={async (characterId, amount, reason) => {
     // Add XP to character and record in history
     const { error } = await supabase.rpc('add_character_xp', {

@@ -220,13 +220,13 @@ age: (selectedCharacter as any).age,
     name: "No Character",
     race: "Unknown",
     class: "Unknown",
-    subclass: null,
+    subclass: undefined,
     level: 1,
     background: "Unknown",
     alignment: "Neutral",
-    age: null,
-    height: null,
-    weight: null,
+    age: undefined,
+    height: undefined,
+    weight: undefined,
     hp: { current: 10, max: 10, temp: 0 },
     ac: 10,
     initiative: 0,
@@ -279,7 +279,7 @@ age: (selectedCharacter as any).age,
   }))
 
   // Get item equipped in a slot
-  const getEquippedItem = (slotId: string) => equippedItems.find(item => item.slot === slotId)
+  const getEquippedItem = (slotId: string) => equippedItems.find(item => item.slot === slotId) ?? null
 
   // Handle equipping an item to the selected slot
   const handleEquipFromInventory = (itemId: string) => {

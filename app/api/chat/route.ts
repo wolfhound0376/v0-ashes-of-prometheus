@@ -1,4 +1,4 @@
-import { generateText } from "ai"
+import { generateText, type ModelMessage } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -500,10 +500,10 @@ ${combatantRows
     : ""
 
   // Build conversation history for the AI
-  const conversationHistory = (recentDialogue || [])
+  const conversationHistory: ModelMessage[] = (recentDialogue || [])
     .reverse()
     .map(d => ({
-      role: d.speaker === "Malachar" ? "assistant" : "user" as const,
+      role: d.speaker === "Malachar" ? "assistant" as const : "user" as const,
       content: `${d.speaker}: ${d.text}`
     }))
 

@@ -157,8 +157,8 @@ export default function ShotListPage() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "session_beats" },
-        (payload) => {
-          const newBeat = payload.new as Beat
+        (payload: { new: Record<string, unknown> }) => {
+          const newBeat = payload.new as unknown as Beat
           if (newBeat.session_id !== selectedSessionId) return
           setBeats((prev) =>
             prev.some((b) => b.id === newBeat.id) ? prev : [...prev, newBeat],
