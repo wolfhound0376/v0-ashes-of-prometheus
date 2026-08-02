@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Settings, Sparkles, X, Save, RotateCcw } from "lucide-react"
+import { Settings, Sparkles, X, Save, RotateCcw, Flame, Hammer, Download, ChevronUp, RefreshCw, UserMinus, Circle, BookOpen, ScrollText, Map, Users, Landmark } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
@@ -56,6 +56,27 @@ const tempId = () =>
 // makes four browsers each keep their own character instead of sharing one
 // global session pointer.
 const CHARACTER_LS_KEY = "aop_character_id"
+
+// Top-bar navigation destinations. These builder/companion routes ship in later
+// Dashboard v3 phases, so they render as honest "soon" affordances rather than
+// dead links that 404.
+const NAV_ITEMS: { label: string; Icon: typeof BookOpen }[] = [
+  { label: "Journal", Icon: BookOpen },
+  { label: "Quests", Icon: ScrollText },
+  { label: "Maps", Icon: Map },
+  { label: "NPCs", Icon: Users },
+  { label: "Lore", Icon: Landmark },
+]
+
+// Render a compact "X ago" string for the last-saved indicator.
+function formatSavedAgo(ms: number): string {
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
 
 export default function DashboardPage() {
   const supabase = createClient()
@@ -248,6 +269,66 @@ export default function DashboardPage() {
 
   const cancelRestartCampaign = () => {
     setShowRestartDialog(false)
+  }
+
+  // DM Mode -> Refresh Dashboard. Re-pulls character/inventory/equipment via the
+  // existing loader. If the loader isn't reachable for any reason, fall back to a
+  // hard reload so the DM always gets a fresh view.
+  const refreshDashboard = () => {
+    setDmMenuOpen(false)
+    try {
+      fetchCharacterData()
+    } catch {
+      if (typeof window !== "undefined") window.location.reload()
+    }
+  }
+
+  // Bottom bar -> Export Campaign. Client-side JSON download built from the
+  // already-loaded players plus a one-off inventory pull. Claim tokens are
+  // explicitly stripped so an exported file can never leak a character's
+  // ownership secret.
+  const handleExportCampaign = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const playerIds = players.map((p) => p.id)
+      let inventory: InventoryItem[] = []
+      if (playerIds.length > 0) {
+        const { data } = await supabase
+          .from("inventory_items")
+          .select("*")
+          .in("character_id", playerIds)
+        inventory = data || []
+      }
+
+      // Strip claim_token / token-ish fields from every character before export.
+      const sanitizedCharacters = players.map((character) => {
+        const { claim_token, ...safe } = character as unknown as Record<string, unknown>
+        return safe
+      })
+
+      const payload = {
+        campaign: { id: activeCampaign.id, name: activeCampaign.name },
+        exportedAt: new Date().toISOString(),
+        characters: sanitizedCharacters,
+        inventory,
+        dialogue: dialogue.map(({ speaker, text }) => ({ speaker, text })),
+      }
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `ashes-of-prometheus-${activeCampaign.id}-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error("Error exporting campaign:", err)
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const [resources, setResources] = useState({
