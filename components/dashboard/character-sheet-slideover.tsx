@@ -542,7 +542,9 @@ export function CharacterSheetSlideOver({
                 onClick={() => doD20("Initiative", character.initiative ?? character.abilities.dex.modifier)}
                 title="Roll initiative"
               />
-              <StatCell label="Speed" value={`${character.speed ?? 30} ft`} />
+              {/* `speed` is free text for some rows ("30 ft. (Walking)"), which
+                  rendered as "30 ft. (Walking) ft" and overflowed the cell. */}
+              <StatCell label="Speed" value={`${formatSpeedValue(character.speed)} ft`} />
               <StatCell label="Prof. Bonus" value={signed(pb)} />
               <button
                 onClick={() => setInspiration((v) => !v)}
@@ -942,11 +944,27 @@ function Dot({ state }: { state: "" | "p" | "e" }) {
   )
 }
 
-function ProfLine({ label, values }: { label: string; values?: string[] }) {
+function formatSpeedValue(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "30"
+  if (typeof value === "number") return String(value)
+  const match = /(-?\d+)/.exec(String(value))
+  return match ? match[1] : String(value)
+}
+
+// Defensive on purpose. These come from character columns the sheet treats as
+// arrays but which are plain TEXT in the database for some rows, so a bare
+// `values.join()` throws — and because this renders inside the sheet, that one
+// throw unmounted the entire slide-over. Accept whatever arrives.
+function ProfLine({ label, values }: { label: string; values?: string[] | string | null }) {
+  const text = Array.isArray(values)
+    ? values.filter(Boolean).map(String).join(", ")
+    : typeof values === "string"
+      ? values.trim()
+      : ""
   return (
     <div>
       <b className="text-[#c9a868]">{label}:</b>{" "}
-      <span className="text-stone-300">{values && values.length ? values.join(", ") : "None"}</span>
+      <span className="text-stone-300">{text || "None"}</span>
     </div>
   )
 }

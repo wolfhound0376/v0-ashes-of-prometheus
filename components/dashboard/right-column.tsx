@@ -25,6 +25,22 @@ import { XPTracker } from "./xp-tracker"
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 
+// Several character columns that the sheet treats as lists are actually free
+// TEXT in the database — `characters.languages` holds
+// "Common, Goblin, Thieves' Cant, Undercommon" for Fifi, not an array. Passing
+// that string straight through made the full-sheet slide-over call
+// `values.join()` on a string and throw during render, which unmounted the whole
+// sheet: clicking "View Full Character Sheet" appeared to do nothing at all.
+// Normalise here so the sheet always receives a real array.
+function toList(value: unknown, fallback: string[] = []): string[] {
+  if (Array.isArray(value)) return value.filter(Boolean).map(String)
+  if (typeof value === "string") {
+    const parts = value.split(",").map((s) => s.trim()).filter(Boolean)
+    return parts.length ? parts : fallback
+  }
+  return fallback
+}
+
 // `characters.speed` is a free-text column: some rows hold a bare number (30),
 // others prose like "30 ft. (Walking)". The Speed tile sits beside AC / INIT /
 // PROF / PP, which all render bare figures in a fixed-width box, so the prose
@@ -189,10 +205,10 @@ age: (selectedCharacter as any).age,
     savingThrowProficiencies: ((selectedCharacter as any).saving_throw_proficiencies || []) as ("str" | "dex" | "con" | "int" | "wis" | "cha")[],
     skillProficiencies: (selectedCharacter as any).skill_proficiencies || [],
     skillExpertises: (selectedCharacter as any).skill_expertises || [],
-    languages: (selectedCharacter as any).languages || ["Common"],
-    armorProficiencies: (selectedCharacter as any).armor_proficiencies || [],
-    weaponProficiencies: (selectedCharacter as any).weapon_proficiencies || [],
-    toolProficiencies: (selectedCharacter as any).tool_proficiencies || [],
+    languages: toList((selectedCharacter as any).languages, ["Common"]),
+    armorProficiencies: toList((selectedCharacter as any).armor_proficiencies),
+    weaponProficiencies: toList((selectedCharacter as any).weapon_proficiencies),
+    toolProficiencies: toList((selectedCharacter as any).tool_proficiencies),
     features: (selectedCharacter as any).features || [],
     spellcastingAbility: (selectedCharacter as any).spellcasting_ability,
     spellSaveDC: (selectedCharacter as any).spell_save_dc,
