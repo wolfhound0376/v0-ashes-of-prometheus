@@ -487,7 +487,15 @@ export const dialogueData = [
 ]
 
 // D&D 5E Actions - type determines color: action (green), bonus (yellow), reaction (purple)
-export const actionsData = [
+export const actionsData: Array<{
+  id: string
+  name: string
+  description: string
+  icon: string
+  iconUrl: string | null
+  type: "action" | "bonus" | "reaction"
+  hasSubmenu?: boolean
+}> = [
   // Standard Actions (Green)
   { id: "attack", name: "Attack", description: "Make a melee or ranged attack.", icon: "sword", iconUrl: "/icons/actions/attack.png", type: "action" },
   { id: "cast-spell", name: "Cast a Spell", description: "Cast a spell with a casting time of 1 action.", icon: "sparkles", iconUrl: "/icons/actions/cast-spell.png", type: "action" },

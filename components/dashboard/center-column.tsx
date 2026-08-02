@@ -109,7 +109,7 @@ interface CenterColumnProps {
   characterLevel?: number
   characterName?: string
   availableActionIds?: string[]
-  onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
+  onTelemetryPush?: (actionType: string, intent: string, roll?: number) => void
   onSendToLich?: (message: string) => void
   sceneImageUrl?: string
   npcEncounters?: NpcEncounter[]

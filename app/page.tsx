@@ -661,7 +661,7 @@ if (error) {
     const payload = buildPayload(
       selectedCharacter,
       { type: actionType, intent, roll },
-      { name: environmentData.location, description: environmentData.description },
+      { name: environmentData.location, description: currentEnvironment?.description ?? undefined },
       { action: resources.action > 0, bonusAction: resources.bonusAction > 0, reaction: resources.reaction > 0 }
     )
 

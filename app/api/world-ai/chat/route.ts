@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages, tool } from 'ai'
+import { streamText, convertToModelMessages, stepCountIs, tool } from 'ai'
 import { type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { z } from 'zod'
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       tools: {
         updateEnvironment: tool({
           description: 'Update the current environment/location when the scene changes. Use this when describing a new location, time change, or significant environmental shift.',
-          parameters: z.object({
+          inputSchema: z.object({
             name: z.string().describe('The name of the location (e.g., "Thornwood Forest", "The Gilded Tavern", "Malachar\'s Sanctum")'),
             timeOfDay: z.enum(['Morning', 'Midday', 'Afternoon', 'Evening', 'Night']).describe('The current time of day'),
             description: z.string().describe('A brief atmospheric description of the environment'),
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
           },
         }),
       },
-      maxSteps: 3, // Allow tool use and follow-up
+      stopWhen: stepCountIs(3), // Allow tool use and follow-up
     })
 
     return result.toUIMessageStreamResponse()
