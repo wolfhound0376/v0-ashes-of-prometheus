@@ -10,6 +10,7 @@ import { DiceProvider } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
+import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -891,8 +892,32 @@ if (error) {
         </div>
       </div>
 
-      {/* Main dashboard grid */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
+      <V4Dashboard
+        environment={{
+          name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
+          region: "The Underdark",
+          timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
+          imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
+          description: currentEnvironment?.description,
+        }}
+        dialogue={dialogue}
+        dialogueInput={dialogueInput}
+        setDialogueInput={setDialogueInput}
+        onDialogueSubmit={handleDialogueSubmit}
+        onQuickReply={(text) => void handleQuickReply(text)}
+        characters={players}
+        selectedCharacter={selectedCharacter}
+        selectedCharacterId={selectedCharacterId}
+        onCharacterSelect={claimLocked ? undefined : handleCharacterSelect}
+        inventory={characterInventory}
+        equipment={characterEquipment}
+        npcEncounters={npcEncounters}
+        isThinking={lichLoading}
+      />
+
+      {/* Legacy dashboard remains mounted out of view during the v4.1 migration
+          so its existing handlers can be compared without losing code. */}
+      <div className="hidden grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
