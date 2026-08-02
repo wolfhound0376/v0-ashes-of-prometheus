@@ -160,7 +160,7 @@ export function V4Dashboard(props: V4DashboardProps) {
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
-          <div className="mt-2 grid grid-cols-6 gap-1">{abilities.map((ability) => <div key={ability.key} className="rounded border border-[#4b3a19] p-1 text-center"><span className="text-[7px] uppercase text-[#9b8251]">{ability.key}</span><b className="block text-sm text-[#e2d4b9]">{ability.score}</b><span className="text-[8px] text-[#a4916d]">{ability.mod >= 0 ? "+" : ""}{ability.mod}</span></div>)}</div>
+          <div className="mt-2 grid grid-cols-6 gap-1">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} />)}</div>
           <div className="mt-2 grid grid-cols-2 gap-3"><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>{[["WIS",4],["CHA",3],["CON",2],["STR",1]].map(([name,value]) => <div key={name} className="flex justify-between text-[#b6a685]"><span>{name}</span><b className="text-white">+{value}</b></div>)}<h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3><div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{selected?.passive_perception ?? 12}</b></div><div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">14</b></div></div><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>{[["Insight",4],["Medicine",4],["Religion",1],["History",1]].map(([name,value], index) => <div key={name} className={cn("flex justify-between px-1 text-[#b6a685]", index < 2 && "border border-[#725c2f] bg-[#251c0d]")}><span>{name}</span><b className="text-white">+{value}</b></div>)}<p className="mt-1 text-[8px] text-[#8f8061]">□ Cleric class skill</p></div></div>
           <button className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492]">⌁ View Full Character Sheet</button>
         </div>
@@ -186,6 +186,22 @@ function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: stri
 }
 
 type StatKind = "ac" | "initiative" | "proficiency" | "speed"
+
+const abilityNames: Record<string, string> = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" }
+
+function AbilityScoreCard({ ability }: { ability: { key: string; score: number; mod: number } }) {
+  const order = ["str", "dex", "con", "int", "wis", "cha"]
+  const index = Math.max(0, order.indexOf(ability.key.toLowerCase()))
+  const x = index === 0 ? "0%" : index === 5 ? "100%" : `${index * 20}%`
+  const name = abilityNames[ability.key.toLowerCase()] ?? ability.key
+  return <button type="button" className="group relative h-[112px] min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition hover:-translate-y-0.5 hover:border-[#c79a49] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
+    <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
+    <span className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black via-black/90 to-transparent" />
+    <span className="absolute inset-x-0 bottom-[19px] text-center font-serif text-[15px] leading-none text-[#f0d9aa] drop-shadow-[0_1px_2px_#000]">{ability.score}</span>
+    <span className="absolute inset-x-0 bottom-[8px] text-center font-serif text-[9px] leading-none text-[#d7ab62]">{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
+    <span className="absolute inset-x-0 bottom-0 truncate px-0.5 text-center text-[5px] font-bold uppercase tracking-[.05em] text-[#bfa36d]">{name}</span>
+  </button>
+}
 
 function StatShield({ kind, label, value, onClick }: { kind: StatKind; label: string; value: string; onClick: () => void }) {
   const spritePosition: Record<StatKind, string> = {
