@@ -565,52 +565,50 @@ export function CharacterSheetSlideOver({
 
           {/* ---- Column B: stats, saves/skills, vitals ---- */}
           <div className="flex flex-col gap-3">
-            {/* saves + skills */}
+            {/* saving throws */}
             <Panel>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <PanelHead>Saving Throws</PanelHead>
-                  <div className="flex flex-col">
-                    {ABILS.map((ab) => {
-                      const prof = character.savingThrowProficiencies.includes(ab)
-                      const bonus = saveBonus(ab)
-                      return (
-                        <button
-                          key={ab}
-                          onClick={() => doD20(`${ABILITY_NAMES[ab]} Save`, bonus)}
-                          className="flex items-center gap-2 rounded px-1 py-1 text-[13px] text-stone-300 hover:bg-[#c9a868]/10"
-                        >
-                          <Dot state={prof ? "p" : ""} />
-                          <b className="min-w-[32px] text-[#f2e8d5]">{signed(bonus)}</b>
-                          {ABILITY_NAMES[ab]}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <PanelHead>Skills</PanelHead>
-                  <div className="flex flex-col">
-                    {SKILLS.map(([name, ab]) => {
-                      const key = toSkillKey(name)
-                      const expert = character.skillExpertises.includes(key)
-                      const prof = character.skillProficiencies.includes(key)
-                      const bonus = skillBonus(name, ab)
-                      return (
-                        <button
-                          key={name}
-                          onClick={() => doD20(name, bonus)}
-                          className="flex items-center gap-2 rounded px-1 py-0.5 text-[13px] text-stone-300 hover:bg-[#c9a868]/10"
-                        >
-                          <Dot state={expert ? "e" : prof ? "p" : ""} />
-                          <b className="min-w-[32px] text-[#f2e8d5]">{signed(bonus)}</b>
-                          <span className="truncate">{name}</span>
-                          <span className="ml-auto text-[10px] uppercase text-stone-600">{ABILITY_SHORT[ab]}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
+              <PanelHead>Saving Throws</PanelHead>
+              <div className="flex flex-col">
+                {ABILS.map((ab) => {
+                  const prof = character.savingThrowProficiencies.includes(ab)
+                  const bonus = saveBonus(ab)
+                  return (
+                    <button
+                      key={ab}
+                      onClick={() => doD20(`${ABILITY_NAMES[ab]} Save`, bonus)}
+                      className="flex items-center gap-2 rounded px-1 py-1 text-[13px] text-stone-300 hover:bg-[#c9a868]/10"
+                    >
+                      <Dot state={prof ? "p" : ""} />
+                      <b className="w-8 text-[#f2e8d5]">{signed(bonus)}</b>
+                      <span className="flex-1 truncate text-left">{ABILITY_NAMES[ab]}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </Panel>
+
+            {/* skills — single column so names never clip (image 1 layout) */}
+            <Panel>
+              <PanelHead>Skills</PanelHead>
+              <div className="flex flex-col">
+                {SKILLS.map(([name, ab]) => {
+                  const key = toSkillKey(name)
+                  const expert = character.skillExpertises.includes(key)
+                  const prof = character.skillProficiencies.includes(key)
+                  const bonus = skillBonus(name, ab)
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => doD20(name, bonus)}
+                      className="flex items-center gap-2 rounded px-1 py-0.5 text-[13px] text-stone-300 hover:bg-[#c9a868]/10"
+                    >
+                      <Dot state={expert ? "e" : prof ? "p" : ""} />
+                      <span className="w-8 text-[10px] uppercase text-stone-600">{ABILITY_SHORT[ab]}</span>
+                      <span className="flex-1 truncate text-left">{name}</span>
+                      <b className="text-[#f2e8d5]">{signed(bonus)}</b>
+                    </button>
+                  )
+                })}
               </div>
             </Panel>
 
