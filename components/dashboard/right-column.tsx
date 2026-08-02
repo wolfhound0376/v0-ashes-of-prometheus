@@ -330,6 +330,38 @@ age: (selectedCharacter as any).age,
 
   const canCastSpells = ["Wizard", "Sorcerer", "Cleric", "Druid", "Bard", "Warlock", "Paladin", "Ranger"].includes(character.class)
 
+  // --- Abbreviated skills + passive senses (v3.0 reference panel) ---------
+  // Map each D&D 5E skill to its governing ability so a proficient skill's
+  // bonus can be derived from the authoritative ability modifiers.
+  const SKILL_ABILITY: Record<string, AbilityKey> = {
+    athletics: "str",
+    acrobatics: "dex", sleight_of_hand: "dex", stealth: "dex",
+    arcana: "int", history: "int", investigation: "int", nature: "int", religion: "int",
+    animal_handling: "wis", insight: "wis", medicine: "wis", perception: "wis", survival: "wis",
+    deception: "cha", intimidation: "cha", performance: "cha", persuasion: "cha",
+  }
+  const normSkill = (s: string) => s.toLowerCase().replace(/ /g, "_")
+  const titleSkill = (key: string) =>
+    key.split("_").map((w, i) => (i > 0 && (w === "of" || w === "the") ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(" ")
+  const skillProfKeys = (character.skillProficiencies as string[]).map(normSkill)
+  const skillExpKeys = (character.skillExpertises as string[]).map(normSkill)
+  // Only proficient skills are listed (the reference shows a compact set).
+  const proficientSkills = skillProfKeys
+    .map((key) => {
+      const ability = SKILL_ABILITY[key]
+      if (!ability) return null
+      const expertise = skillExpKeys.includes(key)
+      const bonus = character.abilities[ability].modifier + character.proficiencyBonus * (expertise ? 2 : 1)
+      return { key, label: titleSkill(key), bonus }
+    })
+    .filter((s): s is { key: string; label: string; bonus: number } => s !== null)
+  const passiveInvestigation =
+    10 + character.abilities.int.modifier + (skillProfKeys.includes("investigation") ? character.proficiencyBonus : 0)
+  const passiveInsight =
+    10 + character.abilities.wis.modifier + (skillProfKeys.includes("insight") ? character.proficiencyBonus : 0)
+  const inspiration = Boolean((selectedCharacter as any)?.inspiration)
+  const fmtBonus = (n: number) => `${n >= 0 ? "+" : ""}${n}`
+
   return (
     <>
       <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -397,11 +429,21 @@ age: (selectedCharacter as any).age,
                       ))}
                     </div>
                   )}
+                  {/* Species · Class (Subclass) — matches the reference subtitle. */}
+                  <p className="mt-0.5 text-xs text-stone-400">
+                    {character.race} {character.class}
+                    {character.subclass ? ` (${character.subclass})` : ""}
+                  </p>
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-stone-400 text-sm">Level {character.level}</span>
-                <span className="text-[#7aa8c8] text-sm ml-2 font-medium">{character.class}</span>
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-sm text-stone-400">Level {character.level}</span>
+                {inspiration && (
+                  <span className="inline-flex items-center gap-1 rounded-sm border border-[#c9a868]/50 bg-[#241a10] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[#e6c878]">
+                    <Sparkles className="h-3 w-3" />
+                    Inspiration
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -412,7 +454,14 @@ age: (selectedCharacter as any).age,
             <div className="mb-3">
               <div className="flex justify-between text-xs mb-1">
                 <span className="text-stone-400">HP</span>
-                <span className="text-red-400">{character.hp.current} / {character.hp.max}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-red-400">{character.hp.current} / {character.hp.max}</span>
+                  {character.hp.temp > 0 && (
+                    <span className="rounded-sm bg-[#1a2a35] px-1.5 py-0.5 text-[10px] font-medium text-cyan-300">
+                      +{character.hp.temp} temp
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="h-2 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/40">
                 <div 

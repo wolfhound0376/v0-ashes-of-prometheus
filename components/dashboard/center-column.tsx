@@ -112,6 +112,8 @@ interface CenterColumnProps {
   onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
   onSendToLich?: (message: string) => void
   sceneImageUrl?: string
+  // Large cinematic environment/location image shown beneath the NPC window.
+  environmentImageUrl?: string
   npcEncounters?: NpcEncounter[]
   dialogue?: DialogueEntry[]
 }
@@ -328,7 +330,7 @@ const actionTypeColors = {
 
 type ActionTab = "action" | "bonus" | "reaction"
 
-export function CenterColumn({ selectedAction, onActionSelect, actions, resources, characterClass, characterLevel, characterName, onSendToLich, sceneImageUrl, npcEncounters = [], dialogue = [] }: CenterColumnProps) {
+export function CenterColumn({ characterClass, characterLevel, onSendToLich, sceneImageUrl, environmentImageUrl, npcEncounters = [], dialogue = [] }: CenterColumnProps) {
   // Filter active encounters for the tile strip, but attribution uses a separate
   // one-time fetch of the FULL roster so inactive NPCs remain resolvable.
   const activeEncounters = npcEncounters.filter(e => e.is_active)
@@ -430,275 +432,48 @@ export function CenterColumn({ selectedAction, onActionSelect, actions, resource
   const activeSpeaker = activeSpeakerId
     ? fullNpcRoster.find(n => n.id === activeSpeakerId) ?? npcEncounters.find(n => n.id === activeSpeakerId) ?? null
     : null
-  // Remaining active encounters shown dimmed/shrunk beneath the featured speaker.
-  const otherEncounters = activeSpeaker
-    ? activeEncounters.filter(e => e.id !== activeSpeaker.id)
-    : activeEncounters
-  
-  // Check if character can cast spells based on D&D 5E rules
-  const spellcasting = getClassSpellcasting(characterClass || "", characterLevel || 1)
-  
-  // Action type tab state
-  const [activeTab, setActiveTab] = useState<ActionTab>("action")
-  
-  // Filter actions by current tab (reactions always visible)
-  const filteredActions = actions.filter(a => a.type === activeTab)
-  const reactionActions = actions.filter(a => a.type === "reaction")
-  
+  // The NPC / DM window shows only the currently speaking NPC (or, if no one is
+  // speaking, the first present encounter as a silent portrait). Per the v3.0
+  // reference the center column no longer hosts actions, resources or dice.
+  const featuredNpc = activeSpeaker ?? activeEncounters[0] ?? null
+
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
-      <FantasyPanel title="NPC / Monster Interactions" className="flex-shrink-0">
-        <div className={`relative overflow-hidden rounded-sm transition-[height] duration-300 ease-in-out ${activeSpeaker ? "h-[46vh] min-h-[380px]" : "h-[260px]"}`}>
+      {/* NPC / Dungeon Master Window — shows only the currently speaking NPC. */}
+      <FantasyPanel title="NPC / Dungeon Master Window" className="flex-shrink-0">
+        <div className="relative h-[236px] overflow-hidden rounded-sm p-2">
           <CombatFxKeyframes />
-          {activeSpeaker ? (
-            <div className="h-full flex flex-col gap-2 p-2">
-              <FeaturedSpeaker
-                speaker={activeSpeaker}
-                line={activeLine}
-                voiceId={current?.voiceId ?? activeSpeaker.voice_id ?? null}
-                caption={activeCaption}
-                hasOthers={otherEncounters.length > 0}
-                onLineComplete={() => setSegIndex(i => Math.min(i + 1, segments.length - 1))}
-              />
-              {otherEncounters.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto flex-shrink-0 h-[64px] opacity-60">
-                  {otherEncounters.map((encounter) => (
-                    <NpcEncounterCard key={encounter.id} encounter={encounter} solo={false} compact />
-                  ))}
-                </div>
-              )}
+          {featuredNpc ? (
+            <FeaturedSpeaker
+              speaker={featuredNpc}
+              line={featuredNpc.id === activeSpeaker?.id ? activeLine : null}
+              voiceId={current?.voiceId ?? featuredNpc.voice_id ?? null}
+              caption={featuredNpc.id === activeSpeaker?.id ? activeCaption : null}
+              onLineComplete={() => setSegIndex(i => Math.min(i + 1, segments.length - 1))}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-sm bg-gradient-to-br from-[#1a1614] via-[#2a2018] to-[#1a1614]">
+              <p className="text-sm italic text-stone-500 drop-shadow">No one is speaking with you right now.</p>
             </div>
-          ) : activeEncounters.length > 0 ? (
-            <div className="h-full flex gap-2 p-2 overflow-x-auto">
-              {activeEncounters.map((encounter) => (
-                <NpcEncounterCard
-                  key={encounter.id}
-                  encounter={encounter}
-                  solo={activeEncounters.length === 1}
-                />
-              ))}
-            </div>
-          ) : sceneImageUrl ? (
-            <>
-              <img
-                src={sceneImageUrl}
-                alt="NPC or monster encountered"
-                className="absolute inset-0 w-full h-full object-cover object-top opacity-70"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#1a1614] via-transparent to-transparent" />
-            </>
+          )}
+        </div>
+      </FantasyPanel>
+
+      {/* Large cinematic environment view. */}
+      <FantasyPanel className="flex-1 min-h-0 flex flex-col">
+        <div className="relative flex-1 min-h-0 overflow-hidden rounded-sm">
+          {environmentImageUrl || sceneImageUrl ? (
+            <img
+              src={environmentImageUrl || sceneImageUrl}
+              alt="Current scene"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-[#1a1614] via-[#2a2018] to-[#1a1614]" />
           )}
-          {!activeSpeaker && activeEncounters.length === 0 && (
-            <div className="relative h-full flex items-end justify-center p-3">
-              <p className="text-stone-400 italic text-sm drop-shadow-lg">
-                {sceneImageUrl ? "" : "No one is interacting with you right now."}
-              </p>
-            </div>
-          )}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0a0908]/70 via-transparent to-[#0a0908]/20" />
         </div>
       </FantasyPanel>
-
-      {/* Available Actions */}
-      <FantasyPanel className="flex-1 min-h-0 flex flex-col">
-        {/* Tab Header */}
-        <div className="px-2 py-2 border-b border-[#3d3428]/60">
-          <div className="flex gap-1">
-            {/* Action Tab */}
-            <button
-              onClick={() => setActiveTab("action")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wider transition-all",
-                activeTab === "action"
-                  ? "bg-[#2a4a2a] text-[#7ac87a] border border-[#4a8a4a]/60"
-                  : "text-stone-500 hover:text-stone-300 hover:bg-[#2a2420]/40"
-              )}
-            >
-              <span>Actions</span>
-              <span className={cn(
-                "w-5 h-5 rounded-full flex items-center justify-center text-[10px]",
-                activeTab === "action" ? "bg-[#4a8a4a]/40" : "bg-[#3d3428]/60"
-              )}>
-                {resources.action}
-              </span>
-            </button>
-            
-            {/* Bonus Action Tab */}
-            <button
-              onClick={() => setActiveTab("bonus")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wider transition-all",
-                activeTab === "bonus"
-                  ? "bg-[#4a4a2a] text-[#d4b454] border border-[#8a7a3a]/60"
-                  : "text-stone-500 hover:text-stone-300 hover:bg-[#2a2420]/40"
-              )}
-            >
-              <span>Bonus</span>
-              <span className={cn(
-                "w-5 h-5 rounded-full flex items-center justify-center text-[10px]",
-                activeTab === "bonus" ? "bg-[#8a7a3a]/40" : "bg-[#3d3428]/60"
-              )}>
-                {resources.bonusAction}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Actions List */}
-        <div className="flex-1 overflow-y-auto p-2">
-          {filteredActions.length > 0 ? (
-            <div className="space-y-1">
-              {filteredActions.map((action) => (
-                <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-stone-500 text-sm italic">
-              No {activeTab === "action" ? "actions" : "bonus actions"} available
-            </div>
-          )}
-        </div>
-
-        {/* Reactions - Always visible at bottom */}
-        {reactionActions.length > 0 && (
-          <div className="border-t border-[#3d3428]/40 p-2">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className={cn("text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded", actionTypeColors.reaction.labelBg, actionTypeColors.reaction.text)}>
-                Reactions
-              </span>
-              <span className="w-4 h-4 rounded-full bg-[#3a2a4a] flex items-center justify-center text-[10px] text-[#b87ac8]">
-                {resources.reaction}
-              </span>
-              <div className="flex-1 h-px bg-[#7a4a8a]/30" />
-            </div>
-            <div className="space-y-1">
-              {reactionActions.map((action) => (
-                <ActionButton key={action.id} action={action} isSelected={selectedAction === action.id} onSelect={onActionSelect} />
-              ))}
-            </div>
-          </div>
-        )}
-      </FantasyPanel>
-
-      {/* Magical Resources - Only show for spellcasting classes */}
-      {spellcasting.canCast && (
-        <FantasyPanel title="Magical Resources & Abilities" className="flex-shrink-0">
-          <div className="p-3">
-            <div className="flex gap-2">
-              {/* Spell Slots - for all casters */}
-              <ResourceBox
-                label="Spell Slots"
-                current={resources.spellSlots}
-                max={resources.maxSpellSlots}
-                color="purple"
-              />
-              {/* Sorcery Points - only for Sorcerers */}
-              {spellcasting.hasSorceryPoints && (
-                <ResourceBox
-                  label="Sorcery Points"
-                  current={resources.sorceryPoints}
-                  max={resources.maxSorceryPoints}
-                  color="pink"
-                />
-              )}
-              {/* Pact Slots/Arcane Charges - only for Warlocks */}
-              {spellcasting.hasArcaneCharges && (
-                <ResourceBox
-                  label="Pact Slots"
-                  current={resources.arcaneCharges}
-                  max={resources.maxArcaneCharges}
-                  color="blue"
-                />
-              )}
-              {/* Spellbook - only for Wizards */}
-              {spellcasting.hasSpellbook && (
-                <button className="flex-1 flex flex-col items-center justify-center gap-1 p-2 rounded-sm bg-[#1a1614] border border-[#3d3428]/60 hover:border-[#5a4a3a]/80 transition-colors group">
-                  <BookOpen className="w-6 h-6 text-[#8b7355] group-hover:text-[#c9b896] transition-colors" />
-                  <span className="text-[10px] uppercase tracking-wider text-[#8b7355] group-hover:text-[#c9b896]">
-                    Spellbook
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
-        </FantasyPanel>
-      )}
-
-      {/* Quick Abilities - Only show for spellcasting classes */}
-      {spellcasting.canCast && (
-        <FantasyPanel title="Quick Abilities" className="flex-shrink-0">
-          <div className="p-3">
-            <div className="flex gap-2 justify-center">
-              {quickAbilities.map((ability) => {
-                const IconComponent = quickAbilityIconMap[ability.icon] || LockedAbilityIcon
-                return (
-                  <button
-                    key={ability.id}
-                    disabled={!ability.unlocked}
-                    className={cn(
-                      "flex flex-col items-center gap-1 p-1 rounded-sm transition-all",
-                      ability.unlocked
-                        ? "hover:bg-[#2a2420]/60 group cursor-pointer"
-                        : "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    <IconFrame 
-                      className="w-14 h-14" 
-                      disabled={!ability.unlocked}
-                    >
-                      <div className={cn(
-                        "w-full h-full bg-gradient-to-br overflow-hidden",
-                        ability.unlocked 
-                          ? "from-[#1a2a35] to-[#0f1a20]" 
-                          : "from-[#1a1614] to-[#0d0b0a]"
-                      )}>
-                        {ability.iconUrl ? (
-                          <img 
-                            src={ability.iconUrl} 
-                            alt={ability.name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <IconComponent className="w-full h-full p-1" />
-                        )}
-                      </div>
-                    </IconFrame>
-                    <span
-                      className={cn(
-                        "text-[10px] text-center leading-tight",
-                        ability.unlocked ? "text-stone-400" : "text-stone-600"
-                      )}
-                    >
-                      {ability.name}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </FantasyPanel>
-      )}
-
-      {/* Collapsible Reactions Panel */}
-      <ReactionsPanel
-        reactions={[]}
-        reactionCount={resources.reaction}
-        onReactionUse={(reactionId) => {
-          onActionSelect(reactionId)
-          // Notify Lich of reaction use
-          if (onSendToLich) {
-            onSendToLich(`[Reaction] ${characterName || "Player"} uses ${reactionId}`)
-          }
-        }}
-        characterClass={characterClass}
-      />
-
-      {/* Dice Roller */}
-      <DiceRoller
-        onSendToLich={onSendToLich}
-        characterName={characterName}
-      />
     </div>
   )
 }
@@ -871,146 +646,134 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
     }
   }
 
+  // Full spoken line makes the strongest quote; fall back to the short caption.
+  const quote = line || caption || null
+  const subtitle = speaker.description || null
+
   return (
-    <div className="relative w-full min-h-0 flex-1">
-      <div
-        className="relative w-full h-full overflow-hidden rounded-sm border-2"
-        style={{ animation: "aopSpeakerPulse 2s ease-in-out infinite", borderColor: "rgba(201,168,104,0.55)" }}
-      >
+    <div
+      className="relative flex h-full w-full overflow-hidden rounded-sm border-2"
+      style={{
+        animation: speaking ? "aopSpeakerPulse 2s ease-in-out infinite" : undefined,
+        borderColor: "rgba(201,168,104,0.45)",
+      }}
+    >
+      {/* Left: name, title/description, and the spoken quote. */}
+      <div className="relative z-10 flex w-[54%] flex-col justify-center gap-2 p-4">
+        <div>
+          <h3 className="font-serif text-2xl leading-tight text-[#e6c878] drop-shadow text-balance">
+            {speaker.name}
+          </h3>
+          {subtitle && (
+            <p className="mt-1 text-[13px] leading-snug text-stone-400 line-clamp-2">{subtitle}</p>
+          )}
+        </div>
+        {quote && (
+          <p
+            key={quote}
+            className="max-w-[95%] font-serif text-[15px] italic leading-snug text-stone-200 drop-shadow line-clamp-4"
+            style={{ animation: "aopCaptionFade 0.5s ease-out" }}
+          >
+            {`\u201C${quote}\u201D`}
+          </p>
+        )}
+        {speaker.conditions && speaker.conditions.length > 0 && (
+          <div className="flex flex-wrap">
+            <ConditionBadges conditions={speaker.conditions} size="sm" />
+          </div>
+        )}
+      </div>
+
+      {/* Right: portrait with disposition / attitude / speaking overlay. */}
+      <div className="relative w-[46%] flex-shrink-0">
         {face ? (
-          <>
-            {/* Blurred fill spanning the full width so the sides read as
-                atmosphere rather than empty letterbox bars. */}
+          <div className="relative h-full w-full">
             <img
               src={face}
-              aria-hidden="true"
-              className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl opacity-40"
+              alt={speaker.name}
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ objectPosition: "50% 25%" }}
             />
-            {/* Sharp face in a centered portrait frame. aspect-[4/5] is narrower
-                than the square source, forcing object-cover to fit by height and
-                reveal the entire face top-to-bottom. object-position keeps the
-                head/face (upper portion of the square) in frame. The static
-                image is the base layer; talking/idle videos crossfade above it
-                when present, and fall back to this image when absent. */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="relative h-full aspect-[4/5]">
-                <img
-                  src={face}
-                  alt={speaker.name}
-                  className="absolute inset-0 h-full w-full object-cover"
-                  style={{ objectPosition: "50% 30%" }}
-                />
-                {idleUrl && (
-                  <video
-                    ref={idleVideoRef}
-                    src={idleUrl}
-                    muted
-                    loop
-                    autoPlay
-                    playsInline
-                    aria-hidden="true"
-                    className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-in-out"
-                    style={{ objectPosition: "50% 30%", opacity: showIdle ? 1 : 0 }}
-                  />
-                )}
-                {talkingUrl && (
-                  <video
-                    ref={talkingVideoRef}
-                    src={talkingUrl}
-                    muted
-                    loop
-                    autoPlay
-                    playsInline
-                    aria-hidden="true"
-                    className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-in-out"
-                    style={{ objectPosition: "50% 30%", opacity: showTalking ? 1 : 0 }}
-                  />
-                )}
-              </div>
-            </div>
-          </>
+            {idleUrl && (
+              <video
+                ref={idleVideoRef}
+                src={idleUrl}
+                muted
+                loop
+                autoPlay
+                playsInline
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-in-out"
+                style={{ objectPosition: "50% 25%", opacity: showIdle ? 1 : 0 }}
+              />
+            )}
+            {talkingUrl && (
+              <video
+                ref={talkingVideoRef}
+                src={talkingUrl}
+                muted
+                loop
+                autoPlay
+                playsInline
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ease-in-out"
+                style={{ objectPosition: "50% 25%", opacity: showTalking ? 1 : 0 }}
+              />
+            )}
+          </div>
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-[#2a2018] to-[#1a1614] flex items-center justify-center">
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#2a2018] to-[#1a1614]">
             <span className="text-5xl text-stone-600">?</span>
           </div>
         )}
 
-        {/* Readability gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0908]/95 via-transparent to-transparent" />
+        {/* Fade the portrait's left edge into the text panel. */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#0f0c09] via-[#0f0c09]/30 to-transparent" />
 
-        {/* Speaking indicator + mute/stop toggle */}
-        <div className="absolute top-1.5 right-2 flex items-center gap-1.5">
+        {/* Speaking indicator + disposition + attitude, top-left of portrait. */}
+        <div className="absolute left-2 top-2 flex flex-col items-start gap-1.5">
           {speaking && !muted && (
-            <>
-              <span className="w-1.5 h-1.5 rounded-full bg-[#e6c878] animate-pulse" />
-              <span className="text-[9px] uppercase tracking-widest text-[#c9a868]/90 drop-shadow">Speaking</span>
-            </>
+            <span className="inline-flex items-center gap-1.5 rounded-sm border border-[#c9a868]/50 bg-[#0a0908]/80 px-2 py-0.5 drop-shadow">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e6c878]" />
+              <span className="text-[10px] uppercase tracking-widest text-[#c9a868]">Speaking</span>
+            </span>
           )}
-          <button
-            type="button"
-            onClick={toggleMute}
-            aria-label={muted ? "Unmute NPC voice" : "Mute / stop NPC voice"}
-            title={muted ? "Unmute NPC voice" : "Mute / stop NPC voice"}
-            className="flex items-center justify-center w-6 h-6 rounded-sm bg-[#0a0908]/70 border border-[#c9a868]/40 text-[#c9a868] hover:text-[#e6c878] hover:border-[#c9a868]/70 transition-colors"
-          >
-            {muted ? (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
-                <line x1="23" y1="9" x2="17" y2="15" />
-                <line x1="17" y1="9" x2="23" y2="15" />
-              </svg>
-            ) : (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-              </svg>
-            )}
-          </button>
+          {speaker.disposition && (
+            <span className="inline-flex flex-col rounded-sm border border-[#c9a868]/40 bg-[#0a0908]/80 px-2 py-0.5 drop-shadow">
+              <span className="text-[9px] uppercase tracking-wider text-stone-500">Disposition</span>
+              <span className="text-[12px] font-medium text-[#e6c878]/90">{speaker.disposition}</span>
+            </span>
+          )}
+          {speaker.attitude && (
+            <span className="inline-flex flex-col rounded-sm border border-[#c9a868]/40 bg-[#0a0908]/80 px-2 py-0.5 drop-shadow">
+              <span className="text-[9px] uppercase tracking-wider text-stone-500">Attitude</span>
+              <span className="text-[12px] font-medium text-[#e6c878]/90">{speaker.attitude}</span>
+            </span>
+          )}
         </div>
 
-        {/* Name + current spoken line beneath the portrait */}
-        <div className="absolute bottom-0 left-0 right-0 p-3 flex flex-col items-center gap-1.5">
-          <div className="flex items-center justify-center gap-2 max-w-full">
-            <span className="h-px w-8 bg-[#c9a868]/40 flex-shrink-0" />
-            <p className="text-sm font-serif font-semibold text-[#e6c878] text-center tracking-wide drop-shadow truncate">
-              {speaker.name}
-            </p>
-            <span className="h-px w-8 bg-[#c9a868]/40 flex-shrink-0" />
-          </div>
-          {/* Disposition / Attitude — only when the encounter record carries them.
-              No placeholders are ever invented for a record that lacks these. */}
-          {(speaker.disposition || speaker.attitude) && (
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
-              {speaker.disposition && (
-                <span className="inline-flex items-center gap-1 rounded-sm border border-[#c9a868]/40 bg-[#0a0908]/70 px-1.5 py-0.5 text-[10px] text-[#e6c878]/90 drop-shadow">
-                  <span className="uppercase tracking-wider text-stone-500">Disposition</span>
-                  <span className="font-medium">{speaker.disposition}</span>
-                </span>
-              )}
-              {speaker.attitude && (
-                <span className="inline-flex items-center gap-1 rounded-sm border border-[#c9a868]/40 bg-[#0a0908]/70 px-1.5 py-0.5 text-[10px] text-[#e6c878]/90 drop-shadow">
-                  <span className="uppercase tracking-wider text-stone-500">Attitude</span>
-                  <span className="font-medium">{speaker.attitude}</span>
-                </span>
-              )}
-            </div>
+        {/* Mute / stop toggle, top-right of portrait. */}
+        <button
+          type="button"
+          onClick={toggleMute}
+          aria-label={muted ? "Unmute NPC voice" : "Mute / stop NPC voice"}
+          title={muted ? "Unmute NPC voice" : "Mute / stop NPC voice"}
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-sm border border-[#c9a868]/40 bg-[#0a0908]/70 text-[#c9a868] transition-colors hover:border-[#c9a868]/70 hover:text-[#e6c878]"
+        >
+          {muted ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+              <line x1="23" y1="9" x2="17" y2="15" />
+              <line x1="17" y1="9" x2="23" y2="15" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+            </svg>
           )}
-          {speaker.conditions && speaker.conditions.length > 0 && (
-            <div className="flex justify-center max-w-full">
-              <ConditionBadges conditions={speaker.conditions} size="sm" />
-            </div>
-          )}
-          {caption && (
-            <p
-              key={caption}
-              className="max-w-[94%] text-center font-serif italic text-[13px] leading-snug text-[#e6c878]/90 drop-shadow-lg line-clamp-2"
-              style={{ animation: "aopCaptionFade 0.5s ease-out" }}
-            >
-              {`\u201C${caption}\u201D`}
-            </p>
-          )}
-        </div>
+        </button>
       </div>
     </div>
   )
