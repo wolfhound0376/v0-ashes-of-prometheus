@@ -198,7 +198,9 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
   }, [])
 
   return (
-    <div className={cn("fixed bottom-4 right-20 z-50 flex items-center", className)}>
+    // bottom-16 (not bottom-4) so the ambient controls float clear of the
+    // status bar — at bottom-4 this sat directly on top of Export Campaign.
+    <div className={cn("fixed bottom-16 right-20 z-50 flex items-center", className)}>
       <audio ref={audioRef} loop preload="none" />
       <div className="flex items-center gap-1 rounded-full bg-[#1a1614] border-2 border-[#3d3428] shadow-lg shadow-black/50 pl-1 pr-2 py-1">
         {/* Play / pause */}

@@ -25,6 +25,17 @@ import { XPTracker } from "./xp-tracker"
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 
+// `characters.speed` is a free-text column: some rows hold a bare number (30),
+// others prose like "30 ft. (Walking)". The Speed tile sits beside AC / INIT /
+// PROF / PP, which all render bare figures in a fixed-width box, so the prose
+// form overflowed its border. Show the leading figure, keep the full text on hover.
+function formatSpeed(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "30"
+  if (typeof value === "number") return String(value)
+  const match = /(-?\d+)/.exec(String(value))
+  return match ? match[1] : String(value)
+}
+
 interface RightColumnProps {
   characters: DBCharacter[]
   selectedCharacterId: string | null
@@ -406,6 +417,13 @@ age: (selectedCharacter as any).age,
             </div>
           </div>
 
+          {/* Everything below the pinned character header scrolls. Previously
+              this content simply overflowed the column with no scroll region,
+              so the last saving throw, the Skills box, the View Full Character
+              Sheet button and the whole Equipped Items group were rendered but
+              unreachable — roughly 100px of the rail was silently cut off. */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+
           {/* Basic Status */}
           <div className="p-3 border-b border-[#3d3428]/40">
             {/* HP Bar */}
@@ -465,7 +483,12 @@ age: (selectedCharacter as any).age,
               </button>
               <div className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30">
                 <Zap className="w-4 h-4 mx-auto mb-1 text-cyan-400" />
-                <div className="text-lg font-bold text-stone-200">{character.speed}</div>
+                <div
+                  className="text-lg font-bold text-stone-200 truncate"
+                  title={String(character.speed ?? 30)}
+                >
+                  {formatSpeed(character.speed)}
+                </div>
                 <div className="text-[9px] uppercase tracking-wider text-stone-500">Speed</div>
               </div>
               <div className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30">
@@ -623,6 +646,8 @@ age: (selectedCharacter as any).age,
               <User2 className="w-4 h-4 text-purple-400" />
               <span className="text-sm text-stone-300">Character Details</span>
             </button>
+          </div>
+
           </div>
         </FantasyPanel>
 

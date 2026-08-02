@@ -45,14 +45,15 @@ export function SupabaseStatus() {
     }
   }, [])
 
-  const color =
-    status === "connected" ? "#97C459" : status === "failed" ? "#E24B4A" : "#FAC775"
-  const label =
-    status === "connected"
-      ? "Supabase: connected"
-      : status === "failed"
-        ? "Supabase: failed"
-        : "Supabase: checking…"
+  // This pill predates the dashboard's top bar and was pinned to the same
+  // top-right corner the nav now occupies, sitting on top of NPCs / Lore / the
+  // settings gear. Rather than fight for that corner, it now behaves as an
+  // alert: silent while the connection is healthy, loud the moment it isn't.
+  // The dashboard's own status bar ("Last Saved … ●") covers the healthy case.
+  if (status === "connected") return null
+
+  const color = status === "failed" ? "#E24B4A" : "#FAC775"
+  const label = status === "failed" ? "Supabase: failed" : "Supabase: checking…"
 
   return (
     <div

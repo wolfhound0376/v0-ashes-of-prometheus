@@ -1128,22 +1128,12 @@ if (error) {
         </div>
       )}
 
-      {/* TTS Mute Toggle */}
-      <MusicPlayer
-        isTTSMuted={isTTSMuted}
-        onToggleTTSMute={toggleTTSMute}
-      />
-
-      {/* Scene-driven background music. Mirror the chat route's canonical
-          location source exactly: the hydrated DB environment name, falling
-          back to the shared canonical start (Velkynvelve) — never the old
-          "Greenmere Village" client default that caused village music. */}
-      <DynamicMusic
-        location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
-        inCombat={inCombat}
-      />
-
-      {/* Bottom status strip (v3.0 design) */}
+      {/* Bottom status strip (v3.0 design).
+          The TTS toggle and the scene-driven ambient music used to render here
+          as free-floating fixed-position widgets pinned to the bottom-right —
+          which put them directly on top of Export Campaign. Both are unchanged
+          apart from being docked into the bar's centre slot; the `static`
+          override cancels their own fixed positioning. */}
       <StatusBar
         lastSavedAt={lastSavedAt}
         autoSave={autoSave}
@@ -1152,6 +1142,20 @@ if (error) {
         onToggleDmMode={() => setDmMode((v) => !v)}
         onExport={handleSaveCampaign}
         exporting={isSaving}
+        centerSlot={
+          <>
+            <DynamicMusic
+              location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
+              inCombat={inCombat}
+              className="static bottom-auto right-auto z-auto"
+            />
+            <MusicPlayer
+              isTTSMuted={isTTSMuted}
+              onToggleTTSMute={toggleTTSMute}
+              className="static bottom-auto right-auto z-auto"
+            />
+          </>
+        }
       />
     </div>
     </DiceProvider>
