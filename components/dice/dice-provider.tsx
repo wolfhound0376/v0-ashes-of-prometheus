@@ -371,10 +371,10 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
             aria-label="Dice roll"
           >
             {/* Dimmed backdrop */}
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="absolute inset-0 bg-black/85 backdrop-blur-[3px]" />
 
             {/* Dark fantasy frame */}
-            <div className="relative z-10 rounded-lg border-2 border-[#8a6a4a] bg-gradient-to-b from-[#1a1614] to-[#0f0d0c] p-4 shadow-[0_0_40px_rgba(0,0,0,0.7),0_0_24px_rgba(200,150,80,0.15)]">
+            <div className="aop-dice-modal relative z-10 p-4">
               {/* Roll label — serif, above the tray */}
               <div className="mb-2 flex items-center justify-center gap-2 text-center">
                 <Dices className="h-4 w-4 text-[#c9a868]" />
@@ -385,7 +385,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
               </div>
 
               {/* Near-black felt tray holding the tumbling 3D dice */}
-              <div className="relative aspect-square w-[min(78vw,420px)] overflow-hidden rounded border-2 border-[#3d3428] bg-[#0a0908]">
+              <div className="relative aspect-square w-[min(78vw,420px)] overflow-hidden rounded-sm border-2 border-[#70491d] bg-[#050504] shadow-[inset_0_0_0_2px_#0a0704,inset_0_0_48px_#000]">
                 {/* Persistent 3D dice canvas mount (preloaded). */}
                 <div
                   id={DICE_MOUNT_SELECTOR}
@@ -393,7 +393,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
                 />
 
                 {/* Subtle amber rim light around the felt. */}
-                <div className="pointer-events-none absolute inset-0 rounded shadow-[inset_0_0_46px_rgba(212,177,90,0.16)]" />
+                <div className="pointer-events-none absolute inset-0 rounded-sm bg-[radial-gradient(circle_at_50%_38%,transparent_20%,rgba(100,20,13,0.08)_55%,rgba(0,0,0,0.72)_100%)] shadow-[inset_0_0_46px_rgba(212,142,58,0.18)]" />
 
                 {/* Prominent total reveal (result phase). */}
                 {overlayPhase === "result" && overlayResult && (

@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Compass, Map, Mic, Plus, X } from "lucide-react"
+import { Compass, Dices, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice } from "@/components/dice/dice-provider"
+import { DiceRoller } from "@/components/dashboard/dice-roller"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
 type DialogueEntry = { id?: string; speaker: string; text: string }
@@ -84,8 +85,8 @@ const conditionColor: Record<string, string> = {
 }
 
 function Frame({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
-  return <section className={cn("min-h-0 overflow-hidden rounded-lg border border-[#4b3a19] bg-[#100e09] shadow-[inset_0_0_0_3px_#171208,0_6px_18px_#000]", className)}>
-    <header className="flex h-7 items-center border-b border-[#4b3a19] px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#cdb276]">
+  return <section className={cn("aop-ornate-panel min-h-0 overflow-hidden", className)}>
+    <header className="aop-ornate-title flex h-8 items-center px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
       <span>{title}</span><span className="ml-auto text-[#675638]">— ×</span>
     </header>{children}
   </section>
@@ -96,6 +97,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [equipmentOpen, setEquipmentOpen] = useState(false)
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
+  const [diceOpen, setDiceOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   const dialogue = props.dialogue.length ? props.dialogue : previewDialogue
@@ -126,7 +128,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
   }))
 
-  return <main className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
+  return <main className="aop-lich-dashboard grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
     <div className="flex min-h-0 flex-col gap-2">
       <Frame title="Current Environment" className="shrink-0">
         <div className="p-2.5">
@@ -164,7 +166,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 pt-2">{quickReplies.map((reply) => <button key={reply} onClick={() => props.onQuickReply?.(reply)} className="rounded-full border border-[#695326] bg-[#171109] px-3 py-1 text-[9px] text-[#cdb276] hover:bg-[#251a0d]">{reply}</button>)}</div>
-      <div className="flex items-center gap-2 px-3 py-2"><button className="h-8 w-8 rounded border border-[#4b3a19] text-[#b69b63]"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="h-8 min-w-0 flex-1 rounded border border-[#4b3a19] bg-[#0b0906] px-3 text-[11px] outline-none focus:border-[#a88745]" /><button disabled className="h-8 w-8 rounded border border-[#4b3a19] text-[#62583f]" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button onClick={() => setStatDetail("initiative")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded border border-[#a88745] bg-[#120c07] pr-3 text-[10px] text-[#d9c492] shadow-[inset_0_0_10px_#000]" title="Roll for initiative and view initiative details"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
+      <div className="flex items-center gap-2 px-3 py-2"><button className="aop-square-action h-8 w-8"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled className="aop-square-action h-8 w-8 opacity-50" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button onClick={() => setDiceOpen(true)} className="aop-square-action h-10 w-10" title="Open Dice Roller"><Dices className="m-auto h-4 w-4" /></button><button onClick={() => setStatDetail("initiative")} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px]" title="Roll for initiative and view initiative details"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
       <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{party.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div><button className="mx-auto mt-2 block rounded border border-[#695326] px-3 py-1 text-[9px] text-[#cdb276]">View All Characters</button></div>
     </Frame>
 
@@ -190,6 +192,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       <button onClick={() => setEquipmentOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Equipped Items <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.equipment.length} equipped　▶</span></button>
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
+    {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
     {characterSheetOpen ? <CharacterSheetModal character={selected} abilities={abilities} inventory={props.inventory} equipment={props.equipment} displayedAc={displayedAc} displayedInitiative={displayedInitiative} onClose={() => setCharacterSheetOpen(false)} /> : null}
     {(inventoryOpen || equipmentOpen) ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => { setInventoryOpen(false); setEquipmentOpen(false) }} /> : null}
   </main>
