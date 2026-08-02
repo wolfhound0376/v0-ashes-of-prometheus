@@ -42,13 +42,18 @@ export interface DiceResult {
   isCrit: boolean
   /** Natural 1 on a single d20. */
   isFail: boolean
+  rollMode?: RollMode
+  keptRolls?: number[]
 }
+
+export type RollMode = "normal" | "advantage" | "disadvantage"
 
 export interface RollSpec {
   die: string
   numDice: number
   modifier: number
   label?: string
+  rollMode?: RollMode
 }
 
 export interface DiceContextValue {
@@ -76,7 +81,7 @@ export interface DiceContextValue {
 
 const DICE_ASSET_PATH = "/assets/dice-box/"
 const DICE_MOUNT_SELECTOR = "dice-box-mount"
-const DICE_THEME_COLOR = "#9c7238"
+const DICE_THEME_COLOR = "#8b1814"
 const DICE_INIT_TIMEOUT_MS = 8000
 const RESPONSE_TIMEOUT_MS = 6000
 const RESULT_DISPLAY_MS = 1500
@@ -89,12 +94,21 @@ function sidesOf(die: string): number {
 export function buildNotation(spec: RollSpec): string {
   const mod = spec.modifier
   const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : ""
-  return `${spec.numDice}${spec.die}${modStr}`
+  const mode = spec.rollMode && spec.rollMode !== "normal" ? ` (${spec.rollMode})` : ""
+  return `${spec.numDice}${spec.die}${modStr}${mode}`
 }
 
 function finalize(spec: RollSpec, rolls: number[]): DiceResult {
-  const total = rolls.reduce((sum, r) => sum + r, 0) + spec.modifier
-  const single20 = spec.die === "d20" && rolls.length === 1
+  const usesD20Mode = spec.die === "d20" && spec.rollMode && spec.rollMode !== "normal"
+  const keptRolls = usesD20Mode
+    ? Array.from({ length: spec.numDice }, (_, index) => {
+        const pair = rolls.slice(index * 2, index * 2 + 2)
+        if (pair.length === 0) return 0
+        return spec.rollMode === "advantage" ? Math.max(...pair) : Math.min(...pair)
+      })
+    : rolls
+  const total = keptRolls.reduce((sum, r) => sum + r, 0) + spec.modifier
+  const single20 = spec.die === "d20" && keptRolls.length === 1
   return {
     die: spec.die,
     rolls,
@@ -102,9 +116,15 @@ function finalize(spec: RollSpec, rolls: number[]): DiceResult {
     total,
     label: spec.label,
     timestamp: new Date(),
-    isCrit: single20 && rolls[0] === 20,
-    isFail: single20 && rolls[0] === 1,
+    isCrit: single20 && keptRolls[0] === 20,
+    isFail: single20 && keptRolls[0] === 1,
+    rollMode: spec.rollMode,
+    keptRolls,
   }
+}
+
+function physicalDiceCount(spec: RollSpec): number {
+  return spec.die === "d20" && spec.rollMode && spec.rollMode !== "normal" ? spec.numDice * 2 : spec.numDice
 }
 
 // Classic (local) roller — silent fallback ONLY when the 3D renderer is
@@ -113,7 +133,7 @@ function finalize(spec: RollSpec, rolls: number[]): DiceResult {
 function resolveClassic(spec: RollSpec): DiceResult {
   const sides = sidesOf(spec.die)
   const rolls: number[] = []
-  for (let i = 0; i < spec.numDice; i++) {
+  for (let i = 0; i < physicalDiceCount(spec); i++) {
     rolls.push(Math.floor(Math.random() * sides) + 1)
   }
   return finalize(spec, rolls)
@@ -264,7 +284,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
 
       // Roll the dice portion only (modifier is applied to the total by us);
       // dice-box notation does not include modifiers.
-      const diceNotation = `${spec.numDice}${spec.die}`
+      const diceNotation = `${physicalDiceCount(spec)}${spec.die}`
 
       box
         .roll(diceNotation)

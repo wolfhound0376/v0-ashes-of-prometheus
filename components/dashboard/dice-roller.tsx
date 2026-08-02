@@ -7,7 +7,7 @@ import { useCallback, useState } from "react"
 import { ChevronDown, ChevronUp, Dices, Send, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { useDice, type DiceResult, type RollSpec } from "@/components/dice/dice-provider"
+import { useDice, type DiceResult, type RollMode, type RollSpec } from "@/components/dice/dice-provider"
 
 interface DiceRollerProps {
   onRollResult?: (result: DiceResult) => void
@@ -17,7 +17,15 @@ interface DiceRollerProps {
   onClose?: () => void
 }
 
-const DICE_TYPES = ["d4", "d6", "d8", "d10", "d12", "d20", "d100"] as const
+const DICE_TYPES = [
+  { die: "d4", position: "-826px -369px" },
+  { die: "d6", position: "-896px -369px" },
+  { die: "d8", position: "-963px -369px" },
+  { die: "d10", position: "-1029px -369px" },
+  { die: "d12", position: "-842px -457px" },
+  { die: "d20", position: "-915px -457px" },
+  { die: "d100", position: "-999px -457px" },
+] as const
 
 export function DiceRoller({
   onRollResult,
@@ -31,6 +39,7 @@ export function DiceRoller({
   const [selectedDie, setSelectedDie] = useState<string>("d20")
   const [numDice, setNumDice] = useState(1)
   const [modifier, setModifier] = useState(0)
+  const [rollMode, setRollMode] = useState<RollMode>("normal")
   const [rollLabel, setRollLabel] = useState("")
   const [lastResult, setLastResult] = useState<DiceResult | null>(null)
 
@@ -44,15 +53,10 @@ export function DiceRoller({
     if (!lastResult || !onSendToLich) return
     const modifierStr = lastResult.modifier === 0 ? "" : lastResult.modifier > 0 ? `+${lastResult.modifier}` : `${lastResult.modifier}`
     const rollDescription = lastResult.label ? `${lastResult.label}: ` : ""
-    onSendToLich(`[Dice Roll] ${characterName} rolled ${lastResult.rolls.length}${lastResult.die}${modifierStr}${rollDescription ? ` for ${rollDescription}` : ""}: [${lastResult.rolls.join(", ")}]${modifierStr} = **${lastResult.total}**`)
+    const modeDescription = lastResult.rollMode && lastResult.rollMode !== "normal" ? ` with ${lastResult.rollMode}` : ""
+    const keptDescription = lastResult.keptRolls && lastResult.rollMode && lastResult.rollMode !== "normal" ? `, kept [${lastResult.keptRolls.join(", ")}]` : ""
+    onSendToLich(`[Dice Roll] ${characterName} rolled ${lastResult.rolls.length}${lastResult.die}${modifierStr}${modeDescription}${rollDescription ? ` for ${rollDescription}` : ""}: [${lastResult.rolls.join(", ")}]${keptDescription}${modifierStr} = **${lastResult.total}**`)
   }, [characterName, lastResult, onSendToLich])
-
-  const quickRolls: { label: string; spec: RollSpec }[] = [
-    { label: "Attack", spec: { die: "d20", numDice: 1, modifier, label: "Attack roll" } },
-    { label: "Damage", spec: { die: selectedDie, numDice, modifier, label: "Damage roll" } },
-    { label: "Initiative", spec: { die: "d20", numDice: 1, modifier, label: "Initiative" } },
-    { label: "Saving Throw", spec: { die: "d20", numDice: 1, modifier, label: "Saving throw" } },
-  ]
 
   const body = (
     <div className="aop-dice-body space-y-4 px-4 pb-4 pt-3">
@@ -72,19 +76,40 @@ export function DiceRoller({
       <section>
         <p className="aop-dice-label">Die Type</p>
         <div className="mt-2 grid grid-cols-4 gap-2">
-          {DICE_TYPES.map((die) => (
+          {DICE_TYPES.map(({ die, position }) => (
             <button
               key={die}
               type="button"
-              onClick={() => setSelectedDie(die)}
+              onClick={() => { setSelectedDie(die); if (die !== "d20") setRollMode("normal") }}
               className={cn("aop-die-choice group", selectedDie === die && "is-selected")}
               aria-pressed={selectedDie === die}
             >
-              <span className="aop-die-gem"><span>{die.slice(1)}</span></span>
+              <span className="aop-die-model" style={{ backgroundPosition: position }} aria-hidden />
               <span className="mt-1 block text-[10px] text-[#d7bd86]">{die}</span>
             </button>
           ))}
         </div>
+      </section>
+
+      <div className="aop-gold-rule" />
+
+      <section>
+        <p className="aop-dice-label">Roll Mode</p>
+        <div className="mt-2 grid grid-cols-3 gap-2" role="group" aria-label="Roll mode">
+          {(["advantage", "normal", "disadvantage"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              disabled={selectedDie !== "d20" && mode !== "normal"}
+              aria-pressed={rollMode === mode}
+              onClick={() => setRollMode(mode)}
+              className={cn("aop-roll-mode", `is-${mode}`, rollMode === mode && "is-selected")}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        {selectedDie !== "d20" && <p className="mt-1 text-center text-[9px] text-[#776548]">Advantage and disadvantage apply to d20 checks.</p>}
       </section>
 
       <div className="aop-gold-rule" />
@@ -102,6 +127,7 @@ export function DiceRoller({
           <p className="aop-dice-label">Current Roll</p>
           <div className="mt-1 rounded-sm border border-[#65451e] bg-black/55 py-2 text-center font-serif text-lg text-[#efd59c]">
             {numDice}{selectedDie}{modifier === 0 ? "" : modifier > 0 ? `+${modifier}` : modifier}
+            {rollMode !== "normal" && <small className="ml-1 text-[8px] uppercase tracking-wider text-[#b78c48]">{rollMode}</small>}
           </div>
         </div>
       </section>
@@ -116,7 +142,7 @@ export function DiceRoller({
       <button
         type="button"
         disabled={busy}
-        onClick={() => initiateRoll({ die: selectedDie, numDice, modifier, label: rollLabel || undefined })}
+        onClick={() => initiateRoll({ die: selectedDie, numDice, modifier, label: rollLabel || undefined, rollMode })}
         className="aop-roll-button w-full"
       >
         <span aria-hidden>✦</span>
@@ -128,7 +154,7 @@ export function DiceRoller({
         <section className={cn("aop-roll-result", lastResult.isCrit && "is-critical", lastResult.isFail && "is-fumble")}>
           <div>
             <p className="text-[9px] uppercase tracking-[.16em] text-[#9a7a48]">{lastResult.label || "Latest result"}</p>
-            <p className="mt-1 text-xs text-[#cbb78d]">[{lastResult.rolls.join(", ")}]{lastResult.modifier ? ` ${lastResult.modifier > 0 ? "+" : ""}${lastResult.modifier}` : ""}</p>
+            <p className="mt-1 text-xs text-[#cbb78d]">[{lastResult.rolls.join(", ")}]{lastResult.keptRolls && lastResult.keptRolls !== lastResult.rolls ? ` keep ${lastResult.keptRolls.join(", ")}` : ""}{lastResult.modifier ? ` ${lastResult.modifier > 0 ? "+" : ""}${lastResult.modifier}` : ""}</p>
           </div>
           <strong className="font-serif text-4xl text-[#f1cf83]">{lastResult.total}</strong>
           {onSendToLich && (
@@ -137,16 +163,6 @@ export function DiceRoller({
         </section>
       )}
 
-      <section>
-        <p className="aop-dice-label">Quick Rolls</p>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          {quickRolls.map((quickRoll) => (
-            <button key={quickRoll.label} type="button" disabled={busy} onClick={() => initiateRoll(quickRoll.spec)} className="aop-quick-roll">
-              {quickRoll.label}
-            </button>
-          ))}
-        </div>
-      </section>
     </div>
   )
 

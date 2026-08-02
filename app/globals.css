@@ -328,23 +328,39 @@
 .aop-die-choice:hover { transform: translateY(-2px); border-color: #ae7330; }
 .aop-die-choice.is-selected { border-color: #e0aa4c; box-shadow: inset 0 0 11px #000, 0 0 13px rgba(223, 146, 43, 0.45); }
 
-.aop-die-gem {
-  position: relative;
-  display: grid;
-  width: 39px;
-  height: 39px;
-  margin: 3px auto 0;
-  place-items: center;
-  clip-path: polygon(50% 0, 94% 24%, 86% 79%, 50% 100%, 14% 79%, 6% 24%);
-  background: conic-gradient(from 15deg, #43100c, #a72c1d, #3a0907, #8e2117, #2a0807, #a72c1d, #43100c);
-  color: #f0c779;
-  font-family: var(--font-serif), "Times New Roman", serif;
-  text-shadow: 0 1px 2px #000;
-  filter: drop-shadow(0 2px 3px #000);
+.aop-die-model {
+  display: block;
+  width: 58px;
+  height: 58px;
+  margin: 2px auto 0;
+  background-image: url('/images/ui/dice-roller-reference.png');
+  background-repeat: no-repeat;
+  background-size: 1536px 1024px;
+  filter: drop-shadow(0 5px 4px #000) saturate(1.12) contrast(1.08);
+  transform: perspective(160px) rotateX(4deg);
+  transition: transform 180ms ease, filter 180ms ease;
 }
 
-.aop-die-gem::before { content: ""; position: absolute; inset: 5px; clip-path: inherit; border: 1px solid rgba(244, 189, 101, 0.58); }
-.aop-die-gem span { position: relative; z-index: 1; }
+.aop-die-choice:hover .aop-die-model,
+.aop-die-choice.is-selected .aop-die-model {
+  transform: perspective(160px) rotateX(0deg) translateY(-2px) scale(1.08);
+  filter: drop-shadow(0 7px 5px #000) saturate(1.25) contrast(1.12) brightness(1.08);
+}
+
+.aop-roll-mode {
+  border: 1px solid #5b3c1b;
+  background: linear-gradient(180deg, #16110a, #090806);
+  padding: 9px 4px;
+  color: #bba276;
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  box-shadow: inset 0 0 12px #000;
+}
+.aop-roll-mode.is-advantage.is-selected { border-color: #9c9f4a; color: #f1dda0; background: linear-gradient(180deg, #394019, #121607); }
+.aop-roll-mode.is-disadvantage.is-selected { border-color: #9f2f25; color: #ffd0b0; background: linear-gradient(180deg, #54140f, #210706); }
+.aop-roll-mode.is-normal.is-selected { border-color: #c18b38; color: #f1d492; background: linear-gradient(180deg, #36240e, #120b05); }
+.aop-roll-mode:disabled { cursor: not-allowed; opacity: .32; }
 
 .aop-mini-control {
   width: 30px;
@@ -389,5 +405,3 @@
 .aop-roll-result.is-fumble { border-color: #9b251c; box-shadow: inset 0 0 15px rgba(125, 18, 12, 0.32); }
 
 .aop-send-lich { border: 1px solid #78501f; padding: 7px; color: #d7ad5f; background: #120b07; }
-.aop-quick-roll { border: 1px solid #573a18; background: #0b0907; padding: 7px 8px; color: #b99c68; font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; }
-.aop-quick-roll:hover { border-color: #b7792f; color: #efd497; background: #171008; }
