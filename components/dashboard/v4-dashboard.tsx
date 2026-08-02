@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Compass, Map, Mic, Plus, X } from "lucide-react"
+import { BookOpen, Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice } from "@/components/dice/dice-provider"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
@@ -99,6 +99,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [equipmentOpen, setEquipmentOpen] = useState(false)
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
   const [diceOpen, setDiceOpen] = useState(false)
+  const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   const dialogue = props.dialogue.length ? props.dialogue : previewDialogue
@@ -117,6 +118,8 @@ export function V4Dashboard(props: V4DashboardProps) {
   const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
+  const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
+  const isMagicUser = ["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"].includes((selected?.class ?? "").toLowerCase())
   const quickReplies = [
     "Who else is being held here?",
     "(Faith) Offer a quiet prayer over the wounded",
@@ -155,10 +158,9 @@ export function V4Dashboard(props: V4DashboardProps) {
     </div>
 
     <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col">
-      <div className="grid h-[205px] shrink-0 grid-cols-[160px_minmax(220px,1fr)_140px] gap-3 p-3 pb-4">
-        <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote></div>
-        <div className="relative overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div>
-        <div className="flex flex-col gap-2 text-[10px]"><div className="rounded border border-[#695326] p-2 text-[#d9c492]">Speaking… ▮▮▯▯</div><button className="mt-auto w-full rounded border border-[#695326] py-2 text-[#cdb276]">View NPC Sheet</button></div>
+      <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 p-3 pb-4">
+        <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote>{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}</div>
+        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className="mt-1.5 flex h-7 items-center justify-center rounded border border-[#695326] bg-black/50 text-[9px] uppercase tracking-[.16em] text-[#d2b04f]">Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></div></div>
       </div>
       <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
         <img src={props.environment.imageUrl} alt="Current scene" className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
@@ -174,7 +176,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 pt-2">{quickReplies.map((reply) => <button key={reply} onClick={() => props.onQuickReply?.(reply)} className="rounded-full border border-[#695326] bg-[#171109] px-3 py-1 text-[9px] text-[#cdb276] hover:bg-[#251a0d]">{reply}</button>)}</div>
       <div className="flex items-center gap-2 px-3 py-2"><button className="aop-square-action h-8 w-8"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled className="aop-square-action h-8 w-8 opacity-50" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
-      <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{party.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div><button className="mx-auto mt-2 block rounded border border-[#695326] px-3 py-1 text-[9px] text-[#cdb276]">View All Characters</button></div>
+      <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{party.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div></div>
     </Frame>
 
     <div className="flex min-h-0 flex-col gap-2">
@@ -197,9 +199,11 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
       <button onClick={() => setInventoryOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Basic Inventory <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb　▶</span></button>
       <button onClick={() => setEquipmentOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Equipped Items <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.equipment.length} equipped　▶</span></button>
+      {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300"><BookOpen className="mr-2 h-4 w-4" />Book of Spells <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
     {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
+    {spellbookOpen ? <SpellbookModal character={selected} onClose={() => setSpellbookOpen(false)} /> : null}
     {characterSheetOpen ? <CharacterSheetModal character={selected} abilities={abilities} inventory={props.inventory} equipment={props.equipment} displayedAc={displayedAc} displayedInitiative={displayedInitiative} onClose={() => setCharacterSheetOpen(false)} /> : null}
     {(inventoryOpen || equipmentOpen) ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => { setInventoryOpen(false); setEquipmentOpen(false) }} /> : null}
   </main>
@@ -242,7 +246,7 @@ function CharacterSheetModal({ character, abilities, inventory, equipment, displ
     <div className="p-4">
       <header className="flex flex-wrap items-center gap-4 rounded-xl border border-[#765a2a] bg-[linear-gradient(100deg,#25170b,#090705_68%)] p-4 shadow-[inset_0_0_20px_#000]">
         <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-[#ad8341] bg-black/50">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-4xl text-[#b78b45]">{character.name[0]}</div>}</div>
-        <div><h3 className="font-serif text-3xl text-[#f2dfb7]">{character.name}</h3><p className="text-xs text-[#ac966d]">Level {character.level} {extra.race || "Human"} {character.class}{extra.subclass ? ` · ${extra.subclass}` : ""}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-[#76694f]">{extra.background || "Background not recorded"} · {extra.alignment || "Alignment not recorded"}</p></div>
+        <div><h3 className="font-serif text-3xl text-[#f2dfb7]">{character.name}</h3><p className="text-xs text-[#ac966d]">Level {character.level} {extra.race || "Human"} {character.class}</p><p className="mt-0.5 text-[10px] text-purple-300">{character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-[#76694f]">{extra.background || "Background not recorded"} · {extra.alignment || "Alignment not recorded"}</p></div>
         <div className="ml-auto min-w-52"><div className="flex justify-between text-[9px] uppercase text-[#887653]"><span>Experience</span><span>{character.xp} / {character.xp_to_next}</span></div><div className="mt-1 h-2 rounded bg-black"><div className="h-full rounded bg-[#aa2a34]" style={{ width: `${Math.min(100, character.xp / Math.max(1, character.xp_to_next) * 100)}%` }} /></div><div className="mt-2 flex gap-2"><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Short Rest</button><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Long Rest</button></div></div>
       </header>
 
@@ -318,6 +322,44 @@ function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: stri
     {enemies.slice(0, 4).map((enemy, index) => <div key={enemy.id} className="absolute flex h-8 w-8 items-center justify-center rounded-full border-2 border-red-500 bg-red-950 text-[9px] font-bold text-white shadow-[0_0_14px_#ef4444]" style={{ right: `${25 + index * 12}%`, top: `${25 + (index % 2) * 12}%` }} title={enemy.name}>{enemy.name[0]}</div>)}
     <div className="absolute bottom-3 right-3 flex gap-2 rounded border border-[#6b5123] bg-black/75 px-2 py-1 text-[8px]"><span className="text-sky-400">● Party</span><span className="text-red-400">● Hostile</span><span className="text-amber-300">◇ Terrain</span></div>
   </div>
+}
+
+function SpellbookModal({ character, onClose }: { character: Character; onClose: () => void }) {
+  const extra = character as Character & { subclass?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
+  const spellcasting = extra.sheet_spellcasting ?? {}
+  const names = (value: unknown): string[] => Array.isArray(value)
+    ? value.map((entry) => typeof entry === "string" ? entry : entry && typeof entry === "object" && "name" in entry ? String((entry as { name: unknown }).name) : "").filter(Boolean)
+    : []
+  const cantrips = names(spellcasting.cantrips)
+  const domainSpells = names(spellcasting.domain_spells ?? spellcasting.domainSpells)
+  const prepared = names(spellcasting.prepared)
+  const known = names(spellcasting.known ?? spellcasting.spellbook)
+  const className = character.class.toLowerCase()
+  const ruleNote = className === "cleric" || className === "druid"
+    ? "Prepared caster: choose prepared spells after a long rest. Domain or circle spells remain prepared when granted."
+    : className === "wizard"
+      ? "Spellbook caster: prepare spells from spells copied into this book after a long rest."
+      : className === "paladin"
+        ? "Prepared caster: choose prepared paladin spells after a long rest; oath spells remain prepared."
+        : "Known-spell caster: spells change only when the class rules or a level increase permit it."
+
+  return <div className="fixed inset-0 z-[78] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`${character.name}'s Book of Spells`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section className="aop-dice-modal max-h-[90vh] w-full max-w-4xl overflow-y-auto p-5">
+      <header className="flex items-start border-b border-purple-900/60 pb-4"><BookOpen className="mr-3 h-8 w-8 text-purple-300" /><div><h2 className="font-serif text-2xl text-[#efd8aa]">{character.name}&apos;s Book of Spells</h2><p className="text-xs text-purple-300">Level {character.level} {character.class}</p><p className="mt-0.5 text-[10px] text-[#9c8562]">{character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p></div><button type="button" onClick={onClose} className="ml-auto text-[#b89557] hover:text-white" aria-label="Close Book of Spells"><X className="h-5 w-5" /></button></header>
+      <p className="my-4 rounded border border-purple-900/50 bg-purple-950/20 p-3 text-xs leading-relaxed text-[#b7a37d]">D&amp;D 5E spell handling: {ruleNote}</p>
+      <div className="grid gap-3 md:grid-cols-2">
+        <SpellList title="Cantrips" spells={cantrips} empty="No cantrips recorded." />
+        <SpellList title={character.class === "Cleric" ? "Domain Spells" : "Subclass Spells"} spells={domainSpells} empty="No subclass spells recorded." />
+        <SpellList title="Prepared / Memorized" spells={prepared} empty="No prepared spells recorded." />
+        <SpellList title={className === "wizard" ? "Spellbook" : "Known / Available"} spells={known} empty="No known spell records attached." />
+      </div>
+      <div className="mt-5 flex items-center justify-between border-t border-[#4f3c1d] pt-4"><p className="text-[10px] text-[#806f52]">Only spells recorded on this character are shown.</p><a href="/forge" className="rounded border border-purple-800 px-3 py-2 text-[10px] uppercase tracking-wider text-purple-300 hover:bg-purple-950/40">Manage in The Forge</a></div>
+    </section>
+  </div>
+}
+
+function SpellList({ title, spells, empty }: { title: string; spells: string[]; empty: string }) {
+  return <section className="overflow-hidden rounded border border-[#4f3c1d] bg-black/30"><h3 className="border-b border-[#4f3c1d] px-3 py-2 font-serif text-xs uppercase tracking-wider text-purple-300">{title}</h3>{spells.length ? <ul className="divide-y divide-[#2d2416]">{spells.map((spell) => <li key={spell} className="px-3 py-2 text-xs text-[#d9c9a8]">{spell}</li>)}</ul> : <p className="p-4 text-xs italic text-[#77684f]">{empty}</p>}</section>
 }
 
 type StatKind = "ac" | "initiative" | "proficiency" | "speed"
