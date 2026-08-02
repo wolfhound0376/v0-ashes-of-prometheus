@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Settings, Sparkles, X, Save, RotateCcw } from "lucide-react"
+import { Settings, Sparkles, X, Save, RotateCcw, Flame, Hammer, Download, ChevronUp, RefreshCw, UserMinus, Circle, BookOpen, ScrollText, Map, Users, Landmark } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
@@ -52,6 +52,27 @@ const tempId = () =>
 // makes four browsers each keep their own character instead of sharing one
 // global session pointer.
 const CHARACTER_LS_KEY = "aop_character_id"
+
+// Top-bar navigation destinations. These builder/companion routes ship in later
+// Dashboard v3 phases, so they render as honest "soon" affordances rather than
+// dead links that 404.
+const NAV_ITEMS: { label: string; Icon: typeof BookOpen }[] = [
+  { label: "Journal", Icon: BookOpen },
+  { label: "Quests", Icon: ScrollText },
+  { label: "Maps", Icon: Map },
+  { label: "NPCs", Icon: Users },
+  { label: "Lore", Icon: Landmark },
+]
+
+// Render a compact "X ago" string for the last-saved indicator.
+function formatSavedAgo(ms: number): string {
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
 
 export default function DashboardPage() {
   const supabase = createClient()
@@ -110,6 +131,24 @@ export default function DashboardPage() {
   const [showRestartDialog, setShowRestartDialog] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  // Dashboard v3 global chrome state.
+  // `lastSavedAt` is the epoch ms of the most recent successful Supabase write;
+  // the bottom status bar renders "Last Saved Xm ago" from it. `now` ticks once
+  // a minute so that relative label never goes stale. `dmMenuOpen` drives the
+  // upward DM Mode dropdown (only rendered when the browser is NOT claim-locked).
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  const [dmMenuOpen, setDmMenuOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const markSaved = useCallback(() => setLastSavedAt(Date.now()), [])
+
+  // Keep the "X minutes ago" label current without re-rendering constantly.
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
@@ -192,6 +231,7 @@ export default function DashboardPage() {
 
       if (error) throw error
 
+      markSaved()
       setSaveMessage("Campaign saved!")
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (err) {
@@ -237,6 +277,66 @@ export default function DashboardPage() {
 
   const cancelRestartCampaign = () => {
     setShowRestartDialog(false)
+  }
+
+  // DM Mode -> Refresh Dashboard. Re-pulls character/inventory/equipment via the
+  // existing loader. If the loader isn't reachable for any reason, fall back to a
+  // hard reload so the DM always gets a fresh view.
+  const refreshDashboard = () => {
+    setDmMenuOpen(false)
+    try {
+      fetchCharacterData()
+    } catch {
+      if (typeof window !== "undefined") window.location.reload()
+    }
+  }
+
+  // Bottom bar -> Export Campaign. Client-side JSON download built from the
+  // already-loaded players plus a one-off inventory pull. Claim tokens are
+  // explicitly stripped so an exported file can never leak a character's
+  // ownership secret.
+  const handleExportCampaign = async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const playerIds = players.map((p) => p.id)
+      let inventory: InventoryItem[] = []
+      if (playerIds.length > 0) {
+        const { data } = await supabase
+          .from("inventory_items")
+          .select("*")
+          .in("character_id", playerIds)
+        inventory = data || []
+      }
+
+      // Strip claim_token / token-ish fields from every character before export.
+      const sanitizedCharacters = players.map((character) => {
+        const { claim_token, ...safe } = character as unknown as Record<string, unknown>
+        return safe
+      })
+
+      const payload = {
+        campaign: { id: activeCampaign.id, name: activeCampaign.name },
+        exportedAt: new Date().toISOString(),
+        characters: sanitizedCharacters,
+        inventory,
+        dialogue: dialogue.map(({ speaker, text }) => ({ speaker, text })),
+      }
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `ashes-of-prometheus-${activeCampaign.id}-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error("Error exporting campaign:", err)
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const [resources, setResources] = useState({
@@ -690,56 +790,183 @@ if (error) {
 
   return (
     <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
-      {/* Campaign Controls */}
-      <div className="fixed top-4 right-4 z-[60] flex items-center gap-2">
-        {/* Save message toast */}
-        {saveMessage && (
-          <div className="px-3 py-1.5 bg-[#1a1614]/95 border border-[#3d3428] rounded-lg text-sm text-[#d4b15a] animate-in fade-in slide-in-from-right-2">
-            {saveMessage}
+      {/* === Dashboard v3 Top Bar === */}
+      <header className="fixed top-0 inset-x-0 z-[60] h-14 flex items-center justify-between gap-4 px-3 sm:px-4 bg-gradient-to-b from-[#1a1614] to-[#141110] border-b border-[#3d3428]/70 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+        {/* Brand + session chip */}
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="flex items-center justify-center w-9 h-9 rounded-md bg-[#0a0908] border border-[#d4b15a]/40 text-[#d4b15a] shadow-[0_0_12px_rgba(212,177,90,0.2)]">
+            <Flame className="w-5 h-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="font-serif text-[#d4b15a] text-base sm:text-lg leading-none truncate">Ashes of Prometheus</h1>
+            <p className="text-[11px] text-stone-500 leading-none mt-1 truncate">
+              {activeCampaign.name}
+              {selectedCharacter ? <span className="text-[#c4a777]"> · Lv {selectedCharacter.level}</span> : null}
+            </p>
           </div>
-        )}
+        </div>
 
-        {/* Save Campaign */}
-        <button
-          onClick={handleSaveCampaign}
-          disabled={isSaving}
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-emerald-400 hover:border-emerald-400/30 transition-all group disabled:opacity-50"
-          title="Save Campaign"
-        >
-          <Save className={`w-5 h-5 transition-transform duration-300 ${isSaving ? 'animate-pulse' : 'group-hover:scale-110'}`} />
-        </button>
+        {/* Navigation */}
+        <nav className="flex items-center gap-1 sm:gap-1.5">
+          {/* Featured: The Forge (builder route ships in a later phase) */}
+          <span
+            aria-disabled="true"
+            title="The Forge — character builder (coming soon)"
+            className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-[#e0651a]/15 border border-[#e0651a]/50 text-[#e0651a] text-sm font-medium cursor-not-allowed"
+          >
+            <Hammer className="w-4 h-4" />
+            <span className="hidden sm:inline">The Forge</span>
+            <span className="ml-0.5 text-[9px] uppercase tracking-wide text-stone-500 border border-[#3d3428] rounded px-1 py-px">soon</span>
+          </span>
 
-        {/* Restart Campaign */}
-        <button
-          onClick={handleRestartCampaign}
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-red-400 hover:border-red-400/30 transition-all group"
-          title="Restart Campaign"
-        >
-          <RotateCcw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
-        </button>
+          {/* Placeholder destinations, honestly marked "soon" */}
+          <div className="hidden md:flex items-center gap-1">
+            {NAV_ITEMS.map(({ label, Icon }) => (
+              <span
+                key={label}
+                aria-disabled="true"
+                title={`${label} (coming soon)`}
+                className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-stone-500 text-sm cursor-not-allowed hover:text-stone-400 transition-colors"
+              >
+                <Icon className="w-4 h-4" />
+                <span>{label}</span>
+                <span className="text-[9px] uppercase tracking-wide text-stone-600 border border-[#3d3428]/70 rounded px-1 py-px">soon</span>
+              </span>
+            ))}
+          </div>
 
-        {/* World AI Toggle */}
-        <button
-          onClick={() => setWorldAIPanelOpen(!worldAIPanelOpen)}
-          className={`p-2 bg-[#1a1614]/90 border rounded-lg transition-all group ${
-            worldAIPanelOpen
-              ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]"
-              : "border-[#3d3428]/60 text-stone-500 hover:text-[#d4b15a] hover:border-[#d4b15a]/30"
-          }`}
-          title="World AI - Campaign Engine"
-        >
-          <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-        </button>
+          {/* World AI toggle (relocated from old top-right cluster) */}
+          <button
+            onClick={() => setWorldAIPanelOpen(!worldAIPanelOpen)}
+            className={`p-2 rounded-md border transition-all group ${
+              worldAIPanelOpen
+                ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]"
+                : "border-[#3d3428]/60 text-stone-500 hover:text-[#d4b15a] hover:border-[#d4b15a]/30"
+            }`}
+            title="World AI - Campaign Engine"
+          >
+            <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+          </button>
 
-        {/* Admin link */}
-        <Link
-          href="/admin"
-          className="p-2 bg-[#1a1614]/90 border border-[#3d3428]/60 rounded-lg text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
-          title="Content Manager"
-        >
-          <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-        </Link>
-      </div>
+          {/* Settings gear -> Content Manager */}
+          <Link
+            href="/admin"
+            className="p-2 rounded-md border border-[#3d3428]/60 text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
+            title="Content Manager"
+          >
+            <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+          </Link>
+        </nav>
+      </header>
+
+      {/* === Dashboard v3 Bottom Status Bar === */}
+      <footer className="fixed bottom-0 inset-x-0 z-[60] h-10 flex items-center justify-between gap-4 px-3 sm:px-4 bg-gradient-to-t from-[#1a1614] to-[#141110] border-t border-[#3d3428]/70 shadow-[0_-4px_20px_rgba(0,0,0,0.5)] text-xs">
+        {/* Save status */}
+        <div className="flex items-center gap-4 min-w-0">
+          <span className="flex items-center gap-1.5 text-stone-400">
+            <Circle
+              className={`w-2 h-2 fill-current ${
+                lastSavedAt && now - lastSavedAt < 120_000 ? "text-emerald-400" : "text-amber-500"
+              }`}
+            />
+            <span className="truncate">
+              {saveMessage
+                ? saveMessage
+                : lastSavedAt
+                  ? `Last Saved ${formatSavedAgo(now - lastSavedAt)}`
+                  : "Not saved yet"}
+            </span>
+          </span>
+          <span className="hidden sm:inline text-stone-600">Auto-Save: <span className="text-emerald-500/80">On</span></span>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSaveCampaign}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#3d3428]/60 text-stone-400 hover:text-emerald-400 hover:border-emerald-400/30 transition-all disabled:opacity-50"
+            title="Save Campaign"
+          >
+            <Save className={`w-3.5 h-3.5 ${isSaving ? "animate-pulse" : ""}`} />
+            <span className="hidden sm:inline">{isSaving ? "Saving…" : "Save"}</span>
+          </button>
+
+          <button
+            onClick={handleExportCampaign}
+            disabled={isExporting}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#3d3428]/60 text-stone-400 hover:text-[#d4b15a] hover:border-[#d4b15a]/30 transition-all disabled:opacity-50"
+            title="Export campaign as JSON"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Export Campaign"}</span>
+          </button>
+
+          {/* DM Mode dropdown — hidden for claim-locked player browsers */}
+          {!claimLocked && (
+            <div className="relative">
+              <button
+                onClick={() => setDmMenuOpen((o) => !o)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border transition-all ${
+                  dmMenuOpen
+                    ? "border-[#e0651a]/60 text-[#e0651a]"
+                    : "border-[#3d3428]/60 text-stone-400 hover:text-[#e0651a] hover:border-[#e0651a]/30"
+                }`}
+                aria-expanded={dmMenuOpen}
+                aria-haspopup="menu"
+                title="Dungeon Master controls"
+              >
+                <span>DM Mode: <span className="text-emerald-500/80">On</span></span>
+                <ChevronUp className={`w-3.5 h-3.5 transition-transform ${dmMenuOpen ? "" : "rotate-180"}`} />
+              </button>
+
+              {dmMenuOpen && (
+                <>
+                  {/* Click-away backdrop */}
+                  <div className="fixed inset-0 z-[59]" onClick={() => setDmMenuOpen(false)} aria-hidden="true" />
+                  <div
+                    role="menu"
+                    className="absolute bottom-full right-0 mb-2 w-52 z-[61] rounded-md bg-[#1a1614] border border-[#3d3428] shadow-2xl py-1 animate-in fade-in slide-in-from-bottom-1"
+                  >
+                    <Link
+                      href="/admin"
+                      role="menuitem"
+                      onClick={() => setDmMenuOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-stone-300 hover:bg-[#2a2520] hover:text-[#c4a777] transition-colors"
+                    >
+                      <Settings className="w-4 h-4" /> Settings
+                    </Link>
+                    <button
+                      role="menuitem"
+                      onClick={refreshDashboard}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-stone-300 hover:bg-[#2a2520] hover:text-[#d4b15a] transition-colors"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Refresh Dashboard
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => { setDmMenuOpen(false); handleRestartCampaign() }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-stone-300 hover:bg-[#2a2520] hover:text-red-400 transition-colors"
+                    >
+                      <RotateCcw className="w-4 h-4" /> Restart Campaign…
+                    </button>
+                    <div className="my-1 h-px bg-[#3d3428]/70" />
+                    <span
+                      role="menuitem"
+                      aria-disabled="true"
+                      title="Remove Character (coming soon)"
+                      className="flex items-center justify-between gap-2 px-3 py-2 text-sm text-red-500/40 cursor-not-allowed"
+                    >
+                      <span className="flex items-center gap-2"><UserMinus className="w-4 h-4" /> Remove Character…</span>
+                      <span className="text-[9px] uppercase tracking-wide text-stone-600 border border-[#3d3428]/70 rounded px-1 py-px">soon</span>
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </footer>
 
       {/* Smoke/fog overlay */}
       <div className="fixed inset-0 pointer-events-none z-50 opacity-20">
@@ -773,8 +1000,8 @@ if (error) {
         </div>
       </div>
 
-      {/* Main dashboard grid */}
-      <div className="h-screen p-2 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
+      {/* Main dashboard grid (offset for fixed top bar + bottom status bar) */}
+      <div className="h-screen px-2 pt-16 pb-11 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
