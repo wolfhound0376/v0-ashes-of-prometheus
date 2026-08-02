@@ -6,6 +6,10 @@ import { Settings, Sparkles, X, Save, RotateCcw, Flame, Hammer, Download, Chevro
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
+import { DiceProvider } from "@/components/dice/dice-provider"
+import { TopNav } from "@/components/dashboard/top-nav"
+import { StatusBar } from "@/components/dashboard/status-bar"
+import { PartyStatus } from "@/components/dashboard/party-status"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -132,23 +136,11 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
-  // Dashboard v3 global chrome state.
-  // `lastSavedAt` is the epoch ms of the most recent successful Supabase write;
-  // the bottom status bar renders "Last Saved Xm ago" from it. `now` ticks once
-  // a minute so that relative label never goes stale. `dmMenuOpen` drives the
-  // upward DM Mode dropdown (only rendered when the browser is NOT claim-locked).
+  // Status-bar state (v3.0 design): last successful save, auto-save preference,
+  // and the DM-mode flag shown at the bottom of the dashboard.
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
-  const [now, setNow] = useState(() => Date.now())
-  const [dmMenuOpen, setDmMenuOpen] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
-
-  const markSaved = useCallback(() => setLastSavedAt(Date.now()), [])
-
-  // Keep the "X minutes ago" label current without re-rendering constantly.
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 60_000)
-    return () => clearInterval(interval)
-  }, [])
+  const [autoSave, setAutoSave] = useState(true)
+  const [dmMode, setDmMode] = useState(false)
 
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
@@ -231,7 +223,7 @@ export default function DashboardPage() {
 
       if (error) throw error
 
-      markSaved()
+      setLastSavedAt(Date.now())
       setSaveMessage("Campaign saved!")
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (err) {
@@ -716,6 +708,58 @@ if (error) {
     }
   }
 
+  // Send a quick-reply line straight through the normal player-message path
+  // (same optimistic insert + speaker attribution as typing it by hand).
+  const handleQuickReply = useCallback(
+    async (text: string) => {
+      const playerName = selectedCharacter?.name || "Player"
+      setDialogueInput("")
+      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
+      const response = await sendToLich(text, selectedCharacterId, claimToken)
+      if (response?.text) {
+        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+        if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
+        if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
+        await fetchCharacterData()
+      }
+    },
+    [selectedCharacter, selectedCharacterId, claimToken, sendToLich],
+  )
+
+  // Announce a completed sheet roll to the table. Every browser sees the roll
+  // line in the shared dialogue feed (realtime on the dialogue table); action
+  // rolls (attacks, spell attacks) additionally go to Malachar as this
+  // browser's character so the DM narrates the outcome of these EXACT numbers
+  // — the roll already happened, he never re-rolls.
+  const handleDiceAnnounce = useCallback(
+    async (text: string, opts: { toLich: boolean }) => {
+      const playerName = selectedCharacter?.name || "Player"
+      const line = `🎲 ${text}`
+
+      // Feed line, visible on all browsers. Optimistic → reconciled by the
+      // realtime echo of the inserted row.
+      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: line, pending: true }))
+      const { error } = await supabase.from("dialogue").insert({ speaker: playerName, text: line })
+      if (error) console.error("[Dice] failed to persist roll announcement:", error)
+
+      // Action rolls also go to the DM for narration.
+      if (opts.toLich) {
+        const response = await sendToLich(
+          `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`,
+          selectedCharacterId,
+          claimToken,
+        )
+        if (response?.text) {
+          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+          if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
+          if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
+          await fetchCharacterData()
+        }
+      }
+    },
+    [selectedCharacter, selectedCharacterId, claimToken, sendToLich],
+  )
+
   // Handler for populating starting equipment (D&D 5E standard gear)
   const handlePopulateStartingGear = async (equipment: any[], inventory: any[], gold: number) => {
     if (!selectedCharacterId) return
@@ -789,184 +833,31 @@ if (error) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0908] text-stone-200 overflow-hidden">
-      {/* === Dashboard v3 Top Bar === */}
-      <header className="fixed top-0 inset-x-0 z-[60] h-14 flex items-center justify-between gap-4 px-3 sm:px-4 bg-gradient-to-b from-[#1a1614] to-[#141110] border-b border-[#3d3428]/70 shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
-        {/* Brand + session chip */}
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="flex items-center justify-center w-9 h-9 rounded-md bg-[#0a0908] border border-[#d4b15a]/40 text-[#d4b15a] shadow-[0_0_12px_rgba(212,177,90,0.2)]">
-            <Flame className="w-5 h-5" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="font-serif text-[#d4b15a] text-base sm:text-lg leading-none truncate">Ashes of Prometheus</h1>
-            <p className="text-[11px] text-stone-500 leading-none mt-1 truncate">
-              {activeCampaign.name}
-              {selectedCharacter ? <span className="text-[#c4a777]"> · Lv {selectedCharacter.level}</span> : null}
-            </p>
-          </div>
+    <DiceProvider onAnnounce={handleDiceAnnounce}>
+    <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
+      {/* Top command bar (v3.0 design) */}
+      <TopNav
+        sessionNumber={1}
+        level={selectedCharacter?.level ?? 1}
+        campaignName={activeCampaign.name}
+        activeSection={worldAIPanelOpen ? "lore" : null}
+        onSection={(section) => {
+          // Sections that already have a home route there; the rest open the
+          // World AI panel, which is where that content lives today.
+          if (section === "settings") {
+            window.location.href = "/admin"
+            return
+          }
+          setWorldAIPanelOpen(true)
+        }}
+      />
+
+      {/* Save toast */}
+      {saveMessage && (
+        <div className="fixed right-4 top-16 z-[60] animate-in fade-in slide-in-from-right-2 rounded-lg border border-[#3d3428] bg-[#1a1614]/95 px-3 py-1.5 text-sm text-[#d4b15a]">
+          {saveMessage}
         </div>
-
-        {/* Navigation */}
-        <nav className="flex items-center gap-1 sm:gap-1.5">
-          {/* Featured: The Forge (builder route ships in a later phase) */}
-          <span
-            aria-disabled="true"
-            title="The Forge — character builder (coming soon)"
-            className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-[#e0651a]/15 border border-[#e0651a]/50 text-[#e0651a] text-sm font-medium cursor-not-allowed"
-          >
-            <Hammer className="w-4 h-4" />
-            <span className="hidden sm:inline">The Forge</span>
-            <span className="ml-0.5 text-[9px] uppercase tracking-wide text-stone-500 border border-[#3d3428] rounded px-1 py-px">soon</span>
-          </span>
-
-          {/* Placeholder destinations, honestly marked "soon" */}
-          <div className="hidden md:flex items-center gap-1">
-            {NAV_ITEMS.map(({ label, Icon }) => (
-              <span
-                key={label}
-                aria-disabled="true"
-                title={`${label} (coming soon)`}
-                className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-stone-500 text-sm cursor-not-allowed hover:text-stone-400 transition-colors"
-              >
-                <Icon className="w-4 h-4" />
-                <span>{label}</span>
-                <span className="text-[9px] uppercase tracking-wide text-stone-600 border border-[#3d3428]/70 rounded px-1 py-px">soon</span>
-              </span>
-            ))}
-          </div>
-
-          {/* World AI toggle (relocated from old top-right cluster) */}
-          <button
-            onClick={() => setWorldAIPanelOpen(!worldAIPanelOpen)}
-            className={`p-2 rounded-md border transition-all group ${
-              worldAIPanelOpen
-                ? "border-[#e0651a] text-[#e0651a] shadow-[0_0_15px_rgba(224,101,26,0.3)]"
-                : "border-[#3d3428]/60 text-stone-500 hover:text-[#d4b15a] hover:border-[#d4b15a]/30"
-            }`}
-            title="World AI - Campaign Engine"
-          >
-            <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-          </button>
-
-          {/* Settings gear -> Content Manager */}
-          <Link
-            href="/admin"
-            className="p-2 rounded-md border border-[#3d3428]/60 text-stone-500 hover:text-[#c4a777] hover:border-[#c4a777]/30 transition-all group"
-            title="Content Manager"
-          >
-            <Settings className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-          </Link>
-        </nav>
-      </header>
-
-      {/* === Dashboard v3 Bottom Status Bar === */}
-      <footer className="fixed bottom-0 inset-x-0 z-[60] h-10 flex items-center justify-between gap-4 px-3 sm:px-4 bg-gradient-to-t from-[#1a1614] to-[#141110] border-t border-[#3d3428]/70 shadow-[0_-4px_20px_rgba(0,0,0,0.5)] text-xs">
-        {/* Save status */}
-        <div className="flex items-center gap-4 min-w-0">
-          <span className="flex items-center gap-1.5 text-stone-400">
-            <Circle
-              className={`w-2 h-2 fill-current ${
-                lastSavedAt && now - lastSavedAt < 120_000 ? "text-emerald-400" : "text-amber-500"
-              }`}
-            />
-            <span className="truncate">
-              {saveMessage
-                ? saveMessage
-                : lastSavedAt
-                  ? `Last Saved ${formatSavedAgo(now - lastSavedAt)}`
-                  : "Not saved yet"}
-            </span>
-          </span>
-          <span className="hidden sm:inline text-stone-600">Auto-Save: <span className="text-emerald-500/80">On</span></span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSaveCampaign}
-            disabled={isSaving}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#3d3428]/60 text-stone-400 hover:text-emerald-400 hover:border-emerald-400/30 transition-all disabled:opacity-50"
-            title="Save Campaign"
-          >
-            <Save className={`w-3.5 h-3.5 ${isSaving ? "animate-pulse" : ""}`} />
-            <span className="hidden sm:inline">{isSaving ? "Saving…" : "Save"}</span>
-          </button>
-
-          <button
-            onClick={handleExportCampaign}
-            disabled={isExporting}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#3d3428]/60 text-stone-400 hover:text-[#d4b15a] hover:border-[#d4b15a]/30 transition-all disabled:opacity-50"
-            title="Export campaign as JSON"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{isExporting ? "Exporting…" : "Export Campaign"}</span>
-          </button>
-
-          {/* DM Mode dropdown — hidden for claim-locked player browsers */}
-          {!claimLocked && (
-            <div className="relative">
-              <button
-                onClick={() => setDmMenuOpen((o) => !o)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border transition-all ${
-                  dmMenuOpen
-                    ? "border-[#e0651a]/60 text-[#e0651a]"
-                    : "border-[#3d3428]/60 text-stone-400 hover:text-[#e0651a] hover:border-[#e0651a]/30"
-                }`}
-                aria-expanded={dmMenuOpen}
-                aria-haspopup="menu"
-                title="Dungeon Master controls"
-              >
-                <span>DM Mode: <span className="text-emerald-500/80">On</span></span>
-                <ChevronUp className={`w-3.5 h-3.5 transition-transform ${dmMenuOpen ? "" : "rotate-180"}`} />
-              </button>
-
-              {dmMenuOpen && (
-                <>
-                  {/* Click-away backdrop */}
-                  <div className="fixed inset-0 z-[59]" onClick={() => setDmMenuOpen(false)} aria-hidden="true" />
-                  <div
-                    role="menu"
-                    className="absolute bottom-full right-0 mb-2 w-52 z-[61] rounded-md bg-[#1a1614] border border-[#3d3428] shadow-2xl py-1 animate-in fade-in slide-in-from-bottom-1"
-                  >
-                    <Link
-                      href="/admin"
-                      role="menuitem"
-                      onClick={() => setDmMenuOpen(false)}
-                      className="flex items-center gap-2 px-3 py-2 text-sm text-stone-300 hover:bg-[#2a2520] hover:text-[#c4a777] transition-colors"
-                    >
-                      <Settings className="w-4 h-4" /> Settings
-                    </Link>
-                    <button
-                      role="menuitem"
-                      onClick={refreshDashboard}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-stone-300 hover:bg-[#2a2520] hover:text-[#d4b15a] transition-colors"
-                    >
-                      <RefreshCw className="w-4 h-4" /> Refresh Dashboard
-                    </button>
-                    <button
-                      role="menuitem"
-                      onClick={() => { setDmMenuOpen(false); handleRestartCampaign() }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-stone-300 hover:bg-[#2a2520] hover:text-red-400 transition-colors"
-                    >
-                      <RotateCcw className="w-4 h-4" /> Restart Campaign…
-                    </button>
-                    <div className="my-1 h-px bg-[#3d3428]/70" />
-                    <span
-                      role="menuitem"
-                      aria-disabled="true"
-                      title="Remove Character (coming soon)"
-                      className="flex items-center justify-between gap-2 px-3 py-2 text-sm text-red-500/40 cursor-not-allowed"
-                    >
-                      <span className="flex items-center gap-2"><UserMinus className="w-4 h-4" /> Remove Character…</span>
-                      <span className="text-[9px] uppercase tracking-wide text-stone-600 border border-[#3d3428]/70 rounded px-1 py-px">soon</span>
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      </footer>
+      )}
 
       {/* Smoke/fog overlay */}
       <div className="fixed inset-0 pointer-events-none z-50 opacity-20">
@@ -1000,8 +891,8 @@ if (error) {
         </div>
       </div>
 
-      {/* Main dashboard grid (offset for fixed top bar + bottom status bar) */}
-      <div className="h-screen px-2 pt-16 pb-11 grid grid-cols-1 lg:grid-cols-[320px_1fr_380px] gap-2">
+      {/* Main dashboard grid */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
@@ -1031,7 +922,14 @@ if (error) {
   characterName={selectedCharacter?.name}
   isWorldAIThinking={lichLoading}
   isTTSMuted={isTTSMuted}
+  initiativeModifier={selectedCharacter?.initiative ?? 0}
+  onQuickReply={(text) => {
+    setDialogueInput(text)
+    // Send immediately so a quick reply is one click, not two.
+    void handleQuickReply(text)
+  }}
 />
+          <div className="flex min-h-0 flex-col gap-2">
           <CenterColumn
             selectedAction={selectedAction}
             onActionSelect={handleActionSelect}
@@ -1079,6 +977,22 @@ if (error) {
             }
           }}
         />
+
+          {/* Party Status row (v3.0 design) sits under the center column */}
+          <PartyStatus
+            members={players.map((p) => ({
+              id: p.id,
+              name: p.name,
+              level: p.level,
+              hp_current: p.hp_current,
+              hp_max: p.hp_max,
+              avatar_image_url: p.avatar_image_url,
+              conditions: (p as any).conditions,
+            }))}
+            selectedCharacterId={selectedCharacterId}
+            onSelect={claimLocked ? undefined : handleCharacterSelect}
+          />
+        </div>
 <RightColumn
   characters={players}
   selectedCharacterId={selectedCharacterId}
@@ -1228,6 +1142,18 @@ if (error) {
         location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
         inCombat={inCombat}
       />
+
+      {/* Bottom status strip (v3.0 design) */}
+      <StatusBar
+        lastSavedAt={lastSavedAt}
+        autoSave={autoSave}
+        onToggleAutoSave={() => setAutoSave((v) => !v)}
+        dmMode={dmMode}
+        onToggleDmMode={() => setDmMode((v) => !v)}
+        onExport={handleSaveCampaign}
+        exporting={isSaving}
+      />
     </div>
+    </DiceProvider>
   )
 }
