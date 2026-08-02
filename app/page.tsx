@@ -272,66 +272,6 @@ export default function DashboardPage() {
     setShowRestartDialog(false)
   }
 
-  // DM Mode -> Refresh Dashboard. Re-pulls character/inventory/equipment via the
-  // existing loader. If the loader isn't reachable for any reason, fall back to a
-  // hard reload so the DM always gets a fresh view.
-  const refreshDashboard = () => {
-    setDmMenuOpen(false)
-    try {
-      fetchCharacterData()
-    } catch {
-      if (typeof window !== "undefined") window.location.reload()
-    }
-  }
-
-  // Bottom bar -> Export Campaign. Client-side JSON download built from the
-  // already-loaded players plus a one-off inventory pull. Claim tokens are
-  // explicitly stripped so an exported file can never leak a character's
-  // ownership secret.
-  const handleExportCampaign = async () => {
-    if (isExporting) return
-    setIsExporting(true)
-    try {
-      const playerIds = players.map((p) => p.id)
-      let inventory: InventoryItem[] = []
-      if (playerIds.length > 0) {
-        const { data } = await supabase
-          .from("inventory_items")
-          .select("*")
-          .in("character_id", playerIds)
-        inventory = data || []
-      }
-
-      // Strip claim_token / token-ish fields from every character before export.
-      const sanitizedCharacters = players.map((character) => {
-        const { claim_token, ...safe } = character as unknown as Record<string, unknown>
-        return safe
-      })
-
-      const payload = {
-        campaign: { id: activeCampaign.id, name: activeCampaign.name },
-        exportedAt: new Date().toISOString(),
-        characters: sanitizedCharacters,
-        inventory,
-        dialogue: dialogue.map(({ speaker, text }) => ({ speaker, text })),
-      }
-
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement("a")
-      anchor.href = url
-      anchor.download = `ashes-of-prometheus-${activeCampaign.id}-${new Date().toISOString().slice(0, 10)}.json`
-      document.body.appendChild(anchor)
-      anchor.click()
-      document.body.removeChild(anchor)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error("Error exporting campaign:", err)
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
   const [resources, setResources] = useState({
     action: 1,
     bonusAction: 1,
