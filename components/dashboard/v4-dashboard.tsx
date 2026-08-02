@@ -4,7 +4,63 @@ import { useState } from "react"
 import { Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice } from "@/components/dice/dice-provider"
+import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
+
+type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
+const ABILITY_KEYS: AbilityKey[] = ["str", "dex", "con", "int", "wis", "cha"]
+
+/** Map a `characters` row onto the shape the Forge sheet expects. Kept here so
+ *  the sheet stays presentational and the DB column names live in one place.
+ *  `sheet_skill_proficiencies` is a jsonb OBJECT keyed by snake_case skill name
+ *  with "proficient" | "expertise" as the value — not an array. */
+function toSheetCharacter(c: Character) {
+  const raw = c as unknown as Record<string, any>
+  const skillMap: Record<string, string> = raw.sheet_skill_proficiencies ?? {}
+  const entries = Object.entries(skillMap)
+  const abilities = Object.fromEntries(
+    ABILITY_KEYS.map((k) => [k, { score: raw[`${k}_score`] ?? 10, modifier: raw[`${k}_modifier`] ?? 0 }]),
+  ) as Record<AbilityKey, { score: number; modifier: number }>
+
+  return {
+    name: c.name,
+    race: raw.sheet_species || raw.race || "Unknown",
+    class: c.class,
+    subclass: raw.sheet_subclass ?? null,
+    level: c.level,
+    background: raw.sheet_background || undefined,
+    alignment: raw.sheet_alignment || undefined,
+    avatarUrl: raw.avatar_image_url || raw.portrait_image_url || null,
+    backdropUrl: raw.sheet_appearance?.backdrop_url ?? null,
+    experiencePoints: raw.xp ?? 0,
+    hp: { current: c.hp_current, max: c.hp_max, temp: raw.sheet_hp_temp ?? 0 },
+    ac: c.ac,
+    initiative: c.initiative,
+    speed: raw.speed,
+    proficiencyBonus: raw.proficiency_bonus ?? 2,
+    passivePerception: raw.passive_perception ?? 10,
+    senses: raw.senses,
+    conditions: Array.isArray(raw.conditions) ? raw.conditions : [],
+    age: raw.sheet_age ?? null,
+    height: raw.height ?? null,
+    weight: raw.character_weight ?? null,
+    abilities,
+    savingThrowProficiencies: (Array.isArray(raw.sheet_save_proficiencies)
+      ? raw.sheet_save_proficiencies
+      : []) as AbilityKey[],
+    skillProficiencies: entries.filter(([, v]) => v === "proficient").map(([k]) => k),
+    skillExpertises: entries.filter(([, v]) => v === "expertise").map(([k]) => k),
+    languages: raw.languages ?? null,
+    armorProficiencies: raw.sheet_proficiencies?.armor ?? null,
+    weaponProficiencies: raw.sheet_proficiencies?.weapons ?? null,
+    toolProficiencies: raw.sheet_proficiencies?.tools ?? null,
+    features: raw.sheet_features,
+    personality: raw.sheet_personality,
+    spellcastingAbility: raw.sheet_spellcasting?.ability ?? null,
+    spellSaveDC: raw.sheet_spellcasting?.save_dc ?? null,
+    spellAttackBonus: raw.sheet_spellcasting?.attack_bonus ?? null,
+  }
+}
 
 type DialogueEntry = { id?: string; speaker: string; text: string }
 type NpcEncounter = {
@@ -190,7 +246,14 @@ export function V4Dashboard(props: V4DashboardProps) {
       <button onClick={() => setEquipmentOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Equipped Items <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.equipment.length} equipped　▶</span></button>
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
-    {characterSheetOpen ? <CharacterSheetModal character={selected} abilities={abilities} inventory={props.inventory} equipment={props.equipment} displayedAc={displayedAc} displayedInitiative={displayedInitiative} onClose={() => setCharacterSheetOpen(false)} /> : null}
+    {/* The full sheet is the Forge 2014 port — the same object players already
+        know from the builder — rather than a second, differently-styled sheet. */}
+    <CharacterSheetSlideOver
+      open={characterSheetOpen}
+      onClose={() => setCharacterSheetOpen(false)}
+      character={{ ...toSheetCharacter(selected), ac: displayedAc, initiative: displayedInitiative }}
+      inventory={props.inventory as any}
+    />
     {(inventoryOpen || equipmentOpen) ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => { setInventoryOpen(false); setEquipmentOpen(false) }} /> : null}
   </main>
 }
