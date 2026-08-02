@@ -4,7 +4,7 @@
 // export on the right. "Last saved" ticks live off the timestamp of the most
 // recent successful save.
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Cloud, Download, Loader2, Skull } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -16,6 +16,11 @@ interface StatusBarProps {
   onToggleDmMode?: () => void
   onExport?: () => void
   exporting?: boolean
+  /** Docked into the middle of the bar. The ambient-music and TTS controls
+   *  live here: as free-floating fixed-position widgets they landed on top of
+   *  Export Campaign, and every other screen edge is already occupied by a
+   *  column. The bar's centre is the one place on the dashboard that is free. */
+  centerSlot?: ReactNode
 }
 
 function relativeTime(ts: number | null, now: number): string {
@@ -37,6 +42,7 @@ export function StatusBar({
   onToggleDmMode,
   onExport,
   exporting = false,
+  centerSlot,
 }: StatusBarProps) {
   // Re-render every 20s so the "2m ago" label stays honest.
   const [now, setNow] = useState(() => Date.now())
@@ -81,6 +87,8 @@ export function StatusBar({
           DM Mode: <span className="font-medium">{dmMode ? "On" : "Off"}</span>
         </button>
       </div>
+
+      {centerSlot && <div className="flex min-w-0 items-center gap-2">{centerSlot}</div>}
 
       <button
         type="button"
