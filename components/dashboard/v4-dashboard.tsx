@@ -369,7 +369,7 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
   return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s Book of Spells`} onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
     <section className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
       <div className="aop-arcane-book">
-        <div className="aop-spellbook-cover" aria-hidden><div className="aop-cover-sigil">{className === "cleric" ? "☀" : "✦"}</div><p>{character.name}</p><strong>Book of Spells</strong></div>
+        <div className="aop-spellbook-cover" aria-hidden />
         <div key={page} className="aop-spellbook-spread">
           <div className="aop-spell-page">
             <span className="aop-rune-ring" aria-hidden>ᚨ ᚱ ᚲ ᚨ ᚾ ᚨ</span>

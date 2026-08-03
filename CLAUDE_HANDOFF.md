@@ -57,6 +57,12 @@ Do not reintroduce the old generated number overlays or sprite background-positi
 
 The earlier `SpellbookModal is not defined` browser error came from a stale Next/Turbopack development bundle. The generated `.next/dev` cache was cleared and the dev server was restarted. Current source contains `SpellbookModal`, and the production build passed. If the error reappears, stop the dev process, remove only `.next/dev`, and restart; do not delete source or campaign data.
 
+The spellbook animation now uses the supplied cinematic artwork rather than the generated purple cover:
+
+- `public/images/ui/spellbook/grimoire-closed.png` is the rotating and opening cover.
+- `public/images/ui/spellbook/grimoire-open.png` is the revealed open-book study beneath the functional spell interface.
+- Closing plays the existing sequence in reverse. Preserve both images and the live spell controls when refining the animation.
+
 ## Verification completed
 
 - TypeScript: `tsc --noEmit` passes after the latest D20 replacement.
