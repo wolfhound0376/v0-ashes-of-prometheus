@@ -226,7 +226,18 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
-  const dialogue = props.dialogue.length ? props.dialogue : previewDialogue
+  // Restart Campaign DOES clear the dialogue table — the reason it looked like
+  // it had failed is right here. An empty feed fell straight back to the
+  // hardcoded preview script, so the log refilled with fake lines a moment
+  // after the wipe and read as "nothing happened".
+  //
+  // The preview is scaffolding for a dashboard with no campaign behind it, so
+  // it is only used when there is no live data at all. With real characters
+  // loaded, an empty feed is a real empty feed and says so.
+  const hasLiveCampaign = props.characters.length > 0
+  const dialogue = props.dialogue.length
+    ? props.dialogue
+    : hasLiveCampaign ? [] : previewDialogue
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
   const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
@@ -293,7 +304,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
       <Frame title="Interactive Log" className="relative flex min-h-[330px] flex-1 flex-col">
         <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{dialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
         <button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-3 right-3" title="Open Dice Roller" aria-label="Open Dice Roller" />
       </Frame>
     </div>
