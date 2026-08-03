@@ -132,6 +132,7 @@ type NpcEncounter = {
   hp_max?: number | null
   conditions?: string[] | null
   challenge_rating?: number | null
+  disposition?: string | null
 }
 
 interface V4DashboardProps {
@@ -157,6 +158,9 @@ interface V4DashboardProps {
   onUnequipItem?: (slot: EquipmentItem["slot"]) => void | Promise<void>
   npcEncounters: NpcEncounter[]
   isThinking?: boolean
+  /** True when this browser has claimed a character via a claim link, i.e. a
+   *  player is sitting here rather than the DM. Gates DM-only readouts. */
+  claimLocked?: boolean
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -274,7 +278,24 @@ export function V4Dashboard(props: V4DashboardProps) {
       <div className="grid h-[205px] shrink-0 grid-cols-[160px_minmax(220px,1fr)_140px] gap-3 p-3 pb-4">
         <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote></div>
         <div className="relative overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div>
-        <div className="space-y-2 text-[10px]"><div className="rounded border border-[#695326] p-2 text-[#d9c492]">Speaking… ▮▮▯▯</div><div className="rounded border border-[#4b3a19] p-2"><span className="block text-[#847557]">Disposition</span>Wary</div><div className="rounded border border-[#4b3a19] p-2"><span className="block text-[#847557]">Attitude</span>Guarded</div><button className="w-full rounded border border-[#695326] py-2 text-[#cdb276]">View NPC Sheet</button></div>
+        {/* Was three hardcoded boxes from the v4.1 design mock — a fake VU
+            meter reading "Speaking… ▮▮▯▯", "Disposition: Wary", "Attitude:
+            Guarded" and a dead "View NPC Sheet" button. Those rendered
+            identically for every NPC in every scene, so the panel asserted
+            things about Eldeth that were never true of her. Replaced with the
+            one real signal: disposition, from the row, DM-only. */}
+        <div className="space-y-2 text-[10px]">
+          {props.claimLocked
+            ? <div className="rounded border border-[#3b3325] bg-[#141210] p-2 text-[10px]">
+                <span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span>
+                <span className="text-[#7e7663]">Read them yourself</span>
+              </div>
+            : <DispositionChip value={activeNpc?.disposition} />}
+          {activeNpc?.challenge_rating ? <div className="rounded border border-[#4b3a19] p-2"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Challenge</span><span className="text-[#d9c492]">CR {activeNpc.challenge_rating}</span></div> : null}
+          {typeof activeNpc?.hp_current === "number" && typeof activeNpc?.hp_max === "number" && activeNpc.hp_max > 0 && !props.claimLocked
+            ? <div className="rounded border border-[#4b3a19] p-2"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Health · DM</span><span className="text-[#d9c492]">{activeNpc.hp_current} / {activeNpc.hp_max}</span><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, Math.min(100, (activeNpc.hp_current / activeNpc.hp_max) * 100))}%` }} /></div></div>
+            : null}
+        </div>
       </div>
       <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
         <img src={props.environment.imageUrl} alt="Current scene" className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
@@ -471,6 +492,39 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
       </section>
     </div>
   </ModalShell>
+}
+
+// One axis, five rungs. Colour carries the reading at a glance; the word is
+// there because colour alone is not an accessible signal. Kept lowest-to-
+// highest so the order is obvious to anyone editing it.
+const DISPOSITIONS: Record<string, { label: string; ring: string; dot: string; text: string }> = {
+  hostile: { label: "Hostile", ring: "border-[#8c2f2f] bg-[#2a0f0f]", dot: "bg-[#e0564f]", text: "text-[#f0a9a4]" },
+  wary:    { label: "Wary",    ring: "border-[#8a6520] bg-[#241a08]", dot: "bg-[#dc9a33]", text: "text-[#f0cd8f]" },
+  neutral: { label: "Neutral", ring: "border-[#5b5545] bg-[#1a1814]", dot: "bg-[#a49c86]", text: "text-[#cfc8b5]" },
+  warm:    { label: "Warm",    ring: "border-[#3f7143] bg-[#0f1e11]", dot: "bg-[#5fbb69]", text: "text-[#a8dcae]" },
+  devoted: { label: "Devoted", ring: "border-[#8a7220] bg-[#221c07]", dot: "bg-[#e8c74a]", text: "text-[#f5e2a0]" },
+}
+
+/** The DM's read on how an NPC feels about the party. Hidden from a browser
+ *  that has claimed a character — players have to earn this, in fiction, and
+ *  an NPC's private attitude is exactly the thing they should not be able to
+ *  read off a dashboard. `null` means the DM AI has not formed a read yet. */
+function DispositionChip({ value }: { value?: string | null }) {
+  const key = (value ?? "").toLowerCase()
+  const d = DISPOSITIONS[key]
+  if (!d) {
+    return <div className="rounded border border-[#3b3325] bg-[#141210] p-2 text-[10px]">
+      <span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span>
+      <span className="text-[#7e7663]">Not yet read</span>
+    </div>
+  }
+  return <div className={cn("rounded border p-2 text-[10px]", d.ring)} title={`This NPC's private attitude toward the party: ${d.label}. Visible to the DM only.`}>
+    <span className="block text-[8px] uppercase tracking-wider text-[#847557]">Disposition · DM</span>
+    <span className={cn("mt-0.5 flex items-center gap-1.5 font-serif", d.text)}>
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", d.dot)} />
+      {d.label}
+    </span>
+  </div>
 }
 
 function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: string; name: string }>; enemies: NpcEncounter[] }) {

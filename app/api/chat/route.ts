@@ -583,6 +583,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends.
 
+6b. NPC DISPOSITION: Every NPC holds one attitude toward the party on a single axis, from worst to best: hostile, wary, neutral, warm, devoted. Emit [NPC_DISPOSITION: <Name> <value>] whenever an NPC's feeling toward the party FIRST becomes clear, and again every time it MOVES — a kindness, an insult, a betrayal, a shared danger, a lie they caught. Use ONLY those five words; anything else is discarded. Move one rung at a time unless something drastic happened (a murder in front of them can go straight to hostile). This is the NPC's private truth, not what they are showing: an NPC can be hostile while smiling. Do not announce the value in your prose — narrate the behaviour and let the tag carry the number.
+
 7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] when they lose/use items.
 
 8. ITEM AWARDS: When narrating the player finding, picking up, receiving, or being given an item, you MUST emit [ITEM_AWARD: name | qty | description | item_type | icon_hint] where icon_hint is a keyword for matching existing icons (e.g., "dagger", "potion", "key", "torch").
@@ -1536,6 +1538,41 @@ EXPERIENCE POINTS:
       }
     }
 
+    // Handle NPC_DISPOSITION tags - [NPC_DISPOSITION: Name value]
+    //
+    // One axis, five rungs, lowest to highest: hostile < wary < neutral < warm
+    // < devoted. The DM AI proposes; this route validates. A value outside the
+    // ladder is DROPPED, not stored and not coerced — the canonical row never
+    // holds something the AI invented. Same rule the inventory follows.
+    const npcDispositionMatches = rawText.matchAll(/\[NPC_DISPOSITION:\s*([^|\]]+?)\s+(hostile|wary|neutral|warm|devoted)\s*\]/gi)
+    for (const match of npcDispositionMatches) {
+      const [, npcName, rawValue] = match
+      const name = npcName.trim()
+      const disposition = rawValue.trim().toLowerCase()
+
+      // Resolve to canonical identity first, so a shift toward "Jorlan" lands
+      // on "Jorlan Duskryn", then write the SHARED active row so every client
+      // reads one truth.
+      const canonicalName = (await resolveNpcByName(supabase, name))?.name || name
+      const npc = await findSharedActiveEncounter(supabase, canonicalName)
+
+      if (!npc) {
+        console.warn("[v0] NPC_DISPOSITION tag for unknown/inactive NPC, ignored:", name)
+        continue
+      }
+
+      const { error } = await supabase
+        .from("npc_encounters")
+        .update({ disposition, updated_at: new Date().toISOString() })
+        .eq("id", npc.id)
+
+      if (error) {
+        console.error("[v0] Error updating NPC disposition:", error)
+      } else {
+        console.log("[v0] NPC_DISPOSITION:", canonicalName, (npc as { disposition?: string | null }).disposition ?? "unset", "->", disposition)
+      }
+    }
+
     // Handle NPC_LEAVE tags - [NPC_LEAVE: name]
     const npcLeaveMatches = rawText.matchAll(/\[NPC_LEAVE:\s*([^\]]+)\]/gi)
     for (const match of npcLeaveMatches) {
@@ -1777,6 +1814,7 @@ EXPERIENCE POINTS:
     .replace(/\[NPC_ENCOUNTER:[^\]]+\]/gi, "")
     .replace(/\[NPC_DAMAGE:[^\]]+\]/gi, "")
     .replace(/\[NPC_LEAVE:[^\]]+\]/gi, "")
+    .replace(/\[NPC_DISPOSITION:[^\]]+\]/gi, "")
     .trim()
 
   // === SERVER-ATTRIBUTED SPEECH SEGMENTS ===
