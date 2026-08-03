@@ -1,11 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Compass, Map, Mic, Plus, X } from "lucide-react"
+import { BookOpen, Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
-import { DiceRoller } from "./dice-roller"
+import { DiceRoller } from "@/components/dashboard/dice-roller"
 import { DmNarration } from "./dm-narration"
 import { classDefaults } from "@/lib/game-data"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
@@ -201,13 +201,14 @@ const conditionColor: Record<string, string> = {
   prone: "border-red-800 bg-red-950/60 text-red-300",
 }
 
+// MERGE NOTE: Codex's ornate panel/title treatment and the optional `action`
+// slot are orthogonal, so this keeps both. The slot exists because the
+// Interactive Log's filter row has no room for a control — six chips need
+// 314px in a 250px column — so panel-level controls live in the title bar.
 function Frame({ title, children, className, action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
-  return <section className={cn("min-h-0 overflow-hidden rounded-lg border border-[#4b3a19] bg-[#100e09] shadow-[inset_0_0_0_3px_#171208,0_6px_18px_#000]", className)}>
-    <header className="flex h-7 items-center gap-2 border-b border-[#4b3a19] px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#cdb276]">
+  return <section className={cn("aop-ornate-panel min-h-0 overflow-hidden", className)}>
+    <header className="aop-ornate-title flex h-8 items-center gap-2 px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
       <span className="truncate">{title}</span>
-      {/* Panel-level control, right-aligned before the window chrome. The
-          filter row below has no room for one: six chips need 314px in a
-          250px column. */}
       {action ? <span className="ml-auto shrink-0">{action}</span> : null}
       <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span>
     </header>{children}
@@ -215,10 +216,13 @@ function Frame({ title, children, className, action }: { title: string; children
 }
 
 export function V4Dashboard(props: V4DashboardProps) {
+  const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [equipmentOpen, setEquipmentOpen] = useState(false)
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
+  const [diceOpen, setDiceOpen] = useState(false)
+  const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   const dialogue = props.dialogue.length ? props.dialogue : previewDialogue
@@ -233,22 +237,14 @@ export function V4Dashboard(props: V4DashboardProps) {
   const displayedAc = (selected?.ac ?? 10) + (equipmentBonus.ac ?? 0)
   const displayedInitiative = (selected?.initiative ?? 0) + (equipmentBonus.initiative ?? 0)
 
-  // Roll Initiative goes through the SHARED dice engine — the same physics d20
-  // the tray and the character sheet use — so the roll is cinematic, queued
-  // behind any roll already tumbling, and announced to the table's feed.
-  // It previously opened an info modal, which read as a dead button.
-  const { roll: sharedRoll, announce: announceRoll, busy: diceBusy } = useDice()
-  const rollInitiative = async () => {
-    const result = await sharedRoll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
-    announceRoll(describeRoll(result))
-  }
-
   const activeNpc = props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
   const npcName = activeNpc?.name ?? "Eldeth Feldrun"
   const npcPortrait = activeNpc?.idle_url || activeNpc?.face_url || activeNpc?.portrait_url
   const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
+  const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
+  const isMagicUser = ["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"].includes((selected?.class ?? "").toLowerCase())
   const quickReplies = [
     "Who else is being held here?",
     "(Faith) Offer a quiet prayer over the wounded",
@@ -260,8 +256,16 @@ export function V4Dashboard(props: V4DashboardProps) {
     score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
     mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
   }))
+  // MERGE NOTE: both branches independently fixed Roll Initiative. Codex's
+  // version is kept because it also sends the result to Malachar so he reacts
+  // to it; the message itself now goes through the shared describeRoll() so an
+  // initiative roll reads identically to every other roll in the feed.
+  const rollInitiative = async () => {
+    const result = await roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
+    announce(describeRoll(result), { toLich: true })
+  }
 
-  return <main className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
+  return <main className="aop-lich-dashboard grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
     <div className="flex min-h-0 flex-col gap-2">
       <Frame title="Current Environment" className="shrink-0">
         <div className="p-2.5">
@@ -274,33 +278,30 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="mt-2 flex gap-1.5 text-[9px] text-[#aa9874]"><span className="rounded-full border border-[#4b3a19] px-2">◐ Dim Light</span><span className="rounded-full border border-[#4b3a19] px-2">◒ Stone Floor</span><span className="rounded-full border border-[#4b3a19] px-2">💧 Damp</span></div>
         </div>
       </Frame>
-      <Frame title="Interactive Log" className="flex min-h-[330px] flex-1 flex-col">
+      <Frame title="Interactive Log" className="relative flex min-h-[330px] flex-1 flex-col">
         <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 text-[11px] leading-[1.45]">{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        <button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-3 right-3" title="Open Dice Roller" aria-label="Open Dice Roller" />
       </Frame>
     </div>
 
     <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" action={<DmNarration dialogue={dialogue} npcs={props.npcEncounters} />}>
-      <div className="grid h-[205px] shrink-0 grid-cols-[160px_minmax(220px,1fr)_140px] gap-3 p-3 pb-4">
-        <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote></div>
-        <div className="relative overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div>
-        {/* Was three hardcoded boxes from the v4.1 design mock — a fake VU
-            meter reading "Speaking… ▮▮▯▯", "Disposition: Wary", "Attitude:
-            Guarded" and a dead "View NPC Sheet" button. Those rendered
-            identically for every NPC in every scene, so the panel asserted
-            things about Eldeth that were never true of her. Replaced with the
-            one real signal: disposition, from the row, DM-only. */}
-        <div className="space-y-2 text-[10px]">
-          {props.claimLocked
-            ? <div className="rounded border border-[#3b3325] bg-[#141210] p-2 text-[10px]">
-                <span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span>
-                <span className="text-[#7e7663]">Read them yourself</span>
-              </div>
-            : <DispositionChip value={activeNpc?.disposition} />}
-          {activeNpc?.challenge_rating ? <div className="rounded border border-[#4b3a19] p-2"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Challenge</span><span className="text-[#d9c492]">CR {activeNpc.challenge_rating}</span></div> : null}
-          {typeof activeNpc?.hp_current === "number" && typeof activeNpc?.hp_max === "number" && activeNpc.hp_max > 0 && !props.claimLocked
-            ? <div className="rounded border border-[#4b3a19] p-2"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Health · DM</span><span className="text-[#d9c492]">{activeNpc.hp_current} / {activeNpc.hp_max}</span><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, Math.min(100, (activeNpc.hp_current / activeNpc.hp_max) * 100))}%` }} /></div></div>
-            : null}
+      <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 p-3 pb-4">
+        <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote>{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}</div>
+        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className="mt-1.5 flex h-7 items-center justify-center rounded border border-[#695326] bg-black/50 text-[9px] uppercase tracking-[.16em] text-[#d2b04f]">Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></div>
+          {/* MERGE NOTE: Codex's redesign dropped the third column, which held
+              disposition / CR / DM-only health. Those are real row data, not
+              mock text, so they are re-homed here as a compact strip beneath
+              the portrait rather than lost. */}
+          <div className="mt-1.5 flex flex-wrap items-stretch gap-1.5 text-[10px]">
+            {props.claimLocked
+              ? <div className="rounded border border-[#3b3325] bg-[#141210] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span><span className="text-[#7e7663]">Read them yourself</span></div>
+              : <DispositionChip value={activeNpc?.disposition} />}
+            {activeNpc?.challenge_rating ? <div className="rounded border border-[#4b3a19] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Challenge</span><span className="text-[#d9c492]">CR {activeNpc.challenge_rating}</span></div> : null}
+            {typeof activeNpc?.hp_current === "number" && typeof activeNpc?.hp_max === "number" && activeNpc.hp_max > 0 && !props.claimLocked
+              ? <div className="min-w-[92px] rounded border border-[#4b3a19] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Health · DM</span><span className="text-[#d9c492]">{activeNpc.hp_current} / {activeNpc.hp_max}</span><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, Math.min(100, (activeNpc.hp_current / activeNpc.hp_max) * 100))}%` }} /></div></div>
+              : null}
+          </div>
         </div>
       </div>
       <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
@@ -316,16 +317,8 @@ export function V4Dashboard(props: V4DashboardProps) {
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 pt-2">{quickReplies.map((reply) => <button key={reply} onClick={() => props.onQuickReply?.(reply)} className="rounded-full border border-[#695326] bg-[#171109] px-3 py-1 text-[9px] text-[#cdb276] hover:bg-[#251a0d]">{reply}</button>)}</div>
-      <div className="flex items-center gap-2 px-3 py-2"><button className="h-8 w-8 rounded border border-[#4b3a19] text-[#b69b63]"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="h-8 min-w-0 flex-1 rounded border border-[#4b3a19] bg-[#0b0906] px-3 text-[11px] outline-none focus:border-[#a88745]" /><button disabled className="h-8 w-8 rounded border border-[#4b3a19] text-[#62583f]" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><div className="flex h-10 items-center whitespace-nowrap rounded border border-[#a88745] bg-[#120c07] text-[10px] text-[#d9c492] shadow-[inset_0_0_10px_#000]"><button onClick={rollInitiative} disabled={diceBusy} className="flex h-full items-center gap-1.5 rounded-l pr-2 transition-colors hover:bg-[#1d1409] disabled:opacity-60" title={`Roll 1d20 ${signed(displayedInitiative)} for initiative`}><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{diceBusy ? "rolling…" : `${signed(displayedInitiative)} modifier`}</small></span></button><button onClick={() => setStatDetail("initiative")} aria-label="Initiative details" title="What initiative does" className="h-full rounded-r border-l border-[#4b3a19] px-2 font-serif text-[11px] text-[#8f7846] transition-colors hover:bg-[#1d1409] hover:text-[#e0cfa0]">i</button></div></div>
-      {/* The physics dice roller had no home in the V4 layout: it was still
-          mounted, but only inside the World AI drawer, which sits off-canvas at
-          x=1512 when closed. It lives here now, collapsed, so the centre column
-          keeps its room and the roller is one click away. The component and its
-          physics are untouched — it just mounts closed. */}
-      <div className="border-t border-[#4b3a19]">
-        <DiceRoller defaultExpanded={false} characterName={selected?.name} onSendToLich={props.onQuickReply} />
-      </div>
-      <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{party.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div><button className="mx-auto mt-2 block rounded border border-[#695326] px-3 py-1 text-[9px] text-[#cdb276]">View All Characters</button></div>
+      <div className="flex items-center gap-2 px-3 py-2"><button className="aop-square-action h-8 w-8"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled className="aop-square-action h-8 w-8 opacity-50" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
+      <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{party.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div></div>
     </Frame>
 
     <div className="flex min-h-0 flex-col gap-2">
@@ -382,10 +375,16 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
       <button onClick={() => setInventoryOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Basic Inventory <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb　▶</span></button>
       <button onClick={() => setEquipmentOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Equipped Items <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.equipment.length} equipped　▶</span></button>
+      {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300"><BookOpen className="mr-2 h-4 w-4" />Book of Spells <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
-    {/* The full sheet is the Forge 2014 port — the same object players already
-        know from the builder — rather than a second, differently-styled sheet. */}
+    {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
+    {spellbookOpen ? <SpellbookModal character={selected} onClose={() => setSpellbookOpen(false)} /> : null}
+    {/* MERGE NOTE: Codex's branch predates the Forge 2014 sheet port. Sam
+        asked for that port explicitly ("I don't like what we have now",
+        "Full port"), so the slide-over stays and CharacterSheetModal does
+        not come back. The Spellbook and dice modal beside it are new from
+        Codex and are kept as-is. */}
     <CharacterSheetSlideOver
       open={characterSheetOpen}
       onClose={() => setCharacterSheetOpen(false)}
@@ -433,7 +432,7 @@ function CharacterSheetModal({ character, abilities, inventory, equipment, displ
     <div className="p-4">
       <header className="flex flex-wrap items-center gap-4 rounded-xl border border-[#765a2a] bg-[linear-gradient(100deg,#25170b,#090705_68%)] p-4 shadow-[inset_0_0_20px_#000]">
         <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-[#ad8341] bg-black/50">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-4xl text-[#b78b45]">{character.name[0]}</div>}</div>
-        <div><h3 className="font-serif text-3xl text-[#f2dfb7]">{character.name}</h3><p className="text-xs text-[#ac966d]">Level {character.level} {extra.race || "Human"} {character.class}{extra.subclass ? ` · ${extra.subclass}` : ""}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-[#76694f]">{extra.background || "Background not recorded"} · {extra.alignment || "Alignment not recorded"}</p></div>
+        <div><h3 className="font-serif text-3xl text-[#f2dfb7]">{character.name}</h3><p className="text-xs text-[#ac966d]">Level {character.level} {extra.race || "Human"} {character.class}</p><p className="mt-0.5 text-[10px] text-purple-300">{character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-[#76694f]">{extra.background || "Background not recorded"} · {extra.alignment || "Alignment not recorded"}</p></div>
         <div className="ml-auto min-w-52"><div className="flex justify-between text-[9px] uppercase text-[#887653]"><span>Experience</span><span>{character.xp} / {character.xp_to_next}</span></div><div className="mt-1 h-2 rounded bg-black"><div className="h-full rounded bg-[#aa2a34]" style={{ width: `${Math.min(100, character.xp / Math.max(1, character.xp_to_next) * 100)}%` }} /></div><div className="mt-2 flex gap-2"><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Short Rest</button><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Long Rest</button></div></div>
       </header>
 
@@ -542,6 +541,84 @@ function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: stri
     {enemies.slice(0, 4).map((enemy, index) => <div key={enemy.id} className="absolute flex h-8 w-8 items-center justify-center rounded-full border-2 border-red-500 bg-red-950 text-[9px] font-bold text-white shadow-[0_0_14px_#ef4444]" style={{ right: `${25 + index * 12}%`, top: `${25 + (index % 2) * 12}%` }} title={enemy.name}>{enemy.name[0]}</div>)}
     <div className="absolute bottom-3 right-3 flex gap-2 rounded border border-[#6b5123] bg-black/75 px-2 py-1 text-[8px]"><span className="text-sky-400">● Party</span><span className="text-red-400">● Hostile</span><span className="text-amber-300">◇ Terrain</span></div>
   </div>
+}
+
+const PHB2014_CLERIC_DOMAINS: Record<string, Array<{ level: number; spells: string[] }>> = {
+  Knowledge: [{ level: 1, spells: ["Command", "Identify"] }, { level: 3, spells: ["Augury", "Suggestion"] }, { level: 5, spells: ["Nondetection", "Speak with Dead"] }, { level: 7, spells: ["Arcane Eye", "Confusion"] }, { level: 9, spells: ["Legend Lore", "Scrying"] }],
+  Life: [{ level: 1, spells: ["Bless", "Cure Wounds"] }, { level: 3, spells: ["Lesser Restoration", "Spiritual Weapon"] }, { level: 5, spells: ["Beacon of Hope", "Revivify"] }, { level: 7, spells: ["Death Ward", "Guardian of Faith"] }, { level: 9, spells: ["Mass Cure Wounds", "Raise Dead"] }],
+  Light: [{ level: 1, spells: ["Burning Hands", "Faerie Fire"] }, { level: 3, spells: ["Flaming Sphere", "Scorching Ray"] }, { level: 5, spells: ["Daylight", "Fireball"] }, { level: 7, spells: ["Guardian of Faith", "Wall of Fire"] }, { level: 9, spells: ["Flame Strike", "Scrying"] }],
+  Nature: [{ level: 1, spells: ["Animal Friendship", "Speak with Animals"] }, { level: 3, spells: ["Barkskin", "Spike Growth"] }, { level: 5, spells: ["Plant Growth", "Wind Wall"] }, { level: 7, spells: ["Dominate Beast", "Grasping Vine"] }, { level: 9, spells: ["Insect Plague", "Tree Stride"] }],
+  Tempest: [{ level: 1, spells: ["Fog Cloud", "Thunderwave"] }, { level: 3, spells: ["Gust of Wind", "Shatter"] }, { level: 5, spells: ["Call Lightning", "Sleet Storm"] }, { level: 7, spells: ["Control Water", "Ice Storm"] }, { level: 9, spells: ["Destructive Wave", "Insect Plague"] }],
+  Trickery: [{ level: 1, spells: ["Charm Person", "Disguise Self"] }, { level: 3, spells: ["Mirror Image", "Pass without Trace"] }, { level: 5, spells: ["Blink", "Dispel Magic"] }, { level: 7, spells: ["Dimension Door", "Polymorph"] }, { level: 9, spells: ["Dominate Person", "Modify Memory"] }],
+  War: [{ level: 1, spells: ["Divine Favor", "Shield of Faith"] }, { level: 3, spells: ["Magic Weapon", "Spiritual Weapon"] }, { level: 5, spells: ["Crusader's Mantle", "Spirit Guardians"] }, { level: 7, spells: ["Freedom of Movement", "Stoneskin"] }, { level: 9, spells: ["Flame Strike", "Hold Monster"] }],
+}
+
+function SpellbookModal({ character, onClose }: { character: Character; onClose: () => void }) {
+  const [page, setPage] = useState(0)
+  const [closing, setClosing] = useState(false)
+  const extra = character as Character & { subclass?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
+  const spellcasting = extra.sheet_spellcasting ?? {}
+  const names = (value: unknown): string[] => Array.isArray(value)
+    ? value.map((entry) => typeof entry === "string" ? entry : entry && typeof entry === "object" && "name" in entry ? String((entry as { name: unknown }).name) : "").filter(Boolean)
+    : []
+  const cantrips = names(spellcasting.cantrips)
+  const recordedDomainSpells = names(spellcasting.domain_spells ?? spellcasting.domainSpells)
+  const prepared = names(spellcasting.prepared)
+  const known = names(spellcasting.known ?? spellcasting.spellbook)
+  const className = character.class.toLowerCase()
+  const clericDomain = className === "cleric" ? Object.keys(PHB2014_CLERIC_DOMAINS).find((domain) => extra.subclass?.toLowerCase().includes(domain.toLowerCase())) : undefined
+  const domainProgression = clericDomain ? PHB2014_CLERIC_DOMAINS[clericDomain] : []
+  const gainedDomainSpells = domainProgression.filter((entry) => character.level >= entry.level).flatMap((entry) => entry.spells)
+  const domainSpells = recordedDomainSpells.length ? recordedDomainSpells : gainedDomainSpells
+  const ruleNote = className === "cleric" || className === "druid"
+    ? "Prepared caster: choose prepared spells after a long rest. Domain or circle spells remain prepared when granted."
+    : className === "wizard"
+      ? "Spellbook caster: prepare spells from spells copied into this book after a long rest."
+      : className === "paladin"
+        ? "Prepared caster: choose prepared paladin spells after a long rest; oath spells remain prepared."
+        : "Known-spell caster: spells change only when the class rules or a level increase permit it."
+
+  const requestClose = () => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 900)
+  }
+  const maxPage = className === "cleric" ? 2 : 1
+
+  return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s Book of Spells`} onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
+    <section className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
+      <div className="aop-arcane-book">
+        <div className="aop-spellbook-cover" aria-hidden />
+        <div key={page} className="aop-spellbook-spread">
+          <div className="aop-spell-page">
+            <span className="aop-rune-ring" aria-hidden>ᚨ ᚱ ᚲ ᚨ ᚾ ᚨ</span>
+            <header><BookOpen className="mx-auto h-7 w-7" /><h2>{character.name}&apos;s Book of Spells</h2><p>Level {character.level} {character.class} · {character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p></header>
+            {page === 0 ? <SpellList title="Cantrips" spells={cantrips} empty="No cantrips recorded." /> : page === 1 ? <SpellList title="Prepared / Memorized" spells={prepared} empty="No prepared spells recorded." /> : <DomainIndex selected={clericDomain} />}
+          </div>
+          <div className="aop-spell-page">
+            <button type="button" onClick={requestClose} className="absolute right-5 top-4 z-10 text-[#6b3e25] hover:text-black" aria-label="Close Book of Spells"><X className="h-5 w-5" /></button>
+            <p className="mb-4 rounded border border-[#7f5d3c]/45 bg-[#7d5223]/10 p-3 text-xs leading-relaxed">D&amp;D 5E: {ruleNote}</p>
+            {page === 0 ? <SpellList title={character.class === "Cleric" ? "Domain Spells · Always Prepared" : "Subclass Spells"} spells={domainSpells} empty={className === "cleric" ? "Choose and record a Player's Handbook domain in The Forge." : "No subclass spells recorded."} /> : page === 1 ? <SpellList title={className === "wizard" ? "Spellbook" : "Known / Available"} spells={known} empty="No known spell records attached." /> : <DomainProgression domain={clericDomain} progression={domainProgression} />}
+            <p className="absolute bottom-12 left-8 right-8 text-center text-[10px] italic text-[#725038]">Only recorded choices and level-eligible 2014 Player&apos;s Handbook domain spells are shown.</p>
+          </div>
+        </div>
+      </div>
+      <div className="aop-page-controls"><button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>← Previous</button><span>Leaves {page + 1} / {maxPage + 1}</span><button type="button" disabled={page === maxPage} onClick={() => setPage((current) => Math.min(maxPage, current + 1))}>Next →</button></div>
+      <a href="/forge" className="aop-spellbook-forge">Manage recorded spells in The Forge</a>
+    </section>
+  </div>
+}
+
+function SpellList({ title, spells, empty }: { title: string; spells: string[]; empty: string }) {
+  return <section className="overflow-hidden rounded border border-[#76502e]/55 bg-[#8c5d27]/5"><h3 className="border-b border-[#76502e]/45 px-3 py-2 font-serif text-xs uppercase tracking-wider text-[#653a24]">{title}</h3>{spells.length ? <ul className="divide-y divide-[#76502e]/25">{spells.map((spell) => <li key={spell} className="px-3 py-2 font-serif text-sm text-[#40271a]">✧ {spell}</li>)}</ul> : <p className="p-4 text-xs italic text-[#77604a]">{empty}</p>}</section>
+}
+
+function DomainIndex({ selected }: { selected?: string }) {
+  return <section><h3 className="mb-3 text-center font-serif text-lg text-[#53301e]">Player&apos;s Handbook Domains</h3><div className="grid grid-cols-2 gap-2">{Object.keys(PHB2014_CLERIC_DOMAINS).map((domain) => <div key={domain} className={cn("rounded border px-3 py-2 text-center font-serif", selected === domain ? "border-[#935f24] bg-amber-900/15 font-bold" : "border-[#846344]/35")}>{domain}</div>)}</div></section>
+}
+
+function DomainProgression({ domain, progression }: { domain?: string; progression: Array<{ level: number; spells: string[] }> }) {
+  return <section><h3 className="mb-3 text-center font-serif text-lg text-[#53301e]">{domain ? `${domain} Domain` : "Select a Domain in The Forge"}</h3>{progression.length ? progression.map((entry) => <div key={entry.level} className="flex border-b border-[#76502e]/30 py-2 text-sm"><b>Cleric {entry.level}</b><span className="ml-auto text-right">{entry.spells.join(" · ")}</span></div>) : <p className="text-center text-sm italic text-[#765941]">No domain is recorded, so no domain spell list has been assigned.</p>}</section>
 }
 
 type StatKind = "ac" | "initiative" | "proficiency" | "speed"

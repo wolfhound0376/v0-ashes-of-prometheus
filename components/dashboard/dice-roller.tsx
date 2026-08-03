@@ -1,281 +1,202 @@
 "use client"
 
-// The dashboard dice tray. UI ONLY — the actual dice engine (3D renderer,
-// cinematic overlay, physics results, fallback) lives in the shared
-// DiceProvider (components/dice/dice-provider.tsx), which this component rolls
-// through exactly like the character sheet does. One roller, one truth.
+// Presentation-only dice controls. All results still come from the shared
+// DiceProvider and its @3d-dice/dice-box physics engine.
 
-import { useState, useCallback } from "react"
+import { useCallback, useState } from "react"
+import { ChevronDown, ChevronUp, Dices, Send, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { Dices, Send, ChevronDown, ChevronUp } from "lucide-react"
-import { useDice, type DiceResult, type RollSpec } from "@/components/dice/dice-provider"
+import { useDice, type DiceResult, type RollMode, type RollSpec } from "@/components/dice/dice-provider"
 
 interface DiceRollerProps {
   onRollResult?: (result: DiceResult) => void
   onSendToLich?: (message: string) => void
   characterName?: string
-  /** Mount collapsed. The V4 centre column has no room to give the roller a
-   *  permanent open panel, so it starts as its own slim bar there. */
-  defaultExpanded?: boolean
+  presentation?: "panel" | "modal"
+  onClose?: () => void
 }
 
-// Standard D&D dice
 const DICE_TYPES = [
-  { die: "d4", sides: 4, color: "from-[#4a3a2a] to-[#2a1a0a]", border: "border-[#8a6a4a]" },
-  { die: "d6", sides: 6, color: "from-[#3a4a2a] to-[#1a2a0a]", border: "border-[#6a8a4a]" },
-  { die: "d8", sides: 8, color: "from-[#2a3a4a] to-[#0a1a2a]", border: "border-[#4a6a8a]" },
-  { die: "d10", sides: 10, color: "from-[#4a2a3a] to-[#2a0a1a]", border: "border-[#8a4a6a]" },
-  { die: "d12", sides: 12, color: "from-[#3a2a4a] to-[#1a0a2a]", border: "border-[#6a4a8a]" },
-  { die: "d20", sides: 20, color: "from-[#4a4a2a] to-[#2a2a0a]", border: "border-[#8a8a4a]" },
-  { die: "d100", sides: 100, color: "from-[#2a2a2a] to-[#0a0a0a]", border: "border-[#6a6a6a]" },
-]
+  { die: "d4", image: "/images/ui/dice-stills/d4.png" },
+  { die: "d6", image: "/images/ui/dice-stills/d6.png" },
+  { die: "d8", image: "/images/ui/dice-stills/d8.png" },
+  { die: "d10", image: "/images/ui/dice-stills/d10.png" },
+  { die: "d12", image: "/images/ui/dice-stills/d12.png" },
+  { die: "d20", image: "/images/ui/dice-stills/d20.png" },
+  { die: "d100", image: "/images/ui/dice-stills/d100.png" },
+] as const
 
-export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player", defaultExpanded = true }: DiceRollerProps) {
+export function DiceRoller({
+  onRollResult,
+  onSendToLich,
+  characterName = "Player",
+  presentation = "panel",
+  onClose,
+}: DiceRollerProps) {
   const { roll, busy, ready } = useDice()
-
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
+  const [isExpanded, setIsExpanded] = useState(true)
   const [selectedDie, setSelectedDie] = useState<string>("d20")
   const [numDice, setNumDice] = useState(1)
   const [modifier, setModifier] = useState(0)
+  const [rollMode, setRollMode] = useState<RollMode>("normal")
   const [rollLabel, setRollLabel] = useState("")
   const [lastResult, setLastResult] = useState<DiceResult | null>(null)
 
-  // Initiate ANY tray roll through the shared engine, then commit the result
-  // to the tray's log + telemetry callback.
-  const initiateRoll = useCallback(
-    async (spec: RollSpec) => {
-      const result = await roll(spec)
-      setLastResult(result)
-      onRollResult?.(result)
-    },
-    [roll, onRollResult],
-  )
+  const initiateRoll = useCallback(async (spec: RollSpec) => {
+    const result = await roll(spec)
+    setLastResult(result)
+    onRollResult?.(result)
+  }, [onRollResult, roll])
 
   const sendResultToLich = useCallback(() => {
     if (!lastResult || !onSendToLich) return
-
-    const modifierStr =
-      lastResult.modifier !== 0
-        ? lastResult.modifier > 0
-          ? `+${lastResult.modifier}`
-          : `${lastResult.modifier}`
-        : ""
-
+    const modifierStr = lastResult.modifier === 0 ? "" : lastResult.modifier > 0 ? `+${lastResult.modifier}` : `${lastResult.modifier}`
     const rollDescription = lastResult.label ? `${lastResult.label}: ` : ""
+    const modeDescription = lastResult.rollMode && lastResult.rollMode !== "normal" ? ` with ${lastResult.rollMode}` : ""
+    const keptDescription = lastResult.keptRolls && lastResult.rollMode && lastResult.rollMode !== "normal" ? `, kept [${lastResult.keptRolls.join(", ")}]` : ""
+    onSendToLich(`[Dice Roll] ${characterName} rolled ${lastResult.rolls.length}${lastResult.die}${modifierStr}${modeDescription}${rollDescription ? ` for ${rollDescription}` : ""}: [${lastResult.rolls.join(", ")}]${keptDescription}${modifierStr} = **${lastResult.total}**`)
+  }, [characterName, lastResult, onSendToLich])
 
-    const message = `[Dice Roll] ${characterName} rolled ${lastResult.rolls.length}${lastResult.die}${modifierStr}${rollDescription ? ` for ${rollDescription}` : ""}: [${lastResult.rolls.join(", ")}]${modifierStr} = **${lastResult.total}**`
+  const body = (
+    <div className="aop-dice-body space-y-4 px-4 pb-4 pt-3">
+      {!ready && <p className="text-center text-[9px] uppercase tracking-[.16em] text-[#806b47]">The bones are warming - classic fallback remains available</p>}
 
-    onSendToLich(message)
-  }, [lastResult, onSendToLich, characterName])
-
-  // Quick rolls initiate a roll immediately through the cinematic overlay.
-  // Attack / Initiative / Saving Throw are d20 checks; Damage uses the currently
-  // selected die + count. All carry the current modifier.
-  const quickRolls: { label: string; spec: RollSpec }[] = [
-    { label: "Attack", spec: { die: "d20", numDice: 1, modifier, label: "Attack roll" } },
-    { label: "Damage", spec: { die: selectedDie, numDice, modifier, label: "Damage roll" } },
-    { label: "Initiative", spec: { die: "d20", numDice: 1, modifier, label: "Initiative" } },
-    { label: "Saving Throw", spec: { die: "d20", numDice: 1, modifier, label: "Saving throw" } },
-  ]
-
-  return (
-    <FantasyPanel className="flex-shrink-0">
-      {/* Header - Always visible */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[#2a2420]/40 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Dices className="w-4 h-4 text-[#c9a868]" />
-          <span className="text-xs font-semibold tracking-[0.15em] uppercase text-[#c9b896]">Dice Roller</span>
+      <section>
+        <p className="aop-dice-label">Quantity</p>
+        <div className="mx-auto mt-1 flex w-48 items-center justify-between">
+          <CounterButton label="Decrease quantity" onClick={() => setNumDice(Math.max(1, numDice - 1))}>-</CounterButton>
+          <span className="font-serif text-xl text-[#f0d6a0]">{numDice}</span>
+          <CounterButton label="Increase quantity" onClick={() => setNumDice(Math.min(10, numDice + 1))}>+</CounterButton>
         </div>
-        {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-stone-500" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-stone-500" />
-        )}
+      </section>
+
+      <div className="aop-gold-rule" />
+
+      <section>
+        <p className="aop-dice-label">Die Type</p>
+        <div className="mt-2 grid grid-cols-4 gap-2">
+          {DICE_TYPES.map((dieType) => (
+            <button
+              key={dieType.die}
+              type="button"
+              onClick={() => { setSelectedDie(dieType.die); if (dieType.die !== "d20") setRollMode("normal") }}
+              className={cn("aop-die-choice group", selectedDie === dieType.die && "is-selected")}
+              aria-pressed={selectedDie === dieType.die}
+            >
+              <img src={dieType.image} alt="" className="mx-auto mt-0.5 block h-[58px] w-[72px] rounded object-contain drop-shadow-[0_5px_4px_#000]" aria-hidden />
+              <span className="mt-1 block text-[10px] text-[#d7bd86]">{dieType.die}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="aop-gold-rule" />
+
+      <section>
+        <p className="aop-dice-label">Roll Mode</p>
+        <div className="mt-2 grid grid-cols-3 gap-2" role="group" aria-label="Roll mode">
+          {(["advantage", "normal", "disadvantage"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              disabled={selectedDie !== "d20" && mode !== "normal"}
+              aria-pressed={rollMode === mode}
+              onClick={() => setRollMode(mode)}
+              className={cn("aop-roll-mode", `is-${mode}`, rollMode === mode && "is-selected")}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        {selectedDie !== "d20" && <p className="mt-1 text-center text-[9px] text-[#776548]">Advantage and disadvantage apply to d20 checks.</p>}
+      </section>
+
+      <div className="aop-gold-rule" />
+
+      <section className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="aop-dice-label">Modifier</p>
+          <div className="mt-1 flex items-center justify-between rounded-sm border border-[#65451e] bg-black/55 p-1">
+            <button type="button" onClick={() => setModifier(modifier - 1)} className="aop-mini-control">-</button>
+            <span className={cn("font-serif text-lg", modifier < 0 ? "text-[#d85845]" : "text-[#efd59c]")}>{modifier >= 0 ? `+${modifier}` : modifier}</span>
+            <button type="button" onClick={() => setModifier(modifier + 1)} className="aop-mini-control">+</button>
+          </div>
+        </div>
+        <div>
+          <p className="aop-dice-label">Current Roll</p>
+          <div className="mt-1 rounded-sm border border-[#65451e] bg-black/55 py-2 text-center font-serif text-lg text-[#efd59c]">
+            {numDice}{selectedDie}{modifier === 0 ? "" : modifier > 0 ? `+${modifier}` : modifier}
+            {rollMode !== "normal" && <small className="ml-1 text-[8px] uppercase tracking-wider text-[#b78c48]">{rollMode}</small>}
+          </div>
+        </div>
+      </section>
+
+      <input
+        value={rollLabel}
+        onChange={(event) => setRollLabel(event.target.value)}
+        placeholder="Purpose of the roll (optional)"
+        className="aop-lich-input w-full px-3 py-2 text-xs"
+      />
+
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => initiateRoll({ die: selectedDie, numDice, modifier, label: rollLabel || undefined, rollMode })}
+        className="aop-roll-button w-full"
+      >
+        <span aria-hidden>✦</span>
+        <span>{busy ? "Casting Dice..." : "Roll Dice"}</span>
+        <span aria-hidden>✦</span>
       </button>
 
-      {/* Collapsible Content */}
-      {isExpanded && (
-        <div className="px-3 pb-3 space-y-3">
-          {!ready && (
-            <p className="text-[10px] text-stone-600">3D dice warming up — rolls fall back locally if unavailable.</p>
+      {lastResult && (
+        <section className={cn("aop-roll-result", lastResult.isCrit && "is-critical", lastResult.isFail && "is-fumble")}>
+          <div>
+            <p className="text-[9px] uppercase tracking-[.16em] text-[#9a7a48]">{lastResult.label || "Latest result"}</p>
+            <p className="mt-1 text-xs text-[#cbb78d]">[{lastResult.rolls.join(", ")}]{lastResult.keptRolls && lastResult.keptRolls !== lastResult.rolls ? ` keep ${lastResult.keptRolls.join(", ")}` : ""}{lastResult.modifier ? ` ${lastResult.modifier > 0 ? "+" : ""}${lastResult.modifier}` : ""}</p>
+          </div>
+          <strong className="font-serif text-4xl text-[#f1cf83]">{lastResult.total}</strong>
+          {onSendToLich && (
+            <button type="button" onClick={sendResultToLich} className="aop-send-lich" title="Send result to the Lich"><Send className="h-4 w-4" /></button>
           )}
-
-          {/* Dice Selection */}
-          <div className="flex gap-1 justify-center flex-wrap">
-            {DICE_TYPES.map((dieType) => (
-              <button
-                key={dieType.die}
-                onClick={() => setSelectedDie(dieType.die)}
-                className={cn(
-                  "w-10 h-10 rounded border-2 flex items-center justify-center text-xs font-bold transition-all",
-                  "bg-gradient-to-br",
-                  dieType.color,
-                  selectedDie === dieType.die
-                    ? cn(dieType.border, "ring-2 ring-[#d4b15a]/60 shadow-lg")
-                    : "border-[#3d3428]/60 hover:border-[#5d5448]",
-                  selectedDie === dieType.die ? "text-white" : "text-stone-400",
-                )}
-              >
-                {dieType.die}
-              </button>
-            ))}
-          </div>
-
-          {/* Number of Dice & Modifier */}
-          <div className="flex gap-2 items-center justify-center">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setNumDice(Math.max(1, numDice - 1))}
-                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-              >
-                -
-              </button>
-              <span className="w-8 text-center text-sm font-bold text-[#c9a868]">{numDice}</span>
-              <button
-                onClick={() => setNumDice(Math.min(10, numDice + 1))}
-                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-              >
-                +
-              </button>
-            </div>
-
-            <span className="text-stone-500 text-lg font-bold">{selectedDie}</span>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setModifier(modifier - 1)}
-                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-              >
-                -
-              </button>
-              <span
-                className={cn(
-                  "w-10 text-center text-sm font-bold",
-                  modifier > 0 ? "text-[#7ac87a]" : modifier < 0 ? "text-[#c87a7a]" : "text-stone-500",
-                )}
-              >
-                {modifier >= 0 ? `+${modifier}` : modifier}
-              </span>
-              <button
-                onClick={() => setModifier(modifier + 1)}
-                className="w-6 h-6 rounded bg-[#2a2420] border border-[#3d3428] text-stone-400 hover:text-white hover:border-[#5d5448] transition-colors"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          {/* Roll Label */}
-          <input
-            type="text"
-            value={rollLabel}
-            onChange={(e) => setRollLabel(e.target.value)}
-            placeholder="Roll label (optional)"
-            className="w-full px-2 py-1 text-xs bg-[#1a1614] border border-[#3d3428] rounded text-stone-300 placeholder:text-stone-600 focus:outline-none focus:border-[#5d5448]"
-          />
-
-          {/* Roll Button — routes through the shared cinematic overlay */}
-          <button
-            onClick={() => initiateRoll({ die: selectedDie, numDice, modifier, label: rollLabel || undefined })}
-            disabled={busy}
-            className={cn(
-              "w-full py-2 rounded font-bold uppercase tracking-wider text-sm transition-all",
-              "bg-gradient-to-r from-[#4a3a2a] via-[#5a4a3a] to-[#4a3a2a]",
-              "border border-[#8a6a4a] hover:border-[#c9a868]",
-              "text-[#c9a868] hover:text-white",
-              "shadow-[0_0_15px_rgba(200,150,80,0.2)] hover:shadow-[0_0_20px_rgba(200,150,80,0.4)]",
-              busy && "opacity-60 cursor-not-allowed",
-            )}
-          >
-            {busy
-              ? "Rolling..."
-              : `Roll ${numDice}${selectedDie}${modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ""}`}
-          </button>
-
-          {/* Last Result — the roll log (shared by overlay + fallback results) */}
-          {lastResult && (
-            <div className="p-2 bg-[#0f0d0c] border border-[#3d3428] rounded">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] uppercase tracking-wider text-stone-500">
-                  {lastResult.label || "Result"}
-                </span>
-                <span className="text-[10px] text-stone-600">
-                  {lastResult.rolls.length}
-                  {lastResult.die}
-                  {lastResult.modifier !== 0 &&
-                    (lastResult.modifier > 0 ? `+${lastResult.modifier}` : lastResult.modifier)}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex gap-1 flex-wrap">
-                  {lastResult.rolls.map((roll, i) => (
-                    <span
-                      key={i}
-                      className={cn(
-                        "w-6 h-6 rounded flex items-center justify-center text-xs font-bold",
-                        "bg-[#2a2420] border border-[#3d3428]",
-                        // Highlight natural 20s and 1s for d20
-                        lastResult.die === "d20" && roll === 20 && "bg-[#2a4a2a] border-[#4a8a4a] text-[#7ac87a]",
-                        lastResult.die === "d20" && roll === 1 && "bg-[#4a2a2a] border-[#8a4a4a] text-[#c87a7a]",
-                        !(lastResult.die === "d20" && (roll === 20 || roll === 1)) && "text-stone-300",
-                      )}
-                    >
-                      {roll}
-                    </span>
-                  ))}
-                  {lastResult.modifier !== 0 && (
-                    <span
-                      className={cn(
-                        "px-1 h-6 rounded flex items-center justify-center text-xs font-bold",
-                        lastResult.modifier > 0 ? "text-[#7ac87a]" : "text-[#c87a7a]",
-                      )}
-                    >
-                      {lastResult.modifier > 0 ? `+${lastResult.modifier}` : lastResult.modifier}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl font-serif font-bold text-[#d4b15a]">{lastResult.total}</span>
-
-                  {/* Send to Lich button */}
-                  {onSendToLich && (
-                    <button
-                      onClick={sendResultToLich}
-                      className="p-1.5 rounded bg-[#2a1a2a] border border-[#6a4a8a]/60 hover:border-[#8a6aaa] text-[#a87ac8] hover:text-white transition-colors"
-                      title="Send result to the Lich"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Roll Buttons — each initiates a cinematic roll */}
-          <div className="flex gap-1 flex-wrap">
-            {quickRolls.map((qr) => (
-              <button
-                key={qr.label}
-                onClick={() => initiateRoll(qr.spec)}
-                disabled={busy}
-                className={cn(
-                  "px-2 py-1 text-[10px] uppercase tracking-wider rounded bg-[#2a2420] border border-[#3d3428]/60 text-stone-500 hover:text-stone-300 hover:border-[#5d5448] transition-colors",
-                  busy && "opacity-60 cursor-not-allowed",
-                )}
-              >
-                {qr.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        </section>
       )}
+
+    </div>
+  )
+
+  if (presentation === "modal") {
+    return (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Dice Roller" onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
+        <section className="aop-dice-modal relative max-h-[92vh] w-full max-w-[390px] overflow-y-auto">
+          <DiceHeader onClose={onClose} />
+          {body}
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <FantasyPanel className="aop-dice-panel flex-shrink-0 overflow-hidden">
+      <button type="button" onClick={() => setIsExpanded(!isExpanded)} className="aop-dice-header w-full">
+        <span className="flex items-center gap-2"><Dices className="h-4 w-4" /> Dice Roller</span>
+        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {isExpanded && body}
     </FantasyPanel>
   )
+}
+
+function DiceHeader({ onClose }: { onClose?: () => void }) {
+  return (
+    <header className="aop-dice-header">
+      <span className="flex-1 text-center">Dice Roller</span>
+      {onClose && <button type="button" onClick={onClose} className="absolute right-3 text-[#c6a060] hover:text-white" aria-label="Close Dice Roller"><X className="h-4 w-4" /></button>}
+    </header>
+  )
+}
+
+function CounterButton({ children, label, onClick }: { children: React.ReactNode; label: string; onClick: () => void }) {
+  return <button type="button" aria-label={label} onClick={onClick} className="h-9 w-14 rounded-sm border border-[#755126] bg-[#100b07] font-serif text-xl text-[#deb86d] shadow-[inset_0_0_12px_#000] hover:border-[#d3a85b] hover:text-white">{children}</button>
 }
