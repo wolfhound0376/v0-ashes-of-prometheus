@@ -18,9 +18,89 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sanitizeForTTS } from "@/lib/tts"
+// The speaker-attribution parser. It lives in the v3 center column today; when
+// that tree is finally deleted this should move to lib/ rather than be rewritten
+// — the quote-pairing and alias rules in it are hard-won.
+import { segmentBySpeaker, setNpcTtsMuted } from "./center-column"
 
 const DM_SPEAKER = "Malachar"
 const STORAGE_KEY = "dm-narration-enabled"
+
+/** Enough of an `npc_encounters` row to attribute a quote and voice it. */
+export type VoiceNpc = {
+  id: string
+  name: string
+  aliases?: string[] | null
+  voice_id?: string | null
+  voice_description?: string | null
+}
+
+/** One thing to say, and who says it. */
+type Utterance =
+  | { kind: "dm"; text: string }
+  | { kind: "npc"; text: string; npc: VoiceNpc }
+
+/**
+ * Split one of Malachar's turns into an ordered run of utterances, casting
+ * quoted speech to whichever NPC the attribution points at.
+ *
+ * `segmentBySpeaker` returns [] when there is nothing quotable in the line —
+ * pure narration — so that case falls back to the whole line in the DM voice.
+ * Any segment whose npcId is not in the live roster also falls back to the DM,
+ * because a voice we cannot resolve should still be heard, just in his mouth.
+ *
+ * IMPORTANT: the segmenter does NOT promise to cover the whole line. It was
+ * written to drive a sequence of speaking NPC portraits, so it returns the
+ * quotes and their lead-ins and stops — the prose trailing the last quote comes
+ * back in nothing. Read straight, that silently swallows narration: "…Jimjar
+ * grins and says, 'Care to wager?' He does not wait for an answer." loses the
+ * last sentence entirely. So the segments are used ONLY to decide who owns
+ * which slice, and the gaps between and after them are walked back in as DM
+ * narration. Every character of the line is spoken exactly once, in order.
+ */
+export function cast(line: string, npcs: VoiceNpc[]): Utterance[] {
+  let segments: Array<{ npcId: string | null; line: string; raw?: string }> = []
+  try {
+    segments = segmentBySpeaker(line, npcs as never)
+  } catch (err) {
+    console.log("[v0] narration: speaker segmentation failed, using DM voice", err)
+  }
+  if (!segments.length) {
+    const whole = sanitizeForTTS(line)
+    return whole ? [{ kind: "dm", text: whole }] : []
+  }
+
+  const out: Utterance[] = []
+  const pushDm = (slice: string) => {
+    const text = sanitizeForTTS(slice)
+    if (text) out.push({ kind: "dm", text })
+  }
+
+  let cursor = 0
+  for (const segment of segments) {
+    const raw = segment.raw || segment.line
+    const at = raw ? line.indexOf(raw, cursor) : -1
+    if (at === -1) {
+      // Can't locate this segment in the source — take it at face value rather
+      // than dropping it, and leave the cursor alone.
+      const text = sanitizeForTTS(segment.line)
+      const npc = segment.npcId ? npcs.find((n) => n.id === segment.npcId) : undefined
+      if (text) out.push(npc ? { kind: "npc", text, npc } : { kind: "dm", text })
+      continue
+    }
+    if (at > cursor) pushDm(line.slice(cursor, at))
+
+    const text = sanitizeForTTS(segment.line)
+    const npc = segment.npcId ? npcs.find((n) => n.id === segment.npcId) : undefined
+    if (text) out.push(npc ? { kind: "npc", text, npc } : { kind: "dm", text })
+    cursor = at + raw.length
+  }
+  pushDm(line.slice(cursor))
+
+  if (out.length) return out
+  const whole = sanitizeForTTS(line)
+  return whole ? [{ kind: "dm", text: whole }] : []
+}
 
 // A valid zero-sample WAV. Played inside the toggle's click handler so the
 // document counts as user-activated for audio before any narration arrives —
@@ -30,13 +110,17 @@ const SILENT_WAV =
 
 type Line = { id?: string; speaker: string; text: string; pending?: boolean }
 
-export function DmNarration({ dialogue, className }: { dialogue: Line[]; className?: string }) {
+export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line[]; npcs?: VoiceNpc[]; className?: string }) {
   const [enabled, setEnabled] = useState(false)
   const [status, setStatus] = useState<"idle" | "loading" | "speaking" | "blocked">("idle")
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const objectUrlRef = useRef<string | null>(null)
-  const queueRef = useRef<string[]>([])
+  const queueRef = useRef<Utterance[]>([])
+  // Kept in a ref so the feed effect can read the current roster without
+  // re-running (and re-speaking) every time an NPC's HP ticks.
+  const npcsRef = useRef<VoiceNpc[]>(npcs)
+  useEffect(() => { npcsRef.current = npcs }, [npcs])
   const drainingRef = useRef(false)
   // Keyed by the SANITISED TEXT, not the row id. The dashboard inserts an
   // optimistic entry with a temp id and then merges the real Supabase row over
@@ -61,24 +145,40 @@ export function DmNarration({ dialogue, className }: { dialogue: Line[]; classNa
     }
   }, [])
 
-  // Speak one line, start to finish. Resolves when the audio ends (or fails),
-  // so the drain loop below never overlaps two lines.
-  const speak = useCallback(async (text: string) => {
+  // Speak one utterance, start to finish. Resolves when the audio ends (or
+  // fails), so the drain loop below never overlaps two of them.
+  //
+  // The DM and the NPCs go to DIFFERENT endpoints on purpose. /api/tts is
+  // Malachar's fixed lich voice; /api/npc-tts resolves and persists a distinct
+  // voice per NPC row, so Eldeth does not sound like Jimjar.
+  const speak = useCallback(async (u: Utterance) => {
     setStatus("loading")
+    const [endpoint, payload] = u.kind === "dm"
+      ? ["/api/tts", { text: u.text, voice: "onyx" }]
+      : ["/api/npc-tts", {
+          text: u.text,
+          // An explicit voice if the row already has one, otherwise the
+          // description so the route can resolve one. npcId scopes the
+          // write-back so a resolved voice is never smeared onto another NPC.
+          voiceId: u.npc.voice_id ?? undefined,
+          voiceDescription: u.npc.voice_id ? undefined : u.npc.voice_description ?? undefined,
+          npcName: u.npc.name,
+          npcId: u.npc.id,
+        }]
     let res: Response
     try {
-      res = await fetch("/api/tts", {
+      res = await fetch(endpoint as string, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice: "onyx" }),
+        body: JSON.stringify(payload),
       })
     } catch (err) {
-      console.log("[v0] DM narration fetch error:", err)
+      console.log("[v0] narration fetch error:", err)
       setStatus("idle")
       return
     }
     if (!res.ok) {
-      console.log("[v0] DM narration TTS failed:", res.status)
+      console.log("[v0] narration TTS failed:", endpoint, res.status)
       setStatus("idle")
       return
     }
@@ -137,6 +237,10 @@ export function DmNarration({ dialogue, className }: { dialogue: Line[]; classNa
 
   useEffect(() => {
     enabledRef.current = enabled
+    // While this control is on it is the ONLY thing speaking: it voices
+    // Malachar and the NPCs from one queue, in narrative order. The legacy v3
+    // auto-play would otherwise repeat every quoted line out of sequence.
+    setNpcTtsMuted(enabled)
     if (!enabled) {
       queueRef.current = []
       stopAudio()
@@ -158,9 +262,14 @@ export function DmNarration({ dialogue, className }: { dialogue: Line[]; classNa
   // nothing. That single rule covers first paint, refetch, reconnect and
   // switching the toggle on mid-session.
   useEffect(() => {
+    // RAW text, deliberately not sanitised yet. sanitizeForTTS strips quote
+    // characters, and quotes are precisely how speaker attribution finds who is
+    // talking — sanitising first left the segmenter nothing to pair and made
+    // Malachar read every NPC's dialogue himself. Each segment is sanitised
+    // after the split instead, inside cast().
     const dmLines = dialogue
       .filter((entry) => entry.speaker === DM_SPEAKER)
-      .map((entry) => sanitizeForTTS(entry.text))
+      .map((entry) => entry.text)
       .filter(Boolean)
 
     if (!enabled) {
@@ -181,11 +290,15 @@ export function DmNarration({ dialogue, className }: { dialogue: Line[]; classNa
       return
     }
     if (unheard.length !== 1) {
-      if (unheard.length > 1) console.log("[v0] DM narration: bulk load of", unheard.length, "lines — not speaking")
+      if (unheard.length > 1) console.log("[v0] narration: bulk load of", unheard.length, "lines — not speaking")
       return
     }
 
-    queueRef.current.push(unheard[0])
+    // Malachar's turn is not one voice. He narrates, an NPC speaks in quotes,
+    // he narrates again. Split the line on speaker attribution and cast each
+    // piece, so the dwarf answers in her own voice inside his narration
+    // instead of him doing all the parts.
+    queueRef.current.push(...cast(unheard[0], npcsRef.current))
     void drain()
   }, [dialogue, enabled, drain])
 
