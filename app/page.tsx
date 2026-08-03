@@ -1115,6 +1115,11 @@ if (error) {
         onToggleDmMode={() => setDmMode((v) => !v)}
         onExport={handleSaveCampaign}
         exporting={isSaving}
+        // The restart flow was fully built — handler, confirmation dialog and
+        // all — but nothing ever called handleRestartCampaign, so it had no way
+        // in. Same orphaning as the dice roller, Malachar's voice and the NPC
+        // talking heads. DM only: a claimed player browser gets no control.
+        onRestart={claimLocked ? undefined : handleRestartCampaign}
         centerSlot={
           <>
             <DynamicMusic
