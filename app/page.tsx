@@ -405,7 +405,7 @@ export default function DashboardPage() {
   const fetchNpcEncounters = useCallback(async () => {
     const { data: npcData } = await supabase
       .from('npc_encounters')
-      .select('id, name, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions')
+      .select('id, name, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions, disposition')
       .eq('is_active', true)
 
     if (npcData) setNpcEncounters(npcData)
@@ -881,6 +881,7 @@ if (error) {
         onUnequipItem={handleUnequipItem}
         npcEncounters={npcEncounters}
         isThinking={lichLoading}
+        claimLocked={claimLocked}
       />
 
       {/* Legacy dashboard remains mounted out of view during the v4.1 migration
