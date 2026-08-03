@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "./dice-roller"
+import { DmNarration } from "./dm-narration"
 import { classDefaults } from "@/lib/game-data"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
@@ -200,10 +201,15 @@ const conditionColor: Record<string, string> = {
   prone: "border-red-800 bg-red-950/60 text-red-300",
 }
 
-function Frame({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+function Frame({ title, children, className, action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return <section className={cn("min-h-0 overflow-hidden rounded-lg border border-[#4b3a19] bg-[#100e09] shadow-[inset_0_0_0_3px_#171208,0_6px_18px_#000]", className)}>
-    <header className="flex h-7 items-center border-b border-[#4b3a19] px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#cdb276]">
-      <span>{title}</span><span className="ml-auto text-[#675638]">— ×</span>
+    <header className="flex h-7 items-center gap-2 border-b border-[#4b3a19] px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#cdb276]">
+      <span className="truncate">{title}</span>
+      {/* Panel-level control, right-aligned before the window chrome. The
+          filter row below has no room for one: six chips need 314px in a
+          250px column. */}
+      {action ? <span className="ml-auto shrink-0">{action}</span> : null}
+      <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span>
     </header>{children}
   </section>
 }
@@ -274,7 +280,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col">
+    <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" action={<DmNarration dialogue={dialogue} />}>
       <div className="grid h-[205px] shrink-0 grid-cols-[160px_minmax(220px,1fr)_140px] gap-3 p-3 pb-4">
         <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote></div>
         <div className="relative overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div>
