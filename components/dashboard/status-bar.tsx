@@ -5,7 +5,7 @@
 // recent successful save.
 
 import { useEffect, useState, type ReactNode } from "react"
-import { Cloud, Download, Loader2, RotateCcw, Skull } from "lucide-react"
+import { Cloud, Download, Loader2, RotateCcw, Skull, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface StatusBarProps {
@@ -20,6 +20,8 @@ interface StatusBarProps {
    *  render at all rather than rendering disabled. */
   onRestart?: () => void
   restarting?: boolean
+  /** DM only, like onRestart. */
+  onManageParty?: () => void
   /** Docked into the middle of the bar. The ambient-music and TTS controls
    *  live here: as free-floating fixed-position widgets they landed on top of
    *  Export Campaign, and every other screen edge is already occupied by a
@@ -48,6 +50,7 @@ export function StatusBar({
   exporting = false,
   onRestart,
   restarting = false,
+  onManageParty,
   centerSlot,
 }: StatusBarProps) {
   // Re-render every 20s so the "2m ago" label stays honest.
@@ -95,6 +98,18 @@ export function StatusBar({
       </div>
 
       {centerSlot && <div className="flex min-w-0 items-center gap-2">{centerSlot}</div>}
+
+      {onManageParty ? (
+        <button
+          type="button"
+          onClick={onManageParty}
+          title="Add or remove characters from the active party"
+          className="flex items-center gap-1.5 rounded-[3px] border border-[#7a5f33]/60 bg-gradient-to-b from-[#1d1710] to-[#120e0a] px-3 py-1 text-stone-300 transition-colors hover:border-[#c9a868] hover:text-[#e0cfa0]"
+        >
+          <Users className="h-3 w-3" />
+          Party
+        </button>
+      ) : null}
 
       {onRestart ? (
         <button
