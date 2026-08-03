@@ -18,13 +18,13 @@ interface DiceRollerProps {
 }
 
 const DICE_TYPES = [
-  { die: "d4", position: "-826px -369px" },
-  { die: "d6", position: "-896px -369px" },
-  { die: "d8", position: "-963px -369px" },
-  { die: "d10", position: "-1029px -369px" },
-  { die: "d12", position: "-842px -457px" },
-  { die: "d20", position: "-915px -457px" },
-  { die: "d100", position: "-999px -457px" },
+  { die: "d4", image: "/images/ui/dice-stills/d4.png" },
+  { die: "d6", image: "/images/ui/dice-stills/d6.png" },
+  { die: "d8", image: "/images/ui/dice-stills/d8.png" },
+  { die: "d10", image: "/images/ui/dice-stills/d10.png" },
+  { die: "d12", image: "/images/ui/dice-stills/d12.png" },
+  { die: "d20", image: "/images/ui/dice-stills/d20.png" },
+  { die: "d100", image: "/images/ui/dice-stills/d100.png" },
 ] as const
 
 export function DiceRoller({
@@ -76,16 +76,16 @@ export function DiceRoller({
       <section>
         <p className="aop-dice-label">Die Type</p>
         <div className="mt-2 grid grid-cols-4 gap-2">
-          {DICE_TYPES.map(({ die, position }) => (
+          {DICE_TYPES.map((dieType) => (
             <button
-              key={die}
+              key={dieType.die}
               type="button"
-              onClick={() => { setSelectedDie(die); if (die !== "d20") setRollMode("normal") }}
-              className={cn("aop-die-choice group", selectedDie === die && "is-selected")}
-              aria-pressed={selectedDie === die}
+              onClick={() => { setSelectedDie(dieType.die); if (dieType.die !== "d20") setRollMode("normal") }}
+              className={cn("aop-die-choice group", selectedDie === dieType.die && "is-selected")}
+              aria-pressed={selectedDie === dieType.die}
             >
-              <span className={cn("aop-die-model", die === "d100" && "is-percentile")} data-face={die.slice(1)} style={{ backgroundPosition: position }} aria-hidden />
-              <span className="mt-1 block text-[10px] text-[#d7bd86]">{die}</span>
+              <img src={dieType.image} alt="" className="mx-auto mt-0.5 block h-[58px] w-[72px] rounded object-contain drop-shadow-[0_5px_4px_#000]" aria-hidden />
+              <span className="mt-1 block text-[10px] text-[#d7bd86]">{dieType.die}</span>
             </button>
           ))}
         </div>
