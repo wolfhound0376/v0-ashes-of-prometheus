@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useDice } from "@/components/dice/dice-provider"
+import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "./dice-roller"
 import { classDefaults } from "@/lib/game-data"
@@ -222,6 +222,17 @@ export function V4Dashboard(props: V4DashboardProps) {
   const rail = buildRailStats(selected)
   const displayedAc = (selected?.ac ?? 10) + (equipmentBonus.ac ?? 0)
   const displayedInitiative = (selected?.initiative ?? 0) + (equipmentBonus.initiative ?? 0)
+
+  // Roll Initiative goes through the SHARED dice engine — the same physics d20
+  // the tray and the character sheet use — so the roll is cinematic, queued
+  // behind any roll already tumbling, and announced to the table's feed.
+  // It previously opened an info modal, which read as a dead button.
+  const { roll: sharedRoll, announce: announceRoll, busy: diceBusy } = useDice()
+  const rollInitiative = async () => {
+    const result = await sharedRoll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
+    announceRoll(describeRoll(result))
+  }
+
   const activeNpc = props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
   const npcName = activeNpc?.name ?? "Eldeth Feldrun"
   const npcPortrait = activeNpc?.idle_url || activeNpc?.face_url || activeNpc?.portrait_url
@@ -278,7 +289,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
       <div className="flex flex-wrap gap-1.5 px-3 pt-2">{quickReplies.map((reply) => <button key={reply} onClick={() => props.onQuickReply?.(reply)} className="rounded-full border border-[#695326] bg-[#171109] px-3 py-1 text-[9px] text-[#cdb276] hover:bg-[#251a0d]">{reply}</button>)}</div>
-      <div className="flex items-center gap-2 px-3 py-2"><button className="h-8 w-8 rounded border border-[#4b3a19] text-[#b69b63]"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="h-8 min-w-0 flex-1 rounded border border-[#4b3a19] bg-[#0b0906] px-3 text-[11px] outline-none focus:border-[#a88745]" /><button disabled className="h-8 w-8 rounded border border-[#4b3a19] text-[#62583f]" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><button onClick={() => setStatDetail("initiative")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded border border-[#a88745] bg-[#120c07] pr-3 text-[10px] text-[#d9c492] shadow-[inset_0_0_10px_#000]" title="Roll for initiative and view initiative details"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
+      <div className="flex items-center gap-2 px-3 py-2"><button className="h-8 w-8 rounded border border-[#4b3a19] text-[#b69b63]"><Plus className="m-auto h-3 w-3" /></button><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="h-8 min-w-0 flex-1 rounded border border-[#4b3a19] bg-[#0b0906] px-3 text-[11px] outline-none focus:border-[#a88745]" /><button disabled className="h-8 w-8 rounded border border-[#4b3a19] text-[#62583f]" title="Voice input coming soon"><Mic className="m-auto h-3 w-3" /></button><div className="flex h-10 items-center whitespace-nowrap rounded border border-[#a88745] bg-[#120c07] text-[10px] text-[#d9c492] shadow-[inset_0_0_10px_#000]"><button onClick={rollInitiative} disabled={diceBusy} className="flex h-full items-center gap-1.5 rounded-l pr-2 transition-colors hover:bg-[#1d1409] disabled:opacity-60" title={`Roll 1d20 ${signed(displayedInitiative)} for initiative`}><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">Roll Initiative</b><small className="block text-[7px] text-[#9f875d]">{diceBusy ? "rolling…" : `${signed(displayedInitiative)} modifier`}</small></span></button><button onClick={() => setStatDetail("initiative")} aria-label="Initiative details" title="What initiative does" className="h-full rounded-r border-l border-[#4b3a19] px-2 font-serif text-[11px] text-[#8f7846] transition-colors hover:bg-[#1d1409] hover:text-[#e0cfa0]">i</button></div></div>
       {/* The physics dice roller had no home in the V4 layout: it was still
           mounted, but only inside the World AI drawer, which sits off-canvas at
           x=1512 when closed. It lives here now, collapsed, so the centre column
