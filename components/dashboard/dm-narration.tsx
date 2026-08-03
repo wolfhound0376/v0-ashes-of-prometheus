@@ -24,7 +24,8 @@ import { sanitizeForTTS } from "@/lib/tts"
 import { segmentBySpeaker, setNpcTtsMuted } from "./center-column"
 
 const DM_SPEAKER = "Malachar"
-const STORAGE_KEY = "dm-narration-enabled"
+const DM_KEY = "dm-narration-enabled"
+const NPC_KEY = "npc-voices-enabled"
 
 /** Enough of an `npc_encounters` row to attribute a quote and voice it. */
 export type VoiceNpc = {
@@ -110,8 +111,18 @@ const SILENT_WAV =
 
 type Line = { id?: string; speaker: string; text: string; pending?: boolean }
 
-export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line[]; npcs?: VoiceNpc[]; className?: string }) {
-  const [enabled, setEnabled] = useState(false)
+export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }: {
+  dialogue: Line[]
+  npcs?: VoiceNpc[]
+  /** Fires with the NPC currently speaking, or null when it is the DM or
+   *  nobody. The queue is the only thing that knows who holds the floor, so
+   *  the portrait is driven from here rather than guessed at from the roster. */
+  onSpeakingChange?: (npc: VoiceNpc | null) => void
+  className?: string
+}) {
+  const [dmOn, setDmOn] = useState(false)
+  const [npcOn, setNpcOn] = useState(false)
+  const enabled = dmOn || npcOn
   const [status, setStatus] = useState<"idle" | "loading" | "speaking" | "blocked">("idle")
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -121,12 +132,17 @@ export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line
   // re-running (and re-speaking) every time an NPC's HP ticks.
   const npcsRef = useRef<VoiceNpc[]>(npcs)
   useEffect(() => { npcsRef.current = npcs }, [npcs])
+  const onSpeakingChangeRef = useRef(onSpeakingChange)
+  useEffect(() => { onSpeakingChangeRef.current = onSpeakingChange }, [onSpeakingChange])
+  const setFloor = useCallback((npc: VoiceNpc | null) => { onSpeakingChangeRef.current?.(npc) }, [])
   const drainingRef = useRef(false)
   // Keyed by the SANITISED TEXT, not the row id. The dashboard inserts an
   // optimistic entry with a temp id and then merges the real Supabase row over
   // it — same words, different id. Keying on id would speak every line twice.
   const spokenRef = useRef<Set<string>>(new Set())
   const enabledRef = useRef(false)
+  const dmOnRef = useRef(false)
+  const npcOnRef = useRef(false)
   // False until the first feed snapshot has been taken with narration on. Stops
   // the existing transcript being read out when the toggle is restored from
   // localStorage on page load.
@@ -199,6 +215,7 @@ export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line
       audio.onended = done
       audio.onerror = done
       setStatus("speaking")
+      setFloor(u.kind === "npc" ? u.npc : null)
       audio.play().catch((err) => {
         // Autoplay policy. The toggle click is a user gesture so this is rare,
         // but say so plainly rather than sitting there mute.
@@ -207,8 +224,9 @@ export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line
         done()
       })
     })
+    setFloor(null)
     if (enabledRef.current) setStatus("idle")
-  }, [])
+  }, [setFloor])
 
   const drain = useCallback(async () => {
     if (drainingRef.current) return
@@ -218,13 +236,15 @@ export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line
       if (next) await speak(next)
     }
     drainingRef.current = false
+    setFloor(null)
     if (!enabledRef.current) setStatus("idle")
-  }, [speak])
+  }, [speak, setFloor])
 
   // Restore the saved preference after mount, so SSR and the first client
   // render agree (localStorage during render is a hydration mismatch).
   useEffect(() => {
-    setEnabled(localStorage.getItem(STORAGE_KEY) === "true")
+    setDmOn(localStorage.getItem(DM_KEY) === "true")
+    setNpcOn(localStorage.getItem(NPC_KEY) === "true")
     hydratedRef.current = true
   }, [])
 
@@ -232,21 +252,25 @@ export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line
   // initial `false` would overwrite a saved `true` before restore runs.
   useEffect(() => {
     if (!hydratedRef.current) return
-    localStorage.setItem(STORAGE_KEY, String(enabled))
-  }, [enabled])
+    localStorage.setItem(DM_KEY, String(dmOn))
+    localStorage.setItem(NPC_KEY, String(npcOn))
+  }, [dmOn, npcOn])
 
   useEffect(() => {
     enabledRef.current = enabled
+    dmOnRef.current = dmOn
+    npcOnRef.current = npcOn
     // While this control is on it is the ONLY thing speaking: it voices
     // Malachar and the NPCs from one queue, in narrative order. The legacy v3
     // auto-play would otherwise repeat every quoted line out of sequence.
-    setNpcTtsMuted(enabled)
+    setNpcTtsMuted(true)
     if (!enabled) {
       queueRef.current = []
       stopAudio()
+      setFloor(null)
       setStatus("idle")
     }
-  }, [enabled, stopAudio])
+  }, [enabled, dmOn, npcOn, stopAudio])
 
   useEffect(() => stopAudio, [stopAudio])
 
@@ -298,48 +322,49 @@ export function DmNarration({ dialogue, npcs = [], className }: { dialogue: Line
     // he narrates again. Split the line on speaker attribution and cast each
     // piece, so the dwarf answers in her own voice inside his narration
     // instead of him doing all the parts.
-    queueRef.current.push(...cast(unheard[0], npcsRef.current))
+    const wanted = cast(unheard[0], npcsRef.current)
+      .filter((u) => (u.kind === "dm" ? dmOnRef.current : npcOnRef.current))
+    if (!wanted.length) return
+    queueRef.current.push(...wanted)
     void drain()
   }, [dialogue, enabled, drain])
 
-  const label = !enabled
-    ? "DM Voice off — click to hear Malachar narrate"
-    : status === "loading" ? "DM Voice — fetching Malachar's voice…"
-    : status === "speaking" ? "DM Voice — Malachar is speaking, click to silence him"
-    : status === "blocked" ? "DM Voice — your browser blocked the audio, click off and on again"
-    : "DM Voice on — Malachar will speak each new line"
+  const busyLabel = status === "loading" ? " — fetching voice…" : status === "speaking" ? " — speaking" : status === "blocked" ? " — browser blocked the audio, click off and on" : ""
 
-  const toggle = () => {
-    setEnabled((wasEnabled) => {
-      if (!wasEnabled) {
-        // Unlock audio while we still have the click. Failure is harmless —
-        // it only means the first line may need a second try.
-        void new Audio(SILENT_WAV).play().catch(() => {})
-        setStatus("idle")
-      }
-      return !wasEnabled
-    })
-  }
-
-  return (
+  const Switch = ({ on, set, label, title }: { on: boolean; set: (v: boolean) => void; label: string; title: string }) => (
     <button
       type="button"
-      onClick={toggle}
-      title={label}
-      aria-label={label}
-      aria-pressed={enabled}
+      onClick={() => {
+        if (!on) {
+          // Unlock audio while we still have the click, so the first line is
+          // not blocked by autoplay policy.
+          void new Audio(SILENT_WAV).play().catch(() => {})
+          setStatus("idle")
+        }
+        set(!on)
+      }}
+      title={title + busyLabel}
+      aria-label={title + busyLabel}
+      aria-pressed={on}
       className={cn(
         "flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[9px] transition-colors",
-        enabled
-          ? "border border-[#a88745] bg-[#241a08] text-[#ead39e]"
-          : "border border-[#4b3a19] text-[#8f8061] hover:border-[#8a6f3c] hover:text-[#cdb276]",
-        className,
+        on ? "border border-[#a88745] bg-[#241a08] text-[#ead39e]"
+           : "border border-[#4b3a19] text-[#8f8061] hover:border-[#8a6f3c] hover:text-[#cdb276]",
       )}
     >
-      {status === "loading" ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
-        : enabled ? <Volume2 className={cn("h-2.5 w-2.5", status === "speaking" && "animate-pulse")} />
+      {status === "loading" && on ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+        : on ? <Volume2 className={cn("h-2.5 w-2.5", status === "speaking" && "animate-pulse")} />
         : <VolumeX className="h-2.5 w-2.5" />}
-      DM Voice
+      {label}
     </button>
+  )
+
+  return (
+    <span className={cn("flex items-center gap-1", className)}>
+      <Switch on={dmOn} set={setDmOn} label="DM Voice"
+        title={dmOn ? "DM Voice on — Malachar narrates aloud" : "DM Voice off — click to hear Malachar narrate"} />
+      <Switch on={npcOn} set={setNpcOn} label="NPC Voices"
+        title={npcOn ? "NPC Voices on — each NPC speaks in their own voice" : "NPC Voices off — click to hear the NPCs speak"} />
+    </span>
   )
 }
