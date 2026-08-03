@@ -15,6 +15,9 @@ interface DiceRollerProps {
   onRollResult?: (result: DiceResult) => void
   onSendToLich?: (message: string) => void
   characterName?: string
+  /** Mount collapsed. The V4 centre column has no room to give the roller a
+   *  permanent open panel, so it starts as its own slim bar there. */
+  defaultExpanded?: boolean
 }
 
 // Standard D&D dice
@@ -28,10 +31,10 @@ const DICE_TYPES = [
   { die: "d100", sides: 100, color: "from-[#2a2a2a] to-[#0a0a0a]", border: "border-[#6a6a6a]" },
 ]
 
-export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player" }: DiceRollerProps) {
+export function DiceRoller({ onRollResult, onSendToLich, characterName = "Player", defaultExpanded = true }: DiceRollerProps) {
   const { roll, busy, ready } = useDice()
 
-  const [isExpanded, setIsExpanded] = useState(true)
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
   const [selectedDie, setSelectedDie] = useState<string>("d20")
   const [numDice, setNumDice] = useState(1)
   const [modifier, setModifier] = useState(0)
