@@ -26,6 +26,33 @@ import { XPTracker } from "./xp-tracker"
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 
+// Several character columns that the sheet treats as lists are actually free
+// TEXT in the database — `characters.languages` holds
+// "Common, Goblin, Thieves' Cant, Undercommon" for Fifi, not an array. Passing
+// that string straight through made the full-sheet slide-over call
+// `values.join()` on a string and throw during render, which unmounted the whole
+// sheet: clicking "View Full Character Sheet" appeared to do nothing at all.
+// Normalise here so the sheet always receives a real array.
+function toList(value: unknown, fallback: string[] = []): string[] {
+  if (Array.isArray(value)) return value.filter(Boolean).map(String)
+  if (typeof value === "string") {
+    const parts = value.split(",").map((s) => s.trim()).filter(Boolean)
+    return parts.length ? parts : fallback
+  }
+  return fallback
+}
+
+// `characters.speed` is a free-text column: some rows hold a bare number (30),
+// others prose like "30 ft. (Walking)". The Speed tile sits beside AC / INIT /
+// PROF / PP, which all render bare figures in a fixed-width box, so the prose
+// form overflowed its border. Show the leading figure, keep the full text on hover.
+function formatSpeed(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "30"
+  if (typeof value === "number") return String(value)
+  const match = /(-?\d+)/.exec(String(value))
+  return match ? match[1] : String(value)
+}
+
 interface RightColumnProps {
   characters: DBCharacter[]
   selectedCharacterId: string | null
@@ -179,10 +206,10 @@ age: (selectedCharacter as any).age,
     savingThrowProficiencies: ((selectedCharacter as any).saving_throw_proficiencies || []) as ("str" | "dex" | "con" | "int" | "wis" | "cha")[],
     skillProficiencies: (selectedCharacter as any).skill_proficiencies || [],
     skillExpertises: (selectedCharacter as any).skill_expertises || [],
-    languages: (selectedCharacter as any).languages || ["Common"],
-    armorProficiencies: (selectedCharacter as any).armor_proficiencies || [],
-    weaponProficiencies: (selectedCharacter as any).weapon_proficiencies || [],
-    toolProficiencies: (selectedCharacter as any).tool_proficiencies || [],
+    languages: toList((selectedCharacter as any).languages, ["Common"]),
+    armorProficiencies: toList((selectedCharacter as any).armor_proficiencies),
+    weaponProficiencies: toList((selectedCharacter as any).weapon_proficiencies),
+    toolProficiencies: toList((selectedCharacter as any).tool_proficiencies),
     features: (selectedCharacter as any).features || [],
     spellcastingAbility: (selectedCharacter as any).spellcasting_ability,
     spellSaveDC: (selectedCharacter as any).spell_save_dc,
@@ -194,13 +221,13 @@ age: (selectedCharacter as any).age,
     name: "No Character",
     race: "Unknown",
     class: "Unknown",
-    subclass: null,
+    subclass: undefined,
     level: 1,
     background: "Unknown",
     alignment: "Neutral",
-    age: null,
-    height: null,
-    weight: null,
+    age: undefined,
+    height: undefined,
+    weight: undefined,
     hp: { current: 10, max: 10, temp: 0 },
     ac: 10,
     initiative: 0,
@@ -253,7 +280,7 @@ age: (selectedCharacter as any).age,
   }))
 
   // Get item equipped in a slot
-  const getEquippedItem = (slotId: string) => equippedItems.find(item => item.slot === slotId)
+  const getEquippedItem = (slotId: string) => equippedItems.find(item => item.slot === slotId) ?? null
 
   // Handle equipping an item to the selected slot
   const handleEquipFromInventory = (itemId: string) => {
@@ -449,6 +476,13 @@ age: (selectedCharacter as any).age,
             </div>
           </div>
 
+          {/* Everything below the pinned character header scrolls. Previously
+              this content simply overflowed the column with no scroll region,
+              so the last saving throw, the Skills box, the View Full Character
+              Sheet button and the whole Equipped Items group were rendered but
+              unreachable — roughly 100px of the rail was silently cut off. */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+
           {/* Basic Status */}
           <div className="p-3 border-b border-[#3d3428]/40">
             {/* HP Bar */}
@@ -515,7 +549,12 @@ age: (selectedCharacter as any).age,
               </button>
               <div className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30">
                 <Zap className="w-4 h-4 mx-auto mb-1 text-cyan-400" />
-                <div className="text-lg font-bold text-stone-200">{character.speed}</div>
+                <div
+                  className="text-lg font-bold text-stone-200 truncate"
+                  title={String(character.speed ?? 30)}
+                >
+                  {formatSpeed(character.speed)}
+                </div>
                 <div className="text-[9px] uppercase tracking-wider text-stone-500">Speed</div>
               </div>
               <div className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30">
@@ -705,6 +744,8 @@ age: (selectedCharacter as any).age,
               <User2 className="w-4 h-4 text-purple-400" />
               <span className="text-sm text-stone-300">Character Details</span>
             </button>
+          </div>
+
           </div>
         </FantasyPanel>
 

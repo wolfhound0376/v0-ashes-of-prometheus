@@ -10,6 +10,8 @@ import { DiceProvider } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
+import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
+import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -56,6 +58,11 @@ const tempId = () =>
 // makes four browsers each keep their own character instead of sharing one
 // global session pointer.
 const CHARACTER_LS_KEY = "aop_character_id"
+// Set by the /join code gate. The claim token is kept here instead of the URL so
+// it can't be forwarded or read out of someone's address bar; the role records
+// whether this browser is a claimed player seat or the DM / shared-TV screen.
+const TOKEN_LS_KEY = "aop_claim_token"
+const ROLE_LS_KEY = "aop_access_role"
 
 // Top-bar navigation destinations. These builder/companion routes ship in later
 // Dashboard v3 phases, so they render as honest "soon" affordances rather than
@@ -128,11 +135,13 @@ export default function DashboardPage() {
 
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
+  const [campaignBook, setCampaignBook] = useState<CampaignBookSection | null>(null)
   const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
   const [pendingCampaignChange, setPendingCampaignChange] = useState<Campaign | null>(null)
 
   // Save/Restart campaign state
   const [showRestartDialog, setShowRestartDialog] = useState(false)
+  const [showPartyManager, setShowPartyManager] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
@@ -241,24 +250,37 @@ export default function DashboardPage() {
   }
 
   const confirmRestartCampaign = async () => {
-    if (!selectedCharacter) return
-
+    // NO selectedCharacter guard. The DM runs this, and the DM has no character
+    // selected — the old guard made the button silently do nothing for the one
+    // person it exists for.
     try {
       // Clear all dialogue
-      await supabase
+      const { error: dialogueError } = await supabase
         .from('dialogue')
         .delete()
         .neq('id', '00000000-0000-0000-0000-000000000000')
+      if (dialogueError) console.error('[restart] dialogue:', dialogueError)
 
-      // Clear character inventory
-      await supabase
-        .from('inventory_items')
-        .delete()
-        .eq('character_id', selectedCharacter.id)
+      // Stand every active encounter down so the table starts on a clean scene.
+      const { error: npcError } = await supabase
+        .from('npc_encounters')
+        .update({ is_active: false })
+        .eq('is_active', true)
+      if (npcError) console.error('[restart] npc_encounters:', npcError)
+
+      // Clear inventory only for a character that is actually selected.
+      if (selectedCharacter) {
+        const { error: invError } = await supabase
+          .from('inventory_items')
+          .delete()
+          .eq('character_id', selectedCharacter.id)
+        if (invError) console.error('[restart] inventory:', invError)
+      }
 
       // Reset local state
       setDialogue([])
       setCharacterInventory([])
+      setNpcEncounters([])
 
       // Close dialog
       setShowRestartDialog(false)
@@ -269,66 +291,6 @@ export default function DashboardPage() {
 
   const cancelRestartCampaign = () => {
     setShowRestartDialog(false)
-  }
-
-  // DM Mode -> Refresh Dashboard. Re-pulls character/inventory/equipment via the
-  // existing loader. If the loader isn't reachable for any reason, fall back to a
-  // hard reload so the DM always gets a fresh view.
-  const refreshDashboard = () => {
-    setDmMenuOpen(false)
-    try {
-      fetchCharacterData()
-    } catch {
-      if (typeof window !== "undefined") window.location.reload()
-    }
-  }
-
-  // Bottom bar -> Export Campaign. Client-side JSON download built from the
-  // already-loaded players plus a one-off inventory pull. Claim tokens are
-  // explicitly stripped so an exported file can never leak a character's
-  // ownership secret.
-  const handleExportCampaign = async () => {
-    if (isExporting) return
-    setIsExporting(true)
-    try {
-      const playerIds = players.map((p) => p.id)
-      let inventory: InventoryItem[] = []
-      if (playerIds.length > 0) {
-        const { data } = await supabase
-          .from("inventory_items")
-          .select("*")
-          .in("character_id", playerIds)
-        inventory = data || []
-      }
-
-      // Strip claim_token / token-ish fields from every character before export.
-      const sanitizedCharacters = players.map((character) => {
-        const { claim_token, ...safe } = character as unknown as Record<string, unknown>
-        return safe
-      })
-
-      const payload = {
-        campaign: { id: activeCampaign.id, name: activeCampaign.name },
-        exportedAt: new Date().toISOString(),
-        characters: sanitizedCharacters,
-        inventory,
-        dialogue: dialogue.map(({ speaker, text }) => ({ speaker, text })),
-      }
-
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement("a")
-      anchor.href = url
-      anchor.download = `ashes-of-prometheus-${activeCampaign.id}-${new Date().toISOString().slice(0, 10)}.json`
-      document.body.appendChild(anchor)
-      anchor.click()
-      document.body.removeChild(anchor)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error("Error exporting campaign:", err)
-    } finally {
-      setIsExporting(false)
-    }
   }
 
   const [resources, setResources] = useState({
@@ -426,7 +388,36 @@ export default function DashboardPage() {
     const params = new URLSearchParams(window.location.search)
     const c = params.get('c')
     const k = params.get('k')
-    if (!c || !k) return // No claim params = DM / shared-TV mode.
+
+    // No claim link. Either this browser already came through the /join code gate
+    // (rehydrate it), or it has no access at all and belongs at the gate.
+    if (!c || !k) {
+      const storedRole = window.localStorage.getItem(ROLE_LS_KEY)
+      const storedToken = window.localStorage.getItem(TOKEN_LS_KEY)
+      const storedChar = window.localStorage.getItem(CHARACTER_LS_KEY)
+
+      if (storedRole === 'player' && storedToken && storedChar) {
+        setSelectedCharacterId(storedChar)
+        setClaimToken(storedToken)
+        setClaimLocked(true)
+        return
+      }
+      if (storedRole === 'dm') return // DM / shared-TV mode, already unlocked.
+
+      // Unknown browser. Only send it to the gate if the gate is actually armed —
+      // if DM_ACCESS_CODE is unset the dashboard stays open exactly as before, so
+      // a missing env var can never lock Sam out of his own game.
+      ;(async () => {
+        try {
+          const res = await fetch('/api/claim-code')
+          const cfg = await res.json()
+          if (cfg?.dmGate) window.location.replace('/join')
+        } catch {
+          /* gate unreachable — leave the dashboard as-is rather than stranding anyone */
+        }
+      })()
+      return
+    }
 
     let cancelled = false
     ;(async () => {
@@ -444,6 +435,10 @@ export default function DashboardPage() {
           setClaimLocked(true)
           setClaimInvalid(false)
           window.localStorage.setItem(CHARACTER_LS_KEY, c)
+          // Upgrade this browser to a gate-style claim so the link only has to be
+          // used once — after this the token lives in localStorage, not the URL.
+          window.localStorage.setItem(TOKEN_LS_KEY, k)
+          window.localStorage.setItem(ROLE_LS_KEY, 'player')
         } else {
           setClaimInvalid(true)
         }
@@ -464,7 +459,7 @@ export default function DashboardPage() {
   const fetchNpcEncounters = useCallback(async () => {
     const { data: npcData } = await supabase
       .from('npc_encounters')
-      .select('id, name, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions')
+      .select('id, name, aliases, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions, disposition')
       .eq('is_active', true)
 
     if (npcData) setNpcEncounters(npcData)
@@ -626,7 +621,22 @@ if (error) {
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
 
   // Only player characters are selectable in the dashboard dropdown.
-  const players = characters.filter((c: any) => c.is_player)
+  // The party is who the DM has SEATED (in_party), not everyone who happens to
+  // be a player character. Falls back to is_player so a stale cache can never
+  // render an empty table.
+  const players = characters.some((c: any) => c.in_party)
+    ? characters.filter((c: any) => c.in_party)
+    : characters.filter((c: any) => c.is_player)
+  // Anyone not currently seated is available to add — players first, then the
+  // NPC allies. Monsters are excluded: nobody is seating a Giant Spider.
+  const partyPool = characters.filter((c: any) =>
+    !players.some((p: any) => p.id === c.id) && (c.is_player || (c.character_type ?? '') === 'npc' || c.claim_token))
+
+  const setSeated = async (id: string, seated: boolean) => {
+    const { error } = await supabase.from('characters').update({ in_party: seated }).eq('id', id)
+    if (error) { console.error('[party] seat change failed:', error); return }
+    setCharacters(prev => prev.map((c: any) => (c.id === id ? { ...c, in_party: seated } : c)))
+  }
 
   // Change the active player for THIS browser only. Selection is per-browser
   // now: it lives in local state and persists to localStorage so a reload keeps
@@ -661,7 +671,7 @@ if (error) {
     const payload = buildPayload(
       selectedCharacter,
       { type: actionType, intent, roll },
-      { name: environmentData.location, description: environmentData.description },
+      { name: environmentData.location, description: currentEnvironment?.description ?? undefined },
       { action: resources.action > 0, bonusAction: resources.bonusAction > 0, reaction: resources.reaction > 0 }
     )
 
@@ -827,9 +837,41 @@ if (error) {
           <p className="text-stone-400 leading-relaxed">
             This character claim link is invalid or has expired. Ask your Dungeon Master for a fresh link to join the session.
           </p>
+          <a
+            href="/join"
+            className="mt-5 inline-block rounded-[3px] border border-[#c9a868]/70 px-4 py-2 font-serif text-[12px] uppercase tracking-[0.16em] text-[#d9bd7e] transition-colors hover:border-[#c9a868] hover:text-[#f0dba8]"
+          >
+            Enter a code instead
+          </a>
         </div>
       </div>
     )
+  }
+
+  const handleEquipItem = async (itemId: string, slot: EquipmentItem['slot']) => {
+    if (!selectedCharacterId) return
+    const item = characterInventory.find((entry) => entry.id === itemId)
+    if (!item || item.equippable_slot !== slot) return
+    await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
+    const itemWithBonuses = item as InventoryItem & { stats_bonus?: Record<string, number> }
+    const { error } = await supabase.from('equipment_items').insert({
+      character_id: selectedCharacterId,
+      slot,
+      name: item.name,
+      icon_url: item.icon_url,
+      equipped: true,
+      description: item.description,
+      stats_bonus: itemWithBonuses.stats_bonus ?? {},
+    })
+    if (error) console.error('[equip] insert failed:', error)
+    await fetchCharacterData()
+  }
+
+  const handleUnequipItem = async (slot: EquipmentItem['slot']) => {
+    if (!selectedCharacterId) return
+    const { error } = await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
+    if (error) console.error('[unequip] delete failed:', error)
+    await fetchCharacterData()
   }
 
   return (
@@ -840,7 +882,7 @@ if (error) {
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
-        activeSection={worldAIPanelOpen ? "lore" : null}
+        activeSection={campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // Sections that already have a home route there; the rest open the
           // World AI panel, which is where that content lives today.
@@ -848,9 +890,16 @@ if (error) {
             window.location.href = "/admin"
             return
           }
+          if (section === "journal" || section === "quests" || section === "maps" || section === "lore") {
+            setWorldAIPanelOpen(false)
+            setCampaignBook(section)
+            return
+          }
           setWorldAIPanelOpen(true)
         }}
       />
+
+      {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} onClose={() => setCampaignBook(null)} /> : null}
 
       {/* Save toast */}
       {saveMessage && (
@@ -891,8 +940,35 @@ if (error) {
         </div>
       </div>
 
-      {/* Main dashboard grid */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
+      <V4Dashboard
+        environment={{
+          name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
+          region: "The Underdark",
+          timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
+          imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
+          description: currentEnvironment?.description,
+        }}
+        dialogue={dialogue}
+        dialogueInput={dialogueInput}
+        setDialogueInput={setDialogueInput}
+        onDialogueSubmit={handleDialogueSubmit}
+        onQuickReply={(text) => void handleQuickReply(text)}
+        characters={players}
+        selectedCharacter={selectedCharacter}
+        selectedCharacterId={selectedCharacterId}
+        onCharacterSelect={claimLocked ? undefined : handleCharacterSelect}
+        inventory={characterInventory}
+        equipment={characterEquipment}
+        onEquipItem={handleEquipItem}
+        onUnequipItem={handleUnequipItem}
+        npcEncounters={npcEncounters}
+        isThinking={lichLoading}
+        claimLocked={claimLocked}
+      />
+
+      {/* Legacy dashboard remains mounted out of view during the v4.1 migration
+          so its existing handlers can be compared without losing code. */}
+      <div className="hidden grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
@@ -1007,38 +1083,8 @@ if (error) {
   characterInventory={characterInventory}
   characterEquipment={characterEquipment}
   loading={loadingCharacters}
-  onEquipItem={async (itemId, slot) => {
-    if (!selectedCharacterId) return
-    const item = characterInventory.find(i => i.id === itemId)
-    if (!item) return
-    // Replace anything already in this slot (one item per slot)
-    await supabase
-      .from('equipment_items')
-      .delete()
-      .eq('character_id', selectedCharacterId)
-      .eq('slot', slot)
-    const { error } = await supabase.from('equipment_items').insert({
-      character_id: selectedCharacterId,
-      slot,
-      name: item.name,
-      icon_url: item.icon_url,
-      equipped: true,
-      description: item.description,
-      stats_bonus: {},
-    })
-    if (error) console.error('[equip] insert failed:', error)
-    fetchCharacterData()
-  }}
-  onUnequipItem={async (slot) => {
-    if (!selectedCharacterId) return
-    const { error } = await supabase
-      .from('equipment_items')
-      .delete()
-      .eq('character_id', selectedCharacterId)
-      .eq('slot', slot)
-    if (error) console.error('[unequip] delete failed:', error)
-    fetchCharacterData()
-  }}
+  onEquipItem={(itemId, slot) => handleEquipItem(itemId, slot as EquipmentItem['slot'])}
+  onUnequipItem={(slot) => handleUnequipItem(slot as EquipmentItem['slot'])}
   onAddXP={async (characterId, amount, reason) => {
     // Add XP to character and record in history
     const { error } = await supabase.rpc('add_character_xp', {
@@ -1105,6 +1151,44 @@ if (error) {
       )}
 
       {/* Restart Campaign Confirmation Dialog */}
+      {/* DM-only party manager. Seats and unseats characters; presence lights
+          are a separate job that needs a heartbeat and are deliberately not
+          faked here. */}
+      {showPartyManager && !claimLocked && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowPartyManager(false)}>
+          <div className="max-h-[80vh] w-[560px] overflow-y-auto rounded-lg border border-[#3d3428] bg-[#1a1614] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-1 font-serif text-xl text-[#e0b765]">The Party</h2>
+            <p className="mb-4 text-xs text-stone-400">Who is at the table. Removing someone leaves their character and inventory untouched — they simply stop appearing in Party Status.</p>
+
+            <h3 className="mb-2 text-[11px] uppercase tracking-wider text-[#8f8061]">Seated ({players.length})</h3>
+            <div className="mb-5 space-y-1">
+              {players.length === 0 ? <p className="text-xs text-stone-500">Nobody is seated.</p> : players.map((c: any) => (
+                <div key={c.id} className="flex items-center gap-3 rounded border border-[#4b3a19] bg-[#12100b] px-3 py-2">
+                  <span className="flex-1 truncate text-sm text-[#ddd2bc]">{c.name}</span>
+                  <span className="text-[10px] text-[#8f8061]">{c.class} {c.level}</span>
+                  <button onClick={() => void setSeated(c.id, false)} className="rounded border border-[#7a3333]/70 px-2 py-0.5 text-[10px] text-[#d9a3a3] hover:border-[#c96868] hover:text-[#f0cfcf]">Remove</button>
+                </div>
+              ))}
+            </div>
+
+            <h3 className="mb-2 text-[11px] uppercase tracking-wider text-[#8f8061]">Available ({partyPool.length})</h3>
+            <div className="space-y-1">
+              {partyPool.length === 0 ? <p className="text-xs text-stone-500">Everyone is already seated.</p> : partyPool.map((c: any) => (
+                <div key={c.id} className="flex items-center gap-3 rounded border border-[#3b3325] bg-[#0f0e0b] px-3 py-2">
+                  <span className="flex-1 truncate text-sm text-[#b9ac93]">{c.name}</span>
+                  <span className="text-[10px] text-[#6d6450]">{c.class} {c.level}</span>
+                  <button onClick={() => void setSeated(c.id, true)} className="rounded border border-[#695326] px-2 py-0.5 text-[10px] text-[#cdb276] hover:border-[#c9a868] hover:text-[#e0cfa0]">Add</button>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button onClick={() => setShowPartyManager(false)} className="rounded border border-[#4b3a19] px-4 py-1.5 text-sm text-stone-300 hover:border-[#c9a868]">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRestartDialog && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="bg-[#1a1614] border border-[#3d3428] rounded-lg p-6 max-w-md mx-4 shadow-2xl">
@@ -1133,22 +1217,12 @@ if (error) {
         </div>
       )}
 
-      {/* TTS Mute Toggle */}
-      <MusicPlayer
-        isTTSMuted={isTTSMuted}
-        onToggleTTSMute={toggleTTSMute}
-      />
-
-      {/* Scene-driven background music. Mirror the chat route's canonical
-          location source exactly: the hydrated DB environment name, falling
-          back to the shared canonical start (Velkynvelve) — never the old
-          "Greenmere Village" client default that caused village music. */}
-      <DynamicMusic
-        location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
-        inCombat={inCombat}
-      />
-
-      {/* Bottom status strip (v3.0 design) */}
+      {/* Bottom status strip (v3.0 design).
+          The TTS toggle and the scene-driven ambient music used to render here
+          as free-floating fixed-position widgets pinned to the bottom-right —
+          which put them directly on top of Export Campaign. Both are unchanged
+          apart from being docked into the bar's centre slot; the `static`
+          override cancels their own fixed positioning. */}
       <StatusBar
         lastSavedAt={lastSavedAt}
         autoSave={autoSave}
@@ -1157,6 +1231,26 @@ if (error) {
         onToggleDmMode={() => setDmMode((v) => !v)}
         onExport={handleSaveCampaign}
         exporting={isSaving}
+        // The restart flow was fully built — handler, confirmation dialog and
+        // all — but nothing ever called handleRestartCampaign, so it had no way
+        // in. Same orphaning as the dice roller, Malachar's voice and the NPC
+        // talking heads. DM only: a claimed player browser gets no control.
+        onRestart={claimLocked ? undefined : handleRestartCampaign}
+        onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
+        centerSlot={
+          <>
+            <DynamicMusic
+              location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
+              inCombat={inCombat}
+              className="static bottom-auto right-auto z-auto"
+            />
+            <MusicPlayer
+              isTTSMuted={isTTSMuted}
+              onToggleTTSMute={toggleTTSMute}
+              className="static bottom-auto right-auto z-auto"
+            />
+          </>
+        }
       />
     </div>
     </DiceProvider>

@@ -1,4 +1,4 @@
-import { generateText } from "ai"
+import { generateText, type ModelMessage } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -304,13 +304,24 @@ export async function POST(req: Request) {
       console.error("[v0] chat: admin client unavailable for claim verification:", e)
       return Response.json({ error: "Claim verification unavailable" }, { status: 500 })
     }
+    // Credentials live in character_secrets, NOT on characters — the anon key can
+    // read every column of characters, so a token stored there would be public.
+    const { data: secretRow } = await admin
+      .from("character_secrets")
+      .select("character_id, claim_token")
+      .eq("character_id", characterId)
+      .maybeSingle()
+    if (!secretRow || secretRow.claim_token !== claimToken) {
+      console.warn("[v0] chat: claim token mismatch for characterId:", characterId)
+      return Response.json({ error: "Invalid character claim" }, { status: 403 })
+    }
     const { data: claimRow } = await admin
       .from("characters")
-      .select("id, name, claim_token")
+      .select("id, name")
       .eq("id", characterId)
       .maybeSingle()
-    if (!claimRow || claimRow.claim_token !== claimToken) {
-      console.warn("[v0] chat: claim token mismatch for characterId:", characterId)
+    if (!claimRow) {
+      console.warn("[v0] chat: claimed character no longer exists:", characterId)
       return Response.json({ error: "Invalid character claim" }, { status: 403 })
     }
     playerCharacter = { id: claimRow.id, name: claimRow.name }
@@ -500,10 +511,10 @@ ${combatantRows
     : ""
 
   // Build conversation history for the AI
-  const conversationHistory = (recentDialogue || [])
+  const conversationHistory: ModelMessage[] = (recentDialogue || [])
     .reverse()
     .map(d => ({
-      role: d.speaker === "Malachar" ? "assistant" : "user" as const,
+      role: d.speaker === "Malachar" ? "assistant" as const : "user" as const,
       content: `${d.speaker}: ${d.text}`
     }))
 
@@ -582,6 +593,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 5. NPC/MONSTER ENCOUNTERS: You MUST emit [NPC_ENCOUNTER: <Name> | <description> | <portrait_prompt>] the FIRST time any NPC or monster meaningfully interacts with the player. If you describe a gray ooze blocking passage, a drow guard confronting them, or any creature entering the scene — EMIT THE TAG.
 
 6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends.
+
+6b. NPC DISPOSITION: Every NPC holds one attitude toward the party on a single axis, from worst to best: hostile, wary, neutral, warm, devoted. Emit [NPC_DISPOSITION: <Name> <value>] whenever an NPC's feeling toward the party FIRST becomes clear, and again every time it MOVES — a kindness, an insult, a betrayal, a shared danger, a lie they caught. Use ONLY those five words; anything else is discarded. Move one rung at a time unless something drastic happened (a murder in front of them can go straight to hostile). This is the NPC's private truth, not what they are showing: an NPC can be hostile while smiling. Do not announce the value in your prose — narrate the behaviour and let the tag carry the number.
 
 7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] when they lose/use items.
 
@@ -709,7 +722,18 @@ RULES:
 - Address the player by their character name
 - Reference their class abilities, stats, and inventory when relevant
 - For dice rolls, write [[XdY+Z]] and wait for the player to roll
-- Keep responses concise (1-3 paragraphs) unless describing important scenes
+- BREVITY IS THE DEFAULT. Answer in 2-4 sentences. One short paragraph. A whole
+  scene does not need describing before the players can act — give them the one
+  detail that matters and hand the turn back. If you find yourself writing a
+  third paragraph, you have already lost them.
+- Never pad. No restating what the player just did, no summarising the last
+  beat, no listing options they did not ask for, no telling them how the room
+  makes them feel.
+- The players control the depth. If they ask to look closer, examine, study,
+  recall lore, or ask you to elaborate, THEN open up — but even then keep it to
+  a tight paragraph or two and stop. Detail is something they pull from you, not
+  something you push at them.
+- Combat and quick exchanges should be shorter still: a sentence or two.
 - Track their progress through the campaign
 
 STRUCTURED TAGS — CRITICAL FOR GAME STATE:
@@ -798,7 +822,37 @@ INTERPRETING PLAYER MESSAGES:
 
 EXPERIENCE POINTS:
 - When players defeat monsters, complete quests, or achieve milestones, announce XP awards narratively
-- Follow D&D 5E XP values based on CR`
+- Follow D&D 5E XP values based on CR
+
+════════════════════════════════════════════════════════════════════
+LENGTH — THIS OVERRIDES EVERY OTHER INSTRUCTION ABOVE
+════════════════════════════════════════════════════════════════════
+This is the last thing you read before you write, because it is the thing you
+keep getting wrong.
+
+HARD CAP: 60 words. Not a target — a ceiling. Most turns should be 25-40.
+If your reply is longer than the player's message plus a sentence, cut it.
+
+Before you send, delete every one of these:
+- Anything the player already knows: restating their action, recapping the last
+  beat, reminding them where they are or who is present.
+- Anything you have already said this session in different words. You repeat
+  yourself constantly. If a thought has appeared before, it does not appear
+  again — say the NEW thing or say nothing.
+- Scene-setting nobody asked for. One concrete detail, then stop.
+- Offering options, listing what they "could" do, or asking what they do next.
+  They know it is their turn.
+- Describing your own tone, your own amusement, or your own cruelty. Be it.
+
+Never open two consecutive replies with the same construction. Vary how you
+begin or it reads like a machine.
+
+MORE DETAIL IS EARNED, NOT GIVEN. Only when the player explicitly looks closer,
+examines, investigates, recalls lore, or asks you to elaborate may you exceed
+the cap — and then by one short paragraph, once. Then back to the cap.
+
+Combat, banter, reactions: one or two sentences. A single devastating line beats
+a paragraph, and you know it.`
 
   const result = await generateText({
     model: anthropic("claude-sonnet-4-6"),
@@ -1536,6 +1590,41 @@ EXPERIENCE POINTS:
       }
     }
 
+    // Handle NPC_DISPOSITION tags - [NPC_DISPOSITION: Name value]
+    //
+    // One axis, five rungs, lowest to highest: hostile < wary < neutral < warm
+    // < devoted. The DM AI proposes; this route validates. A value outside the
+    // ladder is DROPPED, not stored and not coerced — the canonical row never
+    // holds something the AI invented. Same rule the inventory follows.
+    const npcDispositionMatches = rawText.matchAll(/\[NPC_DISPOSITION:\s*([^|\]]+?)\s+(hostile|wary|neutral|warm|devoted)\s*\]/gi)
+    for (const match of npcDispositionMatches) {
+      const [, npcName, rawValue] = match
+      const name = npcName.trim()
+      const disposition = rawValue.trim().toLowerCase()
+
+      // Resolve to canonical identity first, so a shift toward "Jorlan" lands
+      // on "Jorlan Duskryn", then write the SHARED active row so every client
+      // reads one truth.
+      const canonicalName = (await resolveNpcByName(supabase, name))?.name || name
+      const npc = await findSharedActiveEncounter(supabase, canonicalName)
+
+      if (!npc) {
+        console.warn("[v0] NPC_DISPOSITION tag for unknown/inactive NPC, ignored:", name)
+        continue
+      }
+
+      const { error } = await supabase
+        .from("npc_encounters")
+        .update({ disposition, updated_at: new Date().toISOString() })
+        .eq("id", npc.id)
+
+      if (error) {
+        console.error("[v0] Error updating NPC disposition:", error)
+      } else {
+        console.log("[v0] NPC_DISPOSITION:", canonicalName, (npc as { disposition?: string | null }).disposition ?? "unset", "->", disposition)
+      }
+    }
+
     // Handle NPC_LEAVE tags - [NPC_LEAVE: name]
     const npcLeaveMatches = rawText.matchAll(/\[NPC_LEAVE:\s*([^\]]+)\]/gi)
     for (const match of npcLeaveMatches) {
@@ -1777,6 +1866,7 @@ EXPERIENCE POINTS:
     .replace(/\[NPC_ENCOUNTER:[^\]]+\]/gi, "")
     .replace(/\[NPC_DAMAGE:[^\]]+\]/gi, "")
     .replace(/\[NPC_LEAVE:[^\]]+\]/gi, "")
+    .replace(/\[NPC_DISPOSITION:[^\]]+\]/gi, "")
     .trim()
 
   // === SERVER-ATTRIBUTED SPEECH SEGMENTS ===

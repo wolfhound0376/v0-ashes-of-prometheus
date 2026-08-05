@@ -109,7 +109,7 @@ interface CenterColumnProps {
   characterLevel?: number
   characterName?: string
   availableActionIds?: string[]
-  onTelemetryPush?: (event: string, data: Record<string, unknown>) => void
+  onTelemetryPush?: (actionType: string, intent: string, roll?: number) => void
   onSendToLich?: (message: string) => void
   sceneImageUrl?: string
   // Large cinematic environment/location image shown beneath the NPC window.
@@ -525,6 +525,21 @@ function CombatFxKeyframes() {
 // Mute preference + line dedup live at module scope so they survive
 // FeaturedSpeaker unmounting whenever the active speaker changes/clears.
 let ttsMuted = false
+
+/**
+ * Silence the legacy NPC speech path from outside this module.
+ *
+ * The V4 dashboard's DM Voice control speaks BOTH Malachar and the NPCs, in
+ * narrative order, from one queue. This component's own auto-play would then
+ * say every quoted line a second time, out of sequence — audio is unaffected by
+ * the `display: none` that hides the rest of the v3 tree. DmNarration mutes
+ * this while it is on and restores it when it is off, so exactly one system is
+ * ever speaking.
+ */
+export function setNpcTtsMuted(next: boolean) {
+  ttsMuted = next
+  if (next) stopNpcAudio()
+}
 let lastSpokenKey: string | null = null
 let activeNpcAudio: HTMLAudioElement | null = null
 

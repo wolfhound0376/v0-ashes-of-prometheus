@@ -42,13 +42,18 @@ export interface DiceResult {
   isCrit: boolean
   /** Natural 1 on a single d20. */
   isFail: boolean
+  rollMode?: RollMode
+  keptRolls?: number[]
 }
+
+export type RollMode = "normal" | "advantage" | "disadvantage"
 
 export interface RollSpec {
   die: string
   numDice: number
   modifier: number
   label?: string
+  rollMode?: RollMode
 }
 
 export interface DiceContextValue {
@@ -76,8 +81,30 @@ export interface DiceContextValue {
 
 const DICE_ASSET_PATH = "/assets/dice-box/"
 const DICE_MOUNT_SELECTOR = "dice-box-mount"
-const DICE_THEME_COLOR = "#9c7238"
+const DICE_THEME_COLOR = "#8b1814"
 const DICE_INIT_TIMEOUT_MS = 8000
+
+// Sam's dice-box recording: two dice shaken and tumbled onto felt. One shared
+// element, rewound on each roll, so rapid rolls retrigger cleanly instead of
+// stacking overlapping copies. Created lazily on first roll — a roll is always
+// user-initiated, so autoplay policy never blocks it.
+const DICE_SFX_SRC = "/audio/dice-roll.mp3"
+let diceSfx: HTMLAudioElement | null = null
+
+function playDiceSfx() {
+  if (typeof window === "undefined") return
+  try {
+    if (!diceSfx) {
+      diceSfx = new Audio(DICE_SFX_SRC)
+      diceSfx.preload = "auto"
+      diceSfx.volume = 0.7
+    }
+    diceSfx.currentTime = 0
+    void diceSfx.play().catch(() => {})
+  } catch {
+    // Never let a missing or blocked sound file stop the dice from rolling.
+  }
+}
 const RESPONSE_TIMEOUT_MS = 6000
 const RESULT_DISPLAY_MS = 1500
 
@@ -89,12 +116,21 @@ function sidesOf(die: string): number {
 export function buildNotation(spec: RollSpec): string {
   const mod = spec.modifier
   const modStr = mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : ""
-  return `${spec.numDice}${spec.die}${modStr}`
+  const mode = spec.rollMode && spec.rollMode !== "normal" ? ` (${spec.rollMode})` : ""
+  return `${spec.numDice}${spec.die}${modStr}${mode}`
 }
 
 function finalize(spec: RollSpec, rolls: number[]): DiceResult {
-  const total = rolls.reduce((sum, r) => sum + r, 0) + spec.modifier
-  const single20 = spec.die === "d20" && rolls.length === 1
+  const usesD20Mode = spec.die === "d20" && spec.rollMode && spec.rollMode !== "normal"
+  const keptRolls = usesD20Mode
+    ? Array.from({ length: spec.numDice }, (_, index) => {
+        const pair = rolls.slice(index * 2, index * 2 + 2)
+        if (pair.length === 0) return 0
+        return spec.rollMode === "advantage" ? Math.max(...pair) : Math.min(...pair)
+      })
+    : rolls
+  const total = keptRolls.reduce((sum, r) => sum + r, 0) + spec.modifier
+  const single20 = spec.die === "d20" && keptRolls.length === 1
   return {
     die: spec.die,
     rolls,
@@ -102,9 +138,15 @@ function finalize(spec: RollSpec, rolls: number[]): DiceResult {
     total,
     label: spec.label,
     timestamp: new Date(),
-    isCrit: single20 && rolls[0] === 20,
-    isFail: single20 && rolls[0] === 1,
+    isCrit: single20 && keptRolls[0] === 20,
+    isFail: single20 && keptRolls[0] === 1,
+    rollMode: spec.rollMode,
+    keptRolls,
   }
+}
+
+function physicalDiceCount(spec: RollSpec): number {
+  return spec.die === "d20" && spec.rollMode && spec.rollMode !== "normal" ? spec.numDice * 2 : spec.numDice
 }
 
 // Classic (local) roller — silent fallback ONLY when the 3D renderer is
@@ -113,7 +155,7 @@ function finalize(spec: RollSpec, rolls: number[]): DiceResult {
 function resolveClassic(spec: RollSpec): DiceResult {
   const sides = sidesOf(spec.die)
   const rolls: number[] = []
-  for (let i = 0; i < spec.numDice; i++) {
+  for (let i = 0; i < physicalDiceCount(spec); i++) {
     rolls.push(Math.floor(Math.random() * sides) + 1)
   }
   return finalize(spec, rolls)
@@ -246,6 +288,10 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
     (spec: RollSpec, resolve: (r: DiceResult) => void) => {
       const box = diceBoxRef.current
 
+      // Above the renderer check on purpose: the dice should sound the same
+      // whether the 3D box is up or the classic fallback resolved it.
+      playDiceSfx()
+
       // Renderer unusable → resolve classic immediately, no overlay.
       if (diceFailed || !diceReady || !box) {
         settle(resolveClassic(spec), resolve)
@@ -264,7 +310,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
 
       // Roll the dice portion only (modifier is applied to the total by us);
       // dice-box notation does not include modifiers.
-      const diceNotation = `${spec.numDice}${spec.die}`
+      const diceNotation = `${physicalDiceCount(spec)}${spec.die}`
 
       box
         .roll(diceNotation)
@@ -371,10 +417,10 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
             aria-label="Dice roll"
           >
             {/* Dimmed backdrop */}
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="absolute inset-0 bg-black/85 backdrop-blur-[3px]" />
 
             {/* Dark fantasy frame */}
-            <div className="relative z-10 rounded-lg border-2 border-[#8a6a4a] bg-gradient-to-b from-[#1a1614] to-[#0f0d0c] p-4 shadow-[0_0_40px_rgba(0,0,0,0.7),0_0_24px_rgba(200,150,80,0.15)]">
+            <div className="aop-dice-modal relative z-10 p-4">
               {/* Roll label — serif, above the tray */}
               <div className="mb-2 flex items-center justify-center gap-2 text-center">
                 <Dices className="h-4 w-4 text-[#c9a868]" />
@@ -385,7 +431,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
               </div>
 
               {/* Near-black felt tray holding the tumbling 3D dice */}
-              <div className="relative aspect-square w-[min(78vw,420px)] overflow-hidden rounded border-2 border-[#3d3428] bg-[#0a0908]">
+              <div className="relative aspect-square w-[min(78vw,420px)] overflow-hidden rounded-sm border-2 border-[#70491d] bg-[#050504] shadow-[inset_0_0_0_2px_#0a0704,inset_0_0_48px_#000]">
                 {/* Persistent 3D dice canvas mount (preloaded). */}
                 <div
                   id={DICE_MOUNT_SELECTOR}
@@ -393,7 +439,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
                 />
 
                 {/* Subtle amber rim light around the felt. */}
-                <div className="pointer-events-none absolute inset-0 rounded shadow-[inset_0_0_46px_rgba(212,177,90,0.16)]" />
+                <div className="pointer-events-none absolute inset-0 rounded-sm bg-[radial-gradient(circle_at_50%_38%,transparent_20%,rgba(100,20,13,0.08)_55%,rgba(0,0,0,0.72)_100%)] shadow-[inset_0_0_46px_rgba(212,142,58,0.18)]" />
 
                 {/* Prominent total reveal (result phase). */}
                 {overlayPhase === "result" && overlayResult && (

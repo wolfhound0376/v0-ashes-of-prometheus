@@ -10,7 +10,7 @@
 // On success the page shows the character's claim link — the same URL shape
 // the multiplayer claim-link flow verifies (/?c=<id>&k=<token>).
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Anvil, ArrowLeft, Check, ClipboardCopy, Hammer, ScrollText, ShieldAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -33,8 +33,71 @@ const ABILITY_LABELS: Record<(typeof ABILITIES)[number], string> = {
   str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA",
 }
 
+const CHARACTER_CLASSES = [
+  "Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk",
+  "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard",
+] as const
+
+type SpellAbility = "int" | "wis" | "cha"
+type SpellcastingConfig = {
+  ability: SpellAbility
+  cantripLimit: number
+  preparedLimit: number
+  knownLimit?: number
+  cantrips: string[]
+  levelOne: string[]
+  focus: string
+  pact?: boolean
+}
+
+const SPELLCASTING: Partial<Record<(typeof CHARACTER_CLASSES)[number], SpellcastingConfig>> = {
+  Bard: { ability: "cha", cantripLimit: 2, preparedLimit: 4, focus: "Musical Instrument", cantrips: ["Blade Ward", "Dancing Lights", "Light", "Mage Hand", "Mending", "Message", "Minor Illusion", "Prestidigitation", "True Strike", "Vicious Mockery"], levelOne: ["Bane", "Charm Person", "Color Spray", "Command", "Cure Wounds", "Detect Magic", "Disguise Self", "Dissonant Whispers", "Faerie Fire", "Feather Fall", "Healing Word", "Heroism", "Identify", "Sleep", "Tasha's Hideous Laughter", "Thunderwave"] },
+  Cleric: { ability: "wis", cantripLimit: 3, preparedLimit: 4, focus: "Holy Symbol", cantrips: ["Guidance", "Light", "Mending", "Message", "Sacred Flame", "Spare the Dying", "Thaumaturgy", "Toll the Dead", "Word of Radiance"], levelOne: ["Bane", "Bless", "Command", "Cure Wounds", "Detect Magic", "Guiding Bolt", "Healing Word", "Heroism", "Inflict Wounds", "Protection from Evil and Good", "Sanctuary", "Shield of Faith"] },
+  Druid: { ability: "wis", cantripLimit: 2, preparedLimit: 4, focus: "Druidic Focus", cantrips: ["Druidcraft", "Guidance", "Mending", "Message", "Poison Spray", "Produce Flame", "Shillelagh", "Spare the Dying", "Thorn Whip"], levelOne: ["Charm Person", "Cure Wounds", "Detect Magic", "Entangle", "Faerie Fire", "Fog Cloud", "Goodberry", "Healing Word", "Jump", "Longstrider", "Speak with Animals", "Thunderwave"] },
+  Paladin: { ability: "cha", cantripLimit: 0, preparedLimit: 2, focus: "Holy Symbol", cantrips: [], levelOne: ["Bless", "Command", "Cure Wounds", "Divine Favor", "Heroism", "Protection from Evil and Good", "Searing Smite", "Shield of Faith"] },
+  Ranger: { ability: "wis", cantripLimit: 0, preparedLimit: 2, focus: "Druidic Focus", cantrips: [], levelOne: ["Cure Wounds", "Detect Magic", "Entangle", "Fog Cloud", "Goodberry", "Hunter's Mark", "Jump", "Longstrider", "Speak with Animals"] },
+  Sorcerer: { ability: "cha", cantripLimit: 4, preparedLimit: 2, focus: "Arcane Focus", cantrips: ["Acid Splash", "Blade Ward", "Chill Touch", "Dancing Lights", "Fire Bolt", "Light", "Mage Hand", "Message", "Minor Illusion", "Poison Spray", "Prestidigitation", "Ray of Frost", "Shocking Grasp", "True Strike"], levelOne: ["Burning Hands", "Charm Person", "Chromatic Orb", "Color Spray", "Detect Magic", "Disguise Self", "False Life", "Feather Fall", "Fog Cloud", "Grease", "Jump", "Mage Armor", "Magic Missile", "Ray of Sickness", "Shield", "Sleep", "Thunderwave", "Witch Bolt"] },
+  Warlock: { ability: "cha", cantripLimit: 2, preparedLimit: 2, focus: "Arcane Focus", pact: true, cantrips: ["Blade Ward", "Chill Touch", "Eldritch Blast", "Mage Hand", "Message", "Minor Illusion", "Poison Spray", "Prestidigitation", "Toll the Dead", "True Strike"], levelOne: ["Charm Person", "Hellish Rebuke", "Hex", "Protection from Evil and Good", "Tasha's Hideous Laughter", "Witch Bolt"] },
+  Wizard: { ability: "int", cantripLimit: 3, knownLimit: 6, preparedLimit: 4, focus: "Arcane Focus or Spellbook", cantrips: ["Acid Splash", "Blade Ward", "Chill Touch", "Dancing Lights", "Fire Bolt", "Light", "Mage Hand", "Mending", "Message", "Minor Illusion", "Prestidigitation", "Ray of Frost", "Shocking Grasp", "True Strike"], levelOne: ["Burning Hands", "Charm Person", "Chromatic Orb", "Color Spray", "Detect Magic", "Disguise Self", "False Life", "Feather Fall", "Find Familiar", "Fog Cloud", "Grease", "Identify", "Jump", "Mage Armor", "Magic Missile", "Ray of Sickness", "Shield", "Sleep", "Tasha's Hideous Laughter", "Thunderwave", "Witch Bolt"] },
+}
+
+const CLERIC_DOMAINS = ["Knowledge", "Life", "Light", "Nature", "Tempest", "Trickery", "War"] as const
+const CLERIC_DOMAIN_LEVEL_ONE: Record<string, string[]> = {
+  Knowledge: ["Command", "Identify"], Life: ["Bless", "Cure Wounds"], Light: ["Burning Hands", "Faerie Fire"],
+  Nature: ["Animal Friendship", "Speak with Animals"], Tempest: ["Fog Cloud", "Thunderwave"],
+  Trickery: ["Charm Person", "Disguise Self"], War: ["Divine Favor", "Shield of Faith"],
+}
+
 function modifierFor(score: number): number {
   return Math.floor((score - 10) / 2)
+}
+
+function SpellChoiceGrid({
+  title, choices, selected, limit, onToggle,
+}: {
+  title: string
+  choices: string[]
+  selected: string[]
+  limit: number
+  onToggle: (spell: string) => void
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-purple-300">{title}</h4>
+        <span className={cn("text-[11px]", selected.length === limit ? "text-emerald-400" : "text-stone-500")}>{selected.length} / {limit}</span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {choices.map((spell) => {
+          const checked = selected.includes(spell)
+          const disabled = !checked && selected.length >= limit
+          return (
+            <button key={spell} type="button" onClick={() => onToggle(spell)} disabled={disabled} aria-pressed={checked} className={cn("rounded border px-2 py-2 text-left text-xs transition-colors", checked ? "border-purple-500 bg-purple-950/60 text-purple-100" : "border-[#3d3428] bg-[#0f0d0c] text-stone-400 hover:border-purple-800", disabled && "cursor-not-allowed opacity-35")}>{spell}</button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export default function ForgePage() {
@@ -58,6 +121,24 @@ export default function ForgePage() {
   })
   const [qHp, setQHp] = useState(10)
   const [qAc, setQAc] = useState(10)
+  const [qSubclass, setQSubclass] = useState("")
+  const [qCantrips, setQCantrips] = useState<string[]>([])
+  const [qPrepared, setQPrepared] = useState<string[]>([])
+  const [qKnown, setQKnown] = useState<string[]>([])
+
+  const quickSpellcasting = SPELLCASTING[qClass as keyof typeof SPELLCASTING]
+  const quickSpellComplete = !quickSpellcasting || (
+    qCantrips.length === quickSpellcasting.cantripLimit &&
+    qPrepared.length === quickSpellcasting.preparedLimit &&
+    (!quickSpellcasting.knownLimit || qKnown.length === quickSpellcasting.knownLimit)
+  )
+
+  useEffect(() => {
+    setQCantrips([])
+    setQPrepared([])
+    setQKnown([])
+    setQSubclass("")
+  }, [qClass])
 
   const validate = () => {
     setParseError(null)
@@ -128,6 +209,8 @@ export default function ForgePage() {
   }
 
   const quickPayload = useMemo(() => {
+    const spellAbilityModifier = quickSpellcasting ? modifierFor(qScores[quickSpellcasting.ability]) : 0
+    const domainSpells = qClass === "Cleric" && qSubclass ? CLERIC_DOMAIN_LEVEL_ONE[qSubclass] ?? [] : []
     const character: Record<string, unknown> = {
       name: qName.trim(),
       class: qClass,
@@ -140,13 +223,32 @@ export default function ForgePage() {
       sheet_background: qBackground || undefined,
       passive_perception: 10 + modifierFor(qScores.wis),
       initiative: modifierFor(qScores.dex),
+      sheet_subclass: qSubclass ? `${qSubclass} Domain` : undefined,
+      sheet_spellcasting: quickSpellcasting ? {
+        ability: quickSpellcasting.ability,
+        save_dc: 8 + 2 + spellAbilityModifier,
+        attack_bonus: 2 + spellAbilityModifier,
+        cantrips: qCantrips,
+        prepared: qPrepared,
+        known: qKnown,
+        domain_spells: domainSpells,
+        slots: { "1": { max: quickSpellcasting.pact ? 1 : 2, used: 0 } },
+        pact: Boolean(quickSpellcasting.pact),
+        focus: quickSpellcasting.focus,
+        rules_version: "5e-2024",
+      } : undefined,
     }
     for (const ab of ABILITIES) {
       character[`${ab}_score`] = qScores[ab]
       character[`${ab}_modifier`] = modifierFor(qScores[ab])
     }
     return { format: "aop-character-v1", character, inventory: [] }
-  }, [qName, qClass, qSpecies, qBackground, qScores, qHp, qAc])
+  }, [qName, qClass, qSpecies, qBackground, qScores, qHp, qAc, qSubclass, qCantrips, qPrepared, qKnown, quickSpellcasting])
+
+  const toggleSpell = (spell: string, selected: string[], setSelected: (next: string[]) => void, limit: number) => {
+    if (selected.includes(spell)) setSelected(selected.filter((name) => name !== spell))
+    else if (selected.length < limit) setSelected([...selected, spell])
+  }
 
   const copyClaim = async () => {
     if (!claimUrl) return
@@ -308,11 +410,13 @@ export default function ForgePage() {
                 </label>
                 <label className="text-xs text-stone-500 space-y-1">
                   <span>Class</span>
-                  <input
+                  <select
                     value={qClass}
                     onChange={(e) => setQClass(e.target.value)}
                     className="w-full px-2 py-1.5 text-sm bg-[#0f0d0c] border border-[#3d3428] rounded text-stone-300 focus:outline-none focus:border-[#8a6a4a]"
-                  />
+                  >
+                    {CHARACTER_CLASSES.map((className) => <option key={className}>{className}</option>)}
+                  </select>
                 </label>
                 <label className="text-xs text-stone-500 space-y-1">
                   <span>Species</span>
@@ -376,20 +480,57 @@ export default function ForgePage() {
                   />
                 </label>
               </div>
+              {quickSpellcasting && (
+                <section className="space-y-4 rounded-lg border border-purple-900/60 bg-[#120d16] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-serif text-lg text-purple-200">Spellcasting</h3>
+                      <p className="text-xs text-stone-500">
+                        {ABILITY_LABELS[quickSpellcasting.ability]} · Save DC {8 + 2 + modifierFor(qScores[quickSpellcasting.ability])} · Attack {modifierFor(qScores[quickSpellcasting.ability]) + 2 >= 0 ? "+" : ""}{modifierFor(qScores[quickSpellcasting.ability]) + 2} · {quickSpellcasting.focus}
+                      </p>
+                    </div>
+                    <span className="rounded border border-purple-800/60 px-2 py-1 text-[10px] uppercase tracking-wider text-purple-300">5E 2024 · Level 1</span>
+                  </div>
+
+                  {qClass === "Cleric" && (
+                    <label className="block space-y-1 text-xs text-stone-500">
+                      <span>Divine Domain <span className="text-stone-700">(optional for campaigns using 2014 subclass timing)</span></span>
+                      <select value={qSubclass} onChange={(e) => setQSubclass(e.target.value)} className="w-full rounded border border-[#3d3428] bg-[#0f0d0c] px-2 py-1.5 text-sm text-stone-300 focus:border-purple-700 focus:outline-none">
+                        <option value="">Not selected</option>
+                        {CLERIC_DOMAINS.map((domain) => <option key={domain} value={domain}>{domain} Domain</option>)}
+                      </select>
+                    </label>
+                  )}
+
+                  {quickSpellcasting.cantripLimit > 0 && (
+                    <SpellChoiceGrid title="Cantrips" selected={qCantrips} choices={quickSpellcasting.cantrips} limit={quickSpellcasting.cantripLimit} onToggle={(spell) => toggleSpell(spell, qCantrips, setQCantrips, quickSpellcasting.cantripLimit)} />
+                  )}
+                  {quickSpellcasting.knownLimit && (
+                    <SpellChoiceGrid title="Starting Spellbook · Level 1" selected={qKnown} choices={quickSpellcasting.levelOne} limit={quickSpellcasting.knownLimit} onToggle={(spell) => {
+                      toggleSpell(spell, qKnown, (next) => {
+                        setQKnown(next)
+                        setQPrepared((prepared) => prepared.filter((name) => next.includes(name)))
+                      }, quickSpellcasting.knownLimit || 0)
+                    }} />
+                  )}
+                  <SpellChoiceGrid title={qClass === "Wizard" ? "Prepared from Spellbook" : "Prepared Level 1 Spells"} selected={qPrepared} choices={qClass === "Wizard" ? qKnown : quickSpellcasting.levelOne} limit={quickSpellcasting.preparedLimit} onToggle={(spell) => toggleSpell(spell, qPrepared, setQPrepared, quickSpellcasting.preparedLimit)} />
+                  <p className="text-[11px] text-stone-600">Selections are saved with the character and appear in the dashboard&apos;s full character sheet. Spell slots refresh after a long rest.</p>
+                </section>
+              )}
               <button
                 onClick={() => save(quickPayload, duplicatePending)}
-                disabled={saving || !qName.trim()}
+                disabled={saving || !qName.trim() || !quickSpellComplete}
                 className={cn(
                   "w-full py-2 rounded font-bold uppercase tracking-wider text-sm transition-all",
                   "bg-gradient-to-r from-[#4a3a2a] via-[#5a4a3a] to-[#4a3a2a]",
                   "border border-[#8a6a4a] hover:border-[#c9a868] text-[#c9a868] hover:text-white",
-                  (saving || !qName.trim()) && "opacity-60 cursor-not-allowed",
+                  (saving || !qName.trim() || !quickSpellComplete) && "opacity-60 cursor-not-allowed",
                 )}
               >
                 {saving ? "Forging…" : duplicatePending ? "Yes — create a second copy" : "Save to Campaign"}
               </button>
               <p className="text-[11px] text-stone-600">
-                Quick builds are Level 1 with empty inventory — refine them later in the Character Forge and re-import.
+                Quick builds are Level 1 with empty inventory. Spellcasters must complete their spell choices before saving.
               </p>
             </div>
           )}

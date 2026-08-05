@@ -182,3 +182,387 @@
       rgba(139, 115, 85, 0.02) 4px
     );
 }
+
+/* Lich-domain dashboard treatment. These classes deliberately affect only the
+   V4 dashboard and dice surfaces so the existing data and interaction wiring
+   remain untouched. */
+.aop-lich-dashboard {
+  --aop-gold: #c99a49;
+  --aop-gold-bright: #edc879;
+  --aop-gold-dark: #604018;
+  --aop-red: #8f1717;
+  background:
+    radial-gradient(circle at 50% 25%, rgba(117, 22, 17, 0.1), transparent 32%),
+    linear-gradient(rgba(3, 4, 4, 0.96), rgba(3, 3, 3, 0.99)),
+    repeating-linear-gradient(135deg, transparent 0 18px, rgba(173, 119, 42, 0.035) 19px 20px);
+  color: #d8c39a;
+  box-shadow: inset 0 0 70px #000;
+}
+
+.aop-lich-dashboard button,
+.aop-lich-dashboard input,
+.aop-dice-modal button,
+.aop-dice-modal input {
+  font-family: var(--font-serif), "Times New Roman", serif;
+}
+
+.aop-ornate-panel,
+.aop-dice-modal,
+.aop-dice-panel {
+  position: relative;
+  border: 1px solid #755021;
+  border-radius: 2px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(92, 31, 20, 0.11), transparent 34%),
+    linear-gradient(160deg, rgba(13, 14, 13, 0.985), rgba(5, 6, 6, 0.995));
+  box-shadow:
+    inset 0 0 0 2px #090704,
+    inset 0 0 0 3px rgba(146, 93, 28, 0.28),
+    inset 0 0 28px rgba(0, 0, 0, 0.85),
+    0 7px 22px rgba(0, 0, 0, 0.8);
+}
+
+.aop-ornate-panel::before,
+.aop-dice-modal::before,
+.aop-dice-panel::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  z-index: 20;
+  pointer-events: none;
+  border: 1px solid rgba(192, 132, 52, 0.17);
+  clip-path: polygon(0 0, 28px 0, 28px 1px, calc(100% - 28px) 1px, calc(100% - 28px) 0, 100% 0, 100% 28px, calc(100% - 1px) 28px, calc(100% - 1px) calc(100% - 28px), 100% calc(100% - 28px), 100% 100%, calc(100% - 28px) 100%, calc(100% - 28px) calc(100% - 1px), 28px calc(100% - 1px), 28px 100%, 0 100%, 0 calc(100% - 28px), 1px calc(100% - 28px), 1px 28px, 0 28px);
+}
+
+.aop-ornate-title,
+.aop-dice-header {
+  position: relative;
+  min-height: 34px;
+  border-bottom: 1px solid #68451d;
+  background: linear-gradient(90deg, #070707, #15100a 50%, #070707);
+  color: #e1b967;
+  text-shadow: 0 1px 0 #000, 0 0 10px rgba(218, 157, 58, 0.18);
+  box-shadow: inset 0 -1px rgba(0, 0, 0, 0.85);
+}
+
+.aop-ornate-title::after,
+.aop-dice-header::after {
+  content: "◆";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%) rotate(45deg);
+  color: #8d5b25;
+  font-size: 8px;
+  text-shadow: 0 0 5px #d1882d;
+}
+
+.aop-square-action,
+.aop-initiative-button {
+  border: 1px solid #765022;
+  border-radius: 2px;
+  color: #d5ae64;
+  background: linear-gradient(145deg, #181007, #080706);
+  box-shadow: inset 0 0 12px #000, 0 0 0 1px rgba(0, 0, 0, 0.8);
+  transition: border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.aop-square-action:hover,
+.aop-initiative-button:hover {
+  border-color: #d2a350;
+  color: #f7d993;
+  box-shadow: inset 0 0 12px #000, 0 0 10px rgba(190, 118, 27, 0.22);
+}
+
+.aop-lich-input {
+  border: 1px solid #62421d;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #080807, #0d0907);
+  color: #e0cda7;
+  outline: none;
+  box-shadow: inset 0 1px 10px #000;
+}
+
+.aop-lich-input::placeholder { color: #6e6049; }
+.aop-lich-input:focus { border-color: #b88336; box-shadow: inset 0 1px 10px #000, 0 0 8px rgba(184, 131, 54, 0.18); }
+
+.aop-dice-modal {
+  border-color: #936329;
+  box-shadow: inset 0 0 0 2px #090604, inset 0 0 0 4px rgba(128, 74, 18, 0.38), 0 24px 90px #000, 0 0 28px rgba(125, 22, 15, 0.18);
+}
+
+.aop-dice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  font-family: var(--font-serif), "Times New Roman", serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.aop-dice-body { background: radial-gradient(circle at 50% 16%, rgba(88, 24, 15, 0.12), transparent 31%); }
+
+.aop-dice-label {
+  text-align: center;
+  font-family: var(--font-serif), "Times New Roman", serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d6a958;
+}
+
+.aop-gold-rule { height: 1px; background: linear-gradient(90deg, transparent, #6d471e 18%, #9b6426 50%, #6d471e 82%, transparent); }
+
+.aop-die-choice {
+  min-height: 64px;
+  border: 1px solid #513617;
+  border-radius: 3px;
+  background: linear-gradient(145deg, #0b0907, #11100d);
+  box-shadow: inset 0 0 11px #000, 0 3px 7px #000;
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.aop-die-choice:hover { transform: translateY(-2px); border-color: #ae7330; }
+.aop-die-choice.is-selected { border-color: #e0aa4c; box-shadow: inset 0 0 11px #000, 0 0 13px rgba(223, 146, 43, 0.45); }
+
+.aop-die-model {
+  position: relative;
+  display: block;
+  width: 58px;
+  height: 58px;
+  margin: 2px auto 0;
+  background-image: url('/images/ui/dice-roller-reference.png');
+  background-repeat: no-repeat;
+  background-size: 1536px 1024px;
+  filter: drop-shadow(0 5px 4px #000) saturate(1.12) contrast(1.08);
+  transform: perspective(160px) rotateX(4deg);
+  transition: transform 180ms ease, filter 180ms ease;
+}
+.aop-die-model::after {
+  content: attr(data-face);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  min-width: 24px;
+  height: 22px;
+  place-items: center;
+  transform: translate(-50%, -54%);
+  border: 1px solid rgba(238, 186, 92, .75);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(105, 17, 13, .97), rgba(36, 5, 5, .96));
+  color: #f4ce7e;
+  font-family: var(--font-serif), "Times New Roman", serif;
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px #000;
+  box-shadow: 0 1px 5px #000, inset 0 0 5px rgba(255, 160, 54, .24);
+}
+.aop-die-model.is-percentile {
+  width: 53px;
+  height: 53px;
+  border: 1px solid #b67836;
+  border-radius: 50%;
+  background-image:
+    radial-gradient(circle at 36% 28%, rgba(255, 126, 57, .48), transparent 17%),
+    repeating-conic-gradient(from 8deg, #9d281c 0deg 11deg, #53100d 11deg 22deg, #b43a24 22deg 32deg, #3b0908 32deg 43deg);
+  box-shadow: inset -8px -9px 14px rgba(20, 0, 0, .85), inset 5px 5px 9px rgba(244, 123, 55, .3), 0 5px 6px #000;
+}
+.aop-die-model.is-percentile::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(238, 183, 94, .35);
+  border-radius: 50%;
+  background: repeating-linear-gradient(55deg, transparent 0 8px, rgba(241, 178, 76, .25) 9px 10px);
+}
+
+.aop-die-choice:hover .aop-die-model,
+.aop-die-choice.is-selected .aop-die-model {
+  transform: perspective(160px) rotateX(0deg) translateY(-2px) scale(1.08);
+  filter: drop-shadow(0 7px 5px #000) saturate(1.25) contrast(1.12) brightness(1.08);
+}
+
+.aop-roll-mode {
+  border: 1px solid #5b3c1b;
+  background: linear-gradient(180deg, #16110a, #090806);
+  padding: 9px 4px;
+  color: #bba276;
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  box-shadow: inset 0 0 12px #000;
+}
+.aop-roll-mode.is-advantage.is-selected { border-color: #9c9f4a; color: #f1dda0; background: linear-gradient(180deg, #394019, #121607); }
+.aop-roll-mode.is-disadvantage.is-selected { border-color: #9f2f25; color: #ffd0b0; background: linear-gradient(180deg, #54140f, #210706); }
+.aop-roll-mode.is-normal.is-selected { border-color: #c18b38; color: #f1d492; background: linear-gradient(180deg, #36240e, #120b05); }
+.aop-roll-mode:disabled { cursor: not-allowed; opacity: .32; }
+
+.aop-log-d20 {
+  width: 54px;
+  height: 54px;
+  border: 1px solid #b98432;
+  border-radius: 9px;
+  background: url('/images/ui/dice-stills/d20-launcher.png') center / cover no-repeat;
+  box-shadow: inset 0 0 12px #000, 0 5px 14px #000, 0 0 14px rgba(157, 35, 22, .22);
+  overflow: hidden;
+}
+.aop-log-d20:hover { border-color: #f0c56f; box-shadow: inset 0 0 12px #000, 0 5px 14px #000, 0 0 20px rgba(208, 70, 34, .42); }
+
+.aop-campaign-book {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 13px solid #2b160c;
+  border-radius: 18px 24px 24px 18px;
+  background: #321b0e;
+  box-shadow: inset 0 0 0 2px #9a6835, 0 30px 90px #000, 0 0 0 2px #120904;
+  animation: aop-book-open 420ms cubic-bezier(.2,.8,.2,1) both;
+  transform-origin: center;
+}
+.aop-book-page {
+  position: relative;
+  overflow: hidden;
+  padding: 28px 38px;
+  background:
+    linear-gradient(90deg, rgba(72,38,18,.16), transparent 12%, transparent 88%, rgba(72,38,18,.12)),
+    radial-gradient(circle at 45% 28%, #e4c997, #caa66c 72%, #a67b45);
+  box-shadow: inset 0 0 34px rgba(64,34,14,.42);
+}
+.aop-book-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .18;
+  background: repeating-linear-gradient(0deg, transparent 0 25px, #795530 26px 27px);
+  mix-blend-mode: multiply;
+}
+.aop-book-page-left { border-radius: 5px 0 0 8px; border-right: 1px solid #74502e; }
+.aop-book-page-right { border-radius: 0 9px 8px 0; border-left: 1px solid #e0c28e; }
+.aop-book-page-left::before,
+.aop-book-page-right::before { content: ""; position: absolute; inset-block: 0; width: 34px; z-index: 2; pointer-events: none; }
+.aop-book-page-left::before { right: 0; background: linear-gradient(90deg, transparent, rgba(49,25,10,.32)); }
+.aop-book-page-right::before { left: 0; background: linear-gradient(90deg, rgba(49,25,10,.3), transparent); }
+@keyframes aop-book-open { from { opacity: 0; transform: perspective(1200px) rotateX(10deg) scale(.88); } to { opacity: 1; transform: perspective(1200px) rotateX(0) scale(1); } }
+@media (max-width: 720px) {
+  .aop-campaign-book { grid-template-columns: 1fr; overflow-y: auto; }
+  .aop-book-page { min-height: 540px; }
+}
+
+.aop-arcane-stage { perspective: 1500px; }
+.aop-arcane-book {
+  position: relative;
+  min-height: min(680px, 82vh);
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 28px 35px #000);
+}
+.aop-arcane-stage.is-opening .aop-arcane-book { animation: aop-spellbook-reveal 1400ms cubic-bezier(.18,.75,.2,1) both; }
+.aop-arcane-stage.is-closing .aop-arcane-book { animation: aop-spellbook-conceal 900ms cubic-bezier(.55,.05,.8,.25) both; }
+.aop-spellbook-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  border: 8px ridge #8e6536;
+  border-radius: 18px 28px 28px 18px;
+  background: #0b0807 url('/images/ui/spellbook/grimoire-closed.png') center / cover no-repeat;
+  box-shadow: inset 0 0 0 3px #1a081e, inset 0 0 45px #000;
+  transform-origin: left center;
+  backface-visibility: hidden;
+}
+.aop-arcane-stage.is-opening .aop-spellbook-cover { animation: aop-cover-open 1050ms 420ms cubic-bezier(.25,.65,.35,1) both; }
+.aop-arcane-stage.is-closing .aop-spellbook-cover { animation: aop-cover-close 620ms both; }
+.aop-spellbook-spread {
+  display: grid;
+  min-height: min(680px, 82vh);
+  grid-template-columns: 1fr 1fr;
+  border: 11px solid #38200f;
+  border-radius: 14px 22px 22px 14px;
+  background: #21150c url('/images/ui/spellbook/grimoire-open.png') center / cover no-repeat;
+  box-shadow: inset 0 0 0 2px #b17b3e;
+  animation: aop-page-turn 520ms ease both;
+}
+.aop-spell-page {
+  position: relative;
+  min-width: 0;
+  padding: 34px 38px 88px;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% 15%, rgba(255,247,196,.74), transparent 30%),
+    repeating-linear-gradient(0deg, transparent 0 26px, rgba(99,66,36,.08) 27px),
+    linear-gradient(100deg, rgba(200,157,97,.88), rgba(234,214,162,.91) 10%, rgba(223,194,138,.91) 90%, rgba(185,138,81,.88));
+  backdrop-filter: blur(.5px);
+  color: #412719;
+  box-shadow: inset 0 0 38px rgba(68,35,12,.36);
+}
+.aop-spell-page:first-child { border-right: 1px solid #76502e; border-radius: 4px 0 0 7px; }
+.aop-spell-page:last-child { border-left: 1px solid #efdca9; border-radius: 0 8px 7px 0; }
+.aop-spell-page:first-child::after,
+.aop-spell-page:last-child::after { content: ""; position: absolute; inset-block: 0; width: 34px; pointer-events: none; }
+.aop-spell-page:first-child::after { right: 0; background: linear-gradient(90deg, transparent, rgba(54,27,9,.34)); }
+.aop-spell-page:last-child::after { left: 0; background: linear-gradient(90deg, rgba(54,27,9,.32), transparent); }
+.aop-spell-page header { margin-bottom: 25px; text-align: center; color: #56301e; }
+.aop-spell-page header h2 { margin-top: 8px; font-family: var(--font-serif), serif; font-size: 25px; }
+.aop-spell-page header p { margin-top: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+.aop-rune-ring { display: block; margin-bottom: 8px; text-align: center; color: #7f3f75; letter-spacing: .6em; text-shadow: 0 0 7px rgba(120,35,145,.42); }
+.aop-page-controls { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 10px; color: #c9a868; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+.aop-page-controls button { border: 1px solid #765126; padding: 7px 12px; background: #100a07; }
+.aop-page-controls button:disabled { opacity: .3; }
+.aop-spellbook-forge { display: block; width: max-content; margin: 8px auto 0; color: #9d79bd; font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+@keyframes aop-spellbook-reveal { 0% { opacity: 0; transform: translateY(80px) rotateX(32deg) rotateY(-40deg) scale(.42); } 32% { opacity: 1; transform: translateY(0) rotateX(8deg) rotateY(340deg) scale(.62); } 68% { transform: rotateX(0) rotateY(360deg) scale(.82); } 100% { transform: rotateX(0) rotateY(360deg) scale(1); } }
+@keyframes aop-spellbook-conceal { 0% { opacity: 1; transform: rotateY(0) scale(1); } 52% { transform: rotateY(-12deg) scale(.72); } 100% { opacity: 0; transform: translateY(70px) rotateX(24deg) rotateY(-350deg) scale(.38); } }
+@keyframes aop-cover-open { 0% { opacity: 1; transform: rotateY(0); } 72% { opacity: 1; transform: rotateY(-155deg); } 100% { opacity: 0; transform: rotateY(-178deg); visibility: hidden; } }
+@keyframes aop-cover-close { 0% { opacity: 0; transform: rotateY(-178deg); } 20% { opacity: 1; } 100% { opacity: 1; transform: rotateY(0); } }
+@keyframes aop-page-turn { from { opacity: .25; transform: perspective(900px) rotateY(-18deg); } to { opacity: 1; transform: perspective(900px) rotateY(0); } }
+@keyframes aop-rune-pulse { 50% { color: #fff0a7; transform: scale(1.04); box-shadow: 0 0 40px rgba(197,94,255,.55), inset 0 0 32px rgba(238,175,66,.4); } }
+@media (max-width: 760px) {
+  .aop-spellbook-spread { grid-template-columns: 1fr; overflow-y: auto; }
+  .aop-spell-page { min-height: 520px; }
+  .aop-spell-page:last-child { border-left: 0; border-top: 1px solid #76502e; }
+}
+
+.aop-mini-control {
+  width: 30px;
+  height: 28px;
+  border: 1px solid #4f3417;
+  color: #c99a49;
+  background: #0a0806;
+}
+
+.aop-roll-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  min-height: 48px;
+  border: 1px solid #d09b42;
+  clip-path: polygon(6% 0, 94% 0, 100% 50%, 94% 100%, 6% 100%, 0 50%);
+  background: linear-gradient(180deg, #8b1916, #4a0808 52%, #260505);
+  color: #f3cf83;
+  font-family: var(--font-serif), "Times New Roman", serif;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px #000;
+  box-shadow: inset 0 0 18px #1b0000;
+}
+
+.aop-roll-button:hover { filter: brightness(1.17); }
+.aop-roll-button:disabled { cursor: wait; opacity: 0.65; }
+
+.aop-roll-result {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #65451e;
+  background: rgba(4, 4, 4, 0.68);
+  padding: 10px 12px;
+  box-shadow: inset 0 0 14px #000;
+}
+
+.aop-roll-result.is-critical { border-color: #8ba344; box-shadow: inset 0 0 15px rgba(74, 102, 26, 0.28); }
+.aop-roll-result.is-fumble { border-color: #9b251c; box-shadow: inset 0 0 15px rgba(125, 18, 12, 0.32); }
+
+.aop-send-lich { border: 1px solid #78501f; padding: 7px; color: #d7ad5f; background: #120b07; }

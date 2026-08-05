@@ -11,7 +11,8 @@ interface MusicPlayerProps {
 
 export function MusicPlayer({ isTTSMuted, onToggleTTSMute, className }: MusicPlayerProps) {
   return (
-    <div className={cn("fixed bottom-4 right-4 z-50", className)}>
+    // Raised to bottom-16 to clear the status bar's Export Campaign button.
+    <div className={cn("fixed bottom-16 right-4 z-50", className)}>
       <button
         onClick={onToggleTTSMute}
         className={cn(
