@@ -17,6 +17,20 @@ const ABILITY_KEYS: AbilityKey[] = ["str", "dex", "con", "int", "wis", "cha"]
 const spellNames = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((name): name is string => typeof name === "string" && name.trim().length > 0) : []
 
+const DND_SKILLS = [
+  "acrobatics", "animal_handling", "arcana", "athletics", "deception", "history",
+  "insight", "intimidation", "investigation", "medicine", "nature", "perception",
+  "performance", "persuasion", "religion", "sleight_of_hand", "stealth", "survival",
+]
+
+function normalizedSkillMap(raw: Record<string, any>): Record<string, string> {
+  const mapped = raw.sheet_skill_proficiencies
+  if (mapped && typeof mapped === "object" && !Array.isArray(mapped) && Object.keys(mapped).length) return mapped
+  const fromArray = Array.isArray(raw.skill_proficiencies) ? raw.skill_proficiencies : []
+  const legacy = [raw.skills, ...fromArray].filter(Boolean).join(", ").toLowerCase().replace(/[- ]/g, "_")
+  return Object.fromEntries(DND_SKILLS.filter((skill) => new RegExp(`(^|[^a-z_])${skill}(?=[^a-z_]|$)`).test(legacy)).map((skill) => [skill, "proficient"]))
+}
+
 /** Map a `characters` row onto the shape the Forge sheet expects. Kept here so
  *  the sheet stays presentational and the DB column names live in one place.
  *  `sheet_skill_proficiencies` is a jsonb OBJECT keyed by snake_case skill name
@@ -24,7 +38,7 @@ const spellNames = (value: unknown): string[] =>
 function toSheetCharacter(c: Character) {
   const raw = c as unknown as Record<string, any>
   const spellcasting = raw.sheet_spellcasting ?? {}
-  const skillMap: Record<string, string> = raw.sheet_skill_proficiencies ?? {}
+  const skillMap = normalizedSkillMap(raw)
   const entries = Object.entries(skillMap)
   const abilities = Object.fromEntries(
     ABILITY_KEYS.map((k) => [k, { score: raw[`${k}_score`] ?? 10, modifier: raw[`${k}_modifier`] ?? 0 }]),
@@ -112,7 +126,7 @@ function buildRailStats(c: Character | undefined) {
   const classSkills: string[] = (classDefaults[raw.class as string]?.skillChoices?.options ?? [])
     .map((s: string) => s.toLowerCase().replace(/ /g, "_"))
 
-  const skillMap: Record<string, string> = raw.sheet_skill_proficiencies ?? {}
+  const skillMap = normalizedSkillMap(raw)
   const skills = Object.entries(skillMap)
     .filter(([key]) => SKILL_ABILITY[key])
     .map(([key, level]) => {

@@ -700,6 +700,7 @@ FORMATTING — CRITICAL:
 
 NPC DIALOGUE OWNERSHIP — CRITICAL:
 - When an NPC answers, put that NPC's exact spoken words in quotation marks once. Never repeat, paraphrase, or claim the NPC's words as Malachar.
+- Wrap EVERY NPC's exact spoken words, including one-word replies, as [NPC_SPEECH: Exact Canonical Name]"their exact words"[/NPC_SPEECH]. The wrapper is required even when the NPC is the only speaker.
 - Preserve each NPC's established campaign personality, motives, knowledge, and diction. Do not invent a new personality or knowledge the NPC cannot have.
 - Malachar speaks only for necessary narration, rulings, and consequences. If the NPC's answer fully resolves the beat, let the NPC's quoted line stand alone and keep Malachar silent.
 - Never blend two NPCs into one voice. A change of speaker requires a new quoted span with clear attribution.
@@ -1857,8 +1858,15 @@ a paragraph, and you know it.`
     }
   }
 
-  // Strip all tags from the displayed text
+  const taggedNpcSpeech = Array.from(rawText.matchAll(/\[NPC_SPEECH:\s*([^\]]+)\]([\s\S]*?)\[\/NPC_SPEECH\]/gi)).map((match) => ({
+    speaker: match[1].trim(),
+    line: match[2].trim().replace(/^["“”„]+|["“”„]+$/g, "").trim(),
+  })).filter((segment) => segment.speaker && segment.line)
+
+  // Strip control tags from the displayed text, preserving their visible speech.
   const responseText = rawText
+    .replace(/\[NPC_SPEECH:\s*[^\]]+\]/gi, "")
+    .replace(/\[\/NPC_SPEECH\]/gi, "")
     .replace(/\[ITEM_ADD:[^\]]+\]/gi, "")
     .replace(/\[ITEM_REMOVE:[^\]]+\]/gi, "")
     .replace(/\[ITEM_AWARD:[^\]]+\]/gi, "")
@@ -1893,7 +1901,20 @@ a paragraph, and you know it.`
     speech_segments: PersistedSpeechSegment[] | null
   }
   let speechSegments: PersistedSpeechSegment[] | null = null
-  if (responseText && /[“”"„]/.test(responseText)) {
+  if (taggedNpcSpeech.length) {
+    const { data: taggedNpcRows } = await supabase
+      .from("npc_encounters")
+      .select("id, name, voice_id")
+      .order("created_at", { ascending: false })
+    const resolved: PersistedSpeechSegment[] = []
+    for (const segment of taggedNpcSpeech) {
+      const npc = await resolveNpcByName(supabase, segment.speaker)
+      if (!npc) continue
+      const row = (taggedNpcRows || []).find((entry: any) => entry.id === npc.id)
+      resolved.push({ speaker: npc.name, line: segment.line, npc_id: npc.id, voice_id: row?.voice_id || null })
+    }
+    speechSegments = resolved.length ? resolved : null
+  } else if (responseText && /[“”"„]/.test(responseText)) {
     try {
       const { data: speechNpcRows } = await supabase
         .from("npc_encounters")
