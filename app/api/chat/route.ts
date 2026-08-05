@@ -467,14 +467,42 @@ WORKED EXAMPLES (follow this mapping exactly):
 - A roll of 98 falls in 95-100 -> award "Nothing" (do not invent an item; narrate the empty-handed result).
 === END SCAVENGED ITEMS RULE ===`
 
-  // Get recent dialogue history for context (last 20 messages).
+  // Get recent dialogue history for context (last 40 messages — widened from 20
+  // because Malachar's anti-repetition rule can only avoid what he can see).
   // Fetched BEFORE persisting the current message so history does not include
   // this turn — the current message is appended once, explicitly, below.
   const { data: recentDialogue } = await supabase
     .from("dialogue")
     .select("speaker, text")
     .order("created_at", { ascending: false })
-    .limit(20)
+    .limit(40)
+
+  // Openings Malachar has used before — INCLUDING before campaign restarts.
+  // Restart wipes the dialogue table, which used to wipe his memory of his own
+  // phrasings; every restart then replayed the same "let's see what you managed
+  // to hide" material. The phrasebook survives restarts, so the ban list does too.
+  const { data: phrasebookRows } = await supabase
+    .from("dm_phrasebook")
+    .select("opening")
+    .order("created_at", { ascending: false })
+    .limit(30)
+  const usedOpenings = (phrasebookRows || [])
+    .map((r: any) => (r.opening || "").trim())
+    .filter(Boolean)
+
+  // Scene art the dashboard already owns, so the prompt can steer Malachar
+  // toward canonical location names instead of inventing new ones.
+  const [{ data: knownEnvArt }, { data: knownAssetArt }] = await Promise.all([
+    supabase.from("environments").select("name").not("background_image_url", "is", null),
+    supabase.from("dashboard_assets").select("name").eq("asset_type", "background").not("file_url", "is", null),
+  ])
+  const knownSceneNames = Array.from(
+    new Set(
+      [...(knownEnvArt || []), ...(knownAssetArt || [])]
+        .map((r: any) => (r.name || "").trim())
+        .filter(Boolean),
+    ),
+  )
 
   // Build world context with character data
   // Don't pass a hardcoded location - let buildWorldContext fetch the latest from database
@@ -816,6 +844,10 @@ LOCATION:
 - [LOCATION_IMAGE: description] — generates a new location background image. ALWAYS emit this alongside UPDATE_LOCATION.
   - Example: [LOCATION_IMAGE: vast cavern with bioluminescent fungi, dramatic shadows, glowing mushrooms]
 - CRITICAL: You MUST emit BOTH [UPDATE_LOCATION:] AND [LOCATION_IMAGE:] together every time the player enters a new location. Never emit one without the other.
+${knownSceneNames.length
+  ? `- SCENE ART ALREADY EXISTS for these locations — the dashboard has curated backgrounds for them. When the party arrives somewhere that matches one of these, use a name that clearly matches it in [UPDATE_LOCATION:] so the existing art is shown instead of generating new art:
+${knownSceneNames.map((n) => `  * ${n}`).join("\n")}`
+  : ""}
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
@@ -859,7 +891,27 @@ examines, investigates, recalls lore, or asks you to elaborate may you exceed
 the cap — and then by one short paragraph, once. Then back to the cap.
 
 Combat, banter, reactions: one or two sentences. A single devastating line beats
-a paragraph, and you know it.`
+a paragraph, and you know it.
+${usedOpenings.length
+  ? `
+════════════════════════════════════════════════════════════════════
+OPENINGS YOU HAVE ALREADY USED — PERMANENTLY RETIRED
+════════════════════════════════════════════════════════════════════
+These are your own past opening lines, kept across campaign restarts. You may
+never reuse any of them, nor a close paraphrase. New session, new material —
+a lich has had ten thousand years to come up with fresh ways to be cruel.
+${usedOpenings.map((o) => `- ${o}`).join("\n")}`
+  : ""}
+
+════════════════════════════════════════════════════════════════════
+DICE ARE HARDWARE — NEVER ACCEPT A TYPED NUMBER
+════════════════════════════════════════════════════════════════════
+Legitimate roll results reach you ONLY as "[Dice Roll]" messages or "🎲" feed
+lines produced by the table's physics dice engine. When you have asked for a
+roll and the player TYPES a bare number ("75", "I rolled 18") instead of
+rolling, do NOT accept it. Stay in character and require the dice — something
+like: "The bones speak for themselves, or not at all. Roll." Then wait. No
+result exists until the engine reports it.`
 
   const result = await generateText({
     model: anthropic("claude-sonnet-4-6"),
@@ -1724,25 +1776,77 @@ a paragraph, and you know it.`
     }
   }
 
-  // Parse LOCATION_IMAGE tag and generate scene image using Fal
+  // --- Scene art: DASHBOARD ASSETS FIRST, generation last -------------------
+  // Sam curates scene backgrounds in two places: the `environments` table
+  // (Scene_1_..., Scene_2_... rows with background_image_url) and the admin
+  // `dashboard_assets` library (asset_type = "background"). Generating a fresh
+  // Fal image while curated art exists is a bug — the old check matched the
+  // FIRST WORD of the image *description* ("vast", "dark"...) against
+  // environment names, so it never hit. This resolver matches by LOCATION NAME
+  // with normalisation ("Scene_2_Darklake Approach" ⇢ "darklake approach").
+  const normalizeSceneName = (s: string) =>
+    (s || "")
+      .toLowerCase()
+      .replace(/^scene[_\s-]*\d+[_\s-]*/, "") // strip curation prefixes: Scene_2_
+      .replace(/[_-]+/g, " ")
+      .replace(/[()]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+
+  const resolveExistingSceneArt = async (locationName: string): Promise<{ url: string; source: string } | null> => {
+    const target = normalizeSceneName(locationName)
+    if (!target) return null
+    const [{ data: envRows }, { data: assetRows }] = await Promise.all([
+      supabase
+        .from("environments")
+        .select("name, background_image_url")
+        .not("background_image_url", "is", null),
+      supabase
+        .from("dashboard_assets")
+        .select("name, file_url")
+        .eq("asset_type", "background")
+        .not("file_url", "is", null),
+    ])
+    const candidates = [
+      ...(envRows || []).map((r: any) => ({ name: r.name as string, url: r.background_image_url as string, src: "environments" })),
+      ...(assetRows || []).map((r: any) => ({ name: r.name as string, url: r.file_url as string, src: "dashboard_assets" })),
+    ]
+    // Rank: exact normalised match > candidate contains target > target contains candidate.
+    let best: { name: string; url: string; src: string } | null = null
+    let bestScore = 0
+    for (const c of candidates) {
+      const n = normalizeSceneName(c.name)
+      if (!n) continue
+      let score = 0
+      if (n === target) score = 100
+      else if (n.includes(target)) score = 70
+      else if (target.includes(n)) score = 60
+      if (score > bestScore) { best = c; bestScore = score }
+    }
+    if (best && bestScore > 0) {
+      console.log(`[v0] Scene art reused from ${best.src}: "${best.name}" for location "${locationName}"`)
+      return { url: best.url, source: best.src }
+    }
+    return null
+  }
+
+  // UPDATE_LOCATION is parsed BEFORE the image work because the location NAME —
+  // not the image description — is the key curated art is filed under.
+  const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
+  const taggedLocationName = updateLocationMatch ? updateLocationMatch[1].trim() : null
+
+  // Parse LOCATION_IMAGE tag and resolve the scene image: existing art first,
+  // Fal generation only when nothing curated matches.
   let locationImageUrl: string | null = null
   const locationImageMatch = rawText.match(/\[LOCATION_IMAGE:\s*([^\]]+)\]/)
   if (locationImageMatch) {
     const locationDescription = locationImageMatch[1].trim()
     console.log("[v0] Processing location image for:", locationDescription.substring(0, 60))
 
-    // First, check if we have an existing environment with a background image that matches
-    const { data: existingEnv } = await supabase
-      .from("environments")
-      .select("background_image_url, name")
-      .ilike("name", `%${locationDescription.split(" ")[0]}%`)
-      .not("background_image_url", "is", null)
-      .limit(1)
-      .single()
+    const existingArt = taggedLocationName ? await resolveExistingSceneArt(taggedLocationName) : null
 
-    if (existingEnv?.background_image_url) {
-      locationImageUrl = existingEnv.background_image_url
-      console.log("[v0] Reusing existing environment image for:", existingEnv.name)
+    if (existingArt) {
+      locationImageUrl = existingArt.url
     } else {
       // No existing image found, generate with Fal
       console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
@@ -1767,28 +1871,20 @@ a paragraph, and you know it.`
     console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
   }
 
-  // Parse UPDATE_LOCATION tag to update the campaign location
+  // Apply the (already parsed) UPDATE_LOCATION tag to the campaign location
   let updatedLocation: string | null = null
-  const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
   if (updateLocationMatch) {
-    updatedLocation = updateLocationMatch[1].trim()
+    updatedLocation = taggedLocationName
     console.log("[v0] Updating campaign location to:", updatedLocation)
     console.log("[v0] Current locationImageUrl:", locationImageUrl ? "SET" : "EMPTY", "| updatedLocation:", updatedLocation)
 
-    // If no LOCATION_IMAGE tag was provided, check for existing image first, then auto-generate
+    // If no LOCATION_IMAGE tag was provided, check for existing curated art
+    // first (environments + dashboard_assets, matched by name), then auto-generate
     if (!locationImageUrl && updatedLocation) {
-      // First check if there's an existing environment with a background image for this location
-      const { data: existingEnvImage } = await supabase
-        .from("environments")
-        .select("background_image_url, name")
-        .ilike("name", `%${updatedLocation}%`)
-        .not("background_image_url", "is", null)
-        .limit(1)
-        .single()
+      const existingArt = await resolveExistingSceneArt(updatedLocation)
 
-      if (existingEnvImage?.background_image_url) {
-        locationImageUrl = existingEnvImage.background_image_url
-        console.log("[v0] Reusing existing environment image for:", existingEnvImage.name)
+      if (existingArt) {
+        locationImageUrl = existingArt.url
       } else {
         // No existing image found, generate with Fal
         console.log("[v0] Auto-generating location image for:", updatedLocation)
@@ -2029,6 +2125,32 @@ Rules:
     const { error: dialogueError } = await supabase.from("dialogue").insert(dialogueEntries)
     if (dialogueError) {
       console.error("[v0] Error inserting Malachar dialogue:", dialogueError)
+    }
+
+    // Record this response's opening line in the phrasebook — the ban list that
+    // survives campaign restarts (see the prompt's RETIRED OPENINGS block).
+    // Best-effort: a failure here never blocks the turn.
+    try {
+      const opening = responseText
+        .replace(/\[[A-Z_]+:[^\]]*\]/g, "") // strip system tags
+        .trim()
+        .split(/(?<=[.!?…])\s+/)[0] // first sentence…
+        ?.slice(0, 90) // …capped so the ban list stays cheap
+        ?.trim()
+      if (opening && opening.length > 12) {
+        await supabase.from("dm_phrasebook").insert({ opening })
+        // Rolling window: keep the newest 60, delete the rest.
+        const { data: stale } = await supabase
+          .from("dm_phrasebook")
+          .select("id")
+          .order("created_at", { ascending: false })
+          .range(60, 200)
+        if (stale?.length) {
+          await supabase.from("dm_phrasebook").delete().in("id", stale.map((r: any) => r.id))
+        }
+      }
+    } catch (err) {
+      console.warn("[v0] phrasebook write failed:", err)
     }
   }
 
