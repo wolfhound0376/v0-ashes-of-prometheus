@@ -24,11 +24,28 @@ const DND_SKILLS = [
 ]
 
 function normalizedSkillMap(raw: Record<string, any>): Record<string, string> {
+  const result: Record<string, string> = {}
   const mapped = raw.sheet_skill_proficiencies
-  if (mapped && typeof mapped === "object" && !Array.isArray(mapped) && Object.keys(mapped).length) return mapped
-  const fromArray = Array.isArray(raw.skill_proficiencies) ? raw.skill_proficiencies : []
-  const legacy = [raw.skills, ...fromArray].filter(Boolean).join(", ").toLowerCase().replace(/[- ]/g, "_")
-  return Object.fromEntries(DND_SKILLS.filter((skill) => new RegExp(`(^|[^a-z_])${skill}(?=[^a-z_]|$)`).test(legacy)).map((skill) => [skill, "proficient"]))
+  if (mapped && typeof mapped === "object" && !Array.isArray(mapped)) {
+    for (const [key, value] of Object.entries(mapped)) {
+      const normalized = key.toLowerCase().trim().replace(/[- ]+/g, "_")
+      if (DND_SKILLS.includes(normalized) && value) result[normalized] = value === "expertise" ? "expertise" : "proficient"
+    }
+  }
+
+  const sourceText = [raw.sheet_skill_proficiencies, raw.skill_proficiencies, raw.skills]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter((value) => value != null)
+    .map((value) => typeof value === "string" ? value : JSON.stringify(value))
+    .join(" | ")
+    .toLowerCase()
+
+  for (const skill of DND_SKILLS) {
+    const label = skill.replace(/_/g, " ")
+    const pattern = new RegExp(`(^|[^a-z])${label.replace(/ /g, "[ _-]+")}(?=[^a-z]|$)`)
+    if (pattern.test(sourceText) && !result[skill]) result[skill] = "proficient"
+  }
+  return result
 }
 
 /** Map a `characters` row onto the shape the Forge sheet expects. Kept here so
