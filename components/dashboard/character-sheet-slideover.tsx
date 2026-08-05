@@ -53,6 +53,11 @@ const HIT_DICE: Record<string, number> = {
   Sorcerer: 6, Wizard: 6,
 }
 
+const CLASS_SPELLCASTING_ABILITY: Record<string, AbilityKey> = {
+  Bard: "cha", Cleric: "wis", Druid: "wis", Paladin: "cha",
+  Ranger: "wis", Sorcerer: "cha", Warlock: "cha", Wizard: "int",
+}
+
 // Cumulative XP required to reach each level (index = level - 1).
 const XP_THRESHOLDS = [
   0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000,
@@ -114,6 +119,13 @@ interface SheetCharacter {
   spellcastingAbility?: string | null
   spellSaveDC?: number | null
   spellAttackBonus?: number | null
+  spellCantrips?: string[]
+  spellPrepared?: string[]
+  spellKnown?: string[]
+  spellAlwaysPrepared?: string[]
+  spellSlots?: Record<string, { max?: number; used?: number }>
+  spellFocus?: string | null
+  spellRulesVersion?: string | null
 }
 
 interface SheetInventoryItem {
@@ -228,7 +240,12 @@ export function CharacterSheetSlideOver({
   const [tab, setTab] = useState<"actions" | "spells" | "inventory" | "features" | "background" | "notes">("actions")
   const [backdrop, setBackdrop] = useState(0)
 
-  const isCaster = Boolean(character.spellcastingAbility)
+  const classSpellAbility = CLASS_SPELLCASTING_ABILITY[character.class]
+  const spellAbility = (String(character.spellcastingAbility || classSpellAbility || "").toLowerCase() || null) as AbilityKey | null
+  const isCaster = Boolean(spellAbility)
+  const derivedSpellModifier = spellAbility ? character.abilities[spellAbility]?.modifier ?? 0 : 0
+  const spellSaveDC = character.spellSaveDC ?? (isCaster ? 8 + pb + derivedSpellModifier : null)
+  const spellAttackBonus = character.spellAttackBonus ?? (isCaster ? pb + derivedSpellModifier : null)
 
   // Re-sync when a different character is loaded into the sheet.
   const identity = `${character.name}|${character.level}|${hpMax}`
@@ -649,17 +666,13 @@ export function CharacterSheetSlideOver({
               )}
 
               {tab === "spells" && (
-                <>
-                  <h5>Spellcasting</h5>
-                  <table>
-                    <tbody>
-                      <tr><td>Ability</td><td>{String(character.spellcastingAbility || "—").toUpperCase()}</td></tr>
-                      <tr><td>Save DC</td><td>{character.spellSaveDC ?? "—"}</td></tr>
-                      <tr><td>Attack Bonus</td><td>{character.spellAttackBonus != null ? signed(character.spellAttackBonus) : "—"}</td></tr>
-                    </tbody>
-                  </table>
-                  <p className="muted mt-3">Prepared spells and slots live on the dashboard rail.</p>
-                </>
+                <SpellcastingSheetSection
+                  character={character}
+                  spellAbility={spellAbility}
+                  spellSaveDC={spellSaveDC}
+                  spellAttackBonus={spellAttackBonus}
+                  onSpellAttack={() => spellAttackBonus != null && doD20("Spell Attack", spellAttackBonus)}
+                />
               )}
 
               {tab === "inventory" && (
@@ -742,6 +755,67 @@ export function CharacterSheetSlideOver({
 }
 
 // ----- small pieces ---------------------------------------------------------
+
+function SpellcastingSheetSection({
+  character,
+  spellAbility,
+  spellSaveDC,
+  spellAttackBonus,
+  onSpellAttack,
+}: {
+  character: SheetCharacter
+  spellAbility: AbilityKey | null
+  spellSaveDC: number | null
+  spellAttackBonus: number | null
+  onSpellAttack: () => void
+}) {
+  return (
+    <>
+      <h5>Spellcasting</h5>
+      <div className="mb-4 flex flex-wrap items-stretch gap-2">
+        <SpellStat label="Ability" value={spellAbility?.toUpperCase() || "—"} />
+        <SpellStat label="Save DC" value={spellSaveDC ?? "—"} />
+        <button type="button" onClick={onSpellAttack} disabled={spellAttackBonus == null} className="rounded border border-[#c9b88e] bg-white/55 px-3 py-2 text-center hover:border-[#9e2b25] disabled:opacity-50"><span className="block text-[9px] uppercase tracking-wider text-[#8a7f6d]">Spell Attack</span><b>{spellAttackBonus != null ? signed(spellAttackBonus) : "—"}</b></button>
+        <SpellStat label="Focus" value={character.spellFocus || "—"} />
+      </div>
+
+      <h5>Spell Slots</h5>
+      {character.spellSlots && Object.keys(character.spellSlots).length ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {Object.entries(character.spellSlots).map(([level, slot]) => {
+            const max = Number(slot?.max ?? 0)
+            const used = Number(slot?.used ?? 0)
+            return <div key={level} className="rounded border border-[#c9b88e] px-3 py-2 text-xs"><b>Level {level}</b><span className="ml-2 text-[#6b6255]">{Math.max(0, max - used)} / {max} available</span></div>
+          })}
+        </div>
+      ) : <p className="muted mb-4">No spell-slot record is attached yet.</p>}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <SheetSpellList title="Cantrips" spells={character.spellCantrips || []} empty="No cantrips recorded." />
+        <SheetSpellList title="Prepared Spells" spells={character.spellPrepared || []} empty="No prepared spells recorded." />
+        {(character.spellAlwaysPrepared?.length || 0) > 0 && <SheetSpellList title="Always Prepared" spells={character.spellAlwaysPrepared || []} empty="" />}
+        {(character.spellKnown?.length || 0) > 0 && <SheetSpellList title={character.class === "Wizard" ? "Spellbook" : "Known Spells"} spells={character.spellKnown || []} empty="" />}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#c9b88e] pt-3">
+        <p className="muted">{character.spellRulesVersion ? `Rules: ${character.spellRulesVersion}` : "Spell choices have not yet been recorded for this character."}</p>
+        <a href="/forge" className="rounded border border-[#9e2b25] px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#9e2b25] hover:bg-[#9e2b25] hover:text-white">Manage Spells in The Forge</a>
+      </div>
+    </>
+  )
+}
+
+function SpellStat({ label, value }: { label: string; value: string | number }) {
+  return <div className="rounded border border-[#c9b88e] bg-white/55 px-3 py-2 text-center"><span className="block text-[9px] uppercase tracking-wider text-[#8a7f6d]">{label}</span><b>{value}</b></div>
+}
+
+function SheetSpellList({ title, spells, empty }: { title: string; spells: string[]; empty: string }) {
+  return (
+    <section className="rounded border border-[#c9b88e] bg-white/40 p-3">
+      <h5>{title}</h5>
+      {spells.length ? <ul className="grid gap-1">{spells.map((spell) => <li key={spell} className="rounded border border-[#e6ddc6] bg-white/50 px-2 py-1.5">{spell}</li>)}</ul> : <p className="muted">{empty}</p>}
+    </section>
+  )
+}
 
 function RollChip({ label, onClick }: { label: string; onClick: () => void }) {
   return (

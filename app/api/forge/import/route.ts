@@ -39,6 +39,7 @@ const CHARACTER_COLUMN_WHITELIST = [
   "portrait_image_url",
   "avatar_image_url",
   "sheet_species",
+  "sheet_subclass",
   "sheet_background",
   "sheet_alignment",
   "sheet_player_name",

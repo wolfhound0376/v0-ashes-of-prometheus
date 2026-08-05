@@ -13,12 +13,16 @@ import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/databa
 type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
 const ABILITY_KEYS: AbilityKey[] = ["str", "dex", "con", "int", "wis", "cha"]
 
+const spellNames = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((name): name is string => typeof name === "string" && name.trim().length > 0) : []
+
 /** Map a `characters` row onto the shape the Forge sheet expects. Kept here so
  *  the sheet stays presentational and the DB column names live in one place.
  *  `sheet_skill_proficiencies` is a jsonb OBJECT keyed by snake_case skill name
  *  with "proficient" | "expertise" as the value — not an array. */
 function toSheetCharacter(c: Character) {
   const raw = c as unknown as Record<string, any>
+  const spellcasting = raw.sheet_spellcasting ?? {}
   const skillMap: Record<string, string> = raw.sheet_skill_proficiencies ?? {}
   const entries = Object.entries(skillMap)
   const abilities = Object.fromEntries(
@@ -59,9 +63,16 @@ function toSheetCharacter(c: Character) {
     toolProficiencies: raw.sheet_proficiencies?.tools ?? null,
     features: raw.sheet_features,
     personality: raw.sheet_personality,
-    spellcastingAbility: raw.sheet_spellcasting?.ability ?? null,
-    spellSaveDC: raw.sheet_spellcasting?.save_dc ?? null,
-    spellAttackBonus: raw.sheet_spellcasting?.attack_bonus ?? null,
+    spellcastingAbility: spellcasting.ability ?? null,
+    spellSaveDC: spellcasting.save_dc ?? null,
+    spellAttackBonus: spellcasting.attack_bonus ?? null,
+    spellCantrips: spellNames(spellcasting.cantrips),
+    spellPrepared: spellNames(spellcasting.prepared),
+    spellKnown: spellNames(spellcasting.known ?? spellcasting.spellbook),
+    spellAlwaysPrepared: spellNames(spellcasting.domain_spells ?? spellcasting.always_prepared),
+    spellSlots: spellcasting.slots ?? {},
+    spellFocus: spellcasting.focus ?? null,
+    spellRulesVersion: spellcasting.rules_version ?? null,
   }
 }
 
