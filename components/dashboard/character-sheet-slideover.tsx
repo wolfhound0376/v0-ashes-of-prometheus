@@ -22,7 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { X, Dices, Flame, Sparkles, Shuffle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
-import { ForgeSheetTheme, BACKDROPS, backdropCss, backdropIndexFor } from "./forge-sheet-theme"
+import { ForgeSheetTheme, BACKDROPS, backdropCss } from "./forge-sheet-theme"
 
 type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
 
@@ -226,7 +226,7 @@ export function CharacterSheetSlideOver({
   const [hpDelta, setHpDelta] = useState("1")
   const [notes, setNotes] = useState("")
   const [tab, setTab] = useState<"actions" | "spells" | "inventory" | "features" | "background" | "notes">("actions")
-  const [backdrop, setBackdrop] = useState(() => backdropIndexFor(character.name || "character"))
+  const [backdrop, setBackdrop] = useState(0)
 
   const isCaster = Boolean(character.spellcastingAbility)
 
@@ -235,7 +235,7 @@ export function CharacterSheetSlideOver({
   useEffect(() => {
     setHpCurrent(character.hp?.current ?? hpMax)
     setTempHp(character.hp?.temp ?? 0)
-    setBackdrop(backdropIndexFor(character.name || "character"))
+    setBackdrop(0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity])
 

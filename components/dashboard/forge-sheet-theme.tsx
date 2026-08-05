@@ -23,7 +23,12 @@ const SCENE = (a: string, glow: string, b: string) =>
   `radial-gradient(900px 500px at 72% 38%,${glow},transparent 70%),` +
   `linear-gradient(160deg,${a} 0%,${b} 100%)`
 
-export const BACKDROPS: { label: string; css: string }[] = [
+export const BACKDROPS: { label: string; css: string; image?: string }[] = [
+  {
+    label: "Option 1 · Drow Prisons",
+    css: SCENE("#07101d", "rgba(111,76,190,.28)", "#02050a"),
+    image: "/images/ui/character-sheet-scenes/option-1-drow-prisons.png",
+  },
   { label: "Arcane Vault", css: SCENE("#1a1230", "rgba(120,90,200,.35)", "#0a0716") },
   { label: "Ember Caldera", css: SCENE("#241207", "rgba(255,107,53,.38)", "#0d0503") },
   { label: "Underdark", css: SCENE("#071a1c", "rgba(60,180,190,.30)", "#03090c") },
@@ -43,13 +48,15 @@ export function backdropIndexFor(seed: string): number {
 /** Photographic art gets a left-to-right scrim instead of a painted scene, so
  *  the text side stays readable while the art reads on the right. */
 export function backdropCss(index: number, imageUrl?: string | null): string {
-  if (imageUrl) {
+  const selected = BACKDROPS[index % BACKDROPS.length]
+  const selectedImage = selected.image || imageUrl
+  if (selectedImage) {
     return (
-      `linear-gradient(90deg,rgba(6,5,8,.72) 0%,rgba(6,5,8,.30) 45%,rgba(6,5,8,0) 70%),` +
-      `url('${imageUrl.replace(/'/g, "\\'")}')`
+      `linear-gradient(90deg,rgba(6,5,8,.78) 0%,rgba(6,5,8,.34) 43%,rgba(6,5,8,.04) 72%),` +
+      `url('${selectedImage.replace(/'/g, "\\'")}')`
     )
   }
-  return BACKDROPS[index % BACKDROPS.length].css
+  return selected.css
 }
 
 export function ForgeSheetTheme() {
