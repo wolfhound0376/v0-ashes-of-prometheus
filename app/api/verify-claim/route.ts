@@ -28,10 +28,12 @@ export async function POST(req: Request) {
     return Response.json({ valid: false }, { status: 500 })
   }
 
-  const { data, error } = await admin
-    .from("characters")
-    .select("id, name, claim_token")
-    .eq("id", characterId)
+  // Credentials live in character_secrets (RLS on, no policies) rather than on
+  // characters, which the public anon key can read every column of.
+  const { data: secretRow, error } = await admin
+    .from("character_secrets")
+    .select("character_id, claim_token")
+    .eq("character_id", characterId)
     .maybeSingle()
 
   if (error) {
@@ -39,9 +41,19 @@ export async function POST(req: Request) {
     return Response.json({ valid: false }, { status: 500 })
   }
 
-  if (!data || data.claim_token !== claimToken) {
+  if (!secretRow || secretRow.claim_token !== claimToken) {
     return Response.json({ valid: false }, { status: 200 })
   }
 
-  return Response.json({ valid: true, character: { id: data.id, name: data.name } }, { status: 200 })
+  const { data: character } = await admin
+    .from("characters")
+    .select("id, name")
+    .eq("id", characterId)
+    .maybeSingle()
+
+  if (!character) {
+    return Response.json({ valid: false }, { status: 200 })
+  }
+
+  return Response.json({ valid: true, character: { id: character.id, name: character.name } }, { status: 200 })
 }

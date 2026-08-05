@@ -58,6 +58,11 @@ const tempId = () =>
 // makes four browsers each keep their own character instead of sharing one
 // global session pointer.
 const CHARACTER_LS_KEY = "aop_character_id"
+// Set by the /join code gate. The claim token is kept here instead of the URL so
+// it can't be forwarded or read out of someone's address bar; the role records
+// whether this browser is a claimed player seat or the DM / shared-TV screen.
+const TOKEN_LS_KEY = "aop_claim_token"
+const ROLE_LS_KEY = "aop_access_role"
 
 // Top-bar navigation destinations. These builder/companion routes ship in later
 // Dashboard v3 phases, so they render as honest "soon" affordances rather than
@@ -383,7 +388,36 @@ export default function DashboardPage() {
     const params = new URLSearchParams(window.location.search)
     const c = params.get('c')
     const k = params.get('k')
-    if (!c || !k) return // No claim params = DM / shared-TV mode.
+
+    // No claim link. Either this browser already came through the /join code gate
+    // (rehydrate it), or it has no access at all and belongs at the gate.
+    if (!c || !k) {
+      const storedRole = window.localStorage.getItem(ROLE_LS_KEY)
+      const storedToken = window.localStorage.getItem(TOKEN_LS_KEY)
+      const storedChar = window.localStorage.getItem(CHARACTER_LS_KEY)
+
+      if (storedRole === 'player' && storedToken && storedChar) {
+        setSelectedCharacterId(storedChar)
+        setClaimToken(storedToken)
+        setClaimLocked(true)
+        return
+      }
+      if (storedRole === 'dm') return // DM / shared-TV mode, already unlocked.
+
+      // Unknown browser. Only send it to the gate if the gate is actually armed —
+      // if DM_ACCESS_CODE is unset the dashboard stays open exactly as before, so
+      // a missing env var can never lock Sam out of his own game.
+      ;(async () => {
+        try {
+          const res = await fetch('/api/claim-code')
+          const cfg = await res.json()
+          if (cfg?.dmGate) window.location.replace('/join')
+        } catch {
+          /* gate unreachable — leave the dashboard as-is rather than stranding anyone */
+        }
+      })()
+      return
+    }
 
     let cancelled = false
     ;(async () => {
@@ -401,6 +435,10 @@ export default function DashboardPage() {
           setClaimLocked(true)
           setClaimInvalid(false)
           window.localStorage.setItem(CHARACTER_LS_KEY, c)
+          // Upgrade this browser to a gate-style claim so the link only has to be
+          // used once — after this the token lives in localStorage, not the URL.
+          window.localStorage.setItem(TOKEN_LS_KEY, k)
+          window.localStorage.setItem(ROLE_LS_KEY, 'player')
         } else {
           setClaimInvalid(true)
         }
@@ -799,6 +837,12 @@ if (error) {
           <p className="text-stone-400 leading-relaxed">
             This character claim link is invalid or has expired. Ask your Dungeon Master for a fresh link to join the session.
           </p>
+          <a
+            href="/join"
+            className="mt-5 inline-block rounded-[3px] border border-[#c9a868]/70 px-4 py-2 font-serif text-[12px] uppercase tracking-[0.16em] text-[#d9bd7e] transition-colors hover:border-[#c9a868] hover:text-[#f0dba8]"
+          >
+            Enter a code instead
+          </a>
         </div>
       </div>
     )
