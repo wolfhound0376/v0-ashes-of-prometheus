@@ -28,6 +28,12 @@ interface ParsedPreview {
   payload: any
 }
 
+// Same localStorage keys the /join gate and the dashboard use.
+const CHARACTER_LS_KEY = "aop_character_id"
+const TOKEN_LS_KEY = "aop_claim_token"
+const ROLE_LS_KEY = "aop_access_role"
+const FORGE_KEY_LS_KEY = "aop_forge_key"
+
 const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"] as const
 const ABILITY_LABELS: Record<(typeof ABILITIES)[number], string> = {
   str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA",
@@ -110,6 +116,23 @@ export default function ForgePage() {
   const [claimUrl, setClaimUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // The barred door applies here too: when a gate is armed, only a browser that
+  // came through /join (dm, player, or forge role) may use the Forge. Fail-open
+  // when no gate is armed — an unset env var never locks anyone out.
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const role = window.localStorage.getItem(ROLE_LS_KEY)
+        if (role === "dm" || role === "player" || role === "forge") return
+        const res = await fetch("/api/claim-code")
+        const cfg = await res.json()
+        if (cfg?.dmGate || cfg?.forgeGate) window.location.replace("/join")
+      } catch {
+        /* gate unreachable — leave the forge open rather than strand anyone */
+      }
+    })()
+  }, [])
+
   // Quick build form state
   const [quickOpen, setQuickOpen] = useState(false)
   const [qName, setQName] = useState("")
@@ -184,9 +207,20 @@ export default function ForgePage() {
     setSaveError(null)
     setDuplicatePending(false)
     try {
+      // Carry whichever credential this browser holds: the forge/DM code from
+      // /join, or a claimed player's own (characterId, claimToken) pair.
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      const forgeKey = window.localStorage.getItem(FORGE_KEY_LS_KEY)
+      if (forgeKey) headers["x-forge-key"] = forgeKey
+      const ownCharacter = window.localStorage.getItem(CHARACTER_LS_KEY)
+      const ownToken = window.localStorage.getItem(TOKEN_LS_KEY)
+      if (ownCharacter && ownToken) {
+        headers["x-character-id"] = ownCharacter
+        headers["x-claim-token"] = ownToken
+      }
       const res = await fetch(`/api/forge/import${confirmDuplicate ? "?confirm=duplicate" : ""}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(payload),
       })
       const data = await res.json().catch(() => ({}))
@@ -261,6 +295,24 @@ export default function ForgePage() {
     }
   }
 
+  // One-click seat claim for the player who just forged on THIS device: store
+  // the same localStorage trio the /join gate writes, then open the dashboard.
+  const claimHere = () => {
+    if (!claimUrl) return
+    try {
+      const u = new URL(claimUrl)
+      const c = u.searchParams.get("c")
+      const k = u.searchParams.get("k")
+      if (!c || !k) return
+      window.localStorage.setItem(CHARACTER_LS_KEY, c)
+      window.localStorage.setItem(TOKEN_LS_KEY, k)
+      window.localStorage.setItem(ROLE_LS_KEY, "player")
+      window.location.replace("/")
+    } catch {
+      /* malformed URL — the visible link still works by hand */
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0908] text-stone-200">
       <div className="max-w-3xl mx-auto p-6 space-y-6">
@@ -304,7 +356,14 @@ export default function ForgePage() {
                 {copied ? "Copied!" : "Copy"}
               </button>
             </div>
+            <button
+              onClick={claimHere}
+              className="w-full py-2 rounded font-bold uppercase tracking-wider text-sm transition-all bg-gradient-to-r from-[#1d3527] via-[#25452f] to-[#1d3527] border border-emerald-700/70 hover:border-emerald-400 text-emerald-200 hover:text-white"
+            >
+              Play this character on this device
+            </button>
             <p className="text-xs text-stone-600">
+              Building for yourself? The button above claims the seat right here — no link needed.
               The new character also appears in the dashboard picker and on the DM view automatically.
             </p>
           </div>

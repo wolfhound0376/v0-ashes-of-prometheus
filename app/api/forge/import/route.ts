@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { normalizeCode, safeEquals } from "@/lib/access-code"
 
 // POST /api/forge/import — the Character Forge importer.
 //
@@ -104,6 +105,42 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error("[v0] forge/import: admin client unavailable:", e)
     return Response.json({ error: "Server not configured" }, { status: 500 })
+  }
+
+  // ---- Authorization ------------------------------------------------------
+  // When a gate is armed (FORGE_ACCESS_CODE or DM_ACCESS_CODE set), an import
+  // must carry ONE of:
+  //   1. x-forge-key — the forge or DM access code (normalised, timing-safe);
+  //   2. x-character-id + x-claim-token — a claimed player's own verified pair.
+  // With NEITHER env var set the importer stays open — the same fail-open rule
+  // as the /join gate: a forgotten env var must never lock Sam out of his game.
+  const forgeCode = process.env.FORGE_ACCESS_CODE
+  const dmCode = process.env.DM_ACCESS_CODE
+  if (forgeCode || dmCode) {
+    let authorized = false
+    const suppliedKey = normalizeCode(req.headers.get("x-forge-key"))
+    if (suppliedKey) {
+      if (forgeCode && safeEquals(suppliedKey, normalizeCode(forgeCode))) authorized = true
+      if (!authorized && dmCode && safeEquals(suppliedKey, normalizeCode(dmCode))) authorized = true
+    }
+    if (!authorized) {
+      const ownCharacterId = req.headers.get("x-character-id")
+      const ownClaimToken = req.headers.get("x-claim-token")
+      if (ownCharacterId && ownClaimToken) {
+        const { data: ownSecret } = await admin
+          .from("character_secrets")
+          .select("claim_token")
+          .eq("character_id", ownCharacterId)
+          .maybeSingle()
+        if (ownSecret?.claim_token && ownSecret.claim_token === ownClaimToken) authorized = true
+      }
+    }
+    if (!authorized) {
+      return Response.json(
+        { error: "The forge is barred. Enter through /join with a forge code, or claim your seat first." },
+        { status: 403 },
+      )
+    }
   }
 
   const name = character.name.trim()

@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "crypto"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { normalizeCode, safeEquals } from "@/lib/access-code"
 
 // Code-entry access gate (/join).
 //
@@ -21,27 +21,6 @@ import { createAdminClient } from "@/lib/supabase/admin"
 // himself out of his own game by forgetting to set an env var.
 
 export const dynamic = "force-dynamic"
-
-/** Normalise anything a human might type into the canonical stored form.
- *  "  Gloom Tallow  Hush 193 " and "GLOOM_TALLOW-HUSH-193" both become
- *  "gloom-tallow-hush-193". */
-function normalizeCode(raw: unknown): string {
-  if (typeof raw !== "string") return ""
-  return raw
-    .toLowerCase()
-    .trim()
-    .replace(/[\s_.]+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-}
-
-function safeEquals(a: string, b: string): boolean {
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  if (bufA.length !== bufB.length) return false
-  return timingSafeEqual(bufA, bufB)
-}
 
 // Per-IP attempt limiting. Serverless instances don't share memory, so this is a
 // speed bump rather than a wall — but paired with a ~60 million code space and the
@@ -69,9 +48,15 @@ function clientIp(req: Request): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** Tells the dashboard whether the DM gate is armed. No secrets in the response. */
+/** Tells the dashboard which gates are armed. No secrets in the response. */
 export async function GET() {
-  return Response.json({ dmGate: Boolean(process.env.DM_ACCESS_CODE) }, { status: 200 })
+  return Response.json(
+    {
+      dmGate: Boolean(process.env.DM_ACCESS_CODE),
+      forgeGate: Boolean(process.env.FORGE_ACCESS_CODE),
+    },
+    { status: 200 },
+  )
 }
 
 export async function POST(req: Request) {
@@ -96,6 +81,13 @@ export async function POST(req: Request) {
   const dmCode = process.env.DM_ACCESS_CODE
   if (dmCode && safeEquals(code, normalizeCode(dmCode))) {
     return Response.json({ ok: true, role: "dm" }, { status: 200 })
+  }
+
+  // Forge code second — also env-only. It unlocks character creation at /forge
+  // without claiming a seat, so a brand-new player can build their own hero.
+  const forgeCode = process.env.FORGE_ACCESS_CODE
+  if (forgeCode && safeEquals(code, normalizeCode(forgeCode))) {
+    return Response.json({ ok: true, role: "forge" }, { status: 200 })
   }
 
   let admin
