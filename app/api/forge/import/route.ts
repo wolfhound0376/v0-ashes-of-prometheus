@@ -152,16 +152,31 @@ export async function POST(req: Request) {
   row.is_player = true
   row.character_type = "player"
 
-  // claim_token populates itself (gen_random_uuid() default) — read it back.
   const { data: inserted, error: insertError } = await admin
     .from("characters")
     .insert(row)
-    .select("id, claim_token")
+    .select("id")
     .single()
 
   if (insertError || !inserted) {
     console.error("[v0] forge/import: character insert failed:", insertError)
     return Response.json({ error: "Failed to create character" }, { status: 500 })
+  }
+
+  // The claim token is created by the characters_create_secrets trigger into
+  // character_secrets (which the anon key cannot read) — read it back from there.
+  const { data: secretRow, error: secretError } = await admin
+    .from("character_secrets")
+    .select("claim_token")
+    .eq("character_id", inserted.id)
+    .maybeSingle()
+
+  if (secretError || !secretRow) {
+    console.error("[v0] forge/import: claim token unavailable:", secretError)
+    return Response.json(
+      { characterId: inserted.id, warning: "Character created, but no claim link could be issued." },
+      { status: 207 },
+    )
   }
 
   // Bulk-insert inventory with the new character_id (whitelisted columns only).
@@ -195,6 +210,6 @@ export async function POST(req: Request) {
   // NOTE: the `forge` blob (builder-internal state) is intentionally dropped.
 
   const origin = url.origin
-  const claimUrl = `${origin}/?c=${inserted.id}&k=${inserted.claim_token}`
+  const claimUrl = `${origin}/?c=${inserted.id}&k=${secretRow.claim_token}`
   return Response.json({ characterId: inserted.id, claimUrl }, { status: 200 })
 }
