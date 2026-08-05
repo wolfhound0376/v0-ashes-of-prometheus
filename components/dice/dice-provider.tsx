@@ -83,6 +83,28 @@ const DICE_ASSET_PATH = "/assets/dice-box/"
 const DICE_MOUNT_SELECTOR = "dice-box-mount"
 const DICE_THEME_COLOR = "#8b1814"
 const DICE_INIT_TIMEOUT_MS = 8000
+
+// Sam's dice-box recording: two dice shaken and tumbled onto felt. One shared
+// element, rewound on each roll, so rapid rolls retrigger cleanly instead of
+// stacking overlapping copies. Created lazily on first roll — a roll is always
+// user-initiated, so autoplay policy never blocks it.
+const DICE_SFX_SRC = "/audio/dice-roll.mp3"
+let diceSfx: HTMLAudioElement | null = null
+
+function playDiceSfx() {
+  if (typeof window === "undefined") return
+  try {
+    if (!diceSfx) {
+      diceSfx = new Audio(DICE_SFX_SRC)
+      diceSfx.preload = "auto"
+      diceSfx.volume = 0.7
+    }
+    diceSfx.currentTime = 0
+    void diceSfx.play().catch(() => {})
+  } catch {
+    // Never let a missing or blocked sound file stop the dice from rolling.
+  }
+}
 const RESPONSE_TIMEOUT_MS = 6000
 const RESULT_DISPLAY_MS = 1500
 
@@ -265,6 +287,10 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
   const startRoll = useCallback(
     (spec: RollSpec, resolve: (r: DiceResult) => void) => {
       const box = diceBoxRef.current
+
+      // Above the renderer check on purpose: the dice should sound the same
+      // whether the 3D box is up or the classic fallback resolved it.
+      playDiceSfx()
 
       // Renderer unusable → resolve classic immediately, no overlay.
       if (diceFailed || !diceReady || !box) {

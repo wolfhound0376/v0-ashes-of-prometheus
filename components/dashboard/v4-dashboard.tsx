@@ -3,9 +3,122 @@
 import { useState } from "react"
 import { BookOpen, Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useDice } from "@/components/dice/dice-provider"
+import { describeRoll, useDice } from "@/components/dice/dice-provider"
+import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
+import { DmNarration } from "./dm-narration"
+import { classDefaults } from "@/lib/game-data"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
+
+type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
+const ABILITY_KEYS: AbilityKey[] = ["str", "dex", "con", "int", "wis", "cha"]
+
+/** Map a `characters` row onto the shape the Forge sheet expects. Kept here so
+ *  the sheet stays presentational and the DB column names live in one place.
+ *  `sheet_skill_proficiencies` is a jsonb OBJECT keyed by snake_case skill name
+ *  with "proficient" | "expertise" as the value — not an array. */
+function toSheetCharacter(c: Character) {
+  const raw = c as unknown as Record<string, any>
+  const skillMap: Record<string, string> = raw.sheet_skill_proficiencies ?? {}
+  const entries = Object.entries(skillMap)
+  const abilities = Object.fromEntries(
+    ABILITY_KEYS.map((k) => [k, { score: raw[`${k}_score`] ?? 10, modifier: raw[`${k}_modifier`] ?? 0 }]),
+  ) as Record<AbilityKey, { score: number; modifier: number }>
+
+  return {
+    name: c.name,
+    race: raw.sheet_species || raw.race || "Unknown",
+    class: c.class,
+    subclass: raw.sheet_subclass ?? null,
+    level: c.level,
+    background: raw.sheet_background || undefined,
+    alignment: raw.sheet_alignment || undefined,
+    avatarUrl: raw.avatar_image_url || raw.portrait_image_url || null,
+    backdropUrl: raw.sheet_appearance?.backdrop_url ?? null,
+    experiencePoints: raw.xp ?? 0,
+    hp: { current: c.hp_current, max: c.hp_max, temp: raw.sheet_hp_temp ?? 0 },
+    ac: c.ac,
+    initiative: c.initiative,
+    speed: raw.speed,
+    proficiencyBonus: raw.proficiency_bonus ?? 2,
+    passivePerception: raw.passive_perception ?? 10,
+    senses: raw.senses,
+    conditions: Array.isArray(raw.conditions) ? raw.conditions : [],
+    age: raw.sheet_age ?? null,
+    height: raw.height ?? null,
+    weight: raw.character_weight ?? null,
+    abilities,
+    savingThrowProficiencies: (Array.isArray(raw.sheet_save_proficiencies)
+      ? raw.sheet_save_proficiencies
+      : []) as AbilityKey[],
+    skillProficiencies: entries.filter(([, v]) => v === "proficient").map(([k]) => k),
+    skillExpertises: entries.filter(([, v]) => v === "expertise").map(([k]) => k),
+    languages: raw.languages ?? null,
+    armorProficiencies: raw.sheet_proficiencies?.armor ?? null,
+    weaponProficiencies: raw.sheet_proficiencies?.weapons ?? null,
+    toolProficiencies: raw.sheet_proficiencies?.tools ?? null,
+    features: raw.sheet_features,
+    personality: raw.sheet_personality,
+    spellcastingAbility: raw.sheet_spellcasting?.ability ?? null,
+    spellSaveDC: raw.sheet_spellcasting?.save_dc ?? null,
+    spellAttackBonus: raw.sheet_spellcasting?.attack_bonus ?? null,
+  }
+}
+
+const SKILL_ABILITY: Record<string, AbilityKey> = {
+  acrobatics: "dex", animal_handling: "wis", arcana: "int", athletics: "str",
+  deception: "cha", history: "int", insight: "wis", intimidation: "cha",
+  investigation: "int", medicine: "wis", nature: "int", perception: "wis",
+  performance: "cha", persuasion: "cha", religion: "int", sleight_of_hand: "dex",
+  stealth: "dex", survival: "wis",
+}
+const SAVE_LABEL: Record<AbilityKey, string> = {
+  str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA",
+}
+const titleCaseSkill = (key: string) =>
+  key.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+
+export function formatSigned(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n}`
+}
+
+/** Everything the Character Stats rail shows, derived from the row rather than
+ *  transcribed from the design mock. `sheet_skill_proficiencies` is a jsonb
+ *  OBJECT keyed by snake_case skill name ("proficient" | "expertise"); a skill
+ *  counts as class-granted when it also appears in that class's skill list. */
+function buildRailStats(c: Character | undefined) {
+  const raw = (c ?? {}) as unknown as Record<string, any>
+  const pb: number = raw.proficiency_bonus ?? 2
+  const mod = (k: AbilityKey): number => raw[`${k}_modifier`] ?? 0
+
+  const saveProfs: string[] = Array.isArray(raw.sheet_save_proficiencies) ? raw.sheet_save_proficiencies : []
+  const saves = ABILITY_KEYS.map((k) => {
+    const proficient = saveProfs.includes(k)
+    return { key: k, label: SAVE_LABEL[k], proficient, bonus: mod(k) + (proficient ? pb : 0) }
+  }).sort((a, b) => Number(b.proficient) - Number(a.proficient) || b.bonus - a.bonus)
+
+  const classSkills: string[] = (classDefaults[raw.class as string]?.skillChoices?.options ?? [])
+    .map((s: string) => s.toLowerCase().replace(/ /g, "_"))
+
+  const skillMap: Record<string, string> = raw.sheet_skill_proficiencies ?? {}
+  const skills = Object.entries(skillMap)
+    .filter(([key]) => SKILL_ABILITY[key])
+    .map(([key, level]) => {
+      const ability = SKILL_ABILITY[key]
+      const multiplier = level === "expertise" ? 2 : 1
+      return {
+        name: titleCaseSkill(key),
+        bonus: mod(ability) + pb * multiplier,
+        fromClass: classSkills.includes(key),
+        expertise: level === "expertise",
+      }
+    })
+    .sort((a, b) => b.bonus - a.bonus || a.name.localeCompare(b.name))
+
+  const passiveInsight = 10 + mod("wis") + (skillMap.insight === "expertise" ? pb * 2 : skillMap.insight ? pb : 0)
+
+  return { saves, skills, passiveInsight, passivePerception: raw.passive_perception ?? 10 + mod("wis") }
+}
 
 type DialogueEntry = { id?: string; speaker: string; text: string }
 type NpcEncounter = {
@@ -15,11 +128,13 @@ type NpcEncounter = {
   portrait_url: string | null
   face_url?: string | null
   idle_url?: string | null
+  talking_url?: string | null
   is_active: boolean
   hp_current?: number | null
   hp_max?: number | null
   conditions?: string[] | null
   challenge_rating?: number | null
+  disposition?: string | null
 }
 
 interface V4DashboardProps {
@@ -45,6 +160,9 @@ interface V4DashboardProps {
   onUnequipItem?: (slot: EquipmentItem["slot"]) => void | Promise<void>
   npcEncounters: NpcEncounter[]
   isThinking?: boolean
+  /** True when this browser has claimed a character via a claim link, i.e. a
+   *  player is sitting here rather than the DM. Gates DM-only readouts. */
+  claimLocked?: boolean
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -84,10 +202,16 @@ const conditionColor: Record<string, string> = {
   prone: "border-red-800 bg-red-950/60 text-red-300",
 }
 
-function Frame({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+// MERGE NOTE: Codex's ornate panel/title treatment and the optional `action`
+// slot are orthogonal, so this keeps both. The slot exists because the
+// Interactive Log's filter row has no room for a control — six chips need
+// 314px in a 250px column — so panel-level controls live in the title bar.
+function Frame({ title, children, className, action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return <section className={cn("aop-ornate-panel min-h-0 overflow-hidden", className)}>
-    <header className="aop-ornate-title flex h-8 items-center px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
-      <span>{title}</span><span className="ml-auto text-[#675638]">— ×</span>
+    <header className="aop-ornate-title flex h-8 items-center gap-2 px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
+      <span className="truncate">{title}</span>
+      {action ? <span className="ml-auto shrink-0">{action}</span> : null}
+      <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span>
     </header>{children}
   </section>
 }
@@ -102,7 +226,18 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
-  const dialogue = props.dialogue.length ? props.dialogue : previewDialogue
+  // Restart Campaign DOES clear the dialogue table — the reason it looked like
+  // it had failed is right here. An empty feed fell straight back to the
+  // hardcoded preview script, so the log refilled with fake lines a moment
+  // after the wipe and read as "nothing happened".
+  //
+  // The preview is scaffolding for a dashboard with no campaign behind it, so
+  // it is only used when there is no live data at all. With real characters
+  // loaded, an empty feed is a real empty feed and says so.
+  const hasLiveCampaign = props.characters.length > 0
+  const dialogue = props.dialogue.length
+    ? props.dialogue
+    : hasLiveCampaign ? [] : previewDialogue
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
   const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
@@ -110,11 +245,25 @@ export function V4Dashboard(props: V4DashboardProps) {
     Object.entries(item.stats_bonus ?? {}).forEach(([key, value]) => { totals[key.toLowerCase()] = (totals[key.toLowerCase()] ?? 0) + Number(value || 0) })
     return totals
   }, {})
+  const rail = buildRailStats(selected)
   const displayedAc = (selected?.ac ?? 10) + (equipmentBonus.ac ?? 0)
   const displayedInitiative = (selected?.initiative ?? 0) + (equipmentBonus.initiative ?? 0)
+
+  // Whoever currently holds the floor, reported by the narration queue. The
+  // panel used to show whichever NPC happened to be `is_active`, so when
+  // Jimjar answered inside Malachar's narration the picture stayed on someone
+  // else. The speaker wins while they are talking; the scene's active NPC is
+  // the resting state.
+  const [speakingNpc, setSpeakingNpc] = useState<{ id: string; name: string } | null>(null)
   const activeNpc = props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
-  const npcName = activeNpc?.name ?? "Eldeth Feldrun"
-  const npcPortrait = activeNpc?.idle_url || activeNpc?.face_url || activeNpc?.portrait_url
+  const speakingRow = speakingNpc ? props.npcEncounters.find((npc) => npc.id === speakingNpc.id) : undefined
+  const shownNpc = speakingRow ?? activeNpc
+  const npcName = shownNpc?.name ?? "Eldeth Feldrun"
+  // A talking NPC gets talking_url when the row has one, so the animated head
+  // switches to the speaking loop and back to idle on its own.
+  const npcPortrait = speakingRow
+    ? (speakingRow.talking_url || speakingRow.idle_url || speakingRow.face_url || speakingRow.portrait_url)
+    : (shownNpc?.idle_url || shownNpc?.face_url || shownNpc?.portrait_url)
   const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
@@ -131,10 +280,13 @@ export function V4Dashboard(props: V4DashboardProps) {
     score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
     mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
   }))
+  // MERGE NOTE: both branches independently fixed Roll Initiative. Codex's
+  // version is kept because it also sends the result to Malachar so he reacts
+  // to it; the message itself now goes through the shared describeRoll() so an
+  // initiative roll reads identically to every other roll in the feed.
   const rollInitiative = async () => {
     const result = await roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
-    const modifierText = displayedInitiative >= 0 ? `+${displayedInitiative}` : String(displayedInitiative)
-    announce(`Initiative — ${result.total} (d20: ${result.rolls[0]} ${modifierText})`, { toLich: true })
+    announce(describeRoll(result), { toLich: true })
   }
 
   return <main className="aop-lich-dashboard grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
@@ -152,15 +304,29 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
       <Frame title="Interactive Log" className="relative flex min-h-[330px] flex-1 flex-col">
         <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{dialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
         <button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-3 right-3" title="Open Dice Roller" aria-label="Open Dice Roller" />
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col">
-      <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 p-3 pb-4">
+    <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" action={<DmNarration dialogue={dialogue} npcs={props.npcEncounters} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
+      <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 overflow-hidden p-3 pb-4">
         <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">Shield Dwarf Scout · Lawful Good</p><blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“Don’t gamble with him. He cheats. …Eldeth. Gauntlgrym’s where I belong. Not here.”</blockquote>{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}</div>
-        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className="mt-1.5 flex h-7 items-center justify-center rounded border border-[#695326] bg-black/50 text-[9px] uppercase tracking-[.16em] text-[#d2b04f]">Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></div></div>
+        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? <img src={npcPortrait} alt={npcName} className="absolute inset-0 h-full w-full object-contain object-top" /> : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : <>Silent <span className="ml-2">▯▯▯▯</span></>}</div>
+          {/* MERGE NOTE: Codex's redesign dropped the third column, which held
+              disposition / CR / DM-only health. Those are real row data, not
+              mock text, so they are re-homed here as a compact strip beneath
+              the portrait rather than lost. */}
+          <div className="mt-1.5 flex shrink-0 items-stretch gap-1.5 overflow-x-auto text-[10px]">
+            {props.claimLocked
+              ? <div className="rounded border border-[#3b3325] bg-[#141210] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span><span className="text-[#7e7663]">Read them yourself</span></div>
+              : <DispositionChip value={activeNpc?.disposition} />}
+            {activeNpc?.challenge_rating ? <div className="rounded border border-[#4b3a19] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Challenge</span><span className="text-[#d9c492]">CR {activeNpc.challenge_rating}</span></div> : null}
+            {typeof activeNpc?.hp_current === "number" && typeof activeNpc?.hp_max === "number" && activeNpc.hp_max > 0 && !props.claimLocked
+              ? <div className="min-w-[92px] rounded border border-[#4b3a19] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Health · DM</span><span className="text-[#d9c492]">{activeNpc.hp_current} / {activeNpc.hp_max}</span><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, Math.min(100, (activeNpc.hp_current / activeNpc.hp_max) * 100))}%` }} /></div></div>
+              : null}
+          </div>
+        </div>
       </div>
       <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
         <img src={props.environment.imageUrl} alt="Current scene" className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
@@ -193,7 +359,41 @@ export function V4Dashboard(props: V4DashboardProps) {
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
           <div className="mt-2 grid grid-cols-6 gap-1">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} />)}</div>
-          <div className="mt-2 grid grid-cols-2 gap-3"><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>{[["WIS",4],["CHA",3],["CON",2],["STR",1]].map(([name,value]) => <div key={name} className="flex justify-between text-[#b6a685]"><span>{name}</span><b className="text-white">+{value}</b></div>)}<h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3><div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{selected?.passive_perception ?? 12}</b></div><div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">14</b></div></div><div><h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>{[["Insight",4],["Medicine",4],["Religion",1],["History",1]].map(([name,value], index) => <div key={name} className={cn("flex justify-between px-1 text-[#b6a685]", index < 2 && "border border-[#725c2f] bg-[#251c0d]")}><span>{name}</span><b className="text-white">+{value}</b></div>)}<p className="mt-1 text-[8px] text-[#8f8061]">□ Cleric class skill</p></div></div>
+          {/* Saves, skills and passive Insight are DERIVED. They were previously
+              transcribed from the v4.1 mock image, which meant every character —
+              Fifi the Rogue included — showed Sam the Cleric's numbers and the
+              literal legend "Cleric class skill". */}
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <div>
+              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>
+              {rail.saves.map((save) => (
+                <div key={save.key} className="flex items-center gap-1.5 text-[#b6a685]">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", save.proficient ? "bg-[#d9232e]" : "border border-[#6b5a35]")} />
+                  <span>{save.label}</span>
+                  <b className="ml-auto text-white">{formatSigned(save.bonus)}</b>
+                </div>
+              ))}
+              <h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3>
+              <div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{rail.passivePerception}</b></div>
+              <div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">{rail.passiveInsight}</b></div>
+            </div>
+            <div>
+              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>
+              {rail.skills.length === 0 ? (
+                <p className="text-[9px] text-[#8f8061]">No skill proficiencies recorded for {selected?.name ?? "this character"}.</p>
+              ) : (
+                rail.skills.map((skill) => (
+                  <div key={skill.name} className={cn("flex items-center justify-between px-1 text-[#b6a685]", skill.fromClass && "border border-[#725c2f] bg-[#251c0d]")}>
+                    <span className="truncate">{skill.name}</span>
+                    <b className="ml-1 shrink-0 text-white">{formatSigned(skill.bonus)}</b>
+                  </div>
+                ))
+              )}
+              {rail.skills.some((skill) => skill.fromClass) && (
+                <p className="mt-1 text-[8px] text-[#8f8061]">□ {selected?.class ?? "Class"} class skill</p>
+              )}
+            </div>
+          </div>
           <button onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
       </Frame>
@@ -204,7 +404,17 @@ export function V4Dashboard(props: V4DashboardProps) {
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
     {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
     {spellbookOpen ? <SpellbookModal character={selected} onClose={() => setSpellbookOpen(false)} /> : null}
-    {characterSheetOpen ? <CharacterSheetModal character={selected} abilities={abilities} inventory={props.inventory} equipment={props.equipment} displayedAc={displayedAc} displayedInitiative={displayedInitiative} onClose={() => setCharacterSheetOpen(false)} /> : null}
+    {/* MERGE NOTE: Codex's branch predates the Forge 2014 sheet port. Sam
+        asked for that port explicitly ("I don't like what we have now",
+        "Full port"), so the slide-over stays and CharacterSheetModal does
+        not come back. The Spellbook and dice modal beside it are new from
+        Codex and are kept as-is. */}
+    <CharacterSheetSlideOver
+      open={characterSheetOpen}
+      onClose={() => setCharacterSheetOpen(false)}
+      character={{ ...toSheetCharacter(selected), ac: displayedAc, initiative: displayedInitiative }}
+      inventory={props.inventory as any}
+    />
     {(inventoryOpen || equipmentOpen) ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => { setInventoryOpen(false); setEquipmentOpen(false) }} /> : null}
   </main>
 }
@@ -321,6 +531,39 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
   </ModalShell>
 }
 
+// One axis, five rungs. Colour carries the reading at a glance; the word is
+// there because colour alone is not an accessible signal. Kept lowest-to-
+// highest so the order is obvious to anyone editing it.
+const DISPOSITIONS: Record<string, { label: string; ring: string; dot: string; text: string }> = {
+  hostile: { label: "Hostile", ring: "border-[#8c2f2f] bg-[#2a0f0f]", dot: "bg-[#e0564f]", text: "text-[#f0a9a4]" },
+  wary:    { label: "Wary",    ring: "border-[#8a6520] bg-[#241a08]", dot: "bg-[#dc9a33]", text: "text-[#f0cd8f]" },
+  neutral: { label: "Neutral", ring: "border-[#5b5545] bg-[#1a1814]", dot: "bg-[#a49c86]", text: "text-[#cfc8b5]" },
+  warm:    { label: "Warm",    ring: "border-[#3f7143] bg-[#0f1e11]", dot: "bg-[#5fbb69]", text: "text-[#a8dcae]" },
+  devoted: { label: "Devoted", ring: "border-[#8a7220] bg-[#221c07]", dot: "bg-[#e8c74a]", text: "text-[#f5e2a0]" },
+}
+
+/** The DM's read on how an NPC feels about the party. Hidden from a browser
+ *  that has claimed a character — players have to earn this, in fiction, and
+ *  an NPC's private attitude is exactly the thing they should not be able to
+ *  read off a dashboard. `null` means the DM AI has not formed a read yet. */
+function DispositionChip({ value }: { value?: string | null }) {
+  const key = (value ?? "").toLowerCase()
+  const d = DISPOSITIONS[key]
+  if (!d) {
+    return <div className="rounded border border-[#3b3325] bg-[#141210] p-2 text-[10px]">
+      <span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span>
+      <span className="text-[#7e7663]">Not yet read</span>
+    </div>
+  }
+  return <div className={cn("rounded border p-2 text-[10px]", d.ring)} title={`This NPC's private attitude toward the party: ${d.label}. Visible to the DM only.`}>
+    <span className="block text-[8px] uppercase tracking-wider text-[#847557]">Disposition · DM</span>
+    <span className={cn("mt-0.5 flex items-center gap-1.5 font-serif", d.text)}>
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", d.dot)} />
+      {d.label}
+    </span>
+  </div>
+}
+
 function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: string; name: string }>; enemies: NpcEncounter[] }) {
   return <div className="absolute inset-0 overflow-hidden">
     <div className="absolute inset-0 opacity-60" style={{ backgroundImage: "linear-gradient(30deg, transparent 24%, #b8944c55 25%, #b8944c55 26%, transparent 27%, transparent 74%, #b8944c55 75%, #b8944c55 76%, transparent 77%), linear-gradient(150deg, transparent 24%, #b8944c55 25%, #b8944c55 26%, transparent 27%, transparent 74%, #b8944c55 75%, #b8944c55 76%, transparent 77%)", backgroundSize: "56px 96px" }} />
@@ -419,13 +662,19 @@ function AbilityScoreCard({ ability, onClick, sheet = false }: { ability: { key:
   const index = Math.max(0, order.indexOf(ability.key.toLowerCase()))
   const x = index === 0 ? "0%" : index === 5 ? "100%" : `${index * 20}%`
   const name = abilityNames[ability.key.toLowerCase()] ?? ability.key
+  // In the six-up rail each card is only ~45px wide, so the full ability name
+  // cannot fit and was being cut mid-word ("CONSTITUTE", "INTELLIGENC").
+  // The rail shows the standard 5E abbreviation; the wide two-column sheet has
+  // room for the full name. Either way the full name is on hover and in the
+  // native tooltip, so nothing is lost.
+  const label = sheet ? name : ability.key.toUpperCase()
   return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : "h-[132px] hover:scale-125 focus-visible:scale-125")} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
     <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
     <span className="absolute inset-x-0 top-2 z-10 bg-black/0 px-0.5 py-1 text-center font-serif text-[6px] font-bold uppercase tracking-[.04em] text-[#d3ae6b]/0 transition-[color,background-color,text-shadow] duration-200 delay-0 group-hover:bg-black/80 group-hover:text-[#ffe4a8] group-hover:[text-shadow:0_0_7px_#d79b3a] group-hover:delay-500">{name}</span>
-    <span className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black via-black/90 to-transparent" />
-    <span className="absolute inset-x-0 bottom-[19px] text-center font-serif text-[15px] leading-none text-[#f0d9aa] drop-shadow-[0_1px_2px_#000]">{ability.score}</span>
-    <span className="absolute inset-x-0 bottom-[8px] text-center font-serif text-[9px] leading-none text-[#d7ab62]">{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
-    <span className="absolute inset-x-0 bottom-0 truncate px-0.5 text-center text-[5px] font-bold uppercase tracking-[.05em] text-[#bfa36d]">{name}</span>
+    <span className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/92 to-transparent", sheet ? "h-11" : "h-[52px]")} />
+    <span className={cn("absolute inset-x-0 text-center font-serif leading-none text-[#f0d9aa] drop-shadow-[0_1px_2px_#000]", sheet ? "bottom-[19px] text-[15px]" : "bottom-[25px] text-[17px]")}>{ability.score}</span>
+    <span className={cn("absolute inset-x-0 text-center font-serif leading-none text-[#d7ab62]", sheet ? "bottom-[8px] text-[9px]" : "bottom-[13px] text-[10px]")}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
+    <span className={cn("absolute inset-x-0 truncate text-center font-bold uppercase text-[#bfa36d]", sheet ? "bottom-0 px-0.5 text-[5px] tracking-[.05em]" : "bottom-[3px] px-0.5 text-[7px] tracking-[.12em]")}>{label}</span>
   </button>
 }
 
