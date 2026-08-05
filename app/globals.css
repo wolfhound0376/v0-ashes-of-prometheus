@@ -566,3 +566,17 @@
 .aop-roll-result.is-fumble { border-color: #9b251c; box-shadow: inset 0 0 15px rgba(125, 18, 12, 0.32); }
 
 .aop-send-lich { border: 1px solid #78501f; padding: 7px; color: #d7ad5f; background: #120b07; }
+
+/* NPC window: gentle life for still portraits and face close-ups. Uploaded
+   idle/talking video loops replace this entirely (see isVideoUrl in
+   v4-dashboard) — this is only the resting breath of a still image. */
+@media (prefers-reduced-motion: no-preference) {
+  .aop-npc-still {
+    animation: aop-npc-breathe 9s ease-in-out infinite;
+    transform-origin: 50% 30%;
+  }
+}
+@keyframes aop-npc-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04) translateY(-1.2%); }
+}
