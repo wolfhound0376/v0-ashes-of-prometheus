@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { BookOpen, Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { BootsIcon, HoodIcon, NecklaceIcon, OrbIcon, PantsIcon, RingIcon, RobeIcon, StaffIcon } from "@/components/ui/fantasy-icons"
+// (fantasy-icons no longer used here — equipment slots render Sam's uploaded PNG icons)
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
@@ -490,16 +490,16 @@ export function V4Dashboard(props: V4DashboardProps) {
   </main>
 }
 
-const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string; Icon: typeof HoodIcon }> = [
-  { id: "head", label: "Head", position: "left-[4%] top-[5%]", Icon: HoodIcon },
-  { id: "neck", label: "Neck", position: "right-[4%] top-[5%]", Icon: NecklaceIcon },
-  { id: "torso", label: "Torso", position: "right-[4%] top-[30%]", Icon: RobeIcon },
-  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[31%]", Icon: StaffIcon },
-  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[56%]", Icon: OrbIcon },
-  { id: "legs", label: "Legs", position: "left-[4%] top-[58%]", Icon: PantsIcon },
-  { id: "feet", label: "Feet", position: "left-[28%] bottom-[2%]", Icon: BootsIcon },
-  { id: "ring1", label: "Ring I", position: "right-[28%] bottom-[2%]", Icon: RingIcon },
-  { id: "ring2", label: "Ring II", position: "right-[4%] bottom-[2%]", Icon: RingIcon },
+const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string; icon: string }> = [
+  { id: "head", label: "Head", position: "left-[4%] top-[5%]", icon: "/icons/equipment/head.png" },
+  { id: "neck", label: "Neck", position: "right-[4%] top-[5%]", icon: "/icons/equipment/neck.png" },
+  { id: "torso", label: "Torso", position: "right-[4%] top-[30%]", icon: "/icons/equipment/torso.png" },
+  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[31%]", icon: "/icons/equipment/main-hand.png" },
+  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[56%]", icon: "/icons/equipment/off-hand.png" },
+  { id: "legs", label: "Legs", position: "left-[4%] top-[58%]", icon: "/icons/equipment/legs.png" },
+  { id: "feet", label: "Feet", position: "left-[28%] bottom-[2%]", icon: "/icons/equipment/feet.png" },
+  { id: "ring1", label: "Ring I", position: "right-[28%] bottom-[2%]", icon: "/icons/equipment/ring.png" },
+  { id: "ring2", label: "Ring II", position: "right-[4%] bottom-[2%]", icon: "/icons/equipment/ring2.png" },
 ]
 
 function ModalShell({ title, children, onClose, wide = false }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
@@ -590,7 +590,7 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
     <div className="grid min-h-[650px] gap-4 p-4 lg:grid-cols-[minmax(400px,1.05fr)_minmax(330px,.95fr)]">
       <section className="relative min-h-[610px] overflow-hidden rounded-xl border border-[#5e471f] bg-[radial-gradient(circle_at_50%_32%,#27302e,#0a0907_67%)]">
         <div className="absolute inset-x-[21%] bottom-4 top-8 overflow-hidden border-x border-[#4f3c1d] bg-black/20">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-contain object-bottom" /> : <div className="flex h-full items-center justify-center font-serif text-8xl text-[#765a2b]">{character.name[0]}</div>}</div>
-        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; const SlotIcon = slot.Icon; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item?.icon_url ? <img src={item.icon_url} alt="" className="h-10 w-10 object-contain" /> : <SlotIcon className="h-9 w-9 opacity-80" />}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
+        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("group absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item?.icon_url ? <img src={item.icon_url} alt="" className="h-10 w-10 object-contain" /> : <img src={slot.icon} alt={slot.label} className="h-12 w-12 rounded object-contain opacity-85 transition group-hover:opacity-100" />}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
         <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1">{Object.entries(bonuses).length ? Object.entries(bonuses).map(([key, value]) => <span key={key} className="rounded-full border border-emerald-800 bg-emerald-950/80 px-2 py-1 text-[8px] uppercase text-emerald-300">{key} {signed(value)}</span>) : <span className="rounded border border-[#4d3a1d] bg-black/70 px-2 py-1 text-[8px] text-[#8e7b57]">No recorded equipment stat bonuses</span>}</div>
       </section>
       <section className="flex min-h-0 flex-col rounded-xl border border-[#5e471f] bg-[#0d0b07]">
