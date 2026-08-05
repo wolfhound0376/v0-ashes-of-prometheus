@@ -235,20 +235,28 @@ type SheetTab = "actions" | "spells" | "inventory" | "features" | "background" |
 function CharacterSheetModal({ character, abilities, inventory, equipment, displayedAc, displayedInitiative, onClose }: { character: Character; abilities: Array<{ key: string; score: number; mod: number }>; inventory: InventoryItem[]; equipment: EquipmentItem[]; displayedAc: number; displayedInitiative: number; onClose: () => void }) {
   const [tab, setTab] = useState<SheetTab>("actions")
   const [notes, setNotes] = useState("")
+  const [selectedScene, setSelectedScene] = useState("drow-prisons")
   const { roll, busy } = useDice()
   const portrait = character.portrait_image_url || character.avatar_image_url
   const extra = character as Character & { race?: string; background?: string; subclass?: string; alignment?: string; personality_traits?: string; ideals?: string; bonds?: string; flaws?: string; faith?: string }
   const speed = character.speed || "30 ft."
   const carriedWeight = inventory.reduce((sum, item) => sum + Number(item.weight || 0) * item.quantity, 0)
+  const sheetScenes = [{ id: "drow-prisons", label: "Option 1 · Drow Prisons", image: "/images/ui/character-sheet-scenes/option-1-drow-prisons.png" }]
+  const activeScene = sheetScenes.find((scene) => scene.id === selectedScene) ?? sheetScenes[0]
   const abilityRoll = (ability: { key: string; mod: number }) => void roll({ die: "d20", numDice: 1, modifier: ability.mod, label: `${abilityNames[ability.key]} Check` })
   const initiativeRoll = () => void roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
   return <ModalShell title="Full Character Sheet" onClose={onClose} wide>
-    <div className="p-4">
+    <div className="min-h-full bg-cover bg-center bg-fixed p-4" style={{ backgroundImage: `linear-gradient(rgba(4,5,8,.78), rgba(4,3,3,.9)), url('${activeScene.image}')` }}>
       <header className="flex flex-wrap items-center gap-4 rounded-xl border border-[#765a2a] bg-[linear-gradient(100deg,#25170b,#090705_68%)] p-4 shadow-[inset_0_0_20px_#000]">
         <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-[#ad8341] bg-black/50">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-4xl text-[#b78b45]">{character.name[0]}</div>}</div>
         <div><h3 className="font-serif text-3xl text-[#f2dfb7]">{character.name}</h3><p className="text-xs text-[#ac966d]">Level {character.level} {extra.race || "Human"} {character.class}</p><p className="mt-0.5 text-[10px] text-purple-300">{character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-[#76694f]">{extra.background || "Background not recorded"} · {extra.alignment || "Alignment not recorded"}</p></div>
         <div className="ml-auto min-w-52"><div className="flex justify-between text-[9px] uppercase text-[#887653]"><span>Experience</span><span>{character.xp} / {character.xp_to_next}</span></div><div className="mt-1 h-2 rounded bg-black"><div className="h-full rounded bg-[#aa2a34]" style={{ width: `${Math.min(100, character.xp / Math.max(1, character.xp_to_next) * 100)}%` }} /></div><div className="mt-2 flex gap-2"><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Short Rest</button><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Long Rest</button></div></div>
       </header>
+
+      <section className="mt-3 flex items-center gap-3 rounded-lg border border-[#5d4521] bg-black/75 p-2 shadow-[0_8px_24px_#000] backdrop-blur-sm" aria-label="Character sheet scene options">
+        <div className="px-2"><p className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Scene Options</p><p className="text-[8px] text-[#837354]">Character-sheet background</p></div>
+        {sheetScenes.map((scene) => <button key={scene.id} type="button" aria-pressed={selectedScene === scene.id} onClick={() => setSelectedScene(scene.id)} className={cn("flex items-center gap-2 rounded border p-1.5 pr-3 text-left transition", selectedScene === scene.id ? "border-[#c59443] bg-[#2b1e0d] text-[#f1d59e]" : "border-[#4f3c1d] bg-[#100d09] text-[#9c8964]")}><img src={scene.image} alt="" className="h-9 w-16 rounded object-cover" /><span className="text-[9px] font-bold uppercase tracking-wider">{scene.label}</span></button>)}
+      </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(390px,1fr)_250px]">
         <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif text-xs uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-2 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet onClick={() => abilityRoll(ability)} />)}</div><p className="mt-2 text-center text-[8px] text-[#75674d]">Click an ability to roll a check</p></section>

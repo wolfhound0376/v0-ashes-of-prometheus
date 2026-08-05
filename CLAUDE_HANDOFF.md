@@ -53,6 +53,14 @@ The Interactive Log launcher separately uses the user's ornate, opaque D20 artwo
 
 Do not reintroduce the old generated number overlays or sprite background-position cropping.
 
+## Character-sheet scene options
+
+The full character sheet now includes a scene selector below the character header. `Option 1 · Drow Prisons` is selected by default and uses:
+
+- `public/images/ui/character-sheet-scenes/option-1-drow-prisons.png`
+
+The chosen scene backgrounds the full sheet through a dark readability wash. Add future scenes to the `sheetScenes` collection in `components/dashboard/v4-dashboard.tsx`; do not replace the canonical scene with an invented image.
+
 ## Spellbook debugging note
 
 The earlier `SpellbookModal is not defined` browser error came from a stale Next/Turbopack development bundle. The generated `.next/dev` cache was cleared and the dev server was restarted. Current source contains `SpellbookModal`, and the production build passed. If the error reappears, stop the dev process, remove only `.next/dev`, and restart; do not delete source or campaign data.
