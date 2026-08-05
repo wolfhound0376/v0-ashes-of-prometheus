@@ -304,13 +304,24 @@ export async function POST(req: Request) {
       console.error("[v0] chat: admin client unavailable for claim verification:", e)
       return Response.json({ error: "Claim verification unavailable" }, { status: 500 })
     }
+    // Credentials live in character_secrets, NOT on characters — the anon key can
+    // read every column of characters, so a token stored there would be public.
+    const { data: secretRow } = await admin
+      .from("character_secrets")
+      .select("character_id, claim_token")
+      .eq("character_id", characterId)
+      .maybeSingle()
+    if (!secretRow || secretRow.claim_token !== claimToken) {
+      console.warn("[v0] chat: claim token mismatch for characterId:", characterId)
+      return Response.json({ error: "Invalid character claim" }, { status: 403 })
+    }
     const { data: claimRow } = await admin
       .from("characters")
-      .select("id, name, claim_token")
+      .select("id, name")
       .eq("id", characterId)
       .maybeSingle()
-    if (!claimRow || claimRow.claim_token !== claimToken) {
-      console.warn("[v0] chat: claim token mismatch for characterId:", characterId)
+    if (!claimRow) {
+      console.warn("[v0] chat: claimed character no longer exists:", characterId)
       return Response.json({ error: "Invalid character claim" }, { status: 403 })
     }
     playerCharacter = { id: claimRow.id, name: claimRow.name }
