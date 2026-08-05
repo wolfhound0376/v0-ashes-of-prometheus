@@ -120,9 +120,11 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, reason: "invalid" }, { status: 200 })
   }
 
+  // Enough for the /join picker to render a character card — portrait, name,
+  // class, level. Nothing here is a secret once the code has been proven.
   const { data: character } = await admin
     .from("characters")
-    .select("id, name")
+    .select("id, name, class, level, portrait_image_url, avatar_image_url")
     .eq("id", secretRow.character_id)
     .maybeSingle()
 
@@ -134,7 +136,13 @@ export async function POST(req: Request) {
     {
       ok: true,
       role: "player",
-      character: { id: character.id, name: character.name },
+      character: {
+        id: character.id,
+        name: character.name,
+        class: character.class ?? null,
+        level: character.level ?? null,
+        portraitUrl: character.portrait_image_url ?? character.avatar_image_url ?? null,
+      },
       claimToken: secretRow.claim_token,
     },
     { status: 200 },
