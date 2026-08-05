@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { Settings, Sparkles, X, Save, RotateCcw, Flame, Hammer, Download, ChevronUp, RefreshCw, UserMinus, Circle, BookOpen, ScrollText, Map, Users, Landmark } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
@@ -127,6 +127,11 @@ export default function DashboardPage() {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([])
+  // True while Malachar's most recent message contains a [[XdY]] roll request
+  // that no roll has answered yet. While set, ANY roll made through the shared
+  // dice engine (tray, sheet skills, saves) is auto-forwarded to Malachar —
+  // the player never types a result, so the player can never invent one.
+  const awaitingRollRef = useRef(false)
   const [npcImageUrl, setNpcImageUrl] = useState<string | null>(null)
   const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
   // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
@@ -696,9 +701,26 @@ if (error) {
     setSelectedAction(actionId === selectedAction ? null : actionId)
   }
 
+  // Track whether Malachar is currently waiting on a requested roll: true when
+  // the newest feed message is his and contains [[XdY]] dice notation. Any
+  // reply (a roll line or a typed message) makes the newest message the
+  // player's again, clearing the flag naturally.
+  useEffect(() => {
+    const last = dialogue[dialogue.length - 1]
+    awaitingRollRef.current =
+      !!last && last.speaker === "Malachar" && /\[\[\s*\d*\s*d\s*\d+[^\]]*\]\]/i.test(last.text || "")
+  }, [dialogue])
+
+  // Typed messages cannot impersonate the dice engine. "[Dice Roll]" and the 🎲
+  // prefix are reserved for rolls the physics engine actually resolved; a player
+  // typing them gets the plain text sent instead, which Malachar is instructed
+  // to treat as table talk, not as a result.
+  const stripRollSpoof = (text: string) =>
+    text.replace(/^\s*(\[\s*dice\s*roll\s*\]|🎲)\s*/i, "")
+
   const handleDialogueSubmit = async () => {
     if (dialogueInput.trim()) {
-      const text = dialogueInput.trim()
+      const text = stripRollSpoof(dialogueInput.trim())
       setDialogueInput("")
 
       // Optimistically add player message to dialogue immediately. It is marked
@@ -754,6 +776,11 @@ if (error) {
     async (text: string, opts: { toLich: boolean }) => {
       const playerName = selectedCharacter?.name || "Player"
       const line = `🎲 ${text}`
+      // Action rolls always go to Malachar. Check rolls (sheet skills, saves)
+      // ALSO go to him whenever his latest message asked for a roll — the
+      // answer to "Roll [[1d20]]" should never have to be typed by hand.
+      const sendToDm = opts.toLich || awaitingRollRef.current
+      awaitingRollRef.current = false
 
       // Feed line, visible on all browsers. Optimistic → reconciled by the
       // realtime echo of the inserted row.
@@ -762,7 +789,7 @@ if (error) {
       if (error) console.error("[Dice] failed to persist roll announcement:", error)
 
       // Action rolls also go to the DM for narration.
-      if (opts.toLich) {
+      if (sendToDm) {
         const response = await sendToLich(
           `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`,
           selectedCharacterId,
@@ -1033,7 +1060,10 @@ if (error) {
             }
             npcEncounters={npcEncounters}
             dialogue={dialogue}
-          onSendToLich={async (message) => {
+          onSendToLich={async (rawMessage) => {
+            // Reserved roll prefixes are stripped from anything typed by hand —
+            // only the dice engine speaks as the dice (see stripRollSpoof).
+            const message = stripRollSpoof(rawMessage)
             // Optimistically add player message to dialogue immediately (pending
             // → reconciled by id when the realtime echo of the row arrives).
             const playerName = selectedCharacter?.name || "Player"
