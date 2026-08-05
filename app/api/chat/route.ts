@@ -481,14 +481,46 @@ WORKED EXAMPLES (follow this mapping exactly):
   // Restart wipes the dialogue table, which used to wipe his memory of his own
   // phrasings; every restart then replayed the same "let's see what you managed
   // to hide" material. The phrasebook survives restarts, so the ban list does too.
-  const { data: phrasebookRows } = await supabase
-    .from("dm_phrasebook")
-    .select("opening")
-    .order("created_at", { ascending: false })
-    .limit(30)
-  const usedOpenings = (phrasebookRows || [])
-    .map((r: any) => (r.opening || "").trim())
-    .filter(Boolean)
+  //
+  // SERVICE ROLE REQUIRED: dm_phrasebook has RLS on with NO policies (same
+  // pattern as character_secrets), so the anon server client reads zero rows
+  // and its writes fail silently — exactly the bug that made the ban list a
+  // no-op in production. Best-effort: a missing admin client only disables the
+  // ban list, never the turn.
+  let phrasebook: ReturnType<typeof createAdminClient> | null = null
+  try {
+    phrasebook = createAdminClient()
+  } catch (e) {
+    console.warn("[v0] dm_phrasebook: admin client unavailable, ban list disabled:", e)
+  }
+  const { data: phrasebookRows } = phrasebook
+    ? await phrasebook
+        .from("dm_phrasebook")
+        .select("opening")
+        .order("created_at", { ascending: false })
+        .limit(30)
+    : { data: null }
+
+  // Belt and braces: ALSO retire every opening Malachar has already used in the
+  // visible history this session, so in-session repeats are banned explicitly
+  // rather than left to the model's own reading of the transcript.
+  const sessionOpenings = (recentDialogue || [])
+    .filter((d: any) => d.speaker === "Malachar")
+    .map((d: any) =>
+      (d.text || "")
+        .replace(/\[[A-Z_]+:[^\]]*\]/g, "")
+        .trim()
+        .split(/(?<=[.!?…])\s+/)[0]
+        ?.slice(0, 90)
+        ?.trim() || "",
+    )
+    .filter((o: string) => o.length > 12)
+  const usedOpenings = Array.from(
+    new Set([
+      ...sessionOpenings,
+      ...(phrasebookRows || []).map((r: any) => (r.opening || "").trim()).filter(Boolean),
+    ]),
+  ).slice(0, 45)
 
   // Scene art the dashboard already owns, so the prompt can steer Malachar
   // toward canonical location names instead of inventing new ones.
@@ -619,6 +651,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 4. CONDITIONS: You MUST emit [CONDITION_ADD: <target> | <condition>] when ANY character or NPC gains a condition (Manacled, Magical Barrier, Poisoned, Restrained, Frightened, Prone, Invisible, Exhaustion, etc.), and [CONDITION_REMOVE: <target> | <condition>] when it clears. <target> is the exact name of the affected character or NPC (e.g. "Jimjar", "Eldeth"); omit the "<target> |" part to target the player character. Honor every condition already listed in the world context — never narrate a manacled or barriered creature acting freely, and only change a condition by emitting these tags. Examples: [CONDITION_ADD: Jimjar | Frightened] or, for the player, [CONDITION_ADD: Poisoned].
 
 5. NPC/MONSTER ENCOUNTERS: You MUST emit [NPC_ENCOUNTER: <Name> | <description> | <portrait_prompt>] the FIRST time any NPC or monster meaningfully interacts with the player. If you describe a gray ooze blocking passage, a drow guard confronting them, or any creature entering the scene — EMIT THE TAG.
+
+5b. PHYSICAL AND SOCIAL ENGAGEMENT COUNTS. "Interaction" is not only conversation: attacking, shoving, grabbing, pickpocketing, handing something over, gesturing at, blocking, or being attacked BY a named NPC all REQUIRE the [NPC_ENCOUNTER:] tag for that NPC in the same response, even when nobody speaks. If the player's message engages a named NPC in ANY way, that NPC's tag must appear.
 
 6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends.
 
@@ -2137,16 +2171,16 @@ Rules:
         .split(/(?<=[.!?…])\s+/)[0] // first sentence…
         ?.slice(0, 90) // …capped so the ban list stays cheap
         ?.trim()
-      if (opening && opening.length > 12) {
-        await supabase.from("dm_phrasebook").insert({ opening })
+      if (opening && opening.length > 12 && phrasebook) {
+        await phrasebook.from("dm_phrasebook").insert({ opening })
         // Rolling window: keep the newest 60, delete the rest.
-        const { data: stale } = await supabase
+        const { data: stale } = await phrasebook
           .from("dm_phrasebook")
           .select("id")
           .order("created_at", { ascending: false })
           .range(60, 200)
         if (stale?.length) {
-          await supabase.from("dm_phrasebook").delete().in("id", stale.map((r: any) => r.id))
+          await phrasebook.from("dm_phrasebook").delete().in("id", stale.map((r: any) => r.id))
         }
       }
     } catch (err) {
@@ -2304,6 +2338,47 @@ Rules:
     }
   }
   // === END AUTO NPC DETECTION ===
+
+  // === PLAYER-ENGAGEMENT ACTIVATION ===
+  // "When we are engaging someone their image should pop up." The tags cover
+  // Malachar's side, but when the PLAYER addresses or acts on a known NPC
+  // ("I shove Ront") and the model forgets the tag, nothing activates. So:
+  // match the player's own message against the canonical roster (full name, or
+  // any unambiguous name token of 4+ letters), activate the shared row, and
+  // count it as encountered this turn so the focus pass keeps it visible.
+  // Known NPCs only — no generation, no stats, no new rows.
+  if (playerCharacter?.id && typeof message === "string" && message.trim()) {
+    const msg = ` ${message.toLowerCase()} `
+    // token -> canonical name; tokens shared by 2+ NPCs are ambiguous, dropped.
+    const tokenOwner = new Map<string, string | null>()
+    for (const npcName of knownNpcNames) {
+      const tokens = [npcName.toLowerCase(), ...npcName.toLowerCase().split(/\s+/).filter((t) => t.length >= 4)]
+      for (const t of tokens) {
+        tokenOwner.set(t, tokenOwner.has(t) && tokenOwner.get(t) !== npcName ? null : npcName)
+      }
+    }
+    const engaged = new Set<string>()
+    for (const [token, owner] of tokenOwner) {
+      if (!owner) continue
+      if (new RegExp(`\\b${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(msg)) engaged.add(owner)
+    }
+    for (const npcName of engaged) {
+      if (encounteredThisTurn.has(npcName)) continue
+      encounteredThisTurn.add(npcName)
+      const { data: row } = await supabase
+        .from("npc_encounters")
+        .select("id, is_active")
+        .ilike("name", npcName)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (row && !row.is_active) {
+        const { error } = await supabase.from("npc_encounters").update({ is_active: true }).eq("id", row.id)
+        if (error) console.error("[v0] engagement activation failed:", npcName, error.message)
+        else console.log("[v0] NPC activated by player engagement:", npcName)
+      }
+    }
+  }
 
   // === FOCUS THE NPC PANEL ON THE CURRENT SCENE ===
   // If this turn introduced/involved any NPCs, deactivate every OTHER active NPC
