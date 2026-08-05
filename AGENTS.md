@@ -73,7 +73,9 @@ Supabase vars; the full set is in §6.
 | Route | File | What it is |
 |---|---|---|
 | `/` | `app/page.tsx` (1078 L) | The player dashboard. Three columns, `DiceProvider` wrapper, all Supabase fetches + realtime channels, claim-link flow. |
-| `/forge` | `app/forge/page.tsx` | Character Forge importer — paste `aop-character-v1` JSON or quick-build; POSTs `/api/forge/import`, returns a claim link. |
+| `/join` | `app/join/page.tsx` | The access-code gate + character picker. A valid player code shows a card (portrait/class/level) with Enter / Create / Import paths; a forge code shows Create / Import; the DM code skips the picker entirely. Nothing hits localStorage until a path is chosen. |
+| `/forge` | `app/forge/page.tsx` | Character Forge importer — paste `aop-character-v1` JSON; POSTs `/api/forge/import`, returns a claim link + three-word code. Quick build is retired (it produced incomplete sheets). |
+| `/forge/builder` | `app/forge/builder/page.tsx` | The Character Forge 2014 builder embedded same-origin (iframe of `public/forge2014.html`, an exact copy of `docs/design/CharacterForge_2014Edition.html` — regenerate with `cp` if the source changes). Lists this browser's saved builds (`aop_forge2014_v1`); "Add to campaign" calls the iframe's own `exportPayload()`/`migrateChar()` (window-scoped function declarations) and POSTs `/api/forge/import`. |
 | `/shotlist` | `app/shotlist/page.tsx` | Layer 4 view: cinematic beat timeline over `session_beats`, realtime. |
 | `/music-upload` | `app/music-upload/page.tsx` | Bulk audio upload into 12 mood categories. |
 | `/admin` | `app/admin/page.tsx` | Tabbed CMS over 8 tables. `force-dynamic`. |
@@ -87,7 +89,7 @@ Crimson Text (`--font-sans`), mounts `SupabaseStatus` + Vercel Analytics.
 | Route | Does | Service | Service-role? |
 |---|---|---|---|
 | `chat/route.ts` **(2066 L — the game engine)** | The Malachar DM turn: resolve speaker → build world context → call Claude → parse inline tags out of the prose → write game state. | Anthropic direct (`claude-sonnet-4-6` narration, `claude-haiku-4-5` secondary); fal `flux/schnell` for NPC/location art | only at the claim-token check |
-| `forge/import/route.ts` | Validates `aop-character-v1` against column whitelists, inserts `characters` + `inventory_items`, returns claim URL, 409-warns on duplicates. | Supabase | yes |
+| `forge/import/route.ts` | Validates `aop-character-v1` against column whitelists, inserts `characters` + `inventory_items`, issues a three-word `claim_code` into `character_secrets`, returns claim URL + `claimCode`, 409-warns on duplicates. | Supabase | yes |
 | `verify-claim/route.ts` | Verifies `(characterId, claim_token)`; never echoes the token. | Supabase | yes |
 | `inventory/transfer/route.ts` | Moves `environment_inventory` → a character's `inventory_items`. | Supabase | no |
 | `lich-personality/route.ts` | GET/PUT the single personality-dial row. | Supabase | no |
