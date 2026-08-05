@@ -244,7 +244,7 @@ export function WorldAIPanel({
           />
           <ContextSelector 
             label="Location" 
-            options={currentCampaign.contexts.locations.map(l => [l, l])}
+            options={currentCampaign.contexts.locations.map((l): [string, string] => [l, l])}
             value={currentLocation}
             onChange={handleLocationChange}
           />
