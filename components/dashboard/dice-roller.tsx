@@ -4,10 +4,10 @@
 // DiceProvider and its @3d-dice/dice-box physics engine.
 
 import { useCallback, useState } from "react"
-import { ChevronDown, ChevronUp, Dices, Send, X } from "lucide-react"
+import { ChevronDown, ChevronUp, Dices, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
-import { useDice, type DiceResult, type RollMode, type RollSpec } from "@/components/dice/dice-provider"
+import { useDice, describeRoll, type DiceResult, type RollMode, type RollSpec } from "@/components/dice/dice-provider"
 
 interface DiceRollerProps {
   onRollResult?: (result: DiceResult) => void
@@ -34,7 +34,7 @@ export function DiceRoller({
   presentation = "panel",
   onClose,
 }: DiceRollerProps) {
-  const { roll, busy, ready } = useDice()
+  const { roll, announce, busy, ready } = useDice()
   const [isExpanded, setIsExpanded] = useState(true)
   const [selectedDie, setSelectedDie] = useState<string>("d20")
   const [numDice, setNumDice] = useState(1)
@@ -47,16 +47,12 @@ export function DiceRoller({
     const result = await roll(spec)
     setLastResult(result)
     onRollResult?.(result)
-  }, [onRollResult, roll])
+    // Every tray roll is announced AND sent to Malachar automatically. The
+    // physics result is the only truth — the player never types (or invents)
+    // a number. This is the anti-tamper contract: the die reports itself.
+    announce(describeRoll(result), { toLich: true })
+  }, [announce, onRollResult, roll])
 
-  const sendResultToLich = useCallback(() => {
-    if (!lastResult || !onSendToLich) return
-    const modifierStr = lastResult.modifier === 0 ? "" : lastResult.modifier > 0 ? `+${lastResult.modifier}` : `${lastResult.modifier}`
-    const rollDescription = lastResult.label ? `${lastResult.label}: ` : ""
-    const modeDescription = lastResult.rollMode && lastResult.rollMode !== "normal" ? ` with ${lastResult.rollMode}` : ""
-    const keptDescription = lastResult.keptRolls && lastResult.rollMode && lastResult.rollMode !== "normal" ? `, kept [${lastResult.keptRolls.join(", ")}]` : ""
-    onSendToLich(`[Dice Roll] ${characterName} rolled ${lastResult.rolls.length}${lastResult.die}${modifierStr}${modeDescription}${rollDescription ? ` for ${rollDescription}` : ""}: [${lastResult.rolls.join(", ")}]${keptDescription}${modifierStr} = **${lastResult.total}**`)
-  }, [characterName, lastResult, onSendToLich])
 
   const body = (
     <div className="aop-dice-body space-y-4 px-4 pb-4 pt-3">
@@ -157,9 +153,8 @@ export function DiceRoller({
             <p className="mt-1 text-xs text-[#cbb78d]">[{lastResult.rolls.join(", ")}]{lastResult.keptRolls && lastResult.keptRolls !== lastResult.rolls ? ` keep ${lastResult.keptRolls.join(", ")}` : ""}{lastResult.modifier ? ` ${lastResult.modifier > 0 ? "+" : ""}${lastResult.modifier}` : ""}</p>
           </div>
           <strong className="font-serif text-4xl text-[#f1cf83]">{lastResult.total}</strong>
-          {onSendToLich && (
-            <button type="button" onClick={sendResultToLich} className="aop-send-lich" title="Send result to the Lich"><Send className="h-4 w-4" /></button>
-          )}
+          {/* No manual send button: every tray roll is auto-announced to
+              Malachar the moment the die settles (see initiateRoll). */}
         </section>
       )}
 
