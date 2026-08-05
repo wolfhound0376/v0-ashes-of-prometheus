@@ -1018,6 +1018,11 @@ if (error) {
             characterLevel={selectedCharacter?.level}
             characterName={selectedCharacter?.name}
             sceneImageUrl={npcImageUrl || undefined}
+            environmentImageUrl={
+              sceneImageUrl ||
+              currentEnvironment?.background_image_url ||
+              "/images/scenes/velkynvelve-slave-pen.jpg"
+            }
             npcEncounters={npcEncounters}
             dialogue={dialogue}
           onSendToLich={async (message) => {
