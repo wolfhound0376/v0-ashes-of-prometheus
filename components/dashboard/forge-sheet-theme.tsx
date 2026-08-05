@@ -29,6 +29,31 @@ export const BACKDROPS: { label: string; css: string; image?: string }[] = [
     css: SCENE("#07101d", "rgba(111,76,190,.28)", "#02050a"),
     image: "/images/ui/character-sheet-scenes/option-1-drow-prisons.png",
   },
+  {
+    label: "Option 2 · Acid Pits",
+    css: SCENE("#10200b", "rgba(137,255,81,.28)", "#030904"),
+    image: "/images/ui/character-sheet-scenes/Background_AcidPits_Underdark.png",
+  },
+  {
+    label: "Option 3 · Dwarven Fortress Beneath the Mountain",
+    css: SCENE("#24180d", "rgba(226,143,64,.28)", "#090603"),
+    image: "/images/ui/character-sheet-scenes/Background_DwarvenFortress_BeneathMountain.1.png",
+  },
+  {
+    label: "Option 4 · Myconid Village",
+    css: SCENE("#151129", "rgba(179,111,255,.28)", "#05030b"),
+    image: "/images/ui/character-sheet-scenes/Background_MyconidVillage_Underdark.1.png",
+  },
+  {
+    label: "Option 5 · Subterranean Sea",
+    css: SCENE("#071b25", "rgba(73,175,255,.28)", "#02070b"),
+    image: "/images/ui/character-sheet-scenes/Background_SubterraneanSea_Underdark.1.png",
+  },
+  {
+    label: "Option 6 · Twilight Citadel",
+    css: SCENE("#17102b", "rgba(143,94,255,.30)", "#05030b"),
+    image: "/images/ui/character-sheet-scenes/Backkground_TwilightCitadel_DeepGnome_Underdark.1.png",
+  },
   { label: "Arcane Vault", css: SCENE("#1a1230", "rgba(120,90,200,.35)", "#0a0716") },
   { label: "Ember Caldera", css: SCENE("#241207", "rgba(255,107,53,.38)", "#0d0503") },
   { label: "Underdark", css: SCENE("#071a1c", "rgba(60,180,190,.30)", "#03090c") },
