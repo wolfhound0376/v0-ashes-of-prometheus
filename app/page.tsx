@@ -29,6 +29,14 @@ import type { Campaign } from "@/lib/world-ai/campaigns"
 type SpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
 type DialogueMessage = { id: string; speaker: string; text: string; speech_segments?: SpeechSegment[] | null; pending?: boolean }
 
+function optimisticLichEntries(response: { text: string; speechSegments?: SpeechSegment[] | null; dialogueEntries?: Array<{ speaker: string; text: string; speech_segments?: SpeechSegment[] | null }> }): DialogueMessage[] {
+  const entries = response.dialogueEntries?.filter((entry) => entry.text?.trim())
+  if (entries?.length) {
+    return entries.map((entry) => ({ ...entry, id: tempId(), pending: true }))
+  }
+  return response.text ? [{ id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }] : []
+}
+
 // Merge one dialogue row into state with id-based dedupe. This is the single
 // funnel every append goes through so a message can never render twice:
 //   1. If a message with the same id is already present (e.g. the realtime
@@ -704,7 +712,7 @@ if (error) {
       const response = await sendToLich(text, selectedCharacterId, claimToken)
       if (response?.text) {
         // Optimistically add Malachar's response (also pending → reconciled by id)
-        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
+        setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
 
         // Update images if returned
         if (response.npcImageUrl) {
@@ -728,7 +736,7 @@ if (error) {
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
       const response = await sendToLich(text, selectedCharacterId, claimToken)
       if (response?.text) {
-        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
+        setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
         if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
         if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
         await fetchCharacterData()
@@ -761,7 +769,7 @@ if (error) {
           claimToken,
         )
         if (response?.text) {
-          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
+          setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
           if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
           if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
           await fetchCharacterData()
@@ -1036,7 +1044,7 @@ if (error) {
             if (response) {
               // Optimistically add Malachar's response to dialogue (also pending)
               if (response.text) {
-                setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
+                setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
               }
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {

@@ -1886,6 +1886,12 @@ a paragraph, and you know it.`
     npc_id: string | null
     voice_id: string | null
   }
+  type DialogueOutputEntry = {
+    speaker: string
+    speaker_type: "dm" | "npc"
+    text: string
+    speech_segments: PersistedSpeechSegment[] | null
+  }
   let speechSegments: PersistedSpeechSegment[] | null = null
   if (responseText && /[“”"„]/.test(responseText)) {
     try {
@@ -1961,14 +1967,45 @@ Rules:
     }
   }
 
-  // Persist Malachar's response and its permanent server attribution together.
-  if (responseText) {
-    const { error: dialogueError } = await supabase.from("dialogue").insert({
+  // Convert attributed quotes into real dialogue rows. This keeps NPC speech
+  // out of Malachar's mouth in the log, realtime feed, and voice queue.
+  const dialogueEntries: DialogueOutputEntry[] = []
+  if (responseText && speechSegments?.some((segment) => segment.npc_id)) {
+    let cursor = 0
+    const pushMalachar = (text: string) => {
+      const clean = text.replace(/^[\s"“”„]+|[\s"“”„]+$/g, "").trim()
+      if (clean) dialogueEntries.push({ speaker: "Malachar", speaker_type: "dm", text: clean, speech_segments: null })
+    }
+    for (const segment of speechSegments) {
+      const at = responseText.indexOf(segment.line, cursor)
+      if (at < 0) continue
+      pushMalachar(responseText.slice(cursor, at))
+      if (segment.npc_id) {
+        dialogueEntries.push({
+          speaker: segment.speaker,
+          speaker_type: "npc",
+          text: segment.line,
+          speech_segments: [segment],
+        })
+      } else {
+        pushMalachar(segment.line)
+      }
+      cursor = at + segment.line.length
+    }
+    pushMalachar(responseText.slice(cursor))
+  }
+  if (responseText && dialogueEntries.length === 0) {
+    dialogueEntries.push({
       speaker: "Malachar",
       speaker_type: "dm",
       text: responseText,
       speech_segments: speechSegments,
     })
+  }
+
+  // Persist the ordered turn as separate DM/NPC records.
+  if (responseText) {
+    const { error: dialogueError } = await supabase.from("dialogue").insert(dialogueEntries)
     if (dialogueError) {
       console.error("[v0] Error inserting Malachar dialogue:", dialogueError)
     }
@@ -2155,6 +2192,7 @@ Rules:
   return Response.json({
     text: responseText || "",
     speechSegments,
+    dialogueEntries,
     npcImageUrl,
     locationImageUrl,
     updatedLocation: updatedLocation || undefined,

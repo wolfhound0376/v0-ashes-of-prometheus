@@ -10,6 +10,16 @@ interface LichResponse {
     npc_id: string | null
     voice_id: string | null
   }> | null
+  dialogueEntries?: Array<{
+    speaker: string
+    text: string
+    speech_segments?: Array<{
+      speaker: string
+      line: string
+      npc_id: string | null
+      voice_id: string | null
+    }> | null
+  }>
   npcImageUrl?: string | null
   locationImageUrl?: string | null
   updatedLocation?: string
@@ -55,6 +65,7 @@ export function useLich(campaignId: string = "abyss") {
       return {
         text: data.text || "",
         speechSegments: Array.isArray(data.speechSegments) ? data.speechSegments : null,
+        dialogueEntries: Array.isArray(data.dialogueEntries) ? data.dialogueEntries : undefined,
         npcImageUrl: data.npcImageUrl || null,
         locationImageUrl: data.locationImageUrl || null,
         updatedLocation: data.updatedLocation,

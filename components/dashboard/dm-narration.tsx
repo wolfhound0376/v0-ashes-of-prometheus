@@ -315,29 +315,30 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     // talking — sanitising first left the segmenter nothing to pair and made
     // Malachar read every NPC's dialogue himself. Each segment is sanitised
     // after the split instead, inside cast().
-    const dmLines = dialogue
-      .filter((entry) => entry.speaker === DM_SPEAKER)
+    const voicedLines = dialogue
+      .filter((entry) => entry.speaker === DM_SPEAKER || npcsRef.current.some((npc) => npc.name.toLowerCase() === entry.speaker.toLowerCase()))
       .filter((entry) => Boolean(entry.text))
-    const dmTexts = dmLines.map((entry) => entry.text)
+    const lineKey = (entry: Line) => `${entry.speaker.toLowerCase()}\u0000${entry.text}`
+    const voicedKeys = voicedLines.map(lineKey)
 
     if (!enabled) {
       // Off: everything on screen counts as heard, so switching on later does
       // not read the backlog.
-      spokenRef.current = new Set(dmTexts)
+      spokenRef.current = new Set(voicedKeys)
       primedRef.current = false
       return
     }
 
-    const unheard = dmLines.filter((line) => !spokenRef.current.has(line.text))
+    const unheard = voicedLines.filter((line) => !spokenRef.current.has(lineKey(line)))
     // Whatever happens, none of these get spoken twice.
-    for (const line of dmLines) spokenRef.current.add(line.text)
+    for (const line of voicedLines) spokenRef.current.add(lineKey(line))
 
     if (!primedRef.current) {
       // First pass with narration on — this is the existing transcript.
       primedRef.current = true
       return
     }
-    if (unheard.length !== 1) {
+    if (!unheard.length) {
       if (unheard.length > 1) console.log("[v0] narration: bulk load of", unheard.length, "lines — not speaking")
       return
     }
@@ -346,7 +347,12 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     // he narrates again. Split the line on speaker attribution and cast each
     // piece, so the dwarf answers in her own voice inside his narration
     // instead of him doing all the parts.
-    const wanted = castPersisted(unheard[0], npcsRef.current)
+    const wanted = unheard.flatMap((line) => {
+      if (line.speaker === DM_SPEAKER) return castPersisted(line, npcsRef.current)
+      const npc = npcsRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
+      const text = sanitizeForTTS(line.text)
+      return npc && text ? [{ kind: "npc" as const, text, npc }] : []
+    })
       .filter((u) => (u.kind === "dm" ? dmOnRef.current : npcOnRef.current))
     if (!wanted.length) return
     queueRef.current.push(...wanted)
