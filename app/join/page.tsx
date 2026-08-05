@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, type FormEvent } from "react"
+import { useState, useEffect, useCallback, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { FantasyPanel, PanelDivider } from "@/components/ui/fantasy-panel"
 
@@ -17,12 +17,24 @@ import { FantasyPanel, PanelDivider } from "@/components/ui/fantasy-panel"
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
 const ROLE_LS_KEY = "aop_access_role"
+const FORGE_KEY_LS_KEY = "aop_forge_key"
 
 export default function JoinPage() {
   const router = useRouter()
   const [code, setCode] = useState("")
   const [status, setStatus] = useState<"idle" | "checking" | "error" | "limited" | "welcome">("idle")
   const [welcomeName, setWelcomeName] = useState<string | null>(null)
+  const [destination, setDestination] = useState<"dashboard" | "forge">("dashboard")
+  const [forgeGate, setForgeGate] = useState(false)
+
+  // Ask the server which gates are armed so the forge hint only shows when a
+  // forge code actually exists to hand out.
+  useEffect(() => {
+    fetch("/api/claim-code")
+      .then((res) => res.json())
+      .then((cfg) => setForgeGate(Boolean(cfg?.forgeGate)))
+      .catch(() => {})
+  }, [])
 
   const submit = useCallback(
     async (e: FormEvent) => {
@@ -52,7 +64,18 @@ export default function JoinPage() {
         if (result.role === "dm") {
           window.localStorage.setItem(ROLE_LS_KEY, "dm")
           window.localStorage.removeItem(TOKEN_LS_KEY)
+          // The DM code also unlocks the Forge importer — remember it for /forge.
+          window.localStorage.setItem(FORGE_KEY_LS_KEY, code.trim())
           setWelcomeName("Dungeon Master")
+        } else if (result.role === "forge") {
+          // A forge code opens character creation instead of claiming a seat. The
+          // code is kept locally so /forge can authorise the import server-side.
+          window.localStorage.setItem(ROLE_LS_KEY, "forge")
+          window.localStorage.setItem(FORGE_KEY_LS_KEY, code.trim())
+          setDestination("forge")
+          setStatus("welcome")
+          setTimeout(() => router.replace("/forge"), 1100)
+          return
         } else {
           window.localStorage.setItem(ROLE_LS_KEY, "player")
           window.localStorage.setItem(CHARACTER_LS_KEY, result.character.id)
@@ -116,9 +139,11 @@ export default function JoinPage() {
                 Too many attempts. Wait a few minutes and try again.
               </p>
             )}
-            {status === "welcome" && welcomeName && (
+            {status === "welcome" && (
               <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">
-                Welcome back, {welcomeName}. Opening your dashboard…
+                {destination === "forge"
+                  ? "The forge fires are lit. Opening character creation…"
+                  : `Welcome back, ${welcomeName}. Opening your dashboard…`}
               </p>
             )}
 
@@ -133,6 +158,14 @@ export default function JoinPage() {
             </button>
           </form>
         </FantasyPanel>
+
+        {forgeGate && (
+          <p className="mt-6 text-center text-[12px] leading-relaxed text-stone-500">
+            New to the table? Ask your Dungeon Master for the{" "}
+            <span className="text-[#c9a868]">forge code</span> — it opens the Character
+            Forge so you can build your own hero.
+          </p>
+        )}
 
         <p className="mt-6 text-center text-[11px] leading-relaxed text-stone-600">
           Your code claims one character and stays remembered on this device.
