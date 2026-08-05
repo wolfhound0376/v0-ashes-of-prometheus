@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { BookOpen, Compass, Map, Mic, Plus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { BootsIcon, HoodIcon, NecklaceIcon, OrbIcon, PantsIcon, RingIcon, RobeIcon, StaffIcon } from "@/components/ui/fantasy-icons"
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
@@ -131,7 +132,36 @@ function buildRailStats(c: Character | undefined) {
   return { saves, skills, passiveInsight, passivePerception: raw.passive_perception ?? 10 + mod("wis") }
 }
 
-type DialogueEntry = { id?: string; speaker: string; text: string }
+type DialogueSpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
+type DialogueEntry = { id?: string; speaker: string; text: string; speech_segments?: DialogueSpeechSegment[] | null }
+
+function dialogueLines(entry: DialogueEntry): DialogueEntry[] {
+  if (entry.speaker !== "Malachar" || !entry.speech_segments?.length) return [entry]
+  const lines: DialogueEntry[] = []
+  let cursor = 0
+  const push = (speaker: string, text: string, suffix: string) => {
+    const clean = text.replace(/^[\s“”"']+|[\s“”"']+$/g, "").trim()
+    if (clean) lines.push({ id: `${entry.id ?? "line"}-${suffix}`, speaker, text: clean })
+  }
+  entry.speech_segments.forEach((segment, index) => {
+    const at = entry.text.indexOf(segment.line, cursor)
+    if (at < 0) return
+    push("Malachar", entry.text.slice(cursor, at), `dm-${index}`)
+    push(segment.speaker === "NARRATOR" ? "Malachar" : segment.speaker, segment.line, `speaker-${index}`)
+    cursor = at + segment.line.length
+  })
+  push("Malachar", entry.text.slice(cursor), "dm-tail")
+  return lines.length ? lines : [entry]
+}
+
+const SPEAKER_COLORS = ["#61b978", "#d2b04f", "#e1876b", "#6fc0c5", "#c98bd8", "#8eb86a", "#df9164"]
+function speakerColor(speaker: string): string {
+  if (speaker === "Malachar" || speaker === "DM") return "#a879e1"
+  if (speaker === "Sam") return "#52a5d4"
+  if (speaker === "System") return "#b7a683"
+  const hash = Array.from(speaker).reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 0)
+  return SPEAKER_COLORS[hash % SPEAKER_COLORS.length]
+}
 type NpcEncounter = {
   id: string
   name: string
@@ -231,7 +261,6 @@ export function V4Dashboard(props: V4DashboardProps) {
   const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
   const [inventoryOpen, setInventoryOpen] = useState(false)
-  const [equipmentOpen, setEquipmentOpen] = useState(false)
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
   const [diceOpen, setDiceOpen] = useState(false)
   const [spellbookOpen, setSpellbookOpen] = useState(false)
@@ -249,6 +278,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   const dialogue = props.dialogue.length
     ? props.dialogue
     : hasLiveCampaign ? [] : previewDialogue
+  const displayedDialogue = dialogue.flatMap(dialogueLines)
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
   const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
@@ -315,7 +345,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
       <Frame title="Interactive Log" className="relative flex min-h-[330px] flex-1 flex-col">
         <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{dialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{dialogue.map((entry, index) => <p key={entry.id ?? index}><strong className={cn(entry.speaker === "Malachar" ? "text-[#a879e1]" : entry.speaker === "Sam" ? "text-[#52a5d4]" : entry.speaker === "Jimjar" ? "text-[#61b978]" : entry.speaker === "Fifi of Copperas Cove" ? "text-[#d2b04f]" : "text-[#b7a683]")}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
         <button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-3 right-3" title="Open Dice Roller" aria-label="Open Dice Roller" />
       </Frame>
     </div>
@@ -408,8 +438,7 @@ export function V4Dashboard(props: V4DashboardProps) {
           <button onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
       </Frame>
-      <button onClick={() => setInventoryOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Basic Inventory <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb　▶</span></button>
-      <button onClick={() => setEquipmentOpen(true)} className="flex h-8 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Equipped Items <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.equipment.length} equipped　▶</span></button>
+      <button onClick={() => setInventoryOpen(true)} className="flex h-9 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
       {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300"><BookOpen className="mr-2 h-4 w-4" />Book of Spells <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
@@ -426,20 +455,20 @@ export function V4Dashboard(props: V4DashboardProps) {
       character={{ ...toSheetCharacter(selected), ac: displayedAc, initiative: displayedInitiative }}
       inventory={props.inventory as any}
     />
-    {(inventoryOpen || equipmentOpen) ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => { setInventoryOpen(false); setEquipmentOpen(false) }} /> : null}
+    {inventoryOpen ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => setInventoryOpen(false)} /> : null}
   </main>
 }
 
-const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string }> = [
-  { id: "head", label: "Head", position: "left-[4%] top-[5%]" },
-  { id: "neck", label: "Neck", position: "right-[4%] top-[5%]" },
-  { id: "torso", label: "Torso", position: "right-[4%] top-[30%]" },
-  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[31%]" },
-  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[56%]" },
-  { id: "legs", label: "Legs", position: "left-[4%] top-[58%]" },
-  { id: "feet", label: "Feet", position: "left-[28%] bottom-[2%]" },
-  { id: "ring1", label: "Ring I", position: "right-[28%] bottom-[2%]" },
-  { id: "ring2", label: "Ring II", position: "right-[4%] bottom-[2%]" },
+const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string; Icon: typeof HoodIcon }> = [
+  { id: "head", label: "Head", position: "left-[4%] top-[5%]", Icon: HoodIcon },
+  { id: "neck", label: "Neck", position: "right-[4%] top-[5%]", Icon: NecklaceIcon },
+  { id: "torso", label: "Torso", position: "right-[4%] top-[30%]", Icon: RobeIcon },
+  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[31%]", Icon: StaffIcon },
+  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[56%]", Icon: OrbIcon },
+  { id: "legs", label: "Legs", position: "left-[4%] top-[58%]", Icon: PantsIcon },
+  { id: "feet", label: "Feet", position: "left-[28%] bottom-[2%]", Icon: BootsIcon },
+  { id: "ring1", label: "Ring I", position: "right-[28%] bottom-[2%]", Icon: RingIcon },
+  { id: "ring2", label: "Ring II", position: "right-[4%] bottom-[2%]", Icon: RingIcon },
 ]
 
 function ModalShell({ title, children, onClose, wide = false }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
@@ -530,7 +559,7 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
     <div className="grid min-h-[650px] gap-4 p-4 lg:grid-cols-[minmax(400px,1.05fr)_minmax(330px,.95fr)]">
       <section className="relative min-h-[610px] overflow-hidden rounded-xl border border-[#5e471f] bg-[radial-gradient(circle_at_50%_32%,#27302e,#0a0907_67%)]">
         <div className="absolute inset-x-[21%] bottom-4 top-8 overflow-hidden border-x border-[#4f3c1d] bg-black/20">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-contain object-bottom" /> : <div className="flex h-full items-center justify-center font-serif text-8xl text-[#765a2b]">{character.name[0]}</div>}</div>
-        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item?.icon_url ? <img src={item.icon_url} alt="" className="h-10 w-10 object-contain" /> : <span className="text-xl text-[#9b7740]">◇</span>}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
+        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; const SlotIcon = slot.Icon; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item?.icon_url ? <img src={item.icon_url} alt="" className="h-10 w-10 object-contain" /> : <SlotIcon className="h-9 w-9 opacity-80" />}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
         <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1">{Object.entries(bonuses).length ? Object.entries(bonuses).map(([key, value]) => <span key={key} className="rounded-full border border-emerald-800 bg-emerald-950/80 px-2 py-1 text-[8px] uppercase text-emerald-300">{key} {signed(value)}</span>) : <span className="rounded border border-[#4d3a1d] bg-black/70 px-2 py-1 text-[8px] text-[#8e7b57]">No recorded equipment stat bonuses</span>}</div>
       </section>
       <section className="flex min-h-0 flex-col rounded-xl border border-[#5e471f] bg-[#0d0b07]">

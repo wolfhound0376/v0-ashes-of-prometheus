@@ -4,6 +4,12 @@ import { useState, useCallback } from "react"
 
 interface LichResponse {
   text: string
+  speechSegments?: Array<{
+    speaker: string
+    line: string
+    npc_id: string | null
+    voice_id: string | null
+  }> | null
   npcImageUrl?: string | null
   locationImageUrl?: string | null
   updatedLocation?: string
@@ -46,7 +52,13 @@ export function useLich(campaignId: string = "abyss") {
       }
 
       const data = await response.json()
-      return { text: data.text || "", npcImageUrl: data.npcImageUrl || null, locationImageUrl: data.locationImageUrl || null }
+      return {
+        text: data.text || "",
+        speechSegments: Array.isArray(data.speechSegments) ? data.speechSegments : null,
+        npcImageUrl: data.npcImageUrl || null,
+        locationImageUrl: data.locationImageUrl || null,
+        updatedLocation: data.updatedLocation,
+      }
     } catch (error) {
       console.error("Error sending message:", error)
       throw error

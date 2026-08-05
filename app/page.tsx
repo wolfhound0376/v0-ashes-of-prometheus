@@ -26,7 +26,8 @@ import type { Campaign } from "@/lib/world-ai/campaigns"
 
 // A dialogue message carries the DB row `id` so we can dedupe. Optimistic
 // entries added before the row exists get a temporary id and `pending: true`.
-type DialogueMessage = { id: string; speaker: string; text: string; pending?: boolean }
+type SpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
+type DialogueMessage = { id: string; speaker: string; text: string; speech_segments?: SpeechSegment[] | null; pending?: boolean }
 
 // Merge one dialogue row into state with id-based dedupe. This is the single
 // funnel every append goes through so a message can never render twice:
@@ -44,7 +45,7 @@ function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): Dial
   )
   if (pendingIdx !== -1) {
     const next = prev.slice()
-    next[pendingIdx] = { id: incoming.id, speaker: incoming.speaker, text: incoming.text }
+    next[pendingIdx] = { ...incoming, pending: false }
     return next
   }
   return [...prev, incoming]
@@ -471,7 +472,7 @@ export default function DashboardPage() {
     async function fetchDialogue() {
       const { data, error } = await supabase
         .from('dialogue')
-        .select('id, speaker, text')
+        .select('id, speaker, text, speech_segments')
         .order('created_at', { ascending: true })
         .limit(50)
 
@@ -493,9 +494,9 @@ if (error) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'dialogue' },
         (payload: { new: Record<string, any> }) => {
-          const newEntry = payload.new as { id: string; speaker: string; text: string }
+          const newEntry = payload.new as DialogueMessage
           setDialogue(prev =>
-            mergeDialogue(prev, { id: newEntry.id, speaker: newEntry.speaker, text: newEntry.text }),
+            mergeDialogue(prev, newEntry),
           )
         }
       )
@@ -703,7 +704,7 @@ if (error) {
       const response = await sendToLich(text, selectedCharacterId, claimToken)
       if (response?.text) {
         // Optimistically add Malachar's response (also pending → reconciled by id)
-        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
 
         // Update images if returned
         if (response.npcImageUrl) {
@@ -727,7 +728,7 @@ if (error) {
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
       const response = await sendToLich(text, selectedCharacterId, claimToken)
       if (response?.text) {
-        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+        setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
         if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
         if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
         await fetchCharacterData()
@@ -760,7 +761,7 @@ if (error) {
           claimToken,
         )
         if (response?.text) {
-          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
           if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
           if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
           await fetchCharacterData()
@@ -1030,7 +1031,7 @@ if (error) {
             if (response) {
               // Optimistically add Malachar's response to dialogue (also pending)
               if (response.text) {
-                setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, pending: true }))
+                setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }))
               }
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {
@@ -1230,7 +1231,7 @@ if (error) {
         // all — but nothing ever called handleRestartCampaign, so it had no way
         // in. Same orphaning as the dice roller, Malachar's voice and the NPC
         // talking heads. DM only: a claimed player browser gets no control.
-        onRestart={claimLocked ? undefined : handleRestartCampaign}
+        onRestart={!claimLocked && dmMode ? handleRestartCampaign : undefined}
         onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
         centerSlot={
           <>

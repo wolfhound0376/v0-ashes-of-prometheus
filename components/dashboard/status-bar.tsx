@@ -95,6 +95,19 @@ export function StatusBar({
           <Skull className="h-3 w-3" />
           DM Mode: <span className="font-medium">{dmMode ? "On" : "Off"}</span>
         </button>
+
+        {onRestart ? (
+          <button
+            type="button"
+            onClick={onRestart}
+            disabled={restarting}
+            title="Restart the campaign session"
+            className="flex shrink-0 items-center gap-1.5 rounded-[3px] border border-[#7a3333]/70 bg-gradient-to-b from-[#1d1010] to-[#120a0a] px-3 py-1 text-[#d9a3a3] transition-colors hover:border-[#c96868] hover:text-[#f0cfcf] disabled:opacity-60"
+          >
+            {restarting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+            {restarting ? "Restarting…" : "Restart Campaign"}
+          </button>
+        ) : null}
       </div>
 
       {centerSlot && <div className="flex min-w-0 items-center gap-2">{centerSlot}</div>}
@@ -108,19 +121,6 @@ export function StatusBar({
         >
           <Users className="h-3 w-3" />
           Party
-        </button>
-      ) : null}
-
-      {onRestart ? (
-        <button
-          type="button"
-          onClick={onRestart}
-          disabled={restarting}
-          title="Clear the session log and reset the scene. Characters, inventory and items are untouched."
-          className="flex items-center gap-1.5 rounded-[3px] border border-[#7a3333]/70 bg-gradient-to-b from-[#1d1010] to-[#120a0a] px-3 py-1 text-[#d9a3a3] transition-colors hover:border-[#c96868] hover:text-[#f0cfcf] disabled:opacity-60"
-        >
-          {restarting ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-          {restarting ? "Restarting…" : "Restart Campaign"}
         </button>
       ) : null}
 

@@ -109,7 +109,31 @@ export function cast(line: string, npcs: VoiceNpc[]): Utterance[] {
 const SILENT_WAV =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
 
-type Line = { id?: string; speaker: string; text: string; pending?: boolean }
+type PersistedSpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
+type Line = { id?: string; speaker: string; text: string; speech_segments?: PersistedSpeechSegment[] | null; pending?: boolean }
+
+function castPersisted(line: Line, npcs: VoiceNpc[]): Utterance[] {
+  if (!line.speech_segments?.length) return cast(line.text, npcs)
+  const out: Utterance[] = []
+  let cursor = 0
+  const pushDm = (text: string) => {
+    const clean = sanitizeForTTS(text)
+    if (clean) out.push({ kind: "dm", text: clean })
+  }
+  for (const segment of line.speech_segments) {
+    const at = line.text.indexOf(segment.line, cursor)
+    if (at < 0) continue
+    pushDm(line.text.slice(cursor, at))
+    const text = sanitizeForTTS(segment.line)
+    const npc = segment.npc_id
+      ? npcs.find((entry) => entry.id === segment.npc_id)
+      : npcs.find((entry) => entry.name.toLowerCase() === segment.speaker.toLowerCase())
+    if (text) out.push(npc ? { kind: "npc", text, npc } : { kind: "dm", text })
+    cursor = at + segment.line.length
+  }
+  pushDm(line.text.slice(cursor))
+  return out.length ? out : cast(line.text, npcs)
+}
 
 export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }: {
   dialogue: Line[]
@@ -293,20 +317,20 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     // after the split instead, inside cast().
     const dmLines = dialogue
       .filter((entry) => entry.speaker === DM_SPEAKER)
-      .map((entry) => entry.text)
-      .filter(Boolean)
+      .filter((entry) => Boolean(entry.text))
+    const dmTexts = dmLines.map((entry) => entry.text)
 
     if (!enabled) {
       // Off: everything on screen counts as heard, so switching on later does
       // not read the backlog.
-      spokenRef.current = new Set(dmLines)
+      spokenRef.current = new Set(dmTexts)
       primedRef.current = false
       return
     }
 
-    const unheard = dmLines.filter((line) => !spokenRef.current.has(line))
+    const unheard = dmLines.filter((line) => !spokenRef.current.has(line.text))
     // Whatever happens, none of these get spoken twice.
-    for (const line of dmLines) spokenRef.current.add(line)
+    for (const line of dmLines) spokenRef.current.add(line.text)
 
     if (!primedRef.current) {
       // First pass with narration on — this is the existing transcript.
@@ -322,7 +346,7 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     // he narrates again. Split the line on speaker attribution and cast each
     // piece, so the dwarf answers in her own voice inside his narration
     // instead of him doing all the parts.
-    const wanted = cast(unheard[0], npcsRef.current)
+    const wanted = castPersisted(unheard[0], npcsRef.current)
       .filter((u) => (u.kind === "dm" ? dmOnRef.current : npcOnRef.current))
     if (!wanted.length) return
     queueRef.current.push(...wanted)
