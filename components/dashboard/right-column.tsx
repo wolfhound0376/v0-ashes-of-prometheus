@@ -8,6 +8,7 @@ import { Sparkles, ChevronDown, Package, Swords, BookOpen, User2, Shield, Heart,
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
 import { BasicInventory } from "./basic-inventory"
+import { EquippedItemsPanel } from "./equipped-items-panel"
 import {
   characterVisualState,
   VISUAL_STATE_FILTER,
@@ -357,6 +358,38 @@ age: (selectedCharacter as any).age,
 
   const canCastSpells = ["Wizard", "Sorcerer", "Cleric", "Druid", "Bard", "Warlock", "Paladin", "Ranger"].includes(character.class)
 
+  // --- Abbreviated skills + passive senses (v3.0 reference panel) ---------
+  // Map each D&D 5E skill to its governing ability so a proficient skill's
+  // bonus can be derived from the authoritative ability modifiers.
+  const SKILL_ABILITY: Record<string, AbilityKey> = {
+    athletics: "str",
+    acrobatics: "dex", sleight_of_hand: "dex", stealth: "dex",
+    arcana: "int", history: "int", investigation: "int", nature: "int", religion: "int",
+    animal_handling: "wis", insight: "wis", medicine: "wis", perception: "wis", survival: "wis",
+    deception: "cha", intimidation: "cha", performance: "cha", persuasion: "cha",
+  }
+  const normSkill = (s: string) => s.toLowerCase().replace(/ /g, "_")
+  const titleSkill = (key: string) =>
+    key.split("_").map((w, i) => (i > 0 && (w === "of" || w === "the") ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(" ")
+  const skillProfKeys = (character.skillProficiencies as string[]).map(normSkill)
+  const skillExpKeys = (character.skillExpertises as string[]).map(normSkill)
+  // Only proficient skills are listed (the reference shows a compact set).
+  const proficientSkills = skillProfKeys
+    .map((key) => {
+      const ability = SKILL_ABILITY[key]
+      if (!ability) return null
+      const expertise = skillExpKeys.includes(key)
+      const bonus = character.abilities[ability].modifier + character.proficiencyBonus * (expertise ? 2 : 1)
+      return { key, label: titleSkill(key), bonus }
+    })
+    .filter((s): s is { key: string; label: string; bonus: number } => s !== null)
+  const passiveInvestigation =
+    10 + character.abilities.int.modifier + (skillProfKeys.includes("investigation") ? character.proficiencyBonus : 0)
+  const passiveInsight =
+    10 + character.abilities.wis.modifier + (skillProfKeys.includes("insight") ? character.proficiencyBonus : 0)
+  const inspiration = Boolean((selectedCharacter as any)?.inspiration)
+  const fmtBonus = (n: number) => `${n >= 0 ? "+" : ""}${n}`
+
   return (
     <>
       <div className="flex flex-col gap-2 h-full overflow-hidden">
@@ -424,11 +457,21 @@ age: (selectedCharacter as any).age,
                       ))}
                     </div>
                   )}
+                  {/* Species · Class (Subclass) — matches the reference subtitle. */}
+                  <p className="mt-0.5 text-xs text-stone-400">
+                    {character.race} {character.class}
+                    {character.subclass ? ` (${character.subclass})` : ""}
+                  </p>
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-stone-400 text-sm">Level {character.level}</span>
-                <span className="text-[#7aa8c8] text-sm ml-2 font-medium">{character.class}</span>
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-sm text-stone-400">Level {character.level}</span>
+                {inspiration && (
+                  <span className="inline-flex items-center gap-1 rounded-sm border border-[#c9a868]/50 bg-[#241a10] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-[#e6c878]">
+                    <Sparkles className="h-3 w-3" />
+                    Inspiration
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -446,7 +489,14 @@ age: (selectedCharacter as any).age,
             <div className="mb-3">
               <div className="flex justify-between text-xs mb-1">
                 <span className="text-stone-400">HP</span>
-                <span className="text-red-400">{character.hp.current} / {character.hp.max}</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-red-400">{character.hp.current} / {character.hp.max}</span>
+                  {character.hp.temp > 0 && (
+                    <span className="rounded-sm bg-[#1a2a35] px-1.5 py-0.5 text-[10px] font-medium text-cyan-300">
+                      +{character.hp.temp} temp
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="h-2 bg-[#1a1614] rounded-full overflow-hidden border border-[#3d3428]/40">
                 <div 
@@ -594,16 +644,47 @@ age: (selectedCharacter as any).age,
                       <span className="text-stone-400">Passive Perception</span>
                       <span className="text-stone-200">{character.passivePerception}</span>
                     </div>
-                    {character.senses && <div className="text-stone-400">{character.senses}</div>}
+                    <div className="flex items-center justify-between">
+                      <span className="text-stone-400">Passive Investigation</span>
+                      <span className="text-stone-200">{passiveInvestigation}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-stone-400">Passive Insight</span>
+                      <span className="text-stone-200">{passiveInsight}</span>
+                    </div>
+                    {character.senses && <div className="pt-0.5 text-stone-500">{character.senses}</div>}
                   </div>
                 </div>
 
-                {character.skills && (
-                  <div className="rounded-[3px] border border-[#7a5f33]/40 bg-[#12100c] p-2">
-                    <div className="mb-1 font-serif text-[11px] text-[#d9bd7e]">Skills</div>
-                    <div className="text-[11px] leading-relaxed text-stone-400">{character.skills}</div>
-                  </div>
-                )}
+                <div className="rounded-[3px] border border-[#7a5f33]/40 bg-[#12100c] p-2">
+                  <div className="mb-1 font-serif text-[11px] text-[#d9bd7e]">Skills</div>
+                  {proficientSkills.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {proficientSkills.map((s) => (
+                        <button
+                          key={s.key}
+                          onClick={async () => {
+                            const result = await sharedRoll({
+                              die: "d20",
+                              numDice: 1,
+                              modifier: s.bonus,
+                              label: s.label,
+                            })
+                            announceRoll(describeRoll(result))
+                          }}
+                          disabled={diceBusy}
+                          title={`Roll ${s.label} (1d20${fmtBonus(s.bonus)})`}
+                          className="flex w-full items-center justify-between rounded px-1 text-[11px] transition-colors hover:bg-[#241a10] disabled:opacity-60"
+                        >
+                          <span className="text-stone-300">{s.label}</span>
+                          <span className="font-medium text-emerald-400">{fmtBonus(s.bonus)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] italic text-stone-500">No proficient skills</div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -616,16 +697,17 @@ age: (selectedCharacter as any).age,
             </button>
           </div>
 
-          {/* Equipped Items Button - Opens Full Window */}
+          {/* Full-screen paper-doll equipment editor (the inline bar below the
+              inventory is the quick view; this opens the large editor). */}
           <button
             onClick={() => setEquippedItemsOpen(true)}
             className="w-full p-3 border-b border-[#3d3428]/40 flex items-center justify-between hover:bg-[#2a2420]/40 transition-colors group"
           >
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-[#7aa8c8]" />
-              <span className="text-sm text-stone-300">Equipped Items</span>
+              <span className="text-sm text-stone-300">Equipment Editor</span>
             </div>
-            <span className="text-xs text-stone-500 group-hover:text-stone-400">Click to open</span>
+            <span className="text-xs text-stone-500 group-hover:text-stone-400">Full screen</span>
           </button>
 
           {/* Window Toggle Buttons */}
@@ -681,6 +763,17 @@ age: (selectedCharacter as any).age,
           weightMax={(selectedCharacter as any)?.weight_max}
           currency={(selectedCharacter as any)?.sheet_currency}
           onManage={() => setInventoryOpen(true)}
+        />
+
+        {/* Collapsible Equipped Items bar (v3.0 reference image 3) */}
+        <EquippedItemsPanel
+          slots={EQUIPMENT_SLOTS}
+          equipped={equippedItems}
+          eligible={inventory.filter((i) => !!i.equippable_slot)}
+          portraitUrl={character.avatarUrl}
+          characterName={character.name}
+          onEquip={(itemId, slotId) => onEquipItem?.(itemId, slotId)}
+          onUnequip={(slotId) => onUnequipItem?.(slotId)}
         />
       </div>
 
