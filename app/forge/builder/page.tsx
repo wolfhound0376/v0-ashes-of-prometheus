@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { Anvil, ArrowLeft, Check, ClipboardCopy, Music2, RefreshCw, ScrollText, ShieldAlert, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getThemeAudio } from "@/components/theme-audio"
 
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -79,8 +80,9 @@ export default function ForgeBuilderPage() {
   const [result, setResult] = useState<ForgeResult | null>(null)
   const [copied, setCopied] = useState<"code" | "link" | null>(null)
 
-  // Creation theme — loops while a hero is being forged, ceases once seated.
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  // Creation theme — the shared layout audio. If the player came through the
+  // intro it is already playing and simply carries on; otherwise it starts
+  // here. Loops while a hero is being forged, ceases once seated.
   const [musicOn, setMusicOn] = useState(false)
   const seatedRef = useRef(false) // set when a hero joins the campaign
   const mutedRef = useRef(false) // set when the player mutes by hand
@@ -117,11 +119,15 @@ export default function ForgeBuilderPage() {
   // Start the creation theme. Browsers block un-gestured autoplay, so we try
   // immediately and fall back to the first click/keypress on the page.
   useEffect(() => {
-    const audio = audioRef.current
+    const audio = getThemeAudio()
     if (!audio) return
-    audio.volume = 0.4
     const tryPlay = () => {
-      if (seatedRef.current || mutedRef.current || !audio.paused) return
+      if (seatedRef.current || mutedRef.current) return
+      if (!audio.paused) {
+        setMusicOn(true) // already carrying over from the intro
+        return
+      }
+      audio.volume = 0.55
       audio.play().then(() => setMusicOn(true)).catch(() => {})
     }
     tryPlay()
@@ -130,7 +136,7 @@ export default function ForgeBuilderPage() {
     return () => {
       window.removeEventListener("pointerdown", tryPlay)
       window.removeEventListener("keydown", tryPlay)
-      audio.pause()
+      // No pause here — the shared theme plays on; destinations decide.
     }
   }, [])
 
@@ -138,7 +144,7 @@ export default function ForgeBuilderPage() {
   useEffect(() => {
     if (!result) return
     seatedRef.current = true
-    const audio = audioRef.current
+    const audio = getThemeAudio()
     if (!audio || audio.paused) return
     const fade = window.setInterval(() => {
       if (audio.volume > 0.05) audio.volume = Math.max(0, audio.volume - 0.05)
@@ -152,12 +158,12 @@ export default function ForgeBuilderPage() {
   }, [result])
 
   const toggleMusic = () => {
-    const audio = audioRef.current
+    const audio = getThemeAudio()
     if (!audio) return
     if (audio.paused) {
       mutedRef.current = false
       if (seatedRef.current) return // the seat has been taken; the song is done
-      audio.volume = 0.4
+      audio.volume = 0.55
       audio.play().then(() => setMusicOn(true)).catch(() => {})
     } else {
       mutedRef.current = true
@@ -267,7 +273,6 @@ export default function ForgeBuilderPage() {
   return (
     <div className="min-h-screen bg-[#0a0908] bg-[url('/images/forge-creation-bg.webp')] bg-cover bg-fixed bg-center text-stone-200">
       <div className="min-h-screen bg-[#0a0908]/75">
-        <audio ref={audioRef} src="/audio/forge-creation-theme.mp3" loop preload="auto" />
         <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
         {/* Header */}
         <div className="flex items-center justify-between gap-3">

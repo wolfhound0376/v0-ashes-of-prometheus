@@ -6,6 +6,7 @@ import { Settings, Sparkles, X, Save, RotateCcw, Flame, Hammer, Download, Chevro
 import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
+import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { DiceProvider } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
@@ -397,6 +398,11 @@ export default function DashboardPage() {
   //   - No params            -> DM / shared-TV mode; leave the picker alone.
   // Runs once on mount and sets selectedCharacterId ahead of the roster fetch,
   // which respects an already-set selection.
+  // Reaching the dashboard is the end of the journey - the theme bows out.
+  useEffect(() => {
+    fadeOutThemeAudio()
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)

@@ -2,48 +2,54 @@
 
 // /intro — the front door of Ashes of Prometheus.
 //
-// Flow: a BEGIN splash (the user gesture that unlocks audio) -> the intro
-// video plays full-bleed with the campaign theme replacing its own sound ->
-// when it ends (or is skipped) the key art settles in as a static backdrop,
-// the theme keeps looping, and an ornate ENTER button leads to /join.
-//
-// The theme is the same file the Forge uses (/audio/forge-creation-theme.mp3)
-// so the browser cache already has it by the time a player reaches creation.
+// The sequence: the link lands on a full-screen intro video (muted video
+// autoplay is always allowed; the campaign theme starts with it where the
+// browser permits, otherwise on the first tap or keypress). When the video
+// ends — or is skipped — the key art settles in as a static backdrop with an
+// ornate ENTER button. Entering is a CLIENT-side navigation to /join, so the
+// theme (mounted in the root layout) keeps playing while the player speaks
+// the words at the door, and only fades once they reach the dashboard.
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { getThemeAudio } from "@/components/theme-audio"
 
-type Stage = "splash" | "video" | "poster"
+type Stage = "video" | "poster"
 
 export default function IntroPage() {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const [stage, setStage] = useState<Stage>("splash")
+  const [stage, setStage] = useState<Stage>("video")
+  const [needsTap, setNeedsTap] = useState(false)
 
-  const begin = () => {
-    const audio = audioRef.current
+  useEffect(() => {
     const video = videoRef.current
-    setStage("video")
-    if (audio) {
-      audio.volume = 0.55
-      audio.currentTime = 0
-      audio.play().catch(() => {})
+    video?.play().catch(() => setStage("poster")) // video blocked = ancient browser; show the door
+
+    const audio = getThemeAudio()
+    if (!audio) return
+    audio.volume = 0.55
+    const tryTheme = () => {
+      if (!audio.paused) return
+      audio
+        .play()
+        .then(() => setNeedsTap(false))
+        .catch(() => setNeedsTap(true))
     }
-    if (video) {
-      video.currentTime = 0
-      video.play().catch(() => setStage("poster"))
+    tryTheme()
+    window.addEventListener("pointerdown", tryTheme)
+    window.addEventListener("keydown", tryTheme)
+    return () => {
+      window.removeEventListener("pointerdown", tryTheme)
+      window.removeEventListener("keydown", tryTheme)
+      // Deliberately NOT pausing here — the theme carries on into /join.
     }
-  }
+  }, [])
 
   const finishVideo = () => setStage("poster")
 
-  // Leaving the page stops the theme.
-  useEffect(() => () => audioRef.current?.pause(), [])
-
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
-      <audio ref={audioRef} src="/audio/forge-creation-theme.mp3" loop preload="auto" />
-
-      {/* Key art backdrop — under everything, revealed on splash and poster stages */}
+      {/* Key art — revealed when the video ends */}
       <div
         className={
           "absolute inset-0 bg-[url('/images/intro-poster.webp')] bg-cover bg-center transition-opacity duration-1000 " +
@@ -51,36 +57,28 @@ export default function IntroPage() {
         }
       />
 
-      {/* Intro video */}
+      {/* The intro video — full screen from the first moment */}
       <video
         ref={videoRef}
         src="/videos/intro.mp4"
         muted
+        autoPlay
         playsInline
         preload="auto"
         onEnded={finishVideo}
         className={
-          "absolute inset-0 h-full w-full object-contain transition-opacity duration-700 " +
+          "absolute inset-0 h-full w-full object-cover transition-opacity duration-700 " +
           (stage === "video" ? "opacity-100" : "pointer-events-none opacity-0")
         }
       />
 
-      {/* Splash — the gesture that unlocks the music */}
-      {stage === "splash" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-end bg-black/40 pb-[8vh]">
-          <button
-            onClick={begin}
-            className="group rounded-sm border-2 border-[#8a6a3a] bg-black/60 px-12 py-4 font-serif text-2xl uppercase tracking-[0.35em] text-[#d4b15a] shadow-[0_0_30px_rgba(201,168,104,0.25)] backdrop-blur-sm transition-all duration-300 hover:border-[#e8c56a] hover:text-[#f4e0a8] hover:shadow-[0_0_60px_rgba(232,197,106,0.5)]"
-          >
-            Begin
-            <span className="mt-1 block text-[10px] tracking-[0.3em] text-stone-500 transition-colors group-hover:text-[#c9a868]">
-              with sound
-            </span>
-          </button>
+      {/* Sound hint — only when the browser held the music back */}
+      {needsTap && (
+        <div className="absolute left-1/2 top-6 -translate-x-1/2 rounded-full border border-[#8a6a3a]/60 bg-black/60 px-4 py-1.5 text-[11px] uppercase tracking-[0.25em] text-[#c9a868] backdrop-blur-sm">
+          Tap anywhere for sound
         </div>
       )}
 
-      {/* Skip, while the video runs */}
       {stage === "video" && (
         <button
           onClick={finishVideo}
@@ -90,16 +88,16 @@ export default function IntroPage() {
         </button>
       )}
 
-      {/* Poster stage — the theme loops on, the door awaits */}
+      {/* The door awaits — theme loops on through it */}
       {stage === "poster" && (
-        <div className="absolute inset-0 flex animate-[fadeIn_1.2s_ease-out] flex-col items-center justify-end pb-[7vh]">
-          <a
+        <div className="absolute inset-0 flex flex-col items-center justify-end pb-[7vh]">
+          <Link
             href="/join"
             className="group relative rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-16 py-5 font-serif text-3xl uppercase tracking-[0.4em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] backdrop-blur-sm transition-all duration-300 hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)]"
           >
             <span className="pointer-events-none absolute -inset-1 -z-10 animate-pulse rounded border border-[#c9a868]/20" />
             Enter
-          </a>
+          </Link>
           <p className="mt-4 text-[11px] uppercase tracking-[0.3em] text-stone-500">
             The door is barred · speak the words
           </p>
