@@ -20,6 +20,19 @@ export default function IntroPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [stage, setStage] = useState<Stage>("video")
   const [needsTap, setNeedsTap] = useState(false)
+  const [enterHref, setEnterHref] = useState("/join")
+
+  useEffect(() => {
+    // Seen once per browser session — the dashboard checks this before
+    // sending anyone back here.
+    window.sessionStorage.setItem("aop_intro_seen", "1")
+    // A browser that already holds a seat (or the DM screen) re-enters its
+    // own dashboard; strangers go to the code door.
+    const role = window.localStorage.getItem("aop_access_role")
+    const token = window.localStorage.getItem("aop_claim_token")
+    const character = window.localStorage.getItem("aop_character_id")
+    if (role === "dm" || (role === "player" && token && character)) setEnterHref("/")
+  }, [])
 
   useEffect(() => {
     const video = videoRef.current
@@ -57,9 +70,11 @@ export default function IntroPage() {
         }
       />
 
-      {/* The intro video — full screen from the first moment */}
+      {/* The intro video — full screen from the first moment. Any click
+          skips straight to the door; the same tap unlocks the music. */}
       <video
         ref={videoRef}
+        onClick={finishVideo}
         src="/videos/intro.mp4"
         muted
         autoPlay
@@ -80,19 +95,16 @@ export default function IntroPage() {
       )}
 
       {stage === "video" && (
-        <button
-          onClick={finishVideo}
-          className="absolute bottom-6 right-8 text-xs uppercase tracking-[0.25em] text-stone-500 transition-colors hover:text-[#c9a868]"
-        >
-          Skip intro ▸
-        </button>
+        <p className="pointer-events-none absolute bottom-6 right-8 text-xs uppercase tracking-[0.25em] text-stone-600">
+          click anywhere to skip ▸
+        </p>
       )}
 
       {/* The door awaits — theme loops on through it */}
       {stage === "poster" && (
         <div className="absolute inset-0 flex flex-col items-center justify-end pb-[7vh]">
           <Link
-            href="/join"
+            href={enterHref}
             className="group relative rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-16 py-5 font-serif text-3xl uppercase tracking-[0.4em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] backdrop-blur-sm transition-all duration-300 hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)]"
           >
             <span className="pointer-events-none absolute -inset-1 -z-10 animate-pulse rounded border border-[#c9a868]/20" />

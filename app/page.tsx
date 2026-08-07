@@ -412,6 +412,13 @@ export default function DashboardPage() {
     // No claim link. Either this browser already came through the /join code gate
     // (rehydrate it), or it has no access at all and belongs at the gate.
     if (!c || !k) {
+      // Everyone passes through the intro once per browser session — claimed or
+      // not. The intro page sets the flag; claim links skip the ceremony.
+      if (!window.sessionStorage.getItem("aop_intro_seen")) {
+        window.location.replace("/intro")
+        return
+      }
+
       const storedRole = window.localStorage.getItem(ROLE_LS_KEY)
       const storedToken = window.localStorage.getItem(TOKEN_LS_KEY)
       const storedChar = window.localStorage.getItem(CHARACTER_LS_KEY)
