@@ -425,7 +425,7 @@ export default function DashboardPage() {
         try {
           const res = await fetch('/api/claim-code')
           const cfg = await res.json()
-          if (cfg?.dmGate) window.location.replace('/join')
+          if (cfg?.dmGate) window.location.replace('/intro') // fresh visitors get the front door
         } catch {
           /* gate unreachable — leave the dashboard as-is rather than stranding anyone */
         }
