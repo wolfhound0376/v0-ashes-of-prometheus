@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Anvil, ArrowLeft, Check, ClipboardCopy, RefreshCw, ScrollText, ShieldAlert } from "lucide-react"
+import { Anvil, ArrowLeft, Check, ClipboardCopy, Music2, RefreshCw, ScrollText, ShieldAlert, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const CHARACTER_LS_KEY = "aop_character_id"
@@ -79,6 +79,12 @@ export default function ForgeBuilderPage() {
   const [result, setResult] = useState<ForgeResult | null>(null)
   const [copied, setCopied] = useState<"code" | "link" | null>(null)
 
+  // Creation theme — loops while a hero is being forged, ceases once seated.
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [musicOn, setMusicOn] = useState(false)
+  const seatedRef = useRef(false) // set when a hero joins the campaign
+  const mutedRef = useRef(false) // set when the player mutes by hand
+
   // The barred door applies here exactly as it does on /forge.
   useEffect(() => {
     ;(async () => {
@@ -107,6 +113,58 @@ export default function ForgeBuilderPage() {
       window.clearInterval(interval)
     }
   }, [refresh])
+
+  // Start the creation theme. Browsers block un-gestured autoplay, so we try
+  // immediately and fall back to the first click/keypress on the page.
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.volume = 0.4
+    const tryPlay = () => {
+      if (seatedRef.current || mutedRef.current || !audio.paused) return
+      audio.play().then(() => setMusicOn(true)).catch(() => {})
+    }
+    tryPlay()
+    window.addEventListener("pointerdown", tryPlay)
+    window.addEventListener("keydown", tryPlay)
+    return () => {
+      window.removeEventListener("pointerdown", tryPlay)
+      window.removeEventListener("keydown", tryPlay)
+      audio.pause()
+    }
+  }, [])
+
+  // The hero is seated - fade the theme out rather than cutting it dead.
+  useEffect(() => {
+    if (!result) return
+    seatedRef.current = true
+    const audio = audioRef.current
+    if (!audio || audio.paused) return
+    const fade = window.setInterval(() => {
+      if (audio.volume > 0.05) audio.volume = Math.max(0, audio.volume - 0.05)
+      else {
+        window.clearInterval(fade)
+        audio.pause()
+        setMusicOn(false)
+      }
+    }, 120)
+    return () => window.clearInterval(fade)
+  }, [result])
+
+  const toggleMusic = () => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (audio.paused) {
+      mutedRef.current = false
+      if (seatedRef.current) return // the seat has been taken; the song is done
+      audio.volume = 0.4
+      audio.play().then(() => setMusicOn(true)).catch(() => {})
+    } else {
+      mutedRef.current = true
+      audio.pause()
+      setMusicOn(false)
+    }
+  }
 
   const addToCampaign = async (id: string, confirmDuplicate = false) => {
     setError(null)
@@ -207,8 +265,10 @@ export default function ForgeBuilderPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0908] text-stone-200">
-      <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+    <div className="min-h-screen bg-[#0a0908] bg-[url('/images/forge-creation-bg.webp')] bg-cover bg-fixed bg-center text-stone-200">
+      <div className="min-h-screen bg-[#0a0908]/75">
+        <audio ref={audioRef} src="/audio/forge-creation-theme.mp3" loop preload="auto" />
+        <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
         {/* Header */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -221,6 +281,14 @@ export default function ForgeBuilderPage() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-4 text-sm">
+            <button
+              onClick={toggleMusic}
+              title={musicOn ? "Mute the creation theme" : "Play the creation theme"}
+              className="flex items-center gap-1.5 text-stone-400 transition-colors hover:text-[#c9a868]"
+            >
+              {musicOn ? <Music2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              {musicOn ? "Theme" : "Muted"}
+            </button>
             <Link href="/forge" className="flex items-center gap-1.5 text-stone-400 transition-colors hover:text-[#c9a868]">
               <ScrollText className="h-4 w-4" /> Import JSON
             </Link>
@@ -343,6 +411,7 @@ export default function ForgeBuilderPage() {
           title="Character Forge — 2014 Edition"
           className="h-[calc(100vh-140px)] min-h-[560px] w-full rounded-lg border border-[#3d3428] bg-[#0a0908]"
         />
+        </div>
       </div>
     </div>
   )
