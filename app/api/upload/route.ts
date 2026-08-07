@@ -1,5 +1,13 @@
 import { put } from '@vercel/blob'
 import { type NextRequest, NextResponse } from 'next/server'
+import sharp from 'sharp'
+
+// Uploaded art displays at a few hundred px at most; 1600px keeps generous
+// headroom (zoom, retina) while cutting multi-MB camera/AI exports down to
+// size before they ever reach Blob storage. GIFs pass through untouched so
+// animations survive.
+const MAX_DIMENSION = 1600
+const RESIZABLE = new Set(['image/jpeg', 'image/png', 'image/webp'])
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,13 +31,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File too large. Maximum size is 10MB' }, { status: 400 })
     }
 
+    // Resize once at the door, at high quality, so Blob bandwidth stays sane.
+    // Any failure here falls back to storing the original bytes untouched.
+    let body: Buffer | File = file
+    if (RESIZABLE.has(file.type)) {
+      try {
+        const input = Buffer.from(await file.arrayBuffer())
+        const image = sharp(input).rotate() // honour EXIF orientation
+        const meta = await image.metadata()
+        const oversize = (meta.width ?? 0) > MAX_DIMENSION || (meta.height ?? 0) > MAX_DIMENSION
+        const pipeline = oversize
+          ? image.resize(MAX_DIMENSION, MAX_DIMENSION, { fit: 'inside', withoutEnlargement: true })
+          : image
+        const optimized =
+          file.type === 'image/png'
+            ? await pipeline.png({ compressionLevel: 9 }).toBuffer() // keeps transparency
+            : file.type === 'image/webp'
+              ? await pipeline.webp({ quality: 92 }).toBuffer()
+              : await pipeline.jpeg({ quality: 92, mozjpeg: true }).toBuffer()
+        // Only keep the re-encode if it actually helped.
+        body = optimized.length < file.size ? optimized : input
+      } catch (resizeError) {
+        console.error('[v0] upload: resize skipped, storing original:', resizeError)
+        body = file
+      }
+    }
+
     // Generate safe filename
     const timestamp = Date.now()
     const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
     const pathname = `${folder}/${timestamp}-${safeName}`
 
     // Upload to Blob storage with private access
-    const blob = await put(pathname, file, {
+    const blob = await put(pathname, body, {
       access: 'private',
     })
 
