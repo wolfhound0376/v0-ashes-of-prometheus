@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
-import { normalizeCode, safeEquals } from "@/lib/access-code"
+import { generateClaimCode, normalizeCode, safeEquals } from "@/lib/access-code"
 
 // POST /api/forge/import — the Character Forge importer.
 //
@@ -247,7 +247,39 @@ export async function POST(req: Request) {
 
   // NOTE: the `forge` blob (builder-internal state) is intentionally dropped.
 
+  // Issue a three-word rejoin code so the player can claim this seat from any
+  // other device via /join — same shape as the hand-issued codes. Best-effort:
+  // a failure here never blocks the import (the claim link still works).
+  let claimCode: string | null = null
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const candidate = generateClaimCode()
+    // Never collide with the env-gate codes, however unlikely.
+    if (process.env.DM_ACCESS_CODE && safeEquals(candidate, normalizeCode(process.env.DM_ACCESS_CODE))) continue
+    if (process.env.FORGE_ACCESS_CODE && safeEquals(candidate, normalizeCode(process.env.FORGE_ACCESS_CODE))) continue
+    const { data: taken, error: takenError } = await admin
+      .from("character_secrets")
+      .select("character_id")
+      .ilike("claim_code", candidate)
+      .limit(1)
+      .maybeSingle()
+    if (takenError) {
+      console.error("[v0] forge/import: claim-code uniqueness check failed:", takenError)
+      break
+    }
+    if (taken) continue
+    const { error: codeError } = await admin
+      .from("character_secrets")
+      .update({ claim_code: candidate })
+      .eq("character_id", inserted.id)
+    if (codeError) {
+      console.error("[v0] forge/import: claim-code write failed:", codeError)
+      break
+    }
+    claimCode = candidate
+    break
+  }
+
   const origin = url.origin
   const claimUrl = `${origin}/?c=${inserted.id}&k=${secretRow.claim_token}`
-  return Response.json({ characterId: inserted.id, claimUrl }, { status: 200 })
+  return Response.json({ characterId: inserted.id, claimUrl, claimCode }, { status: 200 })
 }
