@@ -13,6 +13,15 @@
 // The engine + overlay were lifted out of components/dashboard/dice-roller.tsx
 // unchanged in behavior; that component is now UI-only and rolls through this
 // provider like everyone else.
+//
+// RESILIENT INIT (2026-08-10): the engine used to get exactly one 8-second
+// attempt at page load; a slow first load (cold cache after a heavy deploy)
+// or a WebGL hiccup meant every roll for the rest of the session quietly
+// resolved as instant text. Now the load-time cutoff is a soft notice — the
+// attempt keeps going in the background and a late success still restores the
+// 3D dice — hard failures auto-retry with backoff, a small "tap to retry"
+// chip appears when the engine is down, and any roll re-kicks a dead engine.
+// Rolls are never blocked: classic results stand in exactly as before.
 // ============================================================================
 
 import {
@@ -82,7 +91,14 @@ export interface DiceContextValue {
 const DICE_ASSET_PATH = "/assets/dice-box/"
 const DICE_MOUNT_SELECTOR = "dice-box-mount"
 const DICE_THEME_COLOR = "#8b1814"
-const DICE_INIT_TIMEOUT_MS = 8000
+// Soft notice, not a death sentence: after this long the classic roller (and
+// the retry chip) take over, but the attempt keeps loading in the background
+// and a late success still brings the 3D dice up.
+const DICE_INIT_SOFT_TIMEOUT_MS = 20000
+// A failed attempt retries on its own this many times, waiting a little
+// longer each time. After that the chip (or the next roll) can re-kick it.
+const DICE_INIT_MAX_AUTO_RETRIES = 3
+const DICE_INIT_RETRY_DELAY_MS = 8000
 
 // Sam's dice-box recording: two dice shaken and tumbled onto felt. One shared
 // element, rewound on each roll, so rapid rolls retrigger cleanly instead of
@@ -194,8 +210,17 @@ interface QueuedRoll {
 export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
   const [mounted, setMounted] = useState(false)
   const [diceReady, setDiceReady] = useState(false)
+  // True when no engine is up and no attempt is quietly making progress —
+  // i.e. the state the retry chip should be visible in.
   const [diceFailed, setDiceFailed] = useState(false)
   const diceBoxRef = useRef<DiceBox | null>(null)
+
+  // Init lifecycle. One attempt in flight at a time; auto-retries with
+  // backoff; the chip and startRoll can both re-kick a dead engine.
+  const initializingRef = useRef(false)
+  const autoRetryCountRef = useRef(0)
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const unmountedRef = useRef(false)
 
   // Overlay state.
   const [overlayOpen, setOverlayOpen] = useState(false)
@@ -217,20 +242,36 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
     setMounted(true)
   }, [])
 
-  // Initialize the 3D dice renderer once the portal (and its mount node) exist.
-  useEffect(() => {
-    if (!mounted || diceBoxRef.current) return
-    let cancelled = false
-    const initTimer = setTimeout(() => {
-      if (!diceBoxRef.current && !cancelled) {
-        console.warn("[Dice] 3D dice init timed out; using classic roller.")
+  // initDice re-enters itself through the retry timer, so keep it in a ref
+  // (same pattern as startRollRef below).
+  const initDiceRef = useRef<() => void>(() => {})
+
+  // Start (or restart) the 3D dice renderer. Safe to call any time: it
+  // no-ops when the engine is already up or an attempt is in flight.
+  const initDice = useCallback(() => {
+    if (typeof window === "undefined") return
+    if (diceBoxRef.current || initializingRef.current) return
+    initializingRef.current = true
+    setDiceFailed(false)
+
+    // Soft cutoff: flip the UI to the classic roller + retry chip, but let
+    // the attempt keep loading — on a slow connection "late" is still a win.
+    const softTimer = setTimeout(() => {
+      if (!diceBoxRef.current && !unmountedRef.current) {
+        console.warn(
+          `[Dice] 3D dice init passed ${DICE_INIT_SOFT_TIMEOUT_MS / 1000}s; classic roller standing in while it keeps loading.`,
+        )
         setDiceFailed(true)
       }
-    }, DICE_INIT_TIMEOUT_MS)
+    }, DICE_INIT_SOFT_TIMEOUT_MS)
+
     ;(async () => {
       try {
         const mod = await import("@3d-dice/dice-box")
         const DiceBoxCtor = mod.default
+        // A dead canvas left by an earlier failed attempt would sit beneath
+        // the new one and confuse the engine — start from a clean mount.
+        document.getElementById(DICE_MOUNT_SELECTOR)?.replaceChildren()
         const box = new DiceBoxCtor({
           id: "dice-canvas",
           assetPath: DICE_ASSET_PATH,
@@ -244,21 +285,40 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
           lightIntensity: 1.1,
         })
         await box.init()
-        if (cancelled) return
+        if (unmountedRef.current || diceBoxRef.current) return
         diceBoxRef.current = box
+        autoRetryCountRef.current = 0
         setDiceReady(true)
+        setDiceFailed(false)
       } catch (err) {
-        console.warn("[Dice] 3D dice failed to initialize; using classic roller.", err)
-        if (!cancelled) setDiceFailed(true)
+        console.warn("[Dice] 3D dice failed to initialize; classic roller standing in.", err)
+        if (unmountedRef.current) return
+        setDiceFailed(true)
+        if (autoRetryCountRef.current < DICE_INIT_MAX_AUTO_RETRIES) {
+          autoRetryCountRef.current += 1
+          retryTimerRef.current = setTimeout(
+            () => initDiceRef.current(),
+            DICE_INIT_RETRY_DELAY_MS * autoRetryCountRef.current,
+          )
+        }
       } finally {
-        clearTimeout(initTimer)
+        clearTimeout(softTimer)
+        initializingRef.current = false
       }
     })()
+  }, [])
+  initDiceRef.current = initDice
+
+  // Initialize the 3D dice renderer once the portal (and its mount node) exist.
+  useEffect(() => {
+    if (!mounted) return
+    unmountedRef.current = false
+    initDice()
     return () => {
-      cancelled = true
-      clearTimeout(initTimer)
+      unmountedRef.current = true
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
-  }, [mounted])
+  }, [mounted, initDice])
 
   const closeOverlay = useCallback(() => {
     setOverlayOpen(false)
@@ -292,8 +352,11 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
       // whether the 3D box is up or the classic fallback resolved it.
       playDiceSfx()
 
-      // Renderer unusable → resolve classic immediately, no overlay.
+      // Renderer unusable → resolve classic immediately, no overlay. A roll
+      // is also a fine moment to re-kick a dead engine: this roll resolves
+      // classic, the next one may get the physics back.
       if (diceFailed || !diceReady || !box) {
+        if (!box) initDiceRef.current()
         settle(resolveClassic(spec), resolve)
         return
       }
@@ -390,6 +453,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
     return () => {
       if (responseTimerRef.current) clearTimeout(responseTimerRef.current)
       if (resultTimerRef.current) clearTimeout(resultTimerRef.current)
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
   }, [])
 
@@ -473,6 +537,29 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
               </div>
             </div>
           </div>,
+          document.body,
+        )}
+
+      {/* Quiet status chip: only when the 3D renderer is down. Rolls still
+          work (classic results); tapping re-kicks the engine by hand and
+          resets the auto-retry budget. Sits above the status bar, below the
+          roll overlay. */}
+      {mounted &&
+        diceFailed &&
+        !diceReady &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => {
+              autoRetryCountRef.current = 0
+              initDice()
+            }}
+            className="fixed bottom-12 right-3 z-[90] flex items-center gap-1.5 rounded-[3px] border border-[#7a5f33]/70 bg-[#15110c]/95 px-2.5 py-1.5 text-[11px] text-[#d9bd7e] shadow-[0_2px_10px_rgba(0,0,0,0.5)] transition-colors hover:border-[#c9a868] hover:text-[#f0dba8]"
+            title="The 3D dice renderer hasn't started (slow connection or WebGL unavailable). Rolls still work — tap to try starting the 3D dice again."
+          >
+            <Dices className="h-3.5 w-3.5 text-[#c9a868]" />
+            3D dice off — tap to retry
+          </button>,
           document.body,
         )}
     </DiceContext.Provider>
