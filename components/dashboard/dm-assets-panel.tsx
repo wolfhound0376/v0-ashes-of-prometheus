@@ -21,10 +21,11 @@
 // DM_ACCESS_CODE server-side.
 
 import { useEffect, useState } from "react"
-import { X } from "lucide-react"
+import { KeyRound, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NpcAssetsTab } from "./npc-assets-panel"
 import { MediaTab, type MediaTabConfig } from "./dm-assets/media-tab"
+import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 
 type TabId = "npcs" | "scenes" | "overlays" | "items" | "library"
 
@@ -75,12 +76,22 @@ const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
   { id: "npcs", label: "NPCs", blurb: "Canon face, idle and talking loops, and the ElevenLabs voice. Applies to every row sharing a name." },
   { id: "scenes", label: "Scenes", blurb: "Environment backgrounds. A looping MP4 works here — an animated cavern, drifting water." },
   { id: "overlays", label: "Overlays", blurb: "Fog and ambient layers drawn over the scene." },
-  { id: "items", label: "Items", blurb: "Catalogue icons. Set the Rags roundel here." },
+  { id: "items", label: "Items", blurb: "Catalogue icons — the roundel shown beside an item in inventory." },
   { id: "library", label: "Library", blurb: "Everything else in dashboard_assets." },
 ]
 
 export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<TabId>("npcs")
+  const [keySet, setKeySet] = useState(true)
+  const [keyDraft, setKeyDraft] = useState("")
+
+  // Read after mount only — localStorage is not available during SSR, and
+  // reading it in the initial state would desync hydration.
+  useEffect(() => {
+    const sync = () => setKeySet(hasDmKey())
+    sync()
+    return onDmKeyChange(sync)
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -135,6 +146,51 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
           </nav>
 
           {active && <p className="mt-2 text-[11px] leading-snug text-stone-500">{active.blurb}</p>}
+
+          {keySet ? (
+            <p className="mt-2 flex items-center gap-1.5 text-[10px] text-stone-600">
+              <KeyRound className="h-3 w-3 text-[#c4a777]/70" />
+              DM code remembered on this browser.
+              <button onClick={() => clearDmKey()} className="underline hover:text-stone-400">
+                forget it
+              </button>
+            </p>
+          ) : (
+            <div className="mt-2 rounded-sm border border-[#c4a777]/40 bg-[#c4a777]/5 p-2">
+              <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[#c4a777]">
+                <KeyRound className="h-3 w-3" />
+                DM code not saved on this browser
+              </label>
+              <p className="mt-1 text-[10px] leading-snug text-stone-500">
+                Enter it once and every tab here will remember it. Without it, uploads come back 403.
+              </p>
+              <div className="mt-1.5 flex gap-1.5">
+                <input
+                  type="password"
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && keyDraft.trim()) {
+                      setDmKey(keyDraft)
+                      setKeyDraft("")
+                    }
+                  }}
+                  placeholder="DM access code"
+                  className="min-w-0 flex-1 rounded-sm border border-[#3d3428] bg-[#0f0d0b] px-2 py-1 text-xs text-[#e8dcc4] placeholder:text-stone-600 focus:border-[#c4a777]/60 focus:outline-none"
+                />
+                <button
+                  onClick={() => {
+                    if (!keyDraft.trim()) return
+                    setDmKey(keyDraft)
+                    setKeyDraft("")
+                  }}
+                  className="rounded-sm border border-[#c9a868] bg-[#c4a777]/12 px-3 py-1 text-[11px] uppercase tracking-wider text-[#f0dcae] hover:bg-[#c4a777]/20"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
           <p className="mt-1 text-[10px] text-stone-600">
             Clearing removes the reference; the file stays in storage and re-uploading restores it.
           </p>
