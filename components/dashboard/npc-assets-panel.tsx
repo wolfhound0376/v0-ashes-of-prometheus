@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ImagePlus, Trash2, X } from "lucide-react"
+import { ImagePlus, Trash2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
 type Asset = "face_url" | "idle_url" | "talking_url"
@@ -14,7 +14,7 @@ type Npc = {
   voice_description: string | null
 }
 
-export function NpcAssetsPanel({ onClose }: { onClose: () => void }) {
+export function NpcAssetsTab() {
   const [npcs, setNpcs] = useState<Npc[]>([])
   const [busy, setBusy] = useState("")
   const [dmCode, setDmCode] = useState("")
@@ -110,9 +110,7 @@ export function NpcAssetsPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return <div className="fixed inset-0 z-[210] flex justify-end bg-black/70" onClick={onClose}>
-    <aside className="h-full w-[520px] max-w-[95vw] overflow-y-auto border-l border-[#6b5123] bg-[#0d0b09] p-5 text-[#e8dcc4]" onClick={(event) => event.stopPropagation()}>
-      <header className="mb-5 flex items-start justify-between"><div><h2 className="font-serif text-xl text-[#d4b15a]">NPC Canon Assets</h2><p className="mt-1 text-xs text-stone-500">Add or clear the face and animation loops shared by every encounter with this name.</p></div><button onClick={onClose} aria-label="Close NPC assets"><X /></button></header>
+  return <div className="min-h-0 flex-1 overflow-y-auto p-4 text-[#e8dcc4]">
       {status ? <p role="status" aria-live="polite" className="mb-3 rounded border border-[#4b3a19] bg-[#15110d] px-3 py-2 text-xs text-[#d4b15a]">{status}</p> : null}
       <div className="space-y-3">{npcs.map((npc) => {
         const draft = voiceDrafts[npc.name] ?? { id: "", description: "" }
@@ -127,6 +125,5 @@ export function NpcAssetsPanel({ onClose }: { onClose: () => void }) {
           </div>
         </article>
       })}</div>
-    </aside>
   </div>
 }
