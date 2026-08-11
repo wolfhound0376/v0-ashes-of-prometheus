@@ -9,9 +9,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { dmHeaders, ensureDmKey, clearDmKey } from "@/lib/dm-key"
 import { MediaSlot, MediaDrop, ClearConfirm } from "./media-slot"
-
-const FORGE_KEY_LS_KEY = "aop_forge_key"
 
 export interface SlotConfig {
   /** Whitelisted target key understood by /api/asset-media. */
@@ -59,29 +58,34 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
     void fetchRows()
   }, [fetchRows])
 
-  const dmHeaders = () => {
-    const headers: Record<string, string> = {}
-    const key = window.localStorage.getItem(FORGE_KEY_LS_KEY)
-    if (key) headers["x-dm-key"] = key
-    return headers
+  // A 403 means the stored code is missing or stale. Drop it, ask once, retry.
+  const withDmRetry = async (purpose: string, send: () => Promise<Response>): Promise<Response> => {
+    let res = await send()
+    if (res.status !== 403) return res
+    clearDmKey()
+    if (ensureDmKey(purpose) === null) return res
+    res = await send()
+    return res
   }
 
   const upload = async (row: Row, slot: SlotConfig, file: File) => {
     const key = `${row.id}:${slot.column}`
     setBusy(key)
-    setStatus((s) => ({ ...s, [row.id]: `Uploading ${slot.label}…` }))
+    setStatus((s) => ({ ...s, [key]: `Uploading ${slot.label}…` }))
     try {
-      const fd = new FormData()
-      fd.append("file", file)
-      fd.append("target", slot.target)
-      fd.append("id", row.id)
-      const res = await fetch("/api/asset-media", { method: "POST", headers: dmHeaders(), body: fd })
+      const res = await withDmRetry(`upload the ${slot.label.toLowerCase()}`, () => {
+        const fd = new FormData()
+        fd.append("file", file)
+        fd.append("target", slot.target)
+        fd.append("id", row.id)
+        return fetch("/api/asset-media", { method: "POST", headers: dmHeaders(), body: fd })
+      })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Upload failed")
-      setStatus((s) => ({ ...s, [row.id]: `${slot.label} saved.` }))
+      setStatus((s) => ({ ...s, [key]: `${slot.label} saved.` }))
       await fetchRows()
     } catch (err) {
-      setStatus((s) => ({ ...s, [row.id]: (err as Error).message }))
+      setStatus((s) => ({ ...s, [key]: (err as Error).message }))
     } finally {
       setBusy(null)
     }
@@ -91,19 +95,21 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
     setConfirming(null)
     const key = `${row.id}:${slot.column}`
     setBusy(key)
-    setStatus((s) => ({ ...s, [row.id]: `Clearing ${slot.label}…` }))
+    setStatus((s) => ({ ...s, [key]: `Clearing ${slot.label}…` }))
     try {
-      const res = await fetch("/api/asset-media", {
-        method: "DELETE",
-        headers: { ...dmHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ target: slot.target, id: row.id }),
-      })
+      const res = await withDmRetry(`clear the ${slot.label.toLowerCase()}`, () =>
+        fetch("/api/asset-media", {
+          method: "DELETE",
+          headers: { ...dmHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ target: slot.target, id: row.id }),
+        }),
+      )
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Clear failed")
-      setStatus((s) => ({ ...s, [row.id]: `${slot.label} cleared. File kept in storage.` }))
+      setStatus((s) => ({ ...s, [key]: `${slot.label} cleared. File kept in storage.` }))
       await fetchRows()
     } catch (err) {
-      setStatus((s) => ({ ...s, [row.id]: (err as Error).message }))
+      setStatus((s) => ({ ...s, [key]: (err as Error).message }))
     } finally {
       setBusy(null)
     }
@@ -168,7 +174,14 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
                   ))}
                 </div>
 
-                {status[row.id] && <p className="text-[11px] text-[#c4a777]">{status[row.id]}</p>}
+                {config.slots.map((slot) => {
+                  const msg = status[`${row.id}:${slot.column}`]
+                  return msg ? (
+                    <p key={slot.column} className="text-[11px] text-[#c4a777]">
+                      {msg}
+                    </p>
+                  ) : null
+                })}
               </div>
             ))}
           </div>
