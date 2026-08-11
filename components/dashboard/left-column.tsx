@@ -282,7 +282,7 @@ export function LeftColumn({
                   muted
                   playsInline
                   preload="metadata"
-                  className={`absolute inset-0 h-full w-full object-cover opacity-60 pointer-events-none mix-blend-overlay ${environment.ambientAnimation || ""}`}
+                  className={`absolute inset-0 h-full w-full object-cover opacity-80 pointer-events-none mix-blend-screen ${environment.ambientAnimation || ""}`}
                 />
               ) : (
                 <img
