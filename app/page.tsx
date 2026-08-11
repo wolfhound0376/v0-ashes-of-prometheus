@@ -943,8 +943,16 @@ if (error) {
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
-        activeSection={campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
+        activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
+          // In DM Mode, the top-right NPCs button is the direct door to canon
+          // faces, loops and voices. Outside DM Mode it keeps its player-facing
+          // World AI behaviour.
+          if (section === "npcs" && dmMode && !claimLocked) {
+            setWorldAIPanelOpen(false)
+            setNpcAssetsOpen(true)
+            return
+          }
           // Sections that already have a home route there; the rest open the
           // World AI panel, which is where that content lives today.
           if (section === "settings") {
