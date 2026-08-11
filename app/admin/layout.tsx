@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { DmGate } from '@/components/admin/dm-gate'
 
 export const metadata: Metadata = {
   title: 'D&D Dashboard Admin',
@@ -11,8 +12,6 @@ export default function AdminLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-[#0a0908]">
-      {children}
-    </div>
+    <DmGate><div className="min-h-screen bg-[#0a0908]">{children}</div></DmGate>
   )
 }
