@@ -12,7 +12,7 @@ import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
-import { NpcAssetsPanel } from "@/components/dashboard/npc-assets-panel"
+import { DmAssetsPanel } from "@/components/dashboard/dm-assets-panel"
 import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
@@ -969,7 +969,7 @@ if (error) {
       />
 
       {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} onClose={() => setCampaignBook(null)} /> : null}
-      {npcAssetsOpen && !claimLocked ? <NpcAssetsPanel onClose={() => setNpcAssetsOpen(false)} /> : null}
+      {npcAssetsOpen && !claimLocked ? <DmAssetsPanel onClose={() => setNpcAssetsOpen(false)} /> : null}
 
       {/* Save toast */}
       {saveMessage && (
