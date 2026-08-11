@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { ImagePlus, Trash2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { ensureDmKey, getDmKey, fetchDmGateEnabled } from "@/lib/dm-key"
 
 type Asset = "face_url" | "idle_url" | "talking_url"
 type Npc = {
@@ -17,7 +18,6 @@ type Npc = {
 export function NpcAssetsTab() {
   const [npcs, setNpcs] = useState<Npc[]>([])
   const [busy, setBusy] = useState("")
-  const [dmCode, setDmCode] = useState("")
   const [status, setStatus] = useState("")
   const [voiceDrafts, setVoiceDrafts] = useState<Record<string, { id: string; description: string }>>({})
   const [dmGateEnabled, setDmGateEnabled] = useState(true)
@@ -35,17 +35,14 @@ export function NpcAssetsTab() {
   }
   useEffect(() => {
     void refresh()
-    void fetch("/api/claim-code", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((gates: { dmGate?: boolean }) => setDmGateEnabled(Boolean(gates.dmGate)))
+    void fetchDmGateEnabled().then(setDmGateEnabled)
   }, [])
 
+  // Shared with the other tabs and with /join, so the code survives a reload
+  // and is only ever typed once per browser.
   const requestDmCode = (purpose: string): string | null => {
     if (!dmGateEnabled) return ""
-    const code = dmCode || window.prompt(`Enter the DM access code to ${purpose}`) || ""
-    if (!code) return null
-    if (!dmCode) setDmCode(code)
-    return code
+    return getDmKey() || ensureDmKey(purpose)
   }
 
   const upload = async (npc: Npc, kind: "face" | "idle" | "talking", file?: File) => {
