@@ -135,13 +135,17 @@ function castPersisted(line: Line, npcs: VoiceNpc[]): Utterance[] {
   return out.length ? out : cast(line.text, npcs)
 }
 
-export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }: {
+export function DmNarration({ dialogue, npcs = [], onSpeakingChange, onDmSpeakingChange, className }: {
   dialogue: Line[]
   npcs?: VoiceNpc[]
   /** Fires with the NPC currently speaking, or null when it is the DM or
    *  nobody. The queue is the only thing that knows who holds the floor, so
    *  the portrait is driven from here rather than guessed at from the roster. */
   onSpeakingChange?: (npc: VoiceNpc | null) => void
+  /** Separate signal for the DM. Deliberately NOT folded into
+   *  `onSpeakingChange` — the dashboard relies on that firing `null` to mean
+   *  "not an NPC", so Malachar gets his own boolean channel. */
+  onDmSpeakingChange?: (speaking: boolean) => void
   className?: string
 }) {
   const [dmOn, setDmOn] = useState(false)
@@ -159,6 +163,9 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
   const onSpeakingChangeRef = useRef(onSpeakingChange)
   useEffect(() => { onSpeakingChangeRef.current = onSpeakingChange }, [onSpeakingChange])
   const setFloor = useCallback((npc: VoiceNpc | null) => { onSpeakingChangeRef.current?.(npc) }, [])
+  const onDmSpeakingChangeRef = useRef(onDmSpeakingChange)
+  useEffect(() => { onDmSpeakingChangeRef.current = onDmSpeakingChange }, [onDmSpeakingChange])
+  const setDmFloor = useCallback((speaking: boolean) => { onDmSpeakingChangeRef.current?.(speaking) }, [])
   const drainingRef = useRef(false)
   // Keyed by the SANITISED TEXT, not the row id. The dashboard inserts an
   // optimistic entry with a temp id and then merges the real Supabase row over
@@ -183,7 +190,8 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       URL.revokeObjectURL(objectUrlRef.current)
       objectUrlRef.current = null
     }
-  }, [])
+    setDmFloor(false)
+  }, [setDmFloor])
 
   // Speak one utterance, start to finish. Resolves when the audio ends (or
   // fails), so the drain loop below never overlaps two of them.
@@ -240,6 +248,7 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       audio.onerror = done
       setStatus("speaking")
       setFloor(u.kind === "npc" ? u.npc : null)
+      setDmFloor(u.kind === "dm")
       audio.play().catch((err) => {
         // Autoplay policy. The toggle click is a user gesture so this is rare,
         // but say so plainly rather than sitting there mute.
@@ -249,8 +258,9 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       })
     })
     setFloor(null)
+    setDmFloor(false)
     if (enabledRef.current) setStatus("idle")
-  }, [setFloor])
+  }, [setFloor, setDmFloor])
 
   const drain = useCallback(async () => {
     if (drainingRef.current) return
@@ -292,9 +302,10 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       queueRef.current = []
       stopAudio()
       setFloor(null)
+      setDmFloor(false)
       setStatus("idle")
     }
-  }, [enabled, dmOn, npcOn, stopAudio])
+  }, [enabled, dmOn, npcOn, stopAudio, setFloor, setDmFloor])
 
   useEffect(() => stopAudio, [stopAudio])
 
