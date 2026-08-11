@@ -64,10 +64,59 @@ function groupByName(rows: NpcRow[]): NpcGroup[] {
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
+interface BackfillResult {
+  dryRun: boolean
+  knownNamedVoices: number
+  candidatesWithoutVoice: number
+  matched: number
+  matchedNames: string[]
+  unmatchedNames: string[]
+  updated: number
+  failures: { name: string; error: string }[]
+}
+
 export default function NpcAssetsAdmin() {
   const [groups, setGroups] = useState<NpcGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<Record<string, string>>({})
+
+  // Canon-voice backfill controls (DM-only endpoint).
+  const [dmCode, setDmCode] = useState("")
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null)
+  const [backfillResult, setBackfillResult] = useState<BackfillResult | null>(null)
+
+  const runBackfill = useCallback(
+    async (apply: boolean) => {
+      if (!dmCode.trim()) {
+        setBackfillMsg("Enter the DM access code first.")
+        return
+      }
+      setBackfilling(true)
+      setBackfillMsg(apply ? "Applying backfill…" : "Previewing…")
+      try {
+        const res = await fetch(`/api/npc-voice/backfill?code=${encodeURIComponent(dmCode.trim())}`, {
+          method: apply ? "POST" : "GET",
+        })
+        const json = (await res.json()) as BackfillResult & { error?: string }
+        if (!res.ok) throw new Error(json.error || "Backfill failed")
+        setBackfillResult(json)
+        setBackfillMsg(
+          apply
+            ? `Applied: ${json.updated} row(s) updated${json.failures.length ? `, ${json.failures.length} failed` : ""}.`
+            : `Preview: ${json.matched} row(s) would be updated.`,
+        )
+        if (apply) await fetchNpcs()
+      } catch (err) {
+        setBackfillMsg((err as Error).message)
+      } finally {
+        setBackfilling(false)
+      }
+    },
+    // fetchNpcs is stable (defined below with useCallback and no deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dmCode],
+  )
 
   // Create the client inside the callback: createClient() returns a new object
   // every render, so depending on it here would recreate fetchNpcs each render
@@ -155,6 +204,67 @@ export default function NpcAssetsAdmin() {
           Face saves to <code className="text-[#c4a777]">faces/&lt;npc-name&gt;.png</code>, videos to{" "}
           <code className="text-[#c4a777]">videos/&lt;npc-name&gt;-idle|talking.mp4</code>, applied to every row sharing that name.
         </p>
+
+        {/* Canon-voice backfill: assign ElevenLabs voice ids to named NPCs
+            (Ront, Eldeth, the Lich, ...) that don't yet have one. */}
+        <div className="mt-4 rounded-sm border border-[#3d3428]/60 bg-gradient-to-b from-[#1a1614] to-[#0f0d0b] p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col">
+              <span className="font-serif text-sm text-[#c4a777]">Backfill canon voices</span>
+              <span className="text-[11px] text-stone-500">
+                Fills empty voices on named NPCs. Never overwrites a set voice.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <input
+                type="password"
+                value={dmCode}
+                onChange={(e) => setDmCode(e.target.value)}
+                placeholder="DM access code"
+                aria-label="DM access code"
+                className="rounded-sm border border-[#3d3428]/70 bg-[#0a0908] px-2 py-1.5 text-xs text-[#e8dcc4] placeholder:text-stone-600 focus:border-[#c4a777]/60 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => runBackfill(false)}
+                disabled={backfilling}
+                className="rounded-sm border border-[#3d3428]/70 px-3 py-1.5 text-xs text-stone-300 transition-colors hover:border-[#c4a777]/60 hover:text-[#e8dcc4] disabled:opacity-50"
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => runBackfill(true)}
+                disabled={backfilling}
+                className="rounded-sm border border-[#c4a777]/60 bg-[#c4a777]/10 px-3 py-1.5 text-xs text-[#e8dcc4] transition-colors hover:bg-[#c4a777]/20 disabled:opacity-50"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+
+          {backfillMsg && <p className="mt-2 text-[11px] text-[#c4a777]">{backfillMsg}</p>}
+
+          {backfillResult && (
+            <div className="mt-2 text-[11px] text-stone-500 leading-snug">
+              {backfillResult.matchedNames.length > 0 && (
+                <p>
+                  <span className="text-stone-400">Matched:</span> {backfillResult.matchedNames.join(", ")}
+                </p>
+              )}
+              {backfillResult.unmatchedNames.length > 0 && (
+                <p>
+                  <span className="text-stone-400">No canon voice:</span> {backfillResult.unmatchedNames.join(", ")}
+                </p>
+              )}
+              {backfillResult.failures.length > 0 && (
+                <p className="text-red-400">
+                  Failed: {backfillResult.failures.map((f) => `${f.name} (${f.error})`).join(", ")}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </header>
 
       {loading ? (
