@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { resolveVoice, sanitizeForTTS } from "@/lib/tts"
+import { resolveVoice, resolveNamedNpcVoiceId, sanitizeForTTS } from "@/lib/tts"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 /**
@@ -8,11 +8,13 @@ import { createAdminClient } from "@/lib/supabase/admin"
  * Voice resolution order:
  *   1. An explicit `voiceId` already stored on the NPC (voice_id column) — used
  *      verbatim, never re-resolved or overwritten.
- *   2. Otherwise, match the closest ElevenLabs voice from `voiceDescription`.
+ *   2. A canon named-NPC voice matched from `npcName` (e.g. Ront, Eldeth, the
+ *      Lich). Named matches are canon and are persisted back to voice_id.
+ *   3. Otherwise, match the closest ElevenLabs voice from `voiceDescription`.
  *      The resolved id is persisted back to voice_id ONLY when it was a genuine
  *      keyword match from that NPC's own description — never a generic default
  *      fallback — and the write is scoped to exactly the NPC being resolved.
- *   3. If there is neither a voiceId nor a matchable description, a sensible
+ *   4. If there is no voiceId, name, nor a matchable description, a sensible
  *      default is chosen for this request only and is NOT persisted.
  *
  * Returns MPEG audio; the resolved voice id is echoed in the `X-Resolved-Voice`
@@ -37,8 +39,19 @@ export async function POST(request: NextRequest) {
     let resolvedVoiceId: string
     // Only a genuine keyword match from THIS NPC's description may be persisted.
     let persistable = false
+    const namedVoiceId = explicitVoiceId ? null : resolveNamedNpcVoiceId(npcName)
     if (explicitVoiceId) {
       resolvedVoiceId = explicitVoiceId
+    } else if (namedVoiceId) {
+      // A canon named NPC (e.g. Ront, Eldeth, the Lich) — this is authoritative
+      // and safe to persist as the NPC's voice.
+      resolvedVoiceId = namedVoiceId
+      persistable = true
+      console.log(
+        "[v0] npc-tts resolved voice by canon name:",
+        resolvedVoiceId,
+        "| npc:", npcName ?? "(unknown)",
+      )
     } else {
       const resolution = resolveVoice(voiceDescription)
       resolvedVoiceId = resolution.voiceId

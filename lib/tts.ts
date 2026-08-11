@@ -68,6 +68,60 @@ export const ELEVEN_VOICE_LIBRARY: ElevenVoice[] = [
   { id: "XrExE9yKIg1WjnnlVkGX", name: "Matilda", gender: "female", tags: ["british", "knowledgeable", "professional", "clear", "pleasant"] },
 ]
 
+/**
+ * Canon named-NPC voices — real ElevenLabs voice IDs assigned to specific
+ * campaign characters (Out of the Abyss cast). These take PRIORITY over generic
+ * keyword matching: when an NPC's name matches an entry here, that voice is used
+ * and is safe to persist as canon.
+ *
+ * `aliases` are the normalized (lowercase, alphanumeric-only) name fragments
+ * that map to the voice. A DB NPC name matches when its normalized form
+ * contains any alias, so "Sarith Kzekarit" → sarith, "The Lich" → lich, etc.
+ */
+export interface NamedNpcVoice {
+  name: string
+  voiceId: string
+  archetype: string
+  aliases: string[]
+}
+
+export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
+  { name: "Sarith Kzekarit", voiceId: "LtatEcI0kyKTsTngQlD8", archetype: "grim, haunted drow warrior with a fraying mind", aliases: ["sarith", "kzekarit"] },
+  { name: "Shuushar the Awakened", voiceId: "Uzt8OVGqinnV0TMbbk28", archetype: "serene, wise amphibious mystic", aliases: ["shuushar"] },
+  { name: "Jorlan Duskryn", voiceId: "S9fXBozPl46ZX7nuL84Z", archetype: "bitter, aristocratic drow commander", aliases: ["jorlan", "duskryn"] },
+  { name: "Turvey", voiceId: "PpgkkvljpSnwEaGm6ybH", archetype: "woozy, spore-dazed deep gnome", aliases: ["turvey"] },
+  { name: "Tipsy", voiceId: "9k8qSCg5OCUsf7lkNEc8", archetype: "giddy, sing-song spore-addled gnome", aliases: ["tipsy"] },
+  { name: "Eldeth", voiceId: "yZt09SSNiK1Vhjbf8Peq", archetype: "gruff, warm dwarf warrior", aliases: ["eldeth"] },
+  { name: "Derendil", voiceId: "JwgGi9aLSpBIW7pVE2A8", archetype: "growling beast with regal elven diction", aliases: ["derendil"] },
+  { name: "JimJar", voiceId: "3shyWw5cq1cr7y8xyeZg", archetype: "sly deep gnome gambler/rogue", aliases: ["jimjar"] },
+  { name: "Drow Matron", voiceId: "AaYuthhtZkIbXwIXDdTi", archetype: "cold, seductive noble drow", aliases: ["matron"] },
+  { name: "Ront", voiceId: "HPNUUUFNQiMEJN5oqMLX", archetype: "brutish, short-tempered orc warrior", aliases: ["ront"] },
+  { name: "Deep Gnome (Svirfneblin)", voiceId: "Eja1uLaoEhh7YwasRYmL", archetype: "wary, secretive Underdark gnome", aliases: ["svirfneblin", "deepgnome"] },
+  { name: "The Lich", voiceId: "NiQt0cwFeLsVf6cAmcCp", archetype: "ancient, quietly contemptuous undead sorcerer", aliases: ["lich", "malachar"] },
+]
+
+/** Normalize a name to lowercase alphanumerics for alias matching. */
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "")
+}
+
+/**
+ * Resolve a canon named-NPC voice id by NPC name. Returns null when the name
+ * does not match any known named character (caller should then fall back to
+ * description-based keyword matching via resolveVoice).
+ */
+export function resolveNamedNpcVoiceId(npcName?: string | null): string | null {
+  if (!npcName || !npcName.trim()) return null
+  const normalized = normalizeName(npcName)
+  if (!normalized) return null
+  for (const entry of NAMED_NPC_VOICES) {
+    if (entry.aliases.some((alias) => normalized.includes(alias))) {
+      return entry.voiceId
+    }
+  }
+  return null
+}
+
 /** Fallbacks used only when a voice cannot be resolved. None of these may be a
  *  voice assigned to a named NPC, or the unresolved cast collides with canon. */
 export const DEFAULT_NPC_VOICE_ID = "XB0fDUnXU5powFXDhCwa" // Charlotte — unassigned
