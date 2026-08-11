@@ -786,6 +786,8 @@ PROGRESSION TRIGGERS — ENFORCE THESE:
   * [UPDATE_LOCATION: exact name of the new location]
   * These tags are REQUIRED and cannot be omitted when transitioning between stages. Without them, the environment will not update.
 - Enforce the starting conditions: slaves have NO gear, NO weapons, NO spell components. They are barefoot and manacled until they escape or acquire items.
+- VELKYNVELVE CONFISCATION: The drow stored every prisoner's confiscated possession. Their gear is recoverable and must never be described as destroyed, discarded, or replaced with improvised loot. Until recovered, the prisoners possess only what the live inventory context lists.
+- VELKYNVELVE WARD: Through Stages 2–4, a drow ward suppresses all spellcasting by every caster, including warlocks, even when a spell needs no material component. Non-spell class features remain available unless another live condition prevents them. The ward ends only after the party reaches Stage 5, the Underdark Tunnels.
 
 RULES:
 - Address the player by their character name

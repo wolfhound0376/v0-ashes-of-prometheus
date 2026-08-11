@@ -12,6 +12,7 @@ import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
+import { NpcAssetsPanel } from "@/components/dashboard/npc-assets-panel"
 import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
 import { MusicPlayer } from "@/components/dashboard/music-player"
@@ -49,9 +50,19 @@ function optimisticLichEntries(response: { text: string; speechSegments?: Speech
 //   3. Otherwise the message is appended.
 function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): DialogueMessage[] {
   if (prev.some((m) => m.id === incoming.id)) return prev
-  const pendingIdx = prev.findIndex(
-    (m) => m.pending && m.speaker === incoming.speaker && m.text === incoming.text,
-  )
+  // A settled realtime row can arrive immediately before the HTTP response's
+  // optimistic copy. Only compare a pending incoming row with the newest row:
+  // searching the entire transcript would swallow a legitimate repeated line
+  // merely because the same speaker said the same words earlier in the game.
+  const newestIdx = prev.length - 1
+  const newest = prev[newestIdx]
+  const pendingIdx = incoming.pending && newest && !newest.pending &&
+    newest.speaker === incoming.speaker && newest.text === incoming.text
+    ? newestIdx
+    : prev.findIndex((m) =>
+        m.pending && !incoming.pending &&
+        m.speaker === incoming.speaker && m.text === incoming.text,
+      )
   if (pendingIdx !== -1) {
     const next = prev.slice()
     next[pendingIdx] = { ...incoming, pending: false }
@@ -150,6 +161,7 @@ export default function DashboardPage() {
 
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
+  const [npcAssetsOpen, setNpcAssetsOpen] = useState(false)
   const [campaignBook, setCampaignBook] = useState<CampaignBookSection | null>(null)
   const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
   const [pendingCampaignChange, setPendingCampaignChange] = useState<Campaign | null>(null)
@@ -936,7 +948,7 @@ if (error) {
           // Sections that already have a home route there; the rest open the
           // World AI panel, which is where that content lives today.
           if (section === "settings") {
-            window.location.href = "/admin"
+            if (!claimLocked) setNpcAssetsOpen(true)
             return
           }
           if (section === "journal" || section === "quests" || section === "maps" || section === "lore") {
@@ -949,6 +961,7 @@ if (error) {
       />
 
       {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} onClose={() => setCampaignBook(null)} /> : null}
+      {npcAssetsOpen && !claimLocked ? <NpcAssetsPanel onClose={() => setNpcAssetsOpen(false)} /> : null}
 
       {/* Save toast */}
       {saveMessage && (
