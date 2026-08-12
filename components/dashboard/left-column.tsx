@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { isVideoUrl } from "@/lib/media-url"
 
 /** Strip markdown / special chars that ElevenLabs reads aloud */
 function sanitizeForTTS(text: string): string {
@@ -271,11 +272,25 @@ export function LeftColumn({
 
             {/* Fog/atmosphere overlay layer */}
             {environment.fogOverlayUrl && (
-              <img
-                src={environment.fogOverlayUrl}
-                alt=""
-                className={`absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none mix-blend-overlay ${environment.ambientAnimation || ''}`}
-              />
+              isVideoUrl(environment.fogOverlayUrl) ? (
+                <video
+                  key={environment.fogOverlayUrl}
+                  src={environment.fogOverlayUrl}
+                  aria-hidden="true"
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className={`absolute inset-0 h-full w-full object-cover opacity-80 pointer-events-none mix-blend-screen ${environment.ambientAnimation || ""}`}
+                />
+              ) : (
+                <img
+                  src={environment.fogOverlayUrl}
+                  alt=""
+                  className={`absolute inset-0 h-full w-full object-cover opacity-60 pointer-events-none mix-blend-overlay ${environment.ambientAnimation || ""}`}
+                />
+              )
             )}
 
             {/* Bottom vignette */}
