@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { isVideoUrl } from "@/lib/media-url"
 
 /** Strip markdown / special chars that ElevenLabs reads aloud */
 function sanitizeForTTS(text: string): string {
@@ -240,11 +241,25 @@ export function LeftColumn({
             {environment.backgroundImageUrl ? (
               <>
                 {/* Actual environment background image */}
-                <img
-                  src={environment.backgroundImageUrl}
-                  alt={environment.location}
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
+                {isVideoUrl(environment.backgroundImageUrl) ? (
+                  <video
+                    key={environment.backgroundImageUrl}
+                    src={environment.backgroundImageUrl}
+                    aria-hidden="true"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : (
+                  <img
+                    src={environment.backgroundImageUrl}
+                    alt={environment.location}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                )}
                 {/* Time of day overlay tints */}
                 <div className={`absolute inset-0 pointer-events-none transition-colors duration-1000 ${
                   environment.timeOfDay === 'Night'
