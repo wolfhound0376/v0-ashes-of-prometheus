@@ -74,6 +74,19 @@ const TARGETS: Record<string, TargetSpec> = {
     folder: "library",
     labelColumn: "name",
   },
+  // Layer 2: a player character's animated idle/talking loop, keyed by id.
+  "character.idle": {
+    table: "characters",
+    column: "idle_url",
+    folder: "characters",
+    labelColumn: "name",
+  },
+  "character.talking": {
+    table: "characters",
+    column: "talking_url",
+    folder: "characters",
+    labelColumn: "name",
+  },
 }
 
 function authorized(request: NextRequest): boolean {

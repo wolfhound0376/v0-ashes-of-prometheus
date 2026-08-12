@@ -27,7 +27,7 @@ import { NpcAssetsTab } from "./npc-assets-panel"
 import { MediaTab, type MediaTabConfig } from "./dm-assets/media-tab"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 
-type TabId = "npcs" | "scenes" | "overlays" | "items" | "library"
+type TabId = "npcs" | "characters" | "scenes" | "overlays" | "items" | "library"
 
 const SCENES: MediaTabConfig = {
   table: "environments",
@@ -72,7 +72,22 @@ const LIBRARY: MediaTabConfig = {
   emptyMessage: "No dashboard assets recorded yet.",
 }
 
+const CHARACTERS: MediaTabConfig = {
+  table: "characters",
+  select: "id, name, class, idle_url, talking_url",
+  labelColumn: "name",
+  subtitleColumn: "class",
+  orderBy: "name",
+  filter: { column: "is_player", value: true },
+  slots: [
+    { target: "character.idle", column: "idle_url", label: "Idle" },
+    { target: "character.talking", column: "talking_url", label: "Talking" },
+  ],
+  emptyMessage: "No player characters found.",
+}
+
 const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
+  { id: "characters", label: "Characters", blurb: "Player-character idle and talking loops." },
   { id: "npcs", label: "NPCs", blurb: "Canon face, idle and talking loops, and the ElevenLabs voice. Applies to every row sharing a name." },
   { id: "scenes", label: "Scenes", blurb: "Environment backgrounds. A looping MP4 works here — an animated cavern, drifting water." },
   { id: "overlays", label: "Overlays", blurb: "Fog and ambient layers drawn over the scene." },
@@ -198,6 +213,7 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="flex min-h-0 flex-1 flex-col">
           {tab === "npcs" && <NpcAssetsTab />}
+          {tab === "characters" && <MediaTab key="characters" config={CHARACTERS} />}
           {tab === "scenes" && <MediaTab key="scenes" config={SCENES} />}
           {tab === "overlays" && <MediaTab key="overlays" config={OVERLAYS} />}
           {tab === "items" && <MediaTab key="items" config={ITEMS} />}
