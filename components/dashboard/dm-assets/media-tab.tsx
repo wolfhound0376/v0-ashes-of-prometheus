@@ -28,6 +28,8 @@ export interface MediaTabConfig {
   /** Optional secondary line under the row name. */
   subtitleColumn?: string
   orderBy: string
+  /** Optional server-side equality filter, e.g. only player characters. */
+  filter?: { column: string; value: string | number | boolean }
   slots: SlotConfig[]
   emptyMessage: string
 }
@@ -48,7 +50,9 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
   const fetchRows = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const { data, error } = await supabase.from(config.table).select(config.select).order(config.orderBy)
+    let query = supabase.from(config.table).select(config.select)
+    if (config.filter) query = query.eq(config.filter.column, config.filter.value)
+    const { data, error } = await query.order(config.orderBy)
     if (error) console.error(`[dm-assets] ${config.table} fetch failed:`, error.message)
     setRows(((data as unknown as Row[]) || []).filter(Boolean))
     setLoading(false)
