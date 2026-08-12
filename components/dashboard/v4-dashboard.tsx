@@ -10,6 +10,8 @@ import { DiceRoller } from "@/components/dashboard/dice-roller"
 import { DmNarration } from "./dm-narration"
 import { classDefaults } from "@/lib/game-data"
 import { getDisplayedArmorClass } from "@/lib/armor-class"
+// blob URLs carry the extension inside ?pathname=, which a naive regex misses.
+import { isVideoUrl } from "@/lib/media-url"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
 type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
@@ -211,7 +213,7 @@ type NpcEncounter = {
 }
 
 // True when a media URL is a video loop (idle/talking uploads are MP4/WebM).
-const isVideoUrl = (u: string | null | undefined): boolean => !!u && /\.(mp4|webm|mov)(\?|#|$)/i.test(u)
+
 
 interface V4DashboardProps {
   environment: {
@@ -347,6 +349,11 @@ export function V4Dashboard(props: V4DashboardProps) {
   // hardcoded preview quote that used to caption every NPC as Eldeth.
   const lastNpcLine = [...dialogue].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160) ?? null
   const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
+  // Layer 2 — the POV character's own animated idle. Prefer the loop; fall back
+  // to the still portrait when a character has no idle_url yet. A talking loop
+  // could later swap in the same way the NPC head does, but players don't speak
+  // as NPCs do, so idle is the whole story here.
+  const characterStageMedia = (selected as Character & { idle_url?: string | null })?.idle_url || characterPortrait
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
   const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
@@ -418,7 +425,10 @@ export function V4Dashboard(props: V4DashboardProps) {
         </div>
         {stageMode === "scene" ? <>
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
-          {characterPortrait ? <img src={characterPortrait} alt={selected?.name ?? "Active character"} className="absolute bottom-0 left-1/2 h-[88%] max-w-[48%] -translate-x-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" /> : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
+          {characterStageMedia ? (isVideoUrl(characterStageMedia)
+            ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" className="absolute bottom-0 left-1/2 h-[88%] max-w-[48%] -translate-x-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+            : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} className="absolute bottom-0 left-1/2 h-[88%] max-w-[48%] -translate-x-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+          ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
