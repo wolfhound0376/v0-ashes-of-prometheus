@@ -1,5 +1,6 @@
 // World Context Service - Gathers all world-building data for Malachar
 import { createClient } from "@/lib/supabase/server"
+import { calculateAC } from "@/lib/armor-class"
 import { CAMPAIGNS, Campaign } from "./campaigns"
 import type { Character, InventoryItem, EquipmentItem, Ability, Environment, Dialogue } from "@/lib/types/database"
 import {
@@ -121,7 +122,7 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
       // Get equipment
       const { data: equipment } = await supabase
         .from("equipment_items")
-        .select("name, slot")
+        .select("name, slot, stats_bonus")
         .eq("character_id", char.id)
         .eq("is_equipped", true)
       
@@ -138,13 +139,19 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
         .select("name, quantity")
         .eq("character_id", char.id)
 
+      // Derive AC from equipped armour + ability modifiers, never the stale
+      // hand-entered characters.ac column. This keeps the DM's view honest: with
+      // the party's gear confiscated to the drow storeroom (nothing but Rags
+      // equipped), Malachar correctly sees 10 + DEX rather than a phantom value.
+      const derivedAc = calculateAC(char, equipment || [])
+
       return {
         name: char.name,
         class: char.class,
         race: (char as Character & { race?: string }).race || "Unknown",
         level: char.level,
         hp: `${char.hp_current}/${char.hp_max}`,
-        ac: char.ac,
+        ac: derivedAc.total,
         speed: 30, // Default speed
         proficiencyBonus: char.proficiency_bonus || Math.floor((char.level - 1) / 4) + 2,
         abilityScores: {
