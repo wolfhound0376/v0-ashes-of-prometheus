@@ -14,6 +14,8 @@ export interface Environment {
 
 export interface Character {
   id: string
+  /** Soft delete. Non-null = removed from the dashboard, row kept in Postgres. */
+  archived_at?: string | null
   name: string
   level: number
   class: string
