@@ -58,6 +58,11 @@ function normalizedSkillMap(raw: Record<string, any>): Record<string, string> {
 function toSheetCharacter(c: Character) {
   const raw = c as unknown as Record<string, any>
   const spellcasting = raw.sheet_spellcasting ?? {}
+  // A character is shown the Spells tab only when a real spellcasting block
+  // exists. An empty `{}` (non-casters) must hide the tab entirely, so we key
+  // off the object having keys rather than off a class-derived guess.
+  const hasSpellcasting =
+    spellcasting && typeof spellcasting === "object" && Object.keys(spellcasting).length > 0
   const skillMap = normalizedSkillMap(raw)
   const entries = Object.entries(skillMap)
   const abilities = Object.fromEntries(
@@ -97,7 +102,11 @@ function toSheetCharacter(c: Character) {
     weaponProficiencies: raw.sheet_proficiencies?.weapons ?? null,
     toolProficiencies: raw.sheet_proficiencies?.tools ?? null,
     features: raw.sheet_features,
+    attacks: raw.sheet_attacks,
+    species: raw.sheet_species || raw.race || "",
     personality: raw.sheet_personality,
+    hasSpellcasting,
+    spellPact: spellcasting.pact ?? null,
     spellcastingAbility: spellcasting.ability ?? null,
     spellSaveDC: spellcasting.save_dc ?? null,
     spellAttackBonus: spellcasting.attack_bonus ?? null,
