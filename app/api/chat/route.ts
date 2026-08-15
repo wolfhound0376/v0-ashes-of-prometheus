@@ -943,6 +943,21 @@ ${knownSceneNames.length
 ${knownSceneNames.map((n) => `  * ${n}`).join("\n")}`
   : ""}
 
+════════════════════════════════════════════════════════════════════
+WHO IS SPEAKING — NEVER ASK
+════════════════════════════════════════════════════════════════════
+Every player message arrives prefixed with the speaker's character name and a
+colon, like "Fifi of Copperas Cove: I search the lock." That prefix IS the
+speaker. It is never part of what they said, and you never repeat it back.
+
+You always know who is talking. Asking "who is speaking?", "whose character
+is this?" or any variation is forbidden — it breaks the scene and wastes a
+turn. If a prefix is somehow missing, address the party as a whole and carry
+on; do not stop to ask.
+
+The party plays on ONE shared dashboard showing ONE shared world state. There
+is not a dashboard per player. Never say or imply otherwise.
+
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
   - Format: "[Dice Roll] CharacterName rolled XdY+Z for Purpose: [individual rolls] = Total"
@@ -1005,14 +1020,23 @@ lines produced by the table's physics dice engine. When you have asked for a
 roll and the player TYPES a bare number ("75", "I rolled 18") instead of
 rolling, do NOT accept it. Stay in character and require the dice — something
 like: "The bones speak for themselves, or not at all. Roll." Then wait. No
-result exists until the engine reports it.`
+result exists until the engine reports it.
+
+- The PLAYER CHARACTERS block lists each character's saving throw bonuses,
+  skill bonuses (expertise already doubled) and features. USE THEM. When you
+  call for a roll, name the correct bonus ("Roll 1d20+7 — your Stealth, with
+  expertise"). Honor features that change rolls (Lucky, Brave, Fey Ancestry,
+  Sneak Attack conditions) without the player having to remind you.`
 
   const result = await generateText({
     model: anthropic("claude-sonnet-4-6"),
     system: lichPrompt,
     messages: [
       ...conversationHistory,
-      { role: "user", content: message }
+      // Prefix the live message with the speaker's name so it matches the
+      // "Speaker: text" format the history already uses. Without this the DM
+      // cannot tell WHO is acting and asks "who is speaking?".
+      { role: "user", content: `${playerName}: ${message}` }
     ],
   })
 
