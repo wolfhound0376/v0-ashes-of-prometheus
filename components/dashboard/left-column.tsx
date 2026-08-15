@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { isVideoUrl } from "@/lib/media-url"
+import { canSpeak } from "@/lib/tts"
 
 /** Strip markdown / special chars that ElevenLabs reads aloud */
 function sanitizeForTTS(text: string): string {
@@ -180,6 +181,11 @@ export function LeftColumn({
 
     const text = sanitizeForTTS(rawText)
     if (!text) return
+
+    // This path speaks Malachar's lich voice, so it belongs to the DM Voice
+    // toggle. Skip the request outright when DM Voice is off — same shared gate
+    // every other TTS entry point uses, so the routing can never drift.
+    if (!canSpeak("Malachar")) return
 
     setLoadingText(rawText)
     try {

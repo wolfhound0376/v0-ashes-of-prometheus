@@ -9,7 +9,7 @@ import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
 import { DmNarration } from "./dm-narration"
 import { classDefaults } from "@/lib/game-data"
-import { getDisplayedArmorClass } from "@/lib/armor-class"
+import { calculateAC } from "@/lib/armor-class"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
 import { isVideoUrl } from "@/lib/media-url"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
@@ -58,6 +58,11 @@ function normalizedSkillMap(raw: Record<string, any>): Record<string, string> {
 function toSheetCharacter(c: Character) {
   const raw = c as unknown as Record<string, any>
   const spellcasting = raw.sheet_spellcasting ?? {}
+  // A character is shown the Spells tab only when a real spellcasting block
+  // exists. An empty `{}` (non-casters) must hide the tab entirely, so we key
+  // off the object having keys rather than off a class-derived guess.
+  const hasSpellcasting =
+    spellcasting && typeof spellcasting === "object" && Object.keys(spellcasting).length > 0
   const skillMap = normalizedSkillMap(raw)
   const entries = Object.entries(skillMap)
   const abilities = Object.fromEntries(
@@ -97,7 +102,11 @@ function toSheetCharacter(c: Character) {
     weaponProficiencies: raw.sheet_proficiencies?.weapons ?? null,
     toolProficiencies: raw.sheet_proficiencies?.tools ?? null,
     features: raw.sheet_features,
+    attacks: raw.sheet_attacks,
+    species: raw.sheet_species || raw.race || "",
     personality: raw.sheet_personality,
+    hasSpellcasting,
+    spellPact: spellcasting.pact ?? null,
     spellcastingAbility: spellcasting.ability ?? null,
     spellSaveDC: spellcasting.save_dc ?? null,
     spellAttackBonus: spellcasting.attack_bonus ?? null,
@@ -327,7 +336,8 @@ export function V4Dashboard(props: V4DashboardProps) {
     return totals
   }, {})
   const rail = buildRailStats(selected)
-  const displayedAc = getDisplayedArmorClass(selected, props.equipment)
+  const acResult = calculateAC(selected, props.equipment)
+  const displayedAc = acResult.total
   const displayedInitiative = (selected?.initiative ?? 0) + (equipmentBonus.initiative ?? 0)
 
   // Whoever currently holds the floor, reported by the narration queue. The
@@ -446,7 +456,7 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
           <div className="mt-2 flex items-center rounded border border-[#4b3a19] px-2 py-1 text-[8px]"><span className="text-purple-400">SPELL SLOTS · LV 1　◉ ◉</span><span className="ml-auto text-[#8f8061]">2 / 2</span></div>
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <StatShield kind="ac" label="Armor Class" value={String(displayedAc)} onClick={() => setStatDetail("ac")} />
+              <StatShield kind="ac" label="Armor Class" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
@@ -492,7 +502,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       <button onClick={() => setInventoryOpen(true)} className="flex h-9 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
       {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300"><BookOpen className="mr-2 h-4 w-4" />Book of Spells <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
     </div>
-    {statDetail ? <StatDetailModal kind={statDetail} character={selected} onClose={() => setStatDetail(null)} /> : null}
+    {statDetail ? <StatDetailModal kind={statDetail} character={selected} acBreakdown={acResult.text} onClose={() => setStatDetail(null)} /> : null}
     {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
     {spellbookOpen ? <SpellbookModal character={selected} onClose={() => setSpellbookOpen(false)} /> : null}
     {/* MERGE NOTE: Codex's branch predates the Forge 2014 sheet port. Sam
@@ -503,7 +513,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     <CharacterSheetSlideOver
       open={characterSheetOpen}
       onClose={() => setCharacterSheetOpen(false)}
-      character={{ ...toSheetCharacter(selected), ac: displayedAc, initiative: displayedInitiative }}
+      character={{ ...toSheetCharacter(selected), ac: displayedAc, acBreakdown: acResult.text, initiative: displayedInitiative }}
       inventory={props.inventory as any}
     />
     {inventoryOpen ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onClose={() => setInventoryOpen(false)} /> : null}
@@ -769,14 +779,14 @@ function AbilityScoreCard({ ability, onClick, sheet = false }: { ability: { key:
   </button>
 }
 
-function StatShield({ kind, label, value, onClick }: { kind: StatKind; label: string; value: string; onClick: () => void }) {
+function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; label: string; value: string; onClick: () => void; tooltip?: string }) {
   const spritePosition: Record<StatKind, string> = {
     ac: "0% 40%",
     speed: "33.333% 40%",
     initiative: "66.666% 40%",
     proficiency: "100% 40%",
   }
-  return <button type="button" onClick={onClick} className="group relative flex h-[82px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={`Open ${label} details`}>
+  return <button type="button" onClick={onClick} className="group relative flex h-[82px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`}>
     <span className="absolute inset-x-1 top-0 h-[66px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
       <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
     </span>
@@ -785,9 +795,12 @@ function StatShield({ kind, label, value, onClick }: { kind: StatKind; label: st
   </button>
 }
 
-function StatDetailModal({ kind, character, onClose }: { kind: StatKind; character?: Character; onClose: () => void }) {
+function StatDetailModal({ kind, character, acBreakdown, onClose }: { kind: StatKind; character?: Character; acBreakdown?: string; onClose: () => void }) {
+  // Pull the derived total straight out of the breakdown ("… = 13") so this
+  // modal shows the same computed AC as the shield, never the stale stored value.
+  const derivedAc = acBreakdown ? acBreakdown.split("=").pop()?.trim() ?? String(character?.ac ?? 10) : String(character?.ac ?? 10)
   const content: Record<StatKind, { title: string; summary: string; rows: Array<[string, string]> }> = {
-    ac: { title: "Armor Class", summary: "How difficult this hero is to hit. The visible total must equal the active armor formula and legal bonuses.", rows: [["Current AC", String(character?.ac ?? 10)], ["Dexterity modifier", signed(character?.dex_modifier ?? 0)], ["Shield / equipment", "Read from equipped items"], ["When attacked", "Enemy roll must meet or exceed AC"]] },
+    ac: { title: "Armor Class", summary: "How difficult this hero is to hit. The visible total is derived from equipped armor and ability modifiers, never a hand-entered number.", rows: [["Current AC", derivedAc], ["Breakdown", acBreakdown ?? `10 + ${signed(character?.dex_modifier ?? 0)} DEX`], ["Dexterity modifier", signed(character?.dex_modifier ?? 0)], ["When attacked", "Enemy roll must meet or exceed AC"]] },
     initiative: { title: "Initiative", summary: "Determines turn order when combat begins. Higher totals act first.", rows: [["Current modifier", signed(character?.initiative ?? 0)], ["Base ability", "Dexterity"], ["Roll", `1d20 ${signed(character?.initiative ?? 0)}`], ["Tie breaker", "Higher Dexterity, then DM ruling"]] },
     proficiency: { title: "Proficiency Bonus", summary: "Represents trained competence. It applies only when the character is proficient with the roll.", rows: [["Current bonus", signed(character?.proficiency_bonus ?? 2)], ["Character level", String(character?.level ?? 1)], ["Applies to", "Proficient saves, skills, attacks and spell DC"], ["Expertise", "Doubles the proficiency contribution"]] },
     speed: { title: "Movement Speed", summary: "The distance this hero can normally move during a turn before Dash or terrain modifiers.", rows: [["Walking speed", character?.speed || "30 ft."], ["Normal move", "Up to speed each turn"], ["Dash", "Adds another movement allowance"], ["Difficult terrain", "Costs 2 feet per foot moved"]] },

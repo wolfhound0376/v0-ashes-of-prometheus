@@ -20,6 +20,10 @@ interface TopNavProps {
   campaignName?: string
   onSection?: (section: NavSection) => void
   activeSection?: NavSection | null
+  /** True only when the current user is acting as the DM. The NPCs tab exposes
+   *  the full NPC roster — including unencountered NPCs and their stats — so it
+   *  renders for the DM alone. Defaults to false, i.e. hidden for players. */
+  isDM?: boolean
 }
 
 const SECTIONS: { id: NavSection; label: string; icon: typeof BookOpen }[] = [
@@ -36,7 +40,11 @@ export function TopNav({
   campaignName = "Campaign Overview",
   onSection,
   activeSection = null,
+  isDM = false,
 }: TopNavProps) {
+  // The NPCs tab is DM-only: players must not reach the roster, since it reveals
+  // unencountered NPCs and their stats.
+  const sections = isDM ? SECTIONS : SECTIONS.filter((s) => s.id !== "npcs")
   return (
     <header className="flex items-center justify-between gap-3 border-b border-[#7a5f33]/50 bg-gradient-to-b from-[#14100b] to-[#0b0907] px-4 py-2">
       {/* Wordmark */}
@@ -67,7 +75,7 @@ export function TopNav({
           The Forge
         </Link>
 
-        {SECTIONS.map((s) => {
+        {sections.map((s) => {
           const Icon = s.icon
           return (
             <button

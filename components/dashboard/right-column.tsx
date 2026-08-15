@@ -4,7 +4,7 @@ import { useState } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { FloatingWindow } from "@/components/ui/floating-window"
 import { BackpackIcon, IconFrame } from "@/components/ui/fantasy-icons"
-import { Sparkles, ChevronDown, Package, Swords, BookOpen, User2, Shield, Heart, Zap, Eye, Star, Dices } from "lucide-react"
+import { Sparkles, ChevronDown, Package, Swords, BookOpen, User2, Shield, Heart, Zap, Eye, Star, Dices, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
 import { BasicInventory } from "./basic-inventory"
@@ -22,6 +22,7 @@ import { DetailedStats } from "./panels/detailed-stats"
 import { AcBreakdownModal, AbilityDetailModal, type AbilityKey } from "./panels/stat-modals"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { XPTracker } from "./xp-tracker"
+import { calculateAC } from "@/lib/armor-class"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
@@ -60,6 +61,11 @@ interface RightColumnProps {
   // When true (claim-locked browser), hide the character picker entirely so a
   // player can't switch to someone else's sheet.
   disableCharacterSelect?: boolean
+  // DM Mode reveals the per-character remove control in the picker. Off for
+  // players and always off in a claim-locked browser.
+  dmMode?: boolean
+  // Soft-deletes a character (archive). Undefined = no remove control.
+  onArchiveCharacter?: (characterId: string) => void | Promise<void>
   selectedCharacter?: DBCharacter
   characterInventory: DBInventoryItem[]
   characterEquipment: DBEquipmentItem[]
@@ -143,6 +149,8 @@ export function RightColumn({
   selectedCharacterId,
   onCharacterSelect,
   disableCharacterSelect = false,
+  dmMode = false,
+  onArchiveCharacter,
   selectedCharacter,
   characterInventory,
   characterEquipment,
@@ -153,6 +161,34 @@ export function RightColumn({
   onLevelUp
 }: RightColumnProps) {
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
+
+  // Remove-character confirmation. Player characters must be confirmed by
+  // typing the name; NPCs and monsters only need the button press.
+  const [pendingRemoval, setPendingRemoval] = useState<DBCharacter | null>(null)
+  const [removalConfirmText, setRemovalConfirmText] = useState("")
+  const [removing, setRemoving] = useState(false)
+  const canRemove = dmMode && !disableCharacterSelect && Boolean(onArchiveCharacter)
+  const removalNeedsTypedName = Boolean((pendingRemoval as any)?.is_player)
+  const removalConfirmed =
+    !removalNeedsTypedName ||
+    removalConfirmText.trim().toLowerCase() === (pendingRemoval?.name ?? "").trim().toLowerCase()
+
+  const closeRemovalDialog = () => {
+    setPendingRemoval(null)
+    setRemovalConfirmText("")
+    setRemoving(false)
+  }
+
+  const confirmRemoval = async () => {
+    if (!pendingRemoval || !onArchiveCharacter || !removalConfirmed) return
+    setRemoving(true)
+    try {
+      await onArchiveCharacter(pendingRemoval.id)
+      closeRemovalDialog()
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   // Sheet rolls go through the SHARED dice roller — never a local RNG.
   const { roll: sharedRoll, announce: announceRoll, busy: diceBusy } = useDice()
@@ -168,6 +204,11 @@ export function RightColumn({
   const [acModalOpen, setAcModalOpen] = useState(false)
   const [abilityModal, setAbilityModal] = useState<AbilityKey | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+
+  // Derived Armour Class from equipped armour + ability modifiers. Never the
+  // hand-entered characters.ac column (which reads 10 for everyone). With only
+  // prison Rags equipped this correctly resolves to 10 + Dex.
+  const acResult = calculateAC(selectedCharacter, characterEquipment)
 
   // Transform character data
   const character = selectedCharacter ? {
@@ -187,7 +228,8 @@ age: (selectedCharacter as any).age,
       max: selectedCharacter.hp_max,
       temp: (selectedCharacter as any).temp_hp || 0
     },
-    ac: selectedCharacter.ac,
+    ac: acResult.total,
+    acBreakdown: acResult.text,
     initiative: selectedCharacter.initiative,
     speed: selectedCharacter.speed || 30,
     senses: selectedCharacter.senses || null,
@@ -230,6 +272,7 @@ age: (selectedCharacter as any).age,
     weight: undefined,
     hp: { current: 10, max: 10, temp: 0 },
     ac: 10,
+    acBreakdown: "10 base + 0 DEX = 10",
     initiative: 0,
     speed: 30,
     senses: null,
@@ -392,6 +435,60 @@ age: (selectedCharacter as any).age,
 
   return (
     <>
+      {/* DM-only remove confirmation. Archive, not destruction: the character
+          and everything they own stay in the database. */}
+      {pendingRemoval && (
+        <div
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={closeRemovalDialog}
+        >
+          <div
+            className="w-[420px] max-w-[92vw] rounded-lg border border-[#3d3428] bg-[#1a1614] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-2 font-serif text-xl text-[#e08a8a]">
+              Remove {pendingRemoval.name}?
+            </h2>
+            <p className="mb-4 text-sm text-stone-300">
+              They will disappear from the Character box, Party Status and the roster.
+              Nothing is destroyed — the character, their inventory and their history
+              stay in the database and can be restored.
+            </p>
+            {removalNeedsTypedName && (
+              <div className="mb-4">
+                <p className="mb-2 text-xs text-stone-400">
+                  This is a player character. Type{" "}
+                  <span className="font-medium text-[#e0b765]">{pendingRemoval.name}</span> to confirm.
+                </p>
+                <input
+                  autoFocus
+                  value={removalConfirmText}
+                  onChange={(e) => setRemovalConfirmText(e.target.value)}
+                  placeholder={pendingRemoval.name}
+                  className="w-full rounded border border-[#3d3428] bg-[#0f0e0b] px-3 py-2 text-sm text-stone-200 outline-none focus:border-[#c9a868]"
+                />
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeRemovalDialog}
+                className="rounded border border-[#3d3428] bg-[#2a2520] px-4 py-2 text-sm text-stone-400 transition-colors hover:border-stone-500 hover:text-stone-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmRemoval()}
+                disabled={!removalConfirmed || removing}
+                className="rounded border border-[#7a3333]/70 bg-[#1d1010] px-4 py-2 text-sm text-[#d9a3a3] transition-colors hover:border-[#c96868] hover:text-[#f0cfcf] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {removing ? "Removing…" : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-2 h-full overflow-hidden">
         <FantasyPanel title="Character" className="flex-1 min-h-0 flex flex-col">
           {/* Character Header */}
@@ -429,31 +526,52 @@ age: (selectedCharacter as any).age,
                   {!disableCharacterSelect && showCharacterDropdown && characters.length > 0 && (
                     <div className="absolute top-full left-0 mt-1 z-50 min-w-[200px] bg-[#1a1614] border border-[#3d3428] rounded-lg shadow-xl overflow-hidden">
                       {characters.map((char) => (
-                        <button
+                        <div
                           key={char.id}
-                          onClick={() => {
-                            onCharacterSelect(char.id)
-                            setShowCharacterDropdown(false)
-                          }}
                           className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[#2a2420] transition-colors",
+                            "group w-full flex items-center hover:bg-[#2a2420] transition-colors",
                             char.id === selectedCharacterId && "bg-[#1a2a35]/60"
                           )}
                         >
-                          <div className="w-8 h-8 rounded-full bg-[#0a0908] border border-[#3d3428]/60 overflow-hidden flex items-center justify-center flex-shrink-0">
-                            {char.avatar_image_url ? (
-                              <img src={char.avatar_image_url} alt={char.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <Sparkles className="w-4 h-4 text-[#4a5a6a]" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className={cn("text-sm font-serif truncate", char.id === selectedCharacterId ? "text-[#7aa8c8]" : "text-stone-300")}>
-                              {char.name}
-                            </p>
-                            <p className="text-xs text-stone-500">Level {char.level} {char.class}</p>
-                          </div>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onCharacterSelect(char.id)
+                              setShowCharacterDropdown(false)
+                            }}
+                            className="flex flex-1 min-w-0 items-center gap-3 px-3 py-2 text-left"
+                          >
+                            <div className="w-8 h-8 rounded-full bg-[#0a0908] border border-[#3d3428]/60 overflow-hidden flex items-center justify-center flex-shrink-0">
+                              {char.avatar_image_url ? (
+                                <img src={char.avatar_image_url} alt={char.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <Sparkles className="w-4 h-4 text-[#4a5a6a]" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={cn("text-sm font-serif truncate", char.id === selectedCharacterId ? "text-[#7aa8c8]" : "text-stone-300")}>
+                                {char.name}
+                              </p>
+                              <p className="text-xs text-stone-500">Level {char.level} {char.class}</p>
+                            </div>
+                          </button>
+                          {canRemove && (
+                            <button
+                              type="button"
+                              title={`Remove ${char.name} from the campaign`}
+                              aria-label={`Remove ${char.name}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setShowCharacterDropdown(false)
+                                setRemovalConfirmText("")
+                                setPendingRemoval(char)
+                              }}
+                              className="mr-2 flex-shrink-0 rounded-sm border border-transparent p-1.5 text-stone-600 transition-colors hover:border-[#7a3333]/70 hover:bg-[#1d1010] hover:text-[#e08a8a]"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -521,7 +639,7 @@ age: (selectedCharacter as any).age,
             <div className="grid grid-cols-5 gap-2 text-center">
               <button
                 onClick={() => setAcModalOpen(true)}
-                title="View Armor Class breakdown"
+                title={character.acBreakdown ? `${character.acBreakdown} — click for full breakdown` : "View Armor Class breakdown"}
                 className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30 hover:border-amber-600/60 transition-colors"
               >
                 <Shield className="w-4 h-4 mx-auto mb-1 text-amber-600" />

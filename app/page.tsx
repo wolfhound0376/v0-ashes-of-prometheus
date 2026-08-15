@@ -339,6 +339,7 @@ export default function DashboardPage() {
       const { data, error } = await supabase
         .from('characters')
         .select('*')
+        .is('archived_at', null)
         .order('character_type', { ascending: false })
         .order('name')
 
@@ -677,6 +678,40 @@ if (error) {
     setCharacters(prev => prev.map((c: any) => (c.id === id ? { ...c, in_party: seated } : c)))
   }
 
+  // DM-only soft delete for the Character box. Stamps characters.archived_at
+  // instead of DELETEing: the row, its inventory, equipment and abilities all
+  // survive, so a mis-click is recoverable by clearing archived_at in Supabase.
+  // A hard DELETE would also fail outright whenever the character is a
+  // session's active_character_id or is referenced by inventory_items
+  // .confiscated_from — both of those foreign keys are NO ACTION.
+  const handleArchiveCharacter = async (characterId: string) => {
+    const { error } = await supabase
+      .from('characters')
+      .update({ archived_at: new Date().toISOString(), in_party: false })
+      .eq('id', characterId)
+    if (error) {
+      console.error('[archive] character archive failed:', error)
+      setSaveMessage('Could not remove that character')
+      setTimeout(() => setSaveMessage(null), 3000)
+      return
+    }
+    const removed = characters.find((c: any) => c.id === characterId)
+    setCharacters(prev => prev.filter((c: any) => c.id !== characterId))
+    // If the DM just removed whoever this browser was looking at, move the
+    // view to another seated player rather than leaving an empty sheet.
+    if (selectedCharacterId === characterId) {
+      const remaining = characters.filter((c: any) => c.id !== characterId)
+      const next = remaining.find((c: any) => c.in_party) ?? remaining.find((c: any) => c.is_player) ?? remaining[0]
+      setSelectedCharacterId(next?.id ?? null)
+      if (typeof window !== 'undefined') {
+        if (next?.id) window.localStorage.setItem(CHARACTER_LS_KEY, next.id)
+        else window.localStorage.removeItem(CHARACTER_LS_KEY)
+      }
+    }
+    setSaveMessage(`${removed?.name ?? 'Character'} removed`)
+    setTimeout(() => setSaveMessage(null), 3000)
+  }
+
   // Change the active player for THIS browser only. Selection is per-browser
   // now: it lives in local state and persists to localStorage so a reload keeps
   // the same seat. It is NEVER written to sessions.active_character_id — that
@@ -943,6 +978,8 @@ if (error) {
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
+        // NPCs tab is DM-only. A claimed player browser is never the DM.
+        isDM={dmMode && !claimLocked}
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // In DM Mode, the top-right NPCs button is the direct door to canon
@@ -1152,6 +1189,8 @@ if (error) {
   selectedCharacterId={selectedCharacterId}
   onCharacterSelect={handleCharacterSelect}
   disableCharacterSelect={claimLocked}
+  dmMode={dmMode && !claimLocked}
+  onArchiveCharacter={handleArchiveCharacter}
   selectedCharacter={selectedCharacter}
   characterInventory={characterInventory}
   characterEquipment={characterEquipment}
