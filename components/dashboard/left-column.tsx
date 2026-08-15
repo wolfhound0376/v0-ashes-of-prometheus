@@ -40,7 +40,6 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
-import { PartyChat } from "@/components/dashboard/party-chat"
 
 // Deterministic per-speaker color for the Interactive Log. Malachar (DM) and the
 // active player keep their dedicated colors elsewhere; every OTHER named speaker
@@ -338,8 +337,8 @@ export function LeftColumn({
         </div>
       </FantasyPanel>
 
-      {/* Interactive Log — the DM channel, roughly the top 65% of the feed area. */}
-      <FantasyPanel title="Interactive Log" className="flex min-h-0 flex-[65_1_0%] flex-col">
+      {/* Interactive Log */}
+      <FantasyPanel title="Interactive Log" className="flex min-h-0 flex-1 flex-col">
         {/* Filter tabs */}
         <div className="flex gap-1 border-b border-[#7a5f33]/35 px-2 py-1.5">
           {LOG_FILTERS.map((f) => (
@@ -495,10 +494,6 @@ export function LeftColumn({
           </div>
         </div>
       </FantasyPanel>
-
-      {/* Party channel — roughly the bottom 35% of the feed area. Its own
-          scrolling pane, plain inserts only, never spoken aloud. */}
-      <PartyChat characterName={characterName} className="flex-[35_1_0%]" />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { SendHorizontal } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
@@ -62,6 +62,10 @@ export function PartyChat({ characterName, className, bare = false }: PartyChatP
   const [input, setInput] = useState("")
   const supabaseRef = useRef(createClient())
   const endRef = useRef<HTMLDivElement>(null)
+  // Unique per mount so two PartyChat instances never share a realtime channel
+  // name. Supabase caches channels by name and throws if you call `.on()` on an
+  // already-subscribed one — that throw previously took the whole dashboard down.
+  const instanceId = useId()
 
   // Initial load (oldest-first) + realtime subscription, both filtered to the
   // party channel so DM narration never appears here.
@@ -80,35 +84,43 @@ export function PartyChat({ characterName, className, bare = false }: PartyChatP
     }
     load()
 
-    const channel = supabase
-      .channel("party-chat-changes")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "dialogue", filter: "channel=eq.party" },
-        (payload: { new: Record<string, any> }) => {
-          const row = payload.new as PartyLine
-          setLines((prev) => {
-            // Dedupe by real id, and upgrade a matching optimistic line in place.
-            if (prev.some((l) => l.id === row.id)) return prev
-            const pendingIdx = prev.findIndex(
-              (l) => l.id.startsWith("party-optimistic-") && l.speaker === row.speaker && l.text === row.text,
-            )
-            if (pendingIdx !== -1) {
-              const next = prev.slice()
-              next[pendingIdx] = row
-              return next
-            }
-            return [...prev, row]
-          })
-        },
-      )
-      .subscribe()
+    // Defensive: a realtime subscription failure must only degrade this pane
+    // (no live updates) and can NEVER throw during mount and crash the route.
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    try {
+      channel = supabase
+        .channel(`party-chat-${instanceId}`)
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "dialogue", filter: "channel=eq.party" },
+          (payload: { new: Record<string, any> }) => {
+            const row = payload.new as PartyLine
+            setLines((prev) => {
+              // Dedupe by real id, and upgrade a matching optimistic line in place.
+              if (prev.some((l) => l.id === row.id)) return prev
+              const pendingIdx = prev.findIndex(
+                (l) => l.id.startsWith("party-optimistic-") && l.speaker === row.speaker && l.text === row.text,
+              )
+              if (pendingIdx !== -1) {
+                const next = prev.slice()
+                next[pendingIdx] = row
+                return next
+              }
+              return [...prev, row]
+            })
+          },
+        )
+        .subscribe()
+    } catch (err) {
+      console.error("[PartyChat] realtime subscribe failed:", err)
+    }
 
     return () => {
       cancelled = true
-      supabase.removeChannel(channel)
+      // Skip cleanup when the channel was never created.
+      if (channel) supabase.removeChannel(channel)
     }
-  }, [])
+  }, [instanceId])
 
   // Auto-scroll to the newest line.
   useEffect(() => {
