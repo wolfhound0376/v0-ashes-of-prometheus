@@ -8,6 +8,7 @@
 // components, this takes a config.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { Archive } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, ensureDmKey, clearDmKey } from "@/lib/dm-key"
 import { MediaSlot, MediaDrop, ClearConfirm } from "./media-slot"
@@ -32,6 +33,13 @@ export interface MediaTabConfig {
   filter?: { column: string; value: string | number | boolean }
   slots: SlotConfig[]
   emptyMessage: string
+  /**
+   * When true, each card gets an archive "x" in the top-right. Archiving sets
+   * `archived_at` (non-destructive — nothing is deleted) and the tab only ever
+   * lists rows where `archived_at` is null. Only meaningful for tables that
+   * have an `archived_at` column (currently `characters`).
+   */
+  archivable?: boolean
 }
 
 interface Row {
@@ -52,11 +60,12 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
     const supabase = createClient()
     let query = supabase.from(config.table).select(config.select)
     if (config.filter) query = query.eq(config.filter.column, config.filter.value)
+    if (config.archivable) query = query.is("archived_at", null)
     const { data, error } = await query.order(config.orderBy)
     if (error) console.error(`[dm-assets] ${config.table} fetch failed:`, error.message)
     setRows(((data as unknown as Row[]) || []).filter(Boolean))
     setLoading(false)
-  }, [config.table, config.select, config.orderBy])
+  }, [config.table, config.select, config.orderBy, config.archivable])
 
   useEffect(() => {
     void fetchRows()
@@ -119,6 +128,28 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
     }
   }
 
+  // Non-destructive: hides the row from the dashboard and VTT by stamping
+  // archived_at. It stays in the database and can be restored from /admin.
+  const archive = async (row: Row) => {
+    const label = String(row[config.labelColumn] ?? "this character")
+    if (!confirm(`Archive "${label}"? It will be hidden from the dashboard and the VTT but nothing is deleted. You can restore it from the Admin \u2192 Characters page.`)) return
+    const key = `${row.id}:__archive`
+    setBusy(key)
+    setStatus((s) => ({ ...s, [key]: `Archiving ${label}…` }))
+    const supabase = createClient()
+    const { error } = await supabase
+      .from(config.table)
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", row.id)
+    if (error) {
+      setStatus((s) => ({ ...s, [key]: error.message }))
+      setBusy(null)
+      return
+    }
+    setBusy(null)
+    await fetchRows()
+  }
+
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase()
     if (!q) return rows
@@ -148,14 +179,28 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
                 key={row.id}
                 className="flex flex-col gap-2 rounded-sm border border-[#3d3428]/60 bg-gradient-to-b from-[#1a1614] to-[#0f0d0b] p-3"
               >
-                <div className="min-w-0">
-                  <h3 className="truncate font-serif text-base text-[#e8dcc4]">
-                    {String(row[config.labelColumn] ?? "Untitled")}
-                  </h3>
-                  {config.subtitleColumn && row[config.subtitleColumn] ? (
-                    <p className="truncate text-[10px] uppercase tracking-wider text-stone-600">
-                      {String(row[config.subtitleColumn])}
-                    </p>
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-serif text-base text-[#e8dcc4]">
+                      {String(row[config.labelColumn] ?? "Untitled")}
+                    </h3>
+                    {config.subtitleColumn && row[config.subtitleColumn] ? (
+                      <p className="truncate text-[10px] uppercase tracking-wider text-stone-600">
+                        {String(row[config.subtitleColumn])}
+                      </p>
+                    ) : null}
+                  </div>
+                  {config.archivable ? (
+                    <button
+                      type="button"
+                      onClick={() => void archive(row)}
+                      disabled={busy === `${row.id}:__archive`}
+                      title="Archive character (hide without deleting)"
+                      aria-label={`Archive ${String(row[config.labelColumn] ?? "character")}`}
+                      className="shrink-0 rounded border border-[#4b3a19] p-1 text-[#c6a060] transition-colors hover:border-[#c9a868] hover:bg-[#c4a777]/10 hover:text-white disabled:opacity-50"
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                    </button>
                   ) : null}
                 </div>
 

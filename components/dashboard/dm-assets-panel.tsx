@@ -84,6 +84,7 @@ const CHARACTERS: MediaTabConfig = {
     { target: "character.talking", column: "talking_url", label: "Talking" },
   ],
   emptyMessage: "No player characters found.",
+  archivable: true,
 }
 
 const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
