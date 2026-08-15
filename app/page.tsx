@@ -29,7 +29,7 @@ import type { Campaign } from "@/lib/world-ai/campaigns"
 // A dialogue message carries the DB row `id` so we can dedupe. Optimistic
 // entries added before the row exists get a temporary id and `pending: true`.
 type SpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
-type DialogueMessage = { id: string; speaker: string; text: string; speech_segments?: SpeechSegment[] | null; pending?: boolean }
+type DialogueMessage = { id: string; speaker: string; text: string; speech_segments?: SpeechSegment[] | null; speaker_type?: string | null; channel?: string | null; pending?: boolean }
 
 function optimisticLichEntries(response: { text: string; speechSegments?: SpeechSegment[] | null; dialogueEntries?: Array<{ speaker: string; text: string; speech_segments?: SpeechSegment[] | null }> }): DialogueMessage[] {
   const entries = response.dialogueEntries?.filter((entry) => entry.text?.trim())
@@ -511,7 +511,8 @@ export default function DashboardPage() {
     async function fetchDialogue() {
       const { data, error } = await supabase
         .from('dialogue')
-        .select('id, speaker, text, speech_segments')
+        .select('id, speaker, text, speech_segments, speaker_type, channel')
+        .eq('channel', 'dm')
         .order('created_at', { ascending: true })
         .limit(50)
 
@@ -531,7 +532,9 @@ if (error) {
       .channel('dialogue-changes')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'dialogue' },
+        // Only the DM channel feeds this transcript. Party chatter lives in its
+        // own realtime subscription inside <PartyChat> and must never leak here.
+        { event: 'INSERT', schema: 'public', table: 'dialogue', filter: 'channel=eq.dm' },
         (payload: { new: Record<string, any> }) => {
           const newEntry = payload.new as DialogueMessage
           setDialogue(prev =>
@@ -845,7 +848,7 @@ if (error) {
       // Feed line, visible on all browsers. Optimistic → reconciled by the
       // realtime echo of the inserted row.
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: line, pending: true }))
-      const { error } = await supabase.from("dialogue").insert({ speaker: playerName, text: line })
+      const { error } = await supabase.from("dialogue").insert({ speaker: playerName, speaker_type: "player", channel: "dm", text: line })
       if (error) console.error("[Dice] failed to persist roll announcement:", error)
 
       // Action rolls also go to the DM for narration.

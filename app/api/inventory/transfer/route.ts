@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
         speaker: "System",
         text: `Acquired ${quantity}x ${envItem.name}`,
         source: "system",
+        channel: "dm",
         metadata: { item: envItem.name, quantity },
       })
 

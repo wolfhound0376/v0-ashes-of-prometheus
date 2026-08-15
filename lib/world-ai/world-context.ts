@@ -283,6 +283,8 @@ export async function fetchRecentDialogue(limit = 10): Promise<WorldContext["rec
     const { data: dialogue, error } = await supabase
       .from("dialogue")
       .select("speaker, text")
+      // DM channel only — party whispers never enter world context.
+      .eq("channel", "dm")
       .order("created_at", { ascending: false })
       .limit(limit)
     

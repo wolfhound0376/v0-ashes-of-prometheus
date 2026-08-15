@@ -99,6 +99,19 @@ interface DialogueEntry {
   speaker: string
   text: string
   speech_segments?: PersistedSpeechSegment[] | null
+  speaker_type?: string | null
+  channel?: string | null
+}
+
+// A player character eligible to occupy the talking-head window. Shaped from the
+// `characters` table (is_player = true, not archived) with the same idle/talking
+// video loops npc_encounters carries.
+interface PlayerSpeakerChar {
+  id: string
+  name: string
+  portrait_url: string | null
+  idle_url: string | null
+  talking_url: string | null
 }
 
 interface CenterColumnProps {
@@ -337,6 +350,7 @@ export function CenterColumn({ characterClass, characterLevel, onSendToLich, sce
   const activeEncounters = npcEncounters.filter(e => e.is_active)
   const supabase = useMemo(() => createClient(), [])
   const [fullNpcRoster, setFullNpcRoster] = useState<NpcEncounter[]>([])
+  const [playerChars, setPlayerChars] = useState<PlayerSpeakerChar[]>([])
   const [persistedSegments, setPersistedSegments] = useState<PersistedSpeechSegment[] | null | undefined>(undefined)
 
   useEffect(() => {
@@ -354,6 +368,30 @@ export function CenterColumn({ characterClass, characterLevel, onSendToLich, sce
         ;({ data } = await supabase.from("npc_encounters").select(BASE_COLS))
       }
       if (!cancelled) setFullNpcRoster((data as NpcEncounter[] | null) || [])
+    })()
+    return () => { cancelled = true }
+  }, [supabase])
+
+  // Player characters eligible to occupy the talking-head window (item 5). Only
+  // live player rows carry the idle/talking loops used below; matched by name.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase
+        .from("characters")
+        .select("id, name, portrait_image_url, avatar_image_url, idle_url, talking_url")
+        .eq("is_player", true)
+        .is("archived_at", null)
+      if (cancelled || !data) return
+      setPlayerChars(
+        (data as any[]).map((c) => ({
+          id: c.id,
+          name: c.name,
+          portrait_url: c.portrait_image_url ?? c.avatar_image_url ?? null,
+          idle_url: c.idle_url ?? null,
+          talking_url: c.talking_url ?? null,
+        })),
+      )
     })()
     return () => { cancelled = true }
   }, [supabase])
@@ -376,6 +414,7 @@ export function CenterColumn({ characterClass, characterLevel, onSendToLich, sce
     supabase
       .from("dialogue")
       .select("speech_segments")
+      .eq("channel", "dm")
       .eq("speaker", DM_SPEAKER)
       .eq("text", lastDialogue.text)
       .order("created_at", { ascending: false })
@@ -433,18 +472,77 @@ export function CenterColumn({ characterClass, characterLevel, onSendToLich, sce
   const activeSpeaker = activeSpeakerId
     ? fullNpcRoster.find(n => n.id === activeSpeakerId) ?? npcEncounters.find(n => n.id === activeSpeakerId) ?? null
     : null
-  // The NPC / DM window shows only the currently speaking NPC (or, if no one is
-  // speaking, the first present encounter as a silent portrait). Per the v3.0
-  // reference the center column no longer hosts actions, resources or dice.
+
+  // A player character briefly occupies the window when they speak on the DM
+  // channel — but only while no NPC line is playing (an NPC/Malachar always
+  // wins). Driven purely by the arrival of a new DM-channel player row; no TTS.
+  const [playerSpeaker, setPlayerSpeaker] = useState<{ char: PlayerSpeakerChar; talking: boolean } | null>(null)
+  const handledPlayerLineRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!lastDialogue) return
+    if (lastDialogue.channel && lastDialogue.channel !== "dm") return // party never touches this window
+    if (lastDialogue.speaker_type && lastDialogue.speaker_type !== "player") return // Malachar / NPC handled by segments
+    const player = playerChars.find(p => p.name === lastDialogue.speaker)
+    if (!player) return
+    // No loops → leave the window exactly as it is (no blank frame, no flicker).
+    if (!player.talking_url && !player.idle_url) return
+    const key = `${lastDialogue.id ?? ""}::${lastDialogue.text}`
+    if (key === handledPlayerLineRef.current) return
+    handledPlayerLineRef.current = key
+
+    setPlayerSpeaker({ char: player, talking: true })
+    const ms = Math.max(3000, (lastDialogue.text?.length ?? 0) * 55)
+    const stopTalking = setTimeout(
+      () => setPlayerSpeaker(prev => (prev && prev.char.id === player.id ? { ...prev, talking: false } : prev)),
+      ms,
+    )
+    // After the idle tail, release the window so it falls back to whatever it
+    // was showing before (a present encounter, or the empty state).
+    const clear = setTimeout(
+      () => setPlayerSpeaker(prev => (prev && prev.char.id === player.id ? null : prev)),
+      ms + 1500,
+    )
+    return () => {
+      clearTimeout(stopTalking)
+      clearTimeout(clear)
+    }
+  }, [lastDialogue, playerChars])
+
+  // The NPC / DM window shows the currently speaking NPC; if none, a speaking
+  // player; if neither, the first present encounter as a silent portrait.
   const featuredNpc = activeSpeaker ?? activeEncounters[0] ?? null
+  const showPlayer = !activeSpeaker && playerSpeaker
+  const playerAsSpeaker: NpcEncounter | null = playerSpeaker
+    ? {
+        id: playerSpeaker.char.id,
+        name: playerSpeaker.char.name,
+        description: null,
+        portrait_url: playerSpeaker.char.portrait_url,
+        face_url: null,
+        idle_url: playerSpeaker.char.idle_url,
+        talking_url: playerSpeaker.char.talking_url,
+        voice_id: null,
+        voice_description: null,
+        is_active: true,
+      }
+    : null
 
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden">
-      {/* NPC / Dungeon Master Window — shows only the currently speaking NPC. */}
+      {/* NPC / Dungeon Master Window — shows the speaking NPC, or a speaking player. */}
       <FantasyPanel title="NPC / Dungeon Master Window" className="flex-shrink-0">
         <div className="relative h-[236px] overflow-hidden rounded-sm p-2">
           <CombatFxKeyframes />
-          {featuredNpc ? (
+          {showPlayer && playerAsSpeaker ? (
+            <FeaturedSpeaker
+              speaker={playerAsSpeaker}
+              line={null}
+              caption={null}
+              silent
+              talking={playerSpeaker!.talking}
+            />
+          ) : featuredNpc ? (
             <FeaturedSpeaker
               speaker={featuredNpc}
               line={featuredNpc.id === activeSpeaker?.id ? activeLine : null}
@@ -552,10 +650,13 @@ function stopNpcAudio() {
   }
 }
 
-function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, onLineComplete }: { speaker: NpcEncounter; line?: string | null; voiceId?: string | null; caption?: string | null; hasOthers?: boolean; onLineComplete?: () => void }) {
+function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, onLineComplete, silent = false, talking = false }: { speaker: NpcEncounter; line?: string | null; voiceId?: string | null; caption?: string | null; hasOthers?: boolean; onLineComplete?: () => void; silent?: boolean; talking?: boolean }) {
   const face = speaker.face_url || speaker.portrait_url
   const [muted, setMuted] = useState(ttsMuted)
   const [speaking, setSpeaking] = useState(false)
+  // In silent mode (a player occupying the window) there is no TTS: the parent
+  // drives the talking/idle state directly via the `talking` prop.
+  const effectiveSpeaking = silent ? talking : speaking
 
   // Keep the completion callback in a ref so the audio effect (which only
   // depends on [line, speaker.id]) always calls the freshest version without
@@ -573,7 +674,7 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
   const idleVideoRef = useRef<HTMLVideoElement | null>(null)
   const talkingVideoRef = useRef<HTMLVideoElement | null>(null)
   // Which video should be visible right now.
-  const showTalking = speaking && !!talkingUrl
+  const showTalking = effectiveSpeaking && !!talkingUrl
   const showIdle = !showTalking && !!idleUrl
 
   // Force muted + playing whenever sources change (React's muted prop and
@@ -590,6 +691,7 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
   // Auto-play the quoted line (dialogue only — narration is never passed here)
   // through the per-NPC voice. Each unique speaker+line plays at most once.
   useEffect(() => {
+    if (silent) return // player window: no TTS, the parent drives the animation
     if (!line || !speaker.id) return
     const key = `${speaker.id}::${line}`
     if (key === lastSpokenKey) return // never speak the same line twice
@@ -673,7 +775,7 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
     <div
       className="relative flex h-full w-full overflow-hidden rounded-sm border-2"
       style={{
-        animation: speaking ? "aopSpeakerPulse 2s ease-in-out infinite" : undefined,
+        animation: effectiveSpeaking ? "aopSpeakerPulse 2s ease-in-out infinite" : undefined,
         borderColor: "rgba(201,168,104,0.45)",
       }}
     >
@@ -751,7 +853,7 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
 
         {/* Speaking indicator + disposition + attitude, top-left of portrait. */}
         <div className="absolute left-2 top-2 flex flex-col items-start gap-1.5">
-          {speaking && !muted && (
+          {(silent ? talking : speaking && !muted) && (
             <span className="inline-flex items-center gap-1.5 rounded-sm border border-[#c9a868]/50 bg-[#0a0908]/80 px-2 py-0.5 drop-shadow">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e6c878]" />
               <span className="text-[10px] uppercase tracking-widest text-[#c9a868]">Speaking</span>
@@ -771,7 +873,9 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
           )}
         </div>
 
-        {/* Mute / stop toggle, top-right of portrait. */}
+        {/* Mute / stop toggle, top-right of portrait. Hidden in silent (player)
+            mode — there is no voice to mute. */}
+        {!silent && (
         <button
           type="button"
           onClick={toggleMute}
@@ -793,6 +897,7 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
             </svg>
           )}
         </button>
+        )}
       </div>
     </div>
   )
