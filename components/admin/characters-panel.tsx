@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
-import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield, Dices, Heart, ListOrdered, Sparkles, Wand2 } from "lucide-react"
+import { Plus, Pencil, Trash2, Save, X, Loader2, User, Crown, Shield, Dices, Heart, ListOrdered, Sparkles, Wand2, Archive, ArchiveRestore } from "lucide-react"
 import type { Character } from "@/lib/types/database"
 import { getDefaultAbilityScores } from "@/lib/game-data"
 import { BestiaryAutopopulate } from "./bestiary-autopopulate"
@@ -49,6 +49,7 @@ export function CharactersPanel() {
   const [formData, setFormData] = useState<Partial<Character>>({})
   const [bestiary, setBestiary] = useState<BestiaryEntry[]>([])
   const [bulkRunning, setBulkRunning] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
 
   const supabase = createClient()
 
@@ -219,11 +220,96 @@ export function CharactersPanel() {
     else { setEditing(null); setFormData({}); fetchCharacters() }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this character?')) return
-    const { error } = await supabase.from('characters').delete().eq('id', id)
+  const handleDelete = async (char: Character) => {
+    if (!confirm(`Permanently delete "${char.name}"? This also destroys its inventory, equipment, abilities, secrets, dialogue and encounter history. This cannot be undone.`)) return
+    const { error } = await supabase.from('characters').delete().eq('id', char.id)
     if (error) console.error('Error:', error)
     else fetchCharacters()
+  }
+
+  // Non-destructive: archived characters are hidden everywhere but never deleted.
+  const handleArchive = async (char: Character) => {
+    if (!confirm(`Archive "${char.name}"? It will be hidden from the dashboard and the VTT but nothing is deleted.`)) return
+    const { error } = await supabase
+      .from('characters')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', char.id)
+    if (error) console.error('Error archiving character:', error)
+    else fetchCharacters()
+  }
+
+  const handleRestore = async (char: Character) => {
+    const { error } = await supabase
+      .from('characters')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', char.id)
+    if (error) console.error('Error restoring character:', error)
+    else fetchCharacters()
+  }
+
+  // Active/archived split is done client-side so the toggle needs no refetch.
+  const activeCharacters = characters.filter((c) => !c.archived_at)
+  const archivedCharacters = characters.filter((c) => !!c.archived_at)
+
+  const renderCard = (char: Character, archived: boolean) => {
+    const type = char.character_type ?? (char.is_player ? "player" : "npc")
+    const typeLabel = type === "player" ? "Player" : type === "npc" ? "NPC" : "Monster"
+    return (
+      <div key={char.id} className={`bg-gradient-to-br from-[#1a1614] to-[#0f0d0b] border border-[#3d3428]/60 rounded-lg overflow-hidden ${archived ? 'opacity-60' : ''}`}>
+        {editing === char.id ? (
+          <div className="p-6">
+            <h3 className="font-serif text-lg text-[#c4a777] mb-4">Edit Character</h3>
+            <CharacterForm formData={formData} setFormData={setFormData} onSave={() => handleUpdate(char.id)} onCancel={() => { setEditing(null); setFormData({}) }} bestiary={bestiary} />
+          </div>
+        ) : (
+          <div className="flex">
+            <div className="w-24 h-32 bg-[#0f0d0b] flex-shrink-0 flex items-center justify-center overflow-hidden">
+              {char.avatar_image_url ? (
+                <img src={char.avatar_image_url} alt={char.name} className="max-w-full max-h-full object-contain" />
+              ) : (
+                <User className="w-8 h-8 text-stone-700" />
+              )}
+            </div>
+            <div className="flex-1 p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-serif text-[#e8dcc4]">{char.name}</h4>
+                    {char.is_player && <Crown className="w-4 h-4 text-[#c4a777]" />}
+                  </div>
+                  {archived && <p className="text-xs text-stone-600 uppercase tracking-wide">{typeLabel}</p>}
+                  <p className="text-sm text-stone-500">Level {char.level}{char.class ? ` ${char.class}` : ''}</p>
+                  <div className="flex items-center gap-4 mt-2 text-xs text-stone-600">
+                    <span>HP: {char.hp_current}/{char.hp_max}</span>
+                    <span>AC: {char.ac}</span>
+                    <span>XP: {char.xp?.toLocaleString()}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setEditing(char.id); setFormData(char); setCreating(false) }}
+                    title="Edit"
+                    className="p-2 text-stone-500 hover:text-[#c4a777]"><Pencil className="w-4 h-4" /></button>
+                  {archived ? (
+                    <>
+                      <button onClick={() => handleRestore(char)}
+                        title="Restore (make active again)"
+                        className="p-2 text-stone-500 hover:text-green-400"><ArchiveRestore className="w-4 h-4" /></button>
+                      <button onClick={() => handleDelete(char)}
+                        title="Permanently delete"
+                        className="p-2 text-stone-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                    </>
+                  ) : (
+                    <button onClick={() => handleArchive(char)}
+                      title="Archive (hide without deleting)"
+                      className="p-2 text-stone-500 hover:text-[#c4a777]"><Archive className="w-4 h-4" /></button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   if (loading) {
@@ -243,6 +329,11 @@ export function CharactersPanel() {
             {bulkRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
             Populate all unstatted NPCs &amp; Monsters
           </button>
+          <button onClick={() => setShowArchived((v) => !v)}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#3d3428] to-[#2a2520] border border-[#c4a777]/30 rounded-lg text-[#c4a777] text-sm hover:border-[#c4a777]/50">
+            <Archive className="w-4 h-4" />
+            {showArchived ? 'Hide archived' : 'Show archived'} ({archivedCharacters.length})
+          </button>
         </div>
       )}
 
@@ -255,60 +346,29 @@ export function CharactersPanel() {
 
       <div className="space-y-6">
         {(["player", "npc", "monster"] as const).map((type) => {
-          const group = characters.filter((c) => (c.character_type ?? (c.is_player ? "player" : "npc")) === type)
+          const group = activeCharacters.filter((c) => (c.character_type ?? (c.is_player ? "player" : "npc")) === type)
           if (group.length === 0) return null
           const label = type === "player" ? "Players" : type === "npc" ? "NPCs" : "Monsters"
           return (
             <div key={type} className="space-y-3">
               <h3 className="font-serif text-lg text-[#c4a777] uppercase tracking-wide">{label}</h3>
               <div className="grid gap-4">
-                {group.map((char) => (
-                  <div key={char.id} className="bg-gradient-to-br from-[#1a1614] to-[#0f0d0b] border border-[#3d3428]/60 rounded-lg overflow-hidden">
-                    {editing === char.id ? (
-                      <div className="p-6">
-                        <h3 className="font-serif text-lg text-[#c4a777] mb-4">Edit Character</h3>
-                        <CharacterForm formData={formData} setFormData={setFormData} onSave={() => handleUpdate(char.id)} onCancel={() => { setEditing(null); setFormData({}) }} bestiary={bestiary} />
-                      </div>
-                    ) : (
-                      <div className="flex">
-                        <div className="w-24 h-32 bg-[#0f0d0b] flex-shrink-0 flex items-center justify-center overflow-hidden">
-                          {char.avatar_image_url ? (
-                            <img src={char.avatar_image_url} alt={char.name} className="max-w-full max-h-full object-contain" />
-                          ) : (
-                            <User className="w-8 h-8 text-stone-700" />
-                          )}
-                        </div>
-                        <div className="flex-1 p-4">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-serif text-[#e8dcc4]">{char.name}</h4>
-                                {char.is_player && <Crown className="w-4 h-4 text-[#c4a777]" />}
-                              </div>
-                              <p className="text-sm text-stone-500">Level {char.level}{char.class ? ` ${char.class}` : ''}</p>
-                              <div className="flex items-center gap-4 mt-2 text-xs text-stone-600">
-                                <span>HP: {char.hp_current}/{char.hp_max}</span>
-                                <span>AC: {char.ac}</span>
-                                <span>XP: {char.xp?.toLocaleString()}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => { setEditing(char.id); setFormData(char); setCreating(false) }}
-                                className="p-2 text-stone-500 hover:text-[#c4a777]"><Pencil className="w-4 h-4" /></button>
-                              <button onClick={() => handleDelete(char.id)}
-                                className="p-2 text-stone-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {group.map((char) => renderCard(char, false))}
               </div>
             </div>
           )
         })}
-        {characters.length === 0 && !creating && (
+
+        {showArchived && archivedCharacters.length > 0 && (
+          <div className="space-y-3 pt-4 border-t border-[#3d3428]/60">
+            <h3 className="font-serif text-lg text-[#c4a777] uppercase tracking-wide">Archived</h3>
+            <div className="grid gap-4">
+              {archivedCharacters.map((char) => renderCard(char, true))}
+            </div>
+          </div>
+        )}
+
+        {activeCharacters.length === 0 && !creating && (
           <div className="text-center py-12 text-stone-500">
             <User className="w-12 h-12 mx-auto mb-3 opacity-50" /><p>No characters yet</p>
           </div>

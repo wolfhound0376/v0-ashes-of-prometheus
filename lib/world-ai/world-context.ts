@@ -111,6 +111,7 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
       .from("characters")
       .select("*")
       .eq("is_player", true)
+      .is("archived_at", null)
     
     if (charError || !characters) {
       console.error("[WorldContext] Error fetching characters:", charError)
