@@ -8,6 +8,61 @@
  *    curated ElevenLabs premade voices below.
  */
 
+// ============================================================================
+// VOICE ROUTING — the single gate every TTS entry point funnels through.
+//
+// Two independent dashboard toggles decide who is allowed to speak:
+//   - DM Voice   → Malachar / the Lich (the DM/narrator) and NOTHING else.
+//   - NPC Voices → every named NPC EXCEPT the Lich.
+//
+// The toggles are React state inside DmNarration, but several speak paths
+// (the narration queue, the legacy featured-speaker auto-play, the v3
+// click-to-play line) need to consult them, so their current values are
+// mirrored here at module scope. Every path classifies its speaker with
+// `classifySpeaker` and asks `canSpeak` before firing a request — so the two
+// toggles can never drift apart, and a disabled voice never burns an
+// ElevenLabs credit because the request is skipped, not merely muted.
+// ============================================================================
+
+let dmVoiceEnabled = false
+let npcVoiceEnabled = false
+
+/** Mirror the DM Voice toggle into module scope. Called from DmNarration. */
+export function setDmVoiceEnabled(on: boolean): void {
+  dmVoiceEnabled = on
+}
+
+/** Mirror the NPC Voices toggle into module scope. Called from DmNarration. */
+export function setNpcVoiceEnabled(on: boolean): void {
+  npcVoiceEnabled = on
+}
+
+// Names that belong to the Dungeon Master rather than to a named NPC. Matched
+// case-insensitively, on word boundaries so "DM" cannot trip on a name that
+// merely contains those letters. "lich king" is listed before "lich" only for
+// readability — either substring resolves to the DM regardless of order.
+const DM_SPEAKER_KEYWORDS = ["malachar", "lich king", "lich", "dungeon master", "narrator", "dm"]
+
+/** Classify a speaker as the DM (Malachar/the Lich/narrator) or an NPC. */
+export function classifySpeaker(speaker?: string | null): "dm" | "npc" {
+  const name = (speaker ?? "").toLowerCase()
+  if (!name.trim()) return "npc"
+  for (const keyword of DM_SPEAKER_KEYWORDS) {
+    const pattern = new RegExp(`\\b${keyword.replace(/\s+/g, "\\s+")}\\b`, "i")
+    if (pattern.test(name)) return "dm"
+  }
+  return "npc"
+}
+
+/**
+ * The one gate. True when the toggle owning this speaker is on. DM-attributed
+ * lines follow DM Voice; everything else follows NPC Voices. The two are fully
+ * independent — turning one off never silences the other.
+ */
+export function canSpeak(speaker?: string | null): boolean {
+  return classifySpeaker(speaker) === "dm" ? dmVoiceEnabled : npcVoiceEnabled
+}
+
 /** Strip markdown / special chars that ElevenLabs would read aloud literally. */
 export function sanitizeForTTS(text: string): string {
   return text

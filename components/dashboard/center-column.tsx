@@ -26,6 +26,7 @@ import { DiceRoller } from "./dice-roller"
 import { ReactionsPanel } from "./reactions-panel"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 import { createClient } from "@/lib/supabase/client"
+import { canSpeak } from "@/lib/tts"
 
 interface Action {
   id: string
@@ -592,8 +593,11 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
     if (!line || !speaker.id) return
     const key = `${speaker.id}::${line}`
     if (key === lastSpokenKey) return // never speak the same line twice
-    if (ttsMuted) {
-      lastSpokenKey = key // honor "played once" even while muted
+    // Route through the shared voice gate. This is an NPC path, so it follows
+    // the NPC Voices toggle (the Lich is never featured here). When the toggle
+    // is off we skip the request entirely rather than burn an ElevenLabs credit.
+    if (ttsMuted || !canSpeak(speaker.name)) {
+      lastSpokenKey = key // honor "played once" even while muted/gated
       return
     }
     lastSpokenKey = key

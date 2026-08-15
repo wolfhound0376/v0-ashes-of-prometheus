@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sanitizeForTTS } from "@/lib/tts"
+import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled } from "@/lib/tts"
 // The speaker-attribution parser. It lives in the v3 center column today; when
 // that tree is finally deleted this should move to lib/ rather than be rewritten
 // — the quote-pairing and alias rules in it are hard-won.
@@ -284,6 +284,10 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     enabledRef.current = enabled
     dmOnRef.current = dmOn
     npcOnRef.current = npcOn
+    // Mirror both toggles into lib/tts so every other TTS entry point routes
+    // through the same canSpeak() gate and can never drift out of sync.
+    setDmVoiceEnabled(dmOn)
+    setNpcVoiceEnabled(npcOn)
     // While this control is on it is the ONLY thing speaking: it voices
     // Malachar and the NPCs from one queue, in narrative order. The legacy v3
     // auto-play would otherwise repeat every quoted line out of sequence.
@@ -353,7 +357,10 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       const text = sanitizeForTTS(line.text)
       return npc && text ? [{ kind: "npc" as const, text, npc }] : []
     })
-      .filter((u) => (u.kind === "dm" ? dmOnRef.current : npcOnRef.current))
+      // One gate for both paths: DM utterances follow DM Voice, NPC utterances
+      // follow NPC Voices. canSpeak classifies by speaker name so the Lich is
+      // always the DM's and every named NPC is the NPC toggle's.
+      .filter((u) => canSpeak(u.kind === "dm" ? DM_SPEAKER : u.npc.name))
     if (!wanted.length) return
     queueRef.current.push(...wanted)
     void drain()

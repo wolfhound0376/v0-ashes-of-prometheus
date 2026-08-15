@@ -943,6 +943,8 @@ if (error) {
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
+        // NPCs tab is DM-only. A claimed player browser is never the DM.
+        isDM={dmMode && !claimLocked}
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // In DM Mode, the top-right NPCs button is the direct door to canon
