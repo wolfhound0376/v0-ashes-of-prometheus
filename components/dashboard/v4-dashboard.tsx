@@ -8,6 +8,7 @@ import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
 import { DmNarration } from "./dm-narration"
+import { PartyChat } from "./party-chat"
 import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
@@ -401,10 +402,15 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="mt-2 flex gap-1.5 text-[9px] text-[#aa9874]"><span className="rounded-full border border-[#4b3a19] px-2">◐ Dim Light</span><span className="rounded-full border border-[#4b3a19] px-2">◒ Stone Floor</span><span className="rounded-full border border-[#4b3a19] px-2">💧 Damp</span></div>
         </div>
       </Frame>
-      <Frame title="Interactive Log" className="relative flex min-h-[330px] flex-1 flex-col">
+      <Frame title="Interactive Log" className="relative flex min-h-[240px] flex-[2_1_0%] flex-col">
         <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
         <button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-3 right-3" title="Open Dice Roller" aria-label="Open Dice Roller" />
+      </Frame>
+      {/* Player-to-player chat — the `party` channel. Plain inserts only; never
+          calls /api/chat and never enters the DM transcript above. */}
+      <Frame title="Party" className="flex min-h-[190px] flex-[1_1_0%] flex-col">
+        <PartyChat bare characterName={props.selectedCharacter?.name} className="min-h-0 flex-1" />
       </Frame>
     </div>
 
