@@ -36,7 +36,7 @@ export function InventoryPanel() {
     setLoading(true)
     const [itemsRes, charsRes] = await Promise.all([
       supabase.from('inventory_items').select('*').order('name'),
-      supabase.from('characters').select('*').order('name')
+      supabase.from('characters').select('*').is('archived_at', null).order('name')
     ])
     if (itemsRes.error) console.error('Error:', itemsRes.error)
     else setItems(itemsRes.data || [])

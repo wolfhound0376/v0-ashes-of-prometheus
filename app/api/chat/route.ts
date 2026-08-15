@@ -232,6 +232,7 @@ async function findCharacterByName(
       .from("characters")
       .select("id, name, is_player, character_type")
       .ilike("name", pattern)
+      .is("archived_at", null)
       .limit(1)
       .maybeSingle()
     if (data) {
@@ -319,6 +320,7 @@ export async function POST(req: Request) {
       .from("characters")
       .select("id, name")
       .eq("id", characterId)
+      .is("archived_at", null)
       .maybeSingle()
     if (!claimRow) {
       console.warn("[v0] chat: claimed character no longer exists:", characterId)
@@ -335,6 +337,7 @@ export async function POST(req: Request) {
       .from("characters")
       .select("id, name")
       .eq("id", characterId)
+      .is("archived_at", null)
       .maybeSingle()
     if (data) {
       playerCharacter = data as { id: string; name: string }
@@ -347,6 +350,7 @@ export async function POST(req: Request) {
       .from("characters")
       .select("id, name")
       .eq("id", sessionCharacterId)
+      .is("archived_at", null)
       .maybeSingle()
     if (data) {
       playerCharacter = data as { id: string; name: string }
@@ -358,6 +362,7 @@ export async function POST(req: Request) {
       .from("characters")
       .select("id, name")
       .eq("is_player", true)
+      .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(1)
     const rows = (data ?? []) as { id: string; name: string }[]
@@ -384,6 +389,7 @@ export async function POST(req: Request) {
     .from("characters")
     .select("name")
     .eq("character_type", "player")
+    .is("archived_at", null)
   const playerRoster = Array.from(
     new Set(
       (playerRosterRows || [])
@@ -1369,11 +1375,12 @@ result exists until the engine reports it.`
       }
       // Try characters (players + NPC character sheets) by name, case-insensitive.
       const { data: charRow } = await supabase
-        .from("characters")
-        .select("id, name, conditions")
-        .ilike("name", wanted)
-        .limit(1)
-        .maybeSingle()
+      .from("characters")
+      .select("id, name, conditions")
+      .ilike("name", wanted)
+      .is("archived_at", null)
+      .limit(1)
+      .maybeSingle()
       if (charRow?.id) {
         return { table: "characters", id: charRow.id, name: charRow.name, conditions: (charRow.conditions as string[]) || [] }
       }

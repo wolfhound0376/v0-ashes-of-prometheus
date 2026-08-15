@@ -32,7 +32,7 @@ export function AbilitiesPanel() {
     setLoading(true)
     const [abilitiesRes, charsRes] = await Promise.all([
       supabase.from('abilities').select('*').order('sort_order'),
-      supabase.from('characters').select('*').order('name')
+      supabase.from('characters').select('*').is('archived_at', null).order('name')
     ])
     if (abilitiesRes.error) console.error('Error:', abilitiesRes.error)
     else setAbilities(abilitiesRes.data || [])

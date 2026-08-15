@@ -47,7 +47,7 @@ export function EquipmentPanel() {
     setLoading(true)
     const [equipRes, charsRes] = await Promise.all([
       supabase.from('equipment_items').select('*').order('slot'),
-      supabase.from('characters').select('*').order('name')
+      supabase.from('characters').select('*').is('archived_at', null).order('name')
     ])
     if (equipRes.error) console.error('Error:', equipRes.error)
     else setEquipment(equipRes.data || [])
