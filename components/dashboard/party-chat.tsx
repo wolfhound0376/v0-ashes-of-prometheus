@@ -49,9 +49,15 @@ interface PartyChatProps {
    */
   characterName?: string
   className?: string
+  /**
+   * When true, omit the self-rendered "Party" title and top border so the
+   * component can nest inside a host panel that already provides a title bar
+   * (e.g. the V4 dashboard's <Frame title="Party">).
+   */
+  bare?: boolean
 }
 
-export function PartyChat({ characterName, className }: PartyChatProps) {
+export function PartyChat({ characterName, className, bare = false }: PartyChatProps) {
   const [lines, setLines] = useState<PartyLine[]>([])
   const [input, setInput] = useState("")
   const supabaseRef = useRef(createClient())
@@ -127,10 +133,12 @@ export function PartyChat({ characterName, className }: PartyChatProps) {
   }
 
   return (
-    <div className={cn("flex min-h-0 flex-col border-t border-[#3d3428]", className)}>
-      <div className="px-3 pb-1 pt-2">
-        <span className="font-serif text-[11px] uppercase tracking-[0.18em] text-[#c4a777]">Party</span>
-      </div>
+    <div className={cn("flex min-h-0 flex-col", !bare && "border-t border-[#3d3428]", className)}>
+      {!bare && (
+        <div className="px-3 pb-1 pt-2">
+          <span className="font-serif text-[11px] uppercase tracking-[0.18em] text-[#c4a777]">Party</span>
+        </div>
+      )}
 
       <div className="scrollbar-thin scrollbar-thumb-[#3d3428] scrollbar-track-transparent flex-1 space-y-1.5 overflow-y-auto px-3 pb-2">
         {lines.length === 0 ? (
