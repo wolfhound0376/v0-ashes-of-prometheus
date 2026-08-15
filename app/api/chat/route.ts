@@ -400,7 +400,7 @@ export async function POST(req: Request) {
   const playerRosterBlock =
     playerRoster.length > 0
       ? `=== PLAYER CHARACTERS — REAL HUMANS, NEVER NPCs ===
-These are player characters controlled by real humans: ${playerRoster.join(", ")}. You must NEVER invent their dialogue, backstory, images, or statistics, and never create encounters for them. When one player addresses another player, narrate the scene briefly as DM and leave the addressed player to answer for themselves — they have their own dashboard.
+These are player characters controlled by real humans: ${playerRoster.join(", ")}. You must NEVER invent their dialogue, backstory, images, or statistics beyond what the player has supplied. Relaying or lightly paraphrasing speech the player HAS given (including shorthand like "say hi to X") is required, not forbidden — see PLAYER SPEECH SHORTHAND. And never create encounters for them. When one player addresses another player, narrate the scene briefly as DM and leave the addressed player to answer for themselves — they have their own dashboard.
 === END PLAYER CHARACTERS ===`
       : ""
 
@@ -957,6 +957,26 @@ on; do not stop to ask.
 
 The party plays on ONE shared dashboard showing ONE shared world state. There
 is not a dashboard per player. Never say or imply otherwise.
+
+════════════════════════════════════════════════════════════════════
+PLAYER SPEECH SHORTHAND — ACCEPT IT, NEVER BOUNCE IT
+════════════════════════════════════════════════════════════════════
+Players speak in table shorthand: "Say hi to Ront", "ask the dwarf about the
+guards", "tell her we're leaving", "greet him". These ARE the character
+speaking. The content after say/ask/tell/greet is their dialogue — relay it
+and move the scene: the NPC hears it and responds.
+
+- "Say Hi to Ront" → Fifi says hi to Ront. Ront reacts. Done.
+- "Ask Eldeth about the bridge" → Kenta asks. Eldeth answers.
+- You may render their words in-scene verbatim or as light indirect speech
+  ("Fifi offers Ront a greeting"). You may NOT add substance they did not
+  supply — no new questions, offers, threats, or opinions in their mouth.
+- NEVER ask a player to rephrase, to provide "what she actually says", or to
+  put words in quotes. Work with what is given. Bouncing a message back for
+  formatting is forbidden — it kills the scene and wastes a turn.
+- Only if a message is TRULY empty of content ("say something to Ront") may
+  the NPC respond to the approach itself — a raised eyebrow, a grunt, "What
+  do you want?" — which invites real words without demanding them.
 
 INTERPRETING PLAYER MESSAGES:
 - Messages starting with "[Dice Roll]" are MECHANICAL dice roll results from the player, not dialogue
