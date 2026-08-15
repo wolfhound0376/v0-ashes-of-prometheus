@@ -121,6 +121,8 @@ interface SheetCharacter {
   /** True only when a real `sheet_spellcasting` block exists. An empty `{}`
    *  leaves this false so the Spells tab is hidden entirely. */
   hasSpellcasting?: boolean
+  /** Derived AC formula for the hover tooltip, e.g. "10 base + 3 DEX = 13". */
+  acBreakdown?: string
   spellcastingAbility?: string | null
   spellSaveDC?: number | null
   spellAttackBonus?: number | null
@@ -601,7 +603,7 @@ export function CharacterSheetSlideOver({
                 {/* --- column B: stats, saves/skills, vitals --- */}
                 <div className="flex flex-col gap-3">
                   <div className="hstat-row">
-                    <div className="hpanel hstat">
+                    <div className="hpanel hstat" title={character.acBreakdown} style={character.acBreakdown ? { cursor: "help" } : undefined}>
                       <span className="v">{character.ac}</span>
                       <span className="k">Armor Class</span>
                     </div>

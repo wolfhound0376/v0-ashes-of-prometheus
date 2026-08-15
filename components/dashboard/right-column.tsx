@@ -22,6 +22,7 @@ import { DetailedStats } from "./panels/detailed-stats"
 import { AcBreakdownModal, AbilityDetailModal, type AbilityKey } from "./panels/stat-modals"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { XPTracker } from "./xp-tracker"
+import { calculateAC } from "@/lib/armor-class"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
@@ -204,6 +205,11 @@ export function RightColumn({
   const [abilityModal, setAbilityModal] = useState<AbilityKey | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
 
+  // Derived Armour Class from equipped armour + ability modifiers. Never the
+  // hand-entered characters.ac column (which reads 10 for everyone). With only
+  // prison Rags equipped this correctly resolves to 10 + Dex.
+  const acResult = calculateAC(selectedCharacter, characterEquipment)
+
   // Transform character data
   const character = selectedCharacter ? {
     name: selectedCharacter.name,
@@ -222,7 +228,8 @@ age: (selectedCharacter as any).age,
       max: selectedCharacter.hp_max,
       temp: (selectedCharacter as any).temp_hp || 0
     },
-    ac: selectedCharacter.ac,
+    ac: acResult.total,
+    acBreakdown: acResult.text,
     initiative: selectedCharacter.initiative,
     speed: selectedCharacter.speed || 30,
     senses: selectedCharacter.senses || null,
@@ -265,6 +272,7 @@ age: (selectedCharacter as any).age,
     weight: undefined,
     hp: { current: 10, max: 10, temp: 0 },
     ac: 10,
+    acBreakdown: "10 base + 0 DEX = 10",
     initiative: 0,
     speed: 30,
     senses: null,
@@ -631,7 +639,7 @@ age: (selectedCharacter as any).age,
             <div className="grid grid-cols-5 gap-2 text-center">
               <button
                 onClick={() => setAcModalOpen(true)}
-                title="View Armor Class breakdown"
+                title={character.acBreakdown ? `${character.acBreakdown} — click for full breakdown` : "View Armor Class breakdown"}
                 className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30 hover:border-amber-600/60 transition-colors"
               >
                 <Shield className="w-4 h-4 mx-auto mb-1 text-amber-600" />
