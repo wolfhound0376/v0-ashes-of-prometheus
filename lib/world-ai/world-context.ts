@@ -31,7 +31,7 @@ export interface WorldContext {
     level: number
     hp: string
     ac: number
-    speed: number
+    speed: string
     proficiencyBonus: number
     abilityScores: {
       strength: number
@@ -43,6 +43,7 @@ export interface WorldContext {
     }
     savingThrows: string[]
     skills: string[]
+    features: string[]
     abilities: string[]
     equipment: string[]
     inventory: string[]
@@ -101,6 +102,40 @@ export function buildCampaignContext(
   }
 }
 
+// Short ability key -> display label for saving throws.
+const ABILITY_LABEL: Record<string, string> = {
+  str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA",
+}
+
+// Standard 5e skill -> governing ability (short key). Lookups are normalized
+// (underscores to spaces, lowercased) so "sleight_of_hand" and "Sleight of Hand"
+// both resolve.
+const SKILL_ABILITY: Record<string, string> = {
+  "acrobatics": "dex",
+  "animal handling": "wis",
+  "arcana": "int",
+  "athletics": "str",
+  "deception": "cha",
+  "history": "int",
+  "insight": "wis",
+  "intimidation": "cha",
+  "investigation": "int",
+  "medicine": "wis",
+  "nature": "int",
+  "perception": "wis",
+  "performance": "cha",
+  "persuasion": "cha",
+  "religion": "int",
+  "sleight of hand": "dex",
+  "stealth": "dex",
+  "survival": "wis",
+}
+
+const abilityMod = (score: number) => Math.floor((score - 10) / 2)
+const fmtBonus = (n: number) => (n >= 0 ? `+${n}` : `${n}`)
+const normalizeSkillKey = (raw: string) => raw.replace(/_/g, " ").trim().toLowerCase()
+const titleCaseSkill = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
+
 // Fetch characters from Supabase with their equipment and abilities
 export async function fetchCharacters(): Promise<WorldContext["characters"]> {
   try {
@@ -146,6 +181,69 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
       // equipped), Malachar correctly sees 10 + DEX rather than a phantom value.
       const derivedAc = calculateAC(char, equipment || [])
 
+      // Pull the real sheet data the character forge already stored. These
+      // columns exist on the row (select("*")) but aren't in the hand-written
+      // Character interface, so read them via a narrow cast.
+      const sheet = char as Character & {
+        sheet_save_proficiencies?: string[] | null
+        sheet_skill_proficiencies?: Record<string, string> | null
+        sheet_features?: Array<{ name?: string; desc?: string; source?: string }> | null
+      }
+
+      const profBonus = char.proficiency_bonus || Math.floor((char.level - 1) / 4) + 2
+      const scoreByAbility: Record<string, number> = {
+        str: char.str_score || 10,
+        dex: char.dex_score || 10,
+        con: char.con_score || 10,
+        int: char.int_score || 10,
+        wis: char.wis_score || 10,
+        cha: char.cha_score || 10,
+      }
+
+      // Saving throws: e.g. ["dex","int"] -> "DEX +5, INT +3" (mod + prof bonus).
+      const savingThrows = Array.isArray(sheet.sheet_save_proficiencies)
+        ? (sheet.sheet_save_proficiencies
+            .map((k) => {
+              const key = String(k).trim().toLowerCase()
+              const label = ABILITY_LABEL[key]
+              if (!label) return null
+              return `${label} ${fmtBonus(abilityMod(scoreByAbility[key] ?? 10) + profBonus)}`
+            })
+            .filter(Boolean) as string[])
+        : []
+
+      // Skills: { Stealth: "expertise" } -> "Stealth +7 (expertise)".
+      // Expertise doubles the proficiency bonus.
+      const skills =
+        sheet.sheet_skill_proficiencies && typeof sheet.sheet_skill_proficiencies === "object"
+          ? (Object.entries(sheet.sheet_skill_proficiencies)
+              .map(([rawName, level]) => {
+                const lookup = normalizeSkillKey(rawName)
+                const ability = SKILL_ABILITY[lookup]
+                if (!ability) return null
+                const isExpertise = String(level).toLowerCase() === "expertise"
+                const bonus = abilityMod(scoreByAbility[ability] ?? 10) + profBonus * (isExpertise ? 2 : 1)
+                return `${titleCaseSkill(lookup)} ${fmtBonus(bonus)}${isExpertise ? " (expertise)" : ""}`
+              })
+              .filter(Boolean) as string[])
+          : []
+
+      // Features: { name, desc, source } -> "Name — first sentence of desc" (≤120 chars).
+      const features = Array.isArray(sheet.sheet_features)
+        ? (sheet.sheet_features
+            .map((f) => {
+              const name = (f?.name || "").trim()
+              if (!name) return null
+              const descRaw = (f?.desc || "").trim()
+              if (!descRaw) return name
+              const firstSentence = descRaw.split(/(?<=[.!?])\s/)[0] || descRaw
+              const capped =
+                firstSentence.length > 120 ? `${firstSentence.slice(0, 120).trimEnd()}…` : firstSentence
+              return `${name} — ${capped}`
+            })
+            .filter(Boolean) as string[])
+        : []
+
       return {
         name: char.name,
         class: char.class,
@@ -153,8 +251,8 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
         level: char.level,
         hp: `${char.hp_current}/${char.hp_max}`,
         ac: derivedAc.total,
-        speed: 30, // Default speed
-        proficiencyBonus: char.proficiency_bonus || Math.floor((char.level - 1) / 4) + 2,
+        speed: char.speed || "30 ft.", // Real sheet speed text, falls back to 30 ft.
+        proficiencyBonus: profBonus,
         abilityScores: {
           strength: char.str_score || 10,
           dexterity: char.dex_score || 10,
@@ -163,8 +261,9 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
           wisdom: char.wis_score || 10,
           charisma: char.cha_score || 10,
         },
-        savingThrows: [], // Will be populated from class defaults or DB
-        skills: [], // Will be populated from class defaults or DB
+        savingThrows,
+        skills,
+        features,
         abilities: abilities?.map((a: { name: string }) => a.name) || [],
         equipment: equipment?.map((e: { name: string; slot: string }) => `${e.name} (${e.slot})`) || [],
         inventory: inventory?.map((i: { name: string; quantity: number }) => 
@@ -440,7 +539,7 @@ export function formatWorldContextForAI(context: WorldContext): string {
     lines.push(`=== PLAYER CHARACTERS ===`)
     for (const char of context.characters) {
       lines.push(`\n${char.name} (Level ${char.level} ${char.race} ${char.class})`)
-      lines.push(`  HP: ${char.hp}, AC: ${char.ac}, Speed: ${char.speed}ft`)
+      lines.push(`  HP: ${char.hp}, AC: ${char.ac}, Speed: ${char.speed}`)
       lines.push(`  Proficiency Bonus: +${char.proficiencyBonus}`)
       lines.push(`  Ability Scores: STR ${char.abilityScores.strength}, DEX ${char.abilityScores.dexterity}, CON ${char.abilityScores.constitution}, INT ${char.abilityScores.intelligence}, WIS ${char.abilityScores.wisdom}, CHA ${char.abilityScores.charisma}`)
       lines.push(`  Active Conditions: ${char.conditions.length > 0 ? char.conditions.join(", ") : "None"}`)
@@ -449,6 +548,9 @@ export function formatWorldContextForAI(context: WorldContext): string {
       }
       if (char.skills.length > 0) {
         lines.push(`  Skill Proficiencies: ${char.skills.join(", ")}`)
+      }
+      if (char.features.length > 0) {
+        lines.push(`  Features: ${char.features.join("; ")}`)
       }
       if (char.abilities.length > 0) {
         lines.push(`  Class Features/Abilities: ${char.abilities.join(", ")}`)
