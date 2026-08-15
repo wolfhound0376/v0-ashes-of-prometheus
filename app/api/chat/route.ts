@@ -480,8 +480,57 @@ WORKED EXAMPLES (follow this mapping exactly):
   const { data: recentDialogue } = await supabase
     .from("dialogue")
     .select("speaker, text")
+    // DM channel only — party whispers must never enter the DM transcript or
+    // the model's conversation history. They are surfaced separately below.
+    .eq("channel", "dm")
     .order("created_at", { ascending: false })
     .limit(40)
+
+  // Party whispers Malachar overhears. Fetch the last 8 party-channel lines
+  // created since the previous DM message so he only reacts to fresh chatter.
+  const { data: lastDmRow } = await supabase
+    .from("dialogue")
+    .select("created_at")
+    .eq("channel", "dm")
+    .eq("speaker", "Malachar")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let partyWhispersQuery = supabase
+    .from("dialogue")
+    .select("speaker, text, created_at")
+    .eq("channel", "party")
+    .order("created_at", { ascending: false })
+    .limit(8)
+  if (lastDmRow?.created_at) {
+    partyWhispersQuery = partyWhispersQuery.gt("created_at", lastDmRow.created_at)
+  }
+  const { data: partyWhisperRows } = await partyWhispersQuery
+  const partyWhispers = (partyWhisperRows || [])
+    .reverse()
+    .map((d: { speaker: string; text: string }) => ({ speaker: d.speaker, text: d.text }))
+
+  const whispersBlock = partyWhispers.length
+    ? `════════════════════════════════════════════════════════════════════
+WHISPERS YOU HAVE OVERHEARD
+════════════════════════════════════════════════════════════════════
+The party believes these words were private. They were not — you hear
+everything spoken in your prison.
+
+${partyWhispers.map((w) => `- ${w.speaker}: ${w.text}`).join("\n")}
+
+STRICT LIMITS ON USING THESE:
+- You may NOT act on them mechanically. No trap placement, no NPC behaviour,
+  no HP, condition, location or inventory change may be caused by a whisper.
+  The world does not move because you eavesdropped.
+- You may NOT quote one back verbatim.
+- You MAY, at most once every few turns, show that you heard — a knowing
+  aside, an unsettling non-sequitur, naming the fear rather than the words.
+  Used sparingly this is terrifying. Used every turn it is tiresome and it
+  teaches the players to stop talking to each other, which ruins the show.
+- If a whisper is dull, ignore it entirely.`
+    : ""
 
   // Openings Malachar has used before — INCLUDING before campaign restarts.
   // Restart wipes the dialogue table, which used to wipe his memory of his own
@@ -588,6 +637,7 @@ ${combatantRows
   const { error: playerDialogueError } = await supabase.from("dialogue").insert({
     speaker: playerName,
     speaker_type: "player",
+    channel: "dm",
     text: message,
   })
   if (playerDialogueError) {
@@ -752,6 +802,8 @@ Victory is yours—but the sound of its death-screams echoes through the caverns
 === END COMBAT RULES ===
 
 ${worldContextText}
+
+${whispersBlock}
 
 ${stageContext}
 
@@ -2165,7 +2217,9 @@ Rules:
 
   // Persist the ordered turn as separate DM/NPC records.
   if (responseText) {
-    const { error: dialogueError } = await supabase.from("dialogue").insert(dialogueEntries)
+    const { error: dialogueError } = await supabase
+      .from("dialogue")
+      .insert(dialogueEntries.map((entry) => ({ ...entry, channel: "dm" })))
     if (dialogueError) {
       console.error("[v0] Error inserting Malachar dialogue:", dialogueError)
     }

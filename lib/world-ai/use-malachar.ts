@@ -58,6 +58,7 @@ export function useMalachar(campaign: CampaignContext) {
           speaker,
           text,
           source,
+          channel: "dm",
           session_id: sessionId,
           campaign_id: campaignRef.current.name,
           metadata: metadata || {},
