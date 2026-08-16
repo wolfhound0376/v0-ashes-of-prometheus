@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Music, Play, Pause, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MUSIC_LIBRARY, getTrackById, type MusicTrack } from "@/lib/music-library"
+import { isMusicOff, setMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
 
 interface DynamicMusicProps {
   /** Canonical session location name (drives the base track pool). */
@@ -103,7 +104,14 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const fadeTimer = useRef<ReturnType<typeof setInterval> | null>(null)
   const [enabled, setEnabled] = useState(false) // user must start playback (browser autoplay policy)
+  // Mute is the shared "music off" preference: muting here is remembered across
+  // pages and reloads, and suppresses the intro theme on the next visit.
+  // Starts false so SSR and first paint agree, then hydrates from the pref.
   const [muted, setMuted] = useState(false)
+  useEffect(() => {
+    setMuted(isMusicOff())
+    return onMusicPrefChange(() => setMuted(isMusicOff()))
+  }, [])
 
   // Location must hydrate from the active session before we choose audio.
   // Until then, selectMusic holds at the neutral dark-ambient default rather
@@ -217,7 +225,7 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
 
         {/* Mute */}
         <button
-          onClick={() => setMuted(v => !v)}
+          onClick={() => setMusicOff(!muted)}
           title={muted ? "Unmute music" : "Mute music"}
           className="w-7 h-7 rounded-full flex items-center justify-center text-stone-400 hover:text-stone-200 transition-colors"
         >

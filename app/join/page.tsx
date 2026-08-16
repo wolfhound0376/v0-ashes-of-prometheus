@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { FantasyPanel, PanelDivider } from "@/components/ui/fantasy-panel"
+import { MusicToggle } from "@/components/music-toggle"
 
 // The access gate. Everyone who is not already claimed lands here.
 //
@@ -167,6 +168,7 @@ export default function JoinPage() {
     const character = isPlayer ? session.character : null
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0a0806] p-6 text-stone-200">
+        <MusicToggle />
         <div className="w-full max-w-md">
           <div className="mb-7 text-center">
             <h1 className="font-serif text-[26px] tracking-[0.18em] text-[#d9bd7e]">ASHES OF PROMETHEUS</h1>
@@ -261,6 +263,7 @@ export default function JoinPage() {
   // -------------------------------------------------------------------------
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#0a0806] p-6 text-stone-200">
+      <MusicToggle />
       <div className="w-full max-w-md">
         <div className="mb-7 text-center">
           <h1 className="font-serif text-[26px] tracking-[0.18em] text-[#d9bd7e]">ASHES OF PROMETHEUS</h1>

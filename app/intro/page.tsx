@@ -12,7 +12,9 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { getThemeAudio } from "@/components/theme-audio"
+import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
+import { MusicToggle } from "@/components/music-toggle"
+import { isMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
 
 type Stage = "video" | "poster"
 
@@ -21,6 +23,9 @@ export default function IntroPage() {
   const [stage, setStage] = useState<Stage>("video")
   const [needsTap, setNeedsTap] = useState(false)
   const [enterHref, setEnterHref] = useState("/join")
+  // The intro video carries its own audio, so it obeys the same preference as
+  // the theme. Starts unmuted (music-on default) and follows later flips.
+  const [videoMuted, setVideoMuted] = useState(false)
 
   useEffect(() => {
     // Seen once per browser session — the dashboard checks this before
@@ -34,6 +39,13 @@ export default function IntroPage() {
     if (role === "dm" || (role === "player" && token && character)) setEnterHref("/")
   }, [])
 
+  // Mirror the "music off" preference onto the video, re-evaluated whenever it
+  // changes — turning music off silences the video's own audio too.
+  useEffect(() => {
+    setVideoMuted(isMusicOff())
+    return onMusicPrefChange(() => setVideoMuted(isMusicOff()))
+  }, [])
+
   useEffect(() => {
     const video = videoRef.current
     video?.play().catch(() => setStage("poster")) // video blocked = ancient browser; show the door
@@ -42,9 +54,10 @@ export default function IntroPage() {
     if (!audio) return
     audio.volume = 0.55
     const tryTheme = () => {
-      if (!audio.paused) return
-      audio
-        .play()
+      // Check the preference each time the listener fires, not once at setup —
+      // a player can flip it off mid-intro and the next tap must not start it.
+      if (isMusicOff() || !audio.paused) return
+      playThemeAudio()
         .then(() => setNeedsTap(false))
         .catch(() => setNeedsTap(true))
     }
@@ -62,6 +75,8 @@ export default function IntroPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
+      <MusicToggle />
+
       {/* Key art — revealed when the video ends */}
       <div
         className={
@@ -76,7 +91,7 @@ export default function IntroPage() {
         ref={videoRef}
         onClick={finishVideo}
         src="/videos/intro.mp4"
-        muted
+        muted={videoMuted}
         autoPlay
         playsInline
         preload="auto"
