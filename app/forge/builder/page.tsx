@@ -18,7 +18,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { Anvil, ArrowLeft, Check, ClipboardCopy, Music2, RefreshCw, ScrollText, ShieldAlert, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getThemeAudio } from "@/components/theme-audio"
+import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
+import { MusicToggle } from "@/components/music-toggle"
+import { isMusicOff, setMusicOff } from "@/lib/audio-prefs"
 
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -122,13 +124,15 @@ export default function ForgeBuilderPage() {
     const audio = getThemeAudio()
     if (!audio) return
     const tryPlay = () => {
-      if (seatedRef.current || mutedRef.current) return
+      // Respect the shared "music off" preference each time — a player can
+      // refuse music and no later tap should start the theme.
+      if (seatedRef.current || mutedRef.current || isMusicOff()) return
       if (!audio.paused) {
         setMusicOn(true) // already carrying over from the intro
         return
       }
       audio.volume = 0.55
-      audio.play().then(() => setMusicOn(true)).catch(() => {})
+      playThemeAudio().then(() => setMusicOn(true)).catch(() => {})
     }
     tryPlay()
     window.addEventListener("pointerdown", tryPlay)
@@ -162,11 +166,16 @@ export default function ForgeBuilderPage() {
     if (!audio) return
     if (audio.paused) {
       mutedRef.current = false
+      // Clear the shared refusal so the theme is allowed to start (and so the
+      // corner MusicToggle and the dashboard agree with this button).
+      setMusicOff(false)
       if (seatedRef.current) return // the seat has been taken; the song is done
       audio.volume = 0.55
-      audio.play().then(() => setMusicOn(true)).catch(() => {})
+      playThemeAudio().then(() => setMusicOn(true)).catch(() => {})
     } else {
       mutedRef.current = true
+      // Persist the refusal so it survives navigation and reload.
+      setMusicOff(true)
       audio.pause()
       setMusicOn(false)
     }
@@ -272,6 +281,7 @@ export default function ForgeBuilderPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0908] bg-[url('/images/forge-creation-bg.webp')] bg-cover bg-fixed bg-center text-stone-200">
+      <MusicToggle />
       <div className="min-h-screen bg-[#0a0908]/75">
         <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
         {/* Header */}

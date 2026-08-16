@@ -338,12 +338,17 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     for (const line of voicedLines) spokenRef.current.add(lineKey(line))
 
     if (!primedRef.current) {
-      // First pass with narration on — this is the existing transcript.
+      // Don't burn the priming pass on an empty first paint.
+      if (voicedLines.length === 0) return
       primedRef.current = true
       return
     }
-    if (!unheard.length) {
-      if (unheard.length > 1) console.log("[v0] narration: bulk load of", unheard.length, "lines — not speaking")
+    if (!unheard.length) return
+    // Malachar narrates ONE line per turn. More than one unheard line is a load,
+    // a refetch or a reconnect — never a beat. Mark it heard (already done above)
+    // and say nothing.
+    if (unheard.length > 1) {
+      console.log("[v0] narration: bulk load of", unheard.length, "lines — not speaking")
       return
     }
 
