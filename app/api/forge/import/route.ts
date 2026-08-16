@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { generateClaimCode, normalizeCode, safeEquals } from "@/lib/access-code"
+import { CONFISCATION_ACTIVE, confiscateOnImport, type ConfiscationResult } from "@/lib/confiscation"
 
 // POST /api/forge/import — the Character Forge importer.
 //
@@ -217,31 +218,45 @@ export async function POST(req: Request) {
     )
   }
 
-  // Bulk-insert inventory with the new character_id (whitelisted columns only).
+  // Build the inventory rows (whitelisted columns only). Where they land is
+  // decided below — on the character normally, in the Velkynvelve stash while
+  // the campaign's confiscation rule is active.
   const inventory: any[] = Array.isArray(body.inventory) ? body.inventory : []
-  if (inventory.length > 0) {
-    const items = inventory
-      .filter((item) => item && typeof item.name === "string" && item.name.trim().length > 0)
-      .slice(0, 200)
-      .map((item) => {
-        const it: Record<string, unknown> = { character_id: inserted.id }
-        for (const col of INVENTORY_COLUMN_WHITELIST) {
-          if (item[col] !== undefined) it[col] = item[col]
-        }
-        it.name = item.name.trim()
-        it.quantity = clamp(item.quantity, 1, 9999, 1)
-        return it
-      })
-    if (items.length > 0) {
-      const { error: invError } = await admin.from("inventory_items").insert(items)
-      if (invError) {
-        // The character exists; report the partial failure honestly.
-        console.error("[v0] forge/import: inventory insert failed:", invError)
-        return Response.json(
-          { characterId: inserted.id, warning: "Character created but inventory failed to import." },
-          { status: 207 },
-        )
+  const items = inventory
+    .filter((item) => item && typeof item.name === "string" && item.name.trim().length > 0)
+    .slice(0, 200)
+    .map((item) => {
+      const it: Record<string, unknown> = { character_id: inserted.id }
+      for (const col of INVENTORY_COLUMN_WHITELIST) {
+        if (item[col] !== undefined) it[col] = item[col]
       }
+      it.name = item.name.trim()
+      it.quantity = clamp(item.quantity, 1, 9999, 1)
+      return it
+    })
+
+  // Act 1 starting condition: the drow took everything. The kit is moved into
+  // the stash, never destroyed, and the character is issued rags instead.
+  // See lib/confiscation.ts.
+  let confiscation: ConfiscationResult | null = null
+  if (CONFISCATION_ACTIVE) {
+    confiscation = await confiscateOnImport(admin, inserted.id, items)
+    if (!confiscation) {
+      // Stash unreachable. Fall through to the ordinary import rather than
+      // silently vaporising the player's gear.
+      console.error("[v0] forge/import: confiscation unavailable, importing inventory as-is")
+    }
+  }
+
+  if (!confiscation && items.length > 0) {
+    const { error: invError } = await admin.from("inventory_items").insert(items)
+    if (invError) {
+      // The character exists; report the partial failure honestly.
+      console.error("[v0] forge/import: inventory insert failed:", invError)
+      return Response.json(
+        { characterId: inserted.id, warning: "Character created but inventory failed to import." },
+        { status: 207 },
+      )
     }
   }
 
@@ -281,5 +296,19 @@ export async function POST(req: Request) {
 
   const origin = url.origin
   const claimUrl = `${origin}/?c=${inserted.id}&k=${secretRow.claim_token}`
-  return Response.json({ characterId: inserted.id, claimUrl, claimCode }, { status: 200 })
+  return Response.json(
+    {
+      characterId: inserted.id,
+      claimUrl,
+      claimCode,
+      ...(confiscation
+        ? {
+            confiscated: confiscation.confiscated,
+            issuedRags: confiscation.issuedRags,
+            ...(confiscation.notes.length > 0 ? { confiscationNotes: confiscation.notes } : {}),
+          }
+        : {}),
+    },
+    { status: 200 },
+  )
 }
