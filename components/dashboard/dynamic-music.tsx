@@ -5,6 +5,11 @@ import { Music, Play, Pause, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MUSIC_LIBRARY, getTrackById, type MusicTrack } from "@/lib/music-library"
 import { isMusicOff, setMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
+import {
+  resolveMusicFromManifest,
+  type ManifestTrack,
+  type MusicMood as ManifestMusicMood,
+} from "@/lib/media-manifest"
 
 interface DynamicMusicProps {
   /** Canonical session location name (drives the base track pool). */
@@ -100,6 +105,26 @@ export function selectMusic(
 
 const BASE_VOLUME = 0.45
 
+/** Minimal shape the audio player needs — shared by manifest + fallback tracks. */
+interface PlayableTrack {
+  id: string
+  name: string
+  url: string
+}
+
+// Module-level cache so every DynamicMusic mount (and remount) shares a single
+// manifest fetch instead of hammering the route.
+let manifestPromise: Promise<ManifestTrack[]> | null = null
+function loadMusicManifest(): Promise<ManifestTrack[]> {
+  if (!manifestPromise) {
+    manifestPromise = fetch("/api/media-manifest?kind=music")
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((j) => (Array.isArray(j.items) ? (j.items as ManifestTrack[]) : []))
+      .catch(() => [])
+  }
+  return manifestPromise
+}
+
 export function DynamicMusic({ location, inCombat = false, mood = "ambient", className }: DynamicMusicProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const fadeTimer = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -116,22 +141,56 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
   // Location must hydrate from the active session before we choose audio.
   // Until then, selectMusic holds at the neutral dark-ambient default rather
   // than keying off any client-side default (the root cause of village music).
-  const selection = selectMusic(location, inCombat, mood)
-  const target = selection.track
+  // Load the data-driven manifest once (module-cached, shared across mounts).
+  const [manifest, setManifest] = useState<ManifestTrack[]>([])
+  useEffect(() => {
+    let alive = true
+    loadMusicManifest().then((items) => {
+      if (alive) setManifest(items)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
-  const [current, setCurrent] = useState<MusicTrack>(target)
+  // Prefer the manifest; fall back to the hardcoded MUSIC_LIBRARY when the
+  // manifest is empty (not migrated/seeded yet) or yields no usable track.
+  const manifestSelection = resolveMusicFromManifest(
+    manifest,
+    location,
+    inCombat,
+    mood as ManifestMusicMood,
+  )
+  const fallbackSelection = selectMusic(location, inCombat, mood)
+
+  const selectionLabel = manifestSelection ? manifestSelection.poolLabel : fallbackSelection.locationLabel
+  const selectionMood = manifestSelection ? manifestSelection.mood : fallbackSelection.mood
+  const selectionSource = manifestSelection ? "manifest" : "library"
+  const target: PlayableTrack = manifestSelection
+    ? {
+        id: manifestSelection.track.id,
+        name: manifestSelection.track.name,
+        url: manifestSelection.track.url,
+      }
+    : {
+        id: fallbackSelection.track.id,
+        name: fallbackSelection.track.name,
+        url: fallbackSelection.track.url,
+      }
+
+  const [current, setCurrent] = useState<PlayableTrack>(target)
 
   // Log every resolved selection so future misfires are diagnosable.
   const lastLogged = useRef<string>("")
   useEffect(() => {
-    const sig = `${selection.locationLabel}|${selection.mood}|${target.id}`
+    const sig = `${selectionSource}|${selectionLabel}|${selectionMood}|${target.id}`
     if (sig !== lastLogged.current) {
       lastLogged.current = sig
       console.log(
-        `[Music] location=${location ?? "(unhydrated)"} pool=${selection.locationLabel} mood=${selection.mood} track=${target.id}`,
+        `[Music] source=${selectionSource} location=${location ?? "(unhydrated)"} pool=${selectionLabel} mood=${selectionMood} track=${target.id}`,
       )
     }
-  }, [selection.locationLabel, selection.mood, target.id, location])
+  }, [selectionSource, selectionLabel, selectionMood, target.id, location])
 
   // Smoothly ramp the audio volume to a target level, then run an optional callback.
   function fade(to: number, ms: number, done?: () => void) {
