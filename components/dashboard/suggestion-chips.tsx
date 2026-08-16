@@ -44,7 +44,7 @@ interface SuggestionChipsProps {
 }
 
 const CHIP_CLASS =
-  "rounded-full border border-[#695326] bg-[#171109] px-3 py-1 text-[9px] text-[#cdb276] hover:bg-[#251a0d] disabled:opacity-50"
+  "rounded-full border border-[#695326] bg-[#171109] px-3.5 py-1.5 text-xs text-[#cdb276] hover:bg-[#251a0d] disabled:opacity-50"
 
 export function SuggestionChips(props: SuggestionChipsProps) {
   const { character, dialogue, inventory, location, fallback, disabled, onPick } = props
@@ -103,7 +103,7 @@ export function SuggestionChips(props: SuggestionChipsProps) {
     return (
       <div className="flex flex-wrap gap-1.5 px-3 pt-2" aria-busy="true">
         {[0, 1, 2].map((i) => (
-          <span key={i} className="h-6 w-24 animate-pulse rounded-full border border-[#4b3a19] bg-[#171109]" />
+          <span key={i} className="h-7 w-28 animate-pulse rounded-full border border-[#4b3a19] bg-[#171109]" />
         ))}
       </div>
     )
