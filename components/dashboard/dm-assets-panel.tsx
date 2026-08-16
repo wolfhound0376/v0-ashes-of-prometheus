@@ -25,9 +25,10 @@ import { KeyRound, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NpcAssetsTab } from "./npc-assets-panel"
 import { MediaTab, type MediaTabConfig } from "./dm-assets/media-tab"
+import { CinematicsTab } from "./dm-assets/cinematics-tab"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 
-type TabId = "npcs" | "characters" | "scenes" | "overlays" | "items" | "library"
+type TabId = "npcs" | "characters" | "scenes" | "overlays" | "items" | "library" | "cinematics"
 
 const SCENES: MediaTabConfig = {
   table: "environments",
@@ -94,6 +95,7 @@ const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
   { id: "overlays", label: "Overlays", blurb: "Fog and ambient layers drawn over the scene." },
   { id: "items", label: "Items", blurb: "Catalogue icons — the roundel shown beside an item in inventory." },
   { id: "library", label: "Library", blurb: "Everything else in dashboard_assets." },
+  { id: "cinematics", label: "Cinematics", blurb: "Rendered clips for the trigger system — 5–8s loops and moments, tagged by location, variant state, scope and kind. Players never see this panel, only playback." },
 ]
 
 export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
@@ -219,6 +221,7 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
           {tab === "overlays" && <MediaTab key="overlays" config={OVERLAYS} />}
           {tab === "items" && <MediaTab key="items" config={ITEMS} />}
           {tab === "library" && <MediaTab key="library" config={LIBRARY} />}
+          {tab === "cinematics" && <CinematicsTab key="cinematics" />}
         </div>
       </section>
     </div>

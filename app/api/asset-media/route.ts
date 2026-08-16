@@ -87,6 +87,13 @@ const TARGETS: Record<string, TargetSpec> = {
     folder: "characters",
     labelColumn: "name",
   },
+  // PR-4: a cinematic clip's rendered video, keyed by clip row id.
+  "cinematic.video": {
+    table: "cinematic_clips",
+    column: "video_url",
+    folder: "cinematics",
+    labelColumn: "location",
+  },
 }
 
 function authorized(request: NextRequest): boolean {
