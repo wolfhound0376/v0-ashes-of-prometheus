@@ -377,6 +377,38 @@ export function V4Dashboard(props: V4DashboardProps) {
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
   const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
   const isMagicUser = ["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"].includes((selected?.class ?? "").toLowerCase())
+  // Header identity is READ from the row, never transcribed from the mock. The
+  // design image said "Human … · Acolyte" for everyone; species and background
+  // are real columns (sheet_species / sheet_background), so a Human Rogue with
+  // the "Criminal / Spy" background now reads correctly.
+  const sheetRow = selected as unknown as Record<string, any>
+  const speciesLabel = sheetRow?.sheet_species || sheetRow?.race || "Human"
+  const backgroundLabel = characterExtra?.sheet_background || "Adventurer"
+  // Spell slots come from the character's sheet_spellcasting block. A non-caster
+  // (a level-1 Rogue whose sheet_spellcasting is `{}`) has no slots, so the
+  // whole panel must not render — never a hardcoded "LV 1 · 2/2". `slots` may be
+  // an array indexed by level (game-data shape) or an object keyed by level.
+  const spellcasting = (characterExtra?.sheet_spellcasting ?? {}) as Record<string, any>
+  const rawSlots = spellcasting.slots
+  const spellSlotLevels: { level: string; total: number; used: number }[] = (() => {
+    if (!rawSlots || typeof rawSlots !== "object") return []
+    const entries = Array.isArray(rawSlots)
+      ? rawSlots.map((count, index) => [String(index + 1), count] as const)
+      : Object.entries(rawSlots)
+    return entries
+      .map(([level, value]) => {
+        if (typeof value === "number") return { level, total: value, used: 0 }
+        if (value && typeof value === "object") {
+          const record = value as Record<string, unknown>
+          const total = Number(record.total ?? record.max ?? record.slots ?? 0)
+          const used = Number(record.used ?? record.expended ?? 0)
+          return { level, total, used }
+        }
+        return { level, total: 0, used: 0 }
+      })
+      .filter((slot) => slot.total > 0)
+  })()
+  const hasSpellSlots = spellSlotLevels.length > 0
   // Static fallback chips — SuggestionChips shows these when no live player is
   // selected or the per-beat Haiku generation returns nothing. (PR-3)
   const quickReplies = [
@@ -466,11 +498,24 @@ export function V4Dashboard(props: V4DashboardProps) {
     <div className="flex min-h-0 flex-col gap-2">
       <Frame title="Character Stats" className="shrink-0">
         <div className="p-2.5 text-[10px]">
-          <div className="flex items-center gap-2"><div className="h-12 w-12 overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{selected?.avatar_image_url ? <img src={selected.avatar_image_url} alt={selected.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-sm font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="truncate text-[9px] text-[#a4916d]">Human {selected?.class ?? "Cleric"} · Acolyte</p></div><span className="ml-auto rounded border border-[#695326] px-2 py-1 text-[#cdb276]">Level {selected?.level ?? 1}</span></div>
+          <div className="flex items-center gap-2"><div className="h-12 w-12 overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{selected?.avatar_image_url ? <img src={selected.avatar_image_url} alt={selected.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-sm font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="truncate text-[9px] text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"} · {backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2 py-1 text-[#cdb276]">Level {selected?.level ?? 1}</span></div>
           <div className="mt-2 flex justify-between text-[8px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-1 bg-[#251a12]"><div className="h-full w-[2%] bg-[#b62d38]" /></div>
           <div className="mt-2 flex items-center gap-2"><b className="text-[#ddd2bc]">HP {selected?.hp_current ?? 10} / {selected?.hp_max ?? 10}</b><div className="h-2 flex-1 bg-[#281315]"><div className="h-full bg-[#bd3039]" style={{ width: `${((selected?.hp_current ?? 10)/(selected?.hp_max ?? 10))*100}%` }} /></div><button className="rounded border border-[#4b3a19] px-1.5 text-[8px]">HEAL</button><button className="rounded border border-[#4b3a19] px-1.5 text-[8px]">DMG</button></div>
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
-          <div className="mt-2 flex items-center rounded border border-[#4b3a19] px-2 py-1 text-[8px]"><span className="text-purple-400">SPELL SLOTS · LV 1　◉ ◉</span><span className="ml-auto text-[#8f8061]">2 / 2</span></div>
+          {hasSpellSlots ? (
+            <div className="mt-2 space-y-1">
+              {spellSlotLevels.map((slot) => {
+                const remaining = Math.max(0, slot.total - slot.used)
+                const pips = "◉".repeat(remaining) + "◯".repeat(Math.max(0, slot.total - remaining))
+                return (
+                  <div key={slot.level} className="flex items-center rounded border border-[#4b3a19] px-2 py-1 text-[8px]">
+                    <span className="text-purple-400">{`SPELL SLOTS · LV ${slot.level}　${pips}`}</span>
+                    <span className="ml-auto text-[#8f8061]">{`${remaining} / ${slot.total}`}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
           <div className="mt-2 grid grid-cols-3 gap-2">
               <StatShield kind="ac" label="Armor Class" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
