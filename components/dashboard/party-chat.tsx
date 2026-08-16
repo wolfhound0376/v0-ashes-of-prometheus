@@ -110,6 +110,19 @@ export function PartyChat({ characterName, className, bare = false }: PartyChatP
             })
           },
         )
+        .on(
+          "postgres_changes",
+          // DELETE payloads carry only the row id (the channel column is not
+          // replicated), so this listener is unfiltered and prunes whatever id
+          // disappears. This is what clears the pane on every connected client
+          // when the DM restarts the campaign and dialogue is bulk-deleted —
+          // previously the rows died but the lines stayed on screen.
+          { event: "DELETE", schema: "public", table: "dialogue" },
+          (payload: { old: Record<string, any> }) => {
+            const deletedId = payload.old?.id
+            if (typeof deletedId === "string") setLines((prev) => prev.filter((line) => line.id !== deletedId))
+          },
+        )
         .subscribe()
     } catch (err) {
       console.error("[PartyChat] realtime subscribe failed:", err)
