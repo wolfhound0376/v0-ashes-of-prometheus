@@ -2,25 +2,8 @@
 
 import { useEffect, useRef, useState } from "react"
 import { isVideoUrl } from "@/lib/media-url"
-import { canSpeak } from "@/lib/tts"
+import { canSpeak, sanitizeForTTS } from "@/lib/tts"
 
-/** Strip markdown / special chars that ElevenLabs reads aloud */
-function sanitizeForTTS(text: string): string {
-  return text
-    .replace(/\*+/g, "")           // asterisks (bold/italic markdown)
-    .replace(/_{2,}/g, "")         // underscores (markdown emphasis)
-    .replace(/#{1,6}\s*/g, "")     // markdown headers
-    .replace(/`{1,3}/g, "")        // backticks
-    .replace(/~{2}/g, "")          // strikethrough
-    .replace(/[""“”]/g, "") // smart & straight double quotes
-    .replace(/['‘’]/g, "") // smart single quotes
-    .replace(/\[ITEM_ADD:[^\]]*\]/g, "") // inventory tags
-    .replace(/\[ITEM_REMOVE:[^\]]*\]/g, "")
-    .replace(/--+/g, ", ")         // em-dashes to pause
-    .replace(/\.\.\./g, "...")     // keep ellipsis (TTS handles it)
-    .replace(/\s{2,}/g, " ")      // collapse whitespace
-    .trim()
-}
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import {
   Sun,
