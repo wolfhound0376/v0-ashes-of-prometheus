@@ -8,6 +8,8 @@
  *    curated ElevenLabs premade voices below.
  */
 
+import { toSpokenNotation } from "./speech-notation"
+
 // ============================================================================
 // VOICE ROUTING — the single gate every TTS entry point funnels through.
 //
@@ -65,7 +67,7 @@ export function canSpeak(speaker?: string | null): boolean {
 
 /** Strip markdown / special chars that ElevenLabs would read aloud literally. */
 export function sanitizeForTTS(text: string): string {
-  return text
+  const stripped = text
     .replace(/\*+/g, "") // asterisks (bold/italic markdown)
     .replace(/_{2,}/g, "") // underscores (markdown emphasis)
     .replace(/#{1,6}\s*/g, "") // markdown headers
@@ -80,6 +82,8 @@ export function sanitizeForTTS(text: string): string {
     .replace(/\.\.\./g, "...") // keep ellipsis (TTS handles it)
     .replace(/\s{2,}/g, " ") // collapse whitespace
     .trim()
+  // Speech-only rewrite: dice/DC notation -> spoken words (the UI keeps 1d20+3).
+  return toSpokenNotation(stripped)
 }
 
 export interface ElevenVoice {
