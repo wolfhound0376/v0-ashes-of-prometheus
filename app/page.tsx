@@ -144,6 +144,12 @@ export default function DashboardPage() {
   // dice engine (tray, sheet skills, saves) is auto-forwarded to Malachar —
   // the player never types a result, so the player can never invent one.
   const awaitingRollRef = useRef(false)
+  // Single source of truth for THIS browser's claimed identity. Updated on every
+  // render (below) so every send path — typed input, suggestion chips, dice —
+  // reads the character + claim token AT CLICK TIME rather than from a value
+  // captured when a button was rendered. This is what stops a suggestion click
+  // from POSTing a character this browser no longer controls.
+  const claimRef = useRef<{ characterId: string | null; claimToken: string | null }>({ characterId: null, claimToken: null })
   const [npcImageUrl, setNpcImageUrl] = useState<string | null>(null)
   const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
   // TTS mute state - persisted in localStorage, loaded after mount to avoid hydration mismatch
@@ -183,6 +189,43 @@ export default function DashboardPage() {
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
+
+  // The chat route returned 403: this browser's character claim is stale (e.g.
+  // the character was deleted, or the token no longer matches). Surface it
+  // instead of failing silently, and drop the cached claim so the browser stops
+  // re-sending a claim the server will keep rejecting.
+  const handleClaimRejected = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(TOKEN_LS_KEY)
+      window.localStorage.removeItem(ROLE_LS_KEY)
+      window.localStorage.removeItem(CHARACTER_LS_KEY)
+    }
+    setClaimToken(null)
+    setClaimLocked(false)
+    // Route the player to the plain re-claim state rather than silently
+    // dropping them into the open picker with a dead token.
+    setClaimInvalid(true)
+  }, [])
+
+  // Every message to Malachar goes through here so the character + claim token
+  // are resolved from claimRef at call time — the same single source of truth
+  // the typed-input path uses. A 403 (stale claim) is caught once and handled;
+  // any other error propagates as before.
+  const dispatchToLich = useCallback(
+    async (text: string) => {
+      const { characterId, claimToken: token } = claimRef.current
+      try {
+        return await sendToLich(text, characterId, token)
+      } catch (err) {
+        if ((err as { claimRejected?: boolean })?.claimRejected) {
+          handleClaimRejected()
+          return null
+        }
+        throw err
+      }
+    },
+    [sendToLich, handleClaimRejected],
+  )
 
 
   // Handle campaign change with confirmation
@@ -440,6 +483,23 @@ export default function DashboardPage() {
         setSelectedCharacterId(storedChar)
         setClaimToken(storedToken)
         setClaimLocked(true)
+        // Validate the cached claim SERVER-SIDE on load. If the character was
+        // deleted or the token rotated, discard the stale claim now instead of
+        // letting every message silently 403 later.
+        ;(async () => {
+          try {
+            const res = await fetch('/api/verify-claim', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ characterId: storedChar, claimToken: storedToken }),
+            })
+            const result = await res.json().catch(() => null)
+            if (!res.ok || !result?.valid) handleClaimRejected()
+          } catch {
+            /* network hiccup — leave the cached claim in place rather than
+               locking the player out over a transient error */
+          }
+        })()
         return
       }
       if (storedRole === 'dm') return // DM / shared-TV mode, already unlocked.
@@ -663,6 +723,11 @@ if (error) {
   // Get the currently selected character
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
 
+  // Keep the claim ref in lockstep with the live selection so any handler that
+  // fires later (a suggestion click, a dice announce) reads the current values,
+  // never a copy captured in a stale closure.
+  claimRef.current = { characterId: selectedCharacterId, claimToken }
+
   // Only player characters are selectable in the dashboard dropdown.
   // The party is who the DM has SEATED (in_party), not everyone who happens to
   // be a player character. Falls back to is_player so a stale cache can never
@@ -794,7 +859,7 @@ if (error) {
 
       // Send to the Lich, carrying THIS browser's character + claim token so
       // the chat route attributes the message to the right player.
-      const response = await sendToLich(text, selectedCharacterId, claimToken)
+      const response = await dispatchToLich(text)
       if (response?.text) {
         // Optimistically add Malachar's response (also pending → reconciled by id)
         setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
@@ -819,7 +884,7 @@ if (error) {
       const playerName = selectedCharacter?.name || "Player"
       setDialogueInput("")
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
-      const response = await sendToLich(text, selectedCharacterId, claimToken)
+      const response = await dispatchToLich(text)
       if (response?.text) {
         setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
         if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
@@ -827,7 +892,7 @@ if (error) {
         await fetchCharacterData()
       }
     },
-    [selectedCharacter, selectedCharacterId, claimToken, sendToLich],
+    [selectedCharacter, dispatchToLich, fetchCharacterData],
   )
 
   // Announce a completed sheet roll to the table. Every browser sees the roll
@@ -853,10 +918,8 @@ if (error) {
 
       // Action rolls also go to the DM for narration.
       if (sendToDm) {
-        const response = await sendToLich(
+        const response = await dispatchToLich(
           `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`,
-          selectedCharacterId,
-          claimToken,
         )
         if (response?.text) {
           setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
@@ -866,7 +929,7 @@ if (error) {
         }
       }
     },
-    [selectedCharacter, selectedCharacterId, claimToken, sendToLich],
+    [selectedCharacter, dispatchToLich, fetchCharacterData],
   )
 
   // Handler for populating starting equipment (D&D 5E standard gear)

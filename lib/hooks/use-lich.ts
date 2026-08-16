@@ -48,6 +48,10 @@ export function useLich(campaignId: string = "abyss") {
           })
           
           if (response.ok) break
+          // A 403 means this browser's character claim is stale/invalid — the
+          // server will reject it every time, so retrying is pointless. Break
+          // immediately and surface it as a typed error the UI can react to.
+          if (response.status === 403) break
           lastError = new Error(`HTTP ${response.status}`)
         } catch (fetchError) {
           lastError = fetchError as Error
@@ -55,6 +59,12 @@ export function useLich(campaignId: string = "abyss") {
             await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)))
           }
         }
+      }
+
+      if (response && response.status === 403) {
+        const claimError = new Error("Character claim rejected") as Error & { claimRejected?: boolean }
+        claimError.claimRejected = true
+        throw claimError
       }
 
       if (!response?.ok) {
