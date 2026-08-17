@@ -78,6 +78,8 @@ export function sanitizeForTTS(text: string): string {
     .replace(/\[ITEM_ADD:[^\]]*\]/g, "") // inventory tags
     .replace(/\[ITEM_REMOVE:[^\]]*\]/g, "")
     .replace(/\[ITEM_AWARD:[^\]]*\]/g, "")
+    .replace(/\[TIME:[^\]]*\]/g, "") // world-clock time tags
+    .replace(/\[STORY_ADVANCE[^\]]*\]/g, "")
     .replace(/--+/g, ", ") // em-dashes to pause
     .replace(/\.\.\./g, "...") // keep ellipsis (TTS handles it)
     .replace(/\s{2,}/g, " ") // collapse whitespace

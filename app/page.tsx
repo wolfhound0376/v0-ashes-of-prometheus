@@ -21,6 +21,7 @@ import { characterData, dialogueData, actionsData, inventoryData, environmentDat
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
+import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
 import { useLich } from "@/lib/hooks/use-lich"
 import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
@@ -136,6 +137,13 @@ export default function DashboardPage() {
 
   // Current environment from database
   const [currentEnvironment, setCurrentEnvironment] = useState<Environment | null>(null)
+  // Player-safe vague time-of-day pushed by the chat route (derived from the
+  // world clock). Takes precedence over the environment row's static value so
+  // the scene header tracks the passage of time without exposing the DM clock.
+  const [liveTimeOfDay, setLiveTimeOfDay] = useState<string | null>(null)
+  // Bumped after every Lich turn so the DM-only clock panel re-pulls the
+  // advanced world clock (day / exact time / pacing counter).
+  const [clockRefresh, setClockRefresh] = useState(0)
 
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
@@ -894,6 +902,10 @@ if (error) {
         if (response.locationImageUrl) {
           setSceneImageUrl(response.locationImageUrl)
         }
+        if (response.timeOfDay) {
+          setLiveTimeOfDay(response.timeOfDay)
+        }
+        setClockRefresh((n) => n + 1)
         // Refresh NPC encounters so the center column shows newly encountered NPCs
         await fetchCharacterData()
       }
@@ -912,6 +924,8 @@ if (error) {
         setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
         if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
         if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
+        if (response.timeOfDay) setLiveTimeOfDay(response.timeOfDay)
+        setClockRefresh((n) => n + 1)
         await fetchCharacterData()
       }
     },
@@ -948,6 +962,8 @@ if (error) {
           setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
           if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
           if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
+          if (response.timeOfDay) setLiveTimeOfDay(response.timeOfDay)
+          setClockRefresh((n) => n + 1)
           await fetchCharacterData()
         }
       }
@@ -1174,7 +1190,7 @@ if (error) {
     const overlayOverride = resolvePanelAsset("left_column", "overlay")
     return {
       location: currentEnvironment?.name || environmentData.location,
-      timeOfDay: currentEnvironment?.time_of_day || environmentData.timeOfDay,
+      timeOfDay: liveTimeOfDay || currentEnvironment?.time_of_day || environmentData.timeOfDay,
       backgroundImageUrl:
         sceneImageUrl ||
         bgOverride?.fileUrl ||
@@ -1236,6 +1252,11 @@ if (error) {
               if (response.text) {
                 setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
               }
+              // Advance the player-facing time-of-day if the clock moved.
+              if (response.timeOfDay) {
+                setLiveTimeOfDay(response.timeOfDay)
+              }
+              setClockRefresh((n) => n + 1)
               // Update NPC image if the response includes one
               if (response.npcImageUrl) {
                 setNpcImageUrl(response.npcImageUrl)
@@ -1444,6 +1465,7 @@ if (error) {
         onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
         centerSlot={
           <>
+            {dmMode && !claimLocked && <GameClockPanel refreshSignal={clockRefresh} />}
             <DynamicMusic
               location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
               inCombat={inCombat}

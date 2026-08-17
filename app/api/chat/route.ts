@@ -19,6 +19,14 @@ import {
   type NpcStatBlock,
 } from "@/lib/world-ai/campaigns"
 import { canonicalizeCondition } from "@/lib/conditions"
+import {
+  readGameClock,
+  logTimeEvent,
+  buildPacingBlock,
+  parseTimeEvents,
+  describeTimeOfDay,
+  type GameClock,
+} from "@/lib/time-tracking"
 import * as fal from "@fal-ai/serverless-client"
 
 // Configure Fal client
@@ -602,6 +610,21 @@ STRICT LIMITS ON USING THESE:
   )
   const worldContextText = formatWorldContextForAI(worldContext)
 
+  // === WORLD CLOCK & STORY-ADVANCEMENT PACING ===
+  // Read the game_clock for the active session with the service-role client
+  // (the time tables are RLS-locked with no policies). The clock drives both
+  // Malachar's pacing directive and the player-facing vague time descriptor.
+  // A dedicated admin handle is used ONLY for the time tables so a failure to
+  // configure the service role never breaks the rest of the turn.
+  let timeAdmin: ReturnType<typeof createAdminClient> | null = null
+  try {
+    timeAdmin = createAdminClient()
+  } catch (e) {
+    console.warn("[time] admin client unavailable; time-tracking disabled this turn:", e)
+  }
+  const gameClock: GameClock | null = await readGameClock(timeAdmin, activeSessionId)
+  const pacingBlock = buildPacingBlock(gameClock)
+
   // Per-encounter stat injection (replaces the old hardcoded Hook Horror block).
   // Read the SHARED active encounters — no character_id filter — so every
   // player's narrator sees the same combatants with the same real HP/AC. Only
@@ -1046,7 +1069,8 @@ result exists until the engine reports it.
   skill bonuses (expertise already doubled) and features. USE THEM. When you
   call for a roll, name the correct bonus ("Roll 1d20+7 — your Stealth, with
   expertise"). Honor features that change rolls (Lucky, Brave, Fey Ancestry,
-  Sneak Attack conditions) without the player having to remind you.`
+  Sneak Attack conditions) without the player having to remind you.
+${pacingBlock ? `\n${pacingBlock}` : ""}`
 
   const result = await generateText({
     model: anthropic("claude-sonnet-4-6"),
@@ -2116,6 +2140,8 @@ result exists until the engine reports it.
     .replace(/\[NPC_DAMAGE:[^\]]+\]/gi, "")
     .replace(/\[NPC_LEAVE:[^\]]+\]/gi, "")
     .replace(/\[NPC_DISPOSITION:[^\]]+\]/gi, "")
+    .replace(/\[TIME:[^\]]*\]/gi, "")
+    .replace(/\[STORY_ADVANCE[^\]]*\]/gi, "")
     .trim()
 
   // === SERVER-ATTRIBUTED SPEECH SEGMENTS ===
@@ -2514,6 +2540,24 @@ Rules:
     }
   }
 
+  // === TIME LOGGING ===
+  // Every successful exchange advances the clock, then any explicit time tags
+  // Malachar emitted (rests, combat end, labor shift, cinematic cut) and a
+  // story_advance (which resets the pacing counter) are logged too. The
+  // apply_time_log trigger does all the math; these inserts are best-effort and
+  // are awaited only so the re-read below reflects them.
+  let playerTimeOfDay: string | null = null
+  if (timeAdmin && activeSessionId) {
+    await logTimeEvent(timeAdmin, activeSessionId, { eventType: "dialogue_exchange" })
+    for (const event of parseTimeEvents(rawText)) {
+      await logTimeEvent(timeAdmin, activeSessionId, event)
+    }
+    // Re-read so the vague descriptor reflects any jump (a long rest or a
+    // cinematic cut can move the party into a new part of the day).
+    const clockAfter = await readGameClock(timeAdmin, activeSessionId)
+    if (clockAfter) playerTimeOfDay = describeTimeOfDay(clockAfter.minutesOfDay)
+  }
+
   return Response.json({
     text: responseText || "",
     speechSegments,
@@ -2521,5 +2565,8 @@ Rules:
     npcImageUrl,
     locationImageUrl,
     updatedLocation: updatedLocation || undefined,
+    // Player-safe, deliberately vague time-of-day derived server-side from the
+    // clock. Never includes the day number, the exact time, or any roll.
+    timeOfDay: playerTimeOfDay || undefined,
   })
 }
