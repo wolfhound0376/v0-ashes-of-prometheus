@@ -80,7 +80,15 @@ async function logCinematicRequest(
 // A miss and a rejection are both normal outcomes: 200, no thrown error. Every
 // request writes exactly one cinematic_requests row, including rejections.
 export async function GET(request: NextRequest) {
-  if (!authorized(request)) return NextResponse.json({ error: "Not authorized" }, { status: 403 })
+  // Player-initiated resolution is the one un-keyed path (PR-5): it can only
+  // reach the fallback resolver — never an explicit clip id, which stays
+  // dm_override-only below — and everything it can return (cinematic_clips
+  // rows, public storage URLs) is already anon-readable under RLS. Every other
+  // caller still needs the DM key.
+  const isPlayerResolution =
+    request.nextUrl.searchParams.get("trigger_type") === "player_initiated" &&
+    !request.nextUrl.searchParams.get("cinematicId")
+  if (!isPlayerResolution && !authorized(request)) return NextResponse.json({ error: "Not authorized" }, { status: 403 })
 
   let admin: ReturnType<typeof createAdminClient>
   try {
