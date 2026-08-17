@@ -143,9 +143,9 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
   /** Player characters, same shape — their typed lines speak in their chosen
    *  voice when the Player Voices toggle is on. */
   players?: VoiceNpc[]
-  /** Fires with the NPC currently speaking, or null when it is the DM or
-   *  nobody. The queue is the only thing that knows who holds the floor, so
-   *  the portrait is driven from here rather than guessed at from the roster. */
+  /** Fires with the NPC or player character currently speaking, or null when
+   *  it is the DM or nobody. The queue is the only thing that knows who holds
+   *  the floor, so the portrait is driven from here rather than guessed. */
   onSpeakingChange?: (npc: VoiceNpc | null) => void
   className?: string
 }) {
@@ -261,7 +261,9 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
       audio.onended = done
       audio.onerror = done
       setStatus("speaking")
-      setFloor(u.kind === "npc" ? u.npc : null)
+      // NPCs and players alike hold the floor while their line plays; the
+      // window swaps to whoever is speaking. Only pure DM narration clears it.
+      setFloor(u.kind === "npc" ? u.npc : u.kind === "player" ? u.pc : null)
       audio.play().catch((err) => {
         // Autoplay policy. The toggle click is a user gesture so this is rare,
         // but say so plainly rather than sitting there mute.
