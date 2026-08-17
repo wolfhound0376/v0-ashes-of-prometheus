@@ -40,6 +40,13 @@ export interface MediaTabConfig {
    * have an `archived_at` column (currently `characters`).
    */
   archivable?: boolean
+  /**
+   * When true, each card gets an ElevenLabs voice editor (voice_id +
+   * voice_description columns must be in `select`). Saves via
+   * /api/character-voice. Used by the Characters tab so players speak in a
+   * chosen voice, mirroring the NPC tab's voice block.
+   */
+  voiceEditable?: boolean
 }
 
 interface Row {
@@ -223,6 +230,8 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
                   ))}
                 </div>
 
+                {config.voiceEditable ? <VoiceEditor key={`${row.id}-voice`} row={row} withDmRetry={withDmRetry} /> : null}
+
                 {config.slots.map((slot) => {
                   const msg = status[`${row.id}:${slot.column}`]
                   return msg ? (
@@ -245,6 +254,70 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
           onConfirm={() => void clear(confirming.row, confirming.slot)}
         />
       )}
+    </div>
+  )
+}
+
+
+/**
+ * Per-character ElevenLabs voice block — the Characters-tab twin of the NPC
+ * tab's voice editor. Store the voice ID, not generated audio; leave the ID
+ * blank and fill the description to let the resolver pick from the curated
+ * library on first speech.
+ */
+function VoiceEditor({ row, withDmRetry }: { row: Row; withDmRetry: (purpose: string, send: () => Promise<Response>) => Promise<Response> }) {
+  const [voiceId, setVoiceId] = useState(String(row.voice_id ?? ""))
+  const [description, setDescription] = useState(String(row.voice_description ?? ""))
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState("")
+
+  const save = async () => {
+    setSaving(true)
+    setMessage("Saving voice…")
+    try {
+      const res = await withDmRetry("save the ElevenLabs voice", () =>
+        fetch("/api/character-voice", {
+          method: "POST",
+          headers: { ...dmHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ id: row.id, voiceId: voiceId.trim(), voiceDescription: description.trim() }),
+        }),
+      )
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Voice save failed")
+      setMessage("Voice saved.")
+    } catch (err) {
+      setMessage((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded border border-[#3d3428]/60 bg-black/25 p-2">
+      <p className="mb-1.5 text-[10px] uppercase tracking-wider text-[#9b8b6b]">ElevenLabs voice</p>
+      <input
+        value={voiceId}
+        onChange={(e) => setVoiceId(e.target.value)}
+        placeholder="ElevenLabs voice ID (optional)"
+        className="w-full rounded border border-[#4b3a19] bg-black/40 px-2 py-1.5 text-xs text-[#e8dcc4] placeholder:text-stone-600"
+      />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Voice description — e.g. young, warm, quick; gravelly and low…"
+        rows={2}
+        className="mt-1.5 w-full resize-y rounded border border-[#4b3a19] bg-black/40 px-2 py-1.5 text-xs text-[#e8dcc4] placeholder:text-stone-600"
+      />
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <span className="min-w-0 text-[10px] text-stone-500">{message || "Store the voice ID, not audio. Blank ID + description = auto-match."}</span>
+        <button
+          disabled={saving}
+          onClick={() => void save()}
+          className="shrink-0 rounded border border-[#8a672d] px-3 py-1 text-[10px] text-[#d4b15a] disabled:opacity-50"
+        >
+          Save voice
+        </button>
+      </div>
     </div>
   )
 }

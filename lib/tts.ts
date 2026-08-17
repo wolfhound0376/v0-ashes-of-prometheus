@@ -39,20 +39,39 @@ export function setNpcVoiceEnabled(on: boolean): void {
   npcVoiceEnabled = on
 }
 
+let playerVoiceEnabled = false
+
+/** Mirror the Player Voices toggle into module scope. Called from DmNarration. */
+export function setPlayerVoiceEnabled(on: boolean): void {
+  playerVoiceEnabled = on
+}
+
+// Player-character names, lowercased, registered by DmNarration from the live
+// roster so classifySpeaker can tell a player line from an NPC line. A name
+// here beats the NPC classification but never the DM keywords.
+let knownPlayerNames = new Set<string>()
+
+/** Register the current player-character names. Called from DmNarration. */
+export function setKnownPlayerNames(names: string[]): void {
+  knownPlayerNames = new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean))
+}
+
 // Names that belong to the Dungeon Master rather than to a named NPC. Matched
 // case-insensitively, on word boundaries so "DM" cannot trip on a name that
 // merely contains those letters. "lich king" is listed before "lich" only for
 // readability — either substring resolves to the DM regardless of order.
 const DM_SPEAKER_KEYWORDS = ["malachar", "lich king", "lich", "dungeon master", "narrator", "dm"]
 
-/** Classify a speaker as the DM (Malachar/the Lich/narrator) or an NPC. */
-export function classifySpeaker(speaker?: string | null): "dm" | "npc" {
+/** Classify a speaker: the DM (Malachar/the Lich/narrator), a registered
+ *  player character, or an NPC. */
+export function classifySpeaker(speaker?: string | null): "dm" | "player" | "npc" {
   const name = (speaker ?? "").toLowerCase()
   if (!name.trim()) return "npc"
   for (const keyword of DM_SPEAKER_KEYWORDS) {
     const pattern = new RegExp(`\\b${keyword.replace(/\s+/g, "\\s+")}\\b`, "i")
     if (pattern.test(name)) return "dm"
   }
+  if (knownPlayerNames.has(name.trim())) return "player"
   return "npc"
 }
 
@@ -62,7 +81,10 @@ export function classifySpeaker(speaker?: string | null): "dm" | "npc" {
  * independent — turning one off never silences the other.
  */
 export function canSpeak(speaker?: string | null): boolean {
-  return classifySpeaker(speaker) === "dm" ? dmVoiceEnabled : npcVoiceEnabled
+  const kind = classifySpeaker(speaker)
+  if (kind === "dm") return dmVoiceEnabled
+  if (kind === "player") return playerVoiceEnabled
+  return npcVoiceEnabled
 }
 
 /** Strip markdown / special chars that ElevenLabs would read aloud literally. */

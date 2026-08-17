@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled } from "@/lib/tts"
+import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled, setPlayerVoiceEnabled, setKnownPlayerNames } from "@/lib/tts"
 // The speaker-attribution parser. It lives in the v3 center column today; when
 // that tree is finally deleted this should move to lib/ rather than be rewritten
 // — the quote-pairing and alias rules in it are hard-won.
@@ -26,6 +26,7 @@ import { segmentBySpeaker, setNpcTtsMuted } from "./center-column"
 const DM_SPEAKER = "Malachar"
 const DM_KEY = "dm-narration-enabled"
 const NPC_KEY = "npc-voices-enabled"
+const PLAYER_KEY = "player-voices-enabled"
 
 /** Enough of an `npc_encounters` row to attribute a quote and voice it. */
 export type VoiceNpc = {
@@ -40,6 +41,7 @@ export type VoiceNpc = {
 type Utterance =
   | { kind: "dm"; text: string }
   | { kind: "npc"; text: string; npc: VoiceNpc }
+  | { kind: "player"; text: string; pc: VoiceNpc }
 
 /**
  * Split one of Malachar's turns into an ordered run of utterances, casting
@@ -135,18 +137,22 @@ function castPersisted(line: Line, npcs: VoiceNpc[]): Utterance[] {
   return out.length ? out : cast(line.text, npcs)
 }
 
-export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }: {
+export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChange, className }: {
   dialogue: Line[]
   npcs?: VoiceNpc[]
-  /** Fires with the NPC currently speaking, or null when it is the DM or
-   *  nobody. The queue is the only thing that knows who holds the floor, so
-   *  the portrait is driven from here rather than guessed at from the roster. */
+  /** Player characters, same shape — their typed lines speak in their chosen
+   *  voice when the Player Voices toggle is on. */
+  players?: VoiceNpc[]
+  /** Fires with the NPC or player character currently speaking, or null when
+   *  it is the DM or nobody. The queue is the only thing that knows who holds
+   *  the floor, so the portrait is driven from here rather than guessed. */
   onSpeakingChange?: (npc: VoiceNpc | null) => void
   className?: string
 }) {
   const [dmOn, setDmOn] = useState(false)
   const [npcOn, setNpcOn] = useState(false)
-  const enabled = dmOn || npcOn
+  const [playersOn, setPlayersOn] = useState(false)
+  const enabled = dmOn || npcOn || playersOn
   const [status, setStatus] = useState<"idle" | "loading" | "speaking" | "blocked">("idle")
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -156,6 +162,12 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
   // re-running (and re-speaking) every time an NPC's HP ticks.
   const npcsRef = useRef<VoiceNpc[]>(npcs)
   useEffect(() => { npcsRef.current = npcs }, [npcs])
+  const playersRef = useRef<VoiceNpc[]>(players)
+  useEffect(() => {
+    playersRef.current = players
+    // Registered so lib/tts can classify a player line wherever TTS is gated.
+    setKnownPlayerNames(players.map((p) => p.name))
+  }, [players])
   const onSpeakingChangeRef = useRef(onSpeakingChange)
   useEffect(() => { onSpeakingChangeRef.current = onSpeakingChange }, [onSpeakingChange])
   const setFloor = useCallback((npc: VoiceNpc | null) => { onSpeakingChangeRef.current?.(npc) }, [])
@@ -195,6 +207,16 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     setStatus("loading")
     const [endpoint, payload] = u.kind === "dm"
       ? ["/api/tts", { text: u.text, voice: "onyx" }]
+      : u.kind === "player"
+      ? ["/api/npc-tts", {
+          text: u.text,
+          // Player voices: an explicit id is used verbatim, else the
+          // description resolves one. Deliberately NO npcName/npcId — canon
+          // name matching and the npc_encounters write-back are NPC machinery
+          // and must never touch a player character.
+          voiceId: u.pc.voice_id ?? undefined,
+          voiceDescription: u.pc.voice_id ? undefined : u.pc.voice_description ?? undefined,
+        }]
       : ["/api/npc-tts", {
           text: u.text,
           // An explicit voice if the row already has one, otherwise the
@@ -239,7 +261,9 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       audio.onended = done
       audio.onerror = done
       setStatus("speaking")
-      setFloor(u.kind === "npc" ? u.npc : null)
+      // NPCs and players alike hold the floor while their line plays; the
+      // window swaps to whoever is speaking. Only pure DM narration clears it.
+      setFloor(u.kind === "npc" ? u.npc : u.kind === "player" ? u.pc : null)
       audio.play().catch((err) => {
         // Autoplay policy. The toggle click is a user gesture so this is rare,
         // but say so plainly rather than sitting there mute.
@@ -269,6 +293,7 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
   useEffect(() => {
     setDmOn(localStorage.getItem(DM_KEY) === "true")
     setNpcOn(localStorage.getItem(NPC_KEY) === "true")
+    setPlayersOn(localStorage.getItem(PLAYER_KEY) === "true")
     hydratedRef.current = true
   }, [])
 
@@ -278,7 +303,8 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     if (!hydratedRef.current) return
     localStorage.setItem(DM_KEY, String(dmOn))
     localStorage.setItem(NPC_KEY, String(npcOn))
-  }, [dmOn, npcOn])
+    localStorage.setItem(PLAYER_KEY, String(playersOn))
+  }, [dmOn, npcOn, playersOn])
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -288,6 +314,7 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     // through the same canSpeak() gate and can never drift out of sync.
     setDmVoiceEnabled(dmOn)
     setNpcVoiceEnabled(npcOn)
+    setPlayerVoiceEnabled(playersOn)
     // While this control is on it is the ONLY thing speaking: it voices
     // Malachar and the NPCs from one queue, in narrative order. The legacy v3
     // auto-play would otherwise repeat every quoted line out of sequence.
@@ -298,7 +325,7 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       setFloor(null)
       setStatus("idle")
     }
-  }, [enabled, dmOn, npcOn, stopAudio])
+  }, [enabled, dmOn, npcOn, playersOn, stopAudio])
 
   useEffect(() => stopAudio, [stopAudio])
 
@@ -320,7 +347,7 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
     // Malachar read every NPC's dialogue himself. Each segment is sanitised
     // after the split instead, inside cast().
     const voicedLines = dialogue
-      .filter((entry) => entry.speaker === DM_SPEAKER || npcsRef.current.some((npc) => npc.name.toLowerCase() === entry.speaker.toLowerCase()))
+      .filter((entry) => entry.speaker === DM_SPEAKER || npcsRef.current.some((npc) => npc.name.toLowerCase() === entry.speaker.toLowerCase()) || playersRef.current.some((pc) => pc.name.toLowerCase() === entry.speaker.toLowerCase()))
       .filter((entry) => Boolean(entry.text))
     const lineKey = (entry: Line) => `${entry.speaker.toLowerCase()}\u0000${entry.text}`
     const voicedKeys = voicedLines.map(lineKey)
@@ -360,12 +387,17 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
       if (line.speaker === DM_SPEAKER) return castPersisted(line, npcsRef.current)
       const npc = npcsRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
       const text = sanitizeForTTS(line.text)
-      return npc && text ? [{ kind: "npc" as const, text, npc }] : []
+      if (npc && text) return [{ kind: "npc" as const, text, npc }]
+      // A player character's own typed line, in their chosen voice. Dice-roll
+      // announcements stay silent — the table already watched the dice land.
+      const pc = playersRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
+      const isRollLine = line.text.trimStart().startsWith("🎲") || line.text.includes("[Dice Roll]")
+      return pc && text && !isRollLine ? [{ kind: "player" as const, text, pc }] : []
     })
       // One gate for both paths: DM utterances follow DM Voice, NPC utterances
       // follow NPC Voices. canSpeak classifies by speaker name so the Lich is
       // always the DM's and every named NPC is the NPC toggle's.
-      .filter((u) => canSpeak(u.kind === "dm" ? DM_SPEAKER : u.npc.name))
+      .filter((u) => canSpeak(u.kind === "dm" ? DM_SPEAKER : u.kind === "npc" ? u.npc.name : u.pc.name))
     if (!wanted.length) return
     queueRef.current.push(...wanted)
     void drain()
@@ -407,6 +439,8 @@ export function DmNarration({ dialogue, npcs = [], onSpeakingChange, className }
         title={dmOn ? "DM Voice on — Malachar narrates aloud" : "DM Voice off — click to hear Malachar narrate"} />
       <Switch on={npcOn} set={setNpcOn} label="NPC Voices"
         title={npcOn ? "NPC Voices on — each NPC speaks in their own voice" : "NPC Voices off — click to hear the NPCs speak"} />
+      <Switch on={playersOn} set={setPlayersOn} label="Player Voices"
+        title={playersOn ? "Player Voices on — typed player lines speak in each character's voice" : "Player Voices off — click to hear player lines aloud"} />
     </span>
   )
 }
