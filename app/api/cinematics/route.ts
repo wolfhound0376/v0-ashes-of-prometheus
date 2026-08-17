@@ -22,11 +22,6 @@ const SCOPES = ["solo", "party"] as const
 const KINDS = ["environment", "action", "filler"] as const
 const TRIGGERS = ["campaign_open", "player_initiated", "event_driven", "dm_override"] as const
 
-// The reserved location that holds catch-all clips. When neither an exact
-// (location+state) nor a location-only clip exists, resolution falls through
-// to a clip filed under this location.
-const GENERIC_LOCATION = "generic"
-
 // The five values the cinematic_requests.resolution column is constrained to
 // at the database level. Anything outside this set throws on insert.
 type Resolution = "exact" | "location_fallback" | "generic_fallback" | "miss" | "rejected"
@@ -66,18 +61,24 @@ async function logCinematicRequest(
   }
 }
 
-// GET /api/cinematics — resolve a cinematic clip via the three-tier fallback
-// and record the outcome. Query params:
-//   location (required), state?, scope?, kind?, trigger_type?,
-//   session_id?, character_id?
+// GET /api/cinematics — resolve a cinematic clip and record the outcome.
+// Query params:
+//   location (required unless cinematicId), state?, scope?, kind?,
+//   trigger_type?, session_id?, character_id?, cinematicId?
 //
-// Fallback order:  location+state ('exact')
-//               →  location alone ('location_fallback')
-//               →  reserved 'generic' location ('generic_fallback')
-//               →  nothing ('miss')
-// A missing location is 'rejected'. Scope/kind, when supplied, constrain every
-// tier. Selection logic and response shape are additive here — no existing
-// behaviour changes.
+// Two paths, one endpoint (the DM's manual override and Malachar's automatic
+// trigger both come through here):
+//
+//   • cinematicId present → direct load by id, no fallback. ONLY honoured when
+//     trigger_type=dm_override; any other caller is refused outright (Malachar
+//     may emit only location/state/kind, never a clip id or URL).
+//   • otherwise → the Postgres resolve_cinematic() function runs the three-tier
+//     fallback (exact → location_fallback → generic_fallback → miss). The
+//     function owns weighted-random variant selection and skips unusable rows
+//     (null video_url, weight 0), so the resolution it returns is used verbatim.
+//
+// A miss and a rejection are both normal outcomes: 200, no thrown error. Every
+// request writes exactly one cinematic_requests row, including rejections.
 export async function GET(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Not authorized" }, { status: 403 })
 
@@ -103,6 +104,7 @@ export async function GET(request: NextRequest) {
     : null
   const sessionId = params.get("session_id") || null
   const characterId = params.get("character_id") || null
+  const cinematicId = (params.get("cinematicId") || "").trim() || null
 
   // Common request metadata attached to whatever resolution we record.
   const reqMeta = {
@@ -115,70 +117,76 @@ export async function GET(request: NextRequest) {
     character_id: characterId,
   }
 
+  // === EXPLICIT CLIP ID PATH ===
+  if (cinematicId) {
+    // Guard (acceptance test #9): an explicit id is only ever legitimate from
+    // the DM's manual override. Enforcing by CALLER — not by whether the id
+    // happens to exist — is deliberately stricter: it prevents Malachar from
+    // ever playing a clip it picked directly, even if it copied a real uuid
+    // from context. A rejection is a normal outcome, not an error.
+    if (triggerType !== "dm_override") {
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "rejected", resolved_clip_id: null })
+      return NextResponse.json({ clip: null, resolution: "rejected" })
+    }
+
+    const { data: clip } = await admin
+      .from("cinematic_clips")
+      .select("id, location, state, scope, kind, video_url")
+      .eq("id", cinematicId)
+      .maybeSingle()
+
+    // id does not exist → rejected. id exists but not yet rendered → miss.
+    if (!clip) {
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "rejected", resolved_clip_id: null })
+      return NextResponse.json({ clip: null, resolution: "rejected" })
+    }
+    if (!clip.video_url) {
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
+      return NextResponse.json({ clip: null, resolution: "miss" })
+    }
+
+    await logCinematicRequest(admin, { ...reqMeta, resolution: "exact", resolved_clip_id: clip.id })
+    return NextResponse.json({ clip, resolution: "exact" })
+  }
+
+  // === FALLBACK RESOLUTION PATH ===
   if (!location) {
     await logCinematicRequest(admin, { ...reqMeta, resolution: "rejected", resolved_clip_id: null })
     return NextResponse.json({ error: "Location is required" }, { status: 400 })
   }
 
-  const columns = "id, location, state, scope, kind, video_url"
+  // The Postgres function owns the three-tier fallback, weighted-random variant
+  // selection, and skipping unusable rows. EXECUTE is granted only to
+  // service_role, so this must run on the admin client. It returns zero or one
+  // row shaped { clip_id, video_url, resolution }; zero rows means a miss.
+  const { data, error } = await admin.rpc("resolve_cinematic", {
+    p_location: location,
+    p_state: state ?? null,
+    p_scope: scope ?? "party",
+    p_kind: kind ?? "environment",
+  })
 
-  // Tier 1 — exact match on location + state (scope/kind always constrain).
-  let resolution: Resolution = "miss"
-  let clip: Record<string, unknown> | null = null
-
-  if (state) {
-    const { data } = await admin
-      .from("cinematic_clips")
-      .select(columns)
-      .eq("location", location)
-      .eq("state", state)
-      .eq("scope", scope)
-      .eq("kind", kind)
-      .limit(1)
-      .maybeSingle()
-    if (data) {
-      clip = data
-      resolution = "exact"
-    }
+  if (error) {
+    console.error("[cinematics] resolve_cinematic rpc failed:", error.message)
+    await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
+    return NextResponse.json({ clip: null, resolution: "miss" })
   }
 
-  // Tier 2 — location alone (any state), same scope/kind.
-  if (!clip) {
-    const { data } = await admin
-      .from("cinematic_clips")
-      .select(columns)
-      .eq("location", location)
-      .eq("scope", scope)
-      .eq("kind", kind)
-      .limit(1)
-      .maybeSingle()
-    if (data) {
-      clip = data
-      resolution = "location_fallback"
-    }
-  }
-
-  // Tier 3 — reserved 'generic' location, same scope/kind.
-  if (!clip) {
-    const { data } = await admin
-      .from("cinematic_clips")
-      .select(columns)
-      .eq("location", GENERIC_LOCATION)
-      .eq("scope", scope)
-      .eq("kind", kind)
-      .limit(1)
-      .maybeSingle()
-    if (data) {
-      clip = data
-      resolution = "generic_fallback"
-    }
-  }
+  // rpc() returns an array for a set-returning function; take the first row.
+  const row = Array.isArray(data) ? data[0] : data
+  const resolution: Resolution = row?.resolution ?? "miss"
+  const clip = row?.clip_id
+    ? { id: row.clip_id as string, video_url: (row.video_url as string) ?? null }
+    : null
 
   // Record the outcome before responding. The insert is awaited so it reliably
   // runs in a serverless invocation, but every error is swallowed inside the
   // helper so a failed log can never block playback.
-  const resolvedClipId = clip && typeof clip.id === "string" ? clip.id : null
-  await logCinematicRequest(admin, { ...reqMeta, resolution, resolved_clip_id: resolvedClipId })
+  await logCinematicRequest(admin, {
+    ...reqMeta,
+    resolution,
+    resolved_clip_id: clip ? clip.id : null,
+  })
 
   return NextResponse.json({ clip, resolution })
 }
