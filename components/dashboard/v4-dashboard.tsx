@@ -419,11 +419,17 @@ export function V4Dashboard(props: V4DashboardProps) {
   const hasSpellSlots = spellSlotLevels.length > 0
   // Static fallback chips — SuggestionChips shows these when no live player is
   // selected or the per-beat Haiku generation returns nothing. (PR-3)
+  //
+  // These MUST stay class-neutral. They previously read as cleric lines
+  // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
+  // player whose generation failed was handed Samson's options — the exact
+  // leak the per-player chips exist to prevent. No class, no skill tag, no
+  // named party member: whatever sits here is shown to EVERY seat at once.
   const quickReplies = [
-    "Who else is being held here?",
-    "(Faith) Offer a quiet prayer over the wounded",
-    "(Persuasion) Help us and we all get out.",
-    "(Medicine) Tend to Kenta’s arm",
+    "Look around",
+    "Listen for anything nearby",
+    "Speak up",
+    "Wait and watch",
   ]
   const abilities = abilityKeys.map((key) => ({
     key,
