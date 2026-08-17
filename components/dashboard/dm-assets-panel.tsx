@@ -75,7 +75,7 @@ const LIBRARY: MediaTabConfig = {
 
 const CHARACTERS: MediaTabConfig = {
   table: "characters",
-  select: "id, name, class, idle_url, talking_url",
+  select: "id, name, class, idle_url, talking_url, voice_id, voice_description",
   labelColumn: "name",
   subtitleColumn: "class",
   orderBy: "name",
@@ -86,10 +86,11 @@ const CHARACTERS: MediaTabConfig = {
   ],
   emptyMessage: "No player characters found.",
   archivable: true,
+  voiceEditable: true,
 }
 
 const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
-  { id: "characters", label: "Characters", blurb: "Player-character idle and talking loops." },
+  { id: "characters", label: "Characters", blurb: "Player-character idle and talking loops, plus each character's ElevenLabs voice for the Player Voices toggle." },
   { id: "npcs", label: "NPCs", blurb: "Canon face, idle and talking loops, and the ElevenLabs voice. Applies to every row sharing a name." },
   { id: "scenes", label: "Scenes", blurb: "Environment backgrounds. A looping MP4 works here — an animated cavern, drifting water." },
   { id: "overlays", label: "Overlays", blurb: "Fog and ambient layers drawn over the scene." },

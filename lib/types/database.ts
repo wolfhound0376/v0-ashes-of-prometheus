@@ -23,6 +23,10 @@ export interface Character {
   xp_to_next: number
   avatar_image_url: string | null
   portrait_image_url: string | null
+  /** ElevenLabs voice for this player character: explicit id used verbatim,
+   *  or a description the resolver matches against the curated library. */
+  voice_id?: string | null
+  voice_description?: string | null
   hp_current: number
   hp_max: number
   ac: number
