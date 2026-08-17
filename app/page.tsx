@@ -20,6 +20,7 @@ import { DynamicMusic } from "@/components/dashboard/dynamic-music"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions, CANONICAL_START_LOCATION } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
+import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
 import { useLich } from "@/lib/hooks/use-lich"
 import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
@@ -174,6 +175,7 @@ export default function DashboardPage() {
 
   // Save/Restart campaign state
   const [showRestartDialog, setShowRestartDialog] = useState(false)
+  const [isRestarting, setIsRestarting] = useState(false)
   const [showPartyManager, setShowPartyManager] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
@@ -320,42 +322,63 @@ export default function DashboardPage() {
   }
 
   const confirmRestartCampaign = async () => {
+    // The work moved to /api/restart-campaign. It has to: `sessions` and
+    // `session_beats` are RLS'd SELECT-only for the anon key, so the deletes
+    // this used to attempt from the browser removed zero rows and reported
+    // success. Malachar's session history outlived every restart — the reason
+    // NPCs kept remembering a wiped campaign.
+    //
     // NO selectedCharacter guard. The DM runs this, and the DM has no character
     // selected — the old guard made the button silently do nothing for the one
     // person it exists for.
+    setIsRestarting(true)
     try {
-      // Clear all dialogue
-      const { error: dialogueError } = await supabase
-        .from('dialogue')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000')
-      if (dialogueError) console.error('[restart] dialogue:', dialogueError)
+      // Prompts once per browser and remembers; returns null if dismissed.
+      ensureDmKey("restart the campaign")
 
-      // Stand every active encounter down so the table starts on a clean scene.
-      const { error: npcError } = await supabase
-        .from('npc_encounters')
-        .update({ is_active: false })
-        .eq('is_active', true)
-      if (npcError) console.error('[restart] npc_encounters:', npcError)
+      const res = await fetch("/api/restart-campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...dmHeaders() },
+      })
+      const body = await res.json().catch(() => null)
 
-      // Clear inventory only for a character that is actually selected.
-      if (selectedCharacter) {
-        const { error: invError } = await supabase
-          .from('inventory_items')
-          .delete()
-          .eq('character_id', selectedCharacter.id)
-        if (invError) console.error('[restart] inventory:', invError)
+      if (res.status === 403) {
+        console.error("[restart] rejected: wrong or missing DM code")
+        window.alert("That DM code was not accepted. The campaign was not restarted.")
+        return
+      }
+      if (!res.ok || !body?.ok) {
+        console.error("[restart] server reported problems:", body)
+        window.alert(
+          "The restart did not fully complete. Check the browser console — some tables may need a manual pass.",
+        )
+        return
       }
 
-      // Reset local state
+      console.log("[restart] complete:", body.report)
+
+      // Clear local state. Realtime will also push the empty tables, but doing
+      // it here means the screen goes clean immediately rather than a beat later.
       setDialogue([])
       setCharacterInventory([])
+      setCharacterEquipment([])
       setNpcEncounters([])
 
-      // Close dialog
+      // Pull the starting location back onto the screen.
+      const { data: env } = await supabase
+        .from('environments')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (env) setCurrentEnvironment(env)
+
       setShowRestartDialog(false)
     } catch (err) {
       console.error('Error restarting campaign:', err)
+      window.alert("The restart failed to reach the server. Nothing was changed.")
+    } finally {
+      setIsRestarting(false)
     }
   }
 
@@ -1372,10 +1395,13 @@ if (error) {
           <div className="bg-[#1a1614] border border-[#3d3428] rounded-lg p-6 max-w-md mx-4 shadow-2xl">
             <h2 className="text-xl font-serif text-red-400 mb-3">Restart Campaign?</h2>
             <p className="text-stone-300 mb-4">
-              This will <span className="text-red-400 font-semibold">permanently delete</span> all dialogue history and remove all items from your inventory.
+              This will <span className="text-red-400 font-semibold">permanently delete</span> all
+              dialogue, Malachar&apos;s session memory, and every item held by every player.
             </p>
             <p className="text-stone-400 text-sm mb-6">
-              Your character stats will be preserved, but you will start fresh in <span className="text-[#d4b15a]">{activeCampaign.name}</span>. This cannot be undone.
+              NPCs forget the party and return to full health. Your uploaded scene art,
+              character stats, XP and levels are preserved. The party wakes in the slave pen
+              wearing rags. This cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">
               <button
@@ -1386,9 +1412,10 @@ if (error) {
               </button>
               <button
                 onClick={confirmRestartCampaign}
-                className="px-4 py-2 rounded bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30 transition-colors"
+                disabled={isRestarting}
+                className="px-4 py-2 rounded bg-red-500/20 border border-red-500/50 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Restart Campaign
+                {isRestarting ? "Restarting…" : "Restart Campaign"}
               </button>
             </div>
           </div>
