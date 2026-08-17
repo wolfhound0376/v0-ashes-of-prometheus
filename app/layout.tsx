@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Cinzel, Crimson_Text, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { SupabaseStatus } from '@/components/supabase-status'
+import { BuildWatch } from '@/components/build-watch'
 import ThemeAudio from '@/components/theme-audio'
 import './globals.css'
 
@@ -54,6 +55,7 @@ export default function RootLayout({
         {children}
         <ThemeAudio />
         <SupabaseStatus />
+        <BuildWatch />
         <Analytics />
       </body>
     </html>
