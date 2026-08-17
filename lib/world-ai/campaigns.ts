@@ -276,11 +276,11 @@ WORLD: The Underdark, Faerûn. Drow priestesses' reckless summonings have torn t
 
 CHAPTER 1 — PRISONERS OF THE DROW (Starting Rules):
 STARTING CONDITIONS: PCs wake in Velkynvelve slave pen. NO gear, NO spell components. Manacles (restrained, normal speed). Collared. Been here 1d10 days. Magical wards block spells cast inside pen (but not from outside).
-SCAVENGED ITEMS (d100, roll ONCE per PC at start): 01-10 Gold coin, 11-16 Carnelian gem (10gp), 17-22 Obsidian flake dagger (1d4 slashing), 23-28 Crossbow bolt, 29-34 1d4 mushrooms (edible), 35-40 Coil of silk rope (50ft), 41-46 Belt pouch with 1d4 cp, 47-52 Drow poison (unconscious 1hr on fail DC 13 CON), 53-58 Flask of lamp oil, 59-64 Waterskin, 65-70 Hand crossbow, 71-76 Shattered spellbook pages (contains 1 random cantrip), 77-82 Iron key (fits manacles), 83-88 Bag of caltrops, 89-94 Tin mess kit, 95-100 Nothing. NOTE: Rogues may have concealed lockpick (DM discretion). Wizards may have 1 spell component.
+SCAVENGED POSSESSIONS (roll ONCE per PC at start: 1d20 + number of days imprisoned, which is 1d10. Result range 2-30): 02-09 Nothing, 10-12 A gold coin, 13-15 A living spider the size of a tarantula, 16-18 A 5-foot-long strand of silk rope, 19-21 A flawed carnelian gemstone worth 10 gp, 22-24 A rusted iron bar (usable as a club), 25-27 A flint shard (usable as a dagger), 28-30 A hand crossbow BOLT coated with drow poison. NOTE: the 28-30 result is a single bolt, NOT a crossbow. There is no d100 table. Do not invent entries outside this list.
 ESCAPE OPTIONS: (1) Jorlan unlocks door (he hates Ilvara for dumping him), (2) Demon attack chaos, (3) Steal during slave work.
 SLAVE DUTIES: Fill water barrels, operate lift, clean barracks, empty chamber pots (grey ooze in pool!), food prep (knives available), laundry. Stealing requires DEX (Sleight of Hand) vs guard passive Perception.
 PLAYER GEAR: Locked in Ilvara's chest (area 7). Getting it is near-suicide without a plan.
-MANACLES: Slip DC 20 DEX, Break DC 20 STR, Pick DC 20 DEX (disadvantage without tools).
+MANACLES: Slip DC 20 DEX, Break DC 20 STR (manacles have 15 HP), Pick with thieves' tools DC 15 DEX. Iron collar: Break DC 20 STR (12 HP). On a failure the character cannot retry until after a long rest. The Help action is allowed.
 
 ACTS: 1 Escape Velkynvelve · 2 Discovery (settlements + demon signs) · 3 Madness Rising (Labyrinth, Vizeran) · 4 Surface coordination + banishment ritual.
 LOCATIONS: VELKYNVELVE (drow slave outpost, start), SLOOBLUDOP (kuo-toa, Demogorgon corruption), DARKLAKE (vast subterranean sea), GRACKLSTUGH (duergar city, Themberchaud the trapped red dragon), NEVERLIGHT GROVE (Zuggtmoy myconid colony), BLINGDENSTONE (deep gnomes, friendly), GRAVENHOLLOW (stone giant library), THE LABYRINTH (Yeenoghu/Baphomet), MANTOL-DERITH (neutral trade), MENZOBERRANZAN (drow city, optional).
@@ -305,7 +305,7 @@ ESCAPE ROUTES: North (Menzoberranzan, 26 days - BAD), West (Darklake), South (Gr
       { label: 'Underdark rumour', roll: { notation: '1d8', name: 'Underdark Rumour' }, prompt: 'Rumour #{roll} from the d8 table. Voice it as the traveller speaking it in 2-3 sentences. Do NOT include dice notation.' },
       { label: 'Roll loot', roll: { notation: '1d8', name: 'Underdark Loot' }, prompt: 'Players defeated a foe. Loot #{roll}. Describe entry #{roll} with sensory detail — the Underdark hoards strangely. Do NOT include dice notation.' },
       { label: 'Madness check', roll: { notation: '1d10', name: 'Madness Roll' }, prompt: 'A character witnessed something unspeakable. Madness #{roll}. Pick the affliction and narrate the moment it takes hold. Do NOT include dice notation.' },
-      { label: 'Escape encounter', roll: { notation: '1d6', name: 'Velkynvelve Escape' }, prompt: 'Velkynvelve escape encounter #{roll} on the d6 table. Describe it. Do NOT include dice notation.' }
+      { label: 'Escape check DCs', prompt: 'List the escape options available right now and their exact DCs: slip manacles DC 20 DEX, break manacles DC 20 STR (15 HP), pick manacles with thieves tools DC 15 DEX, break iron collar DC 20 STR (12 HP). On a failure the character cannot retry until after a long rest. The Help action is allowed. Do not roll — state the options.' }
     ],
     maps: [
       {
@@ -385,10 +385,10 @@ export function getAllCampaigns(): Campaign[] {
 }
 
 // === REFERENCE ROLL TABLES ===================================================
-// Structured, machine-readable versions of the campaign's d100 roll tables so
+// Structured, machine-readable versions of the campaign's roll tables so
 // the narrator can be handed exact numeric ranges and the awarded item can be
 // resolved deterministically. This is the SINGLE SOURCE OF TRUTH for the
-// "Out of the Abyss" opening fortune roll. It mirrors the SCAVENGED ITEMS line
+// "Out of the Abyss" opening fortune roll (1d20 + days imprisoned (1d10), range 2-30). It mirrors the SCAVENGED POSSESSIONS line
 // in abyss.systemPrompt — if you edit one, edit the other.
 export interface RollTableEntry {
   min: number
@@ -400,22 +400,14 @@ export interface RollTableEntry {
 }
 
 export const ABYSS_SCAVENGED_ITEMS_TABLE: RollTableEntry[] = [
-  { min: 1, max: 10, item: "Gold coin", itemType: "currency", iconHint: "coin" },
-  { min: 11, max: 16, item: "Carnelian gem (10gp)", itemType: "misc", iconHint: "gem" },
-  { min: 17, max: 22, item: "Obsidian flake dagger (1d4 slashing)", itemType: "weapon", iconHint: "dagger" },
-  { min: 23, max: 28, item: "Crossbow bolt", itemType: "misc", iconHint: "bolt" },
-  { min: 29, max: 34, item: "1d4 mushrooms (edible)", itemType: "consumable", iconHint: "mushroom" },
-  { min: 35, max: 40, item: "Coil of silk rope (50ft)", itemType: "misc", iconHint: "rope" },
-  { min: 41, max: 46, item: "Belt pouch with 1d4 cp", itemType: "currency", iconHint: "pouch" },
-  { min: 47, max: 52, item: "Drow poison (unconscious 1hr on fail DC 13 CON)", itemType: "consumable", iconHint: "vial" },
-  { min: 53, max: 58, item: "Flask of lamp oil", itemType: "consumable", iconHint: "flask" },
-  { min: 59, max: 64, item: "Waterskin", itemType: "consumable", iconHint: "waterskin" },
-  { min: 65, max: 70, item: "Hand crossbow", itemType: "weapon", iconHint: "crossbow" },
-  { min: 71, max: 76, item: "Shattered spellbook pages (contains 1 random cantrip)", itemType: "misc", iconHint: "scroll" },
-  { min: 77, max: 82, item: "Iron key (fits manacles)", itemType: "misc", iconHint: "key" },
-  { min: 83, max: 88, item: "Bag of caltrops", itemType: "misc", iconHint: "caltrops" },
-  { min: 89, max: 94, item: "Tin mess kit", itemType: "misc", iconHint: "kit" },
-  { min: 95, max: 100, item: "Nothing", itemType: "misc", iconHint: "none" },
+  { min: 2, max: 9, item: "Nothing", itemType: "misc", iconHint: "none" },
+  { min: 10, max: 12, item: "A gold coin", itemType: "currency", iconHint: "coin" },
+  { min: 13, max: 15, item: "A living spider the size of a tarantula", itemType: "misc", iconHint: "spider" },
+  { min: 16, max: 18, item: "A 5-foot-long strand of silk rope", itemType: "misc", iconHint: "rope" },
+  { min: 19, max: 21, item: "A flawed carnelian gemstone worth 10 gp", itemType: "misc", iconHint: "gem" },
+  { min: 22, max: 24, item: "A rusted iron bar (usable as a club)", itemType: "weapon", iconHint: "club" },
+  { min: 25, max: 27, item: "A flint shard (usable as a dagger)", itemType: "weapon", iconHint: "dagger" },
+  { min: 28, max: 30, item: "A hand crossbow bolt coated with drow poison", itemType: "misc", iconHint: "bolt" },
 ]
 
 // Format a roll table as an exact, unambiguous numeric list for prompt injection.
