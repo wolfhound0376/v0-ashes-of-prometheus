@@ -146,13 +146,42 @@ export function DiceRoller({
         <span aria-hidden>✦</span>
       </button>
 
+      {/* Keyframes for the crit/fumble drama (16-bit combat diegetic). The
+          face-cycling number stage from the original prototype is gone on
+          purpose: the shared DiceProvider's 3D physics overlay is the roll
+          animation now, and fake generated numbers must never appear. */}
+      <style>{`
+        @keyframes aopCritPulse {
+          0%   { transform: scale(0.9); box-shadow: 0 0 0 rgba(212,177,90,0); }
+          40%  { transform: scale(1.06); box-shadow: 0 0 28px rgba(212,177,90,0.85); }
+          100% { transform: scale(1); box-shadow: 0 0 8px rgba(212,177,90,0.3); }
+        }
+        @keyframes aopFumble {
+          0%, 100% { transform: translateX(0) rotate(0deg); }
+          20% { transform: translateX(-5px) rotate(-1deg); }
+          40% { transform: translateX(5px) rotate(1deg); }
+          60% { transform: translateX(-4px) rotate(-1deg); }
+          80% { transform: translateX(4px) rotate(1deg); }
+        }
+      `}</style>
+
       {lastResult && (
-        <section className={cn("aop-roll-result", lastResult.isCrit && "is-critical", lastResult.isFail && "is-fumble")}>
+        <section
+          key={lastResult.timestamp.getTime()}
+          className={cn("aop-roll-result", lastResult.isCrit && "is-critical", lastResult.isFail && "is-fumble")}
+          style={{
+            animation: lastResult.isCrit
+              ? "aopCritPulse 1.4s ease-out"
+              : lastResult.isFail
+              ? "aopFumble 0.6s ease-in-out"
+              : undefined,
+          }}
+        >
           <div>
             <p className="text-[9px] uppercase tracking-[.16em] text-[#9a7a48]">{lastResult.label || "Latest result"}</p>
             <p className="mt-1 text-xs text-[#cbb78d]">[{lastResult.rolls.join(", ")}]{lastResult.keptRolls && lastResult.keptRolls !== lastResult.rolls ? ` keep ${lastResult.keptRolls.join(", ")}` : ""}{lastResult.modifier ? ` ${lastResult.modifier > 0 ? "+" : ""}${lastResult.modifier}` : ""}</p>
           </div>
-          <strong className="font-serif text-4xl text-[#f1cf83]">{lastResult.total}</strong>
+          <strong className={cn("font-serif text-4xl", lastResult.isCrit ? "text-[#ffe9a8]" : lastResult.isFail ? "text-[#ff8a7a]" : "text-[#f1cf83]")}>{lastResult.total}</strong>
           {/* No manual send button: every tray roll is auto-announced to
               Malachar the moment the die settles (see initiateRoll). */}
         </section>
