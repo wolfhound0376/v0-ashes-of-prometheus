@@ -23,6 +23,8 @@ interface LichResponse {
   npcImageUrl?: string | null
   locationImageUrl?: string | null
   updatedLocation?: string
+  /** Player-safe vague time-of-day derived server-side from the world clock. */
+  timeOfDay?: string
 }
 
 export function useLich(campaignId: string = "abyss") {
@@ -79,6 +81,7 @@ export function useLich(campaignId: string = "abyss") {
         npcImageUrl: data.npcImageUrl || null,
         locationImageUrl: data.locationImageUrl || null,
         updatedLocation: data.updatedLocation,
+        timeOfDay: typeof data.timeOfDay === "string" ? data.timeOfDay : undefined,
       }
     } catch (error) {
       console.error("Error sending message:", error)
