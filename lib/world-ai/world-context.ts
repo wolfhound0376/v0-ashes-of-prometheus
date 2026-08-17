@@ -247,7 +247,7 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
       return {
         name: char.name,
         class: char.class,
-        race: (char as Character & { race?: string }).race || "Unknown",
+        race: (char as Character & { sheet_species?: string }).sheet_species || "Unknown",
         level: char.level,
         hp: `${char.hp_current}/${char.hp_max}`,
         ac: derivedAc.total,
