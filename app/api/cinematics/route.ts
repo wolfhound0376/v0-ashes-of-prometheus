@@ -20,12 +20,175 @@ export const dynamic = "force-dynamic"
 
 const SCOPES = ["solo", "party"] as const
 const KINDS = ["environment", "action", "filler"] as const
+const TRIGGERS = ["campaign_open", "player_initiated", "event_driven", "dm_override"] as const
+
+// The five values the cinematic_requests.resolution column is constrained to
+// at the database level. Anything outside this set throws on insert.
+type Resolution = "exact" | "location_fallback" | "generic_fallback" | "miss" | "rejected"
 
 function authorized(request: NextRequest): boolean {
   const dmCode = process.env.DM_ACCESS_CODE
   if (!dmCode) return true
   const supplied = normalizeCode(request.headers.get("x-dm-key"))
   return !!supplied && safeEquals(supplied, normalizeCode(dmCode))
+}
+
+// Observability write. Records which fallback tier a resolution landed on so
+// the cinematic_gaps view can surface clips the catalogue is missing.
+//
+// Uses the service-role admin client because cinematic_requests has RLS on
+// with no policies — an anon-key write would silently no-op. Every failure is
+// swallowed and logged: a broken log must never stop a clip from playing.
+async function logCinematicRequest(
+  admin: ReturnType<typeof createAdminClient>,
+  row: {
+    req_location: string | null
+    req_state: string | null
+    req_scope: string
+    req_kind: string
+    trigger_type: string | null
+    session_id: string | null
+    character_id: string | null
+    resolution: Resolution
+    resolved_clip_id: string | null
+  },
+) {
+  try {
+    const { error } = await admin.from("cinematic_requests").insert(row)
+    if (error) console.error("[cinematics] request-log insert failed:", error.message)
+  } catch (e) {
+    console.error("[cinematics] request-log insert threw:", e)
+  }
+}
+
+// GET /api/cinematics — resolve a cinematic clip and record the outcome.
+// Query params:
+//   location (required unless cinematicId), state?, scope?, kind?,
+//   trigger_type?, session_id?, character_id?, cinematicId?
+//
+// Two paths, one endpoint (the DM's manual override and Malachar's automatic
+// trigger both come through here):
+//
+//   • cinematicId present → direct load by id, no fallback. ONLY honoured when
+//     trigger_type=dm_override; any other caller is refused outright (Malachar
+//     may emit only location/state/kind, never a clip id or URL).
+//   • otherwise → the Postgres resolve_cinematic() function runs the three-tier
+//     fallback (exact → location_fallback → generic_fallback → miss). The
+//     function owns weighted-random variant selection and skips unusable rows
+//     (null video_url, weight 0), so the resolution it returns is used verbatim.
+//
+// A miss and a rejection are both normal outcomes: 200, no thrown error. Every
+// request writes exactly one cinematic_requests row, including rejections.
+export async function GET(request: NextRequest) {
+  if (!authorized(request)) return NextResponse.json({ error: "Not authorized" }, { status: 403 })
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch (e) {
+    console.error("[cinematics] admin client unavailable:", e)
+    return NextResponse.json({ error: "Server not configured" }, { status: 500 })
+  }
+
+  const params = request.nextUrl.searchParams
+  const location = (params.get("location") || "").trim().slice(0, 80)
+  const state = (params.get("state") || "").trim().slice(0, 40) || null
+  const scope = SCOPES.includes(params.get("scope") as (typeof SCOPES)[number])
+    ? (params.get("scope") as (typeof SCOPES)[number])
+    : "party"
+  const kind = KINDS.includes(params.get("kind") as (typeof KINDS)[number])
+    ? (params.get("kind") as (typeof KINDS)[number])
+    : "environment"
+  const triggerType = TRIGGERS.includes(params.get("trigger_type") as (typeof TRIGGERS)[number])
+    ? (params.get("trigger_type") as (typeof TRIGGERS)[number])
+    : null
+  const sessionId = params.get("session_id") || null
+  const characterId = params.get("character_id") || null
+  const cinematicId = (params.get("cinematicId") || "").trim() || null
+
+  // Common request metadata attached to whatever resolution we record.
+  const reqMeta = {
+    req_location: location || null,
+    req_state: state,
+    req_scope: scope,
+    req_kind: kind,
+    trigger_type: triggerType,
+    session_id: sessionId,
+    character_id: characterId,
+  }
+
+  // === EXPLICIT CLIP ID PATH ===
+  if (cinematicId) {
+    // Guard (acceptance test #9): an explicit id is only ever legitimate from
+    // the DM's manual override. Enforcing by CALLER — not by whether the id
+    // happens to exist — is deliberately stricter: it prevents Malachar from
+    // ever playing a clip it picked directly, even if it copied a real uuid
+    // from context. A rejection is a normal outcome, not an error.
+    if (triggerType !== "dm_override") {
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "rejected", resolved_clip_id: null })
+      return NextResponse.json({ clip: null, resolution: "rejected" })
+    }
+
+    const { data: clip } = await admin
+      .from("cinematic_clips")
+      .select("id, location, state, scope, kind, video_url")
+      .eq("id", cinematicId)
+      .maybeSingle()
+
+    // id does not exist → rejected. id exists but not yet rendered → miss.
+    if (!clip) {
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "rejected", resolved_clip_id: null })
+      return NextResponse.json({ clip: null, resolution: "rejected" })
+    }
+    if (!clip.video_url) {
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
+      return NextResponse.json({ clip: null, resolution: "miss" })
+    }
+
+    await logCinematicRequest(admin, { ...reqMeta, resolution: "exact", resolved_clip_id: clip.id })
+    return NextResponse.json({ clip, resolution: "exact" })
+  }
+
+  // === FALLBACK RESOLUTION PATH ===
+  if (!location) {
+    await logCinematicRequest(admin, { ...reqMeta, resolution: "rejected", resolved_clip_id: null })
+    return NextResponse.json({ error: "Location is required" }, { status: 400 })
+  }
+
+  // The Postgres function owns the three-tier fallback, weighted-random variant
+  // selection, and skipping unusable rows. EXECUTE is granted only to
+  // service_role, so this must run on the admin client. It returns zero or one
+  // row shaped { clip_id, video_url, resolution }; zero rows means a miss.
+  const { data, error } = await admin.rpc("resolve_cinematic", {
+    p_location: location,
+    p_state: state ?? null,
+    p_scope: scope ?? "party",
+    p_kind: kind ?? "environment",
+  })
+
+  if (error) {
+    console.error("[cinematics] resolve_cinematic rpc failed:", error.message)
+    await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
+    return NextResponse.json({ clip: null, resolution: "miss" })
+  }
+
+  // rpc() returns an array for a set-returning function; take the first row.
+  const row = Array.isArray(data) ? data[0] : data
+  const resolution: Resolution = row?.resolution ?? "miss"
+  const clip = row?.clip_id
+    ? { id: row.clip_id as string, video_url: (row.video_url as string) ?? null }
+    : null
+
+  // Record the outcome before responding. The insert is awaited so it reliably
+  // runs in a serverless invocation, but every error is swallowed inside the
+  // helper so a failed log can never block playback.
+  await logCinematicRequest(admin, {
+    ...reqMeta,
+    resolution,
+    resolved_clip_id: clip ? clip.id : null,
+  })
+
+  return NextResponse.json({ clip, resolution })
 }
 
 export async function POST(request: NextRequest) {
