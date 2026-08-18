@@ -1,9 +1,10 @@
 "use client"
 
-import { useRef, useState } from "react"
-import { BookOpen, Compass, Map, Mic, X } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { BookOpen, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
+import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
 // (fantasy-icons no longer used here — equipment slots render Sam's uploaded PNG icons)
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
@@ -709,6 +710,76 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
   const [selectedSlot, setSelectedSlot] = useState<EquipmentItem["slot"] | null>(null)
   const [busySlot, setBusySlot] = useState<EquipmentItem["slot"] | null>(null)
   const [message, setMessage] = useState("Drag an eligible item onto a slot, or click Equip.")
+
+  // === REPLACE ART (2026-08-18) ===
+  // The DM fixes artwork while looking at the thing that is wrong, rather than
+  // hunting for the row in an admin panel. Gated on this browser holding the DM
+  // key — the server re-checks it regardless, so this only hides a control that
+  // would 403 anyway.
+  //
+  // Art is written at CATALOGUE level by /api/item-art, so replacing the dagger
+  // icon fixes all five daggers across every character at once. That endpoint
+  // creates the catalogue row when none exists, which is the whole point: 44 of
+  // 53 inventory rows had no catalogue entry to upload against.
+  const [dmUnlocked, setDmUnlocked] = useState(false)
+  const [uploadingArtFor, setUploadingArtFor] = useState<string | null>(null)
+  // Freshly uploaded art, keyed by item name, shown immediately. The database is
+  // already updated; this only spares the DM a refresh to see it.
+  const [artOverrides, setArtOverrides] = useState<Record<string, string>>({})
+  const artInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingArtItem = useRef<InventoryItem | null>(null)
+
+  useEffect(() => {
+    // Read in an effect, never during render: localStorage does not exist on the
+    // server and reading it inline would desync hydration.
+    setDmUnlocked(hasDmKey())
+    return onDmKeyChange(() => setDmUnlocked(hasDmKey()))
+  }, [])
+
+  const artKey = (name: string) => name.trim().toLowerCase()
+  const artFor = (name: string, current?: string | null) => artOverrides[artKey(name)] ?? current ?? null
+
+  const pickArtFor = (item: InventoryItem) => {
+    pendingArtItem.current = item
+    if (artInputRef.current) artInputRef.current.value = ""
+    artInputRef.current?.click()
+  }
+
+  const uploadArt = async (file: File) => {
+    const item = pendingArtItem.current
+    pendingArtItem.current = null
+    if (!item) return
+    setUploadingArtFor(item.id)
+    setMessage(`Uploading art for ${item.name}…`)
+    try {
+      const send = () => {
+        const body = new FormData()
+        body.append("file", file)
+        body.append("inventoryItemId", item.id)
+        body.append("name", item.name)
+        return fetch("/api/item-art", { method: "POST", headers: dmHeaders(), body })
+      }
+      // A 403 means the stored code is stale. Drop it, ask once, retry — the same
+      // recovery the DM asset tabs use.
+      let res = await send()
+      if (res.status === 403) {
+        clearDmKey()
+        if (ensureDmKey("replace item art") !== null) res = await send()
+      }
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Upload failed")
+      setArtOverrides((current) => ({ ...current, [artKey(item.name)]: json.url as string }))
+      setMessage(
+        json.created
+          ? `Art saved for ${item.name} — a catalogue entry was created, so every copy shows it.`
+          : `Art replaced for ${item.name} — every copy updated.`,
+      )
+    } catch (err) {
+      setMessage((err as Error).message)
+    } finally {
+      setUploadingArtFor(null)
+    }
+  }
   const portrait = character.portrait_image_url || character.avatar_image_url
   const equippedAt = (slot: EquipmentItem["slot"]) => equipment.find((item) => item.slot === slot && item.equipped !== false)
   const equip = async (item: InventoryItem, slot: EquipmentItem["slot"]) => {
@@ -720,15 +791,27 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
   const unequip = async (slot: EquipmentItem["slot"]) => { if (!onUnequip) return; setBusySlot(slot); try { await onUnequip(slot); setMessage(`${equipmentSlots.find((entry) => entry.id === slot)?.label || slot} cleared.`) } finally { setBusySlot(null) } }
   const eligible = selectedSlot ? inventory.filter((item) => item.equippable_slot === selectedSlot) : inventory
   return <ModalShell title={`${character.name} · Inventory & Equipped Items`} onClose={onClose} wide>
+    {/* One shared picker for the whole panel — a per-row input would mount
+        dozens of identical nodes. `pickArtFor` records which item is pending. */}
+    <input
+      ref={artInputRef}
+      type="file"
+      accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+      className="hidden"
+      onChange={(event) => {
+        const file = event.target.files?.[0]
+        if (file) void uploadArt(file)
+      }}
+    />
     <div className="grid min-h-[650px] gap-4 p-4 lg:grid-cols-[minmax(400px,1.05fr)_minmax(330px,.95fr)]">
       <section className="relative min-h-[610px] overflow-hidden rounded-xl border border-[#5e471f] bg-[radial-gradient(circle_at_50%_32%,#27302e,#0a0907_67%)]">
         <div className="absolute inset-x-[21%] bottom-4 top-8 overflow-hidden border-x border-[#4f3c1d] bg-black/20">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-contain object-bottom" /> : <div className="flex h-full items-center justify-center font-serif text-8xl text-[#765a2b]">{character.name[0]}</div>}</div>
-        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("group absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item ? <ItemIcon iconUrl={item.icon_url} name={item.name} itemType={(item as { item_type?: string | null }).item_type} className="h-10 w-10" /> : <img src={slot.icon} alt={slot.label} className="h-12 w-12 rounded object-contain opacity-85 transition group-hover:opacity-100" />}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
+        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("group absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item ? <ItemIcon iconUrl={artFor(item.name, item.icon_url)} name={item.name} itemType={(item as { item_type?: string | null }).item_type} className="h-10 w-10" /> : <img src={slot.icon} alt={slot.label} className="h-12 w-12 rounded object-contain opacity-85 transition group-hover:opacity-100" />}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
         <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1">{Object.entries(bonuses).length ? Object.entries(bonuses).map(([key, value]) => <span key={key} className="rounded-full border border-emerald-800 bg-emerald-950/80 px-2 py-1 text-[8px] uppercase text-emerald-300">{key} {signed(value)}</span>) : <span className="rounded border border-[#4d3a1d] bg-black/70 px-2 py-1 text-[8px] text-[#8e7b57]">No recorded equipment stat bonuses</span>}</div>
       </section>
       <section className="flex min-h-0 flex-col rounded-xl border border-[#5e471f] bg-[#0d0b07]">
         <div className="border-b border-[#49371c] p-3"><div className="flex items-center"><div><h3 className="font-serif text-sm uppercase tracking-[.14em] text-[#e0bf7c]">{selectedSlot ? `Eligible for ${equipmentSlots.find((slot) => slot.id === selectedSlot)?.label}` : "Basic Inventory"}</h3><p className="mt-1 text-[9px] text-[#817154]">{message}</p></div>{selectedSlot && <button onClick={() => setSelectedSlot(null)} className="ml-auto rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162]">Show all</button>}</div></div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">{eligible.length ? eligible.map((item) => { const slot = item.equippable_slot; const equipped = slot ? equippedAt(slot)?.name === item.name : false; return <article key={item.id} draggable={Boolean(slot)} onDragStart={(event) => { event.dataTransfer.setData("application/aop-inventory-item", item.id); event.dataTransfer.effectAllowed = "move" }} className={cn("flex items-center gap-3 rounded border p-2", slot ? "cursor-grab border-[#51401f] bg-[#171109] active:cursor-grabbing" : "border-[#2e281e] bg-[#100e0b] opacity-70")}><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[#55411f] bg-black/50"><ItemIcon iconUrl={item.icon_url} name={item.name} itemType={item.item_type} className="h-9 w-9" /></div><div className="min-w-0 flex-1"><h4 className="font-serif text-xs text-[#e1d0a8]">{item.name}</h4><p className="truncate text-[9px] text-[#817154]">{item.description || `${item.item_type} · ${item.weight} lb`}</p><span className="text-[8px] uppercase text-[#aa8b52]">{slot ? equipmentSlots.find((entry) => entry.id === slot)?.label : "Not equippable"}</span></div>{slot && <button disabled={equipped || busySlot === slot} onClick={() => void equip(item, slot)} className={cn("rounded border px-2 py-1 text-[9px]", equipped ? "border-emerald-700 bg-emerald-900/60 text-emerald-200" : "border-[#8a672d] text-[#d8b873] hover:bg-[#2a1e0d]")}>{equipped ? "Equipped" : "Equip"}</button>}</article> }) : <p className="p-8 text-center text-xs italic text-[#76694f]">No eligible inventory items for this slot.</p>}</div>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">{eligible.length ? eligible.map((item) => { const slot = item.equippable_slot; const equipped = slot ? equippedAt(slot)?.name === item.name : false; return <article key={item.id} draggable={Boolean(slot)} onDragStart={(event) => { event.dataTransfer.setData("application/aop-inventory-item", item.id); event.dataTransfer.effectAllowed = "move" }} className={cn("flex items-center gap-3 rounded border p-2", slot ? "cursor-grab border-[#51401f] bg-[#171109] active:cursor-grabbing" : "border-[#2e281e] bg-[#100e0b] opacity-70")}><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[#55411f] bg-black/50"><ItemIcon iconUrl={artFor(item.name, item.icon_url)} name={item.name} itemType={item.item_type} className="h-9 w-9" /></div><div className="min-w-0 flex-1"><h4 className="font-serif text-xs text-[#e1d0a8]">{item.name}</h4><p className="truncate text-[9px] text-[#817154]">{item.description || `${item.item_type} · ${item.weight} lb`}</p><span className="text-[8px] uppercase text-[#aa8b52]">{slot ? equipmentSlots.find((entry) => entry.id === slot)?.label : "Not equippable"}</span></div>{dmUnlocked && <button type="button" title={`Replace the artwork for ${item.name} — applies to every copy`} aria-label={`Replace artwork for ${item.name}`} disabled={uploadingArtFor === item.id} onClick={(event) => { event.stopPropagation(); pickArtFor(item) }} className="flex items-center rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162] hover:border-[#c99a49] hover:text-[#e0bf7c] disabled:opacity-50">{uploadingArtFor === item.id ? "Uploading…" : <ImagePlus className="h-3 w-3" />}</button>}{slot && <button disabled={equipped || busySlot === slot} onClick={() => void equip(item, slot)} className={cn("rounded border px-2 py-1 text-[9px]", equipped ? "border-emerald-700 bg-emerald-900/60 text-emerald-200" : "border-[#8a672d] text-[#d8b873] hover:bg-[#2a1e0d]")}>{equipped ? "Equipped" : "Equip"}</button>}</article> }) : <p className="p-8 text-center text-xs italic text-[#76694f]">No eligible inventory items for this slot.</p>}</div>
         {selectedSlot && equippedAt(selectedSlot) ? <button onClick={() => void unequip(selectedSlot)} className="m-3 rounded border border-red-900/70 bg-red-950/30 py-2 text-[10px] uppercase tracking-wider text-red-300">Unequip {equippedAt(selectedSlot)?.name}</button> : null}
       </section>
     </div>
