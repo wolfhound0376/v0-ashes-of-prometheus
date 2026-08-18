@@ -376,7 +376,21 @@ export function V4Dashboard(props: V4DashboardProps) {
     ? (props.characters.find((c) => c.id === speakingNpc.id && c.is_player) as (Character & { idle_url?: string | null; talking_url?: string | null }) | undefined)
     : undefined
   const shownNpc = speakingRow ?? activeNpc
-  const npcName = speakingPlayer?.name ?? shownNpc?.name ?? "Eldeth Feldrun"
+  // EMPTY STAGE IS A REAL STATE, NOT A FAILURE.
+  //
+  // restart-campaign sets every npc_encounters row to is_active:false
+  // ("offstage until the story calls it back") and only Malachar, mid-narration,
+  // brings one back on. Between those two moments the correct answer is that
+  // nobody is here — and page.tsx filters the fetch on is_active, so the array
+  // is legitimately empty.
+  //
+  // This used to fall back to a hardcoded "Eldeth Feldrun" over the subtitle
+  // "Present in the scene", so an empty stage rendered as a named NPC with a
+  // broken portrait. It sent Sam looking for missing art that was never
+  // missing: Eldeth has a face, a portrait and both loops. Nothing was absent
+  // except the NPC herself.
+  const onStage = speakingPlayer ?? shownNpc
+  const npcName = speakingPlayer?.name ?? shownNpc?.name ?? "No one on stage"
   // A talking NPC gets talking_url when the row has one, so the animated head
   // switches to the speaking loop and back to idle on its own.
   const npcPortrait = speakingPlayer
@@ -596,14 +610,16 @@ export function V4Dashboard(props: V4DashboardProps) {
 
     <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" action={<DmNarration dialogue={dialogue} npcs={props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
       <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 overflow-hidden p-3 pb-4">
-        <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : shownNpc?.description || "Present in the scene"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}</div>
-        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : <>Silent <span className="ml-2">▯▯▯▯</span></>}</div>
+        <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? shownNpc?.description || "Present in the scene" : "No one has stepped forward yet"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}</div>
+        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : onStage ? <>Silent <span className="ml-2">▯▯▯▯</span></> : <>Awaiting an entrance</>}</div>
           {/* MERGE NOTE: Codex's redesign dropped the third column, which held
               disposition / CR / DM-only health. Those are real row data, not
               mock text, so they are re-homed here as a compact strip beneath
               the portrait rather than lost. */}
           <div className="mt-1.5 flex shrink-0 items-stretch gap-1.5 overflow-x-auto text-[10px]">
-            {props.claimLocked
+            {!onStage
+              ? null
+              : props.claimLocked
               ? <div className="rounded border border-[#3b3325] bg-[#141210] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span><span className="text-[#7e7663]">Read them yourself</span></div>
               : <DispositionChip value={activeNpc?.disposition} />}
             {activeNpc?.challenge_rating ? <div className="rounded border border-[#4b3a19] px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#847557]">Challenge</span><span className="text-[#d9c492]">CR {activeNpc.challenge_rating}</span></div> : null}
