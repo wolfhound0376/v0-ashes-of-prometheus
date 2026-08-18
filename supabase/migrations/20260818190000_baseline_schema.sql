@@ -1,2 +1,9 @@
--- WIP: full production baseline schema, extraction in progress this session.
--- Will contain the complete public-schema state as of migration 20260818175314.
+-- BASELINE SCHEMA — PLACEHOLDER, DO NOT MERGE AS-IS.
+-- Intended content: the complete public-schema state of production
+-- (project ppadxmvvvxmnnejeaoer) as of applied migration 20260818175314 —
+-- 57 tables (36 live + 21 backup/quarantine), all functions, triggers,
+-- indexes, RLS policies, sequences and extensions, written idempotently
+-- in the same guarded style as 20260818000000_scene_key_registry.sql.
+-- Extraction was blocked in the authoring session by tool permissions
+-- (Supabase execute_sql denied); this file must be replaced with the real
+-- extract before this branch merges.
