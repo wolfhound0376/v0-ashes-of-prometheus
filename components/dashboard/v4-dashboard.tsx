@@ -457,6 +457,12 @@ export function V4Dashboard(props: V4DashboardProps) {
   //     group moment, so it is broadcast to every seat over the realtime
   //     channel and plays for all of them.
   //  5. It plays once through and ends — CinematicOverlay carries no loop.
+  //  6. Both calls below MUST carry dmHeaders(). cinematicParams sends
+  //     trigger_type=dm_override the moment a DM key is stored, and
+  //     /api/cinematics only lets an un-keyed request through when it is
+  //     trigger_type=player_initiated. Without the header a DM browser got a
+  //     403, the probe bailed, and the button never appeared — the scene
+  //     looked broken for the one person most likely to be testing it.
   const [cinematicSrc, setCinematicSrc] = useState<string | null>(null)
   const [cinematicOffered, setCinematicOffered] = useState(false)
   const [cinematicBusy, setCinematicBusy] = useState(false)
@@ -493,8 +499,17 @@ export function V4Dashboard(props: V4DashboardProps) {
     if (!locationName) return
     void (async () => {
       try {
-        const res = await fetch(`/api/cinematics?${cinematicParams({ probe: "1" }).toString()}`)
-        if (!res.ok) return
+        const res = await fetch(`/api/cinematics?${cinematicParams({ probe: "1" }).toString()}`, {
+          headers: dmHeaders(),
+        })
+        if (!res.ok) {
+          // Loud on purpose. A silent 403 here is exactly what hid the button
+          // from every DM browser: cinematicParams sends dm_override whenever a
+          // DM key is stored, and /api/cinematics refuses dm_override without
+          // the matching x-dm-key header.
+          console.warn("[cinematics] probe rejected:", res.status)
+          return
+        }
         const body = await res.json()
         if (!cancelled) setCinematicOffered(!!body?.available)
       } catch {
@@ -524,7 +539,9 @@ export function V4Dashboard(props: V4DashboardProps) {
     if (cinematicBusy) return
     setCinematicBusy(true)
     try {
-      const res = await fetch(`/api/cinematics?${cinematicParams().toString()}`)
+      const res = await fetch(`/api/cinematics?${cinematicParams().toString()}`, {
+        headers: dmHeaders(),
+      })
       const body = await res.json()
       const clip = body?.clip as { video_url?: string; scope?: string } | null
       if (!clip?.video_url) {
