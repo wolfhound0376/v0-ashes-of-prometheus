@@ -3,10 +3,16 @@
 /**
  * Full-screen cinematic playback overlay. (PR-5, first slice)
  *
- * Renders whatever clip resolve_cinematic picked: muted looping video, faded
- * in over the whole dashboard, dismissed by click or Escape. Muted is a house
- * rule, not an oversight — the Tabletop Audio system owns sound, and muted is
- * also what makes browser autoplay reliable (same path /intro proves out).
+ * Renders whatever clip resolve_cinematic picked: a muted video faded in over
+ * the whole dashboard, dismissed by click, by Escape, or by reaching its end.
+ *
+ * IT PLAYS ONCE (Sam's ruling, 18 Aug 2026) — a cinematic is a moment, not
+ * wallpaper. There is deliberately no loop attribute on the video below; when
+ * it ends it fades itself out and unmounts.
+ *
+ * Muted is a house rule, not an oversight — the Tabletop Audio system owns
+ * sound, and muted is also what makes browser autoplay reliable (same path
+ * /intro proves out).
  */
 
 import { useEffect, useState } from "react"
@@ -49,9 +55,9 @@ export function CinematicOverlay({ src, onClose }: CinematicOverlayProps) {
       role="dialog"
       aria-label="Cinematic"
     >
-      <video src={src} autoPlay muted loop playsInline className="h-full w-full object-cover" />
+      <video src={src} autoPlay muted playsInline onEnded={close} className="h-full w-full object-cover" />
       <span className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded border border-[#4b3a19] bg-black/70 px-3 py-1 text-[10px] uppercase tracking-[.2em] text-[#cdb276]">
-        Click anywhere to return
+        Plays once · click anywhere to return
       </span>
     </div>
   )

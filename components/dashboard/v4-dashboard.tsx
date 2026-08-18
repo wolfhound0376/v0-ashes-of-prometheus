@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { BookOpen, Compass, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 // (fantasy-icons no longer used here — equipment slots render Sam's uploaded PNG icons)
@@ -11,6 +11,8 @@ import { DmNarration } from "./dm-narration"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
 import { CinematicOverlay } from "./cinematic-overlay"
+import { createClient } from "@/lib/supabase/client"
+import { hasDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
 import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
@@ -426,31 +428,109 @@ export function V4Dashboard(props: V4DashboardProps) {
   // player whose generation failed was handed Samson's options — the exact
   // leak the per-player chips exist to prevent. No class, no skill tag, no
   // named party member: whatever sits here is shown to EVERY seat at once.
-  // === CINEMATIC TRIGGER (PR-5, first slice) ===
-  // "Look around" — from a chip or typed into the input — asks /api/cinematics
-  // to resolve an environment clip for the current location and plays it as a
-  // full-screen overlay. player_initiated is un-keyed on the server, may only
-  // reach the fallback resolver, and a miss is silent: the reply to Malachar
-  // is never blocked by a missing clip.
+  // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
+  //  1. A clip plays ONCE per character. The server owns that memory
+  //     (cinematic_views); this component never decides what is unseen.
+  //  2. DM mode is the only override — a DM browser sends dm_override, which
+  //     bypasses the seen-check server-side and can replay anything.
+  //  3. Watching is always an explicit choice: an offered button sits with the
+  //     dialogue options, shown only when something unseen is actually here.
+  //     No more sniffing the player's typing for "look around".
+  //  4. A solo clip plays only for the character who asked. A party clip is a
+  //     group moment, so it is broadcast to every seat over the realtime
+  //     channel and plays for all of them.
+  //  5. It plays once through and ends — CinematicOverlay carries no loop.
   const [cinematicSrc, setCinematicSrc] = useState<string | null>(null)
-  const maybeTriggerCinematic = async (text: string) => {
-    if (!/^look around\b/i.test(text.trim())) return
-    try {
+  const [cinematicOffered, setCinematicOffered] = useState(false)
+  const [cinematicBusy, setCinematicBusy] = useState(false)
+  // localStorage is client-only: reading it during render would make the
+  // server and client markup disagree. Resolve after mount instead.
+  const [isDm, setIsDm] = useState(false)
+  useEffect(() => {
+    setIsDm(hasDmKey())
+    return onDmKeyChange(() => setIsDm(hasDmKey()))
+  }, [])
+  const locationName = props.environment.name
+  const seatId = selected?.id ?? null
+
+  const cinematicParams = useCallback(
+    (extra?: Record<string, string>) => {
       const params = new URLSearchParams({
-        location: props.environment.name,
-        scope: "party",
+        location: locationName,
         kind: "environment",
-        trigger_type: "player_initiated",
+        scope: "party",
+        trigger_type: isDm ? "dm_override" : "player_initiated",
+        ...extra,
       })
-      if (selected?.id) params.set("character_id", selected.id)
-      const res = await fetch(`/api/cinematics?${params.toString()}`)
-      if (!res.ok) return
+      if (seatId) params.set("character_id", seatId)
+      return params
+    },
+    [locationName, seatId, isDm],
+  )
+
+  // Ask whether anything unseen is here. A probe records nothing, so asking is
+  // free and cannot burn the clip the button is about to offer.
+  useEffect(() => {
+    let cancelled = false
+    setCinematicOffered(false)
+    if (!locationName) return
+    void (async () => {
+      try {
+        const res = await fetch(`/api/cinematics?${cinematicParams({ probe: "1" }).toString()}`)
+        if (!res.ok) return
+        const body = await res.json()
+        if (!cancelled) setCinematicOffered(!!body?.available)
+      } catch {
+        /* no button is the correct failure mode */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [cinematicParams, locationName])
+
+  // Group clips arrive here from another seat; solo clips never broadcast.
+  useEffect(() => {
+    const channel = createClient()
+      .channel("cinematic-broadcast")
+      .on("broadcast", { event: "play" }, (message) => {
+        const url = (message?.payload as { video_url?: string })?.video_url
+        if (url) setCinematicSrc(url)
+      })
+      .subscribe()
+    return () => {
+      void createClient().removeChannel(channel)
+    }
+  }, [])
+
+  const watchCinematic = async () => {
+    if (cinematicBusy) return
+    setCinematicBusy(true)
+    try {
+      const res = await fetch(`/api/cinematics?${cinematicParams().toString()}`)
       const body = await res.json()
-      if (body?.clip?.video_url) setCinematicSrc(body.clip.video_url as string)
+      const clip = body?.clip as { video_url?: string; scope?: string } | null
+      if (!clip?.video_url) {
+        // Already watched (or nothing here). Retire the button either way.
+        setCinematicOffered(false)
+        return
+      }
+      setCinematicSrc(clip.video_url)
+      setCinematicOffered(false)
+      if (clip.scope === "party") {
+        // A group moment: everyone at the table sees it, not just this seat.
+        await createClient()
+          .channel("cinematic-broadcast")
+          .subscribe()
+          .send({ type: "broadcast", event: "play", payload: { video_url: clip.video_url } })
+      }
     } catch {
-      /* a missing cinematic must never block the reply */
+      /* a failed cinematic must never interrupt play */
+    } finally {
+      setCinematicBusy(false)
     }
   }
+
   const quickReplies = [
     "Look around",
     "Listen for anything nearby",
@@ -530,8 +610,26 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
-      <SuggestionChips character={livePlayers.length && selected?.is_player ? selected : undefined} dialogue={dialogue} inventory={props.inventory} location={props.environment.name} fallback={quickReplies} disabled={!!props.isThinking} onPick={(text) => { props.onQuickReply?.(text); void maybeTriggerCinematic(text) }} />
-      <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { void maybeTriggerCinematic(props.dialogueInput); props.onDialogueSubmit() } }} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
+      <div className="flex flex-col gap-1">
+        <SuggestionChips character={livePlayers.length && selected?.is_player ? selected : undefined} dialogue={dialogue} inventory={props.inventory} location={props.environment.name} fallback={quickReplies} disabled={!!props.isThinking} onPick={(text) => props.onQuickReply?.(text)} />
+        {/* The cinematic offer sits WITH the dialogue options, but reads as its
+            own thing: it is a camera cue, not something you say. Shown only
+            when the server confirms an unseen clip is waiting here. */}
+        {cinematicOffered ? (
+          <div className="px-3 pb-1">
+            <button
+              onClick={() => void watchCinematic()}
+              disabled={cinematicBusy || !!props.isThinking}
+              className="rounded-full border border-[#8d6d35] bg-[#1c1408] px-3.5 py-1.5 text-xs text-[#ead39e] hover:bg-[#251a0d] disabled:opacity-50"
+              title={isDm ? "DM: replays even if already seen" : "Plays once"}
+            >
+              {cinematicBusy ? "…" : "▶ Watch the scene"}
+              {isDm ? <span className="ml-1.5 text-[9px] uppercase tracking-wider text-[#b9913f]">DM</span> : null}
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
       <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{visibleParty.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div></div>
     </Frame>
 
