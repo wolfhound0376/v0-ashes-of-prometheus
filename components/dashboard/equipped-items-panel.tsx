@@ -11,6 +11,7 @@
 import { useState } from "react"
 import { Backpack as BackpackIcon, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { ItemIcon } from "@/lib/item-icons"
 
 export interface EquipSlotDef {
   id: string
@@ -23,6 +24,7 @@ export interface EquippedItem {
   name: string
   slot: string
   iconUrl?: string | null
+  itemType?: string | null
 }
 
 export interface EligibleItem {
@@ -131,11 +133,7 @@ export function EquippedItemsPanel({
         )}
       >
         {eq ? (
-          eq.iconUrl ? (
-            <img src={eq.iconUrl || "/placeholder.svg"} alt={eq.name} className="h-[85%] w-[85%] rounded object-cover" />
-          ) : (
-            <BackpackIcon className="h-[55%] w-[55%] text-[#7aa8c8]" />
-          )
+          <ItemIcon iconUrl={eq.iconUrl} name={eq.name} itemType={eq.itemType} className="h-[85%] w-[85%] rounded" />
         ) : (
           <img
             src={slot.icon || "/placeholder.svg"}
