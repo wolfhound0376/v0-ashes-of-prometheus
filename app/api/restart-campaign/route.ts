@@ -47,6 +47,28 @@ const STARTING_GARMENT = {
   icon_type: "custom",
 }
 
+// Sam's ruling (17 Aug 2026): journals are always part of inventory unless
+// taken — every prisoner smuggled theirs through confiscation, quill included.
+const SMUGGLED_EFFECTS = [
+  {
+    name: "Tattered Journal",
+    description:
+      "A battered personal journal, smuggled through the drow confiscation. Its pages remember what its owner survives.",
+    quantity: 1,
+    weight: "1",
+    value: "0",
+    item_type: "misc",
+  },
+  {
+    name: "Small Quill",
+    description: "A stub of quill and a pinch of soot-ink, hidden in a seam. Enough to keep writing.",
+    quantity: 1,
+    weight: "0",
+    value: "0",
+    item_type: "misc",
+  },
+]
+
 interface EnvironmentRow {
   id: string
   name: string
@@ -209,6 +231,15 @@ export async function POST(req: Request) {
     )
     note("issue rags", ragsErr)
     report.ragsIssued = ragsErr ? 0 : playerIds.length
+
+    // Re-issue the smuggled journal + quill to every player. Journal pages in
+    // journal_entries deliberately survive restart — burning them is a DM
+    // ruling not yet made.
+    const { error: effectsErr } = await admin.from("inventory_items").insert(
+      playerIds.flatMap((character_id) => SMUGGLED_EFFECTS.map((item) => ({ character_id, ...item }))),
+    )
+    note("issue smuggled effects", effectsErr)
+    report.smuggledEffectsIssued = effectsErr ? 0 : playerIds.length * SMUGGLED_EFFECTS.length
   }
 
   // --- 5. environments ----------------------------------------------------

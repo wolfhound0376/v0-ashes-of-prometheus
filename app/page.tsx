@@ -1110,7 +1110,7 @@ if (error) {
         }}
       />
 
-      {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} onClose={() => setCampaignBook(null)} /> : null}
+      {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} characterId={claimRef.current.characterId} onClose={() => setCampaignBook(null)} /> : null}
       {npcAssetsOpen && !claimLocked ? <DmAssetsPanel onClose={() => setNpcAssetsOpen(false)} /> : null}
 
       {/* Save toast */}

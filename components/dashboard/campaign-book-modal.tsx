@@ -2,6 +2,7 @@
 
 import { BookOpen, LockKeyhole, Map, ScrollText, X } from "lucide-react"
 import type { InventoryItem } from "@/lib/types/database"
+import { JournalPages } from "@/components/dashboard/journal-pages"
 
 export type CampaignBookSection = "journal" | "quests" | "maps" | "lore"
 
@@ -28,7 +29,7 @@ const sectionCopy: Record<CampaignBookSection, { title: string; subtitle: string
   },
 }
 
-export function CampaignBookModal({ section, inventory, onClose }: { section: CampaignBookSection; inventory: InventoryItem[]; onClose: () => void }) {
+export function CampaignBookModal({ section, inventory, characterId = null, onClose }: { section: CampaignBookSection; inventory: InventoryItem[]; characterId?: string | null; onClose: () => void }) {
   const copy = sectionCopy[section]
   const journals = inventory.filter((item) => /journal|diary|notebook/i.test(item.name))
   const journalLocked = section === "journal" && journals.length === 0
@@ -51,10 +52,14 @@ export function CampaignBookModal({ section, inventory, onClose }: { section: Ca
               <h3 className="mt-3 font-serif text-xl">Journal not in inventory</h3>
               <p className="mt-3 text-sm leading-relaxed">Personal pages can only be opened by the character carrying their physical journal. A character may possess no more than two journals.</p>
             </div>
+          ) : section === "journal" ? (
+            <div className="mx-auto flex h-[calc(100%-220px)] max-w-md flex-col px-2">
+              <JournalPages characterId={characterId} />
+              <p className="mt-2 text-center text-[10px] uppercase tracking-wider text-[#83582e]">Carried: {journals.map((journal) => journal.name).join(", ")}</p>
+            </div>
           ) : (
             <div className="mx-auto max-w-sm text-center text-[#5c3e28]">
               <p className="font-serif text-lg">{copy.empty}</p>
-              {section === "journal" && journals.length > 0 && <p className="mt-4 text-xs uppercase tracking-wider">Carried: {journals.map((journal) => journal.name).join(", ")}</p>}
             </div>
           )}
         </div>
