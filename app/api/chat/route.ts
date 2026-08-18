@@ -2034,83 +2034,81 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
     console.log("[v0] No [LOCATION_IMAGE:] tag found in response")
   }
 
-  // Apply the (already parsed) UPDATE_LOCATION tag to the campaign location
+  // Apply the (already parsed) UPDATE_LOCATION tag to the campaign location.
+  //
+  // CLOSED-LIST SCENE KEY (root-cause fix, 2026-08-17): Malachar's tag may
+  // only SELECT an existing environments row — it can never CREATE one.
+  // Free-text naming used to insert artless duplicate rows ("Velkynvelve
+  // (slave pen)" alongside the curated "Scene_1_Velkynvelve (slave pen)");
+  // the blank row then became the current environment and cinematic
+  // resolution — which matches cinematic_clips.location against the
+  // environment's exact name — missed on every request. Environment rows are
+  // DM-curated only; Malachar's spelling is snapped to the curated name, and
+  // the snapped name is what the response echoes back to the client (the
+  // dashboard optimistically renames its current environment from
+  // response.updatedLocation, so the canonical spelling must travel the whole
+  // loop or "Look around" resolves cinematics against the wrong key).
   let updatedLocation: string | null = null
-  if (updateLocationMatch) {
-    updatedLocation = taggedLocationName
-    console.log("[v0] Updating campaign location to:", updatedLocation)
-    console.log("[v0] Current locationImageUrl:", locationImageUrl ? "SET" : "EMPTY", "| updatedLocation:", updatedLocation)
-
-    // If no LOCATION_IMAGE tag was provided, check for existing curated art
-    // first (environments + dashboard_assets, matched by name), then auto-generate
-    if (!locationImageUrl && updatedLocation) {
-      const existingArt = await resolveExistingSceneArt(updatedLocation)
-
-      if (existingArt) {
-        locationImageUrl = existingArt.url
-      } else {
-        // No existing image found, generate with Fal
-        console.log("[v0] Auto-generating location image for:", updatedLocation)
-        try {
-          const result = await fal.subscribe("fal-ai/flux/schnell", {
-            input: {
-              prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
-              image_size: "square_hd",
-              num_inference_steps: 4,
-              num_images: 1,
-            },
-          }) as any
-          console.log("[v0] Fal result received:", result ? "YES" : "NO")
-          if (result?.images && result.images.length > 0) {
-            locationImageUrl = result.images[0].url
-            console.log("[v0] Auto-generated location image:", locationImageUrl)
-          } else {
-            console.log("[v0] Fal returned no images. Result:", JSON.stringify(result).substring(0, 200))
-          }
-        } catch (err) {
-          console.error("[v0] Auto-generation of location image failed:", err instanceof Error ? err.message : String(err))
-        }
-      }
-    } else {
-      console.log("[v0] Skipping auto-generation: locationImageUrl exists or no updatedLocation")
-    }
-
+  if (updateLocationMatch && taggedLocationName) {
     try {
-      // Create or update the environment record with the new location and image
-      const { data: existingEnv } = await supabase
+      const { data: envRows } = await supabase
         .from("environments")
-        .select("id")
-        .eq("name", updatedLocation)
-        .single()
+        .select("id, name, background_image_url")
+      const target = normalizeSceneName(taggedLocationName)
+      const canonicalEnv =
+        (envRows || []).find((r: any) => r.name === taggedLocationName) ??
+        (envRows || []).find((r: any) => normalizeSceneName((r.name as string) || "") === target) ??
+        null
 
-      if (existingEnv) {
-        // Location already exists - if we have an image (either from tag or auto-generated), update it
-        if (locationImageUrl) {
-          const { error: updateErr } = await supabase
-            .from("environments")
-            .update({ background_image_url: locationImageUrl })
-            .eq("id", existingEnv.id)
-          if (updateErr) {
-            console.error("[v0] Error updating environment image:", updateErr)
-          } else {
-            console.log("[v0] Updated existing environment with image URL:", locationImageUrl.substring(0, 80))
-          }
-        } else {
-          console.log("[v0] No image URL to update for existing environment")
-        }
+      if (!canonicalEnv) {
+        // Unknown location: refuse to invent a row, and do not rename the
+        // client's current environment. The transcript still reads naturally;
+        // the DM adds the row (with art) when the party truly goes somewhere
+        // new. No Fal generation either — junk names no longer cost an image.
+        console.warn(
+          `[v0] Malachar named unknown location "${taggedLocationName}" — ignored (closed scene list, no row created)`,
+        )
       } else {
-        // Create new location environment with the image
-        const { error: insertErr } = await supabase.from("environments").insert({
-          name: updatedLocation,
-          time_of_day: "Unknown",
-          description: `The party has arrived at ${updatedLocation}.`,
-          background_image_url: locationImageUrl || undefined,
-        })
-        if (insertErr) {
-          console.error("[v0] Error creating environment:", insertErr)
-        } else {
-          console.log("[v0] Created new environment:", updatedLocation, "with image:", locationImageUrl ? "YES" : "NO")
+        updatedLocation = canonicalEnv.name as string
+        if (canonicalEnv.name !== taggedLocationName) {
+          console.log(`[v0] Snapped location "${taggedLocationName}" → "${canonicalEnv.name}"`)
         }
+
+        // Art: reuse curated art first; generate only when the curated row is
+        // still artless. Curated art is never overwritten.
+        if (!locationImageUrl) {
+          const existingArt = await resolveExistingSceneArt(updatedLocation)
+          if (existingArt) locationImageUrl = existingArt.url
+        }
+        if (!locationImageUrl && !canonicalEnv.background_image_url) {
+          console.log("[v0] Auto-generating location image for:", updatedLocation)
+          try {
+            const result = await fal.subscribe("fal-ai/flux/schnell", {
+              input: {
+                prompt: `Dark fantasy environment illustration: ${updatedLocation}. A dramatic scene in the Underdark of D&D. Style: detailed RPG scene art, atmospheric, dramatic fantasy lighting, professional concept art.`,
+                image_size: "square_hd",
+                num_inference_steps: 4,
+                num_images: 1,
+              },
+            }) as any
+            if (result?.images && result.images.length > 0) {
+              locationImageUrl = result.images[0].url
+              console.log("[v0] Auto-generated location image:", locationImageUrl)
+            }
+          } catch (err) {
+            console.error("[v0] Auto-generation of location image failed:", err instanceof Error ? err.message : String(err))
+          }
+        }
+
+        // Persist: touch updated_at so this row becomes the current
+        // environment on every client; attach the image only when the row has
+        // none (never stomp curated art with a generated one).
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        if (locationImageUrl && !canonicalEnv.background_image_url) {
+          patch.background_image_url = locationImageUrl
+        }
+        const { error: updateErr } = await supabase.from("environments").update(patch).eq("id", canonicalEnv.id)
+        if (updateErr) console.error("[v0] Error updating environment:", updateErr)
       }
     } catch (err) {
       console.error("[v0] Location update error:", err)
