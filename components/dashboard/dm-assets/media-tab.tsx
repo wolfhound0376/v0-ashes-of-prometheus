@@ -7,11 +7,12 @@
 // upload to a whitelisted target, clear a target. Rather than four near-identical
 // components, this takes a config.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react"
 import { Archive } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, ensureDmKey, clearDmKey } from "@/lib/dm-key"
 import { MediaSlot, MediaDrop, ClearConfirm } from "./media-slot"
+import { characterStageStyle, STAGE_OFFSET_MAX, STAGE_OFFSET_MIN, STAGE_SCALE_MAX, STAGE_SCALE_MIN } from "@/lib/stage-framing"
 
 export interface SlotConfig {
   /** Whitelisted target key understood by /api/asset-media. */
@@ -47,6 +48,13 @@ export interface MediaTabConfig {
    * chosen voice, mirroring the NPC tab's voice block.
    */
   voiceEditable?: boolean
+  /**
+   * When true, each card gets the scene-stage framing sliders (`stage_scale` +
+   * `stage_offset_y` must be in `select`). Saves via /api/character-stage. Used
+   * by the Characters tab so a full-body idle loop and a waist-up one can be
+   * made to stand at the same world scale without re-cutting the art.
+   */
+  stageEditable?: boolean
 }
 
 interface Row {
@@ -230,6 +238,8 @@ export function MediaTab({ config }: { config: MediaTabConfig }) {
                   ))}
                 </div>
 
+                {config.stageEditable ? <StageFraming key={`${row.id}-stage`} row={row} withDmRetry={withDmRetry} /> : null}
+
                 {config.voiceEditable ? <VoiceEditor key={`${row.id}-voice`} row={row} withDmRetry={withDmRetry} /> : null}
 
                 {config.slots.map((slot) => {
@@ -317,6 +327,127 @@ function VoiceEditor({ row, withDmRetry }: { row: Row; withDmRetry: (purpose: st
         >
           Save voice
         </button>
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * Scene-stage framing block — how tall this character stands on the Character
+ * View stage, and where their feet land.
+ *
+ * Idle loops arrive framed however the render happened to frame them. Fifi's is
+ * a waist-up crop flush to its frame; Samson's is a full body inside a tall
+ * frame with empty space under his feet. Sized off the frame alone, he read as
+ * a fairy hovering mid-air beside her. Rather than re-cut the art every time,
+ * the DM drags two sliders against a live preview of the real loop.
+ *
+ * Size  — multiplier on the stage's default 88% height (1 = unchanged).
+ * Feet  — percent of the figure's own height to push DOWN, which buries any
+ *         transparent padding below the bottom edge and lands the feet on the
+ *         ground line.
+ */
+function StageFraming({ row, withDmRetry }: { row: Row; withDmRetry: (purpose: string, send: () => Promise<Response>) => Promise<Response> }) {
+  const initialScale = Number(row.stage_scale)
+  const initialOffset = Number(row.stage_offset_y)
+  const [scale, setScale] = useState(Number.isFinite(initialScale) ? initialScale : 1)
+  const [offsetY, setOffsetY] = useState(Number.isFinite(initialOffset) ? initialOffset : 0)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState("")
+
+  const media = (row.idle_url as string | null) || null
+  // Exactly the style the real stage figure wears, so what you drag is what you get.
+  const preview: CSSProperties = characterStageStyle({ stage_scale: scale, stage_offset_y: offsetY })
+
+  const save = async () => {
+    setSaving(true)
+    setMessage("Saving stage framing…")
+    try {
+      const res = await withDmRetry("save the stage framing", () =>
+        fetch("/api/character-stage", {
+          method: "POST",
+          headers: { ...dmHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ id: row.id, stageScale: scale, stageOffsetY: offsetY }),
+        }),
+      )
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Stage save failed")
+      setMessage("Stage framing saved.")
+    } catch (err) {
+      setMessage((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded border border-[#3d3428]/60 bg-black/25 p-2">
+      <p className="mb-1.5 text-[10px] uppercase tracking-wider text-[#9b8b6b]">Scene-stage framing</p>
+
+      {media ? (
+        <div className="relative mb-2 h-28 overflow-hidden rounded border border-[#4b3a19] bg-gradient-to-b from-[#16233b] to-[#05070c]">
+          {/* Same box the real stage uses, so what you drag is what you get. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[#c4a777]/40" />
+          <video
+            key={media}
+            src={media}
+            autoPlay
+            loop
+            muted
+            playsInline
+            aria-hidden="true"
+            style={preview}
+            className="absolute bottom-0 left-1/2 object-contain object-bottom"
+          />
+        </div>
+      ) : (
+        <p className="mb-2 text-[10px] text-stone-600">Upload an Idle loop to preview the framing.</p>
+      )}
+
+      <label className="block text-[10px] text-stone-500">
+        <span className="flex justify-between"><span>Size</span><span className="text-[#c4a777]">{scale.toFixed(2)}×</span></span>
+        <input
+          type="range"
+          min={STAGE_SCALE_MIN}
+          max={STAGE_SCALE_MAX}
+          step={0.05}
+          value={scale}
+          onChange={(e) => setScale(Number(e.target.value))}
+          className="mt-0.5 w-full accent-[#c4a777]"
+        />
+      </label>
+
+      <label className="mt-1 block text-[10px] text-stone-500">
+        <span className="flex justify-between"><span>Feet (down ↓)</span><span className="text-[#c4a777]">{offsetY.toFixed(1)}%</span></span>
+        <input
+          type="range"
+          min={STAGE_OFFSET_MIN}
+          max={STAGE_OFFSET_MAX}
+          step={0.5}
+          value={offsetY}
+          onChange={(e) => setOffsetY(Number(e.target.value))}
+          className="mt-0.5 w-full accent-[#c4a777]"
+        />
+      </label>
+
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <span className="min-w-0 text-[10px] text-stone-500">{message || "Match head sizes across the party, then drag the feet to the ground line."}</span>
+        <div className="flex shrink-0 gap-1.5">
+          <button
+            onClick={() => { setScale(1); setOffsetY(0); setMessage("") }}
+            className="rounded border border-[#4b3a19] px-2 py-1 text-[10px] text-stone-400"
+          >
+            Reset
+          </button>
+          <button
+            disabled={saving}
+            onClick={() => void save()}
+            className="rounded border border-[#8a672d] px-3 py-1 text-[10px] text-[#d4b15a] disabled:opacity-50"
+          >
+            Save framing
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { clampFraming, STAGE_OFFSET_MAX, STAGE_OFFSET_MIN, STAGE_SCALE_MAX, STAGE_SCALE_MIN } from "@/lib/stage-framing"
 
 const COLUMNS = ["face_url", "idle_url", "talking_url"] as const
 type AssetColumn = (typeof COLUMNS)[number]
@@ -38,8 +39,19 @@ export async function DELETE(request: Request) {
   return NextResponse.json({ cleared: asset, updatedCount: data?.length ?? 0 })
 }
 
+// PATCH carries two different edits, told apart by which keys are present:
+// the ElevenLabs voice, or the head-window framing. Keeping them on one verb
+// keeps the name-keyed DM authorization in one place; branching on the payload
+// means a framing save can never blank a voice it was not asked about.
 export async function PATCH(request: Request) {
-  let body: { npcName?: string; voiceId?: string; voiceDescription?: string; dmCode?: string }
+  let body: {
+    npcName?: string
+    voiceId?: string
+    voiceDescription?: string
+    stageScale?: number | string
+    stageOffsetY?: number | string
+    dmCode?: string
+  }
   try {
     body = await request.json()
   } catch {
@@ -52,6 +64,18 @@ export async function PATCH(request: Request) {
 
   const npcName = body.npcName?.trim()
   if (!npcName) return NextResponse.json({ error: "npcName is required" }, { status: 400 })
+
+  if (body.stageScale !== undefined || body.stageOffsetY !== undefined) {
+    const stage_scale = clampFraming(body.stageScale, STAGE_SCALE_MIN, STAGE_SCALE_MAX, 1)
+    const stage_offset_y = clampFraming(body.stageOffsetY, STAGE_OFFSET_MIN, STAGE_OFFSET_MAX, 0)
+    const { data, error } = await createAdminClient()
+      .from("npc_encounters")
+      .update({ stage_scale, stage_offset_y })
+      .eq("name", npcName)
+      .select("id")
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ stageScale: stage_scale, stageOffsetY: stage_offset_y, updatedCount: data?.length ?? 0 })
+  }
 
   const voiceId = body.voiceId?.trim() || null
   const voiceDescription = body.voiceDescription?.trim() || null
