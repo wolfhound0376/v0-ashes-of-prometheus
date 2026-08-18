@@ -684,22 +684,44 @@ if (error) {
   const fetchCharacterData = useCallback(async () => {
     if (!selectedCharacterId) return
 
-    // Fetch inventory
+    // Fetch inventory.
+    //
+    // Reads the RESOLVED view, not the raw table: uploaded item art lives in
+    // the items catalogue and the DM asset library, while inventory_items
+    // .icon_url is null on virtually every row. The view walks the fallback
+    // chain (row → catalogue by item_id → catalogue by item_key/alias → asset
+    // library) and hands back resolved_icon_url. Collapsing it onto icon_url
+    // here means every downstream component keeps reading one field.
     const { data: invData } = await supabase
-      .from('inventory_items')
+      .from('inventory_items_resolved')
       .select('*')
       .eq('character_id', selectedCharacterId)
       .order('name')
 
-    if (invData) setCharacterInventory(invData)
+    if (invData) {
+      setCharacterInventory(
+        invData.map((row: any) => ({
+          ...row,
+          icon_url: row.resolved_icon_url ?? row.icon_url ?? null,
+          item_type: row.resolved_item_type ?? row.item_type ?? null,
+        })),
+      )
+    }
 
-    // Fetch equipment
+    // Fetch equipment (same resolved-view treatment as inventory above).
     const { data: equipData } = await supabase
-      .from('equipment_items')
+      .from('equipment_items_resolved')
       .select('*')
       .eq('character_id', selectedCharacterId)
 
-    if (equipData) setCharacterEquipment(equipData)
+    if (equipData) {
+      setCharacterEquipment(
+        equipData.map((row: any) => ({
+          ...row,
+          icon_url: row.resolved_icon_url ?? row.icon_url ?? null,
+        })),
+      )
+    }
 
     // Refresh character to get updated XP
     const { data: charData } = await supabase
@@ -1010,18 +1032,35 @@ if (error) {
       await supabase.from('inventory_items').insert(inventoryToInsert)
 
       // Refresh inventory and equipment
+      // Resolved views again — starting gear must show the same art the
+      // main fetch shows, or icons would depend on which code path loaded them.
       const { data: invData } = await supabase
-        .from('inventory_items')
+        .from('inventory_items_resolved')
         .select('*')
         .eq('character_id', selectedCharacterId)
         .order('name')
-      if (invData) setCharacterInventory(invData)
+      if (invData) {
+        setCharacterInventory(
+          invData.map((row: any) => ({
+            ...row,
+            icon_url: row.resolved_icon_url ?? row.icon_url ?? null,
+            item_type: row.resolved_item_type ?? row.item_type ?? null,
+          })),
+        )
+      }
 
       const { data: equipData } = await supabase
-        .from('equipment_items')
+        .from('equipment_items_resolved')
         .select('*')
         .eq('character_id', selectedCharacterId)
-      if (equipData) setCharacterEquipment(equipData)
+      if (equipData) {
+        setCharacterEquipment(
+          equipData.map((row: any) => ({
+            ...row,
+            icon_url: row.resolved_icon_url ?? row.icon_url ?? null,
+          })),
+        )
+      }
 
     } catch (error) {
       console.error('Error populating starting gear:', error)

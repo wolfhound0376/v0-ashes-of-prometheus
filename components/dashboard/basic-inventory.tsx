@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
+import { ItemIcon } from "@/lib/item-icons"
 
 export interface BasicInventoryItem {
   id: string
@@ -145,11 +146,12 @@ export function BasicInventory({
                 <tr key={item.id} className="border-t border-[#7a5f33]/20 hover:bg-[#1a1410]/60">
                   <td className="px-2 py-1">
                     <span className="flex items-center gap-1.5">
-                      {item.iconUrl ? (
-                        <img src={item.iconUrl} alt="" className="h-4 w-4 flex-shrink-0 object-contain" />
-                      ) : (
-                        <Package className="h-3.5 w-3.5 flex-shrink-0 text-stone-600" />
-                      )}
+                      <ItemIcon
+                        iconUrl={item.iconUrl}
+                        name={item.name}
+                        itemType={item.item_type}
+                        className="h-4 w-4 flex-shrink-0"
+                      />
                       <span className="truncate text-stone-300">{item.name}</span>
                     </span>
                   </td>

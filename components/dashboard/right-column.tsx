@@ -320,6 +320,7 @@ age: (selectedCharacter as any).age,
     name: item.name,
     slot: item.slot,
     iconUrl: item.icon_url,
+    itemType: (item as { item_type?: string | null }).item_type ?? null,
   }))
 
   // Get item equipped in a slot
