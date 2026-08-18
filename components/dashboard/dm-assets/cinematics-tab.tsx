@@ -7,9 +7,10 @@
 // the standard MediaSlot/MediaDrop upload flow through /api/asset-media —
 // deliberately the same mechanism as every other DM asset, not a new one.
 //
-// PR-5's lookup will resolve location+state → location → generic, so location
-// strings must stay consistent; the input offers existing environment names
-// as suggestions to keep spelling honest.
+// Locations are a CLOSED LIST: the dropdown offers only registered
+// environments (plus the generic fallback tier), and the server re-validates
+// against the scene registry — resolve_cinematic matches on scene_key, so a
+// clip filed here can never drift out of reach of its scene.
 //
 // DM-only: the parent panel renders only for a DM browser, and every write
 // re-checks DM_ACCESS_CODE server-side.
@@ -194,18 +195,25 @@ export function CinematicsTab() {
       <div className="shrink-0 border-b border-[#3d3428]/60 px-4 pb-3 pt-3">
         <p className="mb-1.5 text-[10px] uppercase tracking-wider text-stone-600">New clip</p>
         <div className="flex flex-wrap gap-1.5">
-          <input
+          {/* Closed scene list: clips can only be filed under a registered
+              environment (or the generic fallback tier). Free text is gone —
+              it is how mismatched location keys used to be born. */}
+          <select
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            list="cinematic-locations"
-            placeholder="Location — Velkynvelve, Darklake…"
-            className={`${selectClass} min-w-0 flex-1 placeholder:text-stone-600`}
-          />
-          <datalist id="cinematic-locations">
+            className={`${selectClass} min-w-0 flex-1`}
+            aria-label="Location"
+          >
+            <option value="" disabled>
+              Location — choose a registered scene…
+            </option>
             {locations.map((name) => (
-              <option key={name} value={name} />
+              <option key={name} value={name}>
+                {name}
+              </option>
             ))}
-          </datalist>
+            <option value="generic">generic (fallback tier)</option>
+          </select>
           <input
             value={state}
             onChange={(e) => setState(e.target.value)}
