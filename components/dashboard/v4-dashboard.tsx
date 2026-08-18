@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react"
 import { BookOpen, Compass, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
@@ -230,6 +230,32 @@ type NpcEncounter = {
 
 // True when a media URL is a video loop (idle/talking uploads are MP4/WebM).
 
+/** Per-character scene-stage framing, set by the DM in the Characters tab. */
+type StageFramingRow = { stage_scale?: number | null; stage_offset_y?: number | null }
+
+/**
+ * Turns the two stored numbers into the inline style the stage figure wears.
+ *
+ * The base figure is `height: 88%` of the scene panel with `max-width: 48%`.
+ * Both are multiplied by the scale so the multiplier behaves the same whether a
+ * clip is height-limited (a tall full-body frame) or width-limited (a wide
+ * waist-up frame) — scaling only the height would do nothing to a clip already
+ * pinned by max-width.
+ */
+function stageFraming(row: StageFramingRow | undefined): CSSProperties {
+  const clamp = (value: unknown, min: number, max: number, fallback: number) => {
+    const n = typeof value === "number" ? value : Number(value)
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
+  }
+  const scale = clamp(row?.stage_scale, 0.2, 3, 1)
+  const offsetY = clamp(row?.stage_offset_y, -50, 50, 0)
+  return {
+    height: `${88 * scale}%`,
+    maxWidth: `${48 * scale}%`,
+    transform: `translate(-50%, ${offsetY}%)`,
+  }
+}
+
 
 interface V4DashboardProps {
   environment: {
@@ -385,6 +411,14 @@ export function V4Dashboard(props: V4DashboardProps) {
   // could later swap in the same way the NPC head does, but players don't speak
   // as NPCs do, so idle is the whole story here.
   const characterStageMedia = (selected as Character & { idle_url?: string | null })?.idle_url || characterPortrait
+  // Every idle loop is framed differently — Fifi's is a waist-up crop flush to
+  // its frame; Samson's is a full body inside a tall 404x720 frame with ~9%
+  // empty space under his feet. Sizing off the frame alone made him read as a
+  // fairy floating mid-air next to her. `stage_scale` says how tall this
+  // character stands, `stage_offset_y` pushes the figure down so the padding
+  // falls below the panel and the feet meet the ground line. Both default to
+  // the previous behaviour (1 / 0), so untuned characters are unchanged.
+  const stageFrame = stageFraming(selected as (Character & StageFramingRow) | undefined)
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
   const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
@@ -605,8 +639,8 @@ export function V4Dashboard(props: V4DashboardProps) {
         {stageMode === "scene" ? <>
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
           {characterStageMedia ? (isVideoUrl(characterStageMedia)
-            ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" className="absolute bottom-0 left-1/2 h-[88%] max-w-[48%] -translate-x-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
-            : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} className="absolute bottom-0 left-1/2 h-[88%] max-w-[48%] -translate-x-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+            ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+            : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}

@@ -61,6 +61,10 @@ export interface Character {
   condition_immunities: string | null
   // Active conditions affecting this character (jsonb string[]).
   conditions: string[] | null
+  /** Scene-stage figure height multiplier. 1 = the default 88% of the panel. */
+  stage_scale?: number | null
+  /** Percent of the figure's own height to push down so the feet meet the ground line. */
+  stage_offset_y?: number | null
   created_at: string
   updated_at: string
 }
