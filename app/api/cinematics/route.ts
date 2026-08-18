@@ -220,9 +220,36 @@ export async function POST(request: NextRequest) {
   if (!scope) return NextResponse.json({ error: "Scope must be solo or party" }, { status: 400 })
   if (!kind) return NextResponse.json({ error: "Kind must be environment, action or filler" }, { status: 400 })
 
+  // SCENE REGISTRY GUARD: clips may only be filed under a registered
+  // environment (or the literal "generic" tier). The location is snapped to
+  // the registry row's exact display name; scene_key itself is filled by the
+  // database trigger — no code path ever writes a key by hand.
+  let canonicalLocation = location
+  if (location.toLowerCase() !== "generic") {
+    const { data: keyData, error: keyError } = await admin.rpc("scene_key", { p_name: location })
+    if (keyError || !keyData) {
+      console.error("[cinematics] scene_key rpc failed:", keyError?.message)
+      return NextResponse.json({ error: "Could not derive the scene key" }, { status: 500 })
+    }
+    const { data: env } = await admin
+      .from("environments")
+      .select("name")
+      .eq("scene_key", keyData as string)
+      .maybeSingle()
+    if (!env) {
+      return NextResponse.json(
+        { error: `Unknown scene "${location}" — create the environment first, then file clips under it.` },
+        { status: 400 },
+      )
+    }
+    canonicalLocation = env.name as string
+  } else {
+    canonicalLocation = "generic"
+  }
+
   const { data, error } = await admin
     .from("cinematic_clips")
-    .insert({ location, state, scope, kind })
+    .insert({ location: canonicalLocation, state, scope, kind })
     .select("id, location, state, scope, kind, video_url")
     .single()
   if (error) {
