@@ -12,6 +12,7 @@ import { DiceRoller } from "@/components/dashboard/dice-roller"
 import { DmNarration } from "./dm-narration"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
+import type { Suggestion } from "@/lib/suggestions"
 import { CinematicOverlay } from "./cinematic-overlay"
 import { createClient } from "@/lib/supabase/client"
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
@@ -259,6 +260,11 @@ interface V4DashboardProps {
   /** True when this browser has claimed a character via a claim link, i.e. a
    *  player is sitting here rather than the DM. Gates DM-only readouts. */
   claimLocked?: boolean
+  /** The bottom status-bar DM Mode toggle. Sam's ruling, 18 Aug 2026: THIS is
+   *  the switch that grants cinematic replay — not the saved DM code, which is
+   *  invisible from the dashboard and left the badge and the toggle disagreeing
+   *  about who was DM. */
+  dmMode?: boolean
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -448,78 +454,45 @@ export function V4Dashboard(props: V4DashboardProps) {
   // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
   //  1. A clip plays ONCE per character. The server owns that memory
   //     (cinematic_views); this component never decides what is unseen.
-  //  2. DM mode is the only override — a DM browser sends dm_override, which
-  //     bypasses the seen-check server-side and can replay anything.
-  //  3. Watching is always an explicit choice: an offered button sits with the
-  //     dialogue options, shown only when something unseen is actually here.
-  //     No more sniffing the player's typing for "look around".
+  //  2. DM Mode — the bottom toggle — is the only override. It sends
+  //     dm_override, which bypasses the seen-check server-side.
+  //  3. The trigger is the look-around CHIP, nothing else. Every generated set
+  //     carries exactly one observe chip (see lib/suggestions.ts); picking it
+  //     sends the action to Malachar as normal AND rolls for an unseen clip.
+  //     First look at a location plays the cinematic, every look after that is
+  //     description alone. Still no sniffing of free-typed text.
   //  4. A solo clip plays only for the character who asked. A party clip is a
   //     group moment, so it is broadcast to every seat over the realtime
   //     channel and plays for all of them.
   //  5. It plays once through and ends — CinematicOverlay carries no loop.
-  //  6. Both calls below MUST carry dmHeaders(). cinematicParams sends
-  //     trigger_type=dm_override the moment a DM key is stored, and
-  //     /api/cinematics only lets an un-keyed request through when it is
-  //     trigger_type=player_initiated. Without the header a DM browser got a
-  //     403, the probe bailed, and the button never appeared — the scene
-  //     looked broken for the one person most likely to be testing it.
+  //  6. The request MUST carry dmHeaders() whenever it claims dm_override:
+  //     /api/cinematics only waives the x-dm-key check for player_initiated.
+  //     DM Mode is an unguarded toggle that never asks for the code, so a DM
+  //     with the toggle on but no code stored is prompted once rather than
+  //     handed the silent 403 that hid this feature the first time round.
   const [cinematicSrc, setCinematicSrc] = useState<string | null>(null)
-  const [cinematicOffered, setCinematicOffered] = useState(false)
   const [cinematicBusy, setCinematicBusy] = useState(false)
-  // localStorage is client-only: reading it during render would make the
-  // server and client markup disagree. Resolve after mount instead.
-  const [isDm, setIsDm] = useState(false)
-  useEffect(() => {
-    setIsDm(hasDmKey())
-    return onDmKeyChange(() => setIsDm(hasDmKey()))
-  }, [])
   const locationName = props.environment.name
   const seatId = selected?.id ?? null
 
   const cinematicParams = useCallback(
-    (extra?: Record<string, string>) => {
+    (asDm: boolean) => {
       const params = new URLSearchParams({
         location: locationName,
         kind: "environment",
         scope: "party",
-        trigger_type: isDm ? "dm_override" : "player_initiated",
-        ...extra,
+        trigger_type: asDm ? "dm_override" : "player_initiated",
       })
       if (seatId) params.set("character_id", seatId)
       return params
     },
-    [locationName, seatId, isDm],
+    [locationName, seatId],
   )
 
-  // Ask whether anything unseen is here. A probe records nothing, so asking is
-  // free and cannot burn the clip the button is about to offer.
-  useEffect(() => {
-    let cancelled = false
-    setCinematicOffered(false)
-    if (!locationName) return
-    void (async () => {
-      try {
-        const res = await fetch(`/api/cinematics?${cinematicParams({ probe: "1" }).toString()}`, {
-          headers: dmHeaders(),
-        })
-        if (!res.ok) {
-          // Loud on purpose. A silent 403 here is exactly what hid the button
-          // from every DM browser: cinematicParams sends dm_override whenever a
-          // DM key is stored, and /api/cinematics refuses dm_override without
-          // the matching x-dm-key header.
-          console.warn("[cinematics] probe rejected:", res.status)
-          return
-        }
-        const body = await res.json()
-        if (!cancelled) setCinematicOffered(!!body?.available)
-      } catch {
-        /* no button is the correct failure mode */
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [cinematicParams, locationName])
+  // No probe any more. The old flow asked "is anything here?" on every scene
+  // change so it could decide whether to render a button; with the chip as the
+  // only door there is nothing to decide in advance, and a resolution that
+  // returns nothing is simply a look that yields description instead of film.
 
   // Group clips arrive here from another seat; solo clips never broadcast.
   useEffect(() => {
@@ -535,22 +508,31 @@ export function V4Dashboard(props: V4DashboardProps) {
     }
   }, [])
 
-  const watchCinematic = async () => {
+  // Rolled when the look-around chip is picked. A null clip is the ORDINARY
+  // outcome — already seen, or this location has no film — and must stay
+  // completely silent: the player asked to look around, Malachar is already
+  // answering in words, and a failed camera cue is not an error they should
+  // ever perceive.
+  const playSceneCinematic = async () => {
     if (cinematicBusy) return
     setCinematicBusy(true)
     try {
-      const res = await fetch(`/api/cinematics?${cinematicParams().toString()}`, {
+      // DM Mode does not ask for the DM code, but dm_override without the
+      // x-dm-key header is a guaranteed 403. Ask once instead of failing mute;
+      // a dismissed prompt just falls back to an ordinary player request.
+      let asDm = !!props.dmMode
+      if (asDm && !hasDmKey()) asDm = ensureDmKey("replay cinematics in DM Mode") !== null
+      const res = await fetch(`/api/cinematics?${cinematicParams(asDm).toString()}`, {
         headers: dmHeaders(),
       })
-      const body = await res.json()
-      const clip = body?.clip as { video_url?: string; scope?: string } | null
-      if (!clip?.video_url) {
-        // Already watched (or nothing here). Retire the button either way.
-        setCinematicOffered(false)
+      if (!res.ok) {
+        console.warn("[cinematics] request rejected:", res.status)
         return
       }
+      const body = await res.json()
+      const clip = body?.clip as { video_url?: string; scope?: string } | null
+      if (!clip?.video_url) return // seen already, or nothing filmed here
       setCinematicSrc(clip.video_url)
-      setCinematicOffered(false)
       if (clip.scope === "party") {
         // A group moment: everyone at the table sees it, not just this seat.
         await createClient()
@@ -565,11 +547,13 @@ export function V4Dashboard(props: V4DashboardProps) {
     }
   }
 
-  const quickReplies = [
-    "Look around",
-    "Listen for anything nearby",
-    "Speak up",
-    "Wait and watch",
+  // Static fallbacks. "Look around" carries kind:"observe" so the cinematic
+  // still has a door even when suggestion generation fails outright.
+  const quickReplies: Suggestion[] = [
+    { text: "Listen for anything nearby", skill: null },
+    { text: "Speak up", skill: null },
+    { text: "Wait and watch", skill: null },
+    { text: "Look around", skill: null, kind: "observe" },
   ]
   const abilities = abilityKeys.map((key) => ({
     key,
@@ -645,23 +629,21 @@ export function V4Dashboard(props: V4DashboardProps) {
         </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
       </div>
       <div className="flex flex-col gap-1">
-        <SuggestionChips character={livePlayers.length && selected?.is_player ? selected : undefined} dialogue={dialogue} inventory={props.inventory} location={props.environment.name} fallback={quickReplies} disabled={!!props.isThinking} onPick={(text) => props.onQuickReply?.(text)} />
-        {/* The cinematic offer sits WITH the dialogue options, but reads as its
-            own thing: it is a camera cue, not something you say. Shown only
-            when the server confirms an unseen clip is waiting here. */}
-        {cinematicOffered ? (
-          <div className="px-3 pb-1">
-            <button
-              onClick={() => void watchCinematic()}
-              disabled={cinematicBusy || !!props.isThinking}
-              className="rounded-full border border-[#8d6d35] bg-[#1c1408] px-3.5 py-1.5 text-xs text-[#ead39e] hover:bg-[#251a0d] disabled:opacity-50"
-              title={isDm ? "DM: replays even if already seen" : "Plays once"}
-            >
-              {cinematicBusy ? "…" : "▶ Watch the scene"}
-              {isDm ? <span className="ml-1.5 text-[9px] uppercase tracking-wider text-[#b9913f]">DM</span> : null}
-            </button>
-          </div>
-        ) : null}
+        <SuggestionChips
+          character={livePlayers.length && selected?.is_player ? selected : undefined}
+          dialogue={dialogue}
+          inventory={props.inventory}
+          location={props.environment.name}
+          fallback={quickReplies}
+          disabled={!!props.isThinking}
+          onPick={(text, isObserve) => {
+            // The action always reaches Malachar. The cinematic rides along on
+            // top of it the first time, so a look that has no film left still
+            // reads as a normal look rather than a dead button.
+            props.onQuickReply?.(text)
+            if (isObserve) void playSceneCinematic()
+          }}
+        />
       </div>
       <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
       <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{visibleParty.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const portrait = "avatar_image_url" in member ? member.avatar_image_url : null; return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className="h-full w-full object-cover object-[center_14%]" /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div></div>
