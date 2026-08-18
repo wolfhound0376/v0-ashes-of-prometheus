@@ -12,6 +12,7 @@ import { Archive } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, ensureDmKey, clearDmKey } from "@/lib/dm-key"
 import { MediaSlot, MediaDrop, ClearConfirm } from "./media-slot"
+import { characterStageStyle, STAGE_OFFSET_MAX, STAGE_OFFSET_MIN, STAGE_SCALE_MAX, STAGE_SCALE_MIN } from "@/lib/stage-framing"
 
 export interface SlotConfig {
   /** Whitelisted target key understood by /api/asset-media. */
@@ -356,11 +357,8 @@ function StageFraming({ row, withDmRetry }: { row: Row; withDmRetry: (purpose: s
   const [message, setMessage] = useState("")
 
   const media = (row.idle_url as string | null) || null
-  const preview: CSSProperties = {
-    height: `${88 * scale}%`,
-    maxWidth: `${48 * scale}%`,
-    transform: `translate(-50%, ${offsetY}%)`,
-  }
+  // Exactly the style the real stage figure wears, so what you drag is what you get.
+  const preview: CSSProperties = characterStageStyle({ stage_scale: scale, stage_offset_y: offsetY })
 
   const save = async () => {
     setSaving(true)
@@ -411,8 +409,8 @@ function StageFraming({ row, withDmRetry }: { row: Row; withDmRetry: (purpose: s
         <span className="flex justify-between"><span>Size</span><span className="text-[#c4a777]">{scale.toFixed(2)}×</span></span>
         <input
           type="range"
-          min={0.2}
-          max={3}
+          min={STAGE_SCALE_MIN}
+          max={STAGE_SCALE_MAX}
           step={0.05}
           value={scale}
           onChange={(e) => setScale(Number(e.target.value))}
@@ -424,8 +422,8 @@ function StageFraming({ row, withDmRetry }: { row: Row; withDmRetry: (purpose: s
         <span className="flex justify-between"><span>Feet (down ↓)</span><span className="text-[#c4a777]">{offsetY.toFixed(1)}%</span></span>
         <input
           type="range"
-          min={-50}
-          max={50}
+          min={STAGE_OFFSET_MIN}
+          max={STAGE_OFFSET_MAX}
           step={0.5}
           value={offsetY}
           onChange={(e) => setOffsetY(Number(e.target.value))}

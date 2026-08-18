@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
+import { clampFraming, STAGE_OFFSET_MAX, STAGE_OFFSET_MIN, STAGE_SCALE_MAX, STAGE_SCALE_MIN } from "@/lib/stage-framing"
 
 // /api/character-stage — set a player character's scene-stage framing.
 //
@@ -13,22 +14,11 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 
 export const dynamic = "force-dynamic"
 
-export const STAGE_SCALE_MIN = 0.2
-export const STAGE_SCALE_MAX = 3
-export const STAGE_OFFSET_MIN = -50
-export const STAGE_OFFSET_MAX = 50
-
 function authorized(request: NextRequest): boolean {
   const dmCode = process.env.DM_ACCESS_CODE
   if (!dmCode) return true
   const supplied = normalizeCode(request.headers.get("x-dm-key"))
   return !!supplied && safeEquals(supplied, normalizeCode(dmCode))
-}
-
-function clamp(value: unknown, min: number, max: number, fallback: number): number {
-  const n = typeof value === "number" ? value : Number(value)
-  if (!Number.isFinite(n)) return fallback
-  return Math.min(max, Math.max(min, Math.round(n * 100) / 100))
 }
 
 export async function POST(request: NextRequest) {
@@ -46,8 +36,8 @@ export async function POST(request: NextRequest) {
   const id = typeof body?.id === "string" ? body.id : ""
   if (!id) return NextResponse.json({ error: "Character id is required" }, { status: 400 })
 
-  const stage_scale = clamp(body?.stageScale, STAGE_SCALE_MIN, STAGE_SCALE_MAX, 1)
-  const stage_offset_y = clamp(body?.stageOffsetY, STAGE_OFFSET_MIN, STAGE_OFFSET_MAX, 0)
+  const stage_scale = clampFraming(body?.stageScale, STAGE_SCALE_MIN, STAGE_SCALE_MAX, 1)
+  const stage_offset_y = clampFraming(body?.stageOffsetY, STAGE_OFFSET_MIN, STAGE_OFFSET_MAX, 0)
 
   const { data, error } = await admin
     .from("characters")

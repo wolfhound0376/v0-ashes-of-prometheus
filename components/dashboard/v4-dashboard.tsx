@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { BookOpen, Compass, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
@@ -19,6 +19,7 @@ import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
 import { isVideoUrl } from "@/lib/media-url"
+import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
 type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
@@ -226,36 +227,11 @@ type NpcEncounter = {
   conditions?: string[] | null
   challenge_rating?: number | null
   disposition?: string | null
+  stage_scale?: number | string | null
+  stage_offset_y?: number | string | null
 }
 
 // True when a media URL is a video loop (idle/talking uploads are MP4/WebM).
-
-/** Per-character scene-stage framing, set by the DM in the Characters tab. */
-type StageFramingRow = { stage_scale?: number | null; stage_offset_y?: number | null }
-
-/**
- * Turns the two stored numbers into the inline style the stage figure wears.
- *
- * The base figure is `height: 88%` of the scene panel with `max-width: 48%`.
- * Both are multiplied by the scale so the multiplier behaves the same whether a
- * clip is height-limited (a tall full-body frame) or width-limited (a wide
- * waist-up frame) — scaling only the height would do nothing to a clip already
- * pinned by max-width.
- */
-function stageFraming(row: StageFramingRow | undefined): CSSProperties {
-  const clamp = (value: unknown, min: number, max: number, fallback: number) => {
-    const n = typeof value === "number" ? value : Number(value)
-    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
-  }
-  const scale = clamp(row?.stage_scale, 0.2, 3, 1)
-  const offsetY = clamp(row?.stage_offset_y, -50, 50, 0)
-  return {
-    height: `${88 * scale}%`,
-    maxWidth: `${48 * scale}%`,
-    transform: `translate(-50%, ${offsetY}%)`,
-  }
-}
-
 
 interface V4DashboardProps {
   environment: {
@@ -404,6 +380,12 @@ export function V4Dashboard(props: V4DashboardProps) {
     : (shownNpc?.idle_url || shownNpc?.face_url || shownNpc?.portrait_url)
   // The most recent line this NPC actually spoke in the feed — replaces the
   // hardcoded preview quote that used to caption every NPC as Eldeth.
+  // Whoever holds the head window brings their own framing — a face close-up
+  // needs none, a full-body goblin loop needs zooming into the face. NPC rows
+  // only: a speaking PLAYER's stage_scale is tuned for the bottom-anchored scene
+  // stage, and reusing it here would mean one number serving two different
+  // shots. A player borrowing the window keeps the untouched framing.
+  const npcFrame = npcWindowStyle(speakingPlayer ? undefined : ((speakingRow ?? shownNpc) as StageFramingRow | undefined))
   const lastNpcLine = [...dialogue].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160) ?? null
   const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
   // Layer 2 — the POV character's own animated idle. Prefer the loop; fall back
@@ -418,7 +400,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   // character stands, `stage_offset_y` pushes the figure down so the padding
   // falls below the panel and the feet meet the ground line. Both default to
   // the previous behaviour (1 / 0), so untuned characters are unchanged.
-  const stageFrame = stageFraming(selected as (Character & StageFramingRow) | undefined)
+  const stageFrame = characterStageStyle(selected as (Character & StageFramingRow) | undefined)
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
   const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
@@ -614,7 +596,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" action={<DmNarration dialogue={dialogue} npcs={props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
       <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 overflow-hidden p-3 pb-4">
         <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : shownNpc?.description || "Present in the scene"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}</div>
-        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : <>Silent <span className="ml-2">▯▯▯▯</span></>}</div>
+        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">Portrait loads from NPC canon</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : <>Silent <span className="ml-2">▯▯▯▯</span></>}</div>
           {/* MERGE NOTE: Codex's redesign dropped the third column, which held
               disposition / CR / DM-only health. Those are real row data, not
               mock text, so they are re-homed here as a compact strip beneath
