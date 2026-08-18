@@ -77,8 +77,58 @@ async function logCinematicRequest(
 //     function owns weighted-random variant selection and skips unusable rows
 //     (null video_url, weight 0), so the resolution it returns is used verbatim.
 //
+// ONCE PER CHARACTER (Sam's ruling, 18 Aug 2026). A clip a character has
+// already watched will not resolve for them again: cinematic_views is checked
+// before the clip is handed over, and a repeat is reported as
+// { clip: null, resolution: "miss", seen: true }. Two deliberate exceptions:
+//   - trigger_type=dm_override ignores the seen-check entirely. DM mode is the
+//     only way to replay something.
+//   - probe=1 asks "is anything unseen available here?" WITHOUT recording a
+//     view or logging a request, so the dashboard can decide whether to offer
+//     the button. Nothing is consumed until the player asks to watch.
+//
 // A miss and a rejection are both normal outcomes: 200, no thrown error. Every
-// request writes exactly one cinematic_requests row, including rejections.
+// non-probe request writes exactly one cinematic_requests row.
+/** Has this character already watched this clip? */
+async function alreadySeen(
+  admin: ReturnType<typeof createAdminClient>,
+  characterId: string | null,
+  clipId: string,
+): Promise<boolean> {
+  if (!characterId) return false // anonymous seat: nothing to remember it by
+  const { data, error } = await admin
+    .from("cinematic_views")
+    .select("id")
+    .eq("character_id", characterId)
+    .eq("clip_id", clipId)
+    .limit(1)
+  if (error) {
+    console.error("[cinematics] seen-check failed:", error.message)
+    return false
+  }
+  return !!data?.length
+}
+
+/** Record that this character watched this clip. Best-effort, never blocking. */
+async function recordView(
+  admin: ReturnType<typeof createAdminClient>,
+  row: {
+    character_id: string | null
+    clip_id: string
+    location: string | null
+    trigger_type: string | null
+    session_id: string | null
+  },
+) {
+  if (!row.character_id) return
+  try {
+    const { error } = await admin.from("cinematic_views").insert(row)
+    if (error) console.error("[cinematics] view insert failed:", error.message)
+  } catch (e) {
+    console.error("[cinematics] view insert threw:", e)
+  }
+}
+
 export async function GET(request: NextRequest) {
   // Player-initiated resolution is the one un-keyed path (PR-5): it can only
   // reach the fallback resolver — never an explicit clip id, which stays
@@ -113,6 +163,7 @@ export async function GET(request: NextRequest) {
   const sessionId = params.get("session_id") || null
   const characterId = params.get("character_id") || null
   const cinematicId = (params.get("cinematicId") || "").trim() || null
+  const probe = params.get("probe") === "1"
 
   // Common request metadata attached to whatever resolution we record.
   const reqMeta = {
@@ -153,7 +204,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ clip: null, resolution: "miss" })
     }
 
+    // dm_override is the only caller allowed on this path, and DM override is
+    // precisely the sanctioned way to replay — so no seen-check here. The view
+    // is still recorded so the history stays honest about what was watched.
     await logCinematicRequest(admin, { ...reqMeta, resolution: "exact", resolved_clip_id: clip.id })
+    await recordView(admin, {
+      character_id: characterId, clip_id: clip.id, location: location || null,
+      trigger_type: triggerType, session_id: sessionId,
+    })
     return NextResponse.json({ clip, resolution: "exact" })
   }
 
@@ -187,16 +245,33 @@ export async function GET(request: NextRequest) {
     ? { id: row.clip_id as string, video_url: (row.video_url as string) ?? null }
     : null
 
-  // Record the outcome before responding. The insert is awaited so it reliably
-  // runs in a serverless invocation, but every error is swallowed inside the
-  // helper so a failed log can never block playback.
+  // === ONCE PER CHARACTER ===
+  if (clip && triggerType !== "dm_override" && (await alreadySeen(admin, characterId, clip.id))) {
+    if (!probe) {
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
+    }
+    return NextResponse.json({ clip: null, resolution: "miss", seen: true })
+  }
+
+  // A probe stops here: nothing logged, nothing recorded, nothing consumed.
+  if (probe) return NextResponse.json({ available: !!clip, scope, resolution })
+
   await logCinematicRequest(admin, {
     ...reqMeta,
     resolution,
     resolved_clip_id: clip ? clip.id : null,
   })
 
-  return NextResponse.json({ clip, resolution })
+  if (clip) {
+    await recordView(admin, {
+      character_id: characterId, clip_id: clip.id, location: location || null,
+      trigger_type: triggerType, session_id: sessionId,
+    })
+  }
+
+  // scope travels with the clip so the client knows whether this is a personal
+  // moment or a group one that must be broadcast to the other seats.
+  return NextResponse.json({ clip: clip ? { ...clip, scope } : null, resolution })
 }
 
 export async function POST(request: NextRequest) {
