@@ -141,6 +141,17 @@ export async function POST(req: Request) {
   // --- 2. Malachar's session history -------------------------------------
   // The reason this route exists. Beats first: they reference a session.
   {
+    // Sam's ruling (17 Aug 2026): a campaign restart burns journal pages.
+    // The physical Tattered Journal is re-issued below; its pages are not.
+    // Deleted before sessions so the session_id FK never has to set-null.
+    const { count, error } = await admin
+      .from("journal_entries")
+      .delete({ count: "exact" })
+      .neq("id", "00000000-0000-0000-0000-000000000000")
+    note("journal_entries", error)
+    report.journalPagesBurned = count ?? 0
+  }
+  {
     const { count, error } = await admin
       .from("session_beats")
       .delete({ count: "exact" })
@@ -232,9 +243,8 @@ export async function POST(req: Request) {
     note("issue rags", ragsErr)
     report.ragsIssued = ragsErr ? 0 : playerIds.length
 
-    // Re-issue the smuggled journal + quill to every player. Journal pages in
-    // journal_entries deliberately survive restart — burning them is a DM
-    // ruling not yet made.
+    // Re-issue the smuggled journal + quill to every player. Their previous
+    // pages were burned above — a restart is a fresh book (Sam's ruling).
     const { error: effectsErr } = await admin.from("inventory_items").insert(
       playerIds.flatMap((character_id) => SMUGGLED_EFFECTS.map((item) => ({ character_id, ...item }))),
     )
