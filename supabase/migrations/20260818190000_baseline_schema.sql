@@ -1,0 +1,2 @@
+-- WIP: full production baseline schema, extraction in progress this session.
+-- Will contain the complete public-schema state as of migration 20260818175314.
