@@ -1204,6 +1204,8 @@ if (error) {
         setDialogueInput={setDialogueInput}
         onDialogueSubmit={handleDialogueSubmit}
         onQuickReply={(text) => void handleQuickReply(text)}
+        // The look-around chip replays cinematics only while this is on.
+        dmMode={dmMode && !claimLocked}
         characters={players}
         selectedCharacter={selectedCharacter}
         selectedCharacterId={selectedCharacterId}

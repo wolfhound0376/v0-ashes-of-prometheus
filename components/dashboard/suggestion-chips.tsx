@@ -37,10 +37,14 @@ interface SuggestionChipsProps {
   dialogue: ChipDialogueEntry[]
   inventory: InventoryItem[]
   location: string
-  /** Static quick replies shown when no generated chips are available. */
-  fallback: string[]
+  /** Static quick replies shown when no generated chips are available. These
+   *  carry their own observe chip so the look-around action survives a failed
+   *  generation — the one chip that must never go missing. */
+  fallback: Suggestion[]
   disabled?: boolean
-  onPick?: (text: string) => void
+  /** isObserve is true for the look-around chip; the parent uses it to decide
+   *  whether this pick may also roll a cinematic. */
+  onPick?: (text: string, isObserve: boolean) => void
 }
 
 const CHIP_CLASS =
@@ -115,7 +119,12 @@ export function SuggestionChips(props: SuggestionChipsProps) {
         {suggestions.map((suggestion) => {
           const sent = suggestion.skill ? `${suggestion.text} (${suggestion.skill})` : suggestion.text
           return (
-            <button key={sent} disabled={disabled} onClick={() => onPick?.(sent)} className={CHIP_CLASS}>
+            <button
+              key={sent}
+              disabled={disabled}
+              onClick={() => onPick?.(sent, suggestion.kind === "observe")}
+              className={CHIP_CLASS}
+            >
               {suggestion.text}
               {suggestion.skill ? <span style={{ color: skillColor }}>{` (${suggestion.skill})`}</span> : null}
             </button>
@@ -128,8 +137,13 @@ export function SuggestionChips(props: SuggestionChipsProps) {
   return (
     <div className="flex flex-wrap gap-1.5 px-3 pt-2">
       {fallback.map((reply) => (
-        <button key={reply} disabled={disabled} onClick={() => onPick?.(reply)} className={CHIP_CLASS}>
-          {reply}
+        <button
+          key={reply.text}
+          disabled={disabled}
+          onClick={() => onPick?.(reply.text, reply.kind === "observe")}
+          className={CHIP_CLASS}
+        >
+          {reply.text}
         </button>
       ))}
     </div>

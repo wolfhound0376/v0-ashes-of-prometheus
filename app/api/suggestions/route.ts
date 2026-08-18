@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
-import { parseSuggestions } from "@/lib/suggestions"
+import { ensureObserveChip, parseSuggestions } from "@/lib/suggestions"
 
 // Same direct-Anthropic provider as /api/chat — bypasses the Vercel AI Gateway.
 const anthropic = createAnthropic({
@@ -52,10 +52,14 @@ export async function POST(request: NextRequest) {
 
     const prompt = `You suggest quick actions for ONE player in a D&D 5e game set in the Underdark (Out of the Abyss).
 
-Return ONLY a JSON array, no prose, of 2 to 4 entries shaped:
-  {"text": "...", "skill": "..." | null}
+Return ONLY a JSON array, no prose, of 3 to 4 entries shaped:
+  {"text": "...", "skill": "..." | null, "observe": true | false}
 
 Rules:
+- EXACTLY ONE entry must be an observation action — looking around, taking in
+  the surroundings, studying the room — with "observe": true. Phrase it in this
+  character's voice; it does not have to use the words "look around". Every
+  other entry must have "observe": false.
 - "text" is a diegetic action phrased as the player would say it, 60 characters or fewer. No dice notation, no rules jargon.
 - "skill" names the single most relevant 5e skill, spell, or ability for the action, or null when none applies.
 - Suggest only actions this character can plausibly take RIGHT NOW: use only the listed carried items and class abilities, and respect active conditions.
@@ -75,7 +79,16 @@ Carried items: ${items.length ? items.join(", ") : "nothing but rags"}`
       messages: [{ role: "user", content: prompt }],
     })
 
-    return NextResponse.json({ suggestions: parseSuggestions(result.text) })
+    // ensureObserveChip is the backstop: if the model ignored the observe rule
+    // the deterministic chip is appended anyway. The look-around action is a
+    // load-bearing game mechanic (it is what plays a location's cinematic), so
+    // its presence is guaranteed here rather than left to the model.
+    const parsed = parseSuggestions(result.text)
+    // An empty parse must stay empty: the client reads [] as "generation
+    // failed" and falls back to the four static chips, which carry their own
+    // look-around. Returning a lone observe chip here would replace that whole
+    // fallback row with a single button.
+    return NextResponse.json({ suggestions: parsed.length ? ensureObserveChip(parsed) : [] })
   } catch (error) {
     console.error("[suggestions] generation failed:", error)
     return NextResponse.json({ suggestions: [] })
