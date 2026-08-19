@@ -63,6 +63,18 @@ const DAMAGE_TYPE_COLORS: Record<string, string> = {
   psychic: "text-fuchsia-400",
 }
 
+// Divine casters study a Book of Prayers, not a book of spells. The art lives in
+// Supabase (vtt-assets/item-icons/book-of-prayers) alongside the catalog record
+// for the `book-of-prayers` item, which carries the same URLs under properties.art.
+const BOOK_OF_PRAYERS = {
+  poster:
+    "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-poster.png",
+  animation:
+    "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-open-close.webp",
+} as const
+
+const DIVINE_CLASSES = new Set(["Cleric", "Monk"])
+
 export function AttacksSpellcasting({
   attacks,
   canCastSpells,
@@ -77,6 +89,7 @@ export function AttacksSpellcasting({
   characterLevel = 1
 }: AttacksSpellcastingProps) {
   const [activeTab, setActiveTab] = useState<"attacks" | "spells">("attacks")
+  const isDivineCaster = characterClass ? DIVINE_CLASSES.has(characterClass) : false
   const { roll, announce, busy } = useDice()
 
   // Spell attack rolls go through the shared dice roller and to Malachar.
@@ -122,8 +135,19 @@ export function AttacksSpellcasting({
                 : "text-stone-500 hover:text-stone-300"
             )}
           >
-            <Wand2 className="w-3.5 h-3.5" />
-            Spells
+            {isDivineCaster ? (
+              <img
+                src={activeTab === "spells" ? BOOK_OF_PRAYERS.animation : BOOK_OF_PRAYERS.poster}
+                alt=""
+                aria-hidden="true"
+                className="w-4 h-4 object-contain"
+                loading="lazy"
+                decoding="async"
+              />
+            ) : (
+              <Wand2 className="w-3.5 h-3.5" />
+            )}
+            {isDivineCaster ? "Prayers" : "Spells"}
           </button>
         )}
       </div>
