@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { CSSProperties } from "react"
 import { BookOpen, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
@@ -736,7 +737,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         </div>
       </Frame>
       <button onClick={() => setInventoryOpen(true)} className="flex h-9 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
-      {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300"><BookOpen className="mr-2 h-4 w-4" />Book of Spells <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
+      {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300"><BookOpen className="mr-2 h-4 w-4" />{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"} <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} acBreakdown={acResult.text} onClose={() => setStatDetail(null)} /> : null}
     {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
@@ -1037,18 +1038,33 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
   }
   const maxPage = className === "cleric" ? 2 : 1
 
-  return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s Book of Spells`} onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
-    <section className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
+  // Divine casters carry a Book of Prayers rather than a grimoire. Only the
+  // cover and spread art change — the 3D open, the page turn and the spell
+  // lists rendered on top are identical. Art is the same Supabase pair recorded
+  // on the book-of-prayers catalog item under properties.art.
+  const isDivineCaster = className === "cleric" || className === "monk"
+  const bookTitle = isDivineCaster ? "Book of Prayers" : "Book of Spells"
+  const bookArt = isDivineCaster
+    ? ({
+        "--aop-book-cover":
+          "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-closed-hd.png')",
+        "--aop-book-spread":
+          "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-open-hd.png')",
+      } as CSSProperties)
+    : undefined
+
+  return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s ${bookTitle}`} onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
+    <section style={bookArt} className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
       <div className="aop-arcane-book">
         <div className="aop-spellbook-cover" aria-hidden />
         <div key={page} className="aop-spellbook-spread">
           <div className="aop-spell-page">
             <span className="aop-rune-ring" aria-hidden>ᚨ ᚱ ᚲ ᚨ ᚾ ᚨ</span>
-            <header><BookOpen className="mx-auto h-7 w-7" /><h2>{character.name}&apos;s Book of Spells</h2><p>Level {character.level} {character.class} · {character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p></header>
+            <header><BookOpen className="mx-auto h-7 w-7" /><h2>{character.name}&apos;s {bookTitle}</h2><p>Level {character.level} {character.class} · {character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p></header>
             {page === 0 ? <SpellList title="Cantrips" spells={cantrips} empty="No cantrips recorded." /> : page === 1 ? <SpellList title="Prepared / Memorized" spells={prepared} empty="No prepared spells recorded." /> : <DomainIndex selected={clericDomain} />}
           </div>
           <div className="aop-spell-page">
-            <button type="button" onClick={requestClose} className="absolute right-5 top-4 z-10 text-[#6b3e25] hover:text-black" aria-label="Close Book of Spells"><X className="h-5 w-5" /></button>
+            <button type="button" onClick={requestClose} className="absolute right-5 top-4 z-10 text-[#6b3e25] hover:text-black" aria-label={`Close ${bookTitle}`}><X className="h-5 w-5" /></button>
             <p className="mb-4 rounded border border-[#7f5d3c]/45 bg-[#7d5223]/10 p-3 text-xs leading-relaxed">D&amp;D 5E: {ruleNote}</p>
             {page === 0 ? <SpellList title={character.class === "Cleric" ? "Domain Spells · Always Prepared" : "Subclass Spells"} spells={domainSpells} empty={className === "cleric" ? "Choose and record a Player's Handbook domain in The Forge." : "No subclass spells recorded."} /> : page === 1 ? <SpellList title={className === "wizard" ? "Spellbook" : "Known / Available"} spells={known} empty="No known spell records attached." /> : <DomainProgression domain={clericDomain} progression={domainProgression} />}
             <p className="absolute bottom-12 left-8 right-8 text-center text-[10px] italic text-[#725038]">Only recorded choices and level-eligible 2014 Player&apos;s Handbook domain spells are shown.</p>
