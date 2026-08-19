@@ -124,6 +124,11 @@ function toSheetCharacter(c: Character) {
     spellKnown: spellNames(spellcasting.known ?? spellcasting.spellbook),
     spellAlwaysPrepared: spellNames(spellcasting.domain_spells ?? spellcasting.always_prepared),
     spellSlots: spellcasting.slots ?? {},
+    // Limits and swap cadence come from class_spellcasting_progression
+    // (SRD 5.2.1 class tables) via characters.sheet_spellcasting.
+    spellCantripsMax: spellcasting.cantrips_max ?? null,
+    spellPreparedMax: spellcasting.prepared_max ?? null,
+    spellSwapCadence: spellcasting.swap_cadence ?? null,
     spellFocus: spellcasting.focus ?? null,
     spellRulesVersion: spellcasting.rules_version ?? null,
   }

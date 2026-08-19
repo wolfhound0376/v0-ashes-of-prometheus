@@ -1280,6 +1280,9 @@ age: (selectedCharacter as any).age,
           proficiencyBonus={character.proficiencyBonus}
           characterClass={character.class}
           characterLevel={character.level}
+          preparedCount={character.spellPrepared?.length ?? 0}
+          preparedMax={character.spellPreparedMax ?? undefined}
+          swapCadence={character.spellSwapCadence ?? undefined}
         />
       </FloatingWindow>
 
