@@ -43,6 +43,12 @@ interface AttacksSpellcastingProps {
   strModifier?: number
   proficiencyBonus?: number
   characterClass?: string
+  /** How many level 1+ spells are currently prepared. */
+  preparedCount?: number
+  /** Fixed limit from the SRD 5.2.1 class table — NOT ability-modifier based. */
+  preparedMax?: number
+  /** long_rest_any | long_rest_one | level_up_one */
+  swapCadence?: string
   characterLevel?: number
 }
 
@@ -75,6 +81,15 @@ const BOOK_OF_PRAYERS = {
 
 const DIVINE_CLASSES = new Set(["Cleric", "Monk"])
 
+// SRD 5.2.1: when a caster may change prepared spells differs by class.
+// Cleric/Druid/Wizard swap freely on a Long Rest; Paladin/Ranger swap one;
+// Bard/Sorcerer/Warlock only on level-up.
+const SWAP_CADENCE_LABEL: Record<string, string> = {
+  long_rest_any: "Swap freely on a long rest",
+  long_rest_one: "Swap one on a long rest",
+  level_up_one: "Swaps only on level-up",
+}
+
 export function AttacksSpellcasting({
   attacks,
   canCastSpells,
@@ -86,6 +101,9 @@ export function AttacksSpellcasting({
   strModifier = 0,
   proficiencyBonus = 2,
   characterClass,
+  preparedCount,
+  preparedMax,
+  swapCadence,
   characterLevel = 1
 }: AttacksSpellcastingProps) {
   const [activeTab, setActiveTab] = useState<"attacks" | "spells">("attacks")
@@ -228,6 +246,31 @@ export function AttacksSpellcasting({
                 </div>
               </button>
             </div>
+
+            {/* Prepared count — the limit is a fixed number from the class
+                table (SRD 5.2.1), not derived from the ability modifier. */}
+            {preparedMax !== undefined && (
+              <div className="flex items-baseline justify-between gap-2 px-1.5 py-1 rounded bg-[#2a2a3a]/20 border border-purple-500/10">
+                <span className="text-[10px] uppercase tracking-wider text-stone-500">
+                  {isDivineCaster ? "Prepared prayers" : "Prepared"}
+                </span>
+                <span className="text-xs font-medium">
+                  <span
+                    className={cn(
+                      (preparedCount ?? 0) > preparedMax ? "text-red-400" : "text-purple-300"
+                    )}
+                  >
+                    {preparedCount ?? 0}
+                  </span>
+                  <span className="text-stone-500"> / {preparedMax}</span>
+                </span>
+              </div>
+            )}
+            {swapCadence && SWAP_CADENCE_LABEL[swapCadence] && (
+              <div className="px-1.5 text-[10px] italic text-stone-500">
+                {SWAP_CADENCE_LABEL[swapCadence]}
+              </div>
+            )}
 
             {/* Spell Slots */}
             {Object.keys(spellSlots).length > 0 && (
