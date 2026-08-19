@@ -19,10 +19,11 @@
 // ============================================================================
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { X, Flame, Sparkles, Shuffle } from "lucide-react"
+import { X, Flame, Sparkles, Shuffle, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
 import { ForgeSheetTheme, BACKDROPS, backdropCss } from "./forge-sheet-theme"
+import { DmSheetEditor } from "./dm-sheet-editor"
 
 type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
 
@@ -327,12 +328,19 @@ export function CharacterSheetSlideOver({
   onClose,
   character,
   inventory = [],
+  dmMode = false,
+  characterId,
 }: {
   open: boolean
   onClose: () => void
   character: SheetCharacter
   inventory?: SheetInventoryItem[]
+  /** Shows the DM override control. The API enforces authorization itself. */
+  dmMode?: boolean
+  /** Row id, required for the override — the mapped sheet doesn't carry one. */
+  characterId?: string | null
 }) {
+  const [dmEditing, setDmEditing] = useState(false)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
   const { roll, announce } = useDice()
@@ -509,6 +517,20 @@ export function CharacterSheetSlideOver({
               Scene · {BACKDROPS[backdrop % BACKDROPS.length].label}
             </button>
             <div className="ml-auto" />
+            {dmMode && characterId && (
+              <button
+                onClick={() => setDmEditing((v) => !v)}
+                aria-pressed={dmEditing}
+                title="Edit the raw sheet. Requires a reason; every change is written to characters_history."
+                className={cn(
+                  "hpanel !w-auto flex items-center gap-2 !py-1.5 !px-3 text-[11px] uppercase tracking-[0.12em]",
+                  dmEditing && "!border-amber-500/60 !text-amber-300",
+                )}
+              >
+                <Pencil className="h-3 w-3 text-[#c9a86a]" />
+                {dmEditing ? "Close override" : "DM override"}
+              </button>
+            )}
             <button
               onClick={onClose}
               aria-label="Close character sheet"
@@ -517,6 +539,12 @@ export function CharacterSheetSlideOver({
               <X className="h-3.5 w-3.5" /> Close
             </button>
           </div>
+
+          {dmMode && characterId && dmEditing && (
+            <div className="mb-3 rounded border border-amber-500/30 bg-[#0f0c0a]">
+              <DmSheetEditor characterId={characterId} onClose={() => setDmEditing(false)} />
+            </div>
+          )}
 
           {/* ---------- hero poster ---------- */}
           <div className="hero" style={{ backgroundImage: backdropCss(backdrop, character.backdropUrl) }}>
