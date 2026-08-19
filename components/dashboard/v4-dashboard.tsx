@@ -737,7 +737,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         </div>
       </Frame>
       <button onClick={() => setInventoryOpen(true)} className="flex h-9 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
-      {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300"><BookOpen className="mr-2 h-4 w-4" />{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"} <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
+      {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300">{selected.class === "Cleric" || selected.class === "Monk" ? <><img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="mr-2 -my-1 h-10 w-10 shrink-0 object-contain motion-reduce:hidden" /><img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="mr-2 -my-1 hidden h-10 w-10 shrink-0 object-contain motion-reduce:block" /></> : <BookOpen className="mr-2 h-4 w-4" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"} <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} acBreakdown={acResult.text} onClose={() => setStatDetail(null)} /> : null}
     {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
@@ -1006,9 +1006,20 @@ const PHB2014_CLERIC_DOMAINS: Record<string, Array<{ level: number; spells: stri
   War: [{ level: 1, spells: ["Divine Favor", "Shield of Faith"] }, { level: 3, spells: ["Magic Weapon", "Spiritual Weapon"] }, { level: 5, spells: ["Crusader's Mantle", "Spirit Guardians"] }, { level: 7, spells: ["Freedom of Movement", "Stoneskin"] }, { level: 9, spells: ["Flame Strike", "Hold Monster"] }],
 }
 
+// Samson's Book of Prayers art. The looping WebP animates on its own (~16s
+// closed→open→closed loop) and cannot be play/pause controlled, so it is treated
+// as a looping image. The poster PNG is the reduced-motion fallback.
+const BOOK_OF_PRAYERS_MEDIA = {
+  poster:
+    "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-poster.png",
+  animation:
+    "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-open-close.webp",
+} as const
+
 function SpellbookModal({ character, onClose }: { character: Character; onClose: () => void }) {
   const [page, setPage] = useState(0)
   const [closing, setClosing] = useState(false)
+  const [opened, setOpened] = useState(false)
   const extra = character as Character & { subclass?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
   const spellcasting = extra.sheet_spellcasting ?? {}
   const names = (value: unknown): string[] => Array.isArray(value)
@@ -1036,6 +1047,13 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
     setClosing(true)
     window.setTimeout(onClose, 900)
   }
+  // Escape closes from either the attract screen or the open page-spread.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") requestClose() }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const maxPage = className === "cleric" ? 2 : 1
 
   // Divine casters carry a Book of Prayers rather than a grimoire. Only the
@@ -1044,6 +1062,9 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
   // on the book-of-prayers catalog item under properties.art.
   const isDivineCaster = className === "cleric" || className === "monk"
   const bookTitle = isDivineCaster ? "Book of Prayers" : "Book of Spells"
+  // Divine casters get the animated Book of Prayers as an attract screen; a
+  // click (or Escape/backdrop) advances into the existing page-spread UI.
+  const showAttract = isDivineCaster && !opened
 
   // Live limits from class_spellcasting_progression (SRD 5.2.1 class tables),
   // carried on the sheet. The limit is a fixed number per class and level — it
@@ -1066,7 +1087,14 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
       } as CSSProperties)
     : undefined
 
-  return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s ${bookTitle}`} onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
+  return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s ${bookTitle}`} onMouseDown={(event) => { if (event.target !== event.currentTarget) return; if (showAttract) setOpened(true); else requestClose() }}>
+    {showAttract ? (
+      <button type="button" onClick={() => setOpened(true)} className="group flex flex-col items-center gap-6 focus:outline-none" aria-label={`Open ${bookTitle}`}>
+        <img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="h-[400px] w-[400px] max-w-[80vw] max-h-[70vh] object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.85)] motion-reduce:hidden" />
+        <img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="hidden h-[400px] w-[400px] max-w-[80vw] max-h-[70vh] object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.85)] motion-reduce:block" />
+        <span className="animate-pulse font-serif text-sm uppercase tracking-[.3em] text-[#d3ae6b]/70 transition-colors group-hover:text-[#f0d9aa] motion-reduce:animate-none">Open the book</span>
+      </button>
+    ) : (
     <section style={bookArt} className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
       <div className="aop-arcane-book">
         <div className="aop-spellbook-cover" aria-hidden />
@@ -1099,6 +1127,7 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
       <div className="aop-page-controls"><button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>← Previous</button><span>Leaves {page + 1} / {maxPage + 1}</span><button type="button" disabled={page === maxPage} onClick={() => setPage((current) => Math.min(maxPage, current + 1))}>Next →</button></div>
       <a href="/forge" className="aop-spellbook-forge">Manage recorded spells in The Forge</a>
     </section>
+    )}
   </div>
 }
 
