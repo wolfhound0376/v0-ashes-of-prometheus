@@ -1063,6 +1063,14 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
           "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-closed-hd.png')",
         "--aop-book-spread":
           "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-open-hd.png')",
+        // Illuminated frame with a blank centre, so the spell lists below are
+        // live text rather than baked into the artwork. Padding matches the
+        // frame's blank area (x 465-1464, y 137-2036 of 1920x2560): 24% of the
+        // width each side, 5% from the top, 22% from the bottom to clear the
+        // sun medallions.
+        "--aop-page-bg":
+          "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/pages/prayer-page-frame.webp') center / cover no-repeat",
+        "--aop-page-pad": "clamp(20px, 5%, 46px) clamp(26px, 24%, 96px) clamp(58px, 22%, 120px)",
       } as CSSProperties)
     : undefined
 
