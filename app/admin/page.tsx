@@ -23,6 +23,7 @@ import { EquipmentPanel } from "@/components/admin/equipment-panel"
 import { AbilitiesPanel } from "@/components/admin/abilities-panel"
 import { DialoguePanel } from "@/components/admin/dialogue-panel"
 import { AssetsPanel } from "@/components/admin/assets-panel"
+import { DmGate } from "@/components/admin/dm-gate"
 
 type PanelType = 'environments' | 'characters' | 'actions' | 'inventory' | 'equipment' | 'abilities' | 'dialogue' | 'assets'
 
@@ -64,6 +65,7 @@ export default function AdminDashboard() {
   }
 
   return (
+    <DmGate>
     <div className="flex h-screen">
       {/* Sidebar */}
       <aside className="w-72 bg-gradient-to-b from-[#1a1614] to-[#0f0d0b] border-r border-[#3d3428]/60 flex flex-col">
@@ -141,5 +143,6 @@ export default function AdminDashboard() {
         </div>
       </main>
     </div>
+    </DmGate>
   )
 }

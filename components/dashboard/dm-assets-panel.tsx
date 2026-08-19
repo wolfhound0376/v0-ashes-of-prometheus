@@ -174,6 +174,13 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
               <button onClick={() => clearDmKey()} className="underline hover:text-stone-400">
                 forget it
               </button>
+              <span className="text-stone-700">·</span>
+              {/* The only route to /admin in the whole UI. Shown once the code is
+                  stored so a player never sees the door, and so the DM does not
+                  have to remember a URL that appears nowhere else. */}
+              <a href="/admin" className="underline hover:text-stone-400">
+                admin panels
+              </a>
             </p>
           ) : (
             <div className="mt-2 rounded-sm border border-[#c4a777]/40 bg-[#c4a777]/5 p-2">
