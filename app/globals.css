@@ -467,7 +467,9 @@
   z-index: 8;
   border: 8px ridge #8e6536;
   border-radius: 18px 28px 28px 18px;
-  background: #0b0807 url('/images/ui/spellbook/grimoire-closed.png') center / cover no-repeat;
+  /* Divine casters set --aop-book-cover / --aop-book-spread on the stage to
+     swap the grimoire for a Book of Prayers. Unset falls back to the grimoire. */
+  background: #0b0807 var(--aop-book-cover, url('/images/ui/spellbook/grimoire-closed.png')) center / cover no-repeat;
   box-shadow: inset 0 0 0 3px #1a081e, inset 0 0 45px #000;
   transform-origin: left center;
   backface-visibility: hidden;
@@ -480,7 +482,7 @@
   grid-template-columns: 1fr 1fr;
   border: 11px solid #38200f;
   border-radius: 14px 22px 22px 14px;
-  background: #21150c url('/images/ui/spellbook/grimoire-open.png') center / cover no-repeat;
+  background: #21150c var(--aop-book-spread, url('/images/ui/spellbook/grimoire-open.png')) center / cover no-repeat;
   box-shadow: inset 0 0 0 2px #b17b3e;
   animation: aop-page-turn 520ms ease both;
 }

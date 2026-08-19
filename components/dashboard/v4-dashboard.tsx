@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import type { CSSProperties } from "react"
 import { BookOpen, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
@@ -1032,8 +1033,22 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
   }
   const maxPage = className === "cleric" ? 2 : 1
 
+  // Divine casters carry a Book of Prayers rather than a grimoire. Only the
+  // cover and spread art change — the 3D open, the page turn and the spell
+  // lists rendered on top are identical. Art is the same Supabase pair recorded
+  // on the book-of-prayers catalog item under properties.art.
+  const isDivineCaster = className === "cleric" || className === "monk"
+  const bookArt = isDivineCaster
+    ? ({
+        "--aop-book-cover":
+          "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-closed-hd.png')",
+        "--aop-book-spread":
+          "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-open-hd.png')",
+      } as CSSProperties)
+    : undefined
+
   return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s Book of Spells`} onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
-    <section className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
+    <section style={bookArt} className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
       <div className="aop-arcane-book">
         <div className="aop-spellbook-cover" aria-hidden />
         <div key={page} className="aop-spellbook-spread">
