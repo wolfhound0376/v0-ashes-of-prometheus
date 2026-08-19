@@ -1354,6 +1354,8 @@ age: (selectedCharacter as any).age,
         onClose={() => setSheetOpen(false)}
         character={character}
         inventory={characterInventory}
+        dmMode={dmMode}
+        characterId={selectedCharacterId}
       />
     </>
   )
