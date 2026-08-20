@@ -8,7 +8,8 @@ type AssetColumn = (typeof COLUMNS)[number]
 
 function hasDmAccess(dmCode: unknown): boolean {
   const configuredCode = process.env.DM_ACCESS_CODE
-  return !configuredCode || safeEquals(normalizeCode(dmCode), normalizeCode(configuredCode))
+  // Fail closed: if no DM access code is configured, nobody is a DM.
+  return !!configuredCode && safeEquals(normalizeCode(dmCode), normalizeCode(configuredCode))
 }
 
 export async function DELETE(request: Request) {
