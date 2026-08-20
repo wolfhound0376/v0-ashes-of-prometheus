@@ -9,6 +9,7 @@ import { getDefaultAbilityScores } from "@/lib/game-data"
 import { BestiaryAutopopulate } from "./bestiary-autopopulate"
 import { type BestiaryEntry, matchBestiary, buildStatDiff, buildPatch } from "@/lib/bestiary-match"
 import { ConditionsEditor } from "@/components/conditions/conditions-editor"
+import { dmCharacters } from "@/lib/dm-characters"
 
 const CLASSES = ['Wizard', 'Fighter', 'Rogue', 'Cleric', 'Paladin', 'Ranger', 'Bard', 'Warlock', 'Sorcerer', 'Druid', 'Monk', 'Barbarian']
 
@@ -129,11 +130,8 @@ export function CharactersPanel() {
       // Only fill fields that are not already manually set.
       const patch = buildPatch(writable.filter((f) => f.proposed !== null && !f.isManuallySet))
       if (Object.keys(patch).length === 0) continue
-      const { error } = await supabase
-        .from('characters')
-        .update({ ...patch, updated_at: new Date().toISOString() })
-        .eq('id', c.id)
-      if (error) console.error('[v0] Bulk populate error for', c.name, error.message)
+      const { error } = await dmCharacters({ action: 'update', id: c.id, patch })
+      if (error) console.error('[v0] Bulk populate error for', c.name, error)
       else ok++
     }
     setBulkRunning(false)
@@ -147,7 +145,7 @@ export function CharactersPanel() {
     const createType = formData.character_type || 'npc'
     // Class is meaningless for monsters (stored empty) and optional for NPCs.
     const createClass = createType === 'monster' ? '' : createType === 'player' ? (formData.class || 'Wizard') : (formData.class || '')
-    const { data, error } = await supabase.from('characters').insert({
+    const { error } = await dmCharacters({ action: 'create', patch: {
       name: formData.name,
       level: formData.level || 1,
       class: createClass,
@@ -188,10 +186,10 @@ export function CharactersPanel() {
       damage_immunities: formData.damage_immunities || null,
       condition_immunities: formData.condition_immunities || null,
       conditions: (formData.conditions as string[] | undefined) || [],
-    })
+    } })
     if (error) {
       console.error('[v0] Error creating character:', error)
-      alert(`Failed to create character: ${error.message}`)
+      alert(`Failed to create character: ${error}`)
     } else {
       console.log('[v0] Character created successfully')
       setCreating(false)
@@ -203,7 +201,7 @@ export function CharactersPanel() {
   const handleUpdate = async (id: string) => {
     // Force monster class empty even if a stale value is in formData.
     const updateType = formData.character_type || 'npc'
-    const { error } = await supabase.from('characters').update({
+    const { error } = await dmCharacters({ action: 'update', id, patch: {
       ...formData,
       class: updateType === 'monster' ? '' : (formData.class ?? ''),
       // CR is only meaningful for NPCs/monsters; never store it on a player.
@@ -215,14 +213,14 @@ export function CharactersPanel() {
       wis_modifier: Math.floor(((formData.wis_score || 10) - 10) / 2),
       cha_modifier: Math.floor(((formData.cha_score || 10) - 10) / 2),
       updated_at: new Date().toISOString(),
-    }).eq('id', id)
+    } })
     if (error) console.error('Error:', error)
     else { setEditing(null); setFormData({}); fetchCharacters() }
   }
 
   const handleDelete = async (char: Character) => {
     if (!confirm(`Permanently delete "${char.name}"? This also destroys its inventory, equipment, abilities, secrets, dialogue and encounter history. This cannot be undone.`)) return
-    const { error } = await supabase.from('characters').delete().eq('id', char.id)
+    const { error } = await dmCharacters({ action: 'delete', id: char.id })
     if (error) console.error('Error:', error)
     else fetchCharacters()
   }
@@ -230,19 +228,13 @@ export function CharactersPanel() {
   // Non-destructive: archived characters are hidden everywhere but never deleted.
   const handleArchive = async (char: Character) => {
     if (!confirm(`Archive "${char.name}"? It will be hidden from the dashboard and the VTT but nothing is deleted.`)) return
-    const { error } = await supabase
-      .from('characters')
-      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('id', char.id)
+    const { error } = await dmCharacters({ action: 'archive', id: char.id })
     if (error) console.error('Error archiving character:', error)
     else fetchCharacters()
   }
 
   const handleRestore = async (char: Character) => {
-    const { error } = await supabase
-      .from('characters')
-      .update({ archived_at: null, updated_at: new Date().toISOString() })
-      .eq('id', char.id)
+    const { error } = await dmCharacters({ action: 'restore', id: char.id })
     if (error) console.error('Error restoring character:', error)
     else fetchCharacters()
   }

@@ -21,6 +21,7 @@ import { characterData, dialogueData, actionsData, inventoryData, environmentDat
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
+import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
 import { useLich } from "@/lib/hooks/use-lich"
 import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
@@ -794,7 +795,7 @@ if (error) {
     !players.some((p: any) => p.id === c.id) && (c.is_player || (c.character_type ?? '') === 'npc' || c.claim_token))
 
   const setSeated = async (id: string, seated: boolean) => {
-    const { error } = await supabase.from('characters').update({ in_party: seated }).eq('id', id)
+    const { error } = await dmCharacters({ action: 'update', id, patch: { in_party: seated } })
     if (error) { console.error('[party] seat change failed:', error); return }
     setCharacters(prev => prev.map((c: any) => (c.id === id ? { ...c, in_party: seated } : c)))
   }
@@ -806,10 +807,7 @@ if (error) {
   // session's active_character_id or is referenced by inventory_items
   // .confiscated_from — both of those foreign keys are NO ACTION.
   const handleArchiveCharacter = async (characterId: string) => {
-    const { error } = await supabase
-      .from('characters')
-      .update({ archived_at: new Date().toISOString(), in_party: false })
-      .eq('id', characterId)
+    const { error } = await dmCharacters({ action: 'archive', id: characterId })
     if (error) {
       console.error('[archive] character archive failed:', error)
       setSaveMessage('Could not remove that character')
@@ -1364,10 +1362,7 @@ if (error) {
     // Level up the character
     const character = characters.find(c => c.id === characterId)
     if (character && character.level < 20) {
-      const { error } = await supabase
-        .from('characters')
-        .update({ level: character.level + 1 })
-        .eq('id', characterId)
+      const { error } = await dmCharacters({ action: 'update', id: characterId, patch: { level: character.level + 1 } })
       if (!error) {
         fetchCharacterData()
         // Notify the Lich. This is a client-only notice (never written to the
