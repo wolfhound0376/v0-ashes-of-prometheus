@@ -16,9 +16,10 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 // it is a Vercel env change with no migration, and it is never sitting in a table
 // that a misconfigured RLS policy could expose.
 //
-// FAIL-OPEN ON PURPOSE: if DM_ACCESS_CODE is unset, the DM gate is reported as
-// disabled and the dashboard behaves exactly as it does today. Sam can never lock
-// himself out of his own game by forgetting to set an env var.
+// The GET below only REPORTS gate status. Since 2026-08-20 the gated routes
+// themselves FAIL CLOSED when DM_ACCESS_CODE is unset — an unset code locks the
+// DM tools rather than opening them. Recovery from a lost code is a Vercel env
+// change, never an open door.
 
 export const dynamic = "force-dynamic"
 
