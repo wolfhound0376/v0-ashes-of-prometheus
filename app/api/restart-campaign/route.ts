@@ -203,11 +203,33 @@ export async function POST(req: Request) {
   // player and is therefore untouched here.
   const { data: players, error: playersErr } = await admin
     .from("characters")
-    .select("id, name")
+    .select("id, name, hp_max")
     .eq("is_player", true)
   note("characters read", playersErr)
 
   const playerIds = (players || []).map((p) => p.id)
+
+  // --- 4a. player wounds ---------------------------------------------------
+  // RESET, NOT DELETE — the same mercy the NPCs get in step 3. A restart is a
+  // fresh start: hp_current returns to hp_max and lingering conditions clear.
+  // (Added 2026-08-20: this section didn't exist, so Scott carried 0/9 HP
+  // through every restart since the day he first went down.)
+  {
+    let healed = 0
+    for (const p of players || []) {
+      const { error } = await admin
+        .from("characters")
+        .update({
+          hp_current: p.hp_max,
+          conditions: [],
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", p.id)
+      if (error) note(`player hp ${p.id}`, error)
+      else healed += 1
+    }
+    report.playersHealed = healed
+  }
 
   if (playerIds.length) {
     {
