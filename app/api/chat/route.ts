@@ -1427,7 +1427,9 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
 
         if (char) {
           const newHp = Math.max(0, (char.hp_current || 0) - amount)
-          const { error } = await supabase
+          // Service-role write: characters is read-only to the anon key
+          // since the 2026-08-20 security pass.
+          const { error } = await createAdminClient()
             .from("characters")
             .update({ hp_current: newHp })
             .eq("id", playerCharacter.id)
@@ -1458,7 +1460,9 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
 
         if (char) {
           const newHp = Math.min(char.hp_max || 10, (char.hp_current || 0) + amount)
-          const { error } = await supabase
+          // Service-role write: characters is read-only to the anon key
+          // since the 2026-08-20 security pass.
+          const { error } = await createAdminClient()
             .from("characters")
             .update({ hp_current: newHp })
             .eq("id", playerCharacter.id)
@@ -1530,7 +1534,9 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
       if (target.table === "npc_encounters") {
         return supabase.from("npc_encounters").update({ conditions: next }).ilike("name", target.name)
       }
-      return supabase.from("characters").update({ conditions: next }).eq("id", target.id)
+      // Service-role write: characters is read-only to the anon key
+      // since the 2026-08-20 security pass.
+      return createAdminClient().from("characters").update({ conditions: next }).eq("id", target.id)
     }
 
     // Best-effort session beat, mirroring the item-award beat writer.
