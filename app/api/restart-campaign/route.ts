@@ -24,9 +24,9 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   - Character rows, stats, XP and levels.
 //
 // AUTHORIZATION mirrors /api/asset-media and /api/forge/import: x-dm-key must
-// carry DM_ACCESS_CODE when that env var is set. With it unset the route stays
-// open — the same fail-open rule as the /join gate, so a forgotten env var can
-// never lock Sam out of his own game.
+// carry DM_ACCESS_CODE. FAIL CLOSED: with the env var unset the route refuses
+// everyone — an unset code means the gate is locked, not missing (changed
+// 2026-08-20 on Sam's order; the old fail-open rule let anyone in).
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -104,11 +104,13 @@ function isCuratedEnvironment(row: EnvironmentRow): boolean {
 export async function POST(req: Request) {
   // --- auth ---------------------------------------------------------------
   const required = process.env.DM_ACCESS_CODE
-  if (required) {
-    const supplied = req.headers.get("x-dm-key") || ""
-    if (!supplied || !safeEquals(normalizeCode(supplied), normalizeCode(required))) {
-      return Response.json({ ok: false, reason: "forbidden" }, { status: 403 })
-    }
+  // Fail closed: with no DM code configured, nobody may restart the campaign.
+  if (!required) {
+    return Response.json({ ok: false, reason: "forbidden" }, { status: 403 })
+  }
+  const supplied = req.headers.get("x-dm-key") || ""
+  if (!supplied || !safeEquals(normalizeCode(supplied), normalizeCode(required))) {
+    return Response.json({ ok: false, reason: "forbidden" }, { status: 403 })
   }
 
   let admin
