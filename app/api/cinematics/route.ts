@@ -28,7 +28,8 @@ type Resolution = "exact" | "location_fallback" | "generic_fallback" | "miss" | 
 
 function authorized(request: NextRequest): boolean {
   const dmCode = process.env.DM_ACCESS_CODE
-  if (!dmCode) return true
+  // Fail closed: if no DM access code is configured, nobody is a DM.
+  if (!dmCode) return false
   const supplied = normalizeCode(request.headers.get("x-dm-key"))
   return !!supplied && safeEquals(supplied, normalizeCode(dmCode))
 }
