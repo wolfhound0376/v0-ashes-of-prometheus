@@ -113,11 +113,17 @@ export async function POST(req: Request) {
   // must carry ONE of:
   //   1. x-forge-key — the forge or DM access code (normalised, timing-safe);
   //   2. x-character-id + x-claim-token — a claimed player's own verified pair.
-  // With NEITHER env var set the importer stays open — the same fail-open rule
-  // as the /join gate: a forgotten env var must never lock Sam out of his game.
+  // With NEITHER env var set the importer FAILS CLOSED — an unset code means
+  // the forge is barred, not open (changed 2026-08-20 on Sam's order).
   const forgeCode = process.env.FORGE_ACCESS_CODE
   const dmCode = process.env.DM_ACCESS_CODE
-  if (forgeCode || dmCode) {
+  if (!forgeCode && !dmCode) {
+    return Response.json(
+      { error: "The forge is barred: no access code is configured on the server." },
+      { status: 403 },
+    )
+  }
+  {
     let authorized = false
     const suppliedKey = normalizeCode(req.headers.get("x-forge-key"))
     if (suppliedKey) {
