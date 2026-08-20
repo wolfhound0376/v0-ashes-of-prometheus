@@ -1884,7 +1884,9 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
 
           if (char) {
             const newXp = (char.xp || 0) + npc.xp_value
-            const { error: xpError } = await supabase
+            // Service-role write: characters is read-only to the anon key
+            // since the 2026-08-20 security pass.
+            const { error: xpError } = await createAdminClient()
               .from("characters")
               .update({ xp: newXp })
               .eq("id", playerCharacter.id)
