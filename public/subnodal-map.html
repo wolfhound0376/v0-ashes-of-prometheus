@@ -90,17 +90,16 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--viol
 #lightbox.open{display:grid}
 #lightbox img{max-width:94vw;max-height:92vh;border-radius:10px;border:1px solid #6c577b}
 #mobileLegend{display:none;position:absolute;right:14px;top:14px;z-index:10}
-/* embed=1 — living inside the dashboard stage: map only, no side panel */
+/* embed=1 — the map and nothing else. Drag to move, wheel to zoom. Every
+   label, button and caption is chrome the table does not need mid-scene. */
 html.embed body:before{background:none}
 html.embed #app{grid-template-columns:1fr}
-html.embed aside,html.embed #navHelp,html.embed #mobileLegend{display:none}
+html.embed aside,html.embed #mobileLegend,
+html.embed #topbar,html.embed #roleTag,html.embed #navPad,html.embed #navHelp{display:none}
 html.embed #mapFrame{padding:0}
-html.embed #topbar{left:8px;top:8px;padding:4px;gap:4px}
-html.embed #topbar button{padding:5px 7px;font-size:10px}
-html.embed #roleTag{left:8px;top:44px;font-size:9px;padding:4px 7px}
-html.embed #navPad{right:8px;bottom:8px;grid-template-columns:26px 26px 26px;grid-template-rows:26px 26px 26px;gap:3px;padding:5px}
-html.embed #navPad button{font-size:11px}
-html.embed #modeTitle{left:8px;bottom:8px;max-width:min(70%,420px);padding:7px 9px;font-size:10px}
+/* the one caption that earns its place: the name of the pin you just tapped */
+html.embed #modeTitle{display:none;left:8px;bottom:8px;max-width:min(70%,420px);padding:7px 9px;font:10px/1.45 Inter}
+html.embed #modeTitle.showing{display:block}
 html.embed #modeTitle b{font-size:11px}
 @media(max-width:900px){#app{grid-template-columns:1fr}aside{position:absolute;right:0;top:0;bottom:0;width:min(92vw,390px);transition:.2s}aside.closed{transform:translateX(100%)}#mobileLegend{display:block}}
 </style>
@@ -477,7 +476,11 @@ function selectNode(id) {
 
 function showDetail() {
   const d = document.querySelector('#detail'), n = nodeById(activeNode);
-  if (!n) { d.innerHTML = '<b>Select a node</b><br>Pick a pin to inspect it.'; return; }
+  if (!n) {
+    d.innerHTML = '<b>Select a node</b><br>Pick a pin to inspect it.';
+    if (EMBED) document.querySelector('#modeTitle').classList.remove('showing');
+    return;
+  }
   const chip = `<span class="chip ${n.state === 'hidden' ? 'hiddenState' : n.state}">${n.state}</span>`;
   let html = '';
   if (n.name) {
@@ -495,10 +498,11 @@ function showDetail() {
   if (n.tile) html += `<img class="tile" src="${esc(n.tile)}" alt="Node tile">`;
   d.innerHTML = html;
   if (EMBED) {
-    // no side panel in an embed, so the caption box carries the selection
+    // the caption only exists while a pin is selected
     document.querySelector('#mapTitle').textContent = n.name ? `${n.n}. ${n.name}` : 'Unidentified location';
     document.querySelector('#mapBlurb').textContent = n.detail
       || (n.name ? 'You know the name, not the inside.' : 'Seen from where the party stands. No name yet.');
+    document.querySelector('#modeTitle').classList.add('showing');
   }
   const img = d.querySelector('img.tile');
   if (img) img.onclick = () => { const lb = document.querySelector('#lightbox'); lb.querySelector('img').src = img.src; lb.classList.add('open'); };
@@ -632,6 +636,15 @@ document.querySelector('#panLeft').onclick = () => pan(-camera.w * .18, 0);
 document.querySelector('#panRight').onclick = () => pan(camera.w * .18, 0);
 document.querySelector('#mobileLegend').onclick = () => document.querySelector('#legend').classList.toggle('closed');
 document.querySelector('#lightbox').onclick = e => e.currentTarget.classList.remove('open');
+
+// tapping bare map clears the selection, so the caption does not linger
+svg.addEventListener('click', e => {
+  if (window.dragMoved || e.target.closest('.pin') || e.target.closest('.sector')) return;
+  if (activeNode === null) return;
+  activeNode = null;
+  document.querySelectorAll('#placeList .listButton').forEach(b => b.classList.remove('active'));
+  renderPins(); applyToggles(); showDetail(); updateFogTarget();
+});
 
 svg.addEventListener('wheel', e => { e.preventDefault();
   zoom(Math.exp(Math.max(-120, Math.min(120, e.deltaY)) * .0025), clientPoint(e)); }, { passive: false });

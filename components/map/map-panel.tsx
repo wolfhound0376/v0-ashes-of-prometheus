@@ -63,7 +63,7 @@ function LocationLayer({ onBack }: { onBack?: () => void }) {
         ) : (
           <span />
         )}
-        <span className="text-[9px] uppercase tracking-wider text-[#8f8061]">Where the party stands</span>
+        <span />
         <Link
           href="/subnodal-map.html"
           target="_blank"
