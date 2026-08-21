@@ -41,6 +41,17 @@ export function useLich(campaignId: string = "abyss") {
       let response: Response | null = null
       let lastError: Error | null = null
       
+      // RETRY ONLY WHAT IS WORTH RETRYING.
+      //
+      // This loop used to retry ANY non-OK response. But /api/chat persists the
+      // player's line before it calls the model, so every retry of a failing
+      // turn wrote the same line to the log again: one message, three rows,
+      // seconds apart, with no reply between them. That is what "something
+      // broke" looked like when the Anthropic credit balance ran dry.
+      //
+      // A response that arrived is the server's considered answer — retrying it
+      // just duplicates the line. Only a request that never landed (a dropped
+      // connection, a timeout) is retried.
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           response = await fetch("/api/chat", {
@@ -48,13 +59,8 @@ export function useLich(campaignId: string = "abyss") {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message, campaignId, characterId, claimToken }),
           })
-          
-          if (response.ok) break
-          // A 403 means this browser's character claim is stale/invalid — the
-          // server will reject it every time, so retrying is pointless. Break
-          // immediately and surface it as a typed error the UI can react to.
-          if (response.status === 403) break
-          lastError = new Error(`HTTP ${response.status}`)
+          // The server answered — success or failure, that is the answer.
+          break
         } catch (fetchError) {
           lastError = fetchError as Error
           if (attempt < 2) {
@@ -70,6 +76,18 @@ export function useLich(campaignId: string = "abyss") {
       }
 
       if (!response?.ok) {
+        // The route names its failures (ai_credits_exhausted, ai_unavailable)
+        // with a line fit to show the table. Carry that through rather than
+        // throwing an opaque status code.
+        if (response) {
+          const body = await response.json().catch(() => null as null | Record<string, unknown>)
+          if (body && typeof body.message === "string") {
+            const named = new Error(body.message) as Error & { code?: string; playerFacing?: boolean }
+            named.code = typeof body.error === "string" ? body.error : undefined
+            named.playerFacing = true
+            throw named
+          }
+        }
         throw lastError || new Error("Failed to send message")
       }
 

@@ -898,6 +898,19 @@ if (error) {
   const stripRollSpoof = (text: string) =>
     text.replace(/^\s*(\[\s*dice\s*roll\s*\]|🎲)\s*/i, "")
 
+  // When Malachar cannot answer, SAY SO in the log. Silence reads as a broken
+  // app: the player types, nothing happens, and they type again. The line is
+  // client-only (never persisted) so it does not pollute the transcript or the
+  // model's history.
+  const reportDmFailure = useCallback((err: unknown) => {
+    const e = err as (Error & { playerFacing?: boolean; claimRejected?: boolean }) | undefined
+    if (e?.claimRejected) return   // handled by the claim flow
+    const text = e?.playerFacing && e.message
+      ? e.message
+      : "Malachar does not answer. Something between here and his tower is broken."
+    setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "System", text }))
+  }, [])
+
   const handleDialogueSubmit = async () => {
     if (dialogueInput.trim()) {
       const text = stripRollSpoof(dialogueInput.trim())
@@ -911,7 +924,13 @@ if (error) {
 
       // Send to the Lich, carrying THIS browser's character + claim token so
       // the chat route attributes the message to the right player.
-      const response = await dispatchToLich(text)
+      let response: Awaited<ReturnType<typeof dispatchToLich>> = null
+      try {
+        response = await dispatchToLich(text)
+      } catch (err) {
+        reportDmFailure(err)
+        return
+      }
       if (response?.text) {
         // Optimistically add Malachar's response (also pending → reconciled by id)
         setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
@@ -940,7 +959,13 @@ if (error) {
       const playerName = selectedCharacter?.name || "Player"
       setDialogueInput("")
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
-      const response = await dispatchToLich(text)
+      let response: Awaited<ReturnType<typeof dispatchToLich>> = null
+      try {
+        response = await dispatchToLich(text)
+      } catch (err) {
+        reportDmFailure(err)
+        return
+      }
       if (response?.text) {
         setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
         if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
@@ -950,7 +975,7 @@ if (error) {
         await fetchCharacterData()
       }
     },
-    [selectedCharacter, dispatchToLich, fetchCharacterData],
+    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure],
   )
 
   // Announce a completed sheet roll to the table. Every browser sees the roll
