@@ -3,6 +3,7 @@
 import { BookOpen, LockKeyhole, Map, ScrollText, X } from "lucide-react"
 import type { InventoryItem } from "@/lib/types/database"
 import { JournalPages } from "@/components/dashboard/journal-pages"
+import MapPanel from "@/components/map/map-panel"
 
 export type CampaignBookSection = "journal" | "quests" | "maps" | "lore"
 
@@ -34,6 +35,20 @@ export function CampaignBookModal({ section, inventory, characterId = null, onCl
   const journals = inventory.filter((item) => /journal|diary|notebook/i.test(item.name))
   const journalLocked = section === "journal" && journals.length === 0
   const Icon = section === "maps" ? Map : section === "lore" || section === "quests" ? ScrollText : BookOpen
+
+  // Maps is the one section with something real to show, and a parchment book
+  // page is the wrong frame for it: this opens the map window itself, with the
+  // region and location layers a toggle apart.
+  if (section === "maps") {
+    return (
+      <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={copy.title} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+        <section className="relative h-[min(760px,90vh)] w-full max-w-[1180px] overflow-hidden rounded border-2 border-[#7a5f33] bg-[#0b0714] shadow-[0_0_40px_#000]">
+          <button type="button" onClick={onClose} aria-label={`Close ${copy.title}`} className="absolute right-2 top-1.5 z-40 rounded border border-[#6b5123] bg-[#080705]/90 p-1 text-[#e1d0a8] transition hover:border-[#c99a49]"><X className="h-4 w-4" /></button>
+          <MapPanel initial="region" />
+        </section>
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={copy.title} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
