@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import MapStage from "./map-stage"
+import UnderdarkMap from "./underdark-map"
 import UnderdarkMap3D from "./underdark-map-3d"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 
@@ -56,16 +56,7 @@ export default function MapShell() {
           {dm ? "MALACHAR \u2726 ON" : "MALACHAR"}
         </button>
       </div>
-      {mode === "2d" ? (
-        // The full-page 2D component crashes the renderer outright (see
-        // fix/map-page-use-stable-renderer). Until that is understood, /map
-        // uses the same stable renderer the dashboard stage uses.
-        <div className="relative mx-3 mt-2" style={{ height: "calc(100vh - 90px)" }}>
-          <MapStage />
-        </div>
-      ) : (
-        <UnderdarkMap3D />
-      )}
+      {mode === "2d" ? <UnderdarkMap /> : <UnderdarkMap3D />}
     </div>
   )
 }
