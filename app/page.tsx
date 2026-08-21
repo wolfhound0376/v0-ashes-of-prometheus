@@ -12,8 +12,6 @@ import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
-import { SimpleDashboard } from "@/components/dashboard/simple-dashboard"
-import { isFullDashboard, setFullDashboard, onViewModeChange } from "@/lib/view-mode"
 import { DmAssetsPanel } from "@/components/dashboard/dm-assets-panel"
 import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
@@ -197,16 +195,6 @@ export default function DashboardPage() {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const [autoSave, setAutoSave] = useState(true)
   const [dmMode, setDmMode] = useState(false)
-
-  // Simplified is the default view; the choice is remembered per browser.
-  // Read in an effect rather than in useState's initialiser so the server and
-  // the first client render agree — reading localStorage during render is a
-  // hydration mismatch waiting to happen.
-  const [fullDashboard, setFullDashboardState] = useState(false)
-  useEffect(() => {
-    setFullDashboardState(isFullDashboard())
-    return onViewModeChange(() => setFullDashboardState(isFullDashboard()))
-  }, [])
 
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
@@ -1202,32 +1190,6 @@ if (error) {
         </div>
       </div>
 
-      {!fullDashboard ? (
-      <SimpleDashboard
-        environment={{
-          name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
-          region: "The Underdark",
-          timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
-          imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
-          description: currentEnvironment?.description,
-        }}
-        dialogue={dialogue}
-        dialogueInput={dialogueInput}
-        setDialogueInput={setDialogueInput}
-        onDialogueSubmit={handleDialogueSubmit}
-        onQuickReply={(text) => void handleQuickReply(text)}
-        dmMode={dmMode && !claimLocked}
-        characters={players}
-        selectedCharacter={selectedCharacter}
-        selectedCharacterId={selectedCharacterId}
-        onCharacterSelect={claimLocked ? undefined : handleCharacterSelect}
-        inventory={characterInventory}
-        equipment={characterEquipment}
-        npcEncounters={npcEncounters}
-        isThinking={lichLoading}
-        onExpand={() => setFullDashboard(true)}
-      />
-      ) : (
       <V4Dashboard
         environment={{
           name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
@@ -1255,19 +1217,6 @@ if (error) {
         isThinking={lichLoading}
         claimLocked={claimLocked}
       />
-      )}
-      {/* The way back. Lives here rather than inside V4Dashboard so the full
-          dashboard needs no changes at all — four other branches are live in
-          that file and a collapse control is not worth a merge conflict. */}
-      {fullDashboard && (
-        <button
-          onClick={() => setFullDashboard(false)}
-          title="Back to the simple view"
-          className="fixed right-3 top-2 z-50 flex items-center gap-1.5 rounded border border-[#8a6d2f] bg-[#2a2110]/95 px-2.5 py-1 text-[10px] text-[#e8dcc4] hover:bg-[#33280f]"
-        >
-          Simple view
-        </button>
-      )}
 
       {/* Legacy dashboard remains mounted out of view during the v4.1 migration
           so its existing handlers can be compared without losing code. */}
