@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { isVideoUrl } from "@/lib/media-url"
 import { canSpeak, sanitizeForTTS } from "@/lib/tts"
-import { playSpeech, type SpeechPlayback } from "@/lib/speech-playback"
+import { type SpeechPlayback } from "@/lib/speech-playback"
+import { speakBlob } from "@/lib/speech-queue"
 
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import {
@@ -186,7 +187,7 @@ export function LeftColumn({
       // Played through the shared helper, which decodes the MP3 and plays the
       // samples via WebAudio. Some Chromium builds are silently mute when an
       // ElevenLabs MP3 goes through an <audio> element instead.
-      const playback = await playSpeech(await res.blob())
+      const playback = speakBlob("player", await res.blob())
       audioRef.current = playback
       setLoadingText(null)
       setPlayingText(rawText)
