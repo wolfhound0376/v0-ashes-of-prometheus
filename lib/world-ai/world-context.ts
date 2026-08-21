@@ -1,3 +1,4 @@
+import { formatTacticalSection, type TacticalBoard, type BoardToken } from "@/lib/tactical"
 // World Context Service - Gathers all world-building data for Malachar
 import { createClient } from "@/lib/supabase/server"
 import { calculateAC } from "@/lib/armor-class"
@@ -64,12 +65,69 @@ export interface WorldContext {
       isHidden: boolean
     }>
   } | null
+  /**
+   * The active VTT map and everything standing on it, with distances already
+   * measured server-side. Null when no map is active — the game has always run
+   * fine on prose alone and must continue to.
+   */
+  tactical: TacticalBoard | null
   recentDialogue: Array<{
     speaker: string
     text: string
   }>
   book: BookRetrieval
   personality: LichPersonality | null
+}
+
+/**
+ * The active VTT map and its tokens. READ-ONLY: this never writes a position.
+ *
+ * Returns null on absolutely any problem — no active map, an empty board, a
+ * query error. The game ran on prose for months before a board existed and has
+ * to keep running when there isn't one; a tactical section is an enhancement,
+ * never a dependency.
+ */
+async function fetchTacticalBoard(): Promise<TacticalBoard | null> {
+  try {
+    const supabase = await createClient()
+    const { data: map } = await supabase
+      .from("vtt_maps")
+      .select("id, name, grid_width, grid_height")
+      .eq("is_active", true)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!map) return null
+
+    const { data: rows } = await supabase
+      .from("vtt_tokens")
+      .select("label, grid_x, grid_y, character_id, hp_current, hp_max, is_visible")
+      .eq("map_id", map.id)
+      .eq("is_visible", true)
+    if (!rows || rows.length === 0) return null
+
+    const tokens: BoardToken[] = rows
+      .filter((r) => typeof r.grid_x === "number" && typeof r.grid_y === "number")
+      .map((r) => ({
+        label: (r.label || "Unnamed").trim(),
+        gridX: r.grid_x as number,
+        gridY: r.grid_y as number,
+        isPlayer: !!r.character_id,
+        hpCurrent: typeof r.hp_current === "number" ? r.hp_current : null,
+        hpMax: typeof r.hp_max === "number" ? r.hp_max : null,
+      }))
+    if (!tokens.length) return null
+
+    return {
+      mapName: map.name || "Unnamed map",
+      gridWidth: map.grid_width ?? 0,
+      gridHeight: map.grid_height ?? 0,
+      tokens,
+    }
+  } catch (e) {
+    console.error("[WorldContext] tactical board unavailable:", e)
+    return null
+  }
 }
 
 // Build campaign context from the campaigns.ts data
@@ -447,7 +505,7 @@ export async function buildWorldContext(
   const currentLocation = latestEnv?.name || location
   console.log("[WorldContext] Using location:", currentLocation)
 
-  const [characters, environment, recentDialogue, npcConditions, personality, book] =
+  const [characters, environment, recentDialogue, npcConditions, personality, book, tactical] =
     await Promise.all([
       fetchCharacters(),
       fetchEnvironment(campaignId, currentLocation),
@@ -458,6 +516,7 @@ export async function buildWorldContext(
         episodeLabel: episodeLabelFor(campaignId, episode),
         location: currentLocation,
       }),
+      fetchTacticalBoard(),
     ])
 
   const campaign = buildCampaignContext(campaignId, episode, currentLocation, heat)
@@ -478,6 +537,7 @@ export async function buildWorldContext(
     characters,
     npcConditions,
     environment,
+    tactical,
     recentDialogue,
     personality,
     book,
@@ -601,6 +661,10 @@ export function formatWorldContextForAI(context: WorldContext): string {
     }
     lines.push("")
   }
+
+  // Tactical board. Distances are measured here, in code, and handed to
+  // Malachar finished — see lib/tactical.ts for why he is never asked to count.
+  lines.push(...formatTacticalSection(context.tactical))
 
   // Recent dialogue
   if (context.recentDialogue.length > 0) {
