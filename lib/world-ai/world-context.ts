@@ -87,48 +87,77 @@ export interface WorldContext {
  * to keep running when there isn't one; a tactical section is an enhancement,
  * never a dependency.
  */
-async function fetchTacticalBoard(sceneName?: string): Promise<TacticalBoard | null> {
-  try {
-    const supabase = await createClient()
+type MapRow = { id: string; name: string; grid_width: number; grid_height: number }
 
-    // Prefer the board that belongs to the room the party is standing in.
-    // is_active is a DM convenience flag and drifts — it survives the party
-    // walking out — so the scene is asked first and the flag is only the
-    // fallback. A board from the wrong room is worse than no board: it would
-    // hand Malachar exact distances for a fight that is not happening.
-    // Named rather than inlined: the assignments below used `as typeof map`,
-    // which resolves against the CONTROL-FLOW-NARROWED type (`null` at that
-    // point), not the declaration — so `map` stayed `null`, then `never`, and
-    // every read of it failed to compile.
-    type TacticalMapRow = { id: string; name: string; grid_width: number; grid_height: number }
-    let map: TacticalMapRow | null = null
-    if (sceneName) {
-      const { data: env } = await supabase
-        .from("environments")
-        .select("id")
-        .eq("name", sceneName)
-        .maybeSingle()
-      if (env?.id) {
-        const { data: byEnv } = await supabase
-          .from("vtt_maps")
-          .select("id, name, grid_width, grid_height")
-          .eq("environment_id", env.id)
-          .order("updated_at", { ascending: false })
-          .limit(1)
+/**
+ * Which board the party is standing on.
+ *
+ * Follows the SAME travel graph that decides where they are, rather than the
+ * is_active flag — that flag is a DM convenience and it drifts, surviving the
+ * party walking out of the room. It stays only as a last resort.
+ *
+ * Note the label is not a scene name: party_location_label() returns
+ * "Velkynvelve — Slave Pen" while the environment row is called
+ * "Scene_1_Velkynvelve (slave pen)". Matching those two strings would fail
+ * silently and fall through to the flag, so the join goes through
+ * travel_nodes: the location node the party occupies, then its tactical_map
+ * child named for the sub-location — which is exactly the shape the schema's
+ * travel_nodes_vtt_map_type constraint requires (only tactical_map nodes may
+ * carry a vtt_map_id).
+ *
+ * A board from the wrong room is worse than none: the tactical section hands
+ * Malachar exact distances and tells him to trust them over his own narration.
+ */
+async function resolveBoardMap(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  where: { node_key?: string | null; sub_location?: string | null } | null,
+): Promise<MapRow | null> {
+  const SEL = "id, name, grid_width, grid_height"
+  if (where?.node_key) {
+    const { data: locNode } = await supabase
+      .from("travel_nodes")
+      .select("id, vtt_map_id")
+      .eq("node_key", where.node_key)
+      .maybeSingle()
+    if (locNode?.id) {
+      // The tile the party is actually inside, when they are inside one.
+      if (where.sub_location) {
+        const { data: child } = await supabase
+          .from("travel_nodes")
+          .select("vtt_map_id")
+          .eq("parent_id", locNode.id)
+          .eq("node_type", "tactical_map")
+          .eq("name", where.sub_location)
+          .not("vtt_map_id", "is", null)
           .maybeSingle()
-        if (byEnv) map = byEnv as TacticalMapRow
+        if (child?.vtt_map_id) {
+          const { data: m } = await supabase.from("vtt_maps").select(SEL).eq("id", child.vtt_map_id).maybeSingle()
+          if (m) return m as MapRow
+        }
+      }
+      // The location itself may carry a board for the whole site.
+      if (locNode.vtt_map_id) {
+        const { data: m } = await supabase.from("vtt_maps").select(SEL).eq("id", locNode.vtt_map_id).maybeSingle()
+        if (m) return m as MapRow
       }
     }
-    if (!map) {
-      const { data: byFlag } = await supabase
-        .from("vtt_maps")
-        .select("id, name, grid_width, grid_height")
-        .eq("is_active", true)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (byFlag) map = byFlag as TacticalMapRow
-    }
+  }
+  const { data: byFlag } = await supabase
+    .from("vtt_maps")
+    .select(SEL)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return (byFlag as MapRow | null) ?? null
+}
+
+async function fetchTacticalBoard(
+  where?: { node_key?: string | null; sub_location?: string | null } | null,
+): Promise<TacticalBoard | null> {
+  try {
+    const supabase = await createClient()
+    const map = await resolveBoardMap(supabase, where ?? null)
     if (!map) return null
 
     const { data: rows } = await supabase
@@ -552,7 +581,10 @@ export async function buildWorldContext(
   let locationSource = "environments.updated_at"
 
   const { data: partyWhere } = await supabase.rpc("party_location_label")
-  const partyLabel = (partyWhere as { label?: string } | null)?.label
+  const partyWhereDetail = partyWhere as
+    | { label?: string; node_key?: string | null; sub_location?: string | null }
+    | null
+  const partyLabel = partyWhereDetail?.label
   if (partyLabel) {
     currentLocation = partyLabel
     locationSource = "travel graph"
@@ -570,7 +602,7 @@ export async function buildWorldContext(
         episodeLabel: episodeLabelFor(campaignId, episode),
         location: currentLocation,
       }),
-      fetchTacticalBoard(sceneName),
+      fetchTacticalBoard(partyWhereDetail),
     ])
 
   const campaign = buildCampaignContext(campaignId, episode, currentLocation, heat)

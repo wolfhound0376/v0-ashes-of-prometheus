@@ -24,6 +24,10 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   - cinematic_clips and the films themselves. The LIBRARY survives; only the
 //     record of who has watched what is cleared (see step 1b).
 //   - cinematic_requests, the diagnostic log of cues asked for and missed.
+//   - vtt_tokens. The opening tableau (party at the back of the pen, prisoner
+//     NPCs between them and the gates) is canon and hand-placed, so the board
+//     is re-pointed at the starting node's map (step 5c) and the party returns
+//     to those squares rather than having them swept and rebuilt.
 //   - Character rows, stats, XP and levels.
 //
 // AUTHORIZATION mirrors /api/asset-media and /api/forge/import: x-dm-key must
@@ -374,50 +378,50 @@ export async function POST(req: Request) {
     }
   }
 
-  // --- 10. the tactical board ---------------------------------------------
-  // Sending the party home in the fiction while their tokens stand in the room
-  // they escaped to leaves Malachar reading exact distances for a fight that no
-  // longer exists — and he trusts those numbers over his own narration by
-  // design. So the board follows the reset: the map belonging to
-  // STARTING_LOCATION becomes the active one, and every other map is stood
-  // down.
+  // --- 5c. the tactical board ---------------------------------------------
+  // 5b walks the party home on the travel graph; the board has to follow, or
+  // Malachar reads exact distances for the room they escaped to. is_active is
+  // the flag the board falls back on, so point it at the starting node's map.
   //
-  // Tokens are NOT deleted. They carry positions a DM arranged by hand, which
-  // are expensive to rebuild and are canon for the opening scene; the party
-  // simply returns to them. If a restart should also scatter the pieces, that
-  // is a separate ruling and a separate change.
+  // Tokens are NOT deleted. The opening tableau — party at the back of the pen,
+  // the prisoner NPCs between them and the gates — is canon and hand-placed, so
+  // the party simply returns to it.
   {
-    const { data: startEnv } = await admin
-      .from("environments")
+    const { data: startNode } = await admin
+      .from("travel_nodes")
       .select("id")
-      .eq("name", STARTING_LOCATION)
+      .eq("node_key", STARTING_NODE_KEY)
       .maybeSingle()
-    const { data: startMap } = startEnv?.id
-      ? await admin
-          .from("vtt_maps")
-          .select("id, name")
-          .eq("environment_id", startEnv.id)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : { data: null }
-
-    if (startMap?.id) {
+    let startMapId: string | null = null
+    if (startNode?.id) {
+      const { data: child } = await admin
+        .from("travel_nodes")
+        .select("vtt_map_id")
+        .eq("parent_id", startNode.id)
+        .eq("node_type", "tactical_map")
+        .not("vtt_map_id", "is", null)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      startMapId = (child?.vtt_map_id as string | null) ?? null
+    }
+    if (startMapId) {
       const { error: onErr } = await admin
         .from("vtt_maps")
         .update({ is_active: true, updated_at: new Date().toISOString() })
-        .eq("id", startMap.id)
-      note("activate starting map", onErr)
-      const { error: offErr } = await admin
-        .from("vtt_maps")
-        .update({ is_active: false })
-        .neq("id", startMap.id)
-      note("deactivate other maps", offErr)
-      report.tacticalMap = startMap.name
+        .eq("id", startMapId)
+      note("activate starting board", onErr)
+      const { error: offErr } = await admin.from("vtt_maps").update({ is_active: false }).neq("id", startMapId)
+      note("stand down other boards", offErr)
+      const { count } = await admin
+        .from("vtt_tokens")
+        .select("id", { count: "exact", head: true })
+        .eq("map_id", startMapId)
+      report.tacticalTokensWaiting = count ?? 0
     } else {
-      // No board for the starting room is entirely normal — the game ran on
-      // prose for months. Recorded, not treated as a failure.
-      report.tacticalMap = null
+      // No board for the starting node is entirely normal — the game ran on
+      // prose for months. Recorded, never treated as a failure.
+      report.tacticalTokensWaiting = null
     }
   }
 
