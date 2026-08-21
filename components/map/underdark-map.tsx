@@ -18,11 +18,14 @@
 
 import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const MAP_W = 1672
 const MAP_H = 941
 const MAP_SRC = "/maps/underdark-overworld.jpg"
 const POLL_MS = 15000
+const SPRITE_BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/maps/party-"
+type Facing = "south" | "north" | "east" | "west"
 
 type NodeRow = {
   id: string
@@ -33,6 +36,7 @@ type NodeRow = {
   edge_position: number | null
   description: string | null
   metadata: Record<string, any> | null
+  discovered_at?: string | null
 }
 type EdgeRow = {
   id: string
@@ -42,6 +46,7 @@ type EdgeRow = {
   distance_miles: number
   danger_level: number
   metadata: Record<string, any> | null
+  discovered_at?: string | null
 }
 type PartyRow = { campaign_run_id: string; node_id: string; arrived_at: string }
 
@@ -74,6 +79,8 @@ export default function UnderdarkMap() {
   const [selected, setSelected] = useState<string | null>(null)
   const [lantern, setLantern] = useState(true)
   const [loaded, setLoaded] = useState(false)
+  const [dmKey, setDmKeyState] = useState("")
+  const [refresh, setRefresh] = useState(0)
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -83,11 +90,44 @@ export default function UnderdarkMap() {
   const [, bump] = useState(0)
   const rerender = () => bump((n) => n + 1)
 
+  useEffect(() => {
+    setDmKeyState(getDmKey())
+    return onDmKeyChange(() => setDmKeyState(getDmKey()))
+  }, [])
+  useEffect(() => {
+    if (dmKey) setLantern(false)
+  }, [dmKey])
+
+  async function dmAction(action: "reveal" | "move", nodeKey: string) {
+    await fetch("/api/travel", {
+      method: "POST",
+      headers: { ...dmHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action, node_key: nodeKey }),
+    }).catch(() => {})
+    setRefresh((r) => r + 1)
+  }
+
   // ---------- data ----------
   useEffect(() => {
     const supabase = createClient()
     let alive = true
     async function load() {
+      if (dmKey) {
+        try {
+          const res = await fetch("/api/travel", { headers: dmHeaders(), cache: "no-store" })
+          if (res.ok) {
+            const g = await res.json()
+            if (!alive) return
+            setNodes((g.nodes ?? []) as NodeRow[])
+            setEdges((g.edges ?? []) as EdgeRow[])
+            setParty((g.party as PartyRow) ?? null)
+            setLoaded(true)
+            return
+          }
+        } catch {
+          /* fall through to the player path */
+        }
+      }
       const [n, e, p] = await Promise.all([
         supabase.from("travel_nodes").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata"),
         supabase.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata"),
@@ -113,7 +153,8 @@ export default function UnderdarkMap() {
       clearInterval(t)
       supabase.removeChannel(ch)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dmKey, refresh])
 
   // ---------- derived geometry ----------
   const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -121,6 +162,7 @@ export default function UnderdarkMap() {
     (n) => n.node_type !== "waypoint" && n.metadata && typeof n.metadata.map_x === "number",
   )
   const pos = (n: NodeRow) => ({ x: n.metadata!.map_x as number, y: n.metadata!.map_y as number })
+  const isRevealed = (n: { discovered_at?: string | null }) => !dmKey || !!n.discovered_at
 
   function edgeCurve(e: EdgeRow): string | null {
     const a = byId.get(e.from_node_id)
@@ -212,55 +254,126 @@ export default function UnderdarkMap() {
   }, [loaded])
 
   // ---------- walk animation on party move ----------
+  //
+  // The party does NOT fly to its destination: it follows the road. We find a
+  // route through the graph (fewest hops over edges we can see), then walk each
+  // leg along that edge's curve, pausing at every waypoint stone on the way —
+  // the ones the server generated and froze on the first crossing.
   const partyG = useRef<SVGGElement | null>(null)
-  const charW = useRef<SVGGElement | null>(null)
+  const [facing, setFacing] = useState<Facing>("south")
+  const facingRef = useRef<Facing>("south")
+
+  function routeBetween(fromId: string, toId: string): string[] {
+    // BFS over visible edges — fewest hops, so intermediate towns are used
+    // rather than a single arc across the whole Underdark.
+    const adj = new Map<string, string[]>()
+    for (const e of edges) {
+      if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
+      if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
+      adj.get(e.from_node_id)!.push(e.to_node_id)
+      adj.get(e.to_node_id)!.push(e.from_node_id)
+    }
+    const prevOf = new Map<string, string>()
+    const seen = new Set([fromId])
+    const q = [fromId]
+    while (q.length) {
+      const cur = q.shift()!
+      if (cur === toId) break
+      for (const nx of adj.get(cur) ?? []) {
+        if (seen.has(nx)) continue
+        seen.add(nx)
+        prevOf.set(nx, cur)
+        q.push(nx)
+      }
+    }
+    if (!seen.has(toId)) return [fromId, toId]
+    const out = [toId]
+    while (out[0] !== fromId) {
+      const p = prevOf.get(out[0])
+      if (!p) break
+      out.unshift(p)
+    }
+    return out
+  }
+
   useEffect(() => {
     if (!party) return
     const prev = prevPartyNode.current
     prevPartyNode.current = party.node_id
     if (!prev || prev === party.node_id) return
-    const a = byId.get(prev)
-    const b = byId.get(party.node_id)
-    if (!a?.metadata?.map_x || !b?.metadata?.map_x) return
-    const edge = edges.find(
-      (e) =>
-        (e.from_node_id === prev && e.to_node_id === party.node_id) ||
-        (e.to_node_id === prev && e.from_node_id === party.node_id),
-    )
-    const d = edge ? edgeCurve(edge) : `M ${pos(a).x} ${pos(a).y} L ${pos(b).x} ${pos(b).y}`
-    if (!d || !svgRef.current) return
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
-    path.setAttribute("d", d)
-    const L = path.getTotalLength()
-    const p0 = path.getPointAtLength(0)
-    const rev = Math.hypot(p0.x - pos(a).x, p0.y - pos(a).y) > 1
-    walkingRef.current = true
-    partyG.current?.classList.add("aop-walking")
-    const T = 3200
-    const t0 = performance.now()
-    let lastX: number | null = null
-    let dir = 1
-    const followW = Math.min(cam.current.w, 560)
-    const step = (now: number) => {
-      let u = Math.min(1, (now - t0) / T)
-      u = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2
-      const pt = path.getPointAtLength(rev ? L * (1 - u) : L * u)
-      if (lastX !== null && Math.abs(pt.x - lastX) > 0.3) dir = pt.x >= lastX ? 1 : -1
-      lastX = pt.x
-      charW.current?.setAttribute("transform", `scale(${dir},1)`)
-      partyG.current?.setAttribute("transform", `translate(${pt.x},${pt.y})`)
-      cam.current = { x: pt.x - followW / 2, y: pt.y - (followW * MAP_H) / MAP_W / 2, w: followW }
-      applyCam()
-      if (u < 1) requestAnimationFrame(step)
-      else {
-        walkingRef.current = false
-        partyG.current?.classList.remove("aop-walking")
-        rerender()
+    const start = byId.get(prev)
+    if (!start?.metadata?.map_x || !byId.get(party.node_id)?.metadata?.map_x) return
+
+    const route = routeBetween(prev, party.node_id)
+    // Build one sampled polyline for the whole journey: each leg follows its
+    // edge curve, and waypoint stones become the beats we walk through.
+    const pts: { x: number; y: number; pause: boolean }[] = []
+    for (let i = 0; i < route.length - 1; i++) {
+      const A = byId.get(route[i])
+      const B = byId.get(route[i + 1])
+      if (!A?.metadata?.map_x || !B?.metadata?.map_x) continue
+      const e = edges.find(
+        (x) =>
+          (x.from_node_id === route[i] && x.to_node_id === route[i + 1]) ||
+          (x.to_node_id === route[i] && x.from_node_id === route[i + 1]),
+      )
+      const d = e ? edgeCurve(e) : `M ${pos(A).x} ${pos(A).y} L ${pos(B).x} ${pos(B).y}`
+      if (!d) continue
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+      path.setAttribute("d", d)
+      const L = path.getTotalLength()
+      const p0 = path.getPointAtLength(0)
+      const rev = Math.hypot(p0.x - pos(A).x, p0.y - pos(A).y) > 1
+      const wps = e ? (wpByEdge.get(e.id) ?? []) : []
+      const N = wps.length ? Math.max(...wps.map((w) => w.edge_position || 1)) : 0
+      const stops = wps
+        .map((w) => (w.edge_position || 1) / (N + 1))
+        .sort((a, b) => a - b)
+      const SAMPLES = 48
+      for (let k = 1; k <= SAMPLES; k++) {
+        const u = k / SAMPLES
+        const pt = path.getPointAtLength(rev ? L * (1 - u) : L * u)
+        const nearStop = stops.some((sv) => {
+          const su = rev ? 1 - sv : sv
+          return Math.abs(su - u) < 0.5 / SAMPLES
+        })
+        pts.push({ x: pt.x, y: pt.y, pause: nearStop })
       }
     }
-    requestAnimationFrame(step)
+    if (!pts.length) return
+
+    walkingRef.current = true
+    const followW = Math.min(cam.current.w, 620)
+    const PER_STEP = 62
+    let i = 0
+    let last = { x: pos(start).x, y: pos(start).y }
+    const tick = () => {
+      if (i >= pts.length) {
+        walkingRef.current = false
+        rerender()
+        return
+      }
+      const p = pts[i]
+      const dx = p.x - last.x
+      const dy = p.y - last.y
+      if (Math.hypot(dx, dy) > 0.4) {
+        const f: Facing =
+          Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "east" : "west") : dy > 0 ? "south" : "north"
+        if (f !== facingRef.current) {
+          facingRef.current = f
+          setFacing(f)
+        }
+      }
+      last = p
+      partyG.current?.setAttribute("transform", `translate(${p.x},${p.y})`)
+      cam.current = { x: p.x - followW / 2, y: p.y - (followW * MAP_H) / MAP_W / 2, w: followW }
+      applyCam()
+      i++
+      setTimeout(tick, p.pause ? PER_STEP * 6 : PER_STEP)
+    }
+    tick()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [party?.node_id])
+  }, [party?.node_id, nodes.length, edges.length])
 
   // ---------- render ----------
   const kk = Math.max(0.45, Math.min(1, cam.current.w / MAP_W))
@@ -274,10 +387,7 @@ export default function UnderdarkMap() {
   return (
     <div className="min-h-screen bg-[#0b0714] text-[#e8e0f0] p-3 font-mono">
       <style>{`
-        .aop-walking .aop-legL{animation:aopswA .36s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:50% 0%}
-        .aop-walking .aop-legR{animation:aopswB .36s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:50% 0%}
-        @keyframes aopswA{from{transform:rotate(24deg)}to{transform:rotate(-24deg)}}
-        @keyframes aopswB{from{transform:rotate(-24deg)}to{transform:rotate(24deg)}}
+        @keyframes aopbob{from{transform:translateY(0)}to{transform:translateY(-2px)}}
       `}</style>
       <div className="flex items-center justify-between flex-wrap gap-2 pb-3">
         <h1 className="text-[#f5c34d] text-lg tracking-widest" style={{ textShadow: "0 0 12px #f5c34d55" }}>
@@ -327,7 +437,7 @@ export default function UnderdarkMap() {
             </filter>
             <mask id="aop-fog" maskUnits="userSpaceOnUse" x="0" y="0" width={MAP_W} height={MAP_H}>
               <rect width={MAP_W} height={MAP_H} fill="#fff" />
-              {placed.map((n) => (
+              {placed.filter(isRevealed).map((n) => (
                 <circle key={n.id} cx={pos(n).x} cy={pos(n).y} r={170} fill="url(#aop-hole)" />
               ))}
               {[...wpByEdge.entries()].flatMap(([edgeId, wps]) => {
@@ -352,16 +462,17 @@ export default function UnderdarkMap() {
           {edges.map((e) => {
             const d = edgeCurve(e)
             if (!d) return null
+            const eRev = isRevealed(e)
             return (
               <path
                 key={e.id}
                 d={d}
                 fill="none"
-                stroke="#f5c34d"
+                stroke={eRev ? "#f5c34d" : "#8a7bb0"}
                 strokeWidth={2.5 * kk}
                 strokeDasharray="2 9"
                 strokeLinecap="round"
-                opacity=".45"
+                opacity={eRev ? ".45" : ".22"}
               />
             )
           })}
@@ -394,6 +505,7 @@ export default function UnderdarkMap() {
           {placed.map((n) => {
             const P = pos(n)
             const isSel = selected === n.id
+            const col = isRevealed(n) ? "#f5c34d" : "#8a7bb0"
             return (
               <g
                 key={n.id}
@@ -403,9 +515,9 @@ export default function UnderdarkMap() {
                   if (!dragged.current) setSelected(n.id)
                 }}
               >
-                <circle cx={P.x} cy={P.y} r={30 * kk} fill="#f5c34d" opacity=".28" filter="url(#aop-soft)" />
-                <circle cx={P.x} cy={P.y} r={14 * kk} fill="rgba(5,3,10,.4)" stroke="#f5c34d" strokeWidth={3.5 * kk} />
-                <circle cx={P.x} cy={P.y} r={4 * kk} fill="#f5c34d" />
+                <circle cx={P.x} cy={P.y} r={30 * kk} fill={col} opacity={isRevealed(n) ? ".28" : ".12"} filter="url(#aop-soft)" />
+                <circle cx={P.x} cy={P.y} r={14 * kk} fill="rgba(5,3,10,.4)" stroke={col} strokeWidth={3.5 * kk} />
+                <circle cx={P.x} cy={P.y} r={4 * kk} fill={col} />
                 {isSel && (
                   <circle cx={P.x} cy={P.y} r={22 * kk} fill="none" stroke="#fff" strokeWidth={2 * kk} strokeDasharray="4 5" opacity=".9" />
                 )}
@@ -425,27 +537,21 @@ export default function UnderdarkMap() {
             )
           })}
 
-          {/* the party */}
+          {/* the party — Sam's lantern-bearer, facing the way they walk */}
           {partyXY && (
             <g ref={partyG} transform={`translate(${partyXY.x},${partyXY.y})`}>
-              <g ref={charW}>
-                <ellipse cx="0" cy="3" rx="11" ry="4" fill="#000" opacity=".45" />
-                <circle cx="0" cy="-16" r="34" fill="url(#aop-torch)" />
-                <g className="aop-legL">
-                  <path d="M-4.5 -12 L-1.5 -12 L-1.8 0 L-4.8 0 Z" fill="#2a2038" />
-                </g>
-                <g className="aop-legR">
-                  <path d="M1.5 -12 L4.5 -12 L4.2 0 L1.2 0 Z" fill="#1e1628" />
-                </g>
-                <path d="M-7 -12 Q-8.5 -27 0 -29 Q8.5 -27 7 -12 Z" fill="#43305e" stroke="#0b0714" strokeWidth="1.2" />
-                <circle cx="0" cy="-33" r="5.5" fill="#e8c9a0" stroke="#0b0714" strokeWidth="1.2" />
-                <path d="M-6.5 -33 Q0 -41.5 6.5 -33 Q3 -37.5 0 -37.5 Q-3 -37.5 -6.5 -33 Z" fill="#2a2038" />
-                <rect x="6" y="-26" width="9" height="2.6" rx="1.3" fill="#43305e" />
-                <rect x="13.6" y="-34" width="2.6" height="10" rx="1.3" fill="#6b4a2a" />
-                <circle cx="14.9" cy="-37" r="4" fill="#ffb347">
-                  <animate attributeName="r" values="3.2;4.6;3.2" dur=".35s" repeatCount="indefinite" />
-                </circle>
-              </g>
+              <ellipse cx="0" cy="2" rx="13" ry="4.5" fill="#000" opacity=".5" />
+              <circle cx="0" cy="-18" r="42" fill="url(#aop-torch)">
+                <animate attributeName="r" values="38;46;38" dur="2.4s" repeatCount="indefinite" />
+              </circle>
+              <image
+                href={`${SPRITE_BASE}${facing}.png`}
+                x={-21}
+                y={-58}
+                width={42}
+                height={60}
+                style={{ imageRendering: "auto" }}
+              />
             </g>
           )}
         </svg>
@@ -474,6 +580,26 @@ export default function UnderdarkMap() {
                 )
               })}
             </div>
+            {dmKey && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {!sel.discovered_at && (
+                  <button
+                    onClick={() => dmAction("reveal", sel.node_key)}
+                    className="text-xs px-3 py-2 rounded border-2 bg-[#b44df5] border-[#b44df5] text-white hover:brightness-110"
+                  >
+                    REVEAL TO PLAYERS
+                  </button>
+                )}
+                {sel.node_type !== "region" && party?.node_id !== sel.id && (
+                  <button
+                    onClick={() => dmAction("move", sel.node_key)}
+                    className="text-xs px-3 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] hover:brightness-110"
+                  >
+                    MOVE PARTY HERE
+                  </button>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <div className="text-[#9a8fb0]">
