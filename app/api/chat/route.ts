@@ -723,7 +723,9 @@ ${combatantRows
 Some moments in this location have film shot for them. When one of them actually happens in your narration, emit [CINEMATIC: <cue>] on its own line using EXACTLY one of these cue names: ${availableCinematicCues.join(", ")}.
 Rules:
 - ONLY these cue names exist. Never invent a cue, never vary the spelling, never emit one that is not on this list. An invented cue plays nothing.
-- Emit a cue ONLY for something that genuinely happened this turn \u2014 a success that actually succeeded, an action actually taken. Never for an attempt that failed, an intention, or a hypothetical.
+- Emit a cue ONLY for something that genuinely happened this turn. Never for an intention, a hypothetical, or an attempt that did not resolve.
+- "Happened" is not only active success. A moment counts if your narration says it occurred: sleeping and dreaming, a rest, a song, a shift changing, a failure that actually failed. Cue names ending in -fail belong to the failure happening, not to a success.
+- Match the cue to the moment plainly. If the player's action and your own narration describe what a listed cue names \u2014 they slept and you described the dream, they picked the lock and it opened \u2014 emit that cue. Do not hold back because the moment was quiet or passive.
 - AT MOST ONE cue per response. If two would fit, choose the more significant.
 - The cue is silent stagecraft. Never mention it, never describe the film, never tell the player a cinematic is playing.
 - Whether the player has already seen it is handled elsewhere. Emit the cue whenever the moment fits.
@@ -798,7 +800,7 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 8. ITEM AWARDS: When narrating the player finding, picking up, receiving, or being given an item, you MUST emit [ITEM_AWARD: name | qty | description | item_type | icon_hint] where icon_hint is a keyword for matching existing icons (e.g., "dagger", "potion", "key", "torch").
 
-9. CINEMATIC CUES: When a moment listed in the CINEMATIC CUES section actually happens, emit [CINEMATIC: <cue>] using a cue name from that list, at most one per response. If no CINEMATIC CUES section appears above, this location has no film and you MUST NOT emit the tag at all. Unlike the tags above, this one is NOT "when in doubt, emit" \u2014 a cue fired for a moment that did not happen shows the table a scene that never occurred, so emit it only when you are certain.
+9. CINEMATIC CUES: When a moment listed in the CINEMATIC CUES section actually happens, emit [CINEMATIC: <cue>] using a cue name from that list, at most one per response. If no CINEMATIC CUES section appears above, this location has no film and you MUST NOT emit the tag at all. The test is whether the moment HAPPENED in your narration, not whether it was dramatic or actively willed \u2014 a character who sleeps and dreams has had the moment as surely as one who picks a lock. What you must not do is fire a cue for something that did not occur: an intention, a hypothetical, or a moment you invented to justify the film.
 
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
