@@ -84,6 +84,17 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   const [refresh, setRefresh] = useState(0)
   const [confirmNode, setConfirmNode] = useState<NodeRow | null>(null)
   const [arrivedAt, setArrivedAt] = useState<NodeRow | null>(null)
+  // What stopped the march, if anything. Held in the database too, so a reload
+  // cannot walk the party past an ambush.
+  const [halt, setHalt] = useState<{
+    kind: string
+    title: string
+    body: string | null
+    rolls: { title: string; die: number; roll: number; result: string; source: string }[]
+    source: string
+  } | null>(null)
+  const resumeRef = useRef<(() => void) | null>(null)
+  const lastNodeKey = useRef<string | null>(null)
   // No boat yet: the Darklake crossings stay closed until one is earned.
   const hasBoat = false
 
@@ -386,6 +397,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     if (!pts.length) return
 
     walkingRef.current = true
+    lastNodeKey.current = start.node_key
     const followW = Math.min(cam.current.w, 620)
     const PER_STEP = 62
     let i = 0
@@ -408,15 +420,58 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
         }
       }
       last = p
-      if (p.node) {
-        const n = byId.get(p.node)
-        if (n) setArrivedAt(n)   // per-node arrival hook: encounters go here
-      }
       partyG.current?.setAttribute("transform", `translate(${p.x},${p.y})`)
       cam.current = { x: p.x - followW / 2, y: p.y - (followW * MAP_H) / MAP_W / 2, w: followW }
       applyCam()
-      i++
-      setTimeout(tick, p.pause ? PER_STEP * 6 : PER_STEP)
+
+      const advance = () => {
+        i++
+        setTimeout(tick, p.pause ? PER_STEP * 6 : PER_STEP)
+      }
+
+      const n = p.node ? byId.get(p.node) : null
+      if (!n) {
+        advance()
+        return
+      }
+      setArrivedAt(n)
+
+      // Ask the server what waits here. Only the DM's browser asks — a player
+      // watching must never be the one rolling the party's encounters.
+      if (!dmKey) {
+        advance()
+        return
+      }
+      void (async () => {
+        let out: any = null
+        try {
+          const res = await fetch("/api/travel", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-dm-key": dmKey },
+            body: JSON.stringify({ action: "arrive", node_key: n.node_key, from_node_key: lastNodeKey.current }),
+          })
+          out = res.ok ? await res.json() : null
+        } catch {
+          // The tunnel does not care that the network blinked. A failed check
+          // lets them walk on rather than freezing the march forever.
+          out = null
+        }
+        lastNodeKey.current = n.node_key
+        if (out?.halt) {
+          setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source })
+          walkingRef.current = false
+          rerender()
+          // Picked up again by the Continue button, from exactly this step.
+          resumeRef.current = () => {
+            setHalt(null)
+            walkingRef.current = true
+            rerender()
+            advance()
+          }
+          return
+        }
+        advance()
+      })()
     }
     tick()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -719,9 +774,55 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           </div>
         )}
 
-        {arrivedAt && !confirmNode && (
+        {arrivedAt && !confirmNode && !halt && (
           <div className="absolute left-1/2 -translate-x-1/2 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-4 py-2 text-xs text-[#f5c34d] tracking-widest">
             ARRIVED: {arrivedAt.name.toUpperCase()}
+          </div>
+        )}
+
+        {/* The march has stopped. Nothing resumes it but the DM. */}
+        {halt && (
+          <div className="absolute inset-0 grid place-items-center bg-[#0a0612cc] p-4">
+            <div className="w-full max-w-md rounded-lg border-2 border-[#7a2b2b] bg-[#1a1020] p-4 shadow-[0_0_40px_#000]">
+              <div className="text-[10px] uppercase tracking-[.22em] text-[#c96a6a]">
+                {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : "The party stops"}
+              </div>
+              <div className="mt-1 font-serif text-lg leading-snug text-[#f5c34d]">{halt.title}</div>
+              {halt.body && <p className="mt-2 text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
+
+              {halt.rolls.length > 0 && (
+                <ul className="mt-3 space-y-1 border-t border-[#3a2c56] pt-3">
+                  {halt.rolls.map((r, k) => (
+                    <li key={k} className="text-[11px] text-[#9a8fb0]">
+                      <span className="text-[#f5c34d]">d{r.die} = {r.roll}</span>
+                      <span className="mx-2 text-[#5c4f72]">|</span>
+                      {r.title}: <span className="text-[#e4d8bf]">{r.result}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Every number above is checkable. This campaign has been bitten
+                  by invented tables before; the page number rides along. */}
+              <div className="mt-3 text-[10px] italic text-[#6f6486]">{halt.source}</div>
+
+              <button
+                onClick={() => {
+                  const go = resumeRef.current
+                  resumeRef.current = null
+                  void fetch("/api/travel", {
+                    method: "POST",
+                    headers: { "content-type": "application/json", "x-dm-key": dmKey },
+                    body: JSON.stringify({ action: "continue", node_key: arrivedAt?.node_key ?? "" }),
+                  }).catch(() => {})
+                  if (go) go()
+                  else setHalt(null)
+                }}
+                className="mt-4 w-full rounded border border-[#7a5c2b] bg-[#2a1f10] py-2 text-xs tracking-[.2em] text-[#f5c34d] hover:bg-[#3a2b16]"
+              >
+                CONTINUE THE MARCH
+              </button>
+            </div>
           </div>
         )}
       </div>
