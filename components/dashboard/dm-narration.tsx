@@ -18,8 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled, setPlayerVoiceEnabled, setKnownPlayerNames } from "@/lib/tts"
-import { unlockSpeechAudio, type SpeechPlayback } from "@/lib/speech-playback"
-import { speakBlob } from "@/lib/speech-queue"
+import { playSpeech, unlockSpeechAudio, type SpeechPlayback } from "@/lib/speech-playback"
 // The speaker-attribution parser. It lives in the v3 center column today; when
 // that tree is finally deleted this should move to lib/ rather than be rewritten
 // — the quote-pairing and alias rules in it are hard-won.
@@ -240,13 +239,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
     // The shared helper decodes the MP3 and plays it through WebAudio. Going
     // through an <audio> element instead is silently mute in some Chromium
     // builds — play() resolves and currentTime advances with no sound.
-    // Take a turn rather than the floor: player voices outrank narration,
-    // narration outranks NPCs, and anyone cut off resumes after.
-    const playback = speakBlob(
-      u.kind === "player" ? "player" : u.kind === "npc" ? "npc" : "dm",
-      await res.blob(),
-      { speaker: u.kind === "npc" ? u.npc : u.kind === "player" ? u.pc : "Malachar" },
-    )
+    const playback = await playSpeech(await res.blob())
     audioRef.current = playback
     setStatus("speaking")
     // NPCs and players alike hold the floor while their line plays; the

@@ -87,12 +87,8 @@ export function unlockSpeechAudio(): void {
 /**
  * Play one spoken line. Resolves once playback has STARTED (or has failed to);
  * await the returned `finished` to know when the line is over.
- *
- * `offsetSeconds` resumes part-way in. The speech queue uses it when a line was
- * paused for a higher-priority speaker: the NPC picks her sentence up where she
- * was cut off instead of starting the whole line again.
  */
-export async function playSpeech(blob: Blob, offsetSeconds = 0): Promise<SpeechPlayback> {
+export async function playSpeech(blob: Blob): Promise<SpeechPlayback> {
   let bytes: ArrayBuffer
   try {
     bytes = await blob.arrayBuffer()
@@ -100,15 +96,15 @@ export async function playSpeech(blob: Blob, offsetSeconds = 0): Promise<SpeechP
     return { finished: Promise.resolve<SpeechEndReason>("error"), stop: () => {} }
   }
 
-  const viaWebAudio = await playViaWebAudio(bytes, offsetSeconds)
+  const viaWebAudio = await playViaWebAudio(bytes)
   if (viaWebAudio) return viaWebAudio
 
   // decodeAudioData refused it, or there is no AudioContext at all.
-  return playViaElement(blob, offsetSeconds)
+  return playViaElement(blob)
 }
 
 /** Returns null when WebAudio can't handle it, so the caller can fall back. */
-async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0): Promise<SpeechPlayback | null> {
+async function playViaWebAudio(bytes: ArrayBuffer): Promise<SpeechPlayback | null> {
   const ctx = getContext()
   if (!ctx) return null
 
@@ -154,10 +150,7 @@ async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0): Promise<S
   source.onended = () => settle(stopped ? "stopped" : "ended")
 
   try {
-    // Resume where the line was interrupted (clamped: an offset past the end
-    // would otherwise start a source that immediately reports "ended").
-    const from = Math.max(0, Math.min(offsetSeconds, Math.max(0, decoded.duration - 0.05)))
-    source.start(0, from)
+    source.start()
   } catch {
     settle("error")
     return { finished, stop: () => {} }
@@ -179,7 +172,7 @@ async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0): Promise<S
 }
 
 /** The original element-based path, kept as the fallback. */
-function playViaElement(blob: Blob, offsetSeconds = 0): SpeechPlayback {
+function playViaElement(blob: Blob): SpeechPlayback {
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)
 
@@ -196,19 +189,6 @@ function playViaElement(blob: Blob, offsetSeconds = 0): SpeechPlayback {
 
   audio.onended = () => settle("ended")
   audio.onerror = () => settle("error")
-
-  if (offsetSeconds > 0) {
-    // currentTime only sticks once the element knows how long the clip is.
-    const seek = () => {
-      try {
-        audio.currentTime = Math.min(offsetSeconds, Math.max(0, (audio.duration || 0) - 0.05))
-      } catch {
-        // Not seekable — it plays from the top, which is better than silence.
-      }
-    }
-    if (audio.readyState >= 1) seek()
-    else audio.addEventListener("loadedmetadata", seek, { once: true })
-  }
 
   void audio.play().catch(() => settle("blocked"))
 
