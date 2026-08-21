@@ -543,13 +543,30 @@ export async function buildWorldContext(
     .limit(1)
     .maybeSingle()
 
-  const currentLocation = latestEnv?.name || location
-  console.log("[WorldContext] Using location:", currentLocation)
+  // The scene row is the room's PORTRAIT, and the right key for its art and its
+  // tactical board. It is not the same claim as "the party is standing here":
+  // a painting keeps hanging after they walk out, and only a narration tag
+  // takes it down.
+  const sceneName = latestEnv?.name || location
+
+  // The travel graph outranks it, because it is the one record a restart
+  // actually moves and the one the maps draw: party_position joined to
+  // travel_nodes, plus the node inside that location when the party has one.
+  // If the graph knows nothing, the scene row above is still the best guess.
+  let currentLocation = sceneName
+  let locationSource = "environments.updated_at"
+  const { data: partyWhere } = await supabase.rpc("party_location_label")
+  const partyLabel = (partyWhere as { label?: string } | null)?.label
+  if (partyLabel) {
+    currentLocation = partyLabel
+    locationSource = "travel graph"
+  }
+  console.log("[WorldContext] Using location:", currentLocation, "via", locationSource)
 
   const [characters, environment, recentDialogue, npcConditions, personality, book, tactical] =
     await Promise.all([
       fetchCharacters(),
-      fetchEnvironment(campaignId, currentLocation),
+      fetchEnvironment(campaignId, sceneName),
       fetchRecentDialogue(),
       fetchNpcConditions(),
       fetchPersonality(),
@@ -557,7 +574,7 @@ export async function buildWorldContext(
         episodeLabel: episodeLabelFor(campaignId, episode),
         location: currentLocation,
       }),
-      fetchTacticalBoard(currentLocation),
+      fetchTacticalBoard(sceneName),
     ])
 
   const campaign = buildCampaignContext(campaignId, episode, currentLocation, heat)

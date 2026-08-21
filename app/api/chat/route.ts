@@ -668,7 +668,10 @@ ${combatantRows
   }
 
   // Determine campaign stage based on location
-  const currentLocation = worldContext.environment?.name || "Velkynvelve (slave pen)"
+  // campaign.currentLocation is resolved from the travel graph; the environment
+  // row is scene art and may still be named for a place the party has left.
+  const currentLocation =
+    worldContext.campaign?.currentLocation || worldContext.environment?.name || "Velkynvelve (slave pen)"
   let stageContext = ""
 
   if (currentLocation.toLowerCase().includes("slave pen") || currentLocation.toLowerCase().includes("pen")) {
