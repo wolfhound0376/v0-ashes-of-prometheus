@@ -83,6 +83,8 @@ export default function UnderdarkMap({ embedded = false }: { embedded?: boolean 
   const [refresh, setRefresh] = useState(0)
   const [confirmNode, setConfirmNode] = useState<NodeRow | null>(null)
   const [arrivedAt, setArrivedAt] = useState<NodeRow | null>(null)
+  // No boat yet: the Darklake crossings stay closed until one is earned.
+  const hasBoat = false
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -183,7 +185,18 @@ export default function UnderdarkMap({ embedded = false }: { embedded?: boolean 
     const dx = B.x - A.x
     const dy = B.y - A.y
     const len = Math.hypot(dx, dy) || 1
-    if (e.metadata?.is_road) return `M ${A.x} ${A.y} L ${B.x} ${B.y}`
+    if (e.metadata?.is_road) {
+      // Traced geometry: curve_offset is the bend that made this line sit on the
+      // painted causeway when the map art was analysed.
+      const off = Number(e.metadata.curve_offset) || 0
+      if (!off) return `M ${A.x} ${A.y} L ${B.x} ${B.y}`
+      const ddx = B.x - A.x
+      const ddy = B.y - A.y
+      const L = Math.hypot(ddx, ddy) || 1
+      const cx = (A.x + B.x) / 2 + (-ddy / L) * off
+      const cy = (A.y + B.y) / 2 + (ddx / L) * off
+      return `M ${A.x} ${A.y} Q ${cx} ${cy} ${B.x} ${B.y}`
+    }
     const off = (r() - 0.5) * 2 * Math.min(110, len * 0.3)
     const sgn = off < 0 ? -1 : 1
     const mag = Math.max(40, Math.abs(off))
@@ -276,8 +289,9 @@ export default function UnderdarkMap({ embedded = false }: { embedded?: boolean 
   // (is_route_summary) and are never used as geometry — that is what used to
   // make the party sail across open rock.
   function routeBetween(fromId: string, toId: string): string[] {
-    const roads = edges.filter((e) => e.metadata?.is_road)
-    const usable = roads.length ? roads : edges
+    // Water is not walkable. Sail edges only open up once the party has a boat.
+    const roads = edges.filter((e) => e.metadata?.is_road && (e.metadata?.mode !== "sail" || hasBoat))
+    const usable = roads
     const adj = new Map<string, { to: string; w: number }[]>()
     for (const e of usable) {
       const w = Number(e.distance_miles) || 1
@@ -559,9 +573,9 @@ export default function UnderdarkMap({ embedded = false }: { embedded?: boolean 
                 key={e.id}
                 d={d}
                 fill="none"
-                stroke={eRev ? "#f5c34d" : "#8a7bb0"}
-                strokeWidth={2.5 * kk}
-                strokeDasharray="2 9"
+                stroke={e.metadata?.mode === "sail" ? (eRev ? "#5cc8e0" : "#3a6b7a") : eRev ? "#f5c34d" : "#8a7bb0"}
+                strokeWidth={(e.metadata?.mode === "sail" ? 2 : 3) * kk}
+                strokeDasharray={e.metadata?.mode === "sail" ? "1 7" : "6 6"}
                 strokeLinecap="round"
                 opacity={eRev ? ".45" : ".22"}
               />

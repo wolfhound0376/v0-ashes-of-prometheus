@@ -185,8 +185,14 @@ export default function UnderdarkMap3D() {
     const A = pos(a)
     const B = pos(b)
     if (e.metadata?.is_road) {
+      const off = Number(e.metadata.curve_offset) || 0
+      const ddx = B.x - A.x
+      const ddy = B.y - A.y
+      const L = Math.hypot(ddx, ddy) || 1
+      const cx = (A.x + B.x) / 2 + (-ddy / L) * off
+      const cy = (A.y + B.y) / 2 + (ddx / L) * off
       const p0 = document.createElementNS("http://www.w3.org/2000/svg", "path")
-      p0.setAttribute("d", `M ${A.x} ${A.y} L ${B.x} ${B.y}`)
+      p0.setAttribute("d", off ? `M ${A.x} ${A.y} Q ${cx} ${cy} ${B.x} ${B.y}` : `M ${A.x} ${A.y} L ${B.x} ${B.y}`)
       return p0
     }
     const r = mulberry(fnv(e.edge_key))
@@ -204,7 +210,7 @@ export default function UnderdarkMap3D() {
   }
   function routeBetween(fromId: string, toId: string): string[] {
     const adj = new Map<string, string[]>()
-    const roads = dataRef.current.edges.filter((e) => e.metadata?.is_road)
+    const roads = dataRef.current.edges.filter((e) => e.metadata?.is_road && e.metadata?.mode !== "sail")
     for (const e of (roads.length ? roads : dataRef.current.edges)) {
       if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
       if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
