@@ -16,9 +16,12 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 // when that env var is set; with it unset the route stays open (fail-open,
 // same rule as the /join gate).
 //
-// Waypoint generation on first travel is intentionally NOT here yet — that is
-// Layer 1's job (deterministic generation + freeze_edge_waypoints in the same
-// transaction). Reveal/move only touch discovered_at and party_position.
+// WAYPOINT GENERATION happens here, on the first move along an edge: a
+// deterministic count (from the edge's days at normal pace, clamped 2..6) of
+// waypoint nodes is inserted with edge_position 1..n, then the edge is frozen
+// via freeze_edge_waypoints(). The DB triggers make that set permanent, so a
+// route travelled twice yields the identical waypoints — the whole point of
+// the schema. Already-frozen edges just get their existing waypoints revealed.
 
 export const dynamic = "force-dynamic"
 
@@ -56,6 +59,49 @@ async function revealNode(db: ReturnType<typeof createAdminClient>, nodeId: stri
   if (ids.length) await db.from("travel_edges").update({ discovered_at: now }).in("id", ids)
 }
 
+/** Deterministic per-edge PRNG so a regenerated set would be identical. */
+function fnv(str: string) {
+  let h = 2166136261
+  for (const c of str) {
+    h ^= c.charCodeAt(0)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+async function ensureWaypoints(
+  db: ReturnType<typeof createAdminClient>,
+  edge: { id: string; edge_key: string; metadata: Record<string, any> | null; waypoints_generated_at: string | null },
+) {
+  const now = new Date().toISOString()
+  if (edge.waypoints_generated_at) {
+    // Frozen already: the set is permanent, just make sure players can see it.
+    await db.from("travel_nodes").update({ discovered_at: now }).eq("edge_id", edge.id).is("discovered_at", null)
+    return
+  }
+  const days = Number(edge.metadata?.days_normal_pace) || 6
+  const n = Math.max(2, Math.min(6, Math.round(days / 6)))
+  const { data: region } = await db.from("travel_nodes").select("id").eq("node_key", "underdark").single()
+  const rows = Array.from({ length: n }, (_, i) => ({
+    node_key: `wp--${edge.edge_key}--${String(i + 1).padStart(2, "0")}`,
+    name: `Waypoint ${i + 1}`,
+    node_type: "waypoint" as const,
+    parent_id: region?.id ?? null,
+    parent_type: region ? ("region" as const) : null,
+    is_generated: true,
+    edge_id: edge.id,
+    edge_position: i + 1,
+    discovered_at: now,
+    description: "A resting place on the road, marked on the first crossing.",
+    metadata: { seed: fnv("wp:" + edge.edge_key), of: n },
+  }))
+  const { error } = await db.from("travel_nodes").upsert(rows, { onConflict: "node_key" })
+  if (error) return
+  // Freeze in the same request: from here the DB refuses to add, move or
+  // delete waypoints on this edge, forever.
+  await db.rpc("freeze_edge_waypoints", { p_edge_id: edge.id })
+}
+
 export async function POST(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   const body = await req.json().catch(() => null)
@@ -65,6 +111,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "expected { action: 'reveal'|'move', node_key }" }, { status: 400 })
   }
   const db = createAdminClient()
+  let prevNodeId: string | null = null
   const { data: node, error } = await db
     .from("travel_nodes")
     .select("id,node_key,node_type")
@@ -76,6 +123,8 @@ export async function POST(req: NextRequest) {
     if (node.node_type === "region") {
       return NextResponse.json({ error: "party position is always a concrete node, never a region" }, { status: 400 })
     }
+    const { data: before } = await db.from("party_position").select("node_id").limit(1).maybeSingle()
+    prevNodeId = before?.node_id ?? null
     const { data: run } = await db
       .from("campaign_runs")
       .select("id")
@@ -91,6 +140,22 @@ export async function POST(req: NextRequest) {
       arrived_at: new Date().toISOString(),
     })
     if (uerr) return NextResponse.json({ error: uerr.message }, { status: 500 })
+
+    // The road travelled: generate-and-freeze (or reveal) its waypoints.
+    if (prevNodeId && prevNodeId !== node.id) {
+      const { data: edge } = await db
+        .from("travel_edges")
+        .select("id,edge_key,metadata,waypoints_generated_at")
+        .or(
+          `and(from_node_id.eq.${prevNodeId},to_node_id.eq.${node.id}),and(from_node_id.eq.${node.id},to_node_id.eq.${prevNodeId})`,
+        )
+        .limit(1)
+        .maybeSingle()
+      if (edge) {
+        await ensureWaypoints(db, edge as any)
+        await db.from("travel_edges").update({ discovered_at: new Date().toISOString() }).eq("id", edge.id).is("discovered_at", null)
+      }
+    }
   }
   await revealNode(db, node.id)
   return NextResponse.json({ ok: true, action, node_key: node.node_key })
