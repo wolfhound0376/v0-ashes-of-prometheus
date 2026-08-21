@@ -115,7 +115,15 @@ updating both the system prompt and the parser.
 [CONDITION_ADD:  [CONDITION_REMOVE:
 [NPC_ENCOUNTER:  [NPC_DAMAGE:  [NPC_LEAVE:  [NPC_IMAGE:
 [LOCATION_IMAGE:  [UPDATE_LOCATION:
+[TIME:  [STORY_ADVANCE  [CINEMATIC:
 ```
+
+`[CINEMATIC: <cue>]` is the one tag with a **closed** vocabulary. `app/api/chat/route.ts`
+queries `cinematic_clips` for the action states that have film at the party's current
+location, injects them into the prompt as a whitelist, and discards any cue that is not on
+it — so Malachar cannot invent a cue. The cue name alone crosses to the client (via
+`lib/cinematic-cue.ts`); resolution, the once-per-character rule and solo-vs-party scope
+stay in `/api/cinematics`.
 
 `lib/tts.ts` `sanitizeForTTS()` strips these before speech. If you add a tag, add it there too.
 

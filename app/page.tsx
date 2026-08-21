@@ -24,6 +24,7 @@ import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
 import { useLich } from "@/lib/hooks/use-lich"
+import { emitCinematicCue } from "@/lib/cinematic-cue"
 import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib/types/database"
@@ -1294,6 +1295,12 @@ if (error) {
               // Advance the player-facing time-of-day if the clock moved.
               if (response.timeOfDay) {
                 setLiveTimeOfDay(response.timeOfDay)
+              }
+              // Malachar cued a filmed moment. The dashboard owns the overlay,
+              // so hand the cue name over and let /api/cinematics decide
+              // whether anything actually plays.
+              if (response.cinematicCue) {
+                emitCinematicCue(response.cinematicCue)
               }
               setClockRefresh((n) => n + 1)
               // Update NPC image if the response includes one

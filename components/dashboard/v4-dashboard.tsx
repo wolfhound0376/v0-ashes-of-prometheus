@@ -17,6 +17,7 @@ import { SuggestionChips } from "./suggestion-chips"
 import type { Suggestion } from "@/lib/suggestions"
 import { CinematicOverlay } from "./cinematic-overlay"
 import { createClient } from "@/lib/supabase/client"
+import { onCinematicCue } from "@/lib/cinematic-cue"
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
 import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
@@ -496,14 +497,21 @@ export function V4Dashboard(props: V4DashboardProps) {
   const locationName = props.environment.name
   const seatId = selected?.id ?? null
 
+  //  7. A cue from Malachar (rule 9 of the tag protocol) is the second door.
+  //     It asks for kind=action and the cue name as state, under the
+  //     event_driven trigger; everything downstream — resolution, the
+  //     once-per-character rule, solo vs party — is unchanged and still owned
+  //     by the server. scope is a PREFERENCE the resolver may override, so the
+  //     broadcast decision below reads the scope the response came back with.
   const cinematicParams = useCallback(
-    (asDm: boolean) => {
+    (asDm: boolean, cue?: { state: string }) => {
       const params = new URLSearchParams({
         location: locationName,
-        kind: "environment",
-        scope: "party",
-        trigger_type: asDm ? "dm_override" : "player_initiated",
+        kind: cue ? "action" : "environment",
+        scope: cue ? "solo" : "party",
+        trigger_type: asDm ? "dm_override" : cue ? "event_driven" : "player_initiated",
       })
+      if (cue) params.set("state", cue.state)
       if (seatId) params.set("character_id", seatId)
       return params
     },
@@ -534,7 +542,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   // completely silent: the player asked to look around, Malachar is already
   // answering in words, and a failed camera cue is not an error they should
   // ever perceive.
-  const playSceneCinematic = async () => {
+  const playSceneCinematic = async (cue?: { state: string }) => {
     if (cinematicBusy) return
     setCinematicBusy(true)
     try {
@@ -543,7 +551,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       // a dismissed prompt just falls back to an ordinary player request.
       let asDm = !!props.dmMode
       if (asDm && !hasDmKey()) asDm = ensureDmKey("replay cinematics in DM Mode") !== null
-      const res = await fetch(`/api/cinematics?${cinematicParams(asDm).toString()}`, {
+      const res = await fetch(`/api/cinematics?${cinematicParams(asDm, cue).toString()}`, {
         headers: dmHeaders(),
       })
       if (!res.ok) {
@@ -567,6 +575,14 @@ export function V4Dashboard(props: V4DashboardProps) {
       setCinematicBusy(false)
     }
   }
+
+  // Malachar cued a filmed moment this turn (app/page.tsx forwards it here).
+  // A cue that resolves to nothing — no film, or this seat has already seen it
+  // — is the ORDINARY outcome and stays completely silent, exactly like the
+  // look-around path above.
+  const cueHandler = useRef(playSceneCinematic)
+  cueHandler.current = playSceneCinematic
+  useEffect(() => onCinematicCue((cue) => void cueHandler.current(cue)), [])
 
   // Static fallbacks. "Look around" carries kind:"observe" so the cinematic
   // still has a door even when suggestion generation fails outright.

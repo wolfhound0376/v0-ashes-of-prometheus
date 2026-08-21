@@ -102,6 +102,7 @@ export function sanitizeForTTS(text: string): string {
     .replace(/\[ITEM_AWARD:[^\]]*\]/g, "")
     .replace(/\[TIME:[^\]]*\]/g, "") // world-clock time tags
     .replace(/\[STORY_ADVANCE[^\]]*\]/g, "")
+    .replace(/\[CINEMATIC:[^\]]*\]/g, "") // action-cinematic cues
     .replace(/--+/g, ", ") // em-dashes to pause
     .replace(/\.\.\./g, "...") // keep ellipsis (TTS handles it)
     .replace(/\s{2,}/g, " ") // collapse whitespace

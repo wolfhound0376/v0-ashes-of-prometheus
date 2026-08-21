@@ -82,6 +82,7 @@ export function useLich(campaignId: string = "abyss") {
         locationImageUrl: data.locationImageUrl || null,
         updatedLocation: data.updatedLocation,
         timeOfDay: typeof data.timeOfDay === "string" ? data.timeOfDay : undefined,
+        cinematicCue: typeof data.cinematicCue === "string" ? data.cinematicCue : undefined,
       }
     } catch (error) {
       console.error("Error sending message:", error)

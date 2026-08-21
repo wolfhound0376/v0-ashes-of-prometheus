@@ -131,13 +131,17 @@ async function recordView(
 }
 
 export async function GET(request: NextRequest) {
-  // Player-initiated resolution is the one un-keyed path (PR-5): it can only
-  // reach the fallback resolver — never an explicit clip id, which stays
-  // dm_override-only below — and everything it can return (cinematic_clips
-  // rows, public storage URLs) is already anon-readable under RLS. Every other
-  // caller still needs the DM key.
+  // Un-keyed resolution (PR-5) covers the two triggers that originate at the
+  // table rather than from the DM console: player_initiated (the look-around
+  // chip) and event_driven (a cue Malachar emitted mid-narration). Both can
+  // only reach the fallback resolver — never an explicit clip id, which stays
+  // dm_override-only below — and everything they can return (cinematic_clips
+  // rows, public storage URLs) is already anon-readable under RLS. The cue name
+  // itself grants nothing extra: it selects among rows the same caller could
+  // already reach by other states. Every other caller still needs the DM key.
+  const UNKEYED_TRIGGERS = ["player_initiated", "event_driven"]
   const isPlayerResolution =
-    request.nextUrl.searchParams.get("trigger_type") === "player_initiated" &&
+    UNKEYED_TRIGGERS.includes(request.nextUrl.searchParams.get("trigger_type") || "") &&
     !request.nextUrl.searchParams.get("cinematicId")
   if (!isPlayerResolution && !authorized(request)) return NextResponse.json({ error: "Not authorized" }, { status: 403 })
 
@@ -246,6 +250,20 @@ export async function GET(request: NextRequest) {
     ? { id: row.clip_id as string, video_url: (row.video_url as string) ?? null }
     : null
 
+  // resolve_cinematic treats p_scope as a PREFERENCE, not a filter: asking for
+  // "solo" can still return a party clip when that is the only film for the
+  // cue. Echoing the requested scope back therefore mislabels those clips and
+  // silently suppresses the broadcast, so read the resolved row's real scope.
+  let clipScope: (typeof SCOPES)[number] = scope
+  if (clip) {
+    const { data: scopeRow } = await admin
+      .from("cinematic_clips")
+      .select("scope")
+      .eq("id", clip.id)
+      .maybeSingle()
+    if (scopeRow?.scope === "solo" || scopeRow?.scope === "party") clipScope = scopeRow.scope
+  }
+
   // === ONCE PER CHARACTER ===
   if (clip && triggerType !== "dm_override" && (await alreadySeen(admin, characterId, clip.id))) {
     if (!probe) {
@@ -255,7 +273,7 @@ export async function GET(request: NextRequest) {
   }
 
   // A probe stops here: nothing logged, nothing recorded, nothing consumed.
-  if (probe) return NextResponse.json({ available: !!clip, scope, resolution })
+  if (probe) return NextResponse.json({ available: !!clip, scope: clipScope, resolution })
 
   await logCinematicRequest(admin, {
     ...reqMeta,
@@ -272,7 +290,7 @@ export async function GET(request: NextRequest) {
 
   // scope travels with the clip so the client knows whether this is a personal
   // moment or a group one that must be broadcast to the other seats.
-  return NextResponse.json({ clip: clip ? { ...clip, scope } : null, resolution })
+  return NextResponse.json({ clip: clip ? { ...clip, scope: clipScope } : null, resolution })
 }
 
 export async function POST(request: NextRequest) {
