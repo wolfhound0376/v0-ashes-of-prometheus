@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { isVideoUrl } from "@/lib/media-url"
 import { canSpeak, sanitizeForTTS } from "@/lib/tts"
+import { playSpeech, type SpeechPlayback } from "@/lib/speech-playback"
 
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import {
@@ -137,7 +138,7 @@ export function LeftColumn({
   const [logFilter, setLogFilter] = useState<LogFilter>("all")
   const { roll: sharedRoll, announce: announceRoll, busy: diceBusy } = useDice()
   const dialogueEndRef = useRef<HTMLDivElement>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioRef = useRef<SpeechPlayback | null>(null)
   // Which Malachar line is currently loading / playing (keyed by its text).
   const [loadingText, setLoadingText] = useState<string | null>(null)
   const [playingText, setPlayingText] = useState<string | null>(null)
@@ -153,7 +154,7 @@ export function LeftColumn({
   const playLine = async (rawText: string) => {
     // Stop anything currently playing first.
     if (audioRef.current) {
-      audioRef.current.pause()
+      audioRef.current.stop()
       audioRef.current = null
     }
     // Clicking the line that's already playing just stops it.
@@ -182,23 +183,19 @@ export function LeftColumn({
         setLoadingText(null)
         return
       }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      audioRef.current = audio
+      // Played through the shared helper, which decodes the MP3 and plays the
+      // samples via WebAudio. Some Chromium builds are silently mute when an
+      // ElevenLabs MP3 goes through an <audio> element instead.
+      const playback = await playSpeech(await res.blob())
+      audioRef.current = playback
       setLoadingText(null)
       setPlayingText(rawText)
-      const cleanup = () => {
+      const reason = await playback.finished
+      if (reason !== "stopped") {
+        if (reason !== "ended") console.log("[v0] TTS playback:", reason)
         setPlayingText(null)
-        audioRef.current = null
-        URL.revokeObjectURL(url)
+        if (audioRef.current === playback) audioRef.current = null
       }
-      audio.onended = cleanup
-      audio.onerror = cleanup
-      await audio.play().catch((err) => {
-        console.log("[v0] TTS play() failed:", err?.message)
-        cleanup()
-      })
     } catch (err) {
       console.log("[v0] TTS error:", err)
       setLoadingText(null)
@@ -209,7 +206,8 @@ export function LeftColumn({
   useEffect(() => {
     return () => {
       if (audioRef.current) {
-        audioRef.current.pause()
+        audioRef.current.stop()
+        audioRef.current = null
       }
     }
   }, [])

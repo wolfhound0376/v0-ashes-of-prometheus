@@ -27,6 +27,7 @@ import { ReactionsPanel } from "./reactions-panel"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 import { createClient } from "@/lib/supabase/client"
 import { canSpeak } from "@/lib/tts"
+import { playSpeech, type SpeechPlayback } from "@/lib/speech-playback"
 
 interface Action {
   id: string
@@ -640,12 +641,11 @@ export function setNpcTtsMuted(next: boolean) {
   if (next) stopNpcAudio()
 }
 let lastSpokenKey: string | null = null
-let activeNpcAudio: HTMLAudioElement | null = null
+let activeNpcAudio: SpeechPlayback | null = null
 
 function stopNpcAudio() {
   if (activeNpcAudio) {
-    activeNpcAudio.pause()
-    activeNpcAudio.src = ""
+    activeNpcAudio.stop()
     activeNpcAudio = null
   }
 }
@@ -731,20 +731,17 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
         }
         const blob = await res.blob()
         if (cancelled) return
-        const url = URL.createObjectURL(blob)
-        const audio = new Audio(url)
-        activeNpcAudio = audio
-        audio.onended = () => {
-          setSpeaking(false)
-          URL.revokeObjectURL(url)
-          if (activeNpcAudio === audio) activeNpcAudio = null
-          onLineCompleteRef.current?.() // advance to the next speaker beat
-        }
-        audio.onerror = () => {
-          setSpeaking(false)
-          onLineCompleteRef.current?.() // don't strand the sequence on a TTS failure
-        }
-        await audio.play().catch(() => setSpeaking(false))
+        // Decoded and played via WebAudio by the shared helper — an <audio>
+        // element is silently mute for these MP3s in some Chromium builds.
+        const playback = await playSpeech(blob)
+        activeNpcAudio = playback
+        const reason = await playback.finished
+        if (activeNpcAudio === playback) activeNpcAudio = null
+        setSpeaking(false)
+        // "stopped" means something else took the floor and is driving the
+        // sequence already; advancing here would skip a beat. Any other
+        // ending — including a failure — must not strand the sequence.
+        if (reason !== "stopped" && !cancelled) onLineCompleteRef.current?.()
       } catch {
         if (!cancelled) setSpeaking(false)
       }
