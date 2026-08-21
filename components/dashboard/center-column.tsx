@@ -27,8 +27,7 @@ import { ReactionsPanel } from "./reactions-panel"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 import { createClient } from "@/lib/supabase/client"
 import { canSpeak } from "@/lib/tts"
-import { type SpeechPlayback } from "@/lib/speech-playback"
-import { speak } from "@/lib/speech-queue"
+import { playSpeech, type SpeechPlayback } from "@/lib/speech-playback"
 
 interface Action {
   id: string
@@ -705,19 +704,10 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
     }
     lastSpokenKey = key
     let cancelled = false
-    // The NPC asks for the floor rather than seizing it. If Malachar or a
-    // player is mid-line she waits her turn — and if she is cut off, the queue
-    // resumes her where she stopped instead of losing the line entirely, which
-    // is what used to make NPCs seem voiceless.
-    const handle = speak({
-      rank: "npc",
-      speaker: speaker.name,
-      onStart: () => setSpeaking(true),
-      onEnd: (reason) => {
-        setSpeaking(false)
-        if (reason !== "stopped" && !cancelled) onLineCompleteRef.current?.()
-      },
-      fetch: async () => {
+    stopNpcAudio()
+    setSpeaking(true)
+    ;(async () => {
+      try {
         const res = await fetch("/api/npc-tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -735,13 +725,29 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
             npcId: speaker.id,
           }),
         })
-        if (!res.ok || cancelled) return null
-        return await res.blob()
-      },
-    })
+        if (!res.ok || cancelled) {
+          setSpeaking(false)
+          return
+        }
+        const blob = await res.blob()
+        if (cancelled) return
+        // Decoded and played via WebAudio by the shared helper — an <audio>
+        // element is silently mute for these MP3s in some Chromium builds.
+        const playback = await playSpeech(blob)
+        activeNpcAudio = playback
+        const reason = await playback.finished
+        if (activeNpcAudio === playback) activeNpcAudio = null
+        setSpeaking(false)
+        // "stopped" means something else took the floor and is driving the
+        // sequence already; advancing here would skip a beat. Any other
+        // ending — including a failure — must not strand the sequence.
+        if (reason !== "stopped" && !cancelled) onLineCompleteRef.current?.()
+      } catch {
+        if (!cancelled) setSpeaking(false)
+      }
+    })()
     return () => {
       cancelled = true
-      handle.cancel()
     }
   }, [line, speaker.id, speaker.name, speaker.voice_description, voiceId])
 
