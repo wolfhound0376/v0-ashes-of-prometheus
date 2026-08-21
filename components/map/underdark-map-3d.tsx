@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/client"
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 
 const MAP_W = 1672
 const MAP_H = 941
@@ -149,7 +150,9 @@ export default function UnderdarkMap3D() {
     t.nodeMeshes = new Map()
     scene.add(t.markers)
 
-    new GLTFLoader().load(
+    const loader = new GLTFLoader()
+    loader.setMeshoptDecoder(MeshoptDecoder)
+    loader.load(
       modelUrl,
       (gltf) => {
         if (t.disposed) return
