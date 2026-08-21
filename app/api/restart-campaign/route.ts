@@ -21,6 +21,9 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //     lines, and it exists precisely BECAUSE restart wipes the dialogue table.
 //     Clearing it here would restore the bug it was built to fix.
 //   - Curated environments (see isCuratedEnvironment below).
+//   - cinematic_clips and the films themselves. The LIBRARY survives; only the
+//     record of who has watched what is cleared (see step 1b).
+//   - cinematic_requests, the diagnostic log of cues asked for and missed.
 //   - Character rows, stats, XP and levels.
 //
 // AUTHORIZATION mirrors /api/asset-media and /api/forge/import: x-dm-key must
@@ -138,6 +141,26 @@ export async function POST(req: Request) {
       .neq("id", "00000000-0000-0000-0000-000000000000")
     note("dialogue", error)
     report.dialogueDeleted = count ?? 0
+  }
+
+  // --- 1b. cinematic memory ----------------------------------------------
+  // Which clips each character has already watched. A cinematic plays once per
+  // character, so leaving this behind means a restarted campaign never shows
+  // its opening film again — the party wakes in Velkynvelve to silence where
+  // the first run got the waterfall. Exactly the failure this route's header
+  // describes for `sessions`: state surviving a wipe and making the world
+  // remember a campaign that no longer exists.
+  //
+  // cinematic_requests is deliberately NOT cleared. It is the diagnostic log
+  // of what was asked for and whether film existed, and it is the only record
+  // of gaps worth filming — that value is about the library, not the run.
+  {
+    const { count, error } = await admin
+      .from("cinematic_views")
+      .delete({ count: "exact" })
+      .neq("id", "00000000-0000-0000-0000-000000000000")
+    note("cinematic_views", error)
+    report.cinematicViewsCleared = count ?? 0
   }
 
   // --- 2. Malachar's session history -------------------------------------
