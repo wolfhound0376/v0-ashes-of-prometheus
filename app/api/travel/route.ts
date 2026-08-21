@@ -45,6 +45,55 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ nodes: n.data, edges: e.data, party: p.data?.[0] ?? null })
 }
 
+/** Every road node and segment the party crossed becomes known. */
+async function revealRoute(db: ReturnType<typeof createAdminClient>, nodeIds: string[], edgeIds: string[]) {
+  const now = new Date().toISOString()
+  if (nodeIds.length) await db.from("travel_nodes").update({ discovered_at: now }).in("id", nodeIds).is("discovered_at", null)
+  if (edgeIds.length) await db.from("travel_edges").update({ discovered_at: now }).in("id", edgeIds).is("discovered_at", null)
+}
+
+/** Shortest road route (by derived miles) between two nodes, over is_road edges. */
+async function roadRoute(db: ReturnType<typeof createAdminClient>, fromId: string, toId: string) {
+  const { data: roads } = await db
+    .from("travel_edges")
+    .select("id,from_node_id,to_node_id,distance_miles,metadata")
+  const road = (roads ?? []).filter((e) => e.metadata?.is_road)
+  const adj = new Map<string, { to: string; id: string; w: number }[]>()
+  for (const e of road) {
+    if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
+    if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
+    adj.get(e.from_node_id)!.push({ to: e.to_node_id, id: e.id, w: Number(e.distance_miles) })
+    adj.get(e.to_node_id)!.push({ to: e.from_node_id, id: e.id, w: Number(e.distance_miles) })
+  }
+  const dist = new Map<string, number>([[fromId, 0]])
+  const prev = new Map<string, { node: string; edge: string }>()
+  const seen = new Set<string>()
+  while (true) {
+    let cur: string | null = null
+    let best = Infinity
+    for (const [k, v] of dist) if (!seen.has(k) && v < best) ((best = v), (cur = k))
+    if (!cur || cur === toId) break
+    seen.add(cur)
+    for (const nx of adj.get(cur) ?? []) {
+      const nd = best + nx.w
+      if (nd < (dist.get(nx.to) ?? Infinity)) {
+        dist.set(nx.to, nd)
+        prev.set(nx.to, { node: cur, edge: nx.id })
+      }
+    }
+  }
+  if (!dist.has(toId)) return { nodes: [] as string[], edges: [] as string[] }
+  const nodesOut = [toId]
+  const edgesOut: string[] = []
+  while (nodesOut[0] !== fromId) {
+    const p = prev.get(nodesOut[0])
+    if (!p) break
+    edgesOut.push(p.edge)
+    nodesOut.unshift(p.node)
+  }
+  return { nodes: nodesOut, edges: edgesOut }
+}
+
 async function revealNode(db: ReturnType<typeof createAdminClient>, nodeId: string) {
   const now = new Date().toISOString()
   await db.from("travel_nodes").update({ discovered_at: now }).eq("id", nodeId).is("discovered_at", null)
@@ -141,7 +190,13 @@ export async function POST(req: NextRequest) {
     })
     if (uerr) return NextResponse.json({ error: uerr.message }, { status: 500 })
 
-    // The road travelled: generate-and-freeze (or reveal) its waypoints.
+    // The road travelled becomes known, marker by marker.
+    if (prevNodeId && prevNodeId !== node.id) {
+      const r = await roadRoute(db, prevNodeId, node.id)
+      await revealRoute(db, r.nodes, r.edges)
+    }
+
+    // The summary edge travelled: generate-and-freeze (or reveal) its waypoints.
     if (prevNodeId && prevNodeId !== node.id) {
       const { data: edge } = await db
         .from("travel_edges")
