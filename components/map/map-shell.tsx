@@ -4,6 +4,7 @@
 // Both views read the same travel graph; they are two windows on one truth.
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import UnderdarkMap from "./underdark-map"
 import UnderdarkMap3D from "./underdark-map-3d"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
@@ -23,7 +24,14 @@ export default function MapShell() {
     }`
   return (
     <div className="bg-[#0b0714] h-screen overflow-hidden">
-      <div className="flex gap-2 justify-end px-3 pt-3 max-w-[1360px] mx-auto">
+      <div className="flex flex-wrap items-center gap-2 px-3 pt-3 max-w-[1360px] mx-auto">
+        <Link
+          href="/"
+          className="text-xs px-3 py-2 rounded border-2 font-mono tracking-wider bg-[#221936] text-[#e1d0a8] border-[#6b5123] hover:border-[#c99a49]"
+        >
+          ← DASHBOARD
+        </Link>
+        <span className="flex-1" />
         <button className={btn(mode === "2d")} onClick={() => setMode("2d")}>
           2D MAP
         </button>
