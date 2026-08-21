@@ -1133,17 +1133,41 @@ result exists until the engine reports it.
   Sneak Attack conditions) without the player having to remind you.
 ${pacingBlock ? `\n${pacingBlock}` : ""}`
 
-  const result = await generateText({
-    model: anthropic("claude-sonnet-4-6"),
-    system: lichPrompt,
-    messages: [
-      ...conversationHistory,
-      // Prefix the live message with the speaker's name so it matches the
-      // "Speaker: text" format the history already uses. Without this the DM
-      // cannot tell WHO is acting and asks "who is speaking?".
-      { role: "user", content: `${playerName}: ${message}` }
-    ],
-  })
+  // A provider failure here used to escape as a bare 500 with no body: the UI
+  // showed nothing, the client retried, and each retry persisted the player's
+  // line again — one message became three in the log. Name the failure instead,
+  // and mark it non-retryable so the client stops rather than spamming.
+  let result: Awaited<ReturnType<typeof generateText>>
+  try {
+    result = await generateText({
+      model: anthropic("claude-sonnet-4-6"),
+      system: lichPrompt,
+      messages: [
+        ...conversationHistory,
+        // Prefix the live message with the speaker's name so it matches the
+        // "Speaker: text" format the history already uses. Without this the DM
+        // cannot tell WHO is acting and asks "who is speaking?".
+        { role: "user", content: `${playerName}: ${message}` }
+      ],
+    })
+  } catch (error) {
+    const detail = (error as Error)?.message || String(error)
+    const outOfCredit = /credit balance is too low|insufficient.*credit|quota/i.test(detail)
+    console.error("[v0] chat: the model call failed:", detail)
+    return Response.json(
+      {
+        error: outOfCredit ? "ai_credits_exhausted" : "ai_unavailable",
+        // Player-facing, in Malachar's own register — the log should say what
+        // happened rather than sitting there mute.
+        message: outOfCredit
+          ? "Malachar's voice fails him — the API credit balance is exhausted. Top up at console.anthropic.com and he will speak again."
+          : "Malachar cannot reach his thoughts just now. Try again in a moment.",
+        retryable: false,
+        detail: detail.slice(0, 300),
+      },
+      { status: outOfCredit ? 402 : 503 },
+    )
+  }
 
   const rawText = result.text || ""
 
