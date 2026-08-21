@@ -32,6 +32,7 @@ type NodeRow = {
   description: string | null
   metadata: Record<string, any> | null
   discovered_at?: string | null
+  name_known?: boolean
 }
 type EdgeRow = {
   id: string
@@ -75,7 +76,8 @@ export default function MapStage({ onBack }: { onBack?: () => void }) {
         }
       }
       const [n, e, p] = await Promise.all([
-        supabase.from("travel_nodes").select("id,node_key,name,node_type,description,metadata,discovered_at"),
+        // The players' window: discovered rows only, names withheld until learned.
+        supabase.from("travel_nodes_player").select("id,node_key,name,node_type,description,metadata,discovered_at,name_known"),
         supabase.from("travel_edges").select("id,from_node_id,to_node_id,metadata,discovered_at"),
         supabase.from("party_position").select("node_id").limit(1),
       ])
@@ -177,7 +179,7 @@ export default function MapStage({ onBack }: { onBack?: () => void }) {
               <g key={n.id} onClick={() => dmKey && partyNode !== n.id && setConfirm(n)} style={{ cursor: dmKey ? "pointer" : "default" }}>
                 <circle cx={m.map_x} cy={m.map_y} r={26} fill="#f5c34d" opacity={known(n) ? 0.22 : 0.08} />
                 <circle cx={m.map_x} cy={m.map_y} r={15} fill="rgba(5,3,10,.5)" stroke={known(n) ? "#f5c34d" : "#6b5f80"} strokeWidth={4} />
-                <text
+                {(!dmKey ? n.name_known !== false : true) && n.name && <text
                   x={m.map_x}
                   y={m.map_y + 46}
                   textAnchor="middle"
@@ -188,7 +190,7 @@ export default function MapStage({ onBack }: { onBack?: () => void }) {
                   style={{ fontSize: 26, fontWeight: 700, letterSpacing: 1 }}
                 >
                   {n.name.toUpperCase()}
-                </text>
+                </text>}
               </g>
             )
           })}
@@ -205,7 +207,7 @@ export default function MapStage({ onBack }: { onBack?: () => void }) {
           <div className="absolute inset-0 grid place-items-center bg-[#05030acc] px-4">
             <div className="max-w-[34ch] rounded border-2 border-[#c99a49] bg-[#171024] px-4 py-3 text-center">
               <div className="text-[9px] uppercase tracking-widest text-[#8f8061]">Malachar asks</div>
-              <div className="mt-1 font-serif text-sm text-[#f5c34d]">Send the party to {confirm.name}?</div>
+              <div className="mt-1 font-serif text-sm text-[#f5c34d]">Send the party to {confirm.name ?? "that place"}?</div>
               <div className="mt-1 text-[10px] text-[#9a8fb0]">They walk every marker on the road.</div>
               <div className="mt-3 flex justify-center gap-2">
                 <button
