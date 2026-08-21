@@ -679,6 +679,59 @@ ${combatantRows
     stageContext = "CURRENT STAGE: Underdark Tunnels (Stage 5+). The party has fled Velkynvelve. Describe vast caverns, bioluminescent fungi, distant echoes. They are beginning their journey through the Underdark."
   }
 
+  // === CINEMATIC CUES (closed whitelist) ===
+  // Build the canonical list of action cues that actually have film behind them
+  // HERE, and inject it as a closed list. Malachar may only name a cue from it;
+  // anything he invents is discarded by the parser. Same principle as the NPC
+  // roster above — hand the model the real vocabulary instead of letting it
+  // guess, because a guessed cue is a fabricated one.
+  //
+  // scene_key normalisation goes through the same RPC resolve_cinematic uses,
+  // so "Velkynvelve (slave pen)" and "Scene_1_Velkynvelve (slave pen)" agree.
+  let availableCinematicCues: string[] = []
+  try {
+    const { data: cueSceneKey } = await supabase.rpc("scene_key", { p_name: currentLocation })
+    if (cueSceneKey) {
+      const { data: cueRows } = await supabase
+        .from("cinematic_clips")
+        .select("state")
+        .eq("kind", "action")
+        .eq("scene_key", cueSceneKey as string)
+        .not("state", "is", null)
+        .not("video_url", "is", null)
+        .gt("weight", 0)
+      availableCinematicCues = Array.from(
+        new Set(
+          (cueRows || [])
+            .map((r: { state: string | null }) => (r.state || "").trim())
+            .filter((v: string) => v.length > 0),
+        ),
+      )
+    }
+  } catch (e) {
+    // A cue lookup failure must never break the turn: no list simply means no
+    // cues offered this response, and the narration continues untouched.
+    console.error("[cinematics] cue whitelist lookup failed:", e)
+  }
+
+  const cinematicCueBlock =
+    availableCinematicCues.length > 0
+      ? `=== CINEMATIC CUES \u2014 CLOSED LIST ===
+Some moments in this location have film shot for them. When one of them actually happens in your narration, emit [CINEMATIC: <cue>] on its own line using EXACTLY one of these cue names: ${availableCinematicCues.join(", ")}.
+Rules:
+- ONLY these cue names exist. Never invent a cue, never vary the spelling, never emit one that is not on this list. An invented cue plays nothing.
+- Emit a cue ONLY for something that genuinely happened this turn \u2014 a success that actually succeeded, an action actually taken. Never for an attempt that failed, an intention, or a hypothetical.
+- AT MOST ONE cue per response. If two would fit, choose the more significant.
+- The cue is silent stagecraft. Never mention it, never describe the film, never tell the player a cinematic is playing.
+- Whether the player has already seen it is handled elsewhere. Emit the cue whenever the moment fits.
+=== END CINEMATIC CUES ===`
+      : ""
+
+  console.log(
+    "[v0] chat: cinematic cues available:",
+    availableCinematicCues.length ? availableCinematicCues.join(", ") : "(none)",
+  )
+
   // The Lich Malachar system prompt
   const lichPrompt = `You are Malachar, a lich, and the Dungeon Master of this campaign. You are running D&D 5E "Out of the Abyss" in the Underdark of Faerûn. You never break character.
 
@@ -717,6 +770,7 @@ This is an ONGOING session already in progress. The conversation history above i
 ${playerRosterBlock}
 
 ${knownNpcRosterBlock}
+${cinematicCueBlock}
 
 === CRITICAL OUTPUT RULES — READ FIRST ===
 These rules are MANDATORY. The dashboard CANNOT detect game state changes from prose alone. Tags are the ONLY way to update the UI.
@@ -740,6 +794,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] when they lose/use items.
 
 8. ITEM AWARDS: When narrating the player finding, picking up, receiving, or being given an item, you MUST emit [ITEM_AWARD: name | qty | description | item_type | icon_hint] where icon_hint is a keyword for matching existing icons (e.g., "dagger", "potion", "key", "torch").
+
+9. CINEMATIC CUES: When a moment listed in the CINEMATIC CUES section actually happens, emit [CINEMATIC: <cue>] using a cue name from that list, at most one per response. If no CINEMATIC CUES section appears above, this location has no film and you MUST NOT emit the tag at all. Unlike the tags above, this one is NOT "when in doubt, emit" \u2014 a cue fired for a moment that did not happen shows the table a scene that never occurred, so emit it only when you are certain.
 
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
@@ -2148,6 +2204,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
     .replace(/\[NPC_DISPOSITION:[^\]]+\]/gi, "")
     .replace(/\[TIME:[^\]]*\]/gi, "")
     .replace(/\[STORY_ADVANCE[^\]]*\]/gi, "")
+    .replace(/\[CINEMATIC:[^\]]*\]/gi, "")
     .trim()
 
   // === SERVER-ATTRIBUTED SPEECH SEGMENTS ===
@@ -2564,6 +2621,29 @@ Rules:
     if (clockAfter) playerTimeOfDay = describeTimeOfDay(clockAfter.minutesOfDay)
   }
 
+  // === CINEMATIC CUE ===
+  // Malachar names a moment; the server decides whether film exists for it. The
+  // cue is validated against the SAME whitelist that was injected into his
+  // prompt, so a hallucinated or drifted cue name is dropped here rather than
+  // reaching the table. Resolution, the once-per-character rule, scope and
+  // logging all stay in /api/cinematics \u2014 this only forwards the cue name.
+  let cinematicCue: string | null = null
+  if (availableCinematicCues.length > 0) {
+    const cueMatch = rawText.match(/\[CINEMATIC:\s*([^\]]+?)\s*\]/i)
+    if (cueMatch) {
+      const named = (cueMatch[1] || "").trim().toLowerCase()
+      const valid = availableCinematicCues.find((c) => c.toLowerCase() === named)
+      if (valid) {
+        cinematicCue = valid
+        console.log("[cinematics] cue emitted:", valid)
+      } else {
+        console.warn(
+          `[cinematics] ignoring unknown cue "${named}" (available: ${availableCinematicCues.join(", ")})`,
+        )
+      }
+    }
+  }
+
   return Response.json({
     text: responseText || "",
     speechSegments,
@@ -2574,5 +2654,8 @@ Rules:
     // Player-safe, deliberately vague time-of-day derived server-side from the
     // clock. Never includes the day number, the exact time, or any roll.
     timeOfDay: playerTimeOfDay || undefined,
+    // A validated action-cinematic cue, if this turn earned one. The client
+    // asks /api/cinematics to resolve it; a null cue means no film this turn.
+    cinematicCue: cinematicCue || undefined,
   })
 }
