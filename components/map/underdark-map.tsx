@@ -546,33 +546,12 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
               <stop offset="0%" stopColor="#ffb347" stopOpacity=".55" />
               <stop offset="100%" stopColor="#ffb347" stopOpacity="0" />
             </radialGradient>
-            <radialGradient id="aop-hole" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#000" stopOpacity="1" />
-              <stop offset="55%" stopColor="#000" stopOpacity="1" />
-              <stop offset="100%" stopColor="#000" stopOpacity="0" />
+
+
+            <radialGradient id="aop-vignette" cx="50%" cy="50%" r="72%">
+              <stop offset="0%" stopColor="#05030a" stopOpacity="0" />
+              <stop offset="100%" stopColor="#05030a" stopOpacity="0.85" />
             </radialGradient>
-            <filter id="aop-soft" x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="7" />
-            </filter>
-            <mask id="aop-fog" maskUnits="userSpaceOnUse" x="0" y="0" width={MAP_W} height={MAP_H}>
-              <rect width={MAP_W} height={MAP_H} fill="#fff" />
-              {placed.filter(isRevealed).map((n) => (
-                <circle key={n.id} cx={pos(n).x} cy={pos(n).y} r={170} fill="url(#aop-hole)" />
-              ))}
-              {[...wpByEdge.entries()].flatMap(([edgeId, wps]) => {
-                const e = edges.find((x) => x.id === edgeId)
-                const d = e && edgeCurve(e)
-                if (!d) return []
-                const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
-                path.setAttribute("d", d)
-                const L = path.getTotalLength()
-                const N = Math.max(...wps.map((w) => w.edge_position || 1))
-                return wps.map((w) => {
-                  const pt = path.getPointAtLength((L * (w.edge_position || 1)) / (N + 1))
-                  return <circle key={w.id} cx={pt.x} cy={pt.y} r={80} fill="url(#aop-hole)" />
-                })
-              })}
-            </mask>
           </defs>
 
           <image href={MAP_SRC} width={MAP_W} height={MAP_H} />
@@ -617,7 +596,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           })}
 
           {lantern && (
-            <rect width={MAP_W} height={MAP_H} fill="#05030a" fillOpacity=".95" mask="url(#aop-fog)" pointerEvents="none" />
+            <rect width={MAP_W} height={MAP_H} fill="url(#aop-vignette)" pointerEvents="none" />
           )}
 
           {/* road markers — the painted rings, now real nodes */}
@@ -668,7 +647,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                   if (dmKey && party?.node_id !== n.id) setConfirmNode(n)
                 }}
               >
-                <circle cx={P.x} cy={P.y} r={30 * kk} fill={col} opacity={isRevealed(n) ? ".28" : ".12"} filter="url(#aop-soft)" />
+                <circle cx={P.x} cy={P.y} r={30 * kk} fill={col} opacity={isRevealed(n) ? 0.22 : 0.1} />
                 <circle cx={P.x} cy={P.y} r={14 * kk} fill="rgba(5,3,10,.4)" stroke={col} strokeWidth={3.5 * kk} />
                 <circle cx={P.x} cy={P.y} r={4 * kk} fill={col} />
                 {isSel && (
