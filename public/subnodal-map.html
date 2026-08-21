@@ -308,26 +308,33 @@ const pt = n => (mode === 'overview' ? n.ov : n.ta);
 const linePts = l => (mode === 'overview' ? l.ov : l.ta);
 
 /* ---------------- camera ---------------- */
+// A little slack past the edges: it lets the map be dragged even when almost
+// all of it is on screen, instead of locking solid at the frame.
+const EDGE_SLACK = 0.15;
 function setView(x, y, w, h) {
   const d = dims[mode], minW = d.w / 14, minH = d.h / 14;
   w = Math.max(minW, Math.min(d.w, w)); h = Math.max(minH, Math.min(d.h, h));
-  x = Math.max(0, Math.min(d.w - w, x)); y = Math.max(0, Math.min(d.h - h, y));
+  const mx = w * EDGE_SLACK, my = h * EDGE_SLACK;
+  x = Math.max(-mx, Math.min(d.w - w + mx, x));
+  y = Math.max(-my, Math.min(d.h - h + my, y));
   camera = { x, y, w, h };
   svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
 }
 function resetView() { const d = dims[mode]; setView(0, 0, d.w, d.h); activeSector = null;
   document.querySelectorAll('#sectorList .listButton').forEach(b => b.classList.remove('active')); renderSectors(); }
 
-/* The map opens where the party is standing, close enough in that there is room
-   to drag. Fitting the whole map to the box leaves nothing to pan — which reads
-   as a broken map rather than a map with nowhere to go. */
+/* The map opens wide — nearly all of it in frame — but shifted so the party's
+   own node sits in the middle rather than wherever the artwork happens to put
+   it. The edge slack above keeps it draggable at this zoom. */
+const OPENING_ZOOM = 1.15;
 function partyNode() { return DATA && DATA.party_node ? nodeById(DATA.party_node) : null; }
 function focusParty(divisor) {
   const n = partyNode();
   if (!n) return false;
   const p = pt(n);
   if (!p || p[0] == null) return false;
-  const d = dims[mode], w = d.w / (divisor || 2.6), h = d.h / (divisor || 2.6);
+  const z = divisor || OPENING_ZOOM;
+  const d = dims[mode], w = d.w / z, h = d.h / z;
   setView(p[0] - w / 2, p[1] - h / 2, w, h);
   return true;
 }
