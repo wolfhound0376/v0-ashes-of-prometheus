@@ -24,6 +24,9 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   - cinematic_clips and the films themselves. The LIBRARY survives; only the
 //     record of who has watched what is cleared (see step 1b).
 //   - cinematic_requests, the diagnostic log of cues asked for and missed.
+//   - vtt_tokens. Hand-arranged positions are canon for the opening scene and
+//     expensive to rebuild; the board is re-pointed at the starting map (step
+//     10) rather than swept.
 //   - Character rows, stats, XP and levels.
 //
 // AUTHORIZATION mirrors /api/asset-media and /api/forge/import: x-dm-key must
@@ -326,6 +329,53 @@ export async function POST(req: Request) {
       .eq("name", STARTING_LOCATION)
     note("reset location", locErr)
     report.location = STARTING_LOCATION
+  }
+
+  // --- 10. the tactical board ---------------------------------------------
+  // Sending the party home in the fiction while their tokens stand in the room
+  // they escaped to leaves Malachar reading exact distances for a fight that no
+  // longer exists — and he trusts those numbers over his own narration by
+  // design. So the board follows the reset: the map belonging to
+  // STARTING_LOCATION becomes the active one, and every other map is stood
+  // down.
+  //
+  // Tokens are NOT deleted. They carry positions a DM arranged by hand, which
+  // are expensive to rebuild and are canon for the opening scene; the party
+  // simply returns to them. If a restart should also scatter the pieces, that
+  // is a separate ruling and a separate change.
+  {
+    const { data: startEnv } = await admin
+      .from("environments")
+      .select("id")
+      .eq("name", STARTING_LOCATION)
+      .maybeSingle()
+    const { data: startMap } = startEnv?.id
+      ? await admin
+          .from("vtt_maps")
+          .select("id, name")
+          .eq("environment_id", startEnv.id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null }
+
+    if (startMap?.id) {
+      const { error: onErr } = await admin
+        .from("vtt_maps")
+        .update({ is_active: true, updated_at: new Date().toISOString() })
+        .eq("id", startMap.id)
+      note("activate starting map", onErr)
+      const { error: offErr } = await admin
+        .from("vtt_maps")
+        .update({ is_active: false })
+        .neq("id", startMap.id)
+      note("deactivate other maps", offErr)
+      report.tacticalMap = startMap.name
+    } else {
+      // No board for the starting room is entirely normal — the game ran on
+      // prose for months. Recorded, not treated as a failure.
+      report.tacticalMap = null
+    }
   }
 
   console.log("[restart] complete:", JSON.stringify(report))
