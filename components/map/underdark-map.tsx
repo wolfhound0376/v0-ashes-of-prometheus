@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const MAP_W = 1672
 const MAP_H = 941
@@ -33,6 +34,7 @@ type NodeRow = {
   edge_position: number | null
   description: string | null
   metadata: Record<string, any> | null
+  discovered_at?: string | null
 }
 type EdgeRow = {
   id: string
@@ -42,6 +44,7 @@ type EdgeRow = {
   distance_miles: number
   danger_level: number
   metadata: Record<string, any> | null
+  discovered_at?: string | null
 }
 type PartyRow = { campaign_run_id: string; node_id: string; arrived_at: string }
 
@@ -74,6 +77,8 @@ export default function UnderdarkMap() {
   const [selected, setSelected] = useState<string | null>(null)
   const [lantern, setLantern] = useState(true)
   const [loaded, setLoaded] = useState(false)
+  const [dmKey, setDmKeyState] = useState("")
+  const [refresh, setRefresh] = useState(0)
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -83,11 +88,44 @@ export default function UnderdarkMap() {
   const [, bump] = useState(0)
   const rerender = () => bump((n) => n + 1)
 
+  useEffect(() => {
+    setDmKeyState(getDmKey())
+    return onDmKeyChange(() => setDmKeyState(getDmKey()))
+  }, [])
+  useEffect(() => {
+    if (dmKey) setLantern(false)
+  }, [dmKey])
+
+  async function dmAction(action: "reveal" | "move", nodeKey: string) {
+    await fetch("/api/travel", {
+      method: "POST",
+      headers: { ...dmHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action, node_key: nodeKey }),
+    }).catch(() => {})
+    setRefresh((r) => r + 1)
+  }
+
   // ---------- data ----------
   useEffect(() => {
     const supabase = createClient()
     let alive = true
     async function load() {
+      if (dmKey) {
+        try {
+          const res = await fetch("/api/travel", { headers: dmHeaders(), cache: "no-store" })
+          if (res.ok) {
+            const g = await res.json()
+            if (!alive) return
+            setNodes((g.nodes ?? []) as NodeRow[])
+            setEdges((g.edges ?? []) as EdgeRow[])
+            setParty((g.party as PartyRow) ?? null)
+            setLoaded(true)
+            return
+          }
+        } catch {
+          /* fall through to the player path */
+        }
+      }
       const [n, e, p] = await Promise.all([
         supabase.from("travel_nodes").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata"),
         supabase.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata"),
@@ -113,7 +151,8 @@ export default function UnderdarkMap() {
       clearInterval(t)
       supabase.removeChannel(ch)
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dmKey, refresh])
 
   // ---------- derived geometry ----------
   const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -121,6 +160,7 @@ export default function UnderdarkMap() {
     (n) => n.node_type !== "waypoint" && n.metadata && typeof n.metadata.map_x === "number",
   )
   const pos = (n: NodeRow) => ({ x: n.metadata!.map_x as number, y: n.metadata!.map_y as number })
+  const isRevealed = (n: { discovered_at?: string | null }) => !dmKey || !!n.discovered_at
 
   function edgeCurve(e: EdgeRow): string | null {
     const a = byId.get(e.from_node_id)
@@ -327,7 +367,7 @@ export default function UnderdarkMap() {
             </filter>
             <mask id="aop-fog" maskUnits="userSpaceOnUse" x="0" y="0" width={MAP_W} height={MAP_H}>
               <rect width={MAP_W} height={MAP_H} fill="#fff" />
-              {placed.map((n) => (
+              {placed.filter(isRevealed).map((n) => (
                 <circle key={n.id} cx={pos(n).x} cy={pos(n).y} r={170} fill="url(#aop-hole)" />
               ))}
               {[...wpByEdge.entries()].flatMap(([edgeId, wps]) => {
@@ -352,16 +392,17 @@ export default function UnderdarkMap() {
           {edges.map((e) => {
             const d = edgeCurve(e)
             if (!d) return null
+            const eRev = isRevealed(e)
             return (
               <path
                 key={e.id}
                 d={d}
                 fill="none"
-                stroke="#f5c34d"
+                stroke={eRev ? "#f5c34d" : "#8a7bb0"}
                 strokeWidth={2.5 * kk}
                 strokeDasharray="2 9"
                 strokeLinecap="round"
-                opacity=".45"
+                opacity={eRev ? ".45" : ".22"}
               />
             )
           })}
@@ -394,6 +435,7 @@ export default function UnderdarkMap() {
           {placed.map((n) => {
             const P = pos(n)
             const isSel = selected === n.id
+            const col = isRevealed(n) ? "#f5c34d" : "#8a7bb0"
             return (
               <g
                 key={n.id}
@@ -403,9 +445,9 @@ export default function UnderdarkMap() {
                   if (!dragged.current) setSelected(n.id)
                 }}
               >
-                <circle cx={P.x} cy={P.y} r={30 * kk} fill="#f5c34d" opacity=".28" filter="url(#aop-soft)" />
-                <circle cx={P.x} cy={P.y} r={14 * kk} fill="rgba(5,3,10,.4)" stroke="#f5c34d" strokeWidth={3.5 * kk} />
-                <circle cx={P.x} cy={P.y} r={4 * kk} fill="#f5c34d" />
+                <circle cx={P.x} cy={P.y} r={30 * kk} fill={col} opacity={isRevealed(n) ? ".28" : ".12"} filter="url(#aop-soft)" />
+                <circle cx={P.x} cy={P.y} r={14 * kk} fill="rgba(5,3,10,.4)" stroke={col} strokeWidth={3.5 * kk} />
+                <circle cx={P.x} cy={P.y} r={4 * kk} fill={col} />
                 {isSel && (
                   <circle cx={P.x} cy={P.y} r={22 * kk} fill="none" stroke="#fff" strokeWidth={2 * kk} strokeDasharray="4 5" opacity=".9" />
                 )}
@@ -474,6 +516,26 @@ export default function UnderdarkMap() {
                 )
               })}
             </div>
+            {dmKey && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {!sel.discovered_at && (
+                  <button
+                    onClick={() => dmAction("reveal", sel.node_key)}
+                    className="text-xs px-3 py-2 rounded border-2 bg-[#b44df5] border-[#b44df5] text-white hover:brightness-110"
+                  >
+                    REVEAL TO PLAYERS
+                  </button>
+                )}
+                {sel.node_type !== "region" && party?.node_id !== sel.id && (
+                  <button
+                    onClick={() => dmAction("move", sel.node_key)}
+                    className="text-xs px-3 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] hover:brightness-110"
+                  >
+                    MOVE PARTY HERE
+                  </button>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <div className="text-[#9a8fb0]">
