@@ -126,14 +126,15 @@ html.embed #modeTitle b{font-size:11px}
         <g id="labels"></g>
       </svg>
     </div>
-    <div id="navHelp">Wheel / pinch: zoom · click-drag: pan<br>Arrows or WASD: move · +/−: zoom · Home: reset</div>
+    <div id="navHelp">Drag the map to move · wheel or pinch to zoom<br>Arrows or WASD: move · +/−: zoom · ⌖ back to the party</div>
     <div id="navPad" aria-label="Map navigation controls">
       <button id="zoomIn" style="grid-column:1;grid-row:1">+</button>
       <button id="panUp" style="grid-column:2;grid-row:1">↑</button>
       <button id="zoomOut" style="grid-column:3;grid-row:1">−</button>
       <button id="panLeft" style="grid-column:1;grid-row:2">←</button>
-      <button id="fitMap" style="grid-column:2;grid-row:2">⤢</button>
+      <button id="fitMap" style="grid-column:2;grid-row:2" title="Fit the whole map">⤢</button>
       <button id="panRight" style="grid-column:3;grid-row:2">→</button>
+      <button id="findParty" style="grid-column:1;grid-row:3" title="Back to the party">⌖</button>
       <button id="panDown" style="grid-column:2;grid-row:3">↓</button>
     </div>
     <div id="modeTitle"><b id="mapTitle">Loading…</b><span id="mapBlurb">Reading the map from Supabase.</span></div>
@@ -290,8 +291,8 @@ async function load(keepView) {
   document.querySelector('#previewPlayer').setAttribute('aria-pressed', String(playerPreview));
 
   buildLists();
-  if (keepView) { mode = before.mode; applyMode(); setView(before.camera.x, before.camera.y, before.camera.w, before.camera.h); }
-  else applyMode(true);
+  if (keepView) { mode = before.mode; applyMode(false); setView(before.camera.x, before.camera.y, before.camera.w, before.camera.h); }
+  else { applyMode(false); openingView(); }
   renderAll();
 }
 
@@ -317,6 +318,21 @@ function setView(x, y, w, h) {
 }
 function resetView() { const d = dims[mode]; setView(0, 0, d.w, d.h); activeSector = null;
   document.querySelectorAll('#sectorList .listButton').forEach(b => b.classList.remove('active')); renderSectors(); }
+
+/* The map opens where the party is standing, close enough in that there is room
+   to drag. Fitting the whole map to the box leaves nothing to pan — which reads
+   as a broken map rather than a map with nowhere to go. */
+function partyNode() { return DATA && DATA.party_node ? nodeById(DATA.party_node) : null; }
+function focusParty(divisor) {
+  const n = partyNode();
+  if (!n) return false;
+  const p = pt(n);
+  if (!p || p[0] == null) return false;
+  const d = dims[mode], w = d.w / (divisor || 2.6), h = d.h / (divisor || 2.6);
+  setView(p[0] - w / 2, p[1] - h / 2, w, h);
+  return true;
+}
+function openingView() { if (!focusParty()) { const d = dims[mode]; setView(0, 0, d.w, d.h); } }
 function pan(dx, dy) { setView(camera.x + dx, camera.y + dy, camera.w, camera.h); }
 function zoom(factor, anchor) {
   const a = anchor || { x: camera.x + camera.w / 2, y: camera.y + camera.h / 2 };
@@ -601,8 +617,9 @@ document.querySelector('#resetFog').onclick = () => {
 document.querySelector('#previewPlayer').onclick = () => { playerPreview = !playerPreview; activeNode = null; clearRoute(); load(true); };
 
 /* ---------------- interaction ---------------- */
-document.querySelector('#overviewMode').onclick = () => { mode = 'overview'; applyMode(); renderAll(); };
-document.querySelector('#tacticalMode').onclick = () => { mode = 'tactical'; applyMode(); renderAll(); };
+document.querySelector('#overviewMode').onclick = () => { mode = 'overview'; applyMode(false); openingView(); renderAll(); };
+document.querySelector('#tacticalMode').onclick = () => { mode = 'tactical'; applyMode(false); openingView(); renderAll(); };
+document.querySelector('#findParty').onclick = () => { if (!focusParty()) resetView(); };
 document.querySelector('#reloadBtn').onclick = () => load(true);
 document.querySelector('#findRoute').onclick = findRoute;
 document.querySelector('#clearRoute').onclick = clearRoute;
