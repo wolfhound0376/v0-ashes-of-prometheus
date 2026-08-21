@@ -489,7 +489,7 @@ export default function UnderdarkMap({ embedded = false }: { embedded?: boolean 
     : []
 
   return (
-    <div className={embedded ? "absolute inset-0 bg-[#0b0714] text-[#e8e0f0] p-2 font-mono overflow-hidden flex flex-col" : "bg-[#0b0714] text-[#e8e0f0] p-3 font-mono overflow-hidden"}>
+    <div className={embedded ? "absolute inset-0 z-10 bg-[#0b0714] text-[#e8e0f0] p-2 font-mono overflow-hidden flex flex-col" : "bg-[#0b0714] text-[#e8e0f0] p-3 font-mono overflow-hidden"}>
       <style>{`
         @keyframes aopbob{from{transform:translateY(0)}to{transform:translateY(-2px)}}
       `}</style>
@@ -517,11 +517,12 @@ export default function UnderdarkMap({ embedded = false }: { embedded?: boolean 
         </div>
       </div>
 
-      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ maxHeight: embedded ? "100%" : "calc(100vh - 190px)" }}>
+      <div className={embedded ? "relative flex-1 min-h-0 rounded overflow-hidden border border-[#2b2040] bg-[#05030a]" : "relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]"} style={{ maxHeight: embedded ? "100%" : "calc(100vh - 190px)" }}>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${MAP_W} ${MAP_H}`}
-          className="block w-full h-auto touch-none cursor-grab active:cursor-grabbing"
+          className={embedded ? "block w-full h-full touch-none cursor-grab active:cursor-grabbing" : "block w-full h-auto touch-none cursor-grab active:cursor-grabbing"}
+          preserveAspectRatio="xMidYMid meet"
           style={{ maxHeight: embedded ? "100%" : "calc(100vh - 190px)" }}
           onClick={() => {
             if (!dragged.current) setSelected(null)
