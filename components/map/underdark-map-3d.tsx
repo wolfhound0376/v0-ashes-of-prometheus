@@ -184,6 +184,17 @@ export default function UnderdarkMap3D() {
     if (!a?.metadata?.map_x || !b?.metadata?.map_x) return null
     const A = pos(a)
     const B = pos(b)
+    if (e.metadata?.is_road) {
+      const off = Number(e.metadata.curve_offset) || 0
+      const ddx = B.x - A.x
+      const ddy = B.y - A.y
+      const L = Math.hypot(ddx, ddy) || 1
+      const cx = (A.x + B.x) / 2 + (-ddy / L) * off
+      const cy = (A.y + B.y) / 2 + (ddx / L) * off
+      const p0 = document.createElementNS("http://www.w3.org/2000/svg", "path")
+      p0.setAttribute("d", off ? `M ${A.x} ${A.y} Q ${cx} ${cy} ${B.x} ${B.y}` : `M ${A.x} ${A.y} L ${B.x} ${B.y}`)
+      return p0
+    }
     const r = mulberry(fnv(e.edge_key))
     const mx = (A.x + B.x) / 2
     const my = (A.y + B.y) / 2
@@ -199,7 +210,8 @@ export default function UnderdarkMap3D() {
   }
   function routeBetween(fromId: string, toId: string): string[] {
     const adj = new Map<string, string[]>()
-    for (const e of dataRef.current.edges) {
+    const roads = dataRef.current.edges.filter((e) => e.metadata?.is_road && e.metadata?.mode !== "sail")
+    for (const e of (roads.length ? roads : dataRef.current.edges)) {
       if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
       if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
       adj.get(e.from_node_id)!.push(e.to_node_id)
@@ -218,7 +230,7 @@ export default function UnderdarkMap3D() {
         q.push(nx)
       }
     }
-    if (!seen.has(toId)) return [fromId, toId]
+    if (!seen.has(toId)) return []   // no road leads there — we do NOT fly
     const out = [toId]
     while (out[0] !== fromId) {
       const p = prevOf.get(out[0])
@@ -443,6 +455,7 @@ export default function UnderdarkMap3D() {
 
     // Build the walk: every leg of the route, pausing at each waypoint stone.
     const route = routeBetween(from, party.node_id)
+    if (route.length < 2) return
     const wpByEdge = new Map<string, NodeRow[]>()
     for (const n of dataRef.current.nodes) {
       if (n.node_type === "waypoint" && n.edge_id) {

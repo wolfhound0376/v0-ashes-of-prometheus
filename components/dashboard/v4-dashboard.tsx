@@ -10,6 +10,7 @@ import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/l
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
+import MapStage from "@/components/map/map-stage"
 import { DmNarration } from "./dm-narration"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
@@ -648,7 +649,7 @@ export function V4Dashboard(props: V4DashboardProps) {
             : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
-        </> : <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} />}
+        </> : inCombat ? <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} /> : <MapStage />}
       </div>
       <div className="flex flex-col gap-1">
         <SuggestionChips
