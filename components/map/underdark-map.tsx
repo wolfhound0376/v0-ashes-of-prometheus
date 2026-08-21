@@ -37,6 +37,7 @@ type NodeRow = {
   description: string | null
   metadata: Record<string, any> | null
   discovered_at?: string | null
+  name_known?: boolean
 }
 type EdgeRow = {
   id: string
@@ -102,7 +103,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     if (dmKey) setLantern(false)
   }, [dmKey])
 
-  async function dmAction(action: "reveal" | "move", nodeKey: string) {
+  async function dmAction(action: "reveal" | "reveal_name" | "move", nodeKey: string) {
     await fetch("/api/travel", {
       method: "POST",
       headers: { ...dmHeaders(), "Content-Type": "application/json" },
@@ -133,7 +134,8 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
         }
       }
       const [n, e, p] = await Promise.all([
-        supabase.from("travel_nodes").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata"),
+        // Players read the masked view: discovered rows, names only once learned.
+        supabase.from("travel_nodes_player").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at,name_known"),
         supabase.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata"),
         supabase.from("party_position").select("campaign_run_id,node_id,arrived_at").limit(1),
       ])
@@ -770,6 +772,15 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
             </div>
             {dmKey && (
               <div className="flex flex-wrap gap-2 mt-3">
+                {!(sel as any).name_known_at && sel.node_type === "location" && (
+                  <button
+                    onClick={() => dmAction("reveal_name", sel.node_key)}
+                    className="text-xs px-3 py-2 rounded border-2 bg-[#221936] border-[#b44df5] text-[#d9b3ff] hover:bg-[#b44df5] hover:text-white"
+                    title="The party learns what this place is called"
+                  >
+                    TEACH ITS NAME
+                  </button>
+                )}
                 {!sel.discovered_at && (
                   <button
                     onClick={() => dmAction("reveal", sel.node_key)}

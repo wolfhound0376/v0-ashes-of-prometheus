@@ -41,6 +41,7 @@ type NodeRow = {
   description: string | null
   metadata: Record<string, any> | null
   discovered_at?: string | null
+  name_known?: boolean
 }
 type EdgeRow = {
   id: string
@@ -122,7 +123,7 @@ export default function UnderdarkMap3D() {
         }
       }
       const [n, e, p] = await Promise.all([
-        supabase.from("travel_nodes").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at"),
+        supabase.from("travel_nodes_player").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at,name_known"),
         supabase.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata,discovered_at"),
         supabase.from("party_position").select("node_id").limit(1),
       ])
@@ -547,7 +548,7 @@ export default function UnderdarkMap3D() {
     }
     const url = inside.metadata?.island_model_url
     if (!url) return
-    setStatus(`Descending into ${inside.name}…`)
+    setStatus(`Descending into ${inside.name ?? "the dark"}…`)
     t.loader.load(
       url,
       (gltf: any) => {
@@ -565,7 +566,7 @@ export default function UnderdarkMap3D() {
         setStatus("")
       },
       undefined,
-      () => setStatus(`${inside.name}'s diorama could not be reached.`),
+      () => setStatus(`That diorama could not be reached.`),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inside])
@@ -577,7 +578,7 @@ export default function UnderdarkMap3D() {
     <div className="bg-[#0b0714] text-[#e8e0f0] p-3 font-mono">
       <div className="flex items-center justify-between flex-wrap gap-2 pb-2">
         <h1 className="text-[#f5c34d] text-lg tracking-widest" style={{ textShadow: "0 0 12px #f5c34d55" }}>
-          {inside ? inside.name.toUpperCase() : "THE UNDERDARK — DIORAMA"}
+          {inside ? (inside.name ?? "UNKNOWN PLACE").toUpperCase() : "THE UNDERDARK — DIORAMA"}
         </h1>
         <div className="flex items-center gap-3">
           {inside && (
@@ -603,7 +604,7 @@ export default function UnderdarkMap3D() {
           <div className="text-[#9a8fb0]">{status}</div>
         ) : sel ? (
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[#f5c34d] font-bold tracking-widest">{sel.name.toUpperCase()}</span>
+            <span className="text-[#f5c34d] font-bold tracking-widest">{(sel.name ?? "Unknown place").toUpperCase()}</span>
             {partyHere && <span className="text-xs text-[#f5c34d]">◆ PARTY IS HERE</span>}
             {sel.description && <span className="text-[#9a8fb0] text-xs max-w-[60ch]">{sel.description}</span>}
             {sel.metadata?.island_model_url && !inside && (
@@ -611,7 +612,7 @@ export default function UnderdarkMap3D() {
                 onClick={() => setInside(sel)}
                 className="text-xs px-3 py-2 rounded border-2 bg-[#b44df5] border-[#b44df5] text-white hover:brightness-110"
               >
-                ENTER {sel.name.toUpperCase()}
+                ENTER {(sel.name ?? "THIS PLACE").toUpperCase()}
               </button>
             )}
             {dmKey && !partyHere && (

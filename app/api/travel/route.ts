@@ -7,8 +7,11 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   GET               → the FULL graph (all nodes/edges + party), DM eyes only.
 //                       Players never call this; their view is anon + RLS.
 //   POST {action, node_key}
-//     action "reveal" → set discovered_at on the node, then on any edge whose
-//                       both endpoints are now discovered.
+//     action "reveal"      → set discovered_at: the party can now SEE it.
+//     action "reveal_name" → set name_known_at: the party now KNOWS what it is
+//                            called. Deliberately separate — a shape on the
+//                            horizon is not a name, and players read a view
+//                            that withholds the name until this is set.
 //     action "move"   → set party_position to the node (never a region), then
 //                       reveal it. Layer 3 never calls this; it is the DM's.
 //
@@ -36,7 +39,7 @@ export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   const db = createAdminClient()
   const [n, e, p] = await Promise.all([
-    db.from("travel_nodes").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at"),
+    db.from("travel_nodes").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at,name_known_at"),
     db.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata,discovered_at"),
     db.from("party_position").select("campaign_run_id,node_id,arrived_at").limit(1),
   ])
@@ -156,8 +159,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  if (!nodeKey || (action !== "reveal" && action !== "move")) {
-    return NextResponse.json({ error: "expected { action: 'reveal'|'move', node_key }" }, { status: 400 })
+  if (!nodeKey || (action !== "reveal" && action !== "move" && action !== "reveal_name")) {
+    return NextResponse.json({ error: "expected { action: 'reveal'|'reveal_name'|'move', node_key }" }, { status: 400 })
   }
   const db = createAdminClient()
   let prevNodeId: string | null = null
@@ -167,6 +170,14 @@ export async function POST(req: NextRequest) {
     .eq("node_key", nodeKey)
     .single()
   if (error || !node) return NextResponse.json({ error: "unknown node_key" }, { status: 404 })
+
+  if (action === "reveal_name") {
+    // Learning the name also means they have at least seen it.
+    const now = new Date().toISOString()
+    await db.from("travel_nodes").update({ name_known_at: now }).eq("id", node.id).is("name_known_at", null)
+    await revealNode(db, node.id)
+    return NextResponse.json({ ok: true, action, node_key: node.node_key })
+  }
 
   if (action === "move") {
     if (node.node_type === "region") {
