@@ -152,7 +152,8 @@ export default function UnderdarkMap3D() {
 
     const loader = new GLTFLoader()
     loader.setMeshoptDecoder(MeshoptDecoder)
-    loader.load(
+    let attempts = 0
+    const loadModel = () => loader.load(
       modelUrl,
       (gltf) => {
         if (t.disposed) return
@@ -165,8 +166,17 @@ export default function UnderdarkMap3D() {
         setStatus("")
       },
       undefined,
-      () => setStatus("The diorama failed to load — check the model URL."),
+      () => {
+        attempts += 1
+        if (attempts < 4 && !t.disposed) {
+          setStatus("The way is dark\u2026 retrying (" + attempts + "/3)")
+          setTimeout(loadModel, 1500 * attempts)
+        } else {
+          setStatus("The diorama failed to load. Toggle 2D and back to try again.")
+        }
+      },
     )
+    loadModel()
 
     function resize() {
       const w = mount.clientWidth
