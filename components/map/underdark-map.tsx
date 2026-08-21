@@ -71,7 +71,7 @@ function mulberry(seed: number) {
   }
 }
 
-export default function UnderdarkMap() {
+export default function UnderdarkMap({ embedded = false }: { embedded?: boolean } = {}) {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const [nodes, setNodes] = useState<NodeRow[]>([])
   const [edges, setEdges] = useState<EdgeRow[]>([])
@@ -169,6 +169,9 @@ export default function UnderdarkMap() {
   const isRevealed = (n: { discovered_at?: string | null }) => !dmKey || !!n.discovered_at
 
   function edgeCurve(e: EdgeRow): string | null {
+    // Road segments run straight between their markers — the markers are the
+    // shape of the road. Only non-road edges ever bowed, and those are no
+    // longer drawn or walked.
     const a = byId.get(e.from_node_id)
     const b = byId.get(e.to_node_id)
     if (!a || !b || !a.metadata?.map_x || !b.metadata?.map_x) return null
@@ -180,6 +183,7 @@ export default function UnderdarkMap() {
     const dx = B.x - A.x
     const dy = B.y - A.y
     const len = Math.hypot(dx, dy) || 1
+    if (e.metadata?.is_road) return `M ${A.x} ${A.y} L ${B.x} ${B.y}`
     const off = (r() - 0.5) * 2 * Math.min(110, len * 0.3)
     const sgn = off < 0 ? -1 : 1
     const mag = Math.max(40, Math.abs(off))
@@ -299,7 +303,7 @@ export default function UnderdarkMap() {
         }
       }
     }
-    if (!dist.has(toId)) return [fromId, toId]
+    if (!dist.has(toId)) return []   // no road leads there — we do NOT fly
     const out = [toId]
     while (out[0] !== fromId) {
       const p = prevOf.get(out[0])
@@ -318,6 +322,13 @@ export default function UnderdarkMap() {
     if (!start?.metadata?.map_x || !byId.get(party.node_id)?.metadata?.map_x) return
 
     const route = routeBetween(prev, party.node_id)
+    if (route.length < 2) {
+      // No known road. The party is where the DM put them; we refuse to draw a
+      // journey that does not exist. (Boat routes will land here as water edges.)
+      setArrivedAt(byId.get(party.node_id) ?? null)
+      rerender()
+      return
+    }
     // Build one sampled polyline for the whole journey: each leg follows its
     // edge curve, and waypoint stones become the beats we walk through.
     const pts: { x: number; y: number; pause: boolean; node?: string }[] = []
@@ -464,11 +475,11 @@ export default function UnderdarkMap() {
     : []
 
   return (
-    <div className="bg-[#0b0714] text-[#e8e0f0] p-3 font-mono overflow-hidden">
+    <div className={embedded ? "absolute inset-0 bg-[#0b0714] text-[#e8e0f0] p-2 font-mono overflow-hidden flex flex-col" : "bg-[#0b0714] text-[#e8e0f0] p-3 font-mono overflow-hidden"}>
       <style>{`
         @keyframes aopbob{from{transform:translateY(0)}to{transform:translateY(-2px)}}
       `}</style>
-      <div className="flex items-center justify-between flex-wrap gap-2 pb-3">
+      <div className={embedded ? "hidden" : "flex items-center justify-between flex-wrap gap-2 pb-3"}>
         <h1 className="text-[#f5c34d] text-lg tracking-widest" style={{ textShadow: "0 0 12px #f5c34d55" }}>
           THE UNDERDARK
         </h1>
@@ -492,12 +503,12 @@ export default function UnderdarkMap() {
         </div>
       </div>
 
-      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ maxHeight: "calc(100vh - 190px)" }}>
+      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ maxHeight: embedded ? "100%" : "calc(100vh - 190px)" }}>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${MAP_W} ${MAP_H}`}
           className="block w-full h-auto touch-none cursor-grab active:cursor-grabbing"
-          style={{ maxHeight: "calc(100vh - 190px)" }}
+          style={{ maxHeight: embedded ? "100%" : "calc(100vh - 190px)" }}
           onClick={() => {
             if (!dragged.current) setSelected(null)
           }}
@@ -539,7 +550,7 @@ export default function UnderdarkMap() {
           <image href={MAP_SRC} width={MAP_W} height={MAP_H} />
 
           {/* edges (RLS: only discovered rows arrive) */}
-          {edges.map((e) => {
+          {edges.filter((e) => e.metadata?.is_road).map((e) => {
             const d = edgeCurve(e)
             if (!d) return null
             const eRev = isRevealed(e)
@@ -708,7 +719,7 @@ export default function UnderdarkMap() {
         )}
       </div>
 
-      <div className="mt-3 rounded-lg border-2 border-[#3a2c56] bg-[#171024ee] p-4 min-h-[84px] text-sm">
+      <div className={embedded ? "mt-2 rounded border border-[#3a2c56] bg-[#171024ee] p-2 text-[11px]" : "mt-3 rounded-lg border-2 border-[#3a2c56] bg-[#171024ee] p-4 min-h-[84px] text-sm"}>
         {sel ? (
           <>
             <div className="text-[#f5c34d] font-bold tracking-widest">
