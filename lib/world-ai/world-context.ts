@@ -87,16 +87,43 @@ export interface WorldContext {
  * to keep running when there isn't one; a tactical section is an enhancement,
  * never a dependency.
  */
-async function fetchTacticalBoard(): Promise<TacticalBoard | null> {
+async function fetchTacticalBoard(sceneName?: string): Promise<TacticalBoard | null> {
   try {
     const supabase = await createClient()
-    const { data: map } = await supabase
-      .from("vtt_maps")
-      .select("id, name, grid_width, grid_height")
-      .eq("is_active", true)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
+
+    // Prefer the board that belongs to the room the party is standing in.
+    // is_active is a DM convenience flag and drifts — it survives the party
+    // walking out — so the scene is asked first and the flag is only the
+    // fallback. A board from the wrong room is worse than no board: it would
+    // hand Malachar exact distances for a fight that is not happening.
+    let map: { id: string; name: string; grid_width: number; grid_height: number } | null = null
+    if (sceneName) {
+      const { data: env } = await supabase
+        .from("environments")
+        .select("id")
+        .eq("name", sceneName)
+        .maybeSingle()
+      if (env?.id) {
+        const { data: byEnv } = await supabase
+          .from("vtt_maps")
+          .select("id, name, grid_width, grid_height")
+          .eq("environment_id", env.id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (byEnv) map = byEnv as typeof map
+      }
+    }
+    if (!map) {
+      const { data: byFlag } = await supabase
+        .from("vtt_maps")
+        .select("id, name, grid_width, grid_height")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (byFlag) map = byFlag as typeof map
+    }
     if (!map) return null
 
     const { data: rows } = await supabase
@@ -538,7 +565,7 @@ export async function buildWorldContext(
         episodeLabel: episodeLabelFor(campaignId, episode),
         location: currentLocation,
       }),
-      fetchTacticalBoard(),
+      fetchTacticalBoard(sceneName),
     ])
 
   const campaign = buildCampaignContext(campaignId, episode, currentLocation, heat)
