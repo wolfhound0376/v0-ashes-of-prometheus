@@ -1,4 +1,4 @@
-import UnderdarkMap from "@/components/map/underdark-map"
+import MapShell from "@/components/map/map-shell"
 
 export const metadata = {
   title: "The Underdark — Ashes of Prometheus",
@@ -6,5 +6,5 @@ export const metadata = {
 }
 
 export default function MapPage() {
-  return <UnderdarkMap />
+  return <MapShell />
 }
