@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { ensureObserveChip, parseSuggestions } from "@/lib/suggestions"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 // Same direct-Anthropic provider as /api/chat — bypasses the Vercel AI Gateway.
 const anthropic = createAnthropic({
@@ -50,6 +51,57 @@ export async function POST(request: NextRequest) {
       : []
     const conditions = Array.isArray(character.conditions) ? character.conditions.filter(Boolean) : []
 
+    // === FILMED MOMENTS ===
+    // Some actions in a location have a cinematic shot for them. A player can
+    // only reach one by DOING the thing, and until now they had to guess the
+    // words — the film existed but nothing pointed at it.
+    //
+    // So the cue names are handed to the suggester as SUBJECT MATTER, not as
+    // buttons. It renders them into ordinary in-character actions; the player
+    // picks one; Malachar narrates it and emits the cue himself. The chip is
+    // fiction the whole way down, which is Sam's standing rule (18 Aug 2026):
+    // the camera cue belongs inside the fiction as something the character
+    // does, never a meta-button bolted on beside it.
+    //
+    // Deliberately NOT filtered by what this character has already seen. A
+    // filmed action is a good action either way, and filtering would turn the
+    // chip row into a content checklist that empties as the scene is explored.
+    let filmedMoments: string[] = []
+    if (body.location) {
+      try {
+        const admin = createAdminClient()
+        const { data: key } = await admin.rpc("scene_key", { p_name: body.location })
+        if (key) {
+          const { data: rows } = await admin
+            .from("cinematic_clips")
+            .select("state")
+            .eq("kind", "action")
+            .eq("scene_key", key as string)
+            .not("state", "is", null)
+            .not("video_url", "is", null)
+            .gt("weight", 0)
+          filmedMoments = Array.from(
+            new Set((rows || []).map((r: { state: string | null }) => (r.state || "").trim()).filter(Boolean)),
+          )
+        }
+      } catch (e) {
+        // Chips must never fail on account of film. No list simply means the
+        // suggester works exactly as it did before this feature existed.
+        console.error("[suggestions] filmed-moment lookup failed:", e)
+      }
+    }
+
+    const filmedBlock = filmedMoments.length
+      ? `
+Filmed moments available in this location: ${filmedMoments.join(", ")}.
+These are hyphenated shorthand for things a character can DO here (for example
+"sharpen-shard" means working an edge onto a shard). When ONE of them fits the
+scene and this character naturally, make one of your non-observe entries that
+action, written as ordinary in-character speech — never the shorthand itself,
+never a hint that anything is filmed. If none fit the moment, ignore this list
+entirely; a forced action is worse than none.`
+      : ""
+
     const prompt = `You suggest quick actions for ONE player in a D&D 5e game set in the Underdark (Out of the Abyss).
 
 Return ONLY a JSON array, no prose, of 3 to 4 entries shaped:
@@ -66,6 +118,7 @@ Rules:
 - Do NOT invent items the character does not carry. If they carry only rags, no gear-dependent actions.
 - Vary the register: one bold, one cautious or observant, one social or clever where the scene allows.
 - React to the scene beat below; do not restate it.
+${filmedBlock}
 
 Scene (latest DM narration): ${sceneText.slice(-1200)}
 Location: ${body.location ?? "Unknown"}
