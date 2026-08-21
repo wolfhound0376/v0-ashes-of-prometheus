@@ -81,6 +81,8 @@ export default function UnderdarkMap() {
   const [loaded, setLoaded] = useState(false)
   const [dmKey, setDmKeyState] = useState("")
   const [refresh, setRefresh] = useState(0)
+  const [confirmNode, setConfirmNode] = useState<NodeRow | null>(null)
+  const [arrivedAt, setArrivedAt] = useState<NodeRow | null>(null)
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -161,6 +163,8 @@ export default function UnderdarkMap() {
   const placed = nodes.filter(
     (n) => n.node_type !== "waypoint" && n.metadata && typeof n.metadata.map_x === "number",
   )
+  // Road markers traced from the painted rings: small gold dots on the roads.
+  const roadNodes = nodes.filter((n) => n.metadata?.is_road_node && typeof n.metadata?.map_x === "number")
   const pos = (n: NodeRow) => ({ x: n.metadata!.map_x as number, y: n.metadata!.map_y as number })
   const isRevealed = (n: { discovered_at?: string | null }) => !dmKey || !!n.discovered_at
 
@@ -263,30 +267,39 @@ export default function UnderdarkMap() {
   const [facing, setFacing] = useState<Facing>("south")
   const facingRef = useRef<Facing>("south")
 
+  // Travel follows the ROADS painted on the map: only is_road edges are walkable.
+  // The 15 city-pair edges carry the module's canonical days/miles for display
+  // (is_route_summary) and are never used as geometry — that is what used to
+  // make the party sail across open rock.
   function routeBetween(fromId: string, toId: string): string[] {
-    // BFS over visible edges — fewest hops, so intermediate towns are used
-    // rather than a single arc across the whole Underdark.
-    const adj = new Map<string, string[]>()
-    for (const e of edges) {
+    const roads = edges.filter((e) => e.metadata?.is_road)
+    const usable = roads.length ? roads : edges
+    const adj = new Map<string, { to: string; w: number }[]>()
+    for (const e of usable) {
+      const w = Number(e.distance_miles) || 1
       if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
       if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
-      adj.get(e.from_node_id)!.push(e.to_node_id)
-      adj.get(e.to_node_id)!.push(e.from_node_id)
+      adj.get(e.from_node_id)!.push({ to: e.to_node_id, w })
+      adj.get(e.to_node_id)!.push({ to: e.from_node_id, w })
     }
+    const dist = new Map([[fromId, 0]])
     const prevOf = new Map<string, string>()
-    const seen = new Set([fromId])
-    const q = [fromId]
-    while (q.length) {
-      const cur = q.shift()!
-      if (cur === toId) break
+    const done = new Set<string>()
+    for (;;) {
+      let cur: string | null = null
+      let best = Infinity
+      for (const [k, v] of dist) if (!done.has(k) && v < best) ((best = v), (cur = k))
+      if (!cur || cur === toId) break
+      done.add(cur)
       for (const nx of adj.get(cur) ?? []) {
-        if (seen.has(nx)) continue
-        seen.add(nx)
-        prevOf.set(nx, cur)
-        q.push(nx)
+        const nd = best + nx.w
+        if (nd < (dist.get(nx.to) ?? Infinity)) {
+          dist.set(nx.to, nd)
+          prevOf.set(nx.to, cur)
+        }
       }
     }
-    if (!seen.has(toId)) return [fromId, toId]
+    if (!dist.has(toId)) return [fromId, toId]
     const out = [toId]
     while (out[0] !== fromId) {
       const p = prevOf.get(out[0])
@@ -307,7 +320,7 @@ export default function UnderdarkMap() {
     const route = routeBetween(prev, party.node_id)
     // Build one sampled polyline for the whole journey: each leg follows its
     // edge curve, and waypoint stones become the beats we walk through.
-    const pts: { x: number; y: number; pause: boolean }[] = []
+    const pts: { x: number; y: number; pause: boolean; node?: string }[] = []
     for (let i = 0; i < route.length - 1; i++) {
       const A = byId.get(route[i])
       const B = byId.get(route[i + 1])
@@ -324,6 +337,7 @@ export default function UnderdarkMap() {
       const L = path.getTotalLength()
       const p0 = path.getPointAtLength(0)
       const rev = Math.hypot(p0.x - pos(A).x, p0.y - pos(A).y) > 1
+      const legEnd = i === route.length - 2
       const wps = e ? (wpByEdge.get(e.id) ?? []) : []
       const N = wps.length ? Math.max(...wps.map((w) => w.edge_position || 1)) : 0
       const stops = wps
@@ -337,7 +351,9 @@ export default function UnderdarkMap() {
           const su = rev ? 1 - sv : sv
           return Math.abs(su - u) < 0.5 / SAMPLES
         })
-        pts.push({ x: pt.x, y: pt.y, pause: nearStop })
+        // Arriving AT a node is always a beat — every marker is a stop, which is
+        // where per-node triggers will hang once encounters land.
+        pts.push({ x: pt.x, y: pt.y, pause: nearStop || (k === SAMPLES && !legEnd), node: k === SAMPLES ? route[i + 1] : undefined })
       }
     }
     if (!pts.length) return
@@ -365,6 +381,10 @@ export default function UnderdarkMap() {
         }
       }
       last = p
+      if (p.node) {
+        const n = byId.get(p.node)
+        if (n) setArrivedAt(n)   // per-node arrival hook: encounters go here
+      }
       partyG.current?.setAttribute("transform", `translate(${p.x},${p.y})`)
       cam.current = { x: p.x - followW / 2, y: p.y - (followW * MAP_H) / MAP_W / 2, w: followW }
       applyCam()
@@ -374,6 +394,65 @@ export default function UnderdarkMap() {
     tick()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [party?.node_id, nodes.length, edges.length])
+
+  // ---------- keyboard: arrows pick a neighbour, Enter asks, then they walk ----------
+  useEffect(() => {
+    if (!dmKey) return
+    const onKey = (ev: KeyboardEvent) => {
+      const tag = (ev.target as HTMLElement)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA") return
+      if (confirmNode) {
+        if (ev.key === "Enter") {
+          ev.preventDefault()
+          dmAction("move", confirmNode.node_key)
+          setConfirmNode(null)
+        } else if (ev.key === "Escape") {
+          setConfirmNode(null)
+        }
+        return
+      }
+      const here = party ? byId.get(party.node_id) : null
+      const anchor = selected ? byId.get(selected) : here
+      if (!anchor?.metadata?.map_x) return
+      if (ev.key === "Enter") {
+        ev.preventDefault()
+        if (anchor && party?.node_id !== anchor.id) setConfirmNode(anchor)
+        return
+      }
+      const dirs: Record<string, [number, number]> = {
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+      }
+      const d = dirs[ev.key]
+      if (!d) return
+      ev.preventDefault()
+      // step to the neighbour that lies most nearly in the pressed direction
+      const A = pos(anchor)
+      const neighbours = edges
+        .filter((e) => e.metadata?.is_road && (e.from_node_id === anchor.id || e.to_node_id === anchor.id))
+        .map((e) => byId.get(e.from_node_id === anchor.id ? e.to_node_id : e.from_node_id))
+        .filter((n): n is NodeRow => !!n && typeof n.metadata?.map_x === "number")
+      let best: NodeRow | null = null
+      let bestScore = 0.25
+      for (const n of neighbours) {
+        const B = pos(n)
+        const vx = B.x - A.x
+        const vy = B.y - A.y
+        const len = Math.hypot(vx, vy) || 1
+        const score = (vx / len) * d[0] + (vy / len) * d[1]
+        if (score > bestScore) {
+          bestScore = score
+          best = n
+        }
+      }
+      if (best) setSelected(best.id)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dmKey, selected, party?.node_id, edges.length, confirmNode])
 
   // ---------- render ----------
   const kk = Math.max(0.45, Math.min(1, cam.current.w / MAP_W))
@@ -385,7 +464,7 @@ export default function UnderdarkMap() {
     : []
 
   return (
-    <div className="min-h-screen bg-[#0b0714] text-[#e8e0f0] p-3 font-mono">
+    <div className="bg-[#0b0714] text-[#e8e0f0] p-3 font-mono overflow-hidden">
       <style>{`
         @keyframes aopbob{from{transform:translateY(0)}to{transform:translateY(-2px)}}
       `}</style>
@@ -413,11 +492,12 @@ export default function UnderdarkMap() {
         </div>
       </div>
 
-      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]">
+      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ maxHeight: "calc(100vh - 190px)" }}>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${MAP_W} ${MAP_H}`}
           className="block w-full h-auto touch-none cursor-grab active:cursor-grabbing"
+          style={{ maxHeight: "calc(100vh - 190px)" }}
           onClick={() => {
             if (!dragged.current) setSelected(null)
           }}
@@ -501,6 +581,37 @@ export default function UnderdarkMap() {
             <rect width={MAP_W} height={MAP_H} fill="#05030a" fillOpacity=".95" mask="url(#aop-fog)" pointerEvents="none" />
           )}
 
+          {/* road markers — the painted rings, now real nodes */}
+          {roadNodes.map((n) => {
+            const P = pos(n)
+            const known = isRevealed(n)
+            const isSel = selected === n.id
+            return (
+              <g
+                key={n.id}
+                className="cursor-pointer"
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  if (dragged.current) return
+                  setSelected(n.id)
+                  if (dmKey && party?.node_id !== n.id) setConfirmNode(n)
+                }}
+              >
+                <circle cx={P.x} cy={P.y} r={9 * kk} fill="transparent" />
+                <circle
+                  cx={P.x}
+                  cy={P.y}
+                  r={5 * kk}
+                  fill="none"
+                  stroke={known ? "#f5c34d" : "#6b5f80"}
+                  strokeWidth={1.8 * kk}
+                  opacity={known ? 0.85 : 0.35}
+                />
+                {isSel && <circle cx={P.x} cy={P.y} r={10 * kk} fill="none" stroke="#fff" strokeWidth={1.5 * kk} strokeDasharray="3 4" />}
+              </g>
+            )
+          })}
+
           {/* location nodes */}
           {placed.map((n) => {
             const P = pos(n)
@@ -512,7 +623,10 @@ export default function UnderdarkMap() {
                 className="cursor-pointer"
                 onClick={(ev) => {
                   ev.stopPropagation()
-                  if (!dragged.current) setSelected(n.id)
+                  if (dragged.current) return
+                  setSelected(n.id)
+                  // Malachar clicks a node: ask before the party sets out.
+                  if (dmKey && party?.node_id !== n.id) setConfirmNode(n)
                 }}
               >
                 <circle cx={P.x} cy={P.y} r={30 * kk} fill={col} opacity={isRevealed(n) ? ".28" : ".12"} filter="url(#aop-soft)" />
@@ -555,6 +669,43 @@ export default function UnderdarkMap() {
             </g>
           )}
         </svg>
+
+        {confirmNode && (
+          <div className="absolute inset-0 grid place-items-center bg-[#05030acc]">
+            <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 text-center max-w-[38ch]">
+              <div className="text-[#9a8fb0] text-xs tracking-widest">MALACHAR ASKS</div>
+              <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">
+                Send the party to {confirmNode.name}?
+              </div>
+              <div className="text-[#9a8fb0] text-xs mt-2">
+                They will walk every marker on the road, stopping at each.
+              </div>
+              <div className="flex gap-2 justify-center mt-4">
+                <button
+                  onClick={() => {
+                    dmAction("move", confirmNode.node_key)
+                    setConfirmNode(null)
+                  }}
+                  className="text-xs px-4 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] font-bold"
+                >
+                  YES — SET OUT ⏎
+                </button>
+                <button
+                  onClick={() => setConfirmNode(null)}
+                  className="text-xs px-4 py-2 rounded border-2 bg-[#221936] border-[#3a2c56] text-[#9a8fb0]"
+                >
+                  NO — ESC
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {arrivedAt && !confirmNode && (
+          <div className="absolute left-1/2 -translate-x-1/2 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-4 py-2 text-xs text-[#f5c34d] tracking-widest">
+            ARRIVED: {arrivedAt.name.toUpperCase()}
+          </div>
+        )}
       </div>
 
       <div className="mt-3 rounded-lg border-2 border-[#3a2c56] bg-[#171024ee] p-4 min-h-[84px] text-sm">
@@ -592,7 +743,7 @@ export default function UnderdarkMap() {
                 )}
                 {sel.node_type !== "region" && party?.node_id !== sel.id && (
                   <button
-                    onClick={() => dmAction("move", sel.node_key)}
+                    onClick={() => setConfirmNode(sel)}
                     className="text-xs px-3 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] hover:brightness-110"
                   >
                     MOVE PARTY HERE
@@ -604,7 +755,9 @@ export default function UnderdarkMap() {
         ) : (
           <div className="text-[#9a8fb0]">
             {loaded
-              ? "Select a node. Scroll to zoom, drag to pan. The map grows as Malachar reveals the dark."
+              ? dmKey
+                ? "Malachar's eyes. Click any node to send the party walking there. Wheel zooms, drag pans."
+                : "Select a node. Wheel zooms, drag pans. The map grows as Malachar reveals the dark."
               : "Consulting the cartographers…"}
           </div>
         )}
