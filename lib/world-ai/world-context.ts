@@ -493,22 +493,44 @@ export async function buildWorldContext(
 ): Promise<WorldContext> {
   const supabase = await createClient()
 
-  // Fetch the CURRENT location from database (most recently created/updated)
-  // This ensures we always use the latest location even after [UPDATE_LOCATION:] tags
+  // WHERE THE PARTY IS, in order of authority:
+  //
+  //   1. the travel graph — party_position joined to travel_nodes, plus the
+  //      subnodal node inside that location when the party has one. This is
+  //      the same truth the map draws, and the only one a restart resets.
+  //   2. the scene rows, newest FIRST BY updated_at — which is the field
+  //      restart-campaign touches to put the party back in the pen.
+  //   3. whatever the caller passed.
+  //
+  // It used to be (2) ordered by created_at, which is a different field from
+  // the one the restart writes: a scene invented in an earlier run stayed
+  // "current" forever and Malachar narrated a place the party had left.
+  // The scene row is art: it is named for a painting, and a painting can hang
+  // long after the party has walked away from what it shows. Newest by
+  // updated_at, because that is the field restart-campaign touches.
   const { data: latestEnv } = await supabase
     .from("environments")
     .select("name")
-    .order("created_at", { ascending: false })
+    .order("updated_at", { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
+  const sceneName = latestEnv?.name || location
 
-  const currentLocation = latestEnv?.name || location
-  console.log("[WorldContext] Using location:", currentLocation)
+  let currentLocation = sceneName || location
+  let locationSource = "environments.updated_at"
+
+  const { data: partyWhere } = await supabase.rpc("party_location_label")
+  const partyLabel = (partyWhere as { label?: string } | null)?.label
+  if (partyLabel) {
+    currentLocation = partyLabel
+    locationSource = "travel graph"
+  }
+  console.log("[WorldContext] Using location:", currentLocation, "via", locationSource)
 
   const [characters, environment, recentDialogue, npcConditions, personality, book, tactical] =
     await Promise.all([
       fetchCharacters(),
-      fetchEnvironment(campaignId, currentLocation),
+      fetchEnvironment(campaignId, sceneName),
       fetchRecentDialogue(),
       fetchNpcConditions(),
       fetchPersonality(),

@@ -36,6 +36,11 @@ export const maxDuration = 60
 
 /** Where the party stands after a restart. Must match an `environments.name`. */
 const STARTING_LOCATION = "Scene_1_Velkynvelve (slave pen)"
+// The same starting point expressed for the travel graph and the node map:
+// travel_nodes.node_key, then the subnodal map and the area the prisoners wake in.
+const STARTING_NODE_KEY = "velkynvelve"
+const STARTING_SUBNODAL_MAP = "velkynvelve-nodes"
+const STARTING_SUBNODAL_NODE = 11
 
 /** What every character wears out of the gate. Everything else is confiscated. */
 const STARTING_GARMENT = {
@@ -326,6 +331,47 @@ export async function POST(req: Request) {
       .eq("name", STARTING_LOCATION)
     note("reset location", locErr)
     report.location = STARTING_LOCATION
+  }
+
+  // --- 5b. the travel graph ------------------------------------------------
+  // Touching a scene row moves the painting, not the party. Malachar and the
+  // maps both read the travel graph, so a restart has to walk the party back
+  // to the pen there as well — otherwise the story restarts and the map does
+  // not, and the DM narrates a place nobody is standing in.
+  {
+    const { data: startNode, error: nodeErr } = await admin
+      .from("travel_nodes")
+      .select("id")
+      .eq("node_key", STARTING_NODE_KEY)
+      .maybeSingle()
+    note("travel node read", nodeErr)
+
+    if (startNode?.id) {
+      const { data: runs } = await admin
+        .from("campaign_runs")
+        .select("id")
+        .order("started_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+      const runId = runs?.[0]?.id
+      if (runId) {
+        const { error: posErr } = await admin
+          .from("party_position")
+          .upsert(
+            { campaign_run_id: runId, node_id: startNode.id, node_type: "location", updated_at: new Date().toISOString() },
+            { onConflict: "campaign_run_id" },
+          )
+        note("party position reset", posErr)
+        report.partyNode = STARTING_NODE_KEY
+
+        const { error: fogErr } = await admin.rpc("subnodal_reset_to_start", {
+          p_slug: STARTING_SUBNODAL_MAP,
+          p_node: STARTING_SUBNODAL_NODE,
+          p_run_id: runId,
+        })
+        note("subnodal fog reset", fogErr)
+        report.subnodalFogReset = !fogErr
+      }
+    }
   }
 
   console.log("[restart] complete:", JSON.stringify(report))
