@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import { BookOpen, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
-import { cn } from "@/lifb/utils"
+import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
 import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
 // (fantasy-icons no longer used here — equipment slots render Sam's uploaded PNG icons)
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
+import MapPanel from "@/components/map/map-panel"
 import { DmNarration } from "./dm-narration"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
@@ -637,18 +638,18 @@ export function V4Dashboard(props: V4DashboardProps) {
       </div>
       <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
         <img src={props.environment.imageUrl} alt="Current scene" className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
-        <div className="absolute left-3 top-3 flex gap-1 rounded border border-[#6b5123] bg-[#080705]/85 p-1 text-[8px] uppercase tracking-wider">
+        <div className="absolute left-3 top-3 z-20 flex gap-1 rounded border border-[#6b5123] bg-[#080705]/85 p-1 text-[8px] uppercase tracking-wider">
           <button onClick={() => setStageMode("scene")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "scene" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Compass className="h-3 w-3" />Character View</button>
           <button onClick={() => setStageMode("tactical")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "tactical" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Map className="h-3 w-3" />Tactical Map{inCombat ? " · Live" : ""}</button>
         </div>
         {stageMode === "scene" ? <>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
           {characterStageMedia ? (isVideoUrl(characterStageMedia)
             ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
             : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
-        </> : inCombat ? <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} /> : <iframe src="/subnodal-map.html?embed=1" style={{ width: "100%", height: "100%", border: "none" }} />}
+        </> : inCombat ? <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} /> : <MapPanel initial="location" onBack={() => setStageMode("scene")} />}
       </div>
       <div className="flex flex-col gap-1">
         <SuggestionChips
