@@ -22,7 +22,7 @@ export default function MapShell() {
         : "bg-[#221936] text-[#9a8fb0] border-[#3a2c56] hover:border-[#f5c34d]"
     }`
   return (
-    <div className="bg-[#0b0714] min-h-screen">
+    <div className="bg-[#0b0714] h-screen overflow-hidden">
       <div className="flex gap-2 justify-end px-3 pt-3 max-w-[1360px] mx-auto">
         <button className={btn(mode === "2d")} onClick={() => setMode("2d")}>
           2D MAP

@@ -385,7 +385,7 @@ export default function UnderdarkMap() {
     : []
 
   return (
-    <div className="min-h-screen bg-[#0b0714] text-[#e8e0f0] p-3 font-mono">
+    <div className="bg-[#0b0714] text-[#e8e0f0] p-3 font-mono overflow-hidden">
       <style>{`
         @keyframes aopbob{from{transform:translateY(0)}to{transform:translateY(-2px)}}
       `}</style>
@@ -413,11 +413,12 @@ export default function UnderdarkMap() {
         </div>
       </div>
 
-      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]">
+      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ maxHeight: "calc(100vh - 190px)" }}>
         <svg
           ref={svgRef}
           viewBox={`0 0 ${MAP_W} ${MAP_H}`}
           className="block w-full h-auto touch-none cursor-grab active:cursor-grabbing"
+          style={{ maxHeight: "calc(100vh - 190px)" }}
           onClick={() => {
             if (!dragged.current) setSelected(null)
           }}
@@ -512,7 +513,10 @@ export default function UnderdarkMap() {
                 className="cursor-pointer"
                 onClick={(ev) => {
                   ev.stopPropagation()
-                  if (!dragged.current) setSelected(n.id)
+                  if (dragged.current) return
+                  setSelected(n.id)
+                  // Malachar clicks a node, the party walks there.
+                  if (dmKey && party?.node_id !== n.id) dmAction("move", n.node_key)
                 }}
               >
                 <circle cx={P.x} cy={P.y} r={30 * kk} fill={col} opacity={isRevealed(n) ? ".28" : ".12"} filter="url(#aop-soft)" />
@@ -604,7 +608,9 @@ export default function UnderdarkMap() {
         ) : (
           <div className="text-[#9a8fb0]">
             {loaded
-              ? "Select a node. Scroll to zoom, drag to pan. The map grows as Malachar reveals the dark."
+              ? dmKey
+                ? "Malachar's eyes. Click any node to send the party walking there. Wheel zooms, drag pans."
+                : "Select a node. Wheel zooms, drag pans. The map grows as Malachar reveals the dark."
               : "Consulting the cartographers…"}
           </div>
         )}
