@@ -33,14 +33,30 @@ import type { Campaign } from "@/lib/world-ai/campaigns"
 // A dialogue message carries the DB row `id` so we can dedupe. Optimistic
 // entries added before the row exists get a temporary id and `pending: true`.
 type SpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
-type DialogueMessage = { id: string; speaker: string; text: string; speech_segments?: SpeechSegment[] | null; speaker_type?: string | null; channel?: string | null; pending?: boolean }
+type DialogueMessage = {
+  id: string
+  speaker: string
+  text: string
+  speech_segments?: SpeechSegment[] | null
+  speaker_type?: string | null
+  channel?: string | null
+  pending?: boolean
+  /** Client-only. All rows produced by ONE Malachar turn share this. Lets the
+   *  narration queue tell "one turn, several rows" apart from a bulk refetch. */
+  turn_id?: string
+  /** Server timestamp — the fallback turn key for rows that arrive by realtime
+   *  or refetch rather than through the optimistic path. */
+  created_at?: string
+}
 
 function optimisticLichEntries(response: { text: string; speechSegments?: SpeechSegment[] | null; dialogueEntries?: Array<{ speaker: string; text: string; speech_segments?: SpeechSegment[] | null }> }): DialogueMessage[] {
+  // One turn, one id, however many rows the route split it into.
+  const turn = tempId()
   const entries = response.dialogueEntries?.filter((entry) => entry.text?.trim())
   if (entries?.length) {
-    return entries.map((entry) => ({ ...entry, id: tempId(), pending: true }))
+    return entries.map((entry) => ({ ...entry, id: tempId(), turn_id: turn, pending: true }))
   }
-  return response.text ? [{ id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, pending: true }] : []
+  return response.text ? [{ id: tempId(), speaker: "Malachar", text: response.text, speech_segments: response.speechSegments, turn_id: turn, pending: true }] : []
 }
 
 // Merge one dialogue row into state with id-based dedupe. This is the single
@@ -135,6 +151,10 @@ export default function DashboardPage() {
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
   const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; idle_url: string | null; talking_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: number | null; conditions: string[] | null }[]>([])
+  // The WHOLE NPC roster, not just the active-on-stage one. `is_active` is a
+  // stage/portrait flag and must not gate who is allowed a voice, so the
+  // narration queue reads this instead of `npcEncounters`.
+  const [npcRoster, setNpcRoster] = useState<typeof npcEncounters>([])
   const [loadingCharacters, setLoadingCharacters] = useState(true)
 
   // Current environment from database
@@ -590,12 +610,22 @@ export default function DashboardPage() {
   // client renders the same world state (one truth row per NPC). Independent of
   // the selected character; driven by a realtime subscription below.
   const fetchNpcEncounters = useCallback(async () => {
+    const columns = 'id, name, aliases, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions, disposition, stage_scale, stage_offset_y'
     const { data: npcData } = await supabase
       .from('npc_encounters')
-      .select('id, name, aliases, description, portrait_url, face_url, idle_url, talking_url, voice_id, voice_description, is_active, hp_current, hp_max, challenge_rating, conditions, disposition, stage_scale, stage_offset_y')
+      .select(columns)
       .eq('is_active', true)
 
     if (npcData) setNpcEncounters(npcData)
+
+    // The FULL roster — no is_active filter — so any NPC can be voiced even
+    // when only one is the active stage portrait. Same realtime subscription
+    // keeps both in sync.
+    const { data: rosterData } = await supabase
+      .from('npc_encounters')
+      .select(columns)
+
+    if (rosterData) setNpcRoster(rosterData)
   }, [])
 
   // Fetch dialogue from Supabase and subscribe to real-time updates
@@ -604,7 +634,7 @@ export default function DashboardPage() {
     async function fetchDialogue() {
       const { data, error } = await supabase
         .from('dialogue')
-        .select('id, speaker, text, speech_segments, speaker_type, channel')
+        .select('id, speaker, text, speech_segments, speaker_type, channel, created_at')
         .eq('channel', 'dm')
         .order('created_at', { ascending: true })
         .limit(50)
@@ -1239,6 +1269,7 @@ if (error) {
         onEquipItem={handleEquipItem}
         onUnequipItem={handleUnequipItem}
         npcEncounters={npcEncounters}
+        npcRoster={npcRoster}
         isThinking={lichLoading}
         claimLocked={claimLocked}
       />

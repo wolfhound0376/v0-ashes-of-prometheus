@@ -108,7 +108,15 @@ export function cast(line: string, npcs: VoiceNpc[]): Utterance[] {
 }
 
 type PersistedSpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
-type Line = { id?: string; speaker: string; text: string; speech_segments?: PersistedSpeechSegment[] | null; pending?: boolean }
+type Line = {
+  id?: string
+  speaker: string
+  text: string
+  speech_segments?: PersistedSpeechSegment[] | null
+  pending?: boolean
+  turn_id?: string
+  created_at?: string
+}
 
 function castPersisted(line: Line, npcs: VoiceNpc[]): Utterance[] {
   if (!line.speech_segments?.length) return cast(line.text, npcs)
@@ -366,11 +374,27 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
       return
     }
     if (!unheard.length) return
-    // Malachar narrates ONE line per turn. More than one unheard line is a load,
-    // a refetch or a reconnect — never a beat. Mark it heard (already done above)
-    // and say nothing.
-    if (unheard.length > 1) {
-      console.log("[v0] narration: bulk load of", unheard.length, "lines — not speaking")
+    // A Malachar turn is no longer one row. `app/api/chat/route.ts` splits it
+    // into ordered DM/NPC records written in a single insert, so a turn where
+    // an NPC speaks legitimately arrives as several unheard lines at once. The
+    // old `unheard.length > 1` rule read that as a page load and stayed silent,
+    // which is why the NPCs went quiet.
+    //
+    // Rows of the same turn share a turn key: the client-stamped `turn_id` on
+    // the optimistic path, the shared `created_at` of the batch insert
+    // otherwise. Several rows from ONE turn: speak them, in order. Rows from
+    // MORE than one turn: that is a refetch, a reconnect or first paint —
+    // stay silent, exactly as before.
+    const turnKey = (line: Line) => line.turn_id ?? line.created_at ?? line.id ?? line.text
+    const turns = new Set(unheard.map(turnKey))
+    if (turns.size > 1) {
+      console.log("[v0] narration: bulk load spanning", turns.size, "turns — not speaking")
+      return
+    }
+    // Belt and braces: no single turn is ever this long. Anything bigger is a
+    // load that happened to share a key.
+    if (unheard.length > 12) {
+      console.log("[v0] narration: implausible turn of", unheard.length, "lines — not speaking")
       return
     }
 
