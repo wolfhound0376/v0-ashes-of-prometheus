@@ -71,7 +71,7 @@ function mulberry(seed: number) {
   }
 }
 
-export default function UnderdarkMap({ embedded = false }: { embedded?: boolean } = {}) {
+export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: boolean; onBack?: () => void } = {}) {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const [nodes, setNodes] = useState<NodeRow[]>([])
   const [edges, setEdges] = useState<EdgeRow[]>([])
@@ -493,6 +493,17 @@ export default function UnderdarkMap({ embedded = false }: { embedded?: boolean 
       <style>{`
         @keyframes aopbob{from{transform:translateY(0)}to{transform:translateY(-2px)}}
       `}</style>
+      {embedded && onBack && (
+        <div className="flex items-center justify-between gap-2 pb-2">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 rounded border-2 border-[#6b5123] bg-[#080705] px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#e1d0a8] hover:border-[#c99a49]"
+          >
+            ← Character View
+          </button>
+          <span className="text-[10px] uppercase tracking-wider text-[#8f8061]">The Underdark</span>
+        </div>
+      )}
       <div className={embedded ? "hidden" : "flex items-center justify-between flex-wrap gap-2 pb-3"}>
         <h1 className="text-[#f5c34d] text-lg tracking-widest" style={{ textShadow: "0 0 12px #f5c34d55" }}>
           THE UNDERDARK
