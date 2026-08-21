@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled, setPlayerVoiceEnabled, setKnownPlayerNames } from "@/lib/tts"
+import { playSpeech, unlockSpeechAudio, type SpeechPlayback } from "@/lib/speech-playback"
 // The speaker-attribution parser. It lives in the v3 center column today; when
 // that tree is finally deleted this should move to lib/ rather than be rewritten
 // — the quote-pairing and alias rules in it are hard-won.
@@ -105,12 +106,6 @@ export function cast(line: string, npcs: VoiceNpc[]): Utterance[] {
   return whole ? [{ kind: "dm", text: whole }] : []
 }
 
-// A valid zero-sample WAV. Played inside the toggle's click handler so the
-// document counts as user-activated for audio before any narration arrives —
-// otherwise the FIRST spoken line can land outside a gesture and get blocked.
-const SILENT_WAV =
-  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
-
 type PersistedSpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
 type Line = { id?: string; speaker: string; text: string; speech_segments?: PersistedSpeechSegment[] | null; pending?: boolean }
 
@@ -155,8 +150,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
   const enabled = dmOn || npcOn || playersOn
   const [status, setStatus] = useState<"idle" | "loading" | "speaking" | "blocked">("idle")
 
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const objectUrlRef = useRef<string | null>(null)
+  const audioRef = useRef<SpeechPlayback | null>(null)
   const queueRef = useRef<Utterance[]>([])
   // Kept in a ref so the feed effect can read the current roster without
   // re-running (and re-speaking) every time an NPC's HP ticks.
@@ -187,13 +181,8 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
 
   const stopAudio = useCallback(() => {
     if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.src = ""
+      audioRef.current.stop()
       audioRef.current = null
-    }
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
     }
   }, [])
 
@@ -247,33 +236,28 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
     // The toggle may have been switched off while the audio was downloading.
     if (!enabledRef.current) { setStatus("idle"); return }
 
-    const url = URL.createObjectURL(await res.blob())
-    objectUrlRef.current = url
-    const audio = new Audio(url)
-    audioRef.current = audio
+    // The shared helper decodes the MP3 and plays it through WebAudio. Going
+    // through an <audio> element instead is silently mute in some Chromium
+    // builds — play() resolves and currentTime advances with no sound.
+    const playback = await playSpeech(await res.blob())
+    audioRef.current = playback
+    setStatus("speaking")
+    // NPCs and players alike hold the floor while their line plays; the
+    // window swaps to whoever is speaking. Only pure DM narration clears it.
+    setFloor(u.kind === "npc" ? u.npc : u.kind === "player" ? u.pc : null)
 
-    await new Promise<void>((resolve) => {
-      const done = () => {
-        if (objectUrlRef.current === url) { URL.revokeObjectURL(url); objectUrlRef.current = null }
-        if (audioRef.current === audio) audioRef.current = null
-        resolve()
-      }
-      audio.onended = done
-      audio.onerror = done
-      setStatus("speaking")
-      // NPCs and players alike hold the floor while their line plays; the
-      // window swaps to whoever is speaking. Only pure DM narration clears it.
-      setFloor(u.kind === "npc" ? u.npc : u.kind === "player" ? u.pc : null)
-      audio.play().catch((err) => {
-        // Autoplay policy. The toggle click is a user gesture so this is rare,
-        // but say so plainly rather than sitting there mute.
-        console.log("[v0] DM narration play() blocked:", err?.message)
-        setStatus("blocked")
-        done()
-      })
-    })
+    const reason = await playback.finished
+    if (audioRef.current === playback) audioRef.current = null
+    if (reason === "blocked") {
+      // Autoplay policy. The toggle click is a user gesture so this is rare,
+      // but say so plainly rather than sitting there mute.
+      console.log("[v0] DM narration blocked by autoplay policy")
+      setStatus("blocked")
+    } else if (reason === "error") {
+      console.log("[v0] DM narration playback failed")
+    }
     setFloor(null)
-    if (enabledRef.current) setStatus("idle")
+    if (enabledRef.current && reason !== "blocked") setStatus("idle")
   }, [setFloor])
 
   const drain = useCallback(async () => {
@@ -412,7 +396,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
         if (!on) {
           // Unlock audio while we still have the click, so the first line is
           // not blocked by autoplay policy.
-          void new Audio(SILENT_WAV).play().catch(() => {})
+          unlockSpeechAudio()
           setStatus("idle")
         }
         set(!on)
