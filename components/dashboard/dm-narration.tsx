@@ -275,9 +275,15 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
   // Restore the saved preference after mount, so SSR and the first client
   // render agree (localStorage during render is a hydration mismatch).
   useEffect(() => {
-    setDmOn(localStorage.getItem(DM_KEY) === "true")
-    setNpcOn(localStorage.getItem(NPC_KEY) === "true")
-    setPlayersOn(localStorage.getItem(PLAYER_KEY) === "true")
+    // DEFAULT ON. The key is written only once a preference exists, so an
+    // absent key means "never chosen" — and a table that has never chosen
+    // should hear the game rather than sit in silence wondering why nobody
+    // is speaking. Only an explicit "false" turns a voice off, the same shape
+    // as lib/audio-prefs.ts.
+    const on = (key: string) => localStorage.getItem(key) !== "false"
+    setDmOn(on(DM_KEY))
+    setNpcOn(on(NPC_KEY))
+    setPlayersOn(on(PLAYER_KEY))
     hydratedRef.current = true
   }, [])
 
