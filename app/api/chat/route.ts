@@ -802,6 +802,14 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 9. CINEMATIC CUES: When a moment listed in the CINEMATIC CUES section actually happens, emit [CINEMATIC: <cue>] using a cue name from that list, at most one per response. If no CINEMATIC CUES section appears above, this location has no film and you MUST NOT emit the tag at all. The test is whether the moment HAPPENED in your narration, not whether it was dramatic or actively willed \u2014 a character who sleeps and dreams has had the moment as surely as one who picks a lock. What you must not do is fire a cue for something that did not occur: an intention, a hypothetical, or a moment you invented to justify the film.
 
+10. JOURNAL PAGES: Each prisoner smuggled a battered journal past the drow. When a character WRITES IN IT — says they are noting something down, recording what they saw, keeping a tally, marking the days — emit [JOURNAL: <the page>] on its own line.
+
+- The page is THEIRS, not yours. Write what the character would have written, in their voice: what they observed, what they decided, what they are afraid of. First person.
+- You are the hand, not the author. Never editorialise inside the tag, never mock them there, never put words in the page that the character did not mean to record. Be as cruel as you like in the narration around it; the page itself is private and honest.
+- Emit it ONLY when the character actually writes. Thinking about something, saying it aloud, or you describing the journal is not writing in it.
+- One page per response at most. Keep it short — a few lines, the way someone writes by dim light with a stub of quill.
+- Never mention the tag or tell the player their journal updated. They will see the page.
+
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
 === EXAMPLE OF CORRECT OUTPUT ===
@@ -1212,6 +1220,36 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
     "[v0] item tag scan:",
     rawItemTags.length ? rawItemTags.join(" ") : "NO [ITEM_*] TAGS IN RESPONSE",
   )
+
+  // === JOURNAL PAGES ===
+  // The journal has existed since the first session — a physical item every
+  // prisoner smuggled in, a table to hold its pages, a UI that reads them, and
+  // an `author` column that already allowed "malachar". The one thing missing
+  // was anybody telling Malachar journals exist, so a player who said "I write
+  // this down" got narration and an empty book.
+  //
+  // Row-level security lets the browser insert only author='player', which is
+  // correct: a page claiming to be the DM's must come from the server. This is
+  // the server.
+  const journalTags = rawText.match(/\[JOURNAL:\s*([^\]]*)\]/gi) || []
+  if (journalTags.length && playerCharacter?.id) {
+    // One page per turn. If he emitted two, the first is the one he meant.
+    const body = journalTags[0].replace(/^\[JOURNAL:\s*/i, "").replace(/\]$/, "").trim()
+    if (body) {
+      const { error: jerr } = await supabase.from("journal_entries").insert({
+        character_id: playerCharacter.id,
+        session_id: activeSessionId ?? null,
+        author: "malachar",
+        body,
+        visibility: "private",
+      })
+      // A journal page is never worth failing a turn over. Log and carry on.
+      if (jerr) console.error("[v0] journal page failed to write:", jerr.message)
+      else console.log("[v0] journal page written for", playerCharacter.name, "-", body.slice(0, 60))
+    }
+  } else if (journalTags.length) {
+    console.warn("[v0] journal tag emitted with no acting character - page dropped:", journalTags[0].slice(0, 80))
+  }
 
   // Parse and process inventory tags from the response
   if (playerCharacter?.id) {
@@ -2234,6 +2272,16 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
     .replace(/\[TIME:[^\]]*\]/gi, "")
     .replace(/\[STORY_ADVANCE[^\]]*\]/gi, "")
     .replace(/\[CINEMATIC:[^\]]*\]/gi, "")
+    .replace(/\[JOURNAL:[^\]]*\]/gi, "")
+    // BACKSTOP. Every line above is hand-written, so every new tag is one
+    // somebody has to remember to add here — and forgetting means the tag is
+    // printed to the table as raw text. This sweeps any [UPPERCASE_TAG: ...]
+    // that was missed. Player-visible brackets are safe: dice are [[2d6]] and
+    // the roll banner is [Dice Roll], neither of which is ALL-CAPS-then-colon.
+    .replace(/\[[A-Z][A-Z_]*:[^\]]*\]/g, (leaked) => {
+      console.warn("[v0] unstripped control tag reached the strip backstop:", leaked.slice(0, 60))
+      return ""
+    })
     .trim()
 
   // === SERVER-ATTRIBUTED SPEECH SEGMENTS ===
