@@ -90,14 +90,22 @@ function categorize(entry: DialogueEntry): Exclude<LogFilter, "all"> {
   return "dialogue"
 }
 
-// Default quick replies. These are intentionally generic conversational openers
-// that fit almost any scene; clicking one sends it as the player's line.
-const DEFAULT_QUICK_REPLIES: { icon: typeof MessageCircle; text: string }[] = [
-  { icon: MessageCircle, text: "Who are you?" },
-  { icon: Sparkles, text: "We seek knowledge, not conflict." },
-  { icon: Swords, text: "Your reign ends here." },
-  { icon: Drama, text: "(Intimidate) You are already lost." },
-]
+// REMOVED, 22 Aug 2026 (Sam): the four generic openers that used to live here.
+//
+//   "Who are you?" / "We seek knowledge, not conflict." /
+//   "Your reign ends here." / "(Intimidate) You are already lost."
+//
+// They were demo copy from before the game had a scene. By the time there were
+// real prisoners in a real slave pen they were worse than nothing: a chained
+// cleric does not declare "Your reign ends here" to a dwarf he is chained
+// beside, and every one of them fit the fiction so badly that clicking one
+// forced Malachar to talk the player back out of it.
+//
+// The live per-character chips (SuggestionChips, generated against the actual
+// scene) are what this row is for now. Nothing static replaces these: a
+// suggestion that does not know where the party is standing has no business
+// being offered.
+const DEFAULT_QUICK_REPLIES: { icon: typeof MessageCircle; text: string }[] = []
 
 function ChipIcon({ label }: { label: string }) {
   const l = label.toLowerCase()

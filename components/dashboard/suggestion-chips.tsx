@@ -47,8 +47,25 @@ interface SuggestionChipsProps {
   onPick?: (text: string, isObserve: boolean) => void
 }
 
+// Brighter, 22 Aug 2026 (Sam): these were #cdb276 on near-black inside a dim
+// border — legible, but they read as disabled furniture rather than as the
+// things you are meant to click. The row is the player's whole turn; it should
+// look like it. Warmer parchment text, a lit border, and a hover that actually
+// brightens instead of shifting one shade of brown.
 const CHIP_CLASS =
-  "rounded-full border border-[#695326] bg-[#171109] px-3.5 py-1.5 text-xs text-[#cdb276] hover:bg-[#251a0d] disabled:opacity-50"
+  "rounded-full border border-[#a88745] bg-[#1e1509] px-3.5 py-1.5 text-xs font-medium text-[#f0e0bc] " +
+  "transition-colors hover:border-[#f4e0a8] hover:bg-[#33240f] hover:text-[#fff6dd] " +
+  "disabled:opacity-40 disabled:hover:border-[#a88745] disabled:hover:bg-[#1e1509]"
+
+// The skill tag rides on the character's class colour, so a cleric's checks and
+// a rogue's never look alike. It sat at the same weight as the action text and
+// disappeared into it; it is the part that tells you dice are coming, so it
+// gets weight of its own.
+const SKILL_CLASS = "font-semibold"
+
+// A journal action leaves a permanent record. It is not a check and must not
+// be dressed as one — ink, not dice.
+const JOURNAL_CLASS = "font-semibold text-[#8fb8e8]"
 
 export function SuggestionChips(props: SuggestionChipsProps) {
   const { character, dialogue, inventory, location, fallback, disabled, onPick } = props
@@ -117,16 +134,26 @@ export function SuggestionChips(props: SuggestionChipsProps) {
     return (
       <div className="flex flex-wrap gap-1.5 px-3 pt-2">
         {suggestions.map((suggestion) => {
-          const sent = suggestion.skill ? `${suggestion.text} (${suggestion.skill})` : suggestion.text
+          // The tag travels with the sent line, not just the label. Malachar
+          // reads what the player said, so "(Journal Entry)" in the message is
+          // what tells him a page is being written — the chip alone would be
+          // decoration the DM never sees.
+          const tag = suggestion.journal ? "Journal Entry" : suggestion.skill || null
+          const sent = tag ? `${suggestion.text} (${tag})` : suggestion.text
           return (
             <button
               key={sent}
               disabled={disabled}
               onClick={() => onPick?.(sent, suggestion.kind === "observe")}
               className={CHIP_CLASS}
+              title={suggestion.journal ? "Writes a page in your journal" : undefined}
             >
               {suggestion.text}
-              {suggestion.skill ? <span style={{ color: skillColor }}>{` (${suggestion.skill})`}</span> : null}
+              {suggestion.journal ? (
+                <span className={JOURNAL_CLASS}>{" (Journal Entry)"}</span>
+              ) : suggestion.skill ? (
+                <span className={SKILL_CLASS} style={{ color: skillColor }}>{` (${suggestion.skill})`}</span>
+              ) : null}
             </button>
           )
         })}

@@ -15,6 +15,13 @@ export interface Suggestion {
    * bolted on beside it.
    */
   kind?: "observe" | null
+  /**
+   * True when taking this action would put a page in the character's journal.
+   * Surfaced on the chip as "(Journal Entry)" beside the skill, so a player can
+   * see that an action leaves a permanent record before they pick it — the
+   * same courtesy the skill tag already gives them.
+   */
+  journal?: boolean
 }
 
 /**
@@ -39,7 +46,7 @@ export function ensureObserveChip(suggestions: Suggestion[]): Suggestion[] {
   const observe = suggestions.find((entry) => entry.kind === "observe")
   const others = suggestions
     .filter((entry) => entry !== observe)
-    .map((entry) => ({ text: entry.text, skill: entry.skill }))
+    .map((entry) => ({ text: entry.text, skill: entry.skill, journal: entry.journal }))
   // Cap at four chips total so the row never wraps past the input box.
   return [...others.slice(0, 3), observe ?? OBSERVE_FALLBACK]
 }
@@ -59,9 +66,14 @@ export function parseSuggestions(raw: string): Suggestion[] {
       const skillRaw = (entry as { skill?: unknown })?.skill
       const skill = typeof skillRaw === "string" && skillRaw.trim() ? skillRaw.trim().slice(0, 30) : null
       // The model may answer either shape; accept both rather than lose the tag.
-      const raw = entry as { observe?: unknown; kind?: unknown }
+      const raw = entry as { observe?: unknown; kind?: unknown; journal?: unknown }
       const isObserve = raw?.observe === true || raw?.kind === "observe"
-      suggestions.push({ text: text.slice(0, 80), skill, kind: isObserve ? "observe" : null })
+      suggestions.push({
+        text: text.slice(0, 80),
+        skill,
+        kind: isObserve ? "observe" : null,
+        journal: raw?.journal === true,
+      })
       // Read up to six. ensureObserveChip trims to four AFTER the observe
       // entry has been located — capping at four here threw away a correctly
       // tagged look-around action that happened to be listed last, and the
