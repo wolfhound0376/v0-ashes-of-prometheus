@@ -111,7 +111,7 @@ shorthand, never any hint that something is filmed.`
     const prompt = `You suggest quick actions for ONE player in a D&D 5e game set in the Underdark (Out of the Abyss).
 
 Return ONLY a JSON array, no prose, of 3 to 4 entries shaped:
-  {"text": "...", "skill": "..." | null, "observe": true | false}
+  {"text": "...", "skill": "..." | null, "observe": true | false, "journal": true | false}
 
 Rules:
 
@@ -142,6 +142,12 @@ offer business from a room they have left.
   or fewer. No dice notation, no rules jargon.
 - "skill" names the single most relevant 5e skill, spell or ability, or null
   when none applies.
+- "journal" is true ONLY when the action itself is the character writing in
+  their journal — noting something down, recording what they saw, keeping a
+  tally, marking the days. Every prisoner smuggled one past the drow, so it is
+  always available, but it is worth offering only when there is something worth
+  recording: a name, a number, a rotation, a face, a promise. Never more than
+  one journal entry in a set, and never as the observation action.
 - Respect active conditions. A manacled character cannot walk away; a poisoned
   one is not at their best.
 - React to the scene beat below; do not restate it.
