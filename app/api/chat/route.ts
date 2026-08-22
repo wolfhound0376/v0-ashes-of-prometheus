@@ -824,6 +824,14 @@ Gritting your teeth against the pain, you spot a narrow fissure in the cavern wa
 
 [NPC_ENCOUNTER: Gray Ooze | A pulsing mass of corrosive jelly blocking the passage | dark fantasy concept art of a translucent gray ooze creature in a damp Underdark tunnel, bioluminescent fungi, dim lighting]"
 
+And when the player writes something down:
+
+"You wet the quill against your tongue and work by the fungal light, letters cramped to save the page.
+
+[JOURNAL: Three guards on the gate. They change on the fourth hour — Eldeth says the gap is three minutes. She has been counting longer than I have, and she did not have to tell me.]
+
+The quill is nearly dry. Whatever you write next, write it small."
+
 And when the player escapes to a new area:
 
 "You squeeze through the fissure, the ooze's pseudopod grasping uselessly at the stone behind you. The passage opens onto a vast underground ledge, the darkness below seemingly infinite.
@@ -970,6 +978,14 @@ ITEMS:
   - item_type: weapon, armor, consumable, misc, currency
   - icon_hint: keyword for matching existing icons (dagger, potion, key, torch, etc.)
   - Example: [ITEM_AWARD: Rusty Dagger | 1 | A corroded blade found in the rubble | weapon | dagger]
+
+JOURNAL:
+- [JOURNAL: the page, in the character's own words] — when the character WRITES in their journal
+  - Every prisoner smuggled a battered journal past the drow. Writing in it is a real action with a real record.
+  - Emit it whenever the player says they write, note, record, jot, tally, or mark something down. Narrating the quill is not enough — the tag is what puts ink on the page.
+  - Write it as THEY would write it: first person, a few lines, what they saw and what they made of it.
+  - The page is theirs. Never mock them inside the tag and never write something they did not mean to record. Be as cruel as you like in the prose around it.
+  - Example: [JOURNAL: Three guards on the gate. They change on the fourth hour and there is a gap, maybe three minutes wide. Eldeth has been counting them longer than I have.]
 
 HEALTH & CONDITIONS:
 - [DAMAGE: amount type] — when player takes damage. Include this EVERY time damage is dealt.
@@ -1232,6 +1248,10 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
   // correct: a page claiming to be the DM's must come from the server. This is
   // the server.
   const journalTags = rawText.match(/\[JOURNAL:\s*([^\]]*)\]/gi) || []
+  // Same diagnostic the item tags get. When a page does not appear, this says
+  // whether he never emitted the tag or the write failed — the difference
+  // between a prompt problem and a database problem.
+  console.log("[v0] journal tag scan:", journalTags.length ? journalTags.join(" ") : "NO [JOURNAL] TAG IN RESPONSE")
   if (journalTags.length && playerCharacter?.id) {
     // One page per turn. If he emitted two, the first is the one he meant.
     const body = journalTags[0].replace(/^\[JOURNAL:\s*/i, "").replace(/\]$/, "").trim()
