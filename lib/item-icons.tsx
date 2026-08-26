@@ -17,6 +17,7 @@
  * below is a placeholder with a to-do list attached, never a broken image.
  */
 
+import { useState } from "react"
 import {
   Backpack,
   BookOpen,
@@ -85,20 +86,19 @@ export interface ItemIconProps {
  */
 export function ItemIcon({ iconUrl, name, itemType, className }: ItemIconProps) {
   const Fallback = itemTypeIcon(itemType, name)
-  if (!iconUrl) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const shouldFallback = !iconUrl || failedUrl === iconUrl
+
+  if (shouldFallback) {
     return <Fallback className={cn("text-[#94713b]/70", className)} aria-hidden />
   }
+
   return (
     <img
       src={iconUrl}
       alt={name ?? ""}
       className={cn("object-contain", className)}
-      onError={(event) => {
-        // A dead URL must degrade to the silhouette, not a broken-image glyph.
-        const el = event.currentTarget
-        el.style.display = "none"
-        el.parentElement?.setAttribute("data-icon-failed", "true")
-      }}
+      onError={() => setFailedUrl(iconUrl)}
     />
   )
 }
