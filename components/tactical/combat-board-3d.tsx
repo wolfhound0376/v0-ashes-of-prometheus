@@ -1,0 +1,770 @@
+"use client"
+
+// ============================================================================
+// THE COMBAT BOARD — the V5 canon node tile, in 3D, in the game.
+//
+// Ported from C:\ashes-maps\map_viewer_3d.html (the buildSquare path), which
+// until now ran only on Sam's machine over localhost:8741. Everything it drew
+// locally now comes from Supabase:
+//
+//   the painted tile   vtt_maps.meta.art_url    (node-art/v5/node-NN.webp)
+//   cell geometry      vtt_maps.meta.cells_url  (node-maps/v5/node-NN.json)
+//   textures           vtt-assets/map-tiles/diablo-gothic/*
+//   the combatants     vtt_tokens               (live, via realtime)
+//
+// WHAT THE PLAYERS SEE is the drawn map standing up: the tile art as one
+// uncut floor plane (slicing it per-cell is what mangled the artwork in the
+// hex era), rock as boxes wearing their own patch of the art, the pen's
+// cage as see-through bars, doors that are really there. Tokens are discs
+// with HP arcs, or the creature's own GLB where one is wired.
+//
+// WHO MOVES THINGS: the DM, only. Click a token, click a square — the row
+// updates, and every other browser sees the move by realtime subscription.
+// Sam's ruling (22 Aug 2026): DM moves everything; players watch it live.
+//
+// API DIFFERENCES from the r128 original, so the next porter doesn't
+// rediscover them: outputEncoding→outputColorSpace, sRGBEncoding→SRGBColorSpace
+// on textures via .colorSpace, GLTFLoader/OrbitControls from three/addons.
+// ============================================================================
+
+import { useCallback, useEffect, useRef, useState } from "react"
+import * as THREE from "three"
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
+import { createClient } from "@/lib/supabase/client"
+import { getDmKey, onDmKeyChange } from "@/lib/dm-key"
+
+const TILE_BASE =
+  "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/map-tiles/diablo-gothic"
+
+// 1 world unit = one 5-ft square, exactly as the local viewer had it.
+const SQ = 1.0
+
+interface MapRow {
+  id: string
+  name: string
+  grid_width: number
+  grid_height: number
+  cell_size: number
+  meta: { node?: number; art_url?: string; cells_url?: string } | null
+}
+
+interface TokenRow {
+  id: string
+  map_id: string
+  character_id: string | null
+  bestiary_id: string | null
+  label: string
+  model_url: string | null
+  model_scale: number | null
+  model_y_offset: number | null
+  grid_x: number
+  grid_y: number
+  rotation_y: number | null
+  token_size: string | null
+  tint_color: string | null
+  is_visible: boolean
+  hp_current: number | null
+  hp_max: number | null
+}
+
+interface CellsJson {
+  meta: { grid: { width: number; height: number } }
+  render?: {
+    cage?: boolean
+    cage_height?: number
+    cage_texture?: string
+    edge?: "rail" | "wall"
+    rail_height?: number
+    wall_height?: number
+    door_texture?: string
+    ceiling?: boolean
+  }
+  cells: {
+    floor: { sq: [number, number]; water?: boolean; island?: boolean }[]
+    water?: { sq: [number, number]; water?: boolean; island?: boolean }[]
+    doors?: { sq: [number, number]; dir?: [number, number]; type?: string; locked?: boolean; initially_open?: boolean; texture?: string; lock_dc?: number; lock_note?: string }[]
+  }
+  exits?: { type?: string; cells: [number, number][] }[]
+}
+
+/** Storage URLs for the gothic tile textures the local viewer loaded from disk. */
+const storageTex = (file: string) => `${TILE_BASE}/${file.replace(/^tiles\//, "")}`
+
+const sqCentre = (x: number, y: number) => ({ x: (x + 0.5) * SQ, z: (y + 0.5) * SQ })
+const sq4 = (x: number, y: number): [number, number][] => [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]
+
+/** Token disc radius by 5e size category. Medium fills most of its square. */
+function radiusFor(size: string | null): number {
+  const s = (size || "medium").toLowerCase()
+  if (s === "tiny") return 0.18
+  if (s === "small") return 0.3
+  if (s === "large") return 0.8
+  if (s === "huge") return 1.2
+  return 0.38
+}
+
+export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
+  const mountRef = useRef<HTMLDivElement>(null)
+  const [status, setStatus] = useState("Summoning the board…")
+  const [mapName, setMapName] = useState("")
+  const [dm, setDm] = useState(false)
+  const [selected, setSelected] = useState<TokenRow | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  // Refs bridging React and the imperative three scene.
+  const tokensRef = useRef<Map<string, { row: TokenRow; obj: THREE.Object3D; hpArc?: THREE.Mesh }>>(new Map())
+  const selectedRef = useRef<TokenRow | null>(null)
+  const dmRef = useRef(false)
+  const mapRef = useRef<MapRow | null>(null)
+  const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
+
+  useEffect(() => {
+    setDm(Boolean(getDmKey()))
+    return onDmKeyChange(() => setDm(Boolean(getDmKey())))
+  }, [])
+  useEffect(() => { dmRef.current = dm }, [dm])
+  useEffect(() => { selectedRef.current = selected }, [selected])
+
+  const say = useCallback((msg: string) => {
+    setToast(msg)
+    window.setTimeout(() => setToast((cur) => (cur === msg ? null : cur)), 2600)
+  }, [])
+
+  useEffect(() => {
+    const mount = mountRef.current
+    if (!mount) return
+    const supabase = createClient()
+    let disposed = false
+
+    // ---- renderer / scene / camera: the viewer's setup, current API ----
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x020204)
+    scene.fog = new THREE.Fog(0x020204, 30, 90)
+
+    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 500)
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(mount.clientWidth, mount.clientHeight)
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.35
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    mount.appendChild(renderer.domElement)
+
+    // The tile art is pre-lit by the artist; lighting stays gentle so the
+    // board reads as the drawn map, not a blown-out relight.
+    const ambient = new THREE.AmbientLight(0x3a3226, 2.2)
+    scene.add(ambient)
+    const moon = new THREE.DirectionalLight(0x40506c, 0.45)
+    moon.position.set(-20, 30, -10)
+    scene.add(moon)
+    const torch = new THREE.PointLight(0xff9a3c, 1.0, 90, 1.4)
+    torch.castShadow = true
+    torch.shadow.mapSize.set(1024, 1024)
+    scene.add(torch)
+    const torch2 = new THREE.PointLight(0xff7722, 0.5, 50, 1.8)
+    scene.add(torch2)
+
+    // ---- orbit camera, as the viewer had it -------------------------
+    const target = new THREE.Vector3()
+    let az = Math.PI * 0.75
+    let el = 0.72
+    let dist = 26
+    const applyCamera = () => {
+      camera.position.set(
+        target.x + dist * Math.cos(el) * Math.cos(az),
+        target.y + dist * Math.sin(el),
+        target.z + dist * Math.cos(el) * Math.sin(az),
+      )
+      camera.lookAt(target)
+    }
+
+    let drag: { x: number; y: number; btn: number; shift: boolean; moved: boolean } | null = null
+    const onDown = (e: MouseEvent) => { drag = { x: e.clientX, y: e.clientY, btn: e.button, shift: e.shiftKey, moved: false } }
+    const onUp = () => setTimeout(() => { drag = null }, 0)
+    const onMove = (e: MouseEvent) => {
+      if (!drag) return
+      const dx = e.clientX - drag.x
+      const dy = e.clientY - drag.y
+      drag.x = e.clientX
+      drag.y = e.clientY
+      if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true
+      if (drag.btn === 2 || drag.shift) {
+        const right = new THREE.Vector3().subVectors(camera.position, target).cross(camera.up).normalize()
+        const fwd = new THREE.Vector3().crossVectors(camera.up, right)
+        target.addScaledVector(right, dx * dist * 0.0015)
+        target.addScaledVector(fwd, dy * dist * 0.0015)
+      } else {
+        az += dx * 0.005
+        el = Math.min(1.45, Math.max(0.25, el + dy * 0.005))
+      }
+      applyCamera()
+    }
+    const onWheel = (e: WheelEvent) => {
+      dist = Math.min(80, Math.max(6, dist * (e.deltaY > 0 ? 1.1 : 0.9)))
+      applyCamera()
+    }
+    renderer.domElement.addEventListener("mousedown", onDown)
+    window.addEventListener("mouseup", onUp)
+    window.addEventListener("mousemove", onMove)
+    renderer.domElement.addEventListener("wheel", onWheel, { passive: true })
+    renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault())
+
+    // ---- texture plumbing -------------------------------------------
+    const loader = new THREE.TextureLoader()
+    const texCache = new Map<string, THREE.Texture>()
+    const tex = (url: string, repeat = 1) => {
+      const key = url + "@" + repeat
+      const hit = texCache.get(key)
+      if (hit) return hit
+      const t = loader.load(url)
+      t.colorSpace = THREE.SRGBColorSpace
+      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(repeat, repeat)
+      texCache.set(key, t)
+      return t
+    }
+
+    // ---- picking: tokens for selection, the floor for movement ------
+    const raycaster = new THREE.Raycaster()
+    const pointer = new THREE.Vector2()
+    let floorPlane: THREE.Mesh | null = null
+    const doorLeaves: THREE.Mesh[] = []
+    interface DoorRec {
+      cell: string
+      data: NonNullable<CellsJson["cells"]["doors"]>[number]
+      hinge: THREE.Group
+      leaf: THREE.Mesh
+      open: boolean
+      locked: boolean
+      t: number
+      targetT: number
+      shake: number
+    }
+    const doorRecs: DoorRec[] = []
+
+    const applyDoor = (rec: DoorRec, t: number) => { rec.hinge.rotation.y = -t * Math.PI * 0.58 }
+
+    const onClick = (ev: MouseEvent) => {
+      if (drag && drag.moved) return
+      const r = renderer.domElement.getBoundingClientRect()
+      pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1
+      pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1
+      raycaster.setFromCamera(pointer, camera)
+
+      // 1. A token?
+      const tokenObjs: THREE.Object3D[] = []
+      tokensRef.current.forEach((t) => tokenObjs.push(t.obj))
+      const tokenHit = raycaster.intersectObjects(tokenObjs, true)[0]
+      if (tokenHit) {
+        let o: THREE.Object3D | null = tokenHit.object
+        while (o && !o.userData.tokenId) o = o.parent
+        const id = o?.userData.tokenId as string | undefined
+        if (id) {
+          const entry = tokensRef.current.get(id)
+          if (entry) {
+            setSelected((cur) => (cur?.id === id ? null : entry.row))
+            return
+          }
+        }
+      }
+
+      // 2. A door?
+      const doorHit = raycaster.intersectObjects(doorLeaves, false)[0]
+      if (doorHit) {
+        const rec = doorHit.object.userData.door as DoorRec
+        if (rec.locked) {
+          rec.shake = 1
+          const d = rec.data
+          say(d.lock_note ? `LOCKED — ${d.lock_note}` : `The ${d.type ?? "iron"} door is locked.${d.lock_dc ? ` DC ${d.lock_dc}.` : ""}`)
+        } else {
+          rec.open = !rec.open
+          rec.targetT = rec.open ? 1 : 0
+          say(rec.open ? `The ${rec.data.type ?? "iron"} door swings open.` : `The ${rec.data.type ?? "iron"} door closes.`)
+        }
+        return
+      }
+
+      // 3. The floor — a move order, if the DM has a token selected.
+      const sel = selectedRef.current
+      if (!dmRef.current || !sel || !floorPlane) return
+      const floorHit = raycaster.intersectObject(floorPlane, false)[0]
+      if (!floorHit) return
+      const gx = Math.floor(floorHit.point.x / SQ)
+      const gy = Math.floor(floorHit.point.z / SQ)
+      const m = mapRef.current
+      if (!m || gx < 0 || gy < 0 || gx >= m.grid_width || gy >= m.grid_height) return
+      moveTokenRef.current(sel.id, gx, gy)
+    }
+    renderer.domElement.addEventListener("click", onClick)
+
+    // ---- token meshes -----------------------------------------------
+    const gltfLoader = new GLTFLoader()
+    const boardGroup = new THREE.Group()
+    scene.add(boardGroup)
+    const tokenGroup = new THREE.Group()
+    scene.add(tokenGroup)
+
+    const hpColor = (frac: number) => (frac > 0.5 ? 0x51c76a : frac > 0.25 ? 0xd9a53c : 0xd05555)
+
+    /** The ring + HP arc every token carries, GLB or disc alike. */
+    const buildBase = (row: TokenRow) => {
+      const g = new THREE.Group()
+      const r = radiusFor(row.token_size)
+      const isParty = Boolean(row.character_id)
+      const tint = row.tint_color ? new THREE.Color(row.tint_color) : new THREE.Color(isParty ? 0x38bdf8 : 0xef4444)
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(r * 0.98, r * 1.18, 40),
+        new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+      )
+      ring.rotation.x = -Math.PI / 2
+      ring.position.y = 0.06
+      g.add(ring)
+
+      if (row.hp_max && row.hp_max > 0) {
+        const frac = Math.max(0, Math.min(1, (row.hp_current ?? row.hp_max) / row.hp_max))
+        const arc = new THREE.Mesh(
+          new THREE.RingGeometry(r * 1.22, r * 1.38, 40, 1, Math.PI / 2, -frac * Math.PI * 2),
+          new THREE.MeshBasicMaterial({ color: hpColor(frac), transparent: true, opacity: 0.95, side: THREE.DoubleSide }),
+        )
+        arc.rotation.x = -Math.PI / 2
+        arc.position.y = 0.065
+        g.add(arc)
+      }
+      return g
+    }
+
+    /** Name label as a sprite, so it always faces the camera. */
+    const buildLabel = (row: TokenRow) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = 256
+      canvas.height = 56
+      const ctx = canvas.getContext("2d")!
+      ctx.font = "600 26px Georgia, serif"
+      ctx.textAlign = "center"
+      ctx.fillStyle = "rgba(0,0,0,0.55)"
+      const w = Math.min(248, ctx.measureText(row.label).width + 22)
+      ctx.beginPath()
+      ctx.roundRect((256 - w) / 2, 6, w, 40, 8)
+      ctx.fill()
+      ctx.fillStyle = row.character_id ? "#bfe3ff" : "#ffc9c9"
+      ctx.fillText(row.label, 128, 34, 236)
+      const t = new THREE.CanvasTexture(canvas)
+      t.colorSpace = THREE.SRGBColorSpace
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false }))
+      sprite.scale.set(1.7, 0.37, 1)
+      return sprite
+    }
+
+    const spawnToken = (row: TokenRow) => {
+      const existing = tokensRef.current.get(row.id)
+      if (existing) tokenGroup.remove(existing.obj)
+      if (!row.is_visible) { tokensRef.current.delete(row.id); return }
+
+      const g = buildBase(row)
+      g.userData.tokenId = row.id
+      const r = radiusFor(row.token_size)
+
+      if (row.model_url) {
+        // The creature's own model. Measured after load, scaled to size,
+        // feet on the floor — Meshy exports arrive in arbitrary units.
+        gltfLoader.load(row.model_url, (gltf) => {
+          if (disposed) return
+          const obj = gltf.scene
+          const box = new THREE.Box3().setFromObject(obj)
+          const size = box.getSize(new THREE.Vector3())
+          const feet = r >= 1.2 ? 15 : r >= 0.8 ? 10 : 6
+          const want = (feet / 5) * (row.model_scale ?? 1)
+          const s = size.y > 0 ? want / size.y : 1
+          obj.scale.setScalar(s)
+          const box2 = new THREE.Box3().setFromObject(obj)
+          obj.position.set(-(box2.min.x + box2.max.x) / 2, -box2.min.y + (row.model_y_offset ?? 0), -(box2.min.z + box2.max.z) / 2)
+          if (row.rotation_y) obj.rotation.y = (row.rotation_y * Math.PI) / 180
+          // Pre-lit tile leaves models unlit black columns; they carry
+          // their own glow, same trick as the local viewer.
+          obj.traverse((o) => {
+            const mesh = o as THREE.Mesh
+            if (mesh.isMesh && mesh.material) {
+              mesh.castShadow = mesh.receiveShadow = true
+              const m = mesh.material as THREE.MeshStandardMaterial
+              if (m.map) {
+                m.emissiveMap = m.map
+                m.emissive = new THREE.Color(0x8a8a8a)
+                m.emissiveIntensity = 0.42
+              }
+              m.needsUpdate = true
+            }
+          })
+          g.add(obj)
+        })
+      } else {
+        // No model: a disc pawn with a darker rim, honest and readable.
+        const isParty = Boolean(row.character_id)
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(r * 0.85, r * 0.95, 0.5, 28),
+          new THREE.MeshStandardMaterial({
+            color: row.tint_color ? new THREE.Color(row.tint_color) : isParty ? 0x1c4a66 : 0x5c1d1d,
+            roughness: 0.7,
+            metalness: 0.15,
+          }),
+        )
+        body.position.y = 0.31
+        body.castShadow = true
+        g.add(body)
+      }
+
+      const label = buildLabel(row)
+      label.position.y = 1.35
+      g.add(label)
+
+      const c = sqCentre(row.grid_x, row.grid_y)
+      g.position.set(c.x, 0, c.z)
+      tokenGroup.add(g)
+      tokensRef.current.set(row.id, { row, obj: g })
+    }
+
+    const glideToken = (row: TokenRow) => {
+      const entry = tokensRef.current.get(row.id)
+      if (!entry) { spawnToken(row); return }
+      // HP or identity changed → rebuild; position change → glide.
+      const before = entry.row
+      entry.row = row
+      if (before.hp_current !== row.hp_current || before.hp_max !== row.hp_max || before.is_visible !== row.is_visible || before.tint_color !== row.tint_color) {
+        spawnToken(row)
+        return
+      }
+      const c = sqCentre(row.grid_x, row.grid_y)
+      entry.obj.userData.glide = { from: entry.obj.position.clone(), to: new THREE.Vector3(c.x, 0, c.z), t: 0 }
+    }
+
+    // ---- the DM's move order ----------------------------------------
+    moveTokenRef.current = (id, gx, gy) => {
+      const entry = tokensRef.current.get(id)
+      if (!entry) return
+      // Optimistic: glide now, persist behind it. Realtime echoes to others.
+      glideToken({ ...entry.row, grid_x: gx, grid_y: gy })
+      void supabase
+        .from("vtt_tokens")
+        .update({ grid_x: gx, grid_y: gy, updated_by: "dm-board", updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) say("The move did not take: " + error.message)
+        })
+    }
+
+    // ---- build the board from the database --------------------------
+    const build = async () => {
+      const { data: mapRow, error: mapErr } = await supabase
+        .from("vtt_maps")
+        .select("id,name,grid_width,grid_height,cell_size,meta")
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle()
+      if (mapErr || !mapRow) { setStatus(mapErr ? mapErr.message : "No active battle map."); return }
+      const map = mapRow as MapRow
+      mapRef.current = map
+      setMapName(map.name)
+
+      const W = map.grid_width
+      const H = map.grid_height
+      const meta = map.meta ?? {}
+
+      // The painted tile, one uncut plane.
+      const floorMat = meta.art_url
+        ? new THREE.MeshStandardMaterial({ map: tex(meta.art_url), roughness: 0.95, metalness: 0.04 })
+        : new THREE.MeshStandardMaterial({ color: 0x4a4234, roughness: 0.95 })
+      if (floorMat.map) {
+        floorMat.map.wrapS = floorMat.map.wrapT = THREE.ClampToEdgeWrapping
+        floorMat.map.repeat.set(1, 1)
+      }
+      floorPlane = new THREE.Mesh(new THREE.PlaneGeometry(W * SQ, H * SQ), floorMat)
+      floorPlane.rotation.x = -Math.PI / 2
+      floorPlane.position.set((W * SQ) / 2, 0, (H * SQ) / 2)
+      floorPlane.receiveShadow = true
+      boardGroup.add(floorPlane)
+
+      // The void beyond the tile.
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(W * SQ + 400, H * SQ + 400),
+        new THREE.MeshBasicMaterial({ color: 0x010102 }),
+      )
+      ground.rotation.x = -Math.PI / 2
+      ground.position.set((W * SQ) / 2, -0.03, (H * SQ) / 2)
+      boardGroup.add(ground)
+
+      // Grid lines — DM information, faint.
+      const gpts: THREE.Vector3[] = []
+      for (let i = 0; i <= W; i++) gpts.push(new THREE.Vector3(i * SQ, 0.07, 0), new THREE.Vector3(i * SQ, 0.07, H * SQ))
+      for (let j = 0; j <= H; j++) gpts.push(new THREE.Vector3(0, 0.07, j * SQ), new THREE.Vector3(W * SQ, 0.07, j * SQ))
+      boardGroup.add(new THREE.LineSegments(
+        new THREE.BufferGeometry().setFromPoints(gpts),
+        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.13 }),
+      ))
+
+      // Cell geometry: rock, cage, doors — when the node declares them.
+      if (meta.cells_url) {
+        try {
+          const cells = (await fetch(meta.cells_url).then((r) => r.json())) as CellsJson
+          const R = cells.render ?? {}
+          const walk = new Set<string>()
+          const islandSet = new Set<string>()
+          for (const c of [...cells.cells.floor, ...(cells.cells.water ?? [])]) {
+            const k = c.sq.join(",")
+            if (c.island) islandSet.add(k)
+            else walk.add(k)
+          }
+          const doorCells = new Set((cells.cells.doors ?? []).map((d) => d.sq.join(",")))
+
+          const rockTex = tex(storageTex("tiles/floor_cave.png"))
+          const plainSide = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x39332c, roughness: 1, metalness: 0 })
+          const ironMat = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x2e2a26, roughness: 0.9, metalness: 0.25 })
+          const wallH = 1.35
+
+          if (R.cage) {
+            // The pen's bars, floor-outward — one panel per open face, so
+            // edge squares are sealed too (the old inward sweep left gaps).
+            const barMat = new THREE.MeshStandardMaterial({
+              map: tex(storageTex(R.cage_texture || "tiles/jail_bars.png")),
+              transparent: true, alphaTest: 0.35, side: THREE.DoubleSide,
+              roughness: 0.85, metalness: 0.15, color: 0xb9a98c,
+            })
+            const bh = R.cage_height || 2.5
+            for (const k of walk) {
+              const [x, y] = k.split(",").map(Number)
+              if (doorCells.has(k)) continue
+              for (const [nx, ny] of sq4(x, y)) {
+                const nk = nx + "," + ny
+                if (walk.has(nk) || doorCells.has(nk)) continue
+                const c = sqCentre(x, y)
+                const panel = new THREE.Mesh(new THREE.PlaneGeometry(SQ, bh), barMat)
+                panel.position.set(c.x + (nx - x) * SQ * 0.5, bh / 2, c.z + (ny - y) * SQ * 0.5)
+                if (nx !== x) panel.rotation.y = Math.PI / 2
+                panel.castShadow = true
+                boardGroup.add(panel)
+                const sill = new THREE.Mesh(
+                  new THREE.BoxGeometry(nx !== x ? 0.18 : SQ, 0.18, nx !== x ? SQ : 0.18), ironMat)
+                sill.position.copy(panel.position)
+                sill.position.y = 0.09
+                boardGroup.add(sill)
+              }
+            }
+          } else {
+            // Rock: boxes whose top face keeps its own patch of the art.
+            for (let y = 0; y < H; y++) {
+              for (let x = 0; x < W; x++) {
+                const k = x + "," + y
+                if (walk.has(k) || islandSet.has(k)) continue
+                let top: THREE.Material = plainSide
+                let side: THREE.Material = plainSide
+                if (floorMat.map) {
+                  const t = floorMat.map.clone()
+                  t.needsUpdate = true
+                  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping
+                  t.repeat.set(1 / W, 1 / H)
+                  t.offset.set(x / W, 1 - (y + 1) / H)
+                  top = new THREE.MeshStandardMaterial({ map: t, roughness: 0.98, metalness: 0 })
+                  const ts = t.clone()
+                  ts.needsUpdate = true
+                  side = new THREE.MeshStandardMaterial({ map: ts, roughness: 1, metalness: 0, color: 0x6a6a72 })
+                }
+                const box = new THREE.Mesh(new THREE.BoxGeometry(SQ, wallH, SQ), [side, side, top, plainSide, side, side])
+                const c = sqCentre(x, y)
+                box.position.set(c.x, wallH / 2, c.z)
+                box.castShadow = box.receiveShadow = true
+                boardGroup.add(box)
+              }
+            }
+          }
+
+          // Doors — framed, hinged, clickable, honouring the lock.
+          for (const d of cells.cells.doors ?? []) {
+            const c = sqCentre(d.sq[0], d.sq[1])
+            const across = d.dir ? d.dir[0] !== 0 : false
+            const h = 2.1
+            const door = new THREE.Group()
+            door.position.set(c.x, 0, c.z)
+            door.rotation.y = across ? Math.PI / 2 : 0
+            for (const s of [-1, 1]) {
+              const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, h * 1.04, 0.22), ironMat)
+              post.position.set(s * SQ * 0.46, h * 0.52, 0)
+              post.castShadow = true
+              door.add(post)
+            }
+            const lintel = new THREE.Mesh(new THREE.BoxGeometry(SQ * 1.06, 0.18, 0.24), ironMat)
+            lintel.position.set(0, h * 1.04, 0)
+            door.add(lintel)
+            const texPath = d.texture || R.door_texture || "tiles/jail_gate.png"
+            const solid = /iron_door|wood_door|drow_door/.test(texPath)
+            const leafMat = new THREE.MeshStandardMaterial({
+              map: tex(storageTex(texPath)),
+              transparent: !solid, alphaTest: solid ? 0 : 0.3, side: THREE.DoubleSide,
+              roughness: solid ? 0.62 : 0.8, metalness: solid ? 0.55 : 0.2,
+              color: solid ? 0xbfb6a6 : 0xa9997e,
+            })
+            const hinge = new THREE.Group()
+            hinge.position.set(-SQ * 0.46, 0, 0)
+            const leaf = new THREE.Mesh(new THREE.BoxGeometry(SQ * 0.92, h, 0.12), leafMat)
+            leaf.position.set(SQ * 0.46, h / 2, 0)
+            leaf.castShadow = true
+            hinge.add(leaf)
+            door.add(hinge)
+            boardGroup.add(door)
+            const rec: DoorRec = {
+              cell: d.sq.join(","), data: d, hinge, leaf,
+              open: Boolean(d.initially_open),
+              locked: d.locked !== undefined && d.locked !== null ? Boolean(d.locked) : true,
+              t: d.initially_open ? 1 : 0, targetT: d.initially_open ? 1 : 0, shake: 0,
+            }
+            leaf.userData.door = rec
+            doorRecs.push(rec)
+            doorLeaves.push(leaf)
+            if (rec.open) applyDoor(rec, 1)
+          }
+        } catch (e) {
+          // The board without its geometry is still a board. Say so, carry on.
+          console.error("[board] cell geometry failed to load:", e)
+        }
+      }
+
+      // Frame the whole tile.
+      target.set((W * SQ) / 2, 0, (H * SQ) / 2)
+      dist = Math.max(W, H) * SQ * 1.5 + 4
+      if (scene.fog instanceof THREE.Fog) {
+        scene.fog.near = dist * 0.9
+        scene.fog.far = dist * 2.6
+      }
+      torch.position.set(target.x, 9, target.z)
+      torch2.position.set(target.x + 5, 7, target.z - 4)
+      applyCamera()
+
+      // The combatants.
+      const { data: tokenRows } = await supabase
+        .from("vtt_tokens")
+        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
+        .eq("map_id", map.id)
+      for (const row of (tokenRows ?? []) as TokenRow[]) spawnToken(row)
+      setStatus("")
+
+      // Live: any token change, from any hand, lands on every board.
+      const channel = supabase
+        .channel("vtt-tokens-board")
+        .on("postgres_changes", { event: "*", schema: "public", table: "vtt_tokens", filter: `map_id=eq.${map.id}` }, (payload) => {
+          if (payload.eventType === "DELETE") {
+            const gone = tokensRef.current.get((payload.old as { id: string }).id)
+            if (gone) {
+              tokenGroup.remove(gone.obj)
+              tokensRef.current.delete((payload.old as { id: string }).id)
+            }
+            return
+          }
+          glideToken(payload.new as TokenRow)
+        })
+        .subscribe()
+      return () => { void supabase.removeChannel(channel) }
+    }
+
+    let cleanupRealtime: (() => void) | undefined
+    void build().then((fn) => { cleanupRealtime = fn ?? undefined })
+
+    // ---- animation loop ---------------------------------------------
+    const clock = new THREE.Clock()
+    let raf = 0
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const dt = Math.min(clock.getDelta(), 0.1)
+      // Door swings + locked rattles.
+      for (const rec of doorRecs) {
+        if (rec.t !== rec.targetT) {
+          rec.t += Math.sign(rec.targetT - rec.t) * dt * 2.2
+          rec.t = Math.max(0, Math.min(1, rec.t))
+          applyDoor(rec, rec.t)
+        }
+        if (rec.shake > 0) {
+          rec.shake = Math.max(0, rec.shake - dt * 3)
+          rec.hinge.rotation.y = Math.sin(rec.shake * 40) * 0.02 * rec.shake
+        }
+      }
+      // Token glides.
+      tokensRef.current.forEach((entry) => {
+        const gl = entry.obj.userData.glide as { from: THREE.Vector3; to: THREE.Vector3; t: number } | undefined
+        if (!gl) return
+        gl.t = Math.min(1, gl.t + dt * 2.6)
+        const ease = gl.t * gl.t * (3 - 2 * gl.t)
+        entry.obj.position.lerpVectors(gl.from, gl.to, ease)
+        // A step-height hop so the move reads as a move, not a teleport.
+        entry.obj.position.y = Math.sin(ease * Math.PI) * 0.22
+        if (gl.t >= 1) delete entry.obj.userData.glide
+      })
+      renderer.render(scene, camera)
+    }
+    tick()
+
+    const onResize = () => {
+      if (!mount) return
+      camera.aspect = mount.clientWidth / mount.clientHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(mount.clientWidth, mount.clientHeight)
+    }
+    const ro = new ResizeObserver(onResize)
+    ro.observe(mount)
+
+    return () => {
+      disposed = true
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      cleanupRealtime?.()
+      renderer.domElement.removeEventListener("mousedown", onDown)
+      window.removeEventListener("mouseup", onUp)
+      window.removeEventListener("mousemove", onMove)
+      renderer.dispose()
+      mount.removeChild(renderer.domElement)
+      tokensRef.current.clear()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-[#020204]">
+      <div ref={mountRef} className="absolute inset-0" />
+
+      {/* HUD, in the game's own dress rather than the dev viewer's */}
+      <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[300px] rounded border border-[#3a3345] bg-black/70 px-3 py-2">
+        <div className="font-serif text-[12px] tracking-wide text-[#c9a227]">{mapName || "TACTICAL BOARD"}</div>
+        {status && <div className="mt-1 font-mono text-[10px] text-[#8a8678]">{status}</div>}
+        <div className="mt-1 text-[10px] leading-relaxed text-[#8a8678]">
+          drag orbit · wheel zoom · right-drag pan · click a door to try it
+          {dm && <span className="text-[#b48fd8]"> · click a token, then a square, to move it</span>}
+        </div>
+      </div>
+
+      {selected && (
+        <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded border border-[#5a4a6a] bg-black/80 px-4 py-2 text-center">
+          <div className="font-serif text-[13px] text-[#e0d0f0]">{selected.label}</div>
+          {selected.hp_max ? (
+            <div className="font-mono text-[10px] text-[#9ab0d0]">
+              {selected.hp_current ?? selected.hp_max} / {selected.hp_max} HP
+            </div>
+          ) : null}
+          <div className="mt-0.5 text-[9px] text-[#8a8678]">{dm ? "click a square to move · click again to deselect" : "the DM commands the board"}</div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="absolute bottom-14 left-1/2 z-10 -translate-x-1/2 rounded border border-[#c9a227] bg-black/85 px-4 py-1.5 text-[12px] text-[#e8e2d0]">
+          {toast}
+        </div>
+      )}
+
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="absolute right-3 top-3 z-10 rounded border border-[#6b5123] bg-black/70 px-3 py-1.5 font-mono text-[10px] tracking-wider text-[#e1d0a8] hover:border-[#c99a49]"
+        >
+          ← SCENE
+        </button>
+      )}
+    </div>
+  )
+}
