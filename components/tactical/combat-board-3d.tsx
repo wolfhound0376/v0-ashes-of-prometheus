@@ -981,7 +981,17 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         if (gl.t >= 1) delete entry.obj.userData.glide
       })
       // Embers rise, wander, and are reborn at the floor.
+      //
+      // GUARDED, and the guard is the fix for a dead /battle page: this loop
+      // starts on mount, but the ember attribute exists only after build()
+      // returns from Supabase. Every frame in that window touched
+      // attributes.position.needsUpdate on an attribute that was not there —
+      // a race the fast machine that wrote it never lost, and production did.
       const t = clock.elapsedTime
+      if (!emberGeo.attributes.position) {
+        renderer.render(scene, activeCam())
+        return
+      }
       for (let i = 0; i < EMBERS; i++) {
         emberPos[i * 3 + 1] += emberVel[i] * dt
         emberPos[i * 3] += Math.sin(t * 0.8 + emberSeed[i]) * dt * 0.12
