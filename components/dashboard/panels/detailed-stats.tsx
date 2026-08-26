@@ -96,7 +96,7 @@ export function DetailedStats({
   const { roll, announce, busy } = useDice()
   const sheetRoll = async (spec: RollSpec) => {
     const result = await roll(spec)
-    announce(describeRoll(result))
+    announce(describeRoll(result), { result })
   }
 
   return (

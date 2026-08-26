@@ -462,7 +462,7 @@ export function CharacterSheetSlideOver({
 
   const doD20 = async (label: string, modifier: number) => {
     const result = await roll({ die: "d20", numDice: 1, modifier, label })
-    announce(describeRoll(result))
+    announce(describeRoll(result), { result })
   }
 
   const applyHeal = () => {

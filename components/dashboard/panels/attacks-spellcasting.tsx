@@ -121,7 +121,7 @@ export function AttacksSpellcasting({
       modifier: spellAttackBonus,
       label: "Spell Attack",
     })
-    announce(describeRoll(result), { toLich: true })
+    announce(describeRoll(result), { toLich: true, result })
   }
 
   // Filter equipped weapons
@@ -348,7 +348,7 @@ function AttackRow({ attack }: { attack: Attack }) {
       line += ` | ${describeRoll(damageResult)} ${attack.damageType}`
     }
 
-    announce(line, { toLich: true })
+    announce(line, { toLich: true, result: attackResult })
   }
 
   return (

@@ -50,7 +50,7 @@ export function DiceRoller({
     // Every tray roll is announced AND sent to Malachar automatically. The
     // physics result is the only truth — the player never types (or invents)
     // a number. This is the anti-tamper contract: the die reports itself.
-    announce(describeRoll(result), { toLich: true })
+    announce(describeRoll(result), { toLich: true, result })
   }, [announce, onRollResult, roll])
 
 

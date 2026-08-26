@@ -79,7 +79,7 @@ export interface DiceContextValue {
    * sends it to Malachar as this browser's character so the DM narrates the
    * outcome. Outside the dashboard this is a no-op.
    */
-  announce: (text: string, opts?: { toLich?: boolean }) => void
+  announce: (text: string, opts?: { toLich?: boolean; result?: DiceResult }) => void
   /** True while a roll is tumbling in the overlay. */
   busy: boolean
   /** True when the 3D renderer initialized successfully. */
@@ -199,7 +199,7 @@ export function useDice(): DiceContextValue {
 interface DiceProviderProps {
   children: ReactNode
   /** Wired by the dashboard page to the shared dialogue feed / Lich chat. */
-  onAnnounce?: (text: string, opts: { toLich: boolean }) => void
+  onAnnounce?: (text: string, opts: { toLich: boolean; result?: DiceResult }) => void
 }
 
 interface QueuedRoll {
@@ -442,8 +442,8 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
   )
 
   const announce = useCallback(
-    (text: string, opts?: { toLich?: boolean }) => {
-      onAnnounce?.(text, { toLich: opts?.toLich ?? false })
+    (text: string, opts?: { toLich?: boolean; result?: DiceResult }) => {
+      onAnnounce?.(text, { toLich: opts?.toLich ?? false, result: opts?.result })
     },
     [onAnnounce],
   )

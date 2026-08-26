@@ -7,7 +7,7 @@ import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
-import { DiceProvider } from "@/components/dice/dice-provider"
+import { DiceProvider, type DiceResult } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
@@ -29,6 +29,7 @@ import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
+import { rollMatchesRequest, type RollRequestSpec } from "@/lib/roll-requests"
 
 // A dialogue message carries the DB row `id` so we can dedupe. Optimistic
 // entries added before the row exists get a temporary id and `pending: true`.
@@ -170,11 +171,12 @@ export default function DashboardPage() {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([])
-  // True while Malachar's most recent message contains a [[XdY]] roll request
-  // that no roll has answered yet. While set, ANY roll made through the shared
-  // dice engine (tray, sheet skills, saves) is auto-forwarded to Malachar —
-  // the player never types a result, so the player can never invent one.
-  const awaitingRollRef = useRef(false)
+  // Server-issued handoff for Malachar's current roll request. The ref is read
+  // at click time; state renders the lifecycle without making the browser the
+  // authority over whether a result was accepted.
+  const pendingRollRef = useRef<RollRequestSpec | null>(null)
+  const [pendingRoll, setPendingRoll] = useState<RollRequestSpec | null>(null)
+  const [rollLifecycle, setRollLifecycle] = useState<"idle" | "pending" | "resolving" | "committed" | "retry">("idle")
   // Single source of truth for THIS browser's claimed identity. Updated on every
   // render (below) so every send path — typed input, suggestion chips, dice —
   // reads the character + claim token AT CLICK TIME rather than from a value
@@ -911,15 +913,12 @@ if (error) {
     setSelectedAction(actionId === selectedAction ? null : actionId)
   }
 
-  // Track whether Malachar is currently waiting on a requested roll: true when
-  // the newest feed message is his and contains [[XdY]] dice notation. Any
-  // reply (a roll line or a typed message) makes the newest message the
-  // player's again, clearing the flag naturally.
-  useEffect(() => {
-    const last = dialogue[dialogue.length - 1]
-    awaitingRollRef.current =
-      !!last && last.speaker === "Malachar" && /\[\[\s*\d*\s*d\s*\d+[^\]]*\]\]/i.test(last.text || "")
-  }, [dialogue])
+  const captureRollRequest = useCallback((request?: RollRequestSpec) => {
+    if (!request) return
+    pendingRollRef.current = request
+    setPendingRoll(request)
+    setRollLifecycle("pending")
+  }, [])
 
   // Typed messages cannot impersonate the dice engine. "[Dice Roll]" and the 🎲
   // prefix are reserved for rolls the physics engine actually resolved; a player
@@ -962,6 +961,7 @@ if (error) {
         return
       }
       if (response?.text) {
+        captureRollRequest(response.rollRequest)
         // Optimistically add Malachar's response (also pending → reconciled by id)
         setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
 
@@ -997,6 +997,7 @@ if (error) {
         return
       }
       if (response?.text) {
+        captureRollRequest(response.rollRequest)
         setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
         if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
         if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
@@ -1005,7 +1006,7 @@ if (error) {
         await fetchCharacterData()
       }
     },
-    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure],
+    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure, captureRollRequest],
   )
 
   // Announce a completed sheet roll to the table. Every browser sees the roll
@@ -1014,14 +1015,10 @@ if (error) {
   // browser's character so the DM narrates the outcome of these EXACT numbers
   // — the roll already happened, he never re-rolls.
   const handleDiceAnnounce = useCallback(
-    async (text: string, opts: { toLich: boolean }) => {
+    async (text: string, opts: { toLich: boolean; result?: DiceResult }) => {
       const playerName = selectedCharacter?.name || "Player"
       const line = `🎲 ${text}`
-      // Action rolls always go to Malachar. Check rolls (sheet skills, saves)
-      // ALSO go to him whenever his latest message asked for a roll — the
-      // answer to "Roll [[1d20]]" should never have to be typed by hand.
-      const sendToDm = opts.toLich || awaitingRollRef.current
-      awaitingRollRef.current = false
+      const request = pendingRollRef.current
 
       // Feed line, visible on all browsers. Optimistic → reconciled by the
       // realtime echo of the inserted row.
@@ -1029,12 +1026,51 @@ if (error) {
       const { error } = await supabase.from("dialogue").insert({ speaker: playerName, speaker_type: "player", channel: "dm", text: line })
       if (error) console.error("[Dice] failed to persist roll announcement:", error)
 
-      // Action rolls also go to the DM for narration.
-      if (sendToDm) {
-        const response = await dispatchToLich(
-          `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`,
-        )
+      let dmMessage: string | null = null
+      if (request && opts.result) {
+        setRollLifecycle("resolving")
+        const { characterId, claimToken } = claimRef.current
+        const matches = rollMatchesRequest(request, opts.result)
+        let resolution: Response
+        try {
+          resolution = await fetch("/api/rolls/resolve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requestId: request.id, characterId, claimToken, result: opts.result }),
+          })
+        } catch {
+          setRollLifecycle("retry")
+          setDialogue(prev => mergeDialogue(prev, {
+            id: tempId(),
+            speaker: "System",
+            text: "The roll ledger could not be reached. Try the requested roll again.",
+          }))
+          return
+        }
+        const resolved = await resolution.json().catch(() => null)
+        if (!resolution.ok || !resolved?.accepted) {
+          setRollLifecycle("retry")
+          const reason = matches
+            ? "The roll could not be committed. Try the requested roll again."
+            : `Malachar is waiting for ${request.expression}; that roll did not match.`
+          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "System", text: reason }))
+          return
+        }
+        pendingRollRef.current = null
+        setPendingRoll(null)
+        setRollLifecycle("committed")
+        if (resolved.shouldDispatch && typeof resolved.message === "string") dmMessage = resolved.message
+      } else if (opts.toLich) {
+        dmMessage = `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`
+      }
+
+      // Only the first accepted resolution is returned to Malachar. A replay
+      // cannot mutate the roll ledger a second time.
+      if (dmMessage) {
+        const response = await dispatchToLich(dmMessage)
         if (response?.text) {
+          if (response.rollRequest) captureRollRequest(response.rollRequest)
+          else setRollLifecycle("idle")
           setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
           if (response.npcImageUrl) setNpcImageUrl(response.npcImageUrl)
           if (response.locationImageUrl) setSceneImageUrl(response.locationImageUrl)
@@ -1044,7 +1080,7 @@ if (error) {
         }
       }
     },
-    [selectedCharacter, dispatchToLich, fetchCharacterData],
+    [selectedCharacter, dispatchToLich, fetchCharacterData, captureRollRequest],
   )
 
   // Handler for populating starting equipment (D&D 5E standard gear)
@@ -1202,6 +1238,15 @@ if (error) {
           setWorldAIPanelOpen(true)
         }}
       />
+
+      {rollLifecycle !== "idle" && (
+        <div className="fixed left-1/2 top-14 z-[65] -translate-x-1/2 rounded border border-[#7a5f33] bg-[#15110c]/95 px-3 py-1.5 text-xs text-[#e2c98e] shadow-lg">
+          {rollLifecycle === "pending" && pendingRoll && `Malachar requests ${pendingRoll.expression}`}
+          {rollLifecycle === "resolving" && "Resolving the committed dice result…"}
+          {rollLifecycle === "committed" && "Roll committed — returning to Malachar…"}
+          {rollLifecycle === "retry" && pendingRoll && `Roll ${pendingRoll.expression} to continue`}
+        </div>
+      )}
 
       {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} characterId={claimRef.current.characterId} onClose={() => setCampaignBook(null)} /> : null}
       {npcAssetsOpen && !claimLocked ? <DmAssetsPanel onClose={() => setNpcAssetsOpen(false)} /> : null}

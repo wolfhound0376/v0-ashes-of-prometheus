@@ -621,7 +621,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   // initiative roll reads identically to every other roll in the feed.
   const rollInitiative = async () => {
     const result = await roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
-    announce(describeRoll(result), { toLich: true })
+    announce(describeRoll(result), { toLich: true, result })
   }
 
   return <main className="aop-lich-dashboard grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">

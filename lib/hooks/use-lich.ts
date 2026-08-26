@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import type { RollRequestSpec } from "@/lib/roll-requests"
 
 interface LichResponse {
   text: string
@@ -25,6 +26,8 @@ interface LichResponse {
   updatedLocation?: string
   /** Player-safe vague time-of-day derived server-side from the world clock. */
   timeOfDay?: string
+  cinematicCue?: string
+  rollRequest?: RollRequestSpec
 }
 
 export function useLich(campaignId: string = "abyss") {
@@ -101,6 +104,10 @@ export function useLich(campaignId: string = "abyss") {
         updatedLocation: data.updatedLocation,
         timeOfDay: typeof data.timeOfDay === "string" ? data.timeOfDay : undefined,
         cinematicCue: typeof data.cinematicCue === "string" ? data.cinematicCue : undefined,
+        rollRequest:
+          data.rollRequest && typeof data.rollRequest.id === "string"
+            ? (data.rollRequest as RollRequestSpec)
+            : undefined,
       }
     } catch (error) {
       console.error("Error sending message:", error)

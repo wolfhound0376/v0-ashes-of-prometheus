@@ -2,6 +2,7 @@ import { generateText, type ModelMessage } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { parseRollRequest, type RollRequestSpec } from "@/lib/roll-requests"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
 // ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
@@ -2792,6 +2793,64 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
     }
   }
 
+  // Turn the visible [[XdY+Z]] cue into a server-owned, character-bound handoff.
+  // The text remains for readability, but only this ledger entry can be resolved
+  // by the dice endpoint. A committed result is consumed after Malachar answers,
+  // which also permits a follow-up roll request in the same response.
+  let rollRequest: RollRequestSpec | undefined
+  if (playerCharacter) {
+    try {
+      const admin = createAdminClient()
+      const committedResultId = /\[ROLL_RESULT:([0-9a-f-]{36})\]/i.exec(message)?.[1]
+      if (committedResultId) {
+        await admin
+          .from("roll_requests")
+          .update({ status: "consumed", consumed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq("id", committedResultId)
+          .eq("character_id", playerCharacter.id)
+          .eq("status", "resolved")
+      }
+
+      const parsedRequest = parseRollRequest(rawText)
+      if (parsedRequest) {
+        // A later DM turn supersedes an unanswered request for this character.
+        await admin
+          .from("roll_requests")
+          .update({ status: "rejected", updated_at: new Date().toISOString() })
+          .eq("character_id", playerCharacter.id)
+          .eq("status", "pending")
+
+        const { data: created, error: createError } = await admin
+          .from("roll_requests")
+          .insert({
+            session_id: activeSessionId,
+            character_id: playerCharacter.id,
+            requested_expression: parsedRequest.expression,
+            die_sides: Number.parseInt(parsedRequest.die.slice(1), 10),
+            dice_count: parsedRequest.diceCount,
+            modifier: parsedRequest.modifier,
+          })
+          .select("id, correlation_id, requested_expression, die_sides, dice_count, modifier, purpose, status")
+          .single()
+        if (createError) throw createError
+        rollRequest = {
+          id: created.id,
+          correlationId: created.correlation_id,
+          expression: created.requested_expression,
+          die: `d${created.die_sides}`,
+          diceCount: created.dice_count,
+          modifier: created.modifier,
+          purpose: created.purpose,
+          status: created.status,
+        }
+      }
+    } catch (error) {
+      // Keep narration available during a staggered deploy, but never fabricate
+      // a client-side request when the authoritative ledger was unavailable.
+      console.error("[rolls] failed to persist roll handoff:", error)
+    }
+  }
+
   return Response.json({
     text: responseText || "",
     speechSegments,
@@ -2805,5 +2864,6 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
     // A validated action-cinematic cue, if this turn earned one. The client
     // asks /api/cinematics to resolve it; a null cue means no film this turn.
     cinematicCue: cinematicCue || undefined,
+    rollRequest,
   })
 }
