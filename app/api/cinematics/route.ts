@@ -226,7 +226,31 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Location is required" }, { status: 400 })
   }
 
-  // The Postgres function owns the three-tier fallback, weighted-random variant
+  // CHARACTER BINDING (migration 20260821030000). cinematic_clips rows may be
+  // bound to a character (character_id) or a class (character_class), and the
+  // resolver HIDES bound rows from any caller that does not identify a matching
+  // character. Passing the id is therefore not optional book-keeping: without it,
+  // every bound clip — Fifi's manacles, the bard's first song — silently misses
+  // for everyone, including its owner.
+  //
+  // The class is looked up server-side from the character id rather than read
+  // from the query string: a clip bound to "Bard" must not be unlockable by
+  // anyone willing to append &character_class=Bard to a URL. The id is already
+  // the trusted handle everywhere else in this route. A lookup failure degrades
+  // to null, which can cost a character their own personal footage but can never
+  // show them someone else's.
+  let characterClass: string | null = null
+  if (characterId) {
+    const { data: who, error: whoError } = await admin
+      .from("characters")
+      .select("class")
+      .eq("id", characterId)
+      .maybeSingle()
+    if (whoError) console.error("[cinematics] class lookup failed:", whoError.message)
+    characterClass = (who?.class as string | null) ?? null
+  }
+
+  // The Postgres function owns the tiered fallback, weighted-random variant
   // selection, and skipping unusable rows. EXECUTE is granted only to
   // service_role, so this must run on the admin client. It returns zero or one
   // row shaped { clip_id, video_url, resolution }; zero rows means a miss.
@@ -235,6 +259,8 @@ export async function GET(request: NextRequest) {
     p_state: state ?? null,
     p_scope: scope ?? "party",
     p_kind: kind ?? "environment",
+    p_character_id: characterId,
+    p_character_class: characterClass,
   })
 
   if (error) {
