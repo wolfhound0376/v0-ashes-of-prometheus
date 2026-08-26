@@ -31,7 +31,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { createClient } from "@/lib/supabase/client"
-import { getDmKey, onDmKeyChange } from "@/lib/dm-key"
+import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const TILE_BASE =
   "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/map-tiles/diablo-gothic"
@@ -115,6 +115,13 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   // DM markers at eye level.
   const [darknessOn, setDarknessOn] = useState(true)
   const [party, setParty] = useState<TokenRow[]>([])
+  const [combat, setCombat] = useState<{
+    id: string
+    round: number
+    active_index: number
+    turn_order: { token_id: string; label: string; kind: "pc" | "npc"; dex_mod: number; roll: number; total: number }[]
+  } | null>(null)
+  const [combatBusy, setCombatBusy] = useState(false)
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
   const [classicCam, setClassicCam] = useState(true)
   const classicRef = useRef<((on: boolean) => void) | null>(null)
@@ -905,6 +912,21 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       setParty(((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id && r.is_visible))
       setStatus("")
 
+      // Initiative: current state, then live by realtime — the turn passing
+      // is the event every screen at the table is waiting for.
+      const loadCombat = async () => {
+        try {
+          const res = await fetch("/api/combat", { cache: "no-store" })
+          const data = res.ok ? await res.json() : null
+          setCombat(data?.combat && data.combat.status !== "ended" ? data.combat : null)
+        } catch { /* the board without a turn strip is still a board */ }
+      }
+      void loadCombat()
+      const combatChannel = supabase
+        .channel("combat-state-board")
+        .on("postgres_changes", { event: "*", schema: "public", table: "combat_state", filter: `map_id=eq.${map.id}` }, () => void loadCombat())
+        .subscribe()
+
       // Live: any token change, from any hand, lands on every board.
       const channel = supabase
         .channel("vtt-tokens-board")
@@ -920,7 +942,10 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
           glideToken(payload.new as TokenRow)
         })
         .subscribe()
-      return () => { void supabase.removeChannel(channel) }
+      return () => {
+        void supabase.removeChannel(channel)
+        void supabase.removeChannel(combatChannel)
+      }
     }
 
     let cleanupRealtime: (() => void) | undefined
@@ -995,6 +1020,26 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const combatAction = async (action: "start" | "next" | "end") => {
+    if (combatBusy) return
+    setCombatBusy(true)
+    try {
+      const res = await fetch("/api/combat", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...dmHeaders() },
+        body: JSON.stringify({ action }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        say(data?.error ?? "The order would not hold.")
+      }
+    } catch {
+      say("The order would not hold — the network blinked.")
+    } finally {
+      setCombatBusy(false)
+    }
+  }
+
   return (
     // ABSOLUTE, not h-full. The stage container already holds a full-height
     // scene <img>; a static child after it lays out BELOW that image and is
@@ -1067,9 +1112,54 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         )}
       </div>
 
+      {/* THE TURN STRIP. Who acts, who is next, what they rolled — the
+          arithmetic stays visible because this campaign does not do hidden
+          numbers. The acting combatant burns gold. */}
+      {combat && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2">
+          <div className="flex items-center gap-1 rounded border border-[#3a2c1a] bg-black/80 px-2 py-1.5 shadow-[0_0_20px_#000]">
+            <span className="mr-1 font-serif text-[9px] uppercase tracking-[0.2em] text-[#a89468]">Round {combat.round}</span>
+            {combat.turn_order.map((entry, i) => (
+              <span
+                key={entry.token_id}
+                title={`d20 ${entry.roll} ${entry.dex_mod >= 0 ? "+" : ""}${entry.dex_mod} = ${entry.total}`}
+                className={
+                  "rounded px-2 py-0.5 font-serif text-[10px] tracking-wide " +
+                  (i === combat.active_index
+                    ? "bg-[#8b6427] font-bold text-white shadow-[0_0_10px_#c9a22788]"
+                    : entry.kind === "pc"
+                      ? "text-[#9fc3e8]"
+                      : "text-[#d98a80]")
+                }
+              >
+                {entry.label}
+                <span className="ml-1 text-[8px] opacity-60">{entry.total}</span>
+              </span>
+            ))}
+          </div>
+          {dm && (
+            <div className="pointer-events-auto mt-1.5 flex justify-center gap-1.5">
+              <button disabled={combatBusy} onClick={() => void combatAction("next")} className="rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] disabled:opacity-40">Next Turn →</button>
+              <button disabled={combatBusy} onClick={() => void combatAction("end")} className="rounded border border-[#4a3a2a] bg-black/70 px-3 py-1 text-[9px] uppercase tracking-wider text-[#a89468] hover:border-[#8b6427] disabled:opacity-40">End Combat</button>
+            </div>
+          )}
+        </div>
+      )}
+      {!combat && dm && (
+        <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2">
+          <button
+            disabled={combatBusy}
+            onClick={() => void combatAction("start")}
+            className="rounded border-2 border-[#8b6427] bg-[#1c1408]/95 px-4 py-1.5 font-serif text-[11px] uppercase tracking-[0.18em] text-[#f0cd7a] shadow-[0_0_16px_#000] hover:border-[#f4e0a8] disabled:opacity-40"
+          >
+            ⚔ Roll Initiative
+          </button>
+        </div>
+      )}
+
       {/* A selected ENEMY gets the red gothic nameplate, top centre. */}
       {selected && !selected.character_id && (
-        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 text-center">
+        <div className={"pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 text-center " + (combat ? "top-20" : "top-3")}>
           <div className="font-serif text-[15px] font-bold uppercase tracking-[0.2em] text-[#c23b2e] [text-shadow:0_1px_3px_#000]">
             {selected.label}
           </div>
