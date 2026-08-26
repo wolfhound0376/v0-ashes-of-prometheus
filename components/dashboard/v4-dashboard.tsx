@@ -340,6 +340,11 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [diceOpen, setDiceOpen] = useState(false)
   const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
+  // Which face of the tactical stage is showing. The BOARD is always
+  // reachable now — "you can only see the battle map while a monster is
+  // active" meant Sam built a combat interface he could not open. Combat
+  // only picks the DEFAULT: a fight starting flips the stage to the board.
+  const [tacticalView, setTacticalView] = useState<"board" | "travel">("travel")
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   // Restart Campaign DOES clear the dialogue table — the reason it looked like
   // it had failed is right here. An empty feed fell straight back to the
@@ -436,6 +441,13 @@ export function V4Dashboard(props: V4DashboardProps) {
   // the previous behaviour (1 / 0), so untuned characters are unchanged.
   const stageFrame = characterStageStyle(selected as (Character & StageFramingRow) | undefined)
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
+  // A fight breaking out drags the tactical stage to the board once. It does
+  // not fight the DM afterwards — switch freely mid-combat.
+  const wasInCombat = useRef(false)
+  useEffect(() => {
+    if (inCombat && !wasInCombat.current) setTacticalView("board")
+    wasInCombat.current = inCombat
+  }, [inCombat])
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
   const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
   const isMagicUser = ["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"].includes((selected?.class ?? "").toLowerCase())
@@ -671,7 +683,15 @@ export function V4Dashboard(props: V4DashboardProps) {
             : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
-        </> : inCombat ? <CombatBoard3D onBack={() => setStageMode("scene")} /> : <MapPanel initial="location" onBack={() => setStageMode("scene")} />}
+        </> : <>
+          {tacticalView === "board"
+            ? <CombatBoard3D onBack={() => setStageMode("scene")} />
+            : <MapPanel initial="location" onBack={() => setStageMode("scene")} />}
+          <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1 rounded border border-[#6b5123] bg-[#080705]/90 p-1 text-[8px] uppercase tracking-wider">
+            <button onClick={() => setTacticalView("board")} className={cn("rounded px-2.5 py-1", tacticalView === "board" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}>Battle Board{inCombat ? " · Live" : ""}</button>
+            <button onClick={() => setTacticalView("travel")} className={cn("rounded px-2.5 py-1", tacticalView === "travel" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}>Travel Map</button>
+          </div>
+        </>}
       </div>
       <div className="flex flex-col gap-1">
         <SuggestionChips
