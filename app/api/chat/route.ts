@@ -2744,6 +2744,52 @@ Rules:
         )
       }
     }
+
+    // SECOND LOOK. Malachar has never once emitted this tag in production —
+    // not before the prompt rules were widened and not after — while the film
+    // for moments like sleeping sat unwatched. Every other link was verified
+    // working: the whitelist builds, the parser accepts, the clip has video,
+    // the client plays what it is handed. The tag is simply the last
+    // instruction in a very long prompt, and it loses.
+    //
+    // So when he stays silent, a cheap model is asked one narrow question
+    // against the SAME closed list: did any of these actually happen here? It
+    // cannot invent — the answer is validated against the whitelist exactly as
+    // his own is — and NONE is the expected answer on most turns.
+    if (!cinematicCue) {
+      try {
+        const verdict = await generateText({
+          model: anthropic("claude-haiku-4-5-20251001"),
+          messages: [
+            {
+              role: "user",
+              content: `A tabletop RPG turn just happened. Some moments in this room have film shot for them.
+
+Cue names: ${availableCinematicCues.join(", ")}
+
+The player's action: ${message}
+
+What the DM narrated: ${rawText.slice(0, 1500)}
+
+Which ONE cue name describes a moment that GENUINELY HAPPENED in that narration? A cue about sleeping needs the character to have slept; a cue ending -success needs the attempt to have succeeded; a cue ending -fail needs it to have failed. Quiet moments count — sleeping, resting, a song — as long as the narration says they occurred.
+
+Answer with exactly one cue name from the list, or the single word NONE. No other words.`,
+            },
+          ],
+        })
+        const named = (verdict.text || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "")
+        const valid = availableCinematicCues.find((c) => c.toLowerCase() === named)
+        if (valid) {
+          cinematicCue = valid
+          console.log("[cinematics] cue recovered by second look:", valid)
+        } else if (named && named !== "none") {
+          console.warn(`[cinematics] second look named an unknown cue "${named}"`)
+        }
+      } catch (e) {
+        // The turn matters more than the film: a failed second look is silent.
+        console.error("[cinematics] second look failed:", e)
+      }
+    }
   }
 
   return Response.json({
