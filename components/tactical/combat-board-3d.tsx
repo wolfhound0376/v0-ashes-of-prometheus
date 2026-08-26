@@ -114,6 +114,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   // to place tokens and read the room, the way the local viewer hid its
   // DM markers at eye level.
   const [darknessOn, setDarknessOn] = useState(true)
+  const [party, setParty] = useState<TokenRow[]>([])
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
 
   // Refs bridging React and the imperative three scene.
@@ -165,11 +166,15 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
     // Sam saw. The board's real light source is the ARTWORK: it is pre-lit by
     // the artist, so the floor and rock glow with their own texture (emissive,
     // below) and the lamps only add depth on the 3D pieces.
-    const ambient = new THREE.AmbientLight(0x9a9086, 2.6)
+    // D2:R's own approach (per the GDC talk): strip the constant ambient
+    // room light and let dynamic point lights carry the scene. Ambient here
+    // is a floor, not a source - the carried torches, door lamps and the
+    // self-lit artwork do the actual illuminating.
+    const ambient = new THREE.AmbientLight(0x8a8078, 1.5)
     scene.add(ambient)
-    const hemi = new THREE.HemisphereLight(0x8a90b0, 0x3a2e20, 1.4)
+    const hemi = new THREE.HemisphereLight(0x6a7090, 0x2e2418, 0.8)
     scene.add(hemi)
-    const moon = new THREE.DirectionalLight(0x6a7a9c, 1.2)
+    const moon = new THREE.DirectionalLight(0x6a7a9c, 0.7)
     moon.position.set(-20, 30, -10)
     scene.add(moon)
     const torch = new THREE.PointLight(0xff9a3c, 40, 90, 1.4)
@@ -487,6 +492,38 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         g.add(body)
       }
 
+      // D2's light is WARM. Each party token carries a small orange point
+      // light (it moves with the group, so the walls and bars catch fire-
+      // colour as they pass) and an additive glow pooled on the floor.
+      if (row.character_id) {
+        const carry = new THREE.PointLight(0xff9a3c, 11, 7.5, 1.7)
+        carry.position.y = 1.1
+        // Real shadows off the bars and door frames as the bearer walks -
+        // the D2:R trick that makes light feel physical. 512 keeps four of
+        // these affordable.
+        carry.castShadow = true
+        carry.shadow.mapSize.set(512, 512)
+        g.add(carry)
+        const glowCanvas = document.createElement("canvas")
+        glowCanvas.width = glowCanvas.height = 128
+        const gc = glowCanvas.getContext("2d")!
+        const gg = gc.createRadialGradient(64, 64, 4, 64, 64, 62)
+        gg.addColorStop(0, "rgba(255,166,74,0.5)")
+        gg.addColorStop(0.5, "rgba(255,120,40,0.22)")
+        gg.addColorStop(1, "rgba(255,100,30,0)")
+        gc.fillStyle = gg
+        gc.fillRect(0, 0, 128, 128)
+        const glowTex = new THREE.CanvasTexture(glowCanvas)
+        const glow = new THREE.Mesh(
+          new THREE.PlaneGeometry(3.6, 3.6),
+          new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+        )
+        glow.rotation.x = -Math.PI / 2
+        glow.position.y = 0.1
+        glow.renderOrder = 6 // above the darkness plane
+        g.add(glow)
+      }
+
       const label = buildLabel(row)
       label.position.y = 1.35
       g.add(label)
@@ -553,7 +590,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
             // the mercy of scene lights and tone mapping, and it arrived on
             // production nearly black.
             return new THREE.MeshStandardMaterial({
-              map: art, emissiveMap: art, emissive: 0xffffff, emissiveIntensity: 0.78,
+              map: art, emissiveMap: art, emissive: 0xffffff, emissiveIntensity: 0.62,
               roughness: 0.95, metalness: 0.04,
             })
           })()
@@ -696,6 +733,12 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
             hinge.add(leaf)
             door.add(hinge)
             boardGroup.add(door)
+            // A lamp above every doorway - the drow light their gates, and it
+            // gives the darkness fixed warm anchors the way D2 rooms hang
+            // braziers at their thresholds.
+            const lamp = new THREE.PointLight(0xff8a30, 6, 5.5, 1.8)
+            lamp.position.set(c.x, 2.35, c.z)
+            boardGroup.add(lamp)
             const rec: DoorRec = {
               cell: d.sq.join(","), data: d, hinge, leaf,
               open: Boolean(d.initially_open),
@@ -759,6 +802,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
         .eq("map_id", map.id)
       for (const row of (tokenRows ?? []) as TokenRow[]) spawnToken(row)
+      setParty(((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id && r.is_visible))
       setStatus("")
 
       // Live: any token change, from any hand, lands on every board.
@@ -901,14 +945,69 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         </div>
       )}
 
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="absolute right-3 top-3 z-10 rounded border border-[#6b5123] bg-black/70 px-3 py-1.5 font-mono text-[10px] tracking-wider text-[#e1d0a8] hover:border-[#c99a49]"
-        >
-          ← SCENE
-        </button>
+      {/* Location name, D2 style: gold gothic caps, top right, unadorned. */}
+      <div className="pointer-events-none absolute right-3 top-3 z-10 text-right">
+        <div className="font-serif text-[13px] font-semibold uppercase tracking-[0.28em] text-[#d8b25a] [text-shadow:0_1px_3px_#000,0_0_14px_#00000088]">
+          {(mapName || "").replace(/\s*\(.*$/, "") || "The Underdark"}
+        </div>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="pointer-events-auto mt-1.5 rounded border border-[#6b5123] bg-black/70 px-3 py-1 font-mono text-[9px] tracking-wider text-[#e1d0a8] hover:border-[#c99a49]"
+          >
+            ← SCENE
+          </button>
+        )}
+      </div>
+
+      {/* A selected ENEMY gets the red gothic nameplate, top centre. */}
+      {selected && !selected.character_id && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 text-center">
+          <div className="font-serif text-[15px] font-bold uppercase tracking-[0.2em] text-[#c23b2e] [text-shadow:0_1px_3px_#000]">
+            {selected.label}
+          </div>
+          {selected.hp_max ? (
+            <div className="mx-auto mt-1 h-1.5 w-44 overflow-hidden rounded-sm border border-[#4a1512] bg-[#160705]">
+              <div
+                className="h-full bg-gradient-to-r from-[#7a1410] to-[#c23b2e]"
+                style={{ width: `${Math.max(0, Math.min(100, ((selected.hp_current ?? selected.hp_max) / selected.hp_max) * 100))}%` }}
+              />
+            </div>
+          ) : null}
+        </div>
       )}
+
+      {/* The life orb. Drawn from scratch - D2's shape, none of its assets.
+          Shows the selected party member, else the first of the party. */}
+      {(() => {
+        const bearer = selected?.character_id ? selected : party[0]
+        if (!bearer || !bearer.hp_max) return null
+        const frac = Math.max(0, Math.min(1, (bearer.hp_current ?? bearer.hp_max) / bearer.hp_max))
+        return (
+          <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex items-end gap-2.5">
+            <div
+              className="relative h-24 w-24 overflow-hidden rounded-full border-[3px] border-[#3a2c1a] shadow-[0_0_24px_#000,inset_0_0_18px_#000]"
+              style={{ background: "radial-gradient(circle at 35% 30%, #1a0505, #0a0202 70%)" }}
+            >
+              <div
+                className="absolute inset-x-0 bottom-0 transition-[height] duration-500"
+                style={{
+                  height: `${frac * 100}%`,
+                  background: "radial-gradient(circle at 40% 20%, #e04838, #8f1810 55%, #5a0d08)",
+                  boxShadow: "inset 0 4px 10px #ff8a70aa, inset 0 -6px 12px #40060388",
+                }}
+              />
+              <div className="absolute left-3 top-2 h-5 w-8 rounded-full bg-white/15 blur-[3px]" />
+            </div>
+            <div className="mb-1.5 font-serif text-[11px] text-[#d8c9a8] [text-shadow:0_1px_2px_#000]">
+              <div className="uppercase tracking-wider text-[#a89468]">{bearer.label}</div>
+              <div className="text-[13px] font-semibold">
+                {bearer.hp_current ?? bearer.hp_max} <span className="text-[#7a6c50]">/ {bearer.hp_max}</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
