@@ -31,6 +31,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { createClient } from "@/lib/supabase/client"
+import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const TILE_BASE =
@@ -114,7 +115,6 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   // to place tokens and read the room, the way the local viewer hid its
   // DM markers at eye level.
   const [darknessOn, setDarknessOn] = useState(true)
-  const [party, setParty] = useState<TokenRow[]>([])
   const [combat, setCombat] = useState<{
     id: string
     round: number
@@ -122,6 +122,10 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
     turn_order: { token_id: string; label: string; kind: "pc" | "npc"; dex_mod: number; roll: number; total: number }[]
   } | null>(null)
   const [combatBusy, setCombatBusy] = useState(false)
+  const [sheets, setSheets] = useState<HudCharacter[]>([])
+  const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
+  const [log, setLog] = useState<HudLogLine[]>([])
+  const [focusId, setFocusId] = useState<string | null>(null)
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
   const [classicCam, setClassicCam] = useState(true)
   const classicRef = useRef<((on: boolean) => void) | null>(null)
@@ -909,7 +913,41 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
         .eq("map_id", map.id)
       for (const row of (tokenRows ?? []) as TokenRow[]) spawnToken(row)
-      setParty(((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id && r.is_visible))
+      const partyTokens = ((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id && r.is_visible)
+      setTokenToCharacter(Object.fromEntries(
+        ((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id).map((r) => [r.id, r.character_id as string]),
+      ))
+
+      // The plates read the SHEETS, not the tokens: AC, level, speed and
+      // spell slots live on the character, and a HUD that guessed them would
+      // be lying about the sheet.
+      const charIds = partyTokens.map((r) => r.character_id as string)
+      if (charIds.length) {
+        const { data: rows } = await supabase
+          .from("characters")
+          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,dex_modifier,sheet_spellcasting")
+          .in("id", charIds)
+        const list = (rows ?? []) as HudCharacter[]
+        setSheets(list)
+        setFocusId((cur) => cur ?? list[0]?.id ?? null)
+      }
+
+      // The log is the real transcript — what Malachar actually narrated —
+      // rather than invented mechanical chatter.
+      const loadLog = async () => {
+        const { data } = await supabase
+          .from("dialogue")
+          .select("id,speaker,text")
+          .eq("channel", "dm")
+          .order("created_at", { ascending: false })
+          .limit(12)
+        setLog(((data ?? []) as HudLogLine[]).reverse().map((l) => ({ ...l, text: l.text.length > 90 ? l.text.slice(0, 90) + "…" : l.text })))
+      }
+      void loadLog()
+      const logChannel = supabase
+        .channel("combat-log-board")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "dialogue" }, () => void loadLog())
+        .subscribe()
       setStatus("")
 
       // Initiative: current state, then live by realtime — the turn passing
@@ -945,6 +983,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       return () => {
         void supabase.removeChannel(channel)
         void supabase.removeChannel(combatChannel)
+        void supabase.removeChannel(logChannel)
       }
     }
 
@@ -1122,54 +1161,48 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         )}
       </div>
 
-      {/* THE TURN STRIP. Who acts, who is next, what they rolled — the
-          arithmetic stays visible because this campaign does not do hidden
-          numbers. The acting combatant burns gold. */}
-      {combat && (
-        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2">
-          <div className="flex items-center gap-1 rounded border border-[#3a2c1a] bg-black/80 px-2 py-1.5 shadow-[0_0_20px_#000]">
-            <span className="mr-1 font-serif text-[9px] uppercase tracking-[0.2em] text-[#a89468]">Round {combat.round}</span>
-            {combat.turn_order.map((entry, i) => (
-              <span
-                key={entry.token_id}
-                title={`d20 ${entry.roll} ${entry.dex_mod >= 0 ? "+" : ""}${entry.dex_mod} = ${entry.total}`}
-                className={
-                  "rounded px-2 py-0.5 font-serif text-[10px] tracking-wide " +
-                  (i === combat.active_index
-                    ? "bg-[#8b6427] font-bold text-white shadow-[0_0_10px_#c9a22788]"
-                    : entry.kind === "pc"
-                      ? "text-[#9fc3e8]"
-                      : "text-[#d98a80]")
-                }
-              >
-                {entry.label}
-                <span className="ml-1 text-[8px] opacity-60">{entry.total}</span>
-              </span>
-            ))}
-          </div>
-          {dm && (
-            <div className="pointer-events-auto mt-1.5 flex justify-center gap-1.5">
-              <button disabled={combatBusy} onClick={() => void combatAction("next")} className="rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] disabled:opacity-40">Next Turn →</button>
-              <button disabled={combatBusy} onClick={() => void combatAction("end")} className="rounded border border-[#4a3a2a] bg-black/70 px-3 py-1 text-[9px] uppercase tracking-wider text-[#a89468] hover:border-[#8b6427] disabled:opacity-40">End Combat</button>
-            </div>
-          )}
-        </div>
-      )}
+      {/* The full HUD: plates, initiative rail, log, globes, ability rack. */}
+      <CombatHud
+        characters={sheets}
+        tokenToCharacter={tokenToCharacter}
+        turnOrder={combat?.turn_order ?? []}
+        activeIndex={combat?.active_index ?? 0}
+        round={combat?.round ?? 1}
+        log={log}
+        dm={dm}
+        onEndTurn={() => void combatAction("next")}
+        focusId={focusId}
+        onFocus={setFocusId}
+      />
+
+      {/* Before the dice: the one button that starts a fight. Sits under the
+          initiative rail's place so it never overlaps the rail once rolled. */}
       {!combat && dm && (
-        <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2">
+        <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2">
           <button
             disabled={combatBusy}
             onClick={() => void combatAction("start")}
-            className="rounded border-2 border-[#8b6427] bg-[#1c1408]/95 px-4 py-1.5 font-serif text-[11px] uppercase tracking-[0.18em] text-[#f0cd7a] shadow-[0_0_16px_#000] hover:border-[#f4e0a8] disabled:opacity-40"
+            className="rounded-sm border-2 border-[#6b5123] bg-gradient-to-b from-[#2a1f10] to-[#120c06] px-5 py-2 font-serif text-[11px] uppercase tracking-[0.2em] text-[#f0cd7a] shadow-[0_2px_0_#000] hover:border-[#c99a49] hover:text-[#fff3cf] disabled:opacity-40"
           >
             ⚔ Roll Initiative
+          </button>
+        </div>
+      )}
+      {combat && dm && (
+        <div className="absolute bottom-3 right-3 z-20">
+          <button
+            disabled={combatBusy}
+            onClick={() => void combatAction("end")}
+            className="rounded-sm border border-[#4a3a2a] bg-black/70 px-3 py-1 text-[9px] uppercase tracking-wider text-[#a89468] hover:border-[#8b6427] disabled:opacity-40"
+          >
+            End Combat
           </button>
         </div>
       )}
 
       {/* A selected ENEMY gets the red gothic nameplate, top centre. */}
       {selected && !selected.character_id && (
-        <div className={"pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 text-center " + (combat ? "top-20" : "top-3")}>
+        <div className={"pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 text-center " + (combat ? "top-24" : "top-16")}>
           <div className="font-serif text-[15px] font-bold uppercase tracking-[0.2em] text-[#c23b2e] [text-shadow:0_1px_3px_#000]">
             {selected.label}
           </div>
@@ -1184,37 +1217,6 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         </div>
       )}
 
-      {/* The life orb. Drawn from scratch - D2's shape, none of its assets.
-          Shows the selected party member, else the first of the party. */}
-      {(() => {
-        const bearer = selected?.character_id ? selected : party[0]
-        if (!bearer || !bearer.hp_max) return null
-        const frac = Math.max(0, Math.min(1, (bearer.hp_current ?? bearer.hp_max) / bearer.hp_max))
-        return (
-          <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex items-end gap-2.5">
-            <div
-              className="relative h-24 w-24 overflow-hidden rounded-full border-[3px] border-[#3a2c1a] shadow-[0_0_24px_#000,inset_0_0_18px_#000]"
-              style={{ background: "radial-gradient(circle at 35% 30%, #1a0505, #0a0202 70%)" }}
-            >
-              <div
-                className="absolute inset-x-0 bottom-0 transition-[height] duration-500"
-                style={{
-                  height: `${frac * 100}%`,
-                  background: "radial-gradient(circle at 40% 20%, #e04838, #8f1810 55%, #5a0d08)",
-                  boxShadow: "inset 0 4px 10px #ff8a70aa, inset 0 -6px 12px #40060388",
-                }}
-              />
-              <div className="absolute left-3 top-2 h-5 w-8 rounded-full bg-white/15 blur-[3px]" />
-            </div>
-            <div className="mb-1.5 font-serif text-[11px] text-[#d8c9a8] [text-shadow:0_1px_2px_#000]">
-              <div className="uppercase tracking-wider text-[#a89468]">{bearer.label}</div>
-              <div className="text-[13px] font-semibold">
-                {bearer.hp_current ?? bearer.hp_max} <span className="text-[#7a6c50]">/ {bearer.hp_max}</span>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
     </div>
   )
 }
