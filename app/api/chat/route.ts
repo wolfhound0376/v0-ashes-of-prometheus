@@ -695,11 +695,16 @@ ${combatantRows
   try {
     const { data: cueSceneKey } = await supabase.rpc("scene_key", { p_name: currentLocation })
     if (cueSceneKey) {
+      // Location-filed cues plus the 'generic' tier: a cue like a rogue being
+      // overheard while sneaking is not tied to one room, lives at
+      // location='generic', and must be offerable anywhere. resolve_cinematic
+      // already matches generic rows by state (its generic_fallback tier), so
+      // offering them here is what makes that tier reachable by a cue at all.
       const { data: cueRows } = await supabase
         .from("cinematic_clips")
         .select("state")
         .eq("kind", "action")
-        .eq("scene_key", cueSceneKey as string)
+        .in("scene_key", [cueSceneKey as string, "generic"])
         .not("state", "is", null)
         .not("video_url", "is", null)
         .gt("weight", 0)
