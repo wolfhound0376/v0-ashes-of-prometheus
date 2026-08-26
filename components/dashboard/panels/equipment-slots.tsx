@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { ItemIcon } from "@/lib/item-icons"
 import { X, Check } from "lucide-react"
 import {
   HoodIcon,
@@ -12,7 +13,6 @@ import {
   StaffIcon,
   OrbIcon,
   RingIcon,
-  BackpackIcon,
   IconFrame,
 } from "@/components/ui/fantasy-icons"
 
@@ -34,7 +34,8 @@ interface EquippedItem {
   id: string
   name: string
   slot: string
-  icon_url?: string
+  icon_url?: string | null
+  item_type?: string | null
   preset_icon?: string
 }
 
@@ -42,7 +43,8 @@ interface InventoryItem {
   id: string
   name: string
   equippable_slot?: string
-  icon_url?: string
+  icon_url?: string | null
+  item_type?: string | null
   preset_icon?: string
 }
 
@@ -62,7 +64,7 @@ export function EquipmentSlots({
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
 
   // Get equipped item for a slot
-  const getEquippedItem = (slotId: string) => 
+  const getEquippedItem = (slotId: string) =>
     equippedItems.find(item => item.slot === slotId)
 
   // Get available items that can be equipped in the selected slot
@@ -115,11 +117,12 @@ export function EquipmentSlots({
             >
               <IconFrame className="w-full h-full p-1" selected={isSelected}>
                 <div className="w-full h-full bg-[#0a0908] rounded-sm flex items-center justify-center overflow-hidden">
-                  {equippedItem?.icon_url ? (
-                    <img 
-                      src={equippedItem.icon_url} 
-                      alt={equippedItem.name}
-                      className="w-full h-full object-cover"
+                  {equippedItem ? (
+                    <ItemIcon
+                      iconUrl={equippedItem.icon_url}
+                      name={equippedItem.name}
+                      itemType={equippedItem.item_type}
+                      className="w-full h-full p-1"
                     />
                   ) : (
                     <SlotIcon className="w-3/4 h-3/4 text-stone-600" />
@@ -155,12 +158,13 @@ export function EquipmentSlots({
           {/* Currently equipped */}
           {currentEquipped && (
             <div className="mb-2 p-1.5 bg-[#2a3a2a]/40 border border-emerald-500/30 rounded flex items-center gap-2">
-              <div className="w-8 h-8 rounded border border-emerald-500/30 overflow-hidden flex-shrink-0">
-                {currentEquipped.icon_url ? (
-                  <img src={currentEquipped.icon_url} alt={currentEquipped.name} className="w-full h-full object-cover" />
-                ) : (
-                  <BackpackIcon className="w-full h-full text-stone-500 p-1" />
-                )}
+              <div className="w-8 h-8 rounded border border-emerald-500/30 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                <ItemIcon
+                  iconUrl={currentEquipped.icon_url}
+                  name={currentEquipped.name}
+                  itemType={currentEquipped.item_type}
+                  className="w-full h-full p-1"
+                />
               </div>
               <span className="flex-1 text-sm text-emerald-300 truncate">{currentEquipped.name}</span>
               <button
@@ -181,12 +185,13 @@ export function EquipmentSlots({
                   onClick={() => handleEquipItem(item.id)}
                   className="w-full flex items-center gap-2 p-1.5 rounded hover:bg-[#2a2420]/60 transition-colors"
                 >
-                  <div className="w-7 h-7 rounded border border-[#3d3428] overflow-hidden flex-shrink-0">
-                    {item.icon_url ? (
-                      <img src={item.icon_url} alt={item.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <BackpackIcon className="w-full h-full text-stone-500 p-0.5" />
-                    )}
+                  <div className="w-7 h-7 rounded border border-[#3d3428] overflow-hidden flex-shrink-0 flex items-center justify-center">
+                    <ItemIcon
+                      iconUrl={item.icon_url}
+                      name={item.name}
+                      itemType={item.item_type}
+                      className="w-full h-full p-0.5"
+                    />
                   </div>
                   <span className="flex-1 text-sm text-stone-300 truncate text-left">{item.name}</span>
                   <Check className="w-4 h-4 text-stone-500" />
