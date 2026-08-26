@@ -116,6 +116,8 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   const [darknessOn, setDarknessOn] = useState(true)
   const [party, setParty] = useState<TokenRow[]>([])
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
+  const [classicCam, setClassicCam] = useState(true)
+  const classicRef = useRef<((on: boolean) => void) | null>(null)
 
   // Refs bridging React and the imperative three scene.
   const tokensRef = useRef<Map<string, { row: TokenRow; obj: THREE.Object3D; hpArc?: THREE.Mesh }>>(new Map())
@@ -131,6 +133,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   useEffect(() => { dmRef.current = dm }, [dm])
   useEffect(() => { selectedRef.current = selected }, [selected])
   useEffect(() => { darknessRef.current?.(darknessOn) }, [darknessOn])
+  useEffect(() => { classicRef.current?.(classicCam) }, [classicCam])
 
   const say = useCallback((msg: string) => {
     setToast(msg)
@@ -148,7 +151,28 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
     scene.background = new THREE.Color(0x020204)
     scene.fog = new THREE.Fog(0x020204, 30, 90)
 
+    // TWO CAMERAS. Diablo II's look is not a perspective camera at a clever
+    // angle - the original is a 2:1 axonometric projection, and matching it
+    // needs an ORTHOGRAPHIC camera at the fixed dimetric elevation (~30 deg,
+    // where the vertical axis forecloses by half). CLASSIC is that: locked
+    // angle, drag pans, wheel zooms, no orbit - the projection IS the look.
+    // FREE keeps the perspective orbit for the DM working the board.
     const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 500)
+    const orthoCam = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 500)
+    const CLASSIC_EL = Math.PI / 6          // 30 deg: the 2:1 foreshortening
+    const CLASSIC_AZ = Math.PI * 0.75
+    let classic = true
+    let orthoZoom = 1
+    const activeCam = () => (classic ? orthoCam : camera)
+    const sizeOrtho = () => {
+      const aspect = mount.clientWidth / Math.max(1, mount.clientHeight)
+      const half = 9 / orthoZoom            // world units of visible half-height
+      orthoCam.left = -half * aspect
+      orthoCam.right = half * aspect
+      orthoCam.top = half
+      orthoCam.bottom = -half
+      orthoCam.updateProjectionMatrix()
+    }
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setSize(mount.clientWidth, mount.clientHeight)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -199,6 +223,14 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         target.z + dist * Math.cos(el) * Math.sin(az),
       )
       camera.lookAt(target)
+      // The ortho camera holds the classic angle whatever the orbit does.
+      orthoCam.position.set(
+        target.x + 60 * Math.cos(CLASSIC_EL) * Math.cos(CLASSIC_AZ),
+        target.y + 60 * Math.sin(CLASSIC_EL),
+        target.z + 60 * Math.cos(CLASSIC_EL) * Math.sin(CLASSIC_AZ),
+      )
+      orthoCam.lookAt(target)
+      sizeOrtho()
     }
 
     let drag: { x: number; y: number; btn: number; shift: boolean; moved: boolean } | null = null
@@ -211,7 +243,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       drag.x = e.clientX
       drag.y = e.clientY
       if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true
-      if (drag.btn === 2 || drag.shift) {
+      if (classic || drag.btn === 2 || drag.shift) {
         const right = new THREE.Vector3().subVectors(camera.position, target).cross(camera.up).normalize()
         const fwd = new THREE.Vector3().crossVectors(camera.up, right)
         target.addScaledVector(right, dx * dist * 0.0015)
@@ -223,7 +255,11 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       applyCamera()
     }
     const onWheel = (e: WheelEvent) => {
-      dist = Math.min(80, Math.max(6, dist * (e.deltaY > 0 ? 1.1 : 0.9)))
+      if (classic) {
+        orthoZoom = Math.min(3.2, Math.max(0.45, orthoZoom * (e.deltaY > 0 ? 0.92 : 1.09)))
+      } else {
+        dist = Math.min(80, Math.max(6, dist * (e.deltaY > 0 ? 1.1 : 0.9)))
+      }
       applyCamera()
     }
     renderer.domElement.addEventListener("mousedown", onDown)
@@ -245,6 +281,60 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       t.repeat.set(repeat, repeat)
       texCache.set(key, t)
       return t
+    }
+
+    // ---- normals from the painting: the D2:R sprite-relighting trick ----
+    // The art is 2D, but its LUMINANCE is a usable heightmap: run a Sobel
+    // filter over it and you get surface normals - N = normalize(-dH/dx,
+    // -dH/dy, 1) - so a torch raking across the tile catches the painted
+    // stones and grout as if they had depth. This is exactly how D2:R lets
+    // modern point lights land on classic sprite art.
+    const sobelNormalMap = async (url: string): Promise<THREE.Texture | null> => {
+      try {
+        const blob = await fetch(url, { mode: "cors" }).then((r) => (r.ok ? r.blob() : null))
+        if (!blob) return null
+        const bmp = await createImageBitmap(blob)
+        const N = 512 // plenty for lighting; full-res normals just cost memory
+        const cnv = document.createElement("canvas")
+        cnv.width = cnv.height = N
+        const cx = cnv.getContext("2d", { willReadFrequently: true })!
+        cx.drawImage(bmp, 0, 0, N, N)
+        const px = cx.getImageData(0, 0, N, N).data
+        const H = new Float32Array(N * N)
+        for (let i = 0; i < N * N; i++) {
+          H[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255
+        }
+        const out = cx.createImageData(N, N)
+        const at = (x: number, y: number) => H[Math.min(N - 1, Math.max(0, y)) * N + Math.min(N - 1, Math.max(0, x))]
+        const STRENGTH = 2.2
+        for (let y = 0; y < N; y++) {
+          for (let x = 0; x < N; x++) {
+            // Sobel kernels for dH/dx and dH/dy
+            const gx =
+              -at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1) +
+               at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1)
+            const gy =
+              -at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1) +
+               at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1)
+            const nx = -gx * STRENGTH
+            const ny = -gy * STRENGTH
+            const nz = 1
+            const inv = 1 / Math.hypot(nx, ny, nz)
+            const o = (y * N + x) * 4
+            out.data[o] = ((nx * inv) * 0.5 + 0.5) * 255
+            out.data[o + 1] = ((ny * inv) * 0.5 + 0.5) * 255
+            out.data[o + 2] = ((nz * inv) * 0.5 + 0.5) * 255
+            out.data[o + 3] = 255
+          }
+        }
+        cx.putImageData(out, 0, 0)
+        const t = new THREE.CanvasTexture(cnv)
+        t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping
+        return t
+      } catch (e) {
+        console.warn("[board] normal map generation failed - flat lighting stands:", e)
+        return null
+      }
     }
 
     // ---- picking: tokens for selection, the floor for movement ------
@@ -272,7 +362,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       const r = renderer.domElement.getBoundingClientRect()
       pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1
       pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1
-      raycaster.setFromCamera(pointer, camera)
+      raycaster.setFromCamera(pointer, activeCam())
 
       // 1. A token?
       const tokenObjs: THREE.Object3D[] = []
@@ -604,6 +694,15 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       floorPlane.position.set((W * SQ) / 2, 0, (H * SQ) / 2)
       floorPlane.receiveShadow = true
       boardGroup.add(floorPlane)
+      if (meta.art_url) {
+        void sobelNormalMap(meta.art_url).then((nm) => {
+          if (nm && !disposed) {
+            floorMat.normalMap = nm
+            floorMat.normalScale = new THREE.Vector2(0.65, 0.65)
+            floorMat.needsUpdate = true
+          }
+        })
+      }
 
       // The void beyond the tile.
       const ground = new THREE.Mesh(
@@ -773,6 +872,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       lightTexture.offset.set(-(over - 1) / 2, -(over - 1) / 2)
       boardGroup.add(darknessPlane)
       darknessRef.current = (on) => { if (darknessPlane) darknessPlane.visible = on }
+      classicRef.current = (on) => { classic = on; applyCamera() }
 
       // Embers drifting through the torchlight.
       for (let i = 0; i < EMBERS; i++) {
@@ -866,7 +966,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       emberMat.opacity = 0.55 + Math.sin(t * 2.1) * 0.18   // firelight breathes
       torch.intensity = 38 + Math.sin(t * 7.3) * 4 + Math.sin(t * 13.1) * 2
 
-      renderer.render(scene, camera)
+      renderer.render(scene, activeCam())
     }
     tick()
 
@@ -874,6 +974,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       if (!mount) return
       camera.aspect = mount.clientWidth / mount.clientHeight
       camera.updateProjectionMatrix()
+      sizeOrtho()
       renderer.setSize(mount.clientWidth, mount.clientHeight)
     }
     const ro = new ResizeObserver(onResize)
@@ -917,6 +1018,12 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
           drag orbit · wheel zoom · right-drag pan · click a door to try it
           {dm && <span className="text-[#b48fd8]"> · click a token, then a square, to move it</span>}
         </div>
+        <button
+          onClick={() => setClassicCam((v) => !v)}
+          className="pointer-events-auto mr-2 mt-2 rounded border border-[#6b5123] bg-[#171109] px-2.5 py-1 text-[9px] uppercase tracking-wider text-[#cdb276] hover:border-[#c99a49]"
+        >
+          {classicCam ? "Camera: Classic" : "Camera: Free"}
+        </button>
         {dm && (
           <button
             onClick={() => setDarknessOn((v) => !v)}
