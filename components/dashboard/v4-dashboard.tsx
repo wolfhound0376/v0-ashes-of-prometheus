@@ -11,6 +11,7 @@ import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
 import MapPanel from "@/components/map/map-panel"
+import CombatBoard3D from "@/components/tactical/combat-board-3d"
 import { DmNarration } from "./dm-narration"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
@@ -670,7 +671,7 @@ export function V4Dashboard(props: V4DashboardProps) {
             : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
-        </> : inCombat ? <TacticalOverlay characters={party} enemies={props.npcEncounters.filter((npc) => npc.is_active)} /> : <MapPanel initial="location" onBack={() => setStageMode("scene")} />}
+        </> : inCombat ? <CombatBoard3D onBack={() => setStageMode("scene")} /> : <MapPanel initial="location" onBack={() => setStageMode("scene")} />}
       </div>
       <div className="flex flex-col gap-1">
         <SuggestionChips
@@ -1007,17 +1008,8 @@ function DispositionChip({ value }: { value?: string | null }) {
   </div>
 }
 
-function TacticalOverlay({ characters, enemies }: { characters: Array<{ id: string; name: string }>; enemies: NpcEncounter[] }) {
-  return <div className="absolute inset-0 overflow-hidden">
-    <div className="absolute inset-0 opacity-60" style={{ backgroundImage: "linear-gradient(30deg, transparent 24%, #b8944c55 25%, #b8944c55 26%, transparent 27%, transparent 74%, #b8944c55 75%, #b8944c55 76%, transparent 77%), linear-gradient(150deg, transparent 24%, #b8944c55 25%, #b8944c55 26%, transparent 27%, transparent 74%, #b8944c55 75%, #b8944c55 76%, transparent 77%)", backgroundSize: "56px 96px" }} />
-    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent,#050403aa_80%)]" />
-    <div className="absolute left-3 top-14 rounded border border-[#6b5123] bg-black/75 p-2 text-[8px] text-[#b7a47d]"><b className="block uppercase tracking-wider text-[#d8bd83]">Combat Position</b>Grid is spatial guidance only. Canon positions appear when the encounter supplies them.</div>
-    {characters.slice(0, 4).map((character, index) => <div key={character.id} className="absolute flex h-8 w-8 items-center justify-center rounded-full border-2 border-sky-500 bg-sky-950 text-[9px] font-bold text-white shadow-[0_0_14px_#38bdf8]" style={{ left: `${28 + index * 12}%`, top: `${62 + (index % 2) * 10}%` }} title={character.name}>{character.name[0]}</div>)}
-    {enemies.slice(0, 4).map((enemy, index) => <div key={enemy.id} className="absolute flex h-8 w-8 items-center justify-center rounded-full border-2 border-red-500 bg-red-950 text-[9px] font-bold text-white shadow-[0_0_14px_#ef4444]" style={{ right: `${25 + index * 12}%`, top: `${25 + (index % 2) * 12}%` }} title={enemy.name}>{enemy.name[0]}</div>)}
-    <div className="absolute bottom-3 right-3 flex gap-2 rounded border border-[#6b5123] bg-black/75 px-2 py-1 text-[8px]"><span className="text-sky-400">● Party</span><span className="text-red-400">● Hostile</span><span className="text-amber-300">◇ Terrain</span></div>
-  </div>
-}
-
+// TacticalOverlay (the decorative fake grid) removed 22 Aug 2026 —
+// replaced by components/tactical/combat-board-3d.tsx, the real board.
 const PHB2014_CLERIC_DOMAINS: Record<string, Array<{ level: number; spells: string[] }>> = {
   Knowledge: [{ level: 1, spells: ["Command", "Identify"] }, { level: 3, spells: ["Augury", "Suggestion"] }, { level: 5, spells: ["Nondetection", "Speak with Dead"] }, { level: 7, spells: ["Arcane Eye", "Confusion"] }, { level: 9, spells: ["Legend Lore", "Scrying"] }],
   Life: [{ level: 1, spells: ["Bless", "Cure Wounds"] }, { level: 3, spells: ["Lesser Restoration", "Spiritual Weapon"] }, { level: 5, spells: ["Beacon of Hope", "Revivify"] }, { level: 7, spells: ["Death Ward", "Guardian of Faith"] }, { level: 9, spells: ["Mass Cure Wounds", "Raise Dead"] }],
