@@ -726,7 +726,12 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   }, [])
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#020204]">
+    // ABSOLUTE, not h-full. The stage container already holds a full-height
+    // scene <img>; a static child after it lays out BELOW that image and is
+    // clipped by the container's overflow-hidden. The board rendered fine on
+    // its first deploy — one viewport-height of blackness under the fold,
+    // where nobody could see it. Position over the stage like MapPanel does.
+    <div className="absolute inset-0 z-10 overflow-hidden bg-[#020204]">
       <div ref={mountRef} className="absolute inset-0" />
 
       {/* HUD, in the game's own dress rather than the dev viewer's */}
