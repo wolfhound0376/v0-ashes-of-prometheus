@@ -110,6 +110,11 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   const [dm, setDm] = useState(false)
   const [selected, setSelected] = useState<TokenRow | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  // The darkness is the players' truth, not the DM's. Malachar can lift it
+  // to place tokens and read the room, the way the local viewer hid its
+  // DM markers at eye level.
+  const [darknessOn, setDarknessOn] = useState(true)
+  const darknessRef = useRef<((on: boolean) => void) | null>(null)
 
   // Refs bridging React and the imperative three scene.
   const tokensRef = useRef<Map<string, { row: TokenRow; obj: THREE.Object3D; hpArc?: THREE.Mesh }>>(new Map())
@@ -124,6 +129,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
   }, [])
   useEffect(() => { dmRef.current = dm }, [dm])
   useEffect(() => { selectedRef.current = selected }, [selected])
+  useEffect(() => { darknessRef.current?.(darknessOn) }, [darknessOn])
 
   const say = useCallback((msg: string) => {
     setToast(msg)
@@ -175,9 +181,12 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
 
     // ---- orbit camera, as the viewer had it -------------------------
     const target = new THREE.Vector3()
+    // Diablo II's camera: low, close, committed. Orbit still works, but the
+    // default is the dimetric stare and the elevation clamp keeps you from
+    // floating up into map-editor territory where the dread evaporates.
     let az = Math.PI * 0.75
-    let el = 0.72
-    let dist = 26
+    let el = 0.55
+    let dist = 22
     const applyCamera = () => {
       camera.position.set(
         target.x + dist * Math.cos(el) * Math.cos(az),
@@ -204,7 +213,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         target.addScaledVector(fwd, dy * dist * 0.0015)
       } else {
         az += dx * 0.005
-        el = Math.min(1.45, Math.max(0.25, el + dy * 0.005))
+        el = Math.min(1.05, Math.max(0.3, el + dy * 0.005))
       }
       applyCamera()
     }
@@ -307,6 +316,62 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
     renderer.domElement.addEventListener("click", onClick)
 
     // ---- token meshes -----------------------------------------------
+    // ================= THE DARKNESS =================
+    // Diablo II's world exists only inside light radii; everything else is
+    // black. The floor art is self-lit (it has to be, or tone mapping eats
+    // it), so darkness is painted ON TOP: a canvas lightmap multiplied over
+    // the board, opaque dark everywhere except radial holes burned at each
+    // party token. Enemies do not carry light - walking toward them means
+    // walking toward shapes at the edge of your own torch.
+    const LIGHT_TEX = 1024
+    const lightCanvas = document.createElement("canvas")
+    lightCanvas.width = lightCanvas.height = LIGHT_TEX
+    const lightCtx = lightCanvas.getContext("2d")!
+    const lightTexture = new THREE.CanvasTexture(lightCanvas)
+    let darknessPlane: THREE.Mesh | null = null
+    let lightRadiusSquares = 4.5 // ~22 ft of clear sight, dusk beyond
+
+    const redrawDarkness = () => {
+      const m = mapRef.current
+      if (!m) return
+      const W = m.grid_width
+      const H = m.grid_height
+      lightCtx.globalCompositeOperation = "source-over"
+      // Not pure black: a hair of visibility so the DM's grid stays usable
+      // and the room reads as darkness rather than a rendering failure.
+      lightCtx.fillStyle = "rgba(2,2,6,0.93)"
+      lightCtx.clearRect(0, 0, LIGHT_TEX, LIGHT_TEX)
+      lightCtx.fillRect(0, 0, LIGHT_TEX, LIGHT_TEX)
+      lightCtx.globalCompositeOperation = "destination-out"
+      tokensRef.current.forEach(({ row }) => {
+        if (!row.character_id || !row.is_visible) return // only the party carries light
+        const cx = ((row.grid_x + 0.5) / W) * LIGHT_TEX
+        const cy = ((row.grid_y + 0.5) / H) * LIGHT_TEX
+        const r = (lightRadiusSquares / W) * LIGHT_TEX
+        const g = lightCtx.createRadialGradient(cx, cy, r * 0.25, cx, cy, r)
+        g.addColorStop(0, "rgba(0,0,0,1)")      // full clear at the flame
+        g.addColorStop(0.55, "rgba(0,0,0,0.75)")
+        g.addColorStop(1, "rgba(0,0,0,0)")      // darkness wins at the edge
+        lightCtx.fillStyle = g
+        lightCtx.beginPath()
+        lightCtx.arc(cx, cy, r, 0, Math.PI * 2)
+        lightCtx.fill()
+      })
+      lightTexture.needsUpdate = true
+    }
+
+    // ---- embers: the air of the place ----
+    const EMBERS = 90
+    const emberGeo = new THREE.BufferGeometry()
+    const emberPos = new Float32Array(EMBERS * 3)
+    const emberVel = new Float32Array(EMBERS)
+    const emberSeed = new Float32Array(EMBERS)
+    const emberMat = new THREE.PointsMaterial({
+      color: 0xff8a3c, size: 0.055, transparent: true, opacity: 0.8,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+    const embers = new THREE.Points(emberGeo, emberMat)
+
     const gltfLoader = new GLTFLoader()
     const boardGroup = new THREE.Group()
     scene.add(boardGroup)
@@ -430,6 +495,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       g.position.set(c.x, 0, c.z)
       tokenGroup.add(g)
       tokensRef.current.set(row.id, { row, obj: g })
+      redrawDarkness()
     }
 
     const glideToken = (row: TokenRow) => {
@@ -444,6 +510,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       }
       const c = sqCentre(row.grid_x, row.grid_y)
       entry.obj.userData.glide = { from: entry.obj.position.clone(), to: new THREE.Vector3(c.x, 0, c.z), t: 0 }
+      redrawDarkness() // the torch travels with its bearer
     }
 
     // ---- the DM's move order ----------------------------------------
@@ -646,6 +713,35 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         }
       }
 
+      // The darkness, floating just above everything flat. Tokens and walls
+      // rise through it and stay readable - Diablo lit its actors too.
+      const darkMat = new THREE.MeshBasicMaterial({
+        map: lightTexture, transparent: true, depthWrite: false,
+      })
+      darknessPlane = new THREE.Mesh(new THREE.PlaneGeometry(W * SQ + 400, H * SQ + 400), darkMat)
+      darknessPlane.rotation.x = -Math.PI / 2
+      darknessPlane.position.set((W * SQ) / 2, 0.085, (H * SQ) / 2)
+      darknessPlane.renderOrder = 5
+      // The oversized plane must be dark OUTSIDE the tile too: the canvas
+      // maps to the whole plane, so scale the UVs to keep the lit region
+      // aligned with the tile itself.
+      const over = (W * SQ + 400) / (W * SQ)
+      lightTexture.repeat.set(over, over)
+      lightTexture.offset.set(-(over - 1) / 2, -(over - 1) / 2)
+      boardGroup.add(darknessPlane)
+      darknessRef.current = (on) => { if (darknessPlane) darknessPlane.visible = on }
+
+      // Embers drifting through the torchlight.
+      for (let i = 0; i < EMBERS; i++) {
+        emberPos[i * 3] = Math.random() * W * SQ
+        emberPos[i * 3 + 1] = Math.random() * 2.4
+        emberPos[i * 3 + 2] = Math.random() * H * SQ
+        emberVel[i] = 0.12 + Math.random() * 0.25
+        emberSeed[i] = Math.random() * Math.PI * 2
+      }
+      emberGeo.setAttribute("position", new THREE.BufferAttribute(emberPos, 3))
+      boardGroup.add(embers)
+
       // Frame the whole tile.
       target.set((W * SQ) / 2, 0, (H * SQ) / 2)
       dist = Math.max(W, H) * SQ * 1.5 + 4
@@ -715,6 +811,17 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         entry.obj.position.y = Math.sin(ease * Math.PI) * 0.22
         if (gl.t >= 1) delete entry.obj.userData.glide
       })
+      // Embers rise, wander, and are reborn at the floor.
+      const t = clock.elapsedTime
+      for (let i = 0; i < EMBERS; i++) {
+        emberPos[i * 3 + 1] += emberVel[i] * dt
+        emberPos[i * 3] += Math.sin(t * 0.8 + emberSeed[i]) * dt * 0.12
+        if (emberPos[i * 3 + 1] > 2.6) emberPos[i * 3 + 1] = 0.05
+      }
+      emberGeo.attributes.position.needsUpdate = true
+      emberMat.opacity = 0.55 + Math.sin(t * 2.1) * 0.18   // firelight breathes
+      torch.intensity = 38 + Math.sin(t * 7.3) * 4 + Math.sin(t * 13.1) * 2
+
       renderer.render(scene, camera)
     }
     tick()
@@ -752,6 +859,12 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
     <div className="absolute inset-0 z-10 overflow-hidden bg-[#020204]">
       <div ref={mountRef} className="absolute inset-0" />
 
+      {/* Diablo's frame: the screen itself darkens toward its corners. */}
+      <div
+        className="pointer-events-none absolute inset-0 z-[5]"
+        style={{ background: "radial-gradient(ellipse at center, transparent 52%, rgba(2,2,6,0.55) 82%, rgba(2,2,6,0.85) 100%)" }}
+      />
+
       {/* HUD, in the game's own dress rather than the dev viewer's */}
       <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[300px] rounded border border-[#3a3345] bg-black/70 px-3 py-2">
         <div className="font-serif text-[12px] tracking-wide text-[#c9a227]">{mapName || "TACTICAL BOARD"}</div>
@@ -760,6 +873,14 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
           drag orbit · wheel zoom · right-drag pan · click a door to try it
           {dm && <span className="text-[#b48fd8]"> · click a token, then a square, to move it</span>}
         </div>
+        {dm && (
+          <button
+            onClick={() => setDarknessOn((v) => !v)}
+            className="pointer-events-auto mt-2 rounded border border-[#5a4a6a] bg-[#1a1226] px-2.5 py-1 text-[9px] uppercase tracking-wider text-[#c9b3e0] hover:border-[#b48fd8]"
+          >
+            {darknessOn ? "Lift the darkness" : "Let the dark back in"}
+          </button>
+        )}
       </div>
 
       {selected && (
