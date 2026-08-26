@@ -154,16 +154,23 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
 
     // The tile art is pre-lit by the artist; lighting stays gentle so the
     // board reads as the drawn map, not a blown-out relight.
-    const ambient = new THREE.AmbientLight(0x3a3226, 2.2)
+    // r128's light intensities do not translate: r155+ made lights physical,
+    // so the viewer's numbers render near-black here — which is exactly what
+    // Sam saw. The board's real light source is the ARTWORK: it is pre-lit by
+    // the artist, so the floor and rock glow with their own texture (emissive,
+    // below) and the lamps only add depth on the 3D pieces.
+    const ambient = new THREE.AmbientLight(0x9a9086, 2.6)
     scene.add(ambient)
-    const moon = new THREE.DirectionalLight(0x40506c, 0.45)
+    const hemi = new THREE.HemisphereLight(0x8a90b0, 0x3a2e20, 1.4)
+    scene.add(hemi)
+    const moon = new THREE.DirectionalLight(0x6a7a9c, 1.2)
     moon.position.set(-20, 30, -10)
     scene.add(moon)
-    const torch = new THREE.PointLight(0xff9a3c, 1.0, 90, 1.4)
+    const torch = new THREE.PointLight(0xff9a3c, 40, 90, 1.4)
     torch.castShadow = true
     torch.shadow.mapSize.set(1024, 1024)
     scene.add(torch)
-    const torch2 = new THREE.PointLight(0xff7722, 0.5, 50, 1.8)
+    const torch2 = new THREE.PointLight(0xff7722, 18, 50, 1.8)
     scene.add(torch2)
 
     // ---- orbit camera, as the viewer had it -------------------------
@@ -473,7 +480,16 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
 
       // The painted tile, one uncut plane.
       const floorMat = meta.art_url
-        ? new THREE.MeshStandardMaterial({ map: tex(meta.art_url), roughness: 0.95, metalness: 0.04 })
+        ? (() => {
+            const art = tex(meta.art_url!)
+            // The painting lights itself. Without this the drawn map is at
+            // the mercy of scene lights and tone mapping, and it arrived on
+            // production nearly black.
+            return new THREE.MeshStandardMaterial({
+              map: art, emissiveMap: art, emissive: 0xffffff, emissiveIntensity: 0.78,
+              roughness: 0.95, metalness: 0.04,
+            })
+          })()
         : new THREE.MeshStandardMaterial({ color: 0x4a4234, roughness: 0.95 })
       if (floorMat.map) {
         floorMat.map.wrapS = floorMat.map.wrapT = THREE.ClampToEdgeWrapping
@@ -525,8 +541,9 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
           if (R.cage) {
             // The pen's bars, floor-outward — one panel per open face, so
             // edge squares are sealed too (the old inward sweep left gaps).
+            const barTexture = tex(storageTex(R.cage_texture || "tiles/jail_bars.png"))
             const barMat = new THREE.MeshStandardMaterial({
-              map: tex(storageTex(R.cage_texture || "tiles/jail_bars.png")),
+              map: barTexture, emissiveMap: barTexture, emissive: 0x6a6258, emissiveIntensity: 0.5,
               transparent: true, alphaTest: 0.35, side: THREE.DoubleSide,
               roughness: 0.85, metalness: 0.15, color: 0xb9a98c,
             })
@@ -564,10 +581,10 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
                   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping
                   t.repeat.set(1 / W, 1 / H)
                   t.offset.set(x / W, 1 - (y + 1) / H)
-                  top = new THREE.MeshStandardMaterial({ map: t, roughness: 0.98, metalness: 0 })
+                  top = new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 0.62, roughness: 0.98, metalness: 0 })
                   const ts = t.clone()
                   ts.needsUpdate = true
-                  side = new THREE.MeshStandardMaterial({ map: ts, roughness: 1, metalness: 0, color: 0x6a6a72 })
+                  side = new THREE.MeshStandardMaterial({ map: ts, emissiveMap: ts, emissive: 0x8a8a92, emissiveIntensity: 0.4, roughness: 1, metalness: 0, color: 0x6a6a72 })
                 }
                 const box = new THREE.Mesh(new THREE.BoxGeometry(SQ, wallH, SQ), [side, side, top, plainSide, side, side])
                 const c = sqCentre(x, y)
@@ -597,8 +614,9 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
             door.add(lintel)
             const texPath = d.texture || R.door_texture || "tiles/jail_gate.png"
             const solid = /iron_door|wood_door|drow_door/.test(texPath)
+            const leafTexture = tex(storageTex(texPath))
             const leafMat = new THREE.MeshStandardMaterial({
-              map: tex(storageTex(texPath)),
+              map: leafTexture, emissiveMap: leafTexture, emissive: 0x7a7268, emissiveIntensity: 0.45,
               transparent: !solid, alphaTest: solid ? 0 : 0.3, side: THREE.DoubleSide,
               roughness: solid ? 0.62 : 0.8, metalness: solid ? 0.55 : 0.2,
               color: solid ? 0xbfb6a6 : 0xa9997e,
