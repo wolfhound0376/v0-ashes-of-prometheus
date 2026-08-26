@@ -4,7 +4,7 @@ Status values: `INTAKE`, `PREFLIGHT`, `DIAGNOSING`, `PATCHING`, `VERIFYING`, `RE
 
 | ID | Area | Intervention | Status | Owner lane | Collision notes |
 |---|---|---|---|---|---|
-| SI-001 | Project hygiene | Refresh stale `AGENTS.md` verification metadata and reconcile it with current `main` without changing locked architecture | INTAKE | ChatGPT/OpenAI | Must not collide with feature PRs; documentation-only unless discrepancies are found |
+| SI-001 | Project hygiene | Refresh stale `AGENTS.md` verification metadata and reconcile it with current `main` without changing locked architecture | READY FOR PR | ChatGPT/OpenAI | Audit completed against `main` @ `e7355198`; PR #220 untouched; verified delta recorded in `SI-001-AGENTS-CURRENT-SNAPSHOT.md` |
 | SI-002 | Inventory icons | Audit remaining unresolved inventory/equipment icon mappings and repair only demonstrated resolver/catalog gaps | INTAKE | ChatGPT/OpenAI | Check any active inventory PR before editing |
 | SI-003 | Roll path | Review PR #220 for collision/regression risk against current `main`; do not duplicate its implementation | INTAKE | ChatGPT/OpenAI review | PR #220 owns authoritative roll-request ledger |
 
