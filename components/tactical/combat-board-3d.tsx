@@ -622,10 +622,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               mesh.castShadow = mesh.receiveShadow = true
               const m = mesh.material as THREE.MeshStandardMaterial
               if (m.map) {
+                // A gentle lift so a model never reads as a black cut-out.
+                // This was 0.42 back when the board had almost no dynamic
+                // light; with torches and door lamps it now compounds with
+                // them, so it is a whisper rather than a second light source.
                 m.emissiveMap = m.map
-                m.emissive = new THREE.Color(0x8a8a8a)
-                m.emissiveIntensity = 0.42
+                m.emissive = new THREE.Color(0x4a4a4a)
+                m.emissiveIntensity = 0.15
               }
+              // Tone mapping is ACES with exposure 1.35; a model arriving
+              // with metalness 1 and no env map turns into a mirror of
+              // nothing, which reads as white. Clamp what Meshy ships.
+              if (typeof m.metalness === "number") m.metalness = Math.min(m.metalness, 0.25)
+              if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.45)
               m.needsUpdate = true
             }
           })
@@ -669,30 +678,46 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         g.add(body)
       }
 
-      // D2's light is WARM. Each party token carries a small orange point
-      // light (it moves with the group, so the walls and bars catch fire-
-      // colour as they pass) and an additive glow pooled on the floor.
+      // D2's light is WARM. Each party token carries a torch whose light
+      // moves with them, so walls and bars catch fire-colour as they pass.
+      //
+      // THE TORCH IS HELD ABOVE THE HEAD, and that is a bug fix, not
+      // flavour. It used to sit at y=1.1 — chest height, which is INSIDE a
+      // model 1.2 units tall. A point light with inverse-square falloff,
+      // two tenths of a unit from the surfaces around it, multiplies to
+      // roughly 170x: every model rendered as a featureless white blob.
+      // Sam's report was exactly "just a bright light".
+      //
+      // Above the head it lights the floor, the bars and the faces of
+      // whoever stands nearby — which is what it was always meant to do —
+      // and the bearer is lit rather than incinerated.
       if (row.character_id) {
-        const carry = new THREE.PointLight(0xff9a3c, 11, 7.5, 1.7)
-        carry.position.y = 1.1
+        const carry = new THREE.PointLight(0xff9a3c, 7, 7.5, 1.5)
+        carry.position.y = 2.45
         // Real shadows off the bars and door frames as the bearer walks -
         // the D2:R trick that makes light feel physical. 512 keeps four of
         // these affordable.
         carry.castShadow = true
         carry.shadow.mapSize.set(512, 512)
         g.add(carry)
+        // A soft fill from the front so faces are not pure silhouette. Weak
+        // and far enough out that it cannot blow the mesh the way the torch did.
+        const fill = new THREE.PointLight(0xffd2a0, 2.2, 5, 1.4)
+        fill.position.set(0.9, 1.5, 0.9)
+        g.add(fill)
+
         const glowCanvas = document.createElement("canvas")
         glowCanvas.width = glowCanvas.height = 128
         const gc = glowCanvas.getContext("2d")!
         const gg = gc.createRadialGradient(64, 64, 4, 64, 64, 62)
-        gg.addColorStop(0, "rgba(255,166,74,0.5)")
-        gg.addColorStop(0.5, "rgba(255,120,40,0.22)")
+        gg.addColorStop(0, "rgba(255,166,74,0.30)")
+        gg.addColorStop(0.5, "rgba(255,120,40,0.12)")
         gg.addColorStop(1, "rgba(255,100,30,0)")
         gc.fillStyle = gg
         gc.fillRect(0, 0, 128, 128)
         const glowTex = new THREE.CanvasTexture(glowCanvas)
         const glow = new THREE.Mesh(
-          new THREE.PlaneGeometry(3.6, 3.6),
+          new THREE.PlaneGeometry(2.4, 2.4),
           new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
         )
         glow.rotation.x = -Math.PI / 2
@@ -985,6 +1010,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       torch.position.set(target.x, 9, target.z)
       torch2.position.set(target.x + 5, 7, target.z - 4)
       applyCamera()
+
+      // LIGHTING BUDGET. A model rendered as a white blob is almost always
+      // a light too close or too strong, and that is invisible in a
+      // screenshot. Print the budget once so it can be read instead of
+      // guessed at — the torch-inside-the-mesh bug cost a round trip.
+      let lightCount = 0
+      let brightest = 0
+      scene.traverse((o) => {
+        const l = o as THREE.PointLight
+        if ((l as THREE.Light).isLight) {
+          lightCount++
+          if (typeof l.intensity === "number") brightest = Math.max(brightest, l.intensity)
+        }
+      })
+      console.log(
+        `[board] lighting: ${lightCount} lights, strongest ${brightest.toFixed(1)}, ` +
+        `exposure ${renderer.toneMappingExposure}. Party torches sit at y=2.45 — ` +
+        `ABOVE head height, never inside the mesh.`,
+      )
 
       // The combatants.
       const { data: tokenRows } = await supabase
