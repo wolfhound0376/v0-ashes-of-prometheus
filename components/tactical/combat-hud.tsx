@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
+import { Globe } from "./essence-globe"
 import { CharacterCard } from "./character-card"
 import { ClassMedallion } from "./class-medallion"
 import { CharacterSheetOverlay } from "./character-sheet-overlay"
@@ -315,8 +316,7 @@ export function CombatHud(props: Props) {
             value={focus.hp_current ?? focus.hp_max ?? 0}
             max={focus.hp_max ?? 0}
             label="Life"
-            inner="radial-gradient(circle at 40% 22%, #e04838, #8f1810 55%, #4d0b06)"
-            rim="#e0483833"
+            variant="life"
           />
 
           {/* The ability rack, from the sheet. */}
@@ -363,33 +363,10 @@ export function CombatHud(props: Props) {
             value={tally ? tally.max - tally.used : 0}
             max={tally ? tally.max : 0}
             label="Slots"
-            inner="radial-gradient(circle at 40% 22%, #6f5ce0, #2c1d8f 55%, #120a4d)"
-            rim="#6f5ce033"
+            variant="mana"
           />
         </div>
       )}
     </>
-  )
-}
-
-/** A glass sphere in a blackened mount. Drawn, not sourced. */
-function Globe({ value, max, label, inner, rim }: { value: number; max: number; label: string; inner: string; rim: string }) {
-  const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0
-  return (
-    <div className="relative">
-      <div
-        className="relative h-[86px] w-[86px] overflow-hidden rounded-full border-[3px] border-[#3a2c1a]"
-        style={{ background: "radial-gradient(circle at 35% 28%, #171014, #060306 72%)", boxShadow: `0 0 22px #000, inset 0 0 20px #000, 0 0 30px ${rim}` }}
-      >
-        <div className="absolute inset-x-0 bottom-0 transition-[height] duration-500" style={{ height: `${frac * 100}%`, background: inner, boxShadow: "inset 0 4px 12px #ffffff44, inset 0 -8px 14px #00000088" }} />
-        <div className="absolute left-3 top-2 h-4 w-7 rounded-full bg-white/15 blur-[3px]" />
-        <div className="absolute inset-0 grid place-items-center">
-          <span className="font-serif text-[13px] font-semibold text-[#f4ecd8] [text-shadow:0_1px_3px_#000,0_0_8px_#000]">
-            {max > 0 ? `${value} / ${max}` : "—"}
-          </span>
-        </div>
-      </div>
-      <div className="mt-0.5 text-center font-serif text-[8px] uppercase tracking-[0.22em] text-[#8a7952]">{label}</div>
-    </div>
   )
 }
