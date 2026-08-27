@@ -161,6 +161,17 @@ export default function DashboardPage() {
 
   // Current environment from database
   const [currentEnvironment, setCurrentEnvironment] = useState<Environment | null>(null)
+  // The scene bound to the node the party is actually standing on.
+  //
+  // `currentEnvironment` above is "whichever environments row was touched
+  // last", which is the party's room only by luck. Edit any other scene in the
+  // admin panel and that row silently becomes the newest one, and the NPC
+  // window starts painting a room the party has never set foot in. Position is
+  // the authority here, not update order.
+  //
+  // Null when the node has no scene bound yet, in which case the backdrop
+  // falls back to the old behaviour rather than blanking the window.
+  const [nodeEnvironment, setNodeEnvironment] = useState<Environment | null>(null)
   // Set the moment the pen door is unlocked, picked, or opened from outside.
   // The NPC window swaps to the open-door painting for everyone at once.
   const penDoorOpen = useWorldFlag(PEN_DOOR_OPEN)
@@ -634,6 +645,43 @@ export default function DashboardPage() {
     if (rosterData) setNpcRoster(rosterData)
   }, [])
 
+  // Walk position -> node -> scene, so the NPC window's backdrop is a
+  // statement about WHERE THE PARTY IS.
+  //
+  // Three plain reads rather than one PostgREST embed: party_position's key
+  // into travel_nodes is composite (id, node_type), which is not a shape worth
+  // handing to relationship inference for something every screen at the table
+  // reads all session. All three are readable with the anon key
+  // (party_position_read, and travel_nodes_read_discovered - the node the
+  // party occupies is discovered by definition).
+  const fetchNodeEnvironment = useCallback(async () => {
+    const { data: position } = await supabase
+      .from('party_position')
+      .select('node_id')
+      .limit(1)
+      .maybeSingle()
+    if (!position?.node_id) return
+
+    const { data: node } = await supabase
+      .from('travel_nodes')
+      .select('scene_environment_id')
+      .eq('id', position.node_id)
+      .maybeSingle()
+    // A node with no scene bound yet is not an error - fall back rather than
+    // blank the window.
+    if (!node?.scene_environment_id) {
+      setNodeEnvironment(null)
+      return
+    }
+
+    const { data: env } = await supabase
+      .from('environments')
+      .select('*')
+      .eq('id', node.scene_environment_id)
+      .maybeSingle()
+    setNodeEnvironment(env ?? null)
+  }, [])
+
   // Fetch dialogue from Supabase and subscribe to real-time updates
   useEffect(() => {
     // Initial fetch
@@ -691,7 +739,22 @@ if (error) {
           if (data) {
             setCurrentEnvironment(data)
           }
+          // The party's room may be the row that just changed - re-read it so
+          // a backdrop edited in the admin panel lands on the NPC window.
+          void fetchNodeEnvironment()
         }
+      )
+      .subscribe()
+
+    // Subscribe to party movement. Arriving somewhere is a moment the whole
+    // table should see at once, the same way the pen door opening is: the NPC
+    // window changes rooms as the party arrives, not on whoever refreshes first.
+    const partyPositionChannel = supabase
+      .channel('party-position-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'party_position' },
+        () => { void fetchNodeEnvironment() }
       )
       .subscribe()
 
@@ -710,13 +773,16 @@ if (error) {
 
     // Initial shared fetch so encounters render before any realtime event.
     fetchNpcEncounters()
+    // Same for the party's room, so the first paint is already the right one.
+    void fetchNodeEnvironment()
 
     return () => {
       supabase.removeChannel(dialogueChannel)
       supabase.removeChannel(environmentChannel)
+      supabase.removeChannel(partyPositionChannel)
       supabase.removeChannel(npcChannel)
     }
-  }, [fetchNpcEncounters])
+  }, [fetchNpcEncounters, fetchNodeEnvironment])
 
   // Fetch character data function - callable from multiple places
   const fetchCharacterData = useCallback(async () => {
@@ -1301,12 +1367,20 @@ if (error) {
           timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
           imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
           description: currentEnvironment?.description,
+          // The room the party is STANDING IN, falling back to the
+          // last-touched row only for a node with no scene bound yet. Both
+          // paintings come off that one row, so the open-door art can never be
+          // drawn from a different scene than the shut-door art.
           // The open-door painting only once the door is actually open, and
           // only where the scene has one; otherwise the room as it stands.
-          npcBackdropUrl:
-            (penDoorOpen ? currentEnvironment?.npc_backdrop_open_url : null) ||
-            currentEnvironment?.npc_backdrop_url ||
-            null,
+          npcBackdropUrl: (() => {
+            const room = nodeEnvironment ?? currentEnvironment
+            return (
+              (penDoorOpen ? room?.npc_backdrop_open_url : null) ||
+              room?.npc_backdrop_url ||
+              null
+            )
+          })(),
         }}
         dialogue={dialogue}
         dialogueInput={dialogueInput}
