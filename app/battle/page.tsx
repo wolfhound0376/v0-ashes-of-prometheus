@@ -9,9 +9,83 @@
 // on top of it. The board is a place you GO, like /map — the whole viewport,
 // nothing else fighting for it.
 
-import { Suspense } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import CombatBoard3D from "@/components/tactical/combat-board-3d"
+import { DynamicMusic } from "@/components/dashboard/dynamic-music"
+import { createClient } from "@/lib/supabase/client"
+import { isCombatant } from "@/lib/challenge-rating"
+import { CANONICAL_START_LOCATION } from "@/lib/game-data"
+
+// The music followed the party everywhere EXCEPT the one screen a fight is
+// actually fought on.
+//
+// DynamicMusic was mounted only on the dashboard, and v4-dashboard sends a DM
+// browser here the moment a fight starts. So the combat track was selected on
+// a page the DM was being navigated away from in the same breath, and this
+// page — where the fight happens — was silent. Worse: while a fight is live
+// that redirect fires on every load of `/`, so a DM could not get back to the
+// player at all. Players were never redirected and heard it normally; the DM
+// was the one person at the table who could not.
+//
+// The control carries its own fixed position (bottom-16 right-20), which
+// clears the board's End Combat button at bottom-3 right-3.
+function BattleMusic() {
+  const [location, setLocation] = useState<string | null>(null)
+  const [inCombat, setInCombat] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    let alive = true
+
+    // The room the party is standing in, by position rather than by whichever
+    // environments row was edited last — the same authority the NPC window's
+    // backdrop uses, so the board and the dashboard cannot disagree about
+    // which room the fight is in.
+    async function loadLocation() {
+      const { data: position } = await supabase
+        .from("party_position").select("node_id").limit(1).maybeSingle()
+      if (!position?.node_id) return
+      const { data: node } = await supabase
+        .from("travel_nodes").select("scene_environment_id")
+        .eq("id", position.node_id).maybeSingle()
+      if (!node?.scene_environment_id) return
+      const { data: env } = await supabase
+        .from("environments").select("name")
+        .eq("id", node.scene_environment_id).maybeSingle()
+      if (alive && env?.name) setLocation(env.name)
+    }
+
+    // "In combat" means exactly what it means on the dashboard: an active NPC
+    // that is a threat. One definition of the word, so the track cannot differ
+    // between the two screens.
+    async function loadCombat() {
+      const { data } = await supabase
+        .from("npc_encounters").select("is_active, challenge_rating").eq("is_active", true)
+      if (alive) setInCombat((data ?? []).some(n => isCombatant(n.challenge_rating)))
+    }
+
+    void loadLocation()
+    void loadCombat()
+
+    // The fight ending should drop the music back to the room's own theme
+    // without anyone reloading the board.
+    const channel = supabase
+      .channel("battle-music")
+      .on("postgres_changes", { event: "*", schema: "public", table: "npc_encounters" }, () => { void loadCombat() })
+      .subscribe()
+
+    return () => {
+      alive = false
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  // Hold at the canonical start room until the real one arrives, exactly as
+  // the dashboard does — never a client-side default that could pick a pool
+  // from another part of the world.
+  return <DynamicMusic location={location ?? CANONICAL_START_LOCATION} inCombat={inCombat} />
+}
 
 function BattleBoardPage() {
   const router = useRouter()
@@ -24,6 +98,7 @@ function BattleBoardPage() {
         </div>
       )}
       <CombatBoard3D sandbox={sandbox} onBack={() => router.push("/")} />
+      <BattleMusic />
     </div>
   )
 }
