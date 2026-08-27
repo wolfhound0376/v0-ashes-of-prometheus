@@ -34,7 +34,14 @@ alter table public.environments
   add column if not exists npc_backdrop_url text,
   add column if not exists npc_backdrop_open_url text;
 
+-- The default is the door SHUT. The open painting shows only once the flag
+-- is set, and nothing sets it at install time.
+--
+-- The first cut of this had the two backdrops swapped, because the source art
+-- is named "Bamboo Cell Background" (door open) and "Bamboo Cell Open
+-- Background" (door shut) - inverted. These URLs were checked by opening the
+-- images, not by reading their filenames.
 update public.environments
-set npc_backdrop_url      = 'https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/pen-closed.webp',
-    npc_backdrop_open_url = 'https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/pen-open.webp'
+set npc_backdrop_url      = 'https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/pen-door-closed-v2.webp',
+    npc_backdrop_open_url = 'https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/pen-door-open-v2.webp'
 where scene_key = 'velkynvelve-slave-pen';
