@@ -33,7 +33,7 @@ interface LocationPool {
 }
 
 // Shared dark combat theme for pools with no location-specific battle track.
-const DEFAULT_COMBAT_TRACK = "there-be-dragons"
+const DEFAULT_COMBAT_TRACK = "the-pen-erupts"
 // Neutral dark-ambient default when the location is unknown or unmapped — never
 // a village/tavern track. Fits the Underdark campaign's baseline dread.
 const DEFAULT_TRACK = "dungeon-i"

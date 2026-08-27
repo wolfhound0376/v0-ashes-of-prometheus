@@ -23,6 +23,19 @@ export type MusicCategory =
 
 export const MUSIC_LIBRARY: MusicTrack[] = [
   {
+    // Sam's commissioned battle theme. Loudness-matched to the rest of the
+    // library at -27 LUFS: it arrived at -13, roughly five times as loud as
+    // every other track, which would have buried the dialogue the moment a
+    // fight started. The player's own 0.45 volume is a master control, not a
+    // substitute for levelling the file.
+    id: "the-pen-erupts",
+    name: "The Pen Erupts",
+    url: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/music/combat/the-pen-erupts-v2.mp3",
+    category: "combat",
+    mood: ["intense", "driving", "underdark"],
+    description: "Commissioned battle theme. Loops under combat.",
+  },
+  {
     id: "there-be-dragons",
     name: "There Be Dragons",
     url: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/47_There_be_Dragons-TfuKUKVjplbvlOeMFnoo3zbN8J2Lcs.mp3",
