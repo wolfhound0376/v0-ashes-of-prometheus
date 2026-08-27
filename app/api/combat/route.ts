@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   if (!map) return NextResponse.json({ combat: null })
   const { data } = await db
     .from("combat_state")
-    .select("id,map_id,round,active_index,turn_order,status,started_at")
+    .select("id,map_id,round,active_index,turn_order,turn_state,status,started_at")
     .eq("map_id", map.id)
     .eq("status", "active")
     .maybeSingle()
@@ -43,11 +43,20 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   const body = await req.json().catch(() => null)
   const action = body?.action
-  if (!["start", "next", "end"].includes(action)) {
-    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end' }" }, { status: 400 })
+  // The DM gate applies to the verbs that change the SHAPE of the fight —
+  // rolling initiative, passing the turn, ending combat. Marking your own
+  // action spent is not one of them.
+  if (!["spend", "ack"].includes(action) && !authorized(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 403 })
+  }
+  // "spend" and "ack" are the PLAYER's verbs and are deliberately NOT
+  // DM-gated below: a player must be able to mark their own bonus action
+  // used, and acknowledge their own turn, without the DM clicking for them.
+  const PLAYER_VERBS = ["spend", "ack"]
+  if (!["start", "next", "end", ...PLAYER_VERBS].includes(action)) {
+    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'spend'|'ack' }" }, { status: 400 })
   }
   const db = createAdminClient()
   const sandbox = body?.sandbox === true
@@ -108,11 +117,34 @@ export async function POST(req: NextRequest) {
 
   const { data: combat } = await db
     .from("combat_state")
-    .select("id,round,active_index,turn_order")
+    .select("id,round,active_index,turn_order,turn_state")
     .eq("map_id", map.id)
     .eq("status", "active")
     .maybeSingle()
   if (!combat) return NextResponse.json({ error: "no combat running" }, { status: 409 })
+
+  if (action === "spend" || action === "ack") {
+    const state = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
+    const next = { ...state }
+    if (action === "ack") {
+      next.acknowledged = true
+    } else {
+      const kind = body?.kind
+      if (!["action", "bonus", "reaction"].includes(kind)) {
+        return NextResponse.json({ error: "expected kind: action|bonus|reaction" }, { status: 400 })
+      }
+      // A toggle, not a one-way latch: players mis-click, and a turn where
+      // you cannot un-spend a bonus action you never took is a turn that
+      // makes the tracker a liability rather than a help.
+      next[kind] = !state[kind]
+    }
+    const { error } = await db
+      .from("combat_state")
+      .update({ turn_state: next, updated_at: new Date().toISOString() })
+      .eq("id", combat.id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, turn_state: next })
+  }
 
   if (action === "next") {
     const count = (combat.turn_order as unknown[]).length
@@ -120,6 +152,7 @@ export async function POST(req: NextRequest) {
     const { error } = await db
       .from("combat_state")
       .update({
+        turn_state: { action: false, bonus: false, reaction: false, moved_ft: 0, acknowledged: false },
         active_index: nextIndex,
         // Wrapping past the last combatant is a new round — SRD: "a round
         // ends when every participant has taken a turn."
