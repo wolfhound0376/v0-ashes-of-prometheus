@@ -321,7 +321,11 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
     // While this control is on it is the ONLY thing speaking: it voices
     // Malachar and the NPCs from one queue, in narrative order. The legacy v3
     // auto-play would otherwise repeat every quoted line out of sequence.
-    setNpcTtsMuted(true)
+    // RESTORE it when every toggle is off — passing `true` unconditionally
+    // left the featured-speaker voice permanently muted the moment this
+    // control mounted, even with all three toggles off, which silenced the
+    // characters entirely for a table that never used these toggles.
+    setNpcTtsMuted(enabled)
     if (!enabled) {
       queueRef.current = []
       stopAudio()
