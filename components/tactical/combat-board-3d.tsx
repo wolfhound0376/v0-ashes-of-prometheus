@@ -33,6 +33,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { createClient } from "@/lib/supabase/client"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
+import { TurnBanner, type TurnEconomy } from "./turn-banner"
 import { clipFor, ONE_SHOT, type TokenState } from "@/lib/token-animation"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
@@ -122,7 +123,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     round: number
     active_index: number
     turn_order: { token_id: string; label: string; kind: "pc" | "npc"; dex_mod: number; roll: number; total: number }[]
+    turn_state?: TurnEconomy
   } | null>(null)
+  // Which character THIS browser is sitting behind. The dashboard stores it
+  // when a player picks or claims a character; the DM's browser has none,
+  // which is exactly right — the DM drives the order, they do not take turns.
+  const [myCharacterId, setMyCharacterId] = useState<string | null>(null)
   const [combatBusy, setCombatBusy] = useState(false)
   const [sheets, setSheets] = useState<HudCharacter[]>([])
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
@@ -146,6 +152,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   useEffect(() => {
     setDm(Boolean(getDmKey()))
     return onDmKeyChange(() => setDm(Boolean(getDmKey())))
+  }, [])
+  useEffect(() => {
+    try {
+      setMyCharacterId(window.localStorage.getItem("aop_character_id"))
+    } catch {
+      // Private mode or blocked storage: no banner rather than a broken board.
+    }
   }, [])
   useEffect(() => { dmRef.current = dm }, [dm])
   useEffect(() => { selectedRef.current = selected }, [selected])
@@ -1322,6 +1335,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
   }
 
+  const playerVerb = async (body: Record<string, unknown>) => {
+    try {
+      await fetch("/api/combat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...body, sandbox }),
+      })
+    } catch {
+      say("That did not reach the table — check the connection.")
+    }
+  }
+
+  // Whose turn is it, and is it mine? The active entry names a TOKEN; the
+  // token maps to a character; the character is mine if this browser claimed
+  // them. Any missing link means no banner, which is the safe direction.
+  const activeEntry = combat?.turn_order?.[combat.active_index] ?? null
+  const activeCharacterId = activeEntry ? tokenToCharacter[activeEntry.token_id] : undefined
+  const isMyTurn = Boolean(myCharacterId && activeCharacterId && myCharacterId === activeCharacterId)
+  const activeSheet = sheets.find((c) => c.id === activeCharacterId)
+  // "30 ft. (Walking)" -> 30. A sheet with prose speed still yields a budget.
+  const speedFt = Number.parseInt(String(activeSheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
+
   return (
     // ABSOLUTE, not h-full. The stage container already holds a full-height
     // scene <img>; a static child after it lays out BELOW that image and is
@@ -1398,6 +1433,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           </button>
         )}
       </div>
+
+      {/* YOUR TURN — only for the browser whose character is up. */}
+      <TurnBanner
+        active={Boolean(combat)}
+        isMine={isMyTurn}
+        characterName={activeSheet?.name ?? activeEntry?.label ?? ""}
+        economy={combat?.turn_state ?? {}}
+        speedFt={speedFt}
+        onAcknowledge={() => void playerVerb({ action: "ack" })}
+        onSpend={(kind) => void playerVerb({ action: "spend", kind })}
+      />
 
       {/* The full HUD: plates, initiative rail, log, globes, ability rack. */}
       <CombatHud
