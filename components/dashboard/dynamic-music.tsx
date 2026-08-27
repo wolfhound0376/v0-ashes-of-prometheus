@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react"
 import { Music, Play, Pause, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MUSIC_LIBRARY, getTrackById, type MusicTrack } from "@/lib/music-library"
-import { isMusicOff, setMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
+import {
+  isMusicOff,
+  setMusicOff,
+  onMusicPrefChange,
+  isMusicStarted,
+  setMusicStarted,
+} from "@/lib/audio-prefs"
 
 interface DynamicMusicProps {
   /** Canonical session location name (drives the base track pool). */
@@ -110,7 +116,16 @@ const BASE_VOLUME = 0.45
 export function DynamicMusic({ location, inCombat = false, mood = "ambient", className }: DynamicMusicProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const fadeTimer = useRef<ReturnType<typeof setInterval> | null>(null)
-  const [enabled, setEnabled] = useState(false) // user must start playback (browser autoplay policy)
+  // Starts false so SSR and first paint agree, then hydrates from the
+  // remembered consent below. A browser will not start audio without a
+  // gesture, so this can never simply default to true.
+  const [enabled, setEnabled] = useState(false)
+  const gestureRetry = useRef<(() => void) | null>(null)
+
+  // Did this listener already press play, on this or any earlier page?
+  useEffect(() => {
+    if (isMusicStarted()) setEnabled(true)
+  }, [])
   // Mute is the shared "music off" preference: muting here is remembered across
   // pages and reloads, and suppresses the intro theme on the next visit.
   // Starts false so SSR and first paint agree, then hydrates from the pref.
@@ -189,10 +204,28 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
       }
       audio.volume = 0
       audio.play().then(() => fade(muted ? 0 : BASE_VOLUME, 600)).catch(() => {
-        // Autoplay blocked — revert the toggle so the button reflects reality.
-        setEnabled(false)
+        // Autoplay blocked. This is the restored-consent path: the listener
+        // DID press play, just not on this page, so the browser has no gesture
+        // here yet. Reverting the toggle would throw that consent away and put
+        // us back to a silent fight. Wait for the first click or keypress
+        // anywhere — on the board that is immediate — and start then.
+        detachGesture()
+        const retry = () => {
+          // Whichever event fired, drop BOTH: `once` only removes the one
+          // that ran, and the survivor would outlive the component.
+          document.removeEventListener("pointerdown", retry)
+          document.removeEventListener("keydown", retry)
+          gestureRetry.current = null
+          const el = audioRef.current
+          if (!el) return
+          el.play().then(() => fade(muted ? 0 : BASE_VOLUME, 600)).catch(() => {})
+        }
+        gestureRetry.current = retry
+        document.addEventListener("pointerdown", retry, { once: true })
+        document.addEventListener("keydown", retry, { once: true })
       })
     } else {
+      detachGesture()
       fade(0, 300, () => audio.pause())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,10 +239,20 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [muted])
 
+  function detachGesture() {
+    const retry = gestureRetry.current
+    if (!retry) return
+    gestureRetry.current = null
+    document.removeEventListener("pointerdown", retry)
+    document.removeEventListener("keydown", retry)
+  }
+
   useEffect(() => {
     return () => {
       if (fadeTimer.current) clearInterval(fadeTimer.current)
+      detachGesture()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
@@ -220,7 +263,13 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
       <div className="flex items-center gap-1 rounded-full bg-[#1a1614] border-2 border-[#3d3428] shadow-lg shadow-black/50 pl-1 pr-2 py-1">
         {/* Play / pause */}
         <button
-          onClick={() => setEnabled(v => !v)}
+          onClick={() => {
+            const next = !enabled
+            setEnabled(next)
+            // Remember it, so the next page — /battle, most of all — starts
+            // on its own instead of waiting to be asked again.
+            setMusicStarted(next)
+          }}
           title={enabled ? "Pause music" : "Play scene music"}
           className={cn(
             "w-9 h-9 rounded-full flex items-center justify-center transition-colors",
