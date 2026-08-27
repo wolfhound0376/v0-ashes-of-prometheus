@@ -101,9 +101,16 @@ export type CastHand = "LeftHand" | "RightHand"
  * instead is the tell that separates a game from a tech demo — the light
  * leaves her palm before she has moved.
  *
- * Measured 2026-08-18 against Shadow_Warlock_CombatMagic.glb.
+ * Measured 2026-08-18 by sampling the clips' forward kinematics — the release
+ * is where the casting hand peaks in reach. Order matters: the longest name
+ * wins, because "charged_spell_cast_1" is a DIFFERENT clip from
+ * "charged_spell_cast" (4.30s right-handed vs 2.67s two-handed overhead) and
+ * a substring match would otherwise hand it the wrong hand and the wrong
+ * frame.
  */
 const CAST_EVENTS: { match: string; release: number; hand: CastHand }[] = [
+  // hero-rogue.glb's cast — the 20-clip Meshy set every hero currently uses.
+  { match: "charged_spell_cast_1", release: 2.19, hand: "RightHand" },
   { match: "charged_spell_cast", release: 1.95, hand: "LeftHand" }, // both hands overhead
   { match: "spell_cast_2", release: 1.1, hand: "RightHand" },
   { match: "soell_cast_3", release: 1.1, hand: "RightHand" },
