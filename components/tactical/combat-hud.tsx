@@ -43,6 +43,19 @@ export interface HudCharacter {
   wis_score?: number | null
   cha_score?: number | null
   sheet_features?: unknown
+  /** Full-body standee — the sheet shows the figure, not the medallion face. */
+  avatar_image_url?: string | null
+  initiative?: number | null
+  xp?: number | null
+  xp_to_next?: number | null
+  sheet_species?: string | null
+  sheet_background?: string | null
+  /** jsonb: array of ability keys, e.g. ["wis","cha"] */
+  sheet_save_proficiencies?: unknown
+  /** jsonb: object keyed by skill name, e.g. {"Insight":"proficient"} */
+  sheet_skill_proficiencies?: unknown
+  /** jsonb: [{name, type, hit, damage, range}] */
+  sheet_attacks?: unknown
   /** jsonb string[] on `characters`. Malachar writes this column mid-fight from
    *  the chat route, so it arrives as raw jsonb and goes through
    *  `normalizeConditions` before anything renders it. */
@@ -148,6 +161,7 @@ export function CombatHud(props: Props) {
         <CharacterSheetOverlay
           character={characters.find((c) => c.id === sheetFor)!}
           onClose={() => setSheetFor(null)}
+          onEndTurn={dm ? undefined : () => { onEndTurn(); setSheetFor(null) }}
         />
       )}
 
