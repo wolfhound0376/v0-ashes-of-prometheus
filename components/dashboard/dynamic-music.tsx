@@ -135,6 +135,24 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
     return onMusicPrefChange(() => setMuted(isMusicOff()))
   }, [])
 
+  // Combat auto-start: the beginning of a fight is the one moment the table
+  // should never have to reach for the play button. When combat begins (or the
+  // player mounts mid-fight) and playback is idle, start it — unless the
+  // listener has music switched off, which always wins. The ref arms once per
+  // fight: pausing mid-combat is respected until the next one begins.
+  const prevCombat = useRef(false)
+  useEffect(() => {
+    if (inCombat && !prevCombat.current) {
+      prevCombat.current = true
+      if (!enabled && !isMusicOff()) {
+        setEnabled(true)
+        setMusicStarted(true)
+      }
+    } else if (!inCombat) {
+      prevCombat.current = false
+    }
+  }, [inCombat, enabled])
+
   // Location must hydrate from the active session before we choose audio.
   // Until then, selectMusic holds at the neutral dark-ambient default rather
   // than keying off any client-side default (the root cause of village music).
