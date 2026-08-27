@@ -32,8 +32,15 @@ interface LocationPool {
   combat?: string
 }
 
-// Shared dark combat theme for pools with no location-specific battle track.
-const DEFAULT_COMBAT_TRACK = "the-pen-erupts"
+// Shared combat theme for pools with no location-specific battle track, which
+// today is every pool but `village`. Sam's commissioned track: this is what the
+// table hears when a fight starts anywhere the campaign has not written its own
+// battle music.
+//
+// This replaced "the-pen-erupts", which now sits in MUSIC_LIBRARY unreferenced.
+// Kept rather than deleted: it is written for the slave pen, and pinning it back
+// on the `prison` pool is a one-line change if the pen should keep its own.
+const DEFAULT_COMBAT_TRACK = "steel-in-the-dark"
 // Neutral dark-ambient default when the location is unknown or unmapped — never
 // a village/tavern track. Fits the Underdark campaign's baseline dread.
 const DEFAULT_TRACK = "dungeon-i"
