@@ -31,6 +31,14 @@ export const MUSIC_LIBRARY: MusicTrack[] = [
     description: "Commissioned combat theme for Velkynvelve engagements.",
   },
   {
+    id: "the-drow-descend",
+    name: "The Drow Descend",
+    url: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/music/combat/the-drow-descend.mp3",
+    category: "combat",
+    mood: ["relentless", "martial", "underdark"],
+    description: "Second shared combat theme; alternates per fight with Steel in the Dark. Levelled to -27 LUFS.",
+  },
+  {
     // Sam's commissioned battle theme. Loudness-matched to the rest of the
     // library at -27 LUFS: it arrived at -13, roughly five times as loud as
     // every other track, which would have buried the dialogue the moment a

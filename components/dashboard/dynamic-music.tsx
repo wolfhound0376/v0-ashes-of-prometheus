@@ -38,15 +38,17 @@ interface LocationPool {
   combat?: string
 }
 
-// Shared combat theme for pools with no location-specific battle track, which
-// today is every pool but `village`. Sam's commissioned track: this is what the
-// table hears when a fight starts anywhere the campaign has not written its own
-// battle music.
+// Shared combat themes for pools with no location-specific battle track, which
+// today is every pool but `village`. Both are commissioned tracks: each time a
+// fight begins the component flips a coin between them, so back-to-back battles
+// don't sound identical. Index 0 is what non-rotating callers of selectMusic
+// get, and stays the id every pool below references.
 //
-// This replaced "the-pen-erupts", which now sits in MUSIC_LIBRARY unreferenced.
-// Kept rather than deleted: it is written for the slave pen, and pinning it back
-// on the `prison` pool is a one-line change if the pen should keep its own.
-const DEFAULT_COMBAT_TRACK = "steel-in-the-dark"
+// "the-pen-erupts" still sits in MUSIC_LIBRARY unreferenced. Kept rather than
+// deleted: it is written for the slave pen, and pinning it back on the `prison`
+// pool is a one-line change if the pen should keep its own.
+const DEFAULT_COMBAT_TRACKS = ["steel-in-the-dark", "the-drow-descend"] as const
+const DEFAULT_COMBAT_TRACK = DEFAULT_COMBAT_TRACKS[0]
 // Neutral dark-ambient default when the location is unknown or unmapped — never
 // a village/tavern track. Fits the Underdark campaign's baseline dread.
 const DEFAULT_TRACK = "dungeon-i"
@@ -86,6 +88,8 @@ export function selectMusic(
   location: string | null | undefined,
   inCombat: boolean,
   mood: MusicMood = "ambient",
+  /** Per-fight coin flip from the component: true swaps in the second shared combat theme. */
+  combatAlt = false,
 ): MusicSelection {
   const loc = (location || "").trim()
   const effectiveMood: MusicMood = inCombat ? "combat" : mood
@@ -99,14 +103,20 @@ export function selectMusic(
             : effectiveMood === "tense"
               ? pool.tense || pool.base
               : pool.base
-        const track = getTrackById(trackId) || getTrackById(pool.base) || getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
+        const chosenId = combatAlt && trackId === DEFAULT_COMBAT_TRACK ? DEFAULT_COMBAT_TRACKS[1] : trackId
+        const track = getTrackById(chosenId) || getTrackById(pool.base) || getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
         return { track, locationLabel: pool.label, mood: effectiveMood }
       }
     }
   }
 
   // No location or no mapped pool → neutral dark-ambient (or shared combat theme).
-  const fallbackId = effectiveMood === "combat" ? DEFAULT_COMBAT_TRACK : DEFAULT_TRACK
+  const fallbackId =
+    effectiveMood === "combat"
+      ? combatAlt
+        ? DEFAULT_COMBAT_TRACKS[1]
+        : DEFAULT_COMBAT_TRACK
+      : DEFAULT_TRACK
   const track = getTrackById(fallbackId) || getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
   return { track, locationLabel: "neutral", mood: effectiveMood }
 }
@@ -140,10 +150,14 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
   // player mounts mid-fight) and playback is idle, start it — unless the
   // listener has music switched off, which always wins. The ref arms once per
   // fight: pausing mid-combat is respected until the next one begins.
+  // Each fight also flips a coin between the two shared combat themes. State
+  // (not a ref) so the re-render recomputes the selection with the new pick.
+  const [combatAlt, setCombatAlt] = useState(false)
   const prevCombat = useRef(false)
   useEffect(() => {
     if (inCombat && !prevCombat.current) {
       prevCombat.current = true
+      setCombatAlt(Math.random() < 0.5)
       if (!enabled && !isMusicOff()) {
         setEnabled(true)
         setMusicStarted(true)
@@ -156,7 +170,7 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
   // Location must hydrate from the active session before we choose audio.
   // Until then, selectMusic holds at the neutral dark-ambient default rather
   // than keying off any client-side default (the root cause of village music).
-  const selection = selectMusic(location, inCombat, mood)
+  const selection = selectMusic(location, inCombat, mood, combatAlt)
   const target = selection.track
 
   const [current, setCurrent] = useState<MusicTrack>(target)
