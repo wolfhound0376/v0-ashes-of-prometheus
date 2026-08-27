@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { createClient } from "@/lib/supabase/client"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
 import { clipFor, ONE_SHOT, type TokenState } from "@/lib/token-animation"
@@ -481,7 +482,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     })
     const embers = new THREE.Points(emberGeo, emberMat)
 
+    // THE DECODER IS NOT OPTIONAL. Every token GLB in this project is
+    // meshopt-compressed (it is how a 45 MB export became 608 KB), and a
+    // GLTFLoader without setMeshoptDecoder REJECTS those files. This board
+    // shipped without it while the /map 3D page had it — and because the
+    // load call also had no error callback, the rejection was silent: rings
+    // and name labels appeared instantly, the figures never did, and three
+    // rounds of lighting and scaling fixes were spent on models that had
+    // never loaded at all. If a loader in this repo loads project GLBs, it
+    // sets this decoder. No exceptions.
     const gltfLoader = new GLTFLoader()
+    gltfLoader.setMeshoptDecoder(MeshoptDecoder)
     const boardGroup = new THREE.Group()
     scene.add(boardGroup)
     const tokenGroup = new THREE.Group()
@@ -588,6 +599,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       g.userData.tokenId = row.id
       const r = radiusFor(row.token_size)
 
+      const buildPawn = () => {
+        const isParty = Boolean(row.character_id)
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(r * 0.85, r * 0.95, 0.5, 28),
+          new THREE.MeshStandardMaterial({
+            color: row.tint_color ? new THREE.Color(row.tint_color) : isParty ? 0x1c4a66 : 0x5c1d1d,
+            roughness: 0.7,
+            metalness: 0.15,
+          }),
+        )
+        body.position.y = 0.31
+        body.castShadow = true
+        g.add(body)
+      }
+
       if (row.model_url) {
         // The creature's own model. Measured after load, scaled to size,
         // feet on the floor — Meshy exports arrive in arbitrary units.
@@ -688,21 +714,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             anim.names.join(", "),
           )
           }
+        }, undefined, (err) => {
+          // A model that fails to load says so OUT LOUD and falls back to the
+          // pawn. The silent version of this failure cost three debugging
+          // rounds; it does not get to be silent again.
+          console.error(`[board] ${row.label}: model failed to load — pawn fallback`, row.model_url, err)
+          if (!disposed) buildPawn()
         })
       } else {
-        // No model: a disc pawn with a darker rim, honest and readable.
-        const isParty = Boolean(row.character_id)
-        const body = new THREE.Mesh(
-          new THREE.CylinderGeometry(r * 0.85, r * 0.95, 0.5, 28),
-          new THREE.MeshStandardMaterial({
-            color: row.tint_color ? new THREE.Color(row.tint_color) : isParty ? 0x1c4a66 : 0x5c1d1d,
-            roughness: 0.7,
-            metalness: 0.15,
-          }),
-        )
-        body.position.y = 0.31
-        body.castShadow = true
-        g.add(body)
+        // No model wired: the honest disc pawn.
+        buildPawn()
       }
 
       // D2's light is WARM. Each party token carries a torch whose light
