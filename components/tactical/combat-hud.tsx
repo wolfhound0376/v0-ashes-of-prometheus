@@ -49,6 +49,8 @@ export interface HudCharacter {
   sheet_features?: unknown
   /** Full-body standee — the sheet shows the figure, not the medallion face. */
   avatar_image_url?: string | null
+  /** Feature art for the sheet: the character in their finery. */
+  hero_image_url?: string | null
   initiative?: number | null
   xp?: number | null
   xp_to_next?: number | null

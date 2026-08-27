@@ -23,6 +23,9 @@ import { iconFor } from "@/lib/action-icons"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 import type { HudCharacter } from "./combat-hud"
 
+const PARCHMENT =
+  "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/ui/parchment.webp"
+
 const GOLD = "#cdb276"
 const BRONZE = "#a88745"
 
@@ -65,9 +68,9 @@ function Medallion({
 /** A parchment plate — the boxed panels down the sides. */
 function Plate({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={"rounded-sm border border-[#6b5123] bg-[#12100b]/95 " + className}>
+    <div className={"overflow-hidden rounded-sm border border-[#8d6d35] bg-[#e9dfc2]/92 shadow-[0_2px_6px_rgba(30,20,8,0.35)] " + className}>
       {title && (
-        <div className="border-b border-[#4b3a19] bg-[#0a0806] px-2 py-1 text-center font-serif text-[9px] uppercase tracking-[0.2em] text-[#cdb276]">
+        <div className="border-b border-[#8d6d35] bg-[#1a1409] px-2 py-1 text-center font-serif text-[9px] uppercase tracking-[0.2em] text-[#e6c77e]">
           {title}
         </div>
       )}
@@ -130,7 +133,10 @@ export function CharacterSheetOverlay({
   // The rack: cantrips first, then prepared, capped at six — the same order
   // the HUD rack uses, so muscle memory carries between the two.
   const rack = [...cantrips, ...prepared].slice(0, 6)
-  const portrait = c.avatar_image_url || c.portrait_image_url
+  // Feature art for the page. hero_image_url is the character in their
+  // finery; the standee is how they look right now (in rags, in the pen).
+  // The sheet wants the hero, and falls back rather than rendering empty.
+  const hero = c.hero_image_url || c.avatar_image_url || c.portrait_image_url
 
   return (
     <div
@@ -180,11 +186,17 @@ export function CharacterSheetOverlay({
           </button>
         </div>
 
-        {/* ─── BODY: three columns, the figure in the middle ─────────────── */}
-        <div className="grid min-h-0 flex-1 grid-cols-[286px_1fr_212px] gap-2 overflow-y-auto p-2">
-
-          {/* LEFT — saving throws, skills, equipment, attacks */}
-          <div className="flex flex-col gap-2">
+        {/* ─── BODY ───────────────────────────────────────────────────────
+            Five columns, and the medallion gutters are the whole point of
+            the shape. The first cut floated the ability scores over the
+            portrait and covered the character; they now sit in their own
+            narrow columns either side, so the figure is never crossed. */}
+        <div
+          className="grid min-h-0 flex-1 grid-cols-[264px_72px_1fr_72px_196px] gap-1.5 overflow-y-auto p-2"
+          style={{ backgroundImage: `url(${PARCHMENT})`, backgroundSize: "512px" }}
+        >
+          {/* COLUMN 1 — saving throws, skills, attacks */}
+          <div className="flex flex-col gap-1.5">
             <Plate title="Saving Throws">
               <div className="flex justify-between">
                 {(Object.keys(ABIL) as AbilKey[]).map((k) => (
@@ -193,18 +205,18 @@ export function CharacterSheetOverlay({
                       className={
                         "flex h-7 w-9 items-center justify-center rounded-sm border font-serif text-[13px] " +
                         (saveProf.has(k)
-                          ? "border-[#a88745] bg-[#241d10] text-[#f0dfb4]"
-                          : "border-[#3a2f1e] bg-black/40 text-[#c3b48f]")
+                          ? "border-[#8d6d35] bg-[#e6d9b6] text-[#2a2013]"
+                          : "border-[#8d6d35]/50 bg-[#efe6cf]/70 text-[#4a3d24]")
                       }
                     >
                       {sign(saveMod(k))}
                     </div>
-                    <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#8a7952]">{ABIL[k]}</div>
+                    <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#6b5a34]">{ABIL[k]}</div>
                   </div>
                 ))}
               </div>
               <p className="mt-1 text-center text-[7px] leading-tight text-[#6b5a34]">
-                Filled = proficient. Modifier includes the +{prof} proficiency bonus.
+                Filled = proficient · includes the +{prof} proficiency bonus
               </p>
             </Plate>
 
@@ -217,13 +229,13 @@ export function CharacterSheetOverlay({
                       <span
                         className={
                           "h-2 w-2 shrink-0 rounded-full border " +
-                          (isProf ? "border-[#d9b877] bg-[#cdb276]" : "border-[#4b3a19] bg-transparent")
+                          (isProf ? "border-[#6b5a34] bg-[#8d6d35]" : "border-[#8d6d35]/50 bg-transparent")
                         }
                       />
-                      <span className={"flex-1 truncate text-[9px] " + (isProf ? "text-[#e8dcc0]" : "text-[#9b8b6b]")}>
+                      <span className={"flex-1 truncate text-[9px] " + (isProf ? "font-semibold text-[#2a2013]" : "text-[#4a3d24]")}>
                         {name} <span className="text-[7px] text-[#6b5a34]">({ABIL[k]})</span>
                       </span>
-                      <span className="w-8 rounded-sm border border-[#3a2f1e] bg-black/40 text-center font-serif text-[10px] text-[#e0d2ae]">
+                      <span className="w-8 rounded-sm border border-[#8d6d35]/50 bg-[#efe6cf]/80 text-center font-serif text-[10px] text-[#2a2013]">
                         {sign(skillMod(name, k))}
                       </span>
                     </div>
@@ -238,14 +250,14 @@ export function CharacterSheetOverlay({
                   {attacks.slice(0, 4).map((a, i) => {
                     const atk = a as { name?: string; type?: string; hit?: string; damage?: string; range?: string }
                     return (
-                      <div key={i} className="rounded-sm border border-[#3a2f1e] bg-black/40 px-2 py-1">
+                      <div key={i} className="rounded-sm border border-[#4b3a19] bg-[#17130c]/92 px-2 py-1">
                         <div className="flex items-baseline justify-between">
-                          <span className="font-serif text-[11px] text-[#e8dcc0]">{atk.name}</span>
-                          <span className="font-serif text-[11px] text-[#d9b877]">{atk.hit}</span>
+                          <span className="font-serif text-[11px] uppercase tracking-wide text-[#f2e6c8]">{atk.name}</span>
+                          <span className="font-serif text-[11px] text-[#e6c77e]">{atk.hit}</span>
                         </div>
-                        <div className="flex items-baseline justify-between text-[8px] text-[#8a7952]">
+                        <div className="flex items-baseline justify-between text-[8px] text-[#a89468]">
                           <span>{atk.type}{atk.range ? ` · ${atk.range}` : ""}</span>
-                          <span className="text-[#bdb298]">{atk.damage}</span>
+                          <span className="text-[#d8c9a8]">{atk.damage}</span>
                         </div>
                       </div>
                     )
@@ -255,85 +267,86 @@ export function CharacterSheetOverlay({
             )}
           </div>
 
-          {/* CENTRE — the figure, with the ability medallions around him */}
-          <div className="relative min-h-[420px] overflow-hidden rounded-sm border border-[#4b3a19] bg-[radial-gradient(ellipse_at_50%_20%,#2a2114,#080705_70%)]">
-            {portrait ? (
-              <img src={portrait} alt={c.name} className="absolute inset-0 h-full w-full object-contain object-bottom" />
+          {/* COLUMN 2 — left medallion gutter */}
+          <div className="flex flex-col items-center gap-2 pt-1">
+            <Medallion score={sign(prof)} label="Proficiency" size={58} />
+            <Medallion score={scores.int ?? "—"} mod={modOf("int")} label="Intelligence" size={58} />
+            <Medallion score={scores.wis ?? "—"} mod={modOf("wis")} label="Wisdom" size={58} />
+            <Medallion score={scores.cha ?? "—"} mod={modOf("cha")} label="Charisma" size={58} />
+          </div>
+
+          {/* COLUMN 3 — the figure, uncovered */}
+          <div className="relative min-h-[440px] overflow-hidden rounded-sm">
+            {hero ? (
+              <img
+                src={hero}
+                alt={c.name}
+                className="absolute inset-0 h-full w-full object-contain object-bottom"
+                style={{ filter: "drop-shadow(0 10px 26px rgba(40,28,10,0.55))" }}
+              />
             ) : (
-              <div className="flex h-full items-center justify-center font-serif text-7xl text-[#4b3a19]">
+              <div className="flex h-full items-center justify-center font-serif text-7xl text-[#8d6d35]/35">
                 {c.name[0]}
               </div>
             )}
 
-            {/* Medallions ride the edges so the figure stays readable. */}
-            <div className="absolute left-2 top-3 flex flex-col gap-2">
-              <Medallion score={scores.int ?? "—"} mod={modOf("int")} label="Intelligence" size={56} />
-              <Medallion score={scores.wis ?? "—"} mod={modOf("wis")} label="Wisdom" size={56} />
-              <Medallion score={scores.cha ?? "—"} mod={modOf("cha")} label="Charisma" size={56} />
-            </div>
-            <div className="absolute right-2 top-3 flex flex-col gap-2">
-              <Medallion score={scores.con ?? "—"} mod={modOf("con")} label="Constitution" size={56} />
-              <Medallion score={scores.dex ?? "—"} mod={modOf("dex")} label="Dexterity" size={56} />
-              <Medallion score={scores.str ?? "—"} mod={modOf("str")} label="Strength" size={56} />
-            </div>
-
-            {/* Proficiency sits apart: it is not an ability, it is the bonus. */}
-            <div className="absolute left-1/2 top-2 -translate-x-1/2">
-              <Medallion score={sign(prof)} label="Proficiency Bonus" size={48} />
-            </div>
-
-            {/* The three numbers the table calls out loud, along the floor. */}
-            <div className="absolute inset-x-0 bottom-2 flex items-end justify-center gap-5">
-              <div className="text-center">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#4a6b8d] bg-[#0e1520] font-serif text-[16px] text-[#dbe8f5]">
-                  {sign(c.initiative ?? c.dex_modifier ?? 0)}
-                </div>
-                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#8a9bb0]">Initiative</div>
-              </div>
-              <div className="text-center">
-                <div className="flex h-16 w-14 items-center justify-center rounded-b-[45%] rounded-t-sm border-2 border-[#8d6d35] bg-gradient-to-b from-[#efe6cf] to-[#c2ae83] font-serif text-[24px] font-bold text-[#2a2013]">
-                  {c.ac ?? "—"}
-                </div>
-                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#a89468]">Armor Class</div>
-              </div>
-              <div className="text-center">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#7d2b28] bg-[#1c0d0c] font-serif text-[14px] text-[#f0d5c9]">
-                  {(c.speed ?? "—").replace(/\s*ft\.?.*$/i, "")}
-                </div>
-                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#b08b7f]">Speed</div>
-              </div>
-            </div>
-
             {c.conditions != null && (
-              <div className="absolute left-1/2 top-16 -translate-x-1/2">
+              <div className="absolute left-1/2 top-2 -translate-x-1/2">
                 <ConditionBadges conditions={c.conditions} />
               </div>
             )}
+
+            <div className="absolute inset-x-0 bottom-1 flex items-end justify-center gap-5">
+              <div className="text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#4a6b8d] bg-[#efe6cf] font-serif text-[15px] text-[#1d2a38]">
+                  {sign(c.initiative ?? c.dex_modifier ?? 0)}
+                </div>
+                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#3c556f]">Initiative</div>
+              </div>
+              <div className="text-center">
+                <div className="flex h-16 w-14 items-center justify-center rounded-b-[45%] rounded-t-sm border-2 border-[#8d6d35] bg-gradient-to-b from-[#f3ead4] to-[#c2ae83] font-serif text-[24px] font-bold text-[#2a2013]">
+                  {c.ac ?? "—"}
+                </div>
+                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#6b5a34]">Armor Class</div>
+              </div>
+              <div className="text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#7d2b28] bg-[#efe6cf] font-serif text-[14px] text-[#3a1210]">
+                  {(c.speed ?? "—").replace(/\s*ft\.?.*$/i, "")}
+                </div>
+                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#7d2b28]">Speed</div>
+              </div>
+            </div>
           </div>
 
-          {/* RIGHT — spellcasting */}
-          <div className="flex flex-col gap-2">
+          {/* COLUMN 4 — right medallion gutter */}
+          <div className="flex flex-col items-center gap-2 pt-1">
+            <Medallion score={scores.con ?? "—"} mod={modOf("con")} label="Constitution" size={58} />
+            <Medallion score={scores.dex ?? "—"} mod={modOf("dex")} label="Dexterity" size={58} />
+            <Medallion score={scores.str ?? "—"} mod={modOf("str")} label="Strength" size={58} />
+          </div>
+
+          {/* COLUMN 5 — spellcasting */}
+          <div className="flex flex-col gap-1.5">
             <Plate title="Spellcasting">
               {(sc.save_dc != null || sc.attack_bonus != null) && (
-                <div className="mb-1.5 text-center text-[9px] text-[#bdb298]">
+                <div className="mb-1.5 text-center text-[9px] text-[#4a3d24]">
                   Save DC {sc.save_dc ?? "—"} · Attack {sign(sc.attack_bonus ?? 0)}
                 </div>
               )}
               {slotRows.map(([lvl, v]) => (
-                <div key={lvl} className="mb-1.5 rounded-sm border border-[#6b5123] bg-[#241d10] py-[3px] text-center font-serif text-[10px] uppercase tracking-[0.14em] text-[#f0dfb4]">
+                <div key={lvl} className="mb-1.5 rounded-sm border border-[#8d6d35] bg-[#3a2d18] py-[3px] text-center font-serif text-[10px] uppercase tracking-[0.14em] text-[#f6e9c6]">
                   Level {lvl}: {(v?.max ?? 0) - (v?.used ?? 0)}/{v?.max ?? 0}
                 </div>
               ))}
-
               {cantrips.length > 0 && (
                 <>
-                  <div className="mb-1 mt-2 text-[8px] uppercase tracking-[0.18em] text-[#8a7952]">Cantrips</div>
+                  <div className="mb-1 mt-2 text-[8px] uppercase tracking-[0.18em] text-[#6b5a34]">Cantrips</div>
                   {cantrips.map((s) => <SpellRow key={s} name={s} />)}
                 </>
               )}
               {prepared.length > 0 && (
                 <>
-                  <div className="mb-1 mt-2 text-[8px] uppercase tracking-[0.18em] text-[#8a7952]">Prepared Spells</div>
+                  <div className="mb-1 mt-2 text-[8px] uppercase tracking-[0.18em] text-[#6b5a34]">Prepared Spells</div>
                   {prepared.map((s) => <SpellRow key={s} name={s} />)}
                 </>
               )}
