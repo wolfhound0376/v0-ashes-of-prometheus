@@ -183,10 +183,36 @@ export function CharacterCard({
         {c.name.split(/\s+of\s+|\s+the\s+/i)[0]}
       </div>
 
-      {/* The class sigil in the small top-left socket. */}
+      {/* The class sigil in the small top-left socket, with the selection
+          lamp beside it. Sam's brief: green when this is the character being
+          controlled, red when it is not. A lamp rather than a tint, because
+          the card is already dimmed when unfocused and one more brightness
+          step is not a signal anybody would notice mid-fight.
+
+          The sigil and its colour come from the class frame (PR #249) — that
+          landed while this was in flight and is the better source, so it is
+          kept over the hardcoded glyph this branch started from. */}
       <div style={{ ...box(SLOTS.classSigil), ...fitted, fontSize: width * 0.055, color: cls.accent }}>
         {cls.sigil}
       </div>
+      <div
+        aria-label={active ? "Active character" : "Not active"}
+        style={{
+          position: "absolute",
+          left: `${SLOTS.classSigil.left + SLOTS.classSigil.width}%`,
+          top: `${SLOTS.classSigil.top + SLOTS.classSigil.height * 0.28}%`,
+          width: width * 0.030,
+          height: width * 0.030,
+          borderRadius: "50%",
+          background: active
+            ? "radial-gradient(circle at 35% 30%, #d4ffd0, #35d94a 55%, #0f6b1c)"
+            : "radial-gradient(circle at 35% 30%, #ffd3cf, #d93535 55%, #6b0f0f)",
+          border: "1px solid rgba(0,0,0,0.55)",
+          boxShadow: active
+            ? "0 0 6px 1px rgba(53,217,74,0.75), inset 0 0 2px rgba(255,255,255,0.6)"
+            : "0 0 5px 1px rgba(217,53,53,0.55), inset 0 0 2px rgba(255,255,255,0.45)",
+        }}
+      />
 
       {/* The wide field at the foot: conditions, or the class when clear. */}
       <div
