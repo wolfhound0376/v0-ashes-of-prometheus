@@ -16,6 +16,7 @@
 
 import { useEffect } from "react"
 import { iconFor } from "@/lib/action-icons"
+import { ConditionBadges } from "@/components/conditions/condition-badges"
 import type { HudCharacter } from "./combat-hud"
 
 const RULE = "linear-gradient(90deg,transparent,#a88745,transparent)"
@@ -95,6 +96,14 @@ export function CharacterSheetOverlay({
               <Field label="AC" value={c.ac ?? "—"} />
               <Field label="Init" value={c.dex_modifier == null ? "—" : `${c.dex_modifier >= 0 ? "+" : ""}${c.dex_modifier}`} />
               <Field label="Speed" value={(c.speed ?? "—").replace(/\s*\(.*$/, "")} />
+            </div>
+
+            {/* Directly under the numbers, because conditions are what make
+                those numbers wrong. Restrained is a speed of 0 and advantage
+                against you; prone halves your movement. A sheet that shows AC
+                and hides Poisoned is telling half the truth. */}
+            <div className="mt-2">
+              <ConditionBadges conditions={c.conditions} size="xs" emptyLabel="No conditions" />
             </div>
           </div>
         </div>

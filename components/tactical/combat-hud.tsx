@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
+import { conditionColor, normalizeConditions } from "@/lib/conditions"
 import { CharacterCard } from "./character-card"
 import { CharacterSheetOverlay } from "./character-sheet-overlay"
 
@@ -42,6 +43,10 @@ export interface HudCharacter {
   wis_score?: number | null
   cha_score?: number | null
   sheet_features?: unknown
+  /** jsonb string[] on `characters`. Malachar writes this column mid-fight from
+   *  the chat route, so it arrives as raw jsonb and goes through
+   *  `normalizeConditions` before anything renders it. */
+  conditions?: unknown
   sheet_spellcasting: {
     slots?: Record<string, { max?: number; used?: number }>
     cantrips?: string[]
@@ -72,6 +77,9 @@ interface Props {
   tokenToCharacter: Record<string, string>
   /** token_id → portrait URL for NPCs, whose art lives in npc_encounters. */
   tokenPortrait?: Record<string, string>
+  /** token_id → conditions for NPCs, from the same encounter rows. A PC's
+   *  conditions come off their sheet instead and never pass through here. */
+  tokenConditions?: Record<string, unknown>
   turnOrder: HudTurn[]
   activeIndex: number
   round: number
@@ -103,7 +111,7 @@ const CLASS_GLYPH: Record<string, string> = {
 }
 
 export function CombatHud(props: Props) {
-  const { characters, tokenToCharacter, tokenPortrait = {}, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus } = props
+  const { characters, tokenToCharacter, tokenPortrait = {}, tokenConditions = {}, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus } = props
   const [ability, setAbility] = useState<string | null>(null)
   const [sheetFor, setSheetFor] = useState<string | null>(null)
 
@@ -152,7 +160,7 @@ export function CombatHud(props: Props) {
         {characters.map((c) => (
           <div key={c.id} className="pointer-events-auto">
             <CharacterCard
-              character={c}
+              character={{ ...c, conditions: normalizeConditions(c.conditions) }}
               tone="blue"
               active={focus?.id === c.id}
               onClick={() => onFocus(c.id)}
@@ -183,10 +191,16 @@ export function CombatHud(props: Props) {
               // their encounter row. Either way the rail shows a face.
               const art = c?.portrait_image_url ?? tokenPortrait[entry.token_id] ?? null
               const active = i === activeIndex
+              // A PC's conditions ride on their sheet; an NPC's on their
+              // encounter row, which the board looks up by label.
+              const conds = normalizeConditions(c ? c.conditions : tokenConditions[entry.token_id])
               return (
                 <div
                   key={entry.token_id}
-                  title={`${entry.label} — d20 ${entry.roll} ${entry.dex_mod >= 0 ? "+" : ""}${entry.dex_mod} = ${entry.total}`}
+                  title={
+                    `${entry.label} — d20 ${entry.roll} ${entry.dex_mod >= 0 ? "+" : ""}${entry.dex_mod} = ${entry.total}` +
+                    (conds.length ? `\n${conds.join(" · ")}` : "")
+                  }
                   className={
                     "relative w-[44px] overflow-hidden rounded-sm border transition-all " +
                     (active
@@ -206,6 +220,17 @@ export function CombatHud(props: Props) {
                       </span>
                     )}
                   </div>
+                  {conds.length > 0 && (
+                    <div className="absolute left-0 right-0 top-0 flex justify-center gap-[2px] bg-gradient-to-b from-black/80 to-transparent px-[2px] pt-[2px] pb-[3px]">
+                      {conds.slice(0, 4).map((cond) => (
+                        <span
+                          key={cond}
+                          title={cond}
+                          className={"h-[5px] w-[5px] rounded-full bg-current " + conditionColor(cond)}
+                        />
+                      ))}
+                    </div>
+                  )}
                   <div className={"py-[1px] text-center font-serif text-[10px] " + (active ? "bg-[#8b6427] text-white" : "bg-black/70 text-[#c9bca0]")}>
                     {entry.total}
                   </div>
