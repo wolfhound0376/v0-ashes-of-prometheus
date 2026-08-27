@@ -83,13 +83,18 @@ export function CharacterCard({
   character: c,
   tone = "blue",
   active = false,
+  isTurn = false,
   onClick,
   width = 236,
 }: {
   character: CardCharacter
   /** blue for the party, red for hostiles — the artist cut both. */
   tone?: "blue" | "red"
+  /** Focused — this is the card whose globes and ability rack are showing.
+   *  A view state. It brightens the card and nothing more. */
   active?: boolean
+  /** Up NOW, by initiative. The lamp's only meaning. */
+  isTurn?: boolean
   onClick?: () => void
   width?: number
 }) {
@@ -183,36 +188,49 @@ export function CharacterCard({
         {c.name.split(/\s+of\s+|\s+the\s+/i)[0]}
       </div>
 
-      {/* The class sigil in the small top-left socket, with the selection
-          lamp beside it. Sam's brief: green when this is the character being
-          controlled, red when it is not. A lamp rather than a tint, because
-          the card is already dimmed when unfocused and one more brightness
-          step is not a signal anybody would notice mid-fight.
-
-          The sigil and its colour come from the class frame (PR #249) — that
-          landed while this was in flight and is the better source, so it is
-          kept over the hardcoded glyph this branch started from. */}
+      {/* The class sigil in the small top-left socket. Glyph and colour come
+          from the class registry, not a hardcoded table. */}
       <div style={{ ...box(SLOTS.classSigil), ...fitted, fontSize: width * 0.055, color: cls.accent }}>
         {cls.sigil}
       </div>
+
+      {/* THE TURN LAMP.
+          It reports one thing: is this character up, by initiative. Not who is
+          selected — selection is a view state, it changes every time you click
+          around the party mid-fight, and a light that moves when you merely
+          LOOK at something is a light nobody can trust. The table needs to
+          glance at four cards and know whose move it is.
+
+          It sits in SLOTS.statusIcon, the round housing the artist cut at the
+          left of the status band. That socket has been empty since the card
+          shipped; it was always the lamp mount.
+
+          Unlit is DARK, not red. Red on three cards at all times is noise the
+          eye learns to ignore, and it reads as an error rather than "waiting".
+          One lamp lit out of four is the entire signal. */}
       <div
-        aria-label={active ? "Active character" : "Not active"}
+        aria-label={isTurn ? `${c.name} is up` : undefined}
         style={{
-          position: "absolute",
-          left: `${SLOTS.classSigil.left + SLOTS.classSigil.width}%`,
-          top: `${SLOTS.classSigil.top + SLOTS.classSigil.height * 0.28}%`,
-          width: width * 0.030,
-          height: width * 0.030,
-          borderRadius: "50%",
-          background: active
-            ? "radial-gradient(circle at 35% 30%, #d4ffd0, #35d94a 55%, #0f6b1c)"
-            : "radial-gradient(circle at 35% 30%, #ffd3cf, #d93535 55%, #6b0f0f)",
-          border: "1px solid rgba(0,0,0,0.55)",
-          boxShadow: active
-            ? "0 0 6px 1px rgba(53,217,74,0.75), inset 0 0 2px rgba(255,255,255,0.6)"
-            : "0 0 5px 1px rgba(217,53,53,0.55), inset 0 0 2px rgba(255,255,255,0.45)",
+          ...box(SLOTS.statusIcon),
+          display: "grid",
+          placeItems: "center",
         }}
-      />
+      >
+        <div
+          style={{
+            width: "74%",
+            height: "74%",
+            borderRadius: "50%",
+            background: isTurn
+              ? "radial-gradient(circle at 35% 30%, #d8ffd4, #35d94a 55%, #0d5c18)"
+              : "radial-gradient(circle at 35% 30%, #241e14, #12100a 60%, #070504)",
+            boxShadow: isTurn
+              ? "0 0 8px 2px rgba(53,217,74,0.85), inset 0 0 3px rgba(255,255,255,0.65)"
+              : "inset 0 1px 3px rgba(0,0,0,0.95)",
+            transition: "background 160ms, box-shadow 160ms",
+          }}
+        />
+      </div>
 
       {/* The wide field at the foot: conditions, or the class when clear. */}
       <div

@@ -128,6 +128,15 @@ export function CombatHud(props: Props) {
   const [ability, setAbility] = useState<string | null>(null)
   const [sheetFor, setSheetFor] = useState<string | null>(null)
 
+  // Whose turn it is, resolved from the SAME turn order the rail draws from —
+  // one source, so the lamp on the card and the raised portrait on the rail can
+  // never disagree. Null between combats: no fight, no lamp.
+  const activeCharacterId = useMemo(() => {
+    const entry = turnOrder[activeIndex]
+    if (!entry) return null
+    return tokenToCharacter[entry.token_id] ?? null
+  }, [turnOrder, activeIndex, tokenToCharacter])
+
   const focus = useMemo(
     () => characters.find((c) => c.id === focusId) ?? characters[0] ?? null,
     [characters, focusId],
@@ -177,6 +186,7 @@ export function CombatHud(props: Props) {
               character={{ ...c, conditions: normalizeConditions(c.conditions) }}
               tone="blue"
               active={focus?.id === c.id}
+              isTurn={activeCharacterId === c.id}
               onClick={() => onFocus(c.id)}
               width={228}
             />
