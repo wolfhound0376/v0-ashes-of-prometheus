@@ -675,19 +675,34 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               mesh.castShadow = mesh.receiveShadow = true
               const m = mesh.material as THREE.MeshStandardMaterial
               if (m.map) {
-                // A gentle lift so a model never reads as a black cut-out.
-                // This was 0.42 back when the board had almost no dynamic
-                // light; with torches and door lamps it now compounds with
-                // them, so it is a whisper rather than a second light source.
-                m.emissiveMap = m.map
-                m.emissive = new THREE.Color(0x4a4a4a)
-                m.emissiveIntensity = 0.15
+                // COLOUR SPACE FIRST. A base-colour texture read as linear
+                // renders washed and muddy — this is the single biggest
+                // cause of "the colours are off" on imported models, and it
+                // costs nothing to assert rather than assume the loader
+                // guessed right.
+                m.map.colorSpace = THREE.SRGBColorSpace
+
+                // The emissive copy of the base texture is GONE. It was a
+                // crutch from when the board had no real lights, and it does
+                // real damage: adding a grey-scaled copy of the albedo over
+                // itself flattens saturation and lifts blacks, which is
+                // exactly the washed-out look Sam is seeing. Torches, door
+                // lamps and the fill now light these models properly, so the
+                // crutch is worse than nothing.
+                m.emissive = new THREE.Color(0x000000)
+                m.emissiveMap = null
+                m.emissiveIntensity = 0
               }
-              // Tone mapping is ACES with exposure 1.35; a model arriving
-              // with metalness 1 and no env map turns into a mirror of
-              // nothing, which reads as white. Clamp what Meshy ships.
-              if (typeof m.metalness === "number") m.metalness = Math.min(m.metalness, 0.25)
-              if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.45)
+              // Meshy sometimes ships metalness 1 with no environment map,
+              // which under ACES renders as a mirror of nothing. Clamp it —
+              // but not so hard that leather and steel stop reading
+              // differently: 0.35 keeps some sheen, and the roughness floor
+              // is 0.35 rather than 0.45 so highlights survive.
+              if (typeof m.metalness === "number") m.metalness = Math.min(m.metalness, 0.35)
+              if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.35)
+              // Tone mapping desaturates; a touch of extra saturation in the
+              // material colour puts the artist's palette back.
+              if (m.color) m.color.offsetHSL(0, 0.08, 0.02)
               m.needsUpdate = true
             }
           })
@@ -750,9 +765,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         g.add(carry)
         // A soft fill from the front so faces are not pure silhouette. Weak
         // and far enough out that it cannot blow the mesh the way the torch did.
-        const fill = new THREE.PointLight(0xffd2a0, 2.2, 5, 1.4)
+        const fill = new THREE.PointLight(0xffd2a0, 2.6, 5, 1.4)
         fill.position.set(0.9, 1.5, 0.9)
         g.add(fill)
+        // A cool back-rim opposite the torch. Two-source lighting is what
+        // separates a figure from the floor it stands on; one warm source
+        // alone leaves the far side of every model in flat shadow.
+        const rim = new THREE.PointLight(0x9db4d8, 1.6, 4.5, 1.5)
+        rim.position.set(-0.8, 1.7, -0.8)
+        g.add(rim)
 
         const glowCanvas = document.createElement("canvas")
         glowCanvas.width = glowCanvas.height = 128
