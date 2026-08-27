@@ -1,17 +1,21 @@
 "use client"
 
 // ============================================================================
-// THE FULL SHEET — opened from a character card, in the card's own language.
+// THE FULL SHEET — opened from a character card.
 //
-// This replaces the four summary panels that used to sit along the foot of
-// the board. Sam's call, and the right one: those panels showed the same six
-// ability scores for all four characters at all times, which is four times
-// the ink for information a player checks perhaps twice a session. The card
-// on the left is the always-on view; this is the "tell me everything" view,
-// and it only exists when asked for.
+// Sam's reference is an illuminated page: a name banner across the top, the
+// figure standing in the middle with ability medallions floating around him,
+// saving throws and skills down the left, spellcasting down the right, and
+// the globes and ability rack along the foot.
 //
-// Same materials as the card frame: blackened steel, bronze rules, gold
-// small-caps, recessed near-black fields. Nothing new invented.
+// EVERY NUMBER HERE IS DERIVED OR STORED — none is decorative. Saving throws
+// and skills are computed the SRD way (ability modifier, plus proficiency
+// only where the sheet says the character is proficient), so a sheet edit
+// moves them and nothing has to be kept in sync by hand.
+//
+// Where the reference art and the campaign disagree, the campaign wins: the
+// art shows a High Elf with a shortbow, Samson is a Human acolyte with a
+// mace. The layout is the brief; the data is his own.
 // ============================================================================
 
 import { useEffect } from "react"
@@ -19,13 +23,55 @@ import { iconFor } from "@/lib/action-icons"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
 import type { HudCharacter } from "./combat-hud"
 
-const RULE = "linear-gradient(90deg,transparent,#a88745,transparent)"
+const GOLD = "#cdb276"
+const BRONZE = "#a88745"
 
-function Field({ label, value }: { label: string; value: string | number }) {
+/** SRD skill list, each with the ability it keys off. */
+const SKILLS: [string, keyof typeof ABIL][] = [
+  ["Acrobatics", "dex"], ["Animal Handling", "wis"], ["Arcana", "int"],
+  ["Athletics", "str"], ["Deception", "cha"], ["History", "int"],
+  ["Insight", "wis"], ["Intimidation", "cha"], ["Investigation", "int"],
+  ["Medicine", "wis"], ["Nature", "int"], ["Perception", "wis"],
+  ["Performance", "cha"], ["Persuasion", "cha"], ["Religion", "int"],
+  ["Sleight of Hand", "dex"], ["Stealth", "dex"], ["Survival", "wis"],
+]
+const ABIL = { str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA" } as const
+type AbilKey = keyof typeof ABIL
+
+const sign = (n: number) => `${n >= 0 ? "+" : ""}${n}`
+
+/** A gold-rimmed medallion — the ability scores and the standalone numbers. */
+function Medallion({
+  score, label, mod, size = 64,
+}: { score: number | string; label: string; mod?: number | null; size?: number }) {
   return (
-    <div className="rounded-sm border border-[#2a2216] bg-black/45 px-2 py-1 text-center">
-      <div className="text-[7px] uppercase tracking-[0.18em] text-[#6b5a34]">{label}</div>
-      <div className="font-serif text-[13px] text-[#e8dcc0]">{value}</div>
+    <div className="relative" style={{ width: size }}>
+      {mod != null && (
+        <div className="absolute -top-1.5 right-0 z-10 rounded-full border border-[#8d6d35] bg-[#100d08] px-1.5 py-[1px] font-serif text-[10px] text-[#e8dcc0]">
+          {sign(mod)}
+        </div>
+      )}
+      <div
+        className="flex items-center justify-center rounded-full border-2 border-[#8d6d35]"
+        style={{ width: size, height: size, background: "radial-gradient(circle at 50% 35%, #f3ead4, #cbb98f)" }}
+      >
+        <span className="font-serif text-[22px] font-bold text-[#2a2013]">{score}</span>
+      </div>
+      <div className="mt-0.5 text-center text-[7px] uppercase tracking-[0.16em] text-[#a89468]">{label}</div>
+    </div>
+  )
+}
+
+/** A parchment plate — the boxed panels down the sides. */
+function Plate({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={"rounded-sm border border-[#6b5123] bg-[#12100b]/95 " + className}>
+      {title && (
+        <div className="border-b border-[#4b3a19] bg-[#0a0806] px-2 py-1 text-center font-serif text-[9px] uppercase tracking-[0.2em] text-[#cdb276]">
+          {title}
+        </div>
+      )}
+      <div className="p-2">{children}</div>
     </div>
   )
 }
@@ -33,9 +79,11 @@ function Field({ label, value }: { label: string; value: string | number }) {
 export function CharacterSheetOverlay({
   character: c,
   onClose,
+  onEndTurn,
 }: {
   character: HudCharacter
   onClose: () => void
+  onEndTurn?: () => void
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
@@ -43,167 +91,339 @@ export function CharacterSheetOverlay({
     return () => window.removeEventListener("keydown", onKey)
   }, [onClose])
 
-  const mod = (score: number | null | undefined) =>
-    score == null ? "—" : `${Math.floor((score - 10) / 2) >= 0 ? "+" : ""}${Math.floor((score - 10) / 2)}`
+  const scores: Record<AbilKey, number | null | undefined> = {
+    str: c.str_score, dex: c.dex_score, con: c.con_score,
+    int: c.int_score, wis: c.wis_score, cha: c.cha_score,
+  }
+  const modOf = (k: AbilKey) => {
+    const v = scores[k]
+    return v == null ? 0 : Math.floor((v - 10) / 2)
+  }
+  const prof = c.proficiency_bonus ?? 2
 
-  const abilities: [string, number | null | undefined][] = [
-    ["STR", c.str_score], ["DEX", c.dex_score], ["CON", c.con_score],
-    ["INT", c.int_score], ["WIS", c.wis_score], ["CHA", c.cha_score],
-  ]
+  // Proficiency lists arrive as jsonb. Saves are an array of ability keys;
+  // skills are an object keyed by skill name. Both are read defensively —
+  // a missing list means "proficient in nothing", never a crash.
+  const saveProf = new Set(
+    (Array.isArray(c.sheet_save_proficiencies) ? c.sheet_save_proficiencies : [])
+      .map((x) => String(x).toLowerCase()),
+  )
+  const skillProfRaw = (c.sheet_skill_proficiencies ?? {}) as Record<string, unknown>
+  const skillProf = new Set(Object.keys(skillProfRaw).map((k) => k.toLowerCase()))
+
+  const saveMod = (k: AbilKey) => modOf(k) + (saveProf.has(k) ? prof : 0)
+  const skillMod = (name: string, k: AbilKey) =>
+    modOf(k) + (skillProf.has(name.toLowerCase()) ? prof : 0)
 
   const sc = c.sheet_spellcasting ?? {}
   const cantrips = sc.cantrips ?? []
   const prepared = sc.prepared ?? []
-  const slots = sc.slots ?? {}
-  const feats = Array.isArray(c.sheet_features)
-    ? (c.sheet_features as unknown[])
-        .map((f) => (typeof f === "string" ? f : (f as { name?: string })?.name))
-        .filter((n): n is string => Boolean(n))
-    : []
+  const slotRows = Object.entries(sc.slots ?? {}).sort(([a], [b]) => Number(a) - Number(b))
+  const slotsMax = slotRows.reduce((n, [, v]) => n + (v?.max ?? 0), 0)
+  const slotsUsed = slotRows.reduce((n, [, v]) => n + (v?.used ?? 0), 0)
+
+  const attacks = Array.isArray(c.sheet_attacks) ? c.sheet_attacks : []
+  const xp = c.xp ?? 0
+  const xpNext = c.xp_to_next ?? 0
+  const xpPct = xpNext > 0 ? Math.min(100, Math.round((xp / xpNext) * 100)) : 0
+
+  // The rack: cantrips first, then prepared, capped at six — the same order
+  // the HUD rack uses, so muscle memory carries between the two.
+  const rack = [...cantrips, ...prepared].slice(0, 6)
+  const portrait = c.avatar_image_url || c.portrait_image_url
 
   return (
     <div
-      className="absolute inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-[2px]"
+      className="pointer-events-auto fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-3"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[86vh] w-[620px] overflow-y-auto"
-        style={{
-          background: "linear-gradient(180deg,#171009 0%,#0b0805 60%,#120d07 100%)",
-          border: "2px solid #a88745",
-          boxShadow: "0 0 50px #000, inset 0 0 40px #00000099",
-        }}
+        className="relative flex max-h-[96vh] w-full max-w-[1020px] flex-col overflow-hidden rounded border-2 border-[#8d6d35] bg-[#0b0906] shadow-[0_0_60px_#000]"
+        style={{ backgroundImage: "radial-gradient(ellipse at 50% 0%, #1b150c 0%, #0b0906 60%)" }}
       >
-        {/* Head: portrait, name, the numbers a player checks mid-turn. */}
-        <div className="flex gap-3 p-4">
-          <div className="h-[112px] w-[96px] shrink-0 overflow-hidden rounded-sm border border-[#4a3a1e] bg-gradient-to-b from-[#241a0c] to-[#0a0805]">
-            {c.portrait_image_url ? (
-              <img src={c.portrait_image_url} alt="" className="h-full w-full object-contain object-top" />
-            ) : (
-              <div className="grid h-full w-full place-items-center text-[28px] text-[#6b5a34]">✧</div>
-            )}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="font-serif text-[19px] uppercase tracking-[0.16em] text-[#f4e6c4]">{c.name}</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-[#a89468]">
+        {/* ─── HEADER: name banner, then race / background / experience ─── */}
+        <div className="flex shrink-0 items-stretch gap-2 border-b-2 border-[#6b5123] p-2">
+          <div className="flex min-w-0 flex-1 flex-col justify-center rounded-sm border border-[#7d2b28] bg-gradient-to-b from-[#5c1f1c] to-[#2c0f0d] px-4 py-2">
+            <h2 className="truncate font-serif text-[26px] font-bold uppercase tracking-[0.06em] text-[#f4e9cf]">
+              {c.name}
+            </h2>
+            <div className="font-serif text-[11px] uppercase tracking-[0.22em] text-[#d9b877]">
               Level {c.level ?? "—"} {c.class ?? ""}
             </div>
+          </div>
 
-            <div className="mt-2 grid grid-cols-4 gap-1.5">
-              <Field label="HP" value={`${c.hp_current ?? c.hp_max ?? "—"}/${c.hp_max ?? "—"}`} />
-              <Field label="AC" value={c.ac ?? "—"} />
-              <Field label="Init" value={c.dex_modifier == null ? "—" : `${c.dex_modifier >= 0 ? "+" : ""}${c.dex_modifier}`} />
-              <Field label="Speed" value={(c.speed ?? "—").replace(/\s*\(.*$/, "")} />
-            </div>
-
-            {/* Directly under the numbers, because conditions are what make
-                those numbers wrong. Restrained is a speed of 0 and advantage
-                against you; prone halves your movement. A sheet that shows AC
-                and hides Poisoned is telling half the truth. */}
-            <div className="mt-2">
-              <ConditionBadges conditions={c.conditions} size="xs" emptyLabel="No conditions" />
+          <div className="flex shrink-0 items-end gap-1.5">
+            {[
+              ["Race", c.sheet_species ?? "—"],
+              ["Background", c.sheet_background ?? "—"],
+            ].map(([label, value]) => (
+              <div key={label} className="w-[118px] rounded-sm border border-[#6b5123] bg-[#17140d] px-2 py-1 text-center">
+                <div className="text-[7px] uppercase tracking-[0.18em] text-[#8a7952]">{label}</div>
+                <div className="truncate font-serif text-[12px] text-[#e8dcc0]">{value}</div>
+              </div>
+            ))}
+            <div className="w-[150px] rounded-sm border border-[#6b5123] bg-[#17140d] px-2 py-1 text-center">
+              <div className="text-[7px] uppercase tracking-[0.18em] text-[#8a7952]">Experience Points</div>
+              <div className="font-serif text-[12px] text-[#e8dcc0]">{xp} / {xpNext || "—"}</div>
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#241a2e]">
+                <div className="h-full bg-gradient-to-r from-[#7d4fd0] to-[#b58ef5]" style={{ width: `${xpPct}%` }} />
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="mx-4 h-[1px]" style={{ background: RULE }} />
-
-        {/* Abilities, with their modifiers — the modifier is what gets rolled,
-            so it is the larger number, not a footnote. */}
-        <div className="grid grid-cols-6 gap-1.5 p-4">
-          {abilities.map(([label, score]) => (
-            <div key={label} className="rounded-sm border border-[#3a2f1e] bg-black/40 py-1.5 text-center">
-              <div className="text-[7px] uppercase tracking-[0.18em] text-[#6b5a34]">{label}</div>
-              <div className="font-serif text-[16px] leading-tight text-[#f0e6cc]">{mod(score)}</div>
-              <div className="text-[9px] text-[#7a6c50]">{score ?? "—"}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Spellcasting, when there is any — with the commissioned art. */}
-        {(cantrips.length > 0 || prepared.length > 0) && (
-          <>
-            <div className="mx-4 h-[1px]" style={{ background: RULE }} />
-            <div className="p-4">
-              <div className="flex items-baseline justify-between">
-                <div className="font-serif text-[10px] uppercase tracking-[0.24em] text-[#a89468]">Spellcasting</div>
-                <div className="text-[9px] text-[#8a7952]">
-                  {sc.save_dc ? `Save DC ${sc.save_dc}` : ""}
-                  {sc.attack_bonus != null ? `  ·  Attack +${sc.attack_bonus}` : ""}
-                </div>
-              </div>
-
-              {Object.keys(slots).length > 0 && (
-                <div className="mt-1.5 flex gap-2 text-[9px] text-[#8a7952]">
-                  {Object.entries(slots).map(([lvl, s]) => (
-                    <span key={lvl} className="rounded-sm border border-[#3a2f1e] bg-black/40 px-2 py-0.5">
-                      Level {lvl}: <span className="text-[#e0d2ae]">{(s?.max ?? 0) - (s?.used ?? 0)}/{s?.max ?? 0}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {[["Cantrips", cantrips], ["Prepared", prepared]].map(([title, list]) => {
-                const items = list as string[]
-                if (!items.length) return null
-                return (
-                  <div key={title as string} className="mt-2.5">
-                    <div className="text-[8px] uppercase tracking-[0.18em] text-[#6b5a34]">{title as string}</div>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {items.map((name) => {
-                        const art = iconFor(name)
-                        return (
-                          <div
-                            key={name}
-                            title={name}
-                            className="flex items-center gap-1.5 rounded-sm border border-[#3a2f1e] bg-black/40 py-1 pl-1 pr-2"
-                          >
-                            {art ? (
-                              <img src={art} alt="" className="h-6 w-6 rounded-sm object-cover" />
-                            ) : (
-                              // No commissioned art yet — say so quietly rather
-                              // than showing a broken frame.
-                              <span className="grid h-6 w-6 place-items-center rounded-sm border border-[#2a2216] text-[8px] text-[#5f5540]">—</span>
-                            )}
-                            <span className="font-serif text-[10px] text-[#d8c9a8]">{name}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        )}
-
-        {feats.length > 0 && (
-          <>
-            <div className="mx-4 h-[1px]" style={{ background: RULE }} />
-            <div className="p-4">
-              <div className="font-serif text-[10px] uppercase tracking-[0.24em] text-[#a89468]">Features</div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {feats.map((f) => (
-                  <span key={f} className="rounded-sm border border-[#3a2f1e] bg-black/40 px-2 py-1 text-[10px] text-[#d8c9a8]">
-                    {f}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="flex justify-end gap-2 border-t border-[#2a2216] p-3">
           <button
             onClick={onClose}
-            className="rounded-sm border border-[#6b5123] bg-gradient-to-b from-[#2a1f10] to-[#120c06] px-5 py-1.5 font-serif text-[10px] uppercase tracking-[0.2em] text-[#f0cd7a] hover:border-[#c99a49]"
+            className="shrink-0 self-start rounded-sm border border-[#6b5123] px-2 py-1 font-serif text-[10px] uppercase tracking-[0.16em] text-[#cdb276] hover:border-[#a88745]"
           >
             Close
           </button>
         </div>
+
+        {/* ─── BODY: three columns, the figure in the middle ─────────────── */}
+        <div className="grid min-h-0 flex-1 grid-cols-[286px_1fr_212px] gap-2 overflow-y-auto p-2">
+
+          {/* LEFT — saving throws, skills, equipment, attacks */}
+          <div className="flex flex-col gap-2">
+            <Plate title="Saving Throws">
+              <div className="flex justify-between">
+                {(Object.keys(ABIL) as AbilKey[]).map((k) => (
+                  <div key={k} className="text-center">
+                    <div
+                      className={
+                        "flex h-7 w-9 items-center justify-center rounded-sm border font-serif text-[13px] " +
+                        (saveProf.has(k)
+                          ? "border-[#a88745] bg-[#241d10] text-[#f0dfb4]"
+                          : "border-[#3a2f1e] bg-black/40 text-[#c3b48f]")
+                      }
+                    >
+                      {sign(saveMod(k))}
+                    </div>
+                    <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#8a7952]">{ABIL[k]}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1 text-center text-[7px] leading-tight text-[#6b5a34]">
+                Filled = proficient. Modifier includes the +{prof} proficiency bonus.
+              </p>
+            </Plate>
+
+            <Plate title="Skills">
+              <div className="space-y-[1px]">
+                {SKILLS.map(([name, k]) => {
+                  const isProf = skillProf.has(name.toLowerCase())
+                  return (
+                    <div key={name} className="flex items-center gap-1.5 px-1">
+                      <span
+                        className={
+                          "h-2 w-2 shrink-0 rounded-full border " +
+                          (isProf ? "border-[#d9b877] bg-[#cdb276]" : "border-[#4b3a19] bg-transparent")
+                        }
+                      />
+                      <span className={"flex-1 truncate text-[9px] " + (isProf ? "text-[#e8dcc0]" : "text-[#9b8b6b]")}>
+                        {name} <span className="text-[7px] text-[#6b5a34]">({ABIL[k]})</span>
+                      </span>
+                      <span className="w-8 rounded-sm border border-[#3a2f1e] bg-black/40 text-center font-serif text-[10px] text-[#e0d2ae]">
+                        {sign(skillMod(name, k))}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </Plate>
+
+            {attacks.length > 0 && (
+              <Plate title="Attacks">
+                <div className="space-y-1">
+                  {attacks.slice(0, 4).map((a, i) => {
+                    const atk = a as { name?: string; type?: string; hit?: string; damage?: string; range?: string }
+                    return (
+                      <div key={i} className="rounded-sm border border-[#3a2f1e] bg-black/40 px-2 py-1">
+                        <div className="flex items-baseline justify-between">
+                          <span className="font-serif text-[11px] text-[#e8dcc0]">{atk.name}</span>
+                          <span className="font-serif text-[11px] text-[#d9b877]">{atk.hit}</span>
+                        </div>
+                        <div className="flex items-baseline justify-between text-[8px] text-[#8a7952]">
+                          <span>{atk.type}{atk.range ? ` · ${atk.range}` : ""}</span>
+                          <span className="text-[#bdb298]">{atk.damage}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Plate>
+            )}
+          </div>
+
+          {/* CENTRE — the figure, with the ability medallions around him */}
+          <div className="relative min-h-[420px] overflow-hidden rounded-sm border border-[#4b3a19] bg-[radial-gradient(ellipse_at_50%_20%,#2a2114,#080705_70%)]">
+            {portrait ? (
+              <img src={portrait} alt={c.name} className="absolute inset-0 h-full w-full object-contain object-bottom" />
+            ) : (
+              <div className="flex h-full items-center justify-center font-serif text-7xl text-[#4b3a19]">
+                {c.name[0]}
+              </div>
+            )}
+
+            {/* Medallions ride the edges so the figure stays readable. */}
+            <div className="absolute left-2 top-3 flex flex-col gap-2">
+              <Medallion score={scores.int ?? "—"} mod={modOf("int")} label="Intelligence" size={56} />
+              <Medallion score={scores.wis ?? "—"} mod={modOf("wis")} label="Wisdom" size={56} />
+              <Medallion score={scores.cha ?? "—"} mod={modOf("cha")} label="Charisma" size={56} />
+            </div>
+            <div className="absolute right-2 top-3 flex flex-col gap-2">
+              <Medallion score={scores.con ?? "—"} mod={modOf("con")} label="Constitution" size={56} />
+              <Medallion score={scores.dex ?? "—"} mod={modOf("dex")} label="Dexterity" size={56} />
+              <Medallion score={scores.str ?? "—"} mod={modOf("str")} label="Strength" size={56} />
+            </div>
+
+            {/* Proficiency sits apart: it is not an ability, it is the bonus. */}
+            <div className="absolute left-1/2 top-2 -translate-x-1/2">
+              <Medallion score={sign(prof)} label="Proficiency Bonus" size={48} />
+            </div>
+
+            {/* The three numbers the table calls out loud, along the floor. */}
+            <div className="absolute inset-x-0 bottom-2 flex items-end justify-center gap-5">
+              <div className="text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#4a6b8d] bg-[#0e1520] font-serif text-[16px] text-[#dbe8f5]">
+                  {sign(c.initiative ?? c.dex_modifier ?? 0)}
+                </div>
+                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#8a9bb0]">Initiative</div>
+              </div>
+              <div className="text-center">
+                <div className="flex h-16 w-14 items-center justify-center rounded-b-[45%] rounded-t-sm border-2 border-[#8d6d35] bg-gradient-to-b from-[#efe6cf] to-[#c2ae83] font-serif text-[24px] font-bold text-[#2a2013]">
+                  {c.ac ?? "—"}
+                </div>
+                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#a89468]">Armor Class</div>
+              </div>
+              <div className="text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#7d2b28] bg-[#1c0d0c] font-serif text-[14px] text-[#f0d5c9]">
+                  {(c.speed ?? "—").replace(/\s*ft\.?.*$/i, "")}
+                </div>
+                <div className="mt-0.5 text-[7px] uppercase tracking-wider text-[#b08b7f]">Speed</div>
+              </div>
+            </div>
+
+            {c.conditions != null && (
+              <div className="absolute left-1/2 top-16 -translate-x-1/2">
+                <ConditionBadges conditions={c.conditions} />
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT — spellcasting */}
+          <div className="flex flex-col gap-2">
+            <Plate title="Spellcasting">
+              {(sc.save_dc != null || sc.attack_bonus != null) && (
+                <div className="mb-1.5 text-center text-[9px] text-[#bdb298]">
+                  Save DC {sc.save_dc ?? "—"} · Attack {sign(sc.attack_bonus ?? 0)}
+                </div>
+              )}
+              {slotRows.map(([lvl, v]) => (
+                <div key={lvl} className="mb-1.5 rounded-sm border border-[#6b5123] bg-[#241d10] py-[3px] text-center font-serif text-[10px] uppercase tracking-[0.14em] text-[#f0dfb4]">
+                  Level {lvl}: {(v?.max ?? 0) - (v?.used ?? 0)}/{v?.max ?? 0}
+                </div>
+              ))}
+
+              {cantrips.length > 0 && (
+                <>
+                  <div className="mb-1 mt-2 text-[8px] uppercase tracking-[0.18em] text-[#8a7952]">Cantrips</div>
+                  {cantrips.map((s) => <SpellRow key={s} name={s} />)}
+                </>
+              )}
+              {prepared.length > 0 && (
+                <>
+                  <div className="mb-1 mt-2 text-[8px] uppercase tracking-[0.18em] text-[#8a7952]">Prepared Spells</div>
+                  {prepared.map((s) => <SpellRow key={s} name={s} />)}
+                </>
+              )}
+            </Plate>
+          </div>
+        </div>
+
+        {/* ─── FOOT: globes, the rack, and the turn ──────────────────────── */}
+        <div className="flex shrink-0 items-center gap-3 border-t-2 border-[#6b5123] bg-[#0a0806] px-3 py-2">
+          <Globe
+            value={`${c.hp_current ?? 0}/${c.hp_max ?? 0}`}
+            label="Hit Points"
+            from="#c2352f" to="#5b100d" ring="#7d2b28"
+          />
+
+          <div className="flex flex-1 justify-center gap-1.5">
+            {rack.map((name, i) => {
+              const art = iconFor(name)
+              return (
+                <div key={name} className="relative w-[62px]">
+                  <div className="absolute left-1 top-0.5 z-10 font-serif text-[8px] text-[#cdb276]">{i + 1}</div>
+                  <div className="flex h-[62px] items-center justify-center overflow-hidden rounded-sm border border-[#6b5123] bg-[#12100b]">
+                    {art
+                      ? <img src={art} alt={name} className="h-full w-full object-contain" />
+                      : <span className="px-1 text-center font-serif text-[8px] text-[#cdb276]">{name}</span>}
+                  </div>
+                  <div className="mt-0.5 truncate text-center text-[7px] uppercase tracking-wider text-[#a89468]" title={name}>
+                    {name}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <Globe
+            value={`${slotsMax - slotsUsed}/${slotsMax}`}
+            label="Spell Slots"
+            from="#8b5fd0" to="#2c1252" ring="#5b3a94"
+          />
+
+          {onEndTurn && (
+            <button
+              onClick={onEndTurn}
+              className="shrink-0 rounded-sm border-2 border-[#7d2b28] bg-gradient-to-b from-[#5c1f1c] to-[#2c0f0d] px-5 py-3 font-serif text-[13px] uppercase tracking-[0.18em] text-[#f4e9cf] hover:border-[#a8413c]"
+            >
+              End Turn
+            </button>
+          )}
+        </div>
       </div>
+    </div>
+  )
+}
+
+/** One spell in the right-hand column, with its commissioned art if it has any. */
+function SpellRow({ name }: { name: string }) {
+  const art = iconFor(name)
+  return (
+    <div className="mb-[3px] flex items-center gap-1.5 rounded-sm border border-[#3a2f1e] bg-black/40 px-1.5 py-1">
+      <div className="h-6 w-6 shrink-0 overflow-hidden rounded-sm border border-[#4b3a19] bg-[#0a0806]">
+        {art
+          ? <img src={art} alt="" className="h-full w-full object-contain" />
+          : <div className="flex h-full items-center justify-center font-serif text-[9px] text-[#6b5a34]">◈</div>}
+      </div>
+      <span className="truncate text-[9px] text-[#ddd2bc]" title={name}>{name}</span>
+    </div>
+  )
+}
+
+/** The Diablo globe. Fill is proportional, so a hurt character reads at a glance. */
+function Globe({
+  value, label, from, to, ring,
+}: { value: string; label: string; from: string; to: string; ring: string }) {
+  const [cur, max] = value.split("/").map((n) => Number(n) || 0)
+  const pct = max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0
+  return (
+    <div className="shrink-0 text-center">
+      <div
+        className="relative flex h-[68px] w-[68px] items-end justify-center overflow-hidden rounded-full border-2"
+        style={{ borderColor: ring, background: "#0a0806" }}
+      >
+        <div
+          className="absolute inset-x-0 bottom-0 transition-[height]"
+          style={{ height: `${pct}%`, background: `linear-gradient(180deg, ${from}, ${to})` }}
+        />
+        <div className="relative z-10 flex h-full w-full items-center justify-center font-serif text-[15px] font-bold text-[#f4e9cf] drop-shadow-[0_1px_2px_#000]">
+          {value}
+        </div>
+      </div>
+      <div className="mt-0.5 text-[7px] uppercase tracking-[0.16em] text-[#a89468]">{label}</div>
     </div>
   )
 }

@@ -1134,7 +1134,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (!charIds.length) return
         const { data: rows } = await supabase
           .from("characters")
-          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score")
+          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,sheet_attacks")
           .in("id", charIds)
         const list = (rows ?? []) as HudCharacter[]
         setSheets(list)
