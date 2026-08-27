@@ -69,6 +69,8 @@ interface Props {
   characters: HudCharacter[]
   /** token_id → character_id, so the initiative rail can find portraits. */
   tokenToCharacter: Record<string, string>
+  /** token_id → portrait URL for NPCs, whose art lives in npc_encounters. */
+  tokenPortrait?: Record<string, string>
   turnOrder: HudTurn[]
   activeIndex: number
   round: number
@@ -100,7 +102,7 @@ const CLASS_GLYPH: Record<string, string> = {
 }
 
 export function CombatHud(props: Props) {
-  const { characters, tokenToCharacter, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus } = props
+  const { characters, tokenToCharacter, tokenPortrait = {}, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus } = props
   const [ability, setAbility] = useState<string | null>(null)
 
   const focus = useMemo(
@@ -157,6 +159,9 @@ export function CombatHud(props: Props) {
           <div className="flex items-end gap-1.5">
             {turnOrder.map((entry, i) => {
               const c = characters.find((x) => x.id === tokenToCharacter[entry.token_id])
+              // A player's portrait comes from their sheet; an NPC's from
+              // their encounter row. Either way the rail shows a face.
+              const art = c?.portrait_image_url ?? tokenPortrait[entry.token_id] ?? null
               const active = i === activeIndex
               return (
                 <div
@@ -173,8 +178,8 @@ export function CombatHud(props: Props) {
                   style={{ transform: active ? "translateY(-3px)" : undefined }}
                 >
                   <div className="h-[40px] bg-gradient-to-b from-[#1b1610] to-[#080604]">
-                    {c?.portrait_image_url ? (
-                      <img src={c.portrait_image_url} alt="" className="h-full w-full object-cover object-top" />
+                    {art ? (
+                      <img src={art} alt="" className="h-full w-full object-contain object-top" />
                     ) : (
                       <span className={"grid h-full w-full place-items-center font-serif text-[15px] " + (entry.kind === "pc" ? "text-[#7d94b4]" : "text-[#a8635c]")}>
                         {entry.label.slice(0, 1)}

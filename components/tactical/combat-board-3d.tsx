@@ -126,6 +126,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [combatBusy, setCombatBusy] = useState(false)
   const [sheets, setSheets] = useState<HudCharacter[]>([])
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
+  /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
+  const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
   const [log, setLog] = useState<HudLogLine[]>([])
   const [focusId, setFocusId] = useState<string | null>(null)
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
@@ -1103,6 +1105,31 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         setFocusId((cur) => cur ?? list[0]?.id ?? null)
       }
 
+      // NPC medallions. The prisoners have commissioned portraits in
+      // npc_encounters; without this the initiative rail falls back to the
+      // first letter of their name, which is what Sam was looking at.
+      // Matched on LABEL because a token may carry a bestiary_id (a species)
+      // rather than a link to the specific NPC row.
+      const npcLabels = ((tokenRows ?? []) as TokenRow[])
+        .filter((t) => !t.character_id && t.is_visible)
+        .map((t) => t.label)
+      if (npcLabels.length) {
+        const { data: npcs } = await supabase
+          .from("npc_encounters")
+          .select("name,portrait_url,face_url")
+          .in("name", npcLabels)
+        const byName = new Map(
+          (npcs ?? []).map((n: { name: string; portrait_url: string | null; face_url: string | null }) =>
+            [n.name, n.face_url ?? n.portrait_url]),
+        )
+        const map: Record<string, string> = {}
+        for (const t of (tokenRows ?? []) as TokenRow[]) {
+          const url = byName.get(t.label)
+          if (url) map[t.id] = url
+        }
+        setTokenPortrait(map)
+      }
+
       // The log is the real transcript — what Malachar actually narrated —
       // rather than invented mechanical chatter.
       const loadLog = async () => {
@@ -1355,6 +1382,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       <CombatHud
         characters={sheets}
         tokenToCharacter={tokenToCharacter}
+        tokenPortrait={tokenPortrait}
         turnOrder={combat?.turn_order ?? []}
         activeIndex={combat?.active_index ?? 0}
         round={combat?.round ?? 1}
