@@ -27,7 +27,7 @@ const SPELL_SLUGS = new Set([
   "disengage", "disguise-self", "dispel-magic", "earth-tremor", "eldritch-blast",
   "enlarge-reduce", "ensnaring-strike", "entangle", "expeditious-retreat", "fade-away",
   "faerie-fire", "false-life", "feather-fall", "fireball", "flame-strike", "fog-cloud",
-  "goodberry", "grease", "greater-invisibility", "guidance", "healing-spirit", "healing-word",
+  "goodberry", "grease", "greater-invisibility", "guidance", "guiding-bolt", "healing-spirit", "healing-word",
   "heat-metal", "hellish-rebuke", "hex", "hide", "hold-person", "hunters-mark", "inflict-wounds",
   "invisibility", "jump", "leomunds-tiny-hut", "longstrider", "magic-missile", "magic-weapon",
   "mirror-image", "misty-step", "moonbeam", "prayer-of-healing", "protection-from-evil-and-good",
