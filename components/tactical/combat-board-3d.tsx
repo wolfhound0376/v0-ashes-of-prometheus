@@ -134,6 +134,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
   /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
   const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
+  const [tokenConditions, setTokenConditions] = useState<Record<string, unknown>>({})
   const [log, setLog] = useState<HudLogLine[]>([])
   const [focusId, setFocusId] = useState<string | null>(null)
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
@@ -1129,15 +1130,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // spell slots live on the character, and a HUD that guessed them would
       // be lying about the sheet.
       const charIds = partyTokens.map((r) => r.character_id as string)
-      if (charIds.length) {
+      const loadSheets = async () => {
+        if (!charIds.length) return
         const { data: rows } = await supabase
           .from("characters")
-          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,dex_modifier,sheet_spellcasting,sheet_features,str_score,dex_score,con_score,int_score,wis_score,cha_score")
+          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score")
           .in("id", charIds)
         const list = (rows ?? []) as HudCharacter[]
         setSheets(list)
         setFocusId((cur) => cur ?? list[0]?.id ?? null)
       }
+      await loadSheets()
 
       // NPC medallions. The prisoners have commissioned portraits in
       // npc_encounters; without this the initiative rail falls back to the
@@ -1147,22 +1150,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const npcLabels = ((tokenRows ?? []) as TokenRow[])
         .filter((t) => !t.character_id && t.is_visible)
         .map((t) => t.label)
-      if (npcLabels.length) {
+      const loadNpcs = async () => {
+        if (!npcLabels.length) return
         const { data: npcs } = await supabase
           .from("npc_encounters")
-          .select("name,portrait_url,face_url")
+          .select("name,portrait_url,face_url,conditions")
           .in("name", npcLabels)
-        const byName = new Map(
-          (npcs ?? []).map((n: { name: string; portrait_url: string | null; face_url: string | null }) =>
-            [n.name, n.face_url ?? n.portrait_url]),
+        type NpcRow = { name: string; portrait_url: string | null; face_url: string | null; conditions: unknown }
+        const byName = new Map<string, NpcRow>(
+          ((npcs ?? []) as NpcRow[]).map((n) => [n.name, n] as [string, NpcRow]),
         )
         const map: Record<string, string> = {}
+        const conds: Record<string, unknown> = {}
         for (const t of (tokenRows ?? []) as TokenRow[]) {
-          const url = byName.get(t.label)
+          const npc = byName.get(t.label)
+          if (!npc) continue
+          const url = npc.face_url ?? npc.portrait_url
           if (url) map[t.id] = url
+          if (npc.conditions) conds[t.id] = npc.conditions
         }
         setTokenPortrait(map)
+        setTokenConditions(conds)
       }
+      await loadNpcs()
 
       // The log is the real transcript — what Malachar actually narrated —
       // rather than invented mechanical chatter.
@@ -1197,6 +1207,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .on("postgres_changes", { event: "*", schema: "public", table: "combat_state", filter: `map_id=eq.${map.id}` }, () => void loadCombat())
         .subscribe()
 
+      // Live sheets. Until now `sheets` was fetched once on mount and never
+      // again — so a condition Malachar applied mid-fight, or damage he wrote
+      // to the sheet, showed on nobody's plate until they reloaded the page.
+      // A HUD that lies about the sheet is worse than no HUD; a HUD that shows
+      // a five-minute-old sheet lies more quietly, which is worse still.
+      const charIdSet = new Set(charIds)
+      const sheetsChannel = supabase
+        .channel("characters-board")
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "characters" }, (payload: { new?: unknown }) => {
+          // No server-side filter: realtime takes one `eq` at a time and the
+          // party is four rows. Cheaper to check the id here than to open four
+          // channels.
+          const id = (payload.new as { id?: string })?.id
+          if (id && charIdSet.has(id)) void loadSheets()
+        })
+        .subscribe()
+
+      // NPC conditions travel the same way — Malachar writes them to
+      // npc_encounters by name, and the rail should mark them at once.
+      const npcChannel = supabase
+        .channel("npc-conditions-board")
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "npc_encounters" }, () => void loadNpcs())
+        .subscribe()
+
       // Live: any token change, from any hand, lands on every board.
       const channel = supabase
         .channel("vtt-tokens-board")
@@ -1216,6 +1250,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         void supabase.removeChannel(channel)
         void supabase.removeChannel(combatChannel)
         void supabase.removeChannel(logChannel)
+        void supabase.removeChannel(sheetsChannel)
+        void supabase.removeChannel(npcChannel)
       }
     }
 
@@ -1450,6 +1486,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         characters={sheets}
         tokenToCharacter={tokenToCharacter}
         tokenPortrait={tokenPortrait}
+        tokenConditions={tokenConditions}
         turnOrder={combat?.turn_order ?? []}
         activeIndex={combat?.active_index ?? 0}
         round={combat?.round ?? 1}
