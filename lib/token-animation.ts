@@ -101,7 +101,7 @@ export type CastHand = "LeftHand" | "RightHand"
  * instead is the tell that separates a game from a tech demo — the light
  * leaves her palm before she has moved.
  *
- * Measured 2026-08-18 by sampling the clips' forward kinematics — the release
+ * Measured 2026-08-27 by sampling the clips' forward kinematics — the release
  * is where the casting hand peaks in reach. Order matters: the longest name
  * wins, because "charged_spell_cast_1" is a DIFFERENT clip from
  * "charged_spell_cast" (4.30s right-handed vs 2.67s two-handed overhead) and
