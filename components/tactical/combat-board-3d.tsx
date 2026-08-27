@@ -32,6 +32,7 @@ import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { createClient } from "@/lib/supabase/client"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
+import { clipFor, ONE_SHOT, type TokenState } from "@/lib/token-animation"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const TILE_BASE =
@@ -131,7 +132,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const classicRef = useRef<((on: boolean) => void) | null>(null)
 
   // Refs bridging React and the imperative three scene.
-  const tokensRef = useRef<Map<string, { row: TokenRow; obj: THREE.Object3D; hpArc?: THREE.Mesh }>>(new Map())
+  const tokensRef = useRef<
+    Map<string, { row: TokenRow; obj: THREE.Object3D; hpArc?: THREE.Mesh; anim?: TokenAnim }>
+  >(new Map())
   const selectedRef = useRef<TokenRow | null>(null)
   const dmRef = useRef(false)
   const mapRef = useRef<MapRow | null>(null)
@@ -536,6 +539,46 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       return sprite
     }
 
+    /** Everything needed to drive one skinned model's clips. */
+    interface TokenAnim {
+      mixer: THREE.AnimationMixer
+      clips: THREE.AnimationClip[]
+      names: string[]
+      current: THREE.AnimationAction | null
+      state: TokenState
+    }
+
+    /**
+     * Cross-fade a token into a state. One-shots (attack, hurt) play once and
+     * hand back to idle; everything else loops. A model missing the clip for
+     * a state simply keeps what it is doing rather than snapping to a T-pose.
+     */
+    const playState = (anim: TokenAnim, state: TokenState, force = false) => {
+      if (!force && anim.state === state) return
+      const name = clipFor(state, anim.names)
+      if (!name) return
+      const clip = anim.clips.find((c) => c.name === name)
+      if (!clip) return
+      const next = anim.mixer.clipAction(clip)
+      const once = ONE_SHOT.includes(state)
+      next.reset()
+      next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity)
+      next.clampWhenFinished = once
+      next.fadeIn(0.18).play()
+      if (anim.current && anim.current !== next) anim.current.fadeOut(0.18)
+      anim.current = next
+      anim.state = state
+      if (once) {
+        // Back to the stance when the swing finishes — the mixer tells us.
+        const onFinish = (e: { action: THREE.AnimationAction }) => {
+          if (e.action !== next) return
+          anim.mixer.removeEventListener("finished", onFinish as never)
+          playState(anim, "idle", true)
+        }
+        anim.mixer.addEventListener("finished", onFinish as never)
+      }
+    }
+
     const spawnToken = (row: TokenRow) => {
       const existing = tokensRef.current.get(row.id)
       if (existing) tokenGroup.remove(existing.obj)
@@ -576,6 +619,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             }
           })
           g.add(obj)
+
+          // ANIMATION. Meshy ships these with a dozen-plus clips whose names
+          // come from whatever source animation was used, so the state is
+          // resolved by lib/token-animation rather than by exact name.
+          if (gltf.animations?.length) {
+            const mixer = new THREE.AnimationMixer(obj)
+            const anim: TokenAnim = {
+              mixer,
+              clips: gltf.animations,
+              names: gltf.animations.map((c) => c.name),
+              current: null,
+              state: "idle",
+            }
+            const entry = tokensRef.current.get(row.id)
+            if (entry) entry.anim = anim
+            playState(anim, "idle", true)
+            console.log(`[board] ${row.label}: ${gltf.animations.length} clips —`, anim.names.join(", "))
+          }
         })
       } else {
         // No model: a disc pawn with a darker rim, honest and readable.
@@ -1012,15 +1073,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
       }
       // Token glides.
+      // Advance every skinned model's clock.
+      tokensRef.current.forEach((entry) => entry.anim?.mixer.update(dt))
+
       tokensRef.current.forEach((entry) => {
         const gl = entry.obj.userData.glide as { from: THREE.Vector3; to: THREE.Vector3; t: number } | undefined
-        if (!gl) return
+        if (!gl) {
+          // Standing still: stance, unless mid-swing.
+          if (entry.anim && entry.anim.state === "walk") playState(entry.anim, "idle")
+          return
+        }
+        if (entry.anim) playState(entry.anim, "walk")
         gl.t = Math.min(1, gl.t + dt * 2.6)
         const ease = gl.t * gl.t * (3 - 2 * gl.t)
         entry.obj.position.lerpVectors(gl.from, gl.to, ease)
         // A step-height hop so the move reads as a move, not a teleport.
         entry.obj.position.y = Math.sin(ease * Math.PI) * 0.22
-        if (gl.t >= 1) delete entry.obj.userData.glide
+        if (gl.t >= 1) {
+          delete entry.obj.userData.glide
+          if (entry.anim) playState(entry.anim, "idle")
+          // Face the way they travelled, so a walk ends looking onward.
+          const dir = new THREE.Vector3().subVectors(gl.to, gl.from)
+          if (dir.lengthSq() > 0.01) entry.obj.rotation.y = Math.atan2(dir.x, dir.z)
+        }
       })
       // Embers rise, wander, and are reborn at the floor.
       //
