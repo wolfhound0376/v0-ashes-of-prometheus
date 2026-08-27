@@ -109,6 +109,10 @@ interface Props {
   /** The character whose plate is "focused" — drives globes and ability bar. */
   focusId: string | null
   onFocus: (id: string) => void
+  /** Pressing an ability performs it on the board — the focused character's
+   *  miniature plays the matching cast and throws the spell from its hand.
+   *  Optional so the HUD still renders anywhere the board is not mounted. */
+  onCast?: (ability: string, kind: string) => void
 }
 
 /** Slot totals across every level, which is what a single globe can honestly show. */
@@ -125,7 +129,7 @@ function slotTally(c: HudCharacter): { used: number; max: number } | null {
 }
 
 export function CombatHud(props: Props) {
-  const { characters, tokenToCharacter, tokenPortrait = {}, tokenConditions = {}, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus } = props
+  const { characters, tokenToCharacter, tokenPortrait = {}, tokenConditions = {}, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus, onCast } = props
   const [ability, setAbility] = useState<string | null>(null)
   const [sheetFor, setSheetFor] = useState<string | null>(null)
 
@@ -328,7 +332,14 @@ export function CombatHud(props: Props) {
               return (
                 <button
                   key={a.name}
-                  onClick={() => setAbility(ability === a.name ? null : a.name)}
+                  onClick={() => {
+                    const selecting = ability !== a.name
+                    setAbility(selecting ? a.name : null)
+                    // Selecting an ability performs it on the board: the
+                    // miniature casts, and the spell leaves his hand on the
+                    // release frame. Deselecting is just deselecting.
+                    if (selecting) onCast?.(a.name, a.kind)
+                  }}
                   title={`${a.name} — ${kindLabel}`}
                   className={
                     "pointer-events-auto relative h-[46px] w-[46px] overflow-hidden rounded-sm border transition-all " +

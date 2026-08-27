@@ -34,7 +34,16 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { createClient } from "@/lib/supabase/client"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
 import { TurnBanner, type TurnEconomy } from "./turn-banner"
-import { clipFor, ONE_SHOT, type TokenState } from "@/lib/token-animation"
+import {
+  castClipFor,
+  castEventFor,
+  castPlanFor,
+  clipFor,
+  ONE_SHOT,
+  type CastHand,
+  type TokenState,
+} from "@/lib/token-animation"
+import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const TILE_BASE =
@@ -149,6 +158,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const dmRef = useRef(false)
   const mapRef = useRef<MapRow | null>(null)
   const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
+  /** The HUD's ability bar reaches the scene through here, the same way
+   *  moves do. Set inside the scene effect; a no-op until the board is up. */
+  const castRef = useRef<(characterId: string, ability: string, kind: string) => void>(() => {})
 
   useEffect(() => {
     setDm(Boolean(getDmKey()))
@@ -579,13 +591,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * Cross-fade a token into a state. One-shots (attack, hurt) play once and
      * hand back to idle; everything else loops. A model missing the clip for
      * a state simply keeps what it is doing rather than snapping to a T-pose.
+     *
+     * `explicit` overrides the state's usual clip, which is how a cast picks
+     * between a flick of the wrist and a two-handed overhead discharge —
+     * both are the "cast" state, but they are different clips.
+     *
+     * Returns the clip that actually played, so the caller can look up when
+     * the spell leaves the hand.
      */
-    const playState = (anim: TokenAnim, state: TokenState, force = false) => {
-      if (!force && anim.state === state) return
-      const name = clipFor(state, anim.names)
-      if (!name) return
+    const playState = (
+      anim: TokenAnim,
+      state: TokenState,
+      force = false,
+      explicit?: string | null,
+    ): THREE.AnimationClip | null => {
+      if (!force && anim.state === state) return null
+      const name = explicit ?? clipFor(state, anim.names)
+      if (!name) return null
       const clip = anim.clips.find((c) => c.name === name)
-      if (!clip) return
+      if (!clip) return null
       const next = anim.mixer.clipAction(clip)
       const once = ONE_SHOT.includes(state)
       next.reset()
@@ -604,7 +628,58 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
         anim.mixer.addEventListener("finished", onFinish as never)
       }
+      return clip
     }
+
+    // ── CASTING ────────────────────────────────────────────────────────────
+    // Live effects, advanced by the same clock as everything else. A cast
+    // that is still in the air when the board unmounts is disposed with it.
+    const vfx: VfxHandle[] = []
+    /** Casts waiting for their release frame — the spell has not left the
+     *  hand yet, because the hand has not got there yet. */
+    const pending: { wait: number; obj: THREE.Object3D; hand: CastHand; spell: string; target: THREE.Vector3 | null }[] = []
+
+    /**
+     * The HUD pressed an ability. Play the matching clip on that character's
+     * miniature and, at the clip's release frame, throw the spell from the
+     * hand that throws it.
+     */
+    const performCast = (characterId: string, ability: string, kind: string) => {
+      const plan = castPlanFor(ability, kind)
+      if (!plan) return // Dash and friends animate nothing
+      let found: { row: TokenRow; obj: THREE.Object3D; anim?: TokenAnim } | undefined
+      for (const e of Array.from(tokensRef.current.values())) {
+        if (e.row.character_id === characterId) { found = e; break }
+      }
+      if (!found) return
+      const anim = found.anim
+      if (!anim) return // a disc pawn has nothing to animate
+
+      const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names) : null
+      const clip = playState(anim, plan.state, true, explicit)
+      if (!clip) return
+      if (plan.state === "hurt") return // Dodge is a flinch, not a spell
+
+      // Only magic throws light. "Attack" resolves to a cast clip for a
+      // caster — Kenta's attack IS an Eldritch Blast — but for a martial it
+      // resolves to a sword swing, and a swing must not emit arcane sparks.
+      const isSpell = plan.state === "cast" || /spell|cast|soell/i.test(clip.name)
+      if (!isSpell) return
+
+      // Where it is thrown: the selected token if it is someone else, so a
+      // bolt actually flies at the target the DM has picked. Nothing
+      // selected — or the caster selected — and it is just a discharge.
+      const sel = selectedRef.current
+      let target: THREE.Vector3 | null = null
+      if (sel && sel.id !== found.row.id) {
+        const t = tokensRef.current.get(sel.id)
+        if (t) target = new THREE.Vector3(t.obj.position.x, 1.1, t.obj.position.z)
+      }
+
+      const { release, hand } = castEventFor(clip.name, clip.duration)
+      pending.push({ wait: release, obj: found.obj, hand, spell: ability, target })
+    }
+    castRef.current = performCast
 
     const spawnToken = (row: TokenRow) => {
       const existing = tokensRef.current.get(row.id)
@@ -1280,6 +1355,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Advance every skinned model's clock.
       tokensRef.current.forEach((entry) => entry.anim?.mixer.update(dt))
 
+      // A cast in its windup: when the hand reaches the release frame, the
+      // spell leaves it. The bone is looked up now rather than at press time
+      // because the model may only just have finished loading.
+      for (let i = pending.length - 1; i >= 0; i--) {
+        const p = pending[i]
+        p.wait -= dt
+        if (p.wait > 0) continue
+        pending.splice(i, 1)
+        const bone = p.obj.getObjectByName(p.hand) ?? p.obj
+        vfx.push(
+          castSpellVfx({
+            parent: scene,
+            anchor: bone,
+            palette: paletteForSpell(p.spell),
+            target: p.target,
+          }),
+        )
+      }
+      for (let i = vfx.length - 1; i >= 0; i--) {
+        if (!vfx[i].update(dt)) vfx.splice(i, 1)
+      }
+
       tokensRef.current.forEach((entry) => {
         const gl = entry.obj.userData.glide as { from: THREE.Vector3; to: THREE.Vector3; t: number } | undefined
         if (!gl) {
@@ -1347,6 +1444,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
       tokensRef.current.clear()
+      // A spell still in the air when the board goes away takes its
+      // geometry and materials with it.
+      vfx.forEach((v) => v.dispose())
+      vfx.length = 0
+      pending.length = 0
+      castRef.current = () => {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1495,6 +1598,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         onEndTurn={() => void combatAction("next")}
         focusId={focusId}
         onFocus={setFocusId}
+        onCast={(ability, kind) => {
+          if (focusId) castRef.current(focusId, ability, kind)
+        }}
       />
 
       {/* Before the dice: the one button that starts a fight. Sits under the
