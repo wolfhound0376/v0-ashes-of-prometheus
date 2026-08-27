@@ -195,26 +195,28 @@ export function CharacterCard({
       </div>
 
       {/* THE TURN LAMP.
-          It reports one thing: is this character up, by initiative. Not who is
-          selected — selection is a view state, it changes every time you click
-          around the party mid-fight, and a light that moves when you merely
-          LOOK at something is a light nobody can trust. The table needs to
-          glance at four cards and know whose move it is.
+          Red at rest, green when this character is up. Every playable
+          character carries one, so the party reads as a row of red lights with
+          exactly one green in it — and the green travels as initiative passes.
 
-          It sits in SLOTS.statusIcon, the round housing the artist cut at the
-          left of the status band. That socket has been empty since the card
-          shipped; it was always the lamp mount.
+          The red matters. An unlit socket says "this card has a lamp that is
+          off"; a red one says "waiting", which is the actual state, and it
+          makes the single green unmistakable at a glance across four cards.
 
-          Unlit is DARK, not red. Red on three cards at all times is noise the
-          eye learns to ignore, and it reads as an error rather than "waiting".
-          One lamp lit out of four is the entire signal. */}
+          What it does NOT track is selection. Selection is a view state; it
+          changes every time you click across the party to read someone's
+          slots, and a light that moves when you merely LOOK at something is a
+          light nobody at the table can trust.
+
+          It is a glance signal, not the announcement — the turn banner already
+          tells the active player in words. This is what the rest of the table
+          reads without being told.
+
+          It sits in SLOTS.statusIcon, the round housing at the left of the
+          status band, which had been empty since the card shipped. */}
       <div
-        aria-label={isTurn ? `${c.name} is up` : undefined}
-        style={{
-          ...box(SLOTS.statusIcon),
-          display: "grid",
-          placeItems: "center",
-        }}
+        aria-label={isTurn ? `${c.name} is up` : `${c.name} is waiting`}
+        style={{ ...box(SLOTS.statusIcon), display: "grid", placeItems: "center" }}
       >
         <div
           style={{
@@ -223,10 +225,10 @@ export function CharacterCard({
             borderRadius: "50%",
             background: isTurn
               ? "radial-gradient(circle at 35% 30%, #d8ffd4, #35d94a 55%, #0d5c18)"
-              : "radial-gradient(circle at 35% 30%, #241e14, #12100a 60%, #070504)",
+              : "radial-gradient(circle at 35% 30%, #ffcfcb, #c92f2f 55%, #560c0c)",
             boxShadow: isTurn
               ? "0 0 8px 2px rgba(53,217,74,0.85), inset 0 0 3px rgba(255,255,255,0.65)"
-              : "inset 0 1px 3px rgba(0,0,0,0.95)",
+              : "0 0 4px 1px rgba(201,47,47,0.45), inset 0 0 3px rgba(255,255,255,0.4)",
             transition: "background 160ms, box-shadow 160ms",
           }}
         />
