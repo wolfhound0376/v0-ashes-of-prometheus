@@ -594,24 +594,51 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         gltfLoader.load(row.model_url, (gltf) => {
           if (disposed) return
           const obj = gltf.scene
-          // Measure AFTER the loader has applied node transforms — meshopt
-          // stores positions quantised, and the dequantisation lives in the
-          // node matrix, so an early read gives ±32767 nonsense.
           obj.updateWorldMatrix(true, true)
-          const box = new THREE.Box3().setFromObject(obj)
-          const size = box.getSize(new THREE.Vector3())
+
+          // MEASURING A SKINNED MODEL BY ITS MESH IS A TRAP, and it is the
+          // trap that made every player model invisible. Meshopt stores
+          // vertices quantised to ±32767; for a rigid mesh the dequantise
+          // scale sits on the node, so Box3.setFromObject reads true size —
+          // but for a SKINNED mesh the skeleton drives the vertices and the
+          // node matrix is bypassed, so the box reads ~65,534 units. My old
+          // guard called that "reasonable" and scaled by 1/65,534: the model
+          // rendered at a ten-thousandth of intended size. Rings and name
+          // sprites (plain meshes) drew fine, which is exactly the screenshot
+          // Sam sent — labelled rings with nobody standing in them.
+          //
+          // BONES live in real, dequantised space. For skinned models the
+          // skeleton's world-position spread IS the honest height.
+          const bones: THREE.Bone[] = []
+          obj.traverse((o) => { if ((o as THREE.Bone).isBone) bones.push(o as THREE.Bone) })
+          const v = new THREE.Vector3()
+          let size = new THREE.Vector3()
+          if (bones.length) {
+            const bb = new THREE.Box3()
+            for (const b of bones) bb.expandByPoint(b.getWorldPosition(v))
+            bb.getSize(size)
+            // Bones stop at the last joint — skull and soles sit a little
+            // beyond them. A body is ~12% taller than its skeleton spread.
+            size.multiplyScalar(1.12)
+          } else {
+            size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3())
+          }
           const feet = r >= 1.2 ? 15 : r >= 0.8 ? 10 : 6
           const want = (feet / 5) * (row.model_scale ?? 1)
-          // GUARD: a model that measures as zero, NaN or absurd would render
-          // invisible or swallow the board. Fall back to unit scale and say so
-          // in the console rather than leaving Sam staring at an empty square.
-          const usable = Number.isFinite(size.y) && size.y > 1e-4 && size.y < 1e6
+          const usable = Number.isFinite(size.y) && size.y > 1e-4 && size.y < 1e4
           const s = usable ? want / size.y : want
           if (!usable) {
-            console.warn(`[board] ${row.label}: model measured ${size.y} — using fallback scale`, row.model_url)
+            console.warn(`[board] ${row.label}: measured ${size.y} (${bones.length} bones) — fallback scale`, row.model_url)
           }
           obj.scale.setScalar(s)
-          const box2 = new THREE.Box3().setFromObject(obj)
+          obj.updateWorldMatrix(true, true)
+          let box2: THREE.Box3
+          if (bones.length) {
+            box2 = new THREE.Box3()
+            for (const b of bones) box2.expandByPoint(b.getWorldPosition(v))
+          } else {
+            box2 = new THREE.Box3().setFromObject(obj)
+          }
           obj.position.set(-(box2.min.x + box2.max.x) / 2, -box2.min.y + (row.model_y_offset ?? 0), -(box2.min.z + box2.max.z) / 2)
           if (row.rotation_y) obj.rotation.y = (row.rotation_y * Math.PI) / 180
           // Pre-lit tile leaves models unlit black columns; they carry
