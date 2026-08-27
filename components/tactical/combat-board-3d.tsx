@@ -1757,7 +1757,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           .order("name")
         const list = (rows ?? []) as HudCharacter[]
         setSheets(list)
-        setFocusId((cur) => cur ?? list[0]?.id ?? null)
+        // Focus THIS browser's own character by default, not merely the first
+        // plate. Otherwise a player opens the board driving someone else, and
+        // pressing a spell casts as the wrong character. Read localStorage
+        // fresh so effect-ordering can't hand us a stale value; the DM has no
+        // claimed character and correctly falls through to the first plate.
+        const mine = typeof window !== "undefined" ? window.localStorage.getItem("aop_character_id") : null
+        setFocusId((cur) => cur ?? (mine && list.some((c) => c.id === mine) ? mine : list[0]?.id) ?? null)
       }
       await loadSheets()
 
@@ -2258,6 +2264,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     })()
   }
 
+  // The initiative rail should list only combatants ACTUALLY on this map.
+  // turn_order is authoritative for ORDER, but a combatant whose token has
+  // been hidden or removed must not keep a slot — the rail would show a ghost
+  // the board no longer draws, and Sam asked that an absent/unseated character
+  // carry neither a plate nor an initiative pip. tokensRef holds exactly the
+  // visible tokens (a non-visible one is deleted before it ever registers),
+  // so membership there IS presence. Preserve the active highlight by TOKEN
+  // id rather than index, so filtering can never desync whose turn it is.
+  // Guard the first frame, before any token has spawned: show the raw order
+  // rather than an empty rail.
+  const rawTurnOrder = combat?.turn_order ?? []
+  const rawActiveIndex = combat?.active_index ?? 0
+  const activeTokenId = rawTurnOrder[rawActiveIndex]?.token_id
+  const presentTokens = tokensRef.current
+  const shownTurnOrder = presentTokens.size
+    ? rawTurnOrder.filter((e) => presentTokens.has(e.token_id))
+    : rawTurnOrder
+  const shownActiveIndex = Math.max(0, shownTurnOrder.findIndex((e) => e.token_id === activeTokenId))
+
   return (
     // ABSOLUTE, not h-full. The stage container already holds a full-height
     // scene <img>; a static child after it lays out BELOW that image and is
@@ -2379,8 +2404,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         tokenToCharacter={tokenToCharacter}
         tokenPortrait={tokenPortrait}
         tokenConditions={tokenConditions}
-        turnOrder={combat?.turn_order ?? []}
-        activeIndex={combat?.active_index ?? 0}
+        turnOrder={shownTurnOrder}
+        activeIndex={shownActiveIndex}
         round={combat?.round ?? 1}
         log={log}
         dm={dm}
