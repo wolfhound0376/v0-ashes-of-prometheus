@@ -28,9 +28,10 @@ function authorized(req: NextRequest): boolean {
 
 const d20 = () => 1 + Math.floor(Math.random() * 20)
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const db = createAdminClient()
-  const { data: map } = await db.from("vtt_maps").select("id").eq("is_active", true).limit(1).maybeSingle()
+  const sandbox = req.nextUrl.searchParams.get("sandbox") === "1"
+  const { data: map } = await db.from("vtt_maps").select("id").eq(sandbox ? "is_sandbox" : "is_active", true).limit(1).maybeSingle()
   if (!map) return NextResponse.json({ combat: null })
   const { data } = await db
     .from("combat_state")
@@ -49,8 +50,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "expected { action: 'start'|'next'|'end' }" }, { status: 400 })
   }
   const db = createAdminClient()
-  const { data: map } = await db.from("vtt_maps").select("id").eq("is_active", true).limit(1).maybeSingle()
-  if (!map) return NextResponse.json({ error: "no active battle map" }, { status: 409 })
+  const sandbox = body?.sandbox === true
+  const { data: map } = await db
+    .from("vtt_maps").select("id").eq(sandbox ? "is_sandbox" : "is_active", true).limit(1).maybeSingle()
+  if (!map) return NextResponse.json({ error: sandbox ? "no sandbox board" : "no active battle map" }, { status: 409 })
 
   if (action === "start") {
     const { data: existing } = await db

@@ -16,6 +16,7 @@
 // ============================================================================
 
 import { useEffect, useMemo, useState } from "react"
+import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 
 export interface HudCharacter {
   id: string
@@ -101,10 +102,14 @@ export function CombatHud(props: Props) {
   // available), then prepared. A martial with neither simply gets an empty rack
   // rather than invented buttons.
   const abilities = useMemo(() => {
+    // The universal actions come first — every combatant has Attack, Dash,
+    // Dodge, and they are the ones a table reaches for most. Then this
+    // character's real cantrips and prepared spells.
     const sc = focus?.sheet_spellcasting
+    const core = CORE_ACTIONS.slice(0, 5).map((a) => ({ name: a.name, kind: "action" as const }))
     const cantrips = (sc?.cantrips ?? []).map((n) => ({ name: n, kind: "cantrip" as const }))
     const prepared = (sc?.prepared ?? []).map((n) => ({ name: n, kind: "prepared" as const }))
-    return [...cantrips, ...prepared].slice(0, 10)
+    return [...core, ...cantrips, ...prepared].slice(0, 12)
   }, [focus])
 
   useEffect(() => { setAbility(null) }, [focusId])
@@ -118,7 +123,7 @@ export function CombatHud(props: Props) {
   return (
     <>
       {/* ─── LEFT: unit plates ─────────────────────────────────────────── */}
-      <div className="pointer-events-none absolute left-3 top-3 z-20 flex w-[190px] flex-col gap-2">
+      <div className="pointer-events-none absolute left-3 top-3 z-20 flex w-[212px] flex-col gap-1.5">
         {characters.map((c) => {
           const frac = hpFrac(c)
           const open = expanded === c.id
@@ -148,7 +153,14 @@ export function CombatHud(props: Props) {
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-serif text-[12px] uppercase tracking-[0.1em] text-[#e8dcc0]">{c.name}</div>
+                  <div
+                    title={c.name}
+                    className="truncate font-serif text-[12px] uppercase tracking-[0.08em] text-[#e8dcc0]"
+                  >
+                    {/* "Fifi of Copperas Cove" reads as "FIFI OF COPPER…" in a
+                        plate this size. Take the name people actually say. */}
+                    {c.name.split(/\s+of\s+|\s+the\s+/i)[0]}
+                  </div>
                   <div className="truncate text-[9px] uppercase tracking-wider text-[#8a7952]">{c.class ?? "Adventurer"}</div>
 
                   <div className="mt-1 flex items-baseline gap-1">
@@ -276,30 +288,40 @@ export function CombatHud(props: Props) {
 
           {/* The ability rack, from the sheet. */}
           <div className="mb-2 flex gap-1">
-            {abilities.length === 0 ? (
-              <div className="rounded-sm border border-[#2a2216] bg-black/60 px-3 py-3 text-[9px] italic text-[#5f5540]">
-                No spells on this sheet
-              </div>
-            ) : (
-              abilities.map((a, i) => (
+            {abilities.map((a, i) => {
+              const art = iconFor(a.name)
+              const kindLabel =
+                a.kind === "action" ? "action" : a.kind === "cantrip" ? "cantrip, always available" : "prepared spell"
+              return (
                 <button
                   key={a.name}
                   onClick={() => setAbility(ability === a.name ? null : a.name)}
-                  title={`${a.name} — ${a.kind === "cantrip" ? "cantrip, always available" : "prepared spell"}`}
+                  title={`${a.name} — ${kindLabel}`}
                   className={
-                    "pointer-events-auto relative h-[44px] w-[44px] rounded-sm border text-[8px] leading-tight transition-all " +
+                    "pointer-events-auto relative h-[46px] w-[46px] overflow-hidden rounded-sm border transition-all " +
                     (ability === a.name
-                      ? "border-[#f4e0a8] bg-[#2e2210] shadow-[0_0_12px_#c9a22788]"
-                      : "border-[#4a3a1e] bg-gradient-to-b from-[#1a1409] to-[#0a0805] hover:border-[#8b6427]")
+                      ? "border-[#f4e0a8] shadow-[0_0_14px_#c9a227aa]"
+                      : "border-[#4a3a1e] hover:border-[#8b6427]")
                   }
                 >
-                  <span className="absolute left-[3px] top-[2px] text-[7px] text-[#6b5a34]">{i + 1}</span>
-                  <span className={"block px-1 pt-[13px] font-serif " + (a.kind === "cantrip" ? "text-[#c9b3e0]" : "text-[#e0d2ae]")}>
-                    {a.name.split(" ").slice(0, 2).join(" ")}
-                  </span>
+                  {art ? (
+                    // The commissioned art fills the button; its own gold frame
+                    // is the border, which is why the chrome here stays thin.
+                    <img src={art} alt={a.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <span
+                      className={
+                        "grid h-full w-full place-items-center bg-gradient-to-b from-[#1a1409] to-[#0a0805] px-1 text-center font-serif text-[8px] leading-tight " +
+                        (a.kind === "cantrip" ? "text-[#c9b3e0]" : "text-[#e0d2ae]")
+                      }
+                    >
+                      {a.name.split(" ").slice(0, 2).join(" ")}
+                    </span>
+                  )}
+                  <span className="absolute left-[2px] top-[1px] rounded-sm bg-black/70 px-[3px] text-[7px] text-[#d8b25a]">{i + 1}</span>
                 </button>
-              ))
-            )}
+              )
+            })}
           </div>
 
           {/* Spell power — slots, because D&D has no mana. An empty rack means
