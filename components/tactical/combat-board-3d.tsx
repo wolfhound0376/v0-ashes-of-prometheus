@@ -1190,6 +1190,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     moveTokenRef.current = (id, gx, gy) => {
       const entry = tokensRef.current.get(id)
       if (!entry) return
+      // No stacking. A square already held by another visible token rejects
+      // the move rather than burying one miniature inside another — which is
+      // exactly how Kenta ended up invisible on top of Prince Derendil.
+      // tokensRef holds only visible tokens (a hidden one is deleted), so
+      // membership at (gx,gy) is enough. The database enforces the same rule
+      // for every OTHER writer — the NPC AI, a manual edit — so two tokens can
+      // never share a cell from any direction, not just the DM's own click.
+      let taken = false
+      tokensRef.current.forEach((t) => {
+        if (t.row.id !== id && t.row.grid_x === gx && t.row.grid_y === gy) taken = true
+      })
+      if (taken) { say("That square is taken."); return }
       // Optimistic: glide now, persist behind it. Realtime echoes to others.
       glideToken({ ...entry.row, grid_x: gx, grid_y: gy })
       void supabase
