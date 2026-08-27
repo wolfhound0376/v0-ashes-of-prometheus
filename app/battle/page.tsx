@@ -32,7 +32,9 @@ import { CANONICAL_START_LOCATION } from "@/lib/game-data"
 // clears the board's End Combat button at bottom-3 right-3.
 function BattleMusic() {
   const [location, setLocation] = useState<string | null>(null)
-  const [inCombat, setInCombat] = useState(false)
+  // Two independent reasons the music should turn to combat, OR-ed below.
+  const [threat, setThreat] = useState(false)
+  const [fightLive, setFightLive] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -56,23 +58,36 @@ function BattleMusic() {
       if (alive && env?.name) setLocation(env.name)
     }
 
-    // "In combat" means exactly what it means on the dashboard: an active NPC
-    // that is a threat. One definition of the word, so the track cannot differ
-    // between the two screens.
+    // "In combat" on the dashboard means an active NPC that is a threat. That
+    // is the right question THERE, where there is no initiative order to read.
     async function loadCombat() {
       const { data } = await supabase
         .from("npc_encounters").select("is_active, challenge_rating").eq("is_active", true)
-      if (alive) setInCombat((data ?? []).some(n => isCombatant(n.challenge_rating)))
+      if (alive) setThreat((data ?? []).some(n => isCombatant(n.challenge_rating)))
+    }
+
+    // ...but on the BOARD there is, and it is the authority. A fight here is
+    // `combat_state.status = 'active'`: initiative rolled, a turn order, a
+    // round counter. Asking npc_encounters instead was silent during real
+    // fights — observed 2026-08-27 with a live round-1 turn order on the map
+    // while the only active encounter row was Buppido at CR 0, correctly not
+    // a combatant. The DM ran the whole fight to the room's ambient theme.
+    async function loadFight() {
+      const { data } = await supabase
+        .from("combat_state").select("id").eq("status", "active").limit(1).maybeSingle()
+      if (alive) setFightLive(Boolean(data))
     }
 
     void loadLocation()
     void loadCombat()
+    void loadFight()
 
     // The fight ending should drop the music back to the room's own theme
     // without anyone reloading the board.
     const channel = supabase
       .channel("battle-music")
       .on("postgres_changes", { event: "*", schema: "public", table: "npc_encounters" }, () => { void loadCombat() })
+      .on("postgres_changes", { event: "*", schema: "public", table: "combat_state" }, () => { void loadFight() })
       .subscribe()
 
     return () => {
@@ -84,7 +99,12 @@ function BattleMusic() {
   // Hold at the canonical start room until the real one arrives, exactly as
   // the dashboard does — never a client-side default that could pick a pool
   // from another part of the world.
-  return <DynamicMusic location={location ?? CANONICAL_START_LOCATION} inCombat={inCombat} />
+  return (
+    <DynamicMusic
+      location={location ?? CANONICAL_START_LOCATION}
+      inCombat={fightLive || threat}
+    />
+  )
 }
 
 function BattleBoardPage() {
