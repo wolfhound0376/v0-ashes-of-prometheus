@@ -24,6 +24,16 @@ const SPELL_SLUGS = new Set([
   "magic-missile", "mirror-image", "misty-step", "sacred-flame", "shatter",
   "shield", "sneak-attack", "spirit-guardians", "spiritual-weapon", "thunderwave",
   "vicious-mockery",
+  // Batch 3 — 36 more, which between them close most of the party's real
+  // level-1 lists (Fog Cloud, Sanctuary and Sleep were all missing before).
+  "aid", "alter-self", "animal-friendship", "beast-bond", "blink", "burning-hands",
+  "create-or-destroy-water", "earth-tremor", "enlarge-reduce", "ensnaring-strike",
+  "entangle", "fade-away", "false-life", "feather-fall", "fog-cloud", "goodberry",
+  "grease", "healing-spirit", "heat-metal", "inflict-wounds", "invisibility", "jump",
+  "leomunds-tiny-hut", "longstrider", "magic-weapon", "moonbeam",
+  "protection-from-evil-and-good", "sacred-weapon", "sanctuary", "silent-image",
+  "sleep", "suggestion", "tashas-hideous-laughter", "witch-bolt", "wrathful-smite",
+  "zephyr-strike",
 ])
 
 /** "Hunter's Mark" -> "hunters-mark". Apostrophes vanish, spaces become dashes. */
