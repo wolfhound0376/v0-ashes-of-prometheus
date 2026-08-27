@@ -145,6 +145,10 @@ export function castSpellVfx(opts: {
 
   let t = 0
   let impacted = false
+  /** The flash is extinguished exactly once. Without this latch the impact
+   *  light, set below, is zeroed again on the very next frame by the branch
+   *  that ends the flash — and the mote lands in the dark. */
+  let flashDone = false
   const world = new THREE.Vector3()
   const lifetime = target ? SPARK_LIFE + distance / BOLT_SPEED + 0.35 : SPARK_LIFE
 
@@ -181,7 +185,8 @@ export function castSpellVfx(opts: {
         coreMat.opacity = 0.95 * k
         const s = 1 + (1 - k) * 2.2
         core.scale.setScalar(s)
-      } else if (light.intensity !== 0) {
+      } else if (!flashDone) {
+        flashDone = true
         light.intensity = 0
         coreMat.opacity = 0
       }
