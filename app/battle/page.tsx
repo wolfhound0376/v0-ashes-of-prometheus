@@ -9,14 +9,31 @@
 // on top of it. The board is a place you GO, like /map — the whole viewport,
 // nothing else fighting for it.
 
-import { useRouter } from "next/navigation"
+import { Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import CombatBoard3D from "@/components/tactical/combat-board-3d"
 
-export default function BattlePage() {
+function BattleBoardPage() {
   const router = useRouter()
+  const sandbox = useSearchParams().get("sandbox") === "1"
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#020204]">
-      <CombatBoard3D onBack={() => router.push("/")} />
+      {sandbox && (
+        <div className="pointer-events-none absolute left-1/2 top-0 z-40 -translate-x-1/2 rounded-b border border-t-0 border-[#7a5c2b] bg-[#2a1f10]/95 px-4 py-1 font-serif text-[10px] uppercase tracking-[0.25em] text-[#f0cd7a]">
+          Rehearsal — nothing here is canon
+        </div>
+      )}
+      <CombatBoard3D sandbox={sandbox} onBack={() => router.push("/")} />
     </div>
+  )
+}
+
+// useSearchParams forces this subtree to render on the client; without a
+// Suspense boundary the App Router fails the build at prerender time.
+export default function BattlePage() {
+  return (
+    <Suspense fallback={<div className="h-screen w-screen bg-[#020204]" />}>
+      <BattleBoardPage />
+    </Suspense>
   )
 }

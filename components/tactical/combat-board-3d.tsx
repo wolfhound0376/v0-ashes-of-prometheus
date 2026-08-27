@@ -104,7 +104,7 @@ function radiusFor(size: string | null): number {
   return 0.38
 }
 
-export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
+export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: () => void; sandbox?: boolean }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState("Summoning the board…")
   const [mapName, setMapName] = useState("")
@@ -668,10 +668,13 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
 
     // ---- build the board from the database --------------------------
     const build = async () => {
+      // The sandbox is a real board with real tokens — the mechanics under
+      // test are the mechanics, not mocks. It is simply never `is_active`,
+      // so the table can never find itself fighting in the rehearsal room.
       const { data: mapRow, error: mapErr } = await supabase
         .from("vtt_maps")
         .select("id,name,grid_width,grid_height,cell_size,meta")
-        .eq("is_active", true)
+        .eq(sandbox ? "is_sandbox" : "is_active", true)
         .limit(1)
         .maybeSingle()
       if (mapErr || !mapRow) { setStatus(mapErr ? mapErr.message : "No active battle map."); return }
@@ -954,7 +957,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       // is the event every screen at the table is waiting for.
       const loadCombat = async () => {
         try {
-          const res = await fetch("/api/combat", { cache: "no-store" })
+          const res = await fetch(`/api/combat${sandbox ? "?sandbox=1" : ""}`, { cache: "no-store" })
           const data = res.ok ? await res.json() : null
           setCombat(data?.combat && data.combat.status !== "ended" ? data.combat : null)
         } catch { /* the board without a turn strip is still a board */ }
@@ -1076,7 +1079,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       const res = await fetch("/api/combat", {
         method: "POST",
         headers: { "content-type": "application/json", ...dmHeaders() },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, sandbox }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
@@ -1105,27 +1108,32 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
       />
 
       {/* HUD, in the game's own dress rather than the dev viewer's */}
-      <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[300px] rounded border border-[#3a3345] bg-black/70 px-3 py-2">
-        <div className="font-serif text-[12px] tracking-wide text-[#c9a227]">{mapName || "TACTICAL BOARD"}</div>
-        {status && <div className="mt-1 font-mono text-[10px] text-[#8a8678]">{status}</div>}
-        <div className="mt-1 text-[10px] leading-relaxed text-[#8a8678]">
-          drag orbit · wheel zoom · right-drag pan · click a door to try it
-          {dm && <span className="text-[#b48fd8]"> · click a token, then a square, to move it</span>}
+      {/* Board controls. They used to sit at left-3 top-3 - the SAME corner as
+          the character plates - so the hint text and the darkness button
+          rendered straight through Scott's card. That was the clutter. The
+          board's own chrome belongs out of the plates' column entirely. */}
+      <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[260px] rounded border border-[#3a3345] bg-black/70 px-2.5 py-1.5">
+        {status && <div className="font-mono text-[10px] text-[#8a8678]">{status}</div>}
+        <div className="text-[9px] leading-relaxed text-[#7a7568]">
+          drag · wheel zoom · click a door
+          {dm && <span className="text-[#9a7fc0]"> · token then square to move</span>}
         </div>
-        <button
-          onClick={() => setClassicCam((v) => !v)}
-          className="pointer-events-auto mr-2 mt-2 rounded border border-[#6b5123] bg-[#171109] px-2.5 py-1 text-[9px] uppercase tracking-wider text-[#cdb276] hover:border-[#c99a49]"
-        >
-          {classicCam ? "Camera: Classic" : "Camera: Free"}
-        </button>
-        {dm && (
+        <div className="mt-1.5 flex gap-1.5">
           <button
-            onClick={() => setDarknessOn((v) => !v)}
-            className="pointer-events-auto mt-2 rounded border border-[#5a4a6a] bg-[#1a1226] px-2.5 py-1 text-[9px] uppercase tracking-wider text-[#c9b3e0] hover:border-[#b48fd8]"
+            onClick={() => setClassicCam((v) => !v)}
+            className="pointer-events-auto rounded border border-[#6b5123] bg-[#171109] px-2 py-[3px] text-[8px] uppercase tracking-wider text-[#cdb276] hover:border-[#c99a49]"
           >
-            {darknessOn ? "Lift the darkness" : "Let the dark back in"}
+            {classicCam ? "Classic" : "Free"}
           </button>
-        )}
+          {dm && (
+            <button
+              onClick={() => setDarknessOn((v) => !v)}
+              className="pointer-events-auto rounded border border-[#5a4a6a] bg-[#1a1226] px-2 py-[3px] text-[8px] uppercase tracking-wider text-[#c9b3e0] hover:border-[#b48fd8]"
+            >
+              {darknessOn ? "Lift dark" : "Dark on"}
+            </button>
+          )}
+        </div>
       </div>
 
       {selected && (
@@ -1148,8 +1156,8 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
 
       {/* Location name, D2 style: gold gothic caps, top right, unadorned. */}
       <div className="pointer-events-none absolute right-3 top-3 z-10 text-right">
-        <div className="font-serif text-[13px] font-semibold uppercase tracking-[0.28em] text-[#d8b25a] [text-shadow:0_1px_3px_#000,0_0_14px_#00000088]">
-          {(mapName || "").replace(/\s*\(.*$/, "") || "The Underdark"}
+        <div className="max-w-[220px] truncate font-serif text-[12px] font-semibold uppercase tracking-[0.24em] text-[#d8b25a] [text-shadow:0_1px_3px_#000,0_0_14px_#00000088]">
+          {(mapName || "").replace(/\s*[—(].*$/, "").trim() || "The Underdark"}
         </div>
         {onBack && (
           <button
@@ -1189,7 +1197,7 @@ export default function CombatBoard3D({ onBack }: { onBack?: () => void }) {
         </div>
       )}
       {combat && dm && (
-        <div className="absolute bottom-3 right-3 z-20">
+        <div className="absolute bottom-3 right-3 z-30">
           <button
             disabled={combatBusy}
             onClick={() => void combatAction("end")}
