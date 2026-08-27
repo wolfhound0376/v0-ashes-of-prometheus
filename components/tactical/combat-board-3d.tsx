@@ -594,11 +594,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         gltfLoader.load(row.model_url, (gltf) => {
           if (disposed) return
           const obj = gltf.scene
+          // Measure AFTER the loader has applied node transforms — meshopt
+          // stores positions quantised, and the dequantisation lives in the
+          // node matrix, so an early read gives ±32767 nonsense.
+          obj.updateWorldMatrix(true, true)
           const box = new THREE.Box3().setFromObject(obj)
           const size = box.getSize(new THREE.Vector3())
           const feet = r >= 1.2 ? 15 : r >= 0.8 ? 10 : 6
           const want = (feet / 5) * (row.model_scale ?? 1)
-          const s = size.y > 0 ? want / size.y : 1
+          // GUARD: a model that measures as zero, NaN or absurd would render
+          // invisible or swallow the board. Fall back to unit scale and say so
+          // in the console rather than leaving Sam staring at an empty square.
+          const usable = Number.isFinite(size.y) && size.y > 1e-4 && size.y < 1e6
+          const s = usable ? want / size.y : want
+          if (!usable) {
+            console.warn(`[board] ${row.label}: model measured ${size.y} — using fallback scale`, row.model_url)
+          }
           obj.scale.setScalar(s)
           const box2 = new THREE.Box3().setFromObject(obj)
           obj.position.set(-(box2.min.x + box2.max.x) / 2, -box2.min.y + (row.model_y_offset ?? 0), -(box2.min.z + box2.max.z) / 2)
@@ -635,7 +646,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             const entry = tokensRef.current.get(row.id)
             if (entry) entry.anim = anim
             playState(anim, "idle", true)
-            console.log(`[board] ${row.label}: ${gltf.animations.length} clips —`, anim.names.join(", "))
+            console.log(
+            `[board] ${row.label}: ${gltf.animations.length} clips, ` +
+            `height ${(size.y * s).toFixed(2)}u (${(size.y * s * 5).toFixed(1)} ft) —`,
+            anim.names.join(", "),
+          )
           }
         })
       } else {
@@ -989,7 +1004,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (charIds.length) {
         const { data: rows } = await supabase
           .from("characters")
-          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,dex_modifier,sheet_spellcasting")
+          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,dex_modifier,sheet_spellcasting,sheet_features,str_score,dex_score,con_score,int_score,wis_score,cha_score")
           .in("id", charIds)
         const list = (rows ?? []) as HudCharacter[]
         setSheets(list)
