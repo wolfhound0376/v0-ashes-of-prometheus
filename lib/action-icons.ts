@@ -11,19 +11,30 @@ const BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/
 const SPELL_BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/spell-icons"
 
 /**
- * The 32 commissioned spell icons, keyed exactly as the manifest names them.
+ * Every commissioned spell icon, keyed exactly as the manifest names them.
  * A spell resolves by slugifying its name, so "Eldritch Blast" finds
  * eldritch-blast and "Hunter's Mark" finds hunters-mark without a lookup
  * table anyone has to maintain by hand.
+ *
+ * Each of these was verified to return 200 from the bucket before it was
+ * listed here. A slug in this set with no file behind it is worse than an
+ * absent one: the fallback glyph never fires and the button renders broken.
  */
 const SPELL_SLUGS = new Set([
-  "armor-of-agathys", "bardic-inspiration", "bless", "counterspell", "cure-wounds",
-  "dash", "detect-magic", "disengage", "dispel-magic", "eldritch-blast",
-  "faerie-fire", "fireball", "flame-strike", "greater-invisibility", "guidance",
-  "healing-word", "hellish-rebuke", "hex", "hide", "hold-person", "hunters-mark",
-  "magic-missile", "mirror-image", "misty-step", "sacred-flame", "shatter",
-  "shield", "sneak-attack", "spirit-guardians", "spiritual-weapon", "thunderwave",
-  "vicious-mockery",
+  "aid", "alter-self", "animal-friendship", "animal-handling", "armor-of-agathys",
+  "bardic-inspiration", "beast-bond", "beautyberry", "bless", "blink", "burning-hands",
+  "counterspell", "create-or-destroy-water", "cure-wounds", "dash", "detect-magic",
+  "disengage", "disguise-self", "dispel-magic", "earth-tremor", "eldritch-blast",
+  "enlarge-reduce", "ensnaring-strike", "entangle", "expeditious-retreat", "fade-away",
+  "faerie-fire", "false-life", "feather-fall", "fireball", "flame-strike", "fog-cloud",
+  "goodberry", "grease", "greater-invisibility", "guidance", "healing-spirit", "healing-word",
+  "heat-metal", "hellish-rebuke", "hex", "hide", "hold-person", "hunters-mark", "inflict-wounds",
+  "invisibility", "jump", "leomunds-tiny-hut", "longstrider", "magic-missile", "magic-weapon",
+  "mirror-image", "misty-step", "moonbeam", "prayer-of-healing", "protection-from-evil-and-good",
+  "purify-food-and-drink", "sacred-flame", "sacred-weapon", "sanctuary", "searing-smite",
+  "shatter", "shield", "silence", "silent-image", "sleep", "sneak-attack", "spirit-guardians",
+  "spiritual-weapon", "suggestion", "tashas-hideous-laughter", "thorn-whip", "thunderwave",
+  "vicious-mockery", "witch-bolt", "wrathful-smite", "zephyr-strike",
 ])
 
 /** "Hunter's Mark" -> "hunters-mark". Apostrophes vanish, spaces become dashes. */
