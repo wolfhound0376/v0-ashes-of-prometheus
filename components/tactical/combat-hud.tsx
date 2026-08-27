@@ -18,6 +18,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { CharacterCard } from "./character-card"
+import { CharacterSheetOverlay } from "./character-sheet-overlay"
 
 export interface HudCharacter {
   id: string
@@ -104,6 +105,7 @@ const CLASS_GLYPH: Record<string, string> = {
 export function CombatHud(props: Props) {
   const { characters, tokenToCharacter, tokenPortrait = {}, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus } = props
   const [ability, setAbility] = useState<string | null>(null)
+  const [sheetFor, setSheetFor] = useState<string | null>(null)
 
   const focus = useMemo(
     () => characters.find((c) => c.id === focusId) ?? characters[0] ?? null,
@@ -134,6 +136,13 @@ export function CombatHud(props: Props) {
 
   return (
     <>
+      {sheetFor && characters.find((c) => c.id === sheetFor) && (
+        <CharacterSheetOverlay
+          character={characters.find((c) => c.id === sheetFor)!}
+          onClose={() => setSheetFor(null)}
+        />
+      )}
+
       {/* ─── LEFT: the commissioned character cards ────────────────────
           Sam's frame art carries the design; the card component only lays
           live values into the sockets the artist left. Hover no longer
@@ -149,6 +158,17 @@ export function CombatHud(props: Props) {
               onClick={() => onFocus(c.id)}
               width={228}
             />
+            {/* The focused card grows a tab to the full sheet. Explicit rather
+                than a hidden double-click: a feature nobody can find is a
+                feature that does not exist. */}
+            {focus?.id === c.id && (
+              <button
+                onClick={() => setSheetFor(c.id)}
+                className="mt-[-2px] w-full rounded-b-sm border border-t-0 border-[#6b5123] bg-gradient-to-b from-[#1c1408] to-[#100b05] py-[3px] font-serif text-[8px] uppercase tracking-[0.2em] text-[#c9a227] hover:border-[#c99a49] hover:text-[#f0cd7a]"
+              >
+                Open Sheet
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -226,81 +246,15 @@ export function CombatHud(props: Props) {
         )}
       </div>
 
-      {/* ─── FOOT: one summary panel per party member ───────────────────
-          Straight from Sam's reference: abilities across, then proficiency,
-          initiative and speed, then the class features. A SUMMARY, not a
-          character sheet — every number is one the table checks mid-turn. */}
-      {characters.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center gap-2 px-3 pb-1">
-          {characters.slice(0, 4).map((c) => {
-            const abilities: [string, number | null | undefined][] = [
-              ["STR", c.str_score], ["DEX", c.dex_score], ["CON", c.con_score],
-              ["INT", c.int_score], ["WIS", c.wis_score], ["CHA", c.cha_score],
-            ]
-            const feats = Array.isArray(c.sheet_features)
-              ? (c.sheet_features as unknown[])
-                  .map((f) => (typeof f === "string" ? f : (f as { name?: string })?.name))
-                  .filter((n): n is string => Boolean(n))
-                  .slice(0, 3)
-              : []
-            return (
-              <button
-                key={c.id}
-                onClick={() => onFocus(c.id)}
-                className={
-                  "pointer-events-auto w-[268px] rounded-sm border bg-[#0c0a06]/92 px-2.5 py-1.5 text-left transition-colors " +
-                  (focus?.id === c.id ? "border-[#a88745]" : "border-[#3a2f1e] hover:border-[#6b5123]")
-                }
-              >
-                <div className="font-serif text-[12px] uppercase tracking-[0.14em] text-[#e8dcc0]">
-                  {c.name.split(/\s+of\s+|\s+the\s+/i)[0]}
-                </div>
-                <div className="text-[9px] text-[#8a7952]">
-                  Level {c.level ?? "—"} {c.class ?? ""}{c.subclass ? ` — ${c.subclass}` : ""}
-                </div>
-
-                <div className="mt-1 flex gap-2">
-                  <div className="flex-1">
-                    <div className="flex justify-between">
-                      {abilities.map(([label, score]) => (
-                        <div key={label} className="text-center">
-                          <div className="text-[7px] uppercase tracking-wider text-[#6b5a34]">{label}</div>
-                          <div className="font-serif text-[11px] text-[#e0d2ae]">{score ?? "—"}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-1 flex justify-between border-t border-[#2a2216] pt-1">
-                      {[
-                        ["PROF", c.proficiency_bonus == null ? "—" : `+${c.proficiency_bonus}`],
-                        ["INIT", c.dex_modifier == null ? "—" : `${c.dex_modifier >= 0 ? "+" : ""}${c.dex_modifier}`],
-                        ["SPEED", (c.speed ?? "—").replace(/\s*\(.*$/, "")],
-                      ].map(([label, value]) => (
-                        <div key={label as string} className="text-center">
-                          <div className="text-[7px] uppercase tracking-wider text-[#6b5a34]">{label}</div>
-                          <div className="font-serif text-[10px] text-[#d8c9a8]">{value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {feats.length > 0 && (
-                    <div className="w-[86px] border-l border-[#2a2216] pl-2">
-                      <div className="text-[7px] uppercase tracking-wider text-[#6b5a34]">Features</div>
-                      {feats.map((f) => (
-                        <div key={f} className="truncate text-[8px] text-[#bdb298]" title={f}>· {f}</div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {/* The four party summary panels that used to sit here are GONE.
+          Sam: "redundant". They showed the same six ability scores for all
+          four characters at all times — four times the ink for something a
+          player checks twice a session. The card is the always-on view; the
+          full sheet opens from it on demand. */}
 
       {/* ─── BOTTOM: globes + ability rack ─────────────────────────────── */}
       {focus && (
-        <div className="pointer-events-none absolute bottom-[92px] left-1/2 z-20 flex -translate-x-1/2 items-end gap-3">
+        <div className="pointer-events-none absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-end gap-3">
           {/* Life */}
           <Globe
             value={focus.hp_current ?? focus.hp_max ?? 0}
