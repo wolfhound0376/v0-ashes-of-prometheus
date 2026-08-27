@@ -17,6 +17,8 @@
 // ============================================================================
 
 import type { CSSProperties } from "react"
+import { frameForClass } from "@/lib/class-frames"
+import { ClassMedallion } from "./class-medallion"
 
 const FRAME = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/ui-frames"
 
@@ -67,14 +69,14 @@ export interface CardCharacter {
   hp_max: number | null
   dex_modifier: number | null
   portrait_image_url: string | null
+  /** The FACE alone, with no ornament — `portraits/face-{slug}.webp`. When it
+   *  exists the card composites it under the class frame, so the box is chosen
+   *  by class rather than baked into the art. When it is null the card falls
+   *  back to `portrait_image_url` and looks exactly as it always did. */
+  face_image_url?: string | null
   /** 0–1 through the current level, when the campaign tracks it. */
   xpFraction?: number
   conditions?: string[]
-}
-
-const CLASS_GLYPH: Record<string, string> = {
-  cleric: "✧", rogue: "🗡", sorcerer: "✦", wizard: "✦", bard: "♪", fighter: "⚔",
-  paladin: "✝", ranger: "➶", warlock: "◈", barbarian: "⚒", druid: "❋", monk: "☯",
 }
 
 export function CharacterCard({
@@ -91,6 +93,9 @@ export function CharacterCard({
   onClick?: () => void
   width?: number
 }) {
+  // The class decides the box. Not the artist, not the filename, not whoever
+  // happened to be holding the lute the day the medallion was rendered.
+  const cls = frameForClass(c.class)
   const max = c.hp_max ?? 0
   const cur = c.hp_current ?? max
   const frac = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0
@@ -108,20 +113,15 @@ export function CharacterCard({
         (active ? "brightness-110 drop-shadow-[0_0_14px_#c9a22755]" : "brightness-[0.82] hover:brightness-100")
       }
     >
-      {/* 1. The portrait, BEHIND the frame — the arched window masks it. */}
+      {/* 1. The portrait, BEHIND the frame — the arched window masks it.
+             Face + class frame, assembled by the one component that knows how. */}
       <div style={{ ...box(SLOTS.portrait), overflow: "hidden" }}>
-        {c.portrait_image_url ? (
-          <img src={c.portrait_image_url} alt="" className="h-full w-full object-cover object-top" />
-        ) : (
-          <div
-            className="grid h-full w-full place-items-center"
-            style={{ background: "radial-gradient(circle at 50% 35%, #2a2114, #0a0805)" }}
-          >
-            <span style={{ fontSize: width * 0.13, color: "#6b5a34" }}>
-              {CLASS_GLYPH[(c.class ?? "").toLowerCase()] ?? "✧"}
-            </span>
-          </div>
-        )}
+        <ClassMedallion
+          faceUrl={c.face_image_url}
+          portraitUrl={c.portrait_image_url}
+          characterClass={c.class}
+          fallback={<span style={{ fontSize: width * 0.13, color: cls.accent }}>{cls.sigil}</span>}
+        />
       </div>
 
       {/* 2. The frame itself, over the portrait. */}
@@ -184,8 +184,8 @@ export function CharacterCard({
       </div>
 
       {/* The class sigil in the small top-left socket. */}
-      <div style={{ ...box(SLOTS.classSigil), ...fitted, fontSize: width * 0.055, color: "#c9a227" }}>
-        {CLASS_GLYPH[(c.class ?? "").toLowerCase()] ?? "✧"}
+      <div style={{ ...box(SLOTS.classSigil), ...fitted, fontSize: width * 0.055, color: cls.accent }}>
+        {cls.sigil}
       </div>
 
       {/* The wide field at the foot: conditions, or the class when clear. */}

@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
 import { CharacterCard } from "./character-card"
+import { ClassMedallion } from "./class-medallion"
 import { CharacterSheetOverlay } from "./character-sheet-overlay"
 
 export interface HudCharacter {
@@ -35,6 +36,9 @@ export interface HudCharacter {
   speed: string | null
   proficiency_bonus: number | null
   portrait_image_url: string | null
+  /** The unframed face. Null on anyone whose art has not been separated yet;
+   *  the card falls back to the baked medallion in `portrait_image_url`. */
+  face_image_url?: string | null
   dex_modifier: number | null
   str_score?: number | null
   dex_score?: number | null
@@ -115,12 +119,6 @@ function slotTally(c: HudCharacter): { used: number; max: number } | null {
     used += entry?.used ?? 0
   }
   return max > 0 ? { used, max } : null
-}
-
-const CLASS_GLYPH: Record<string, string> = {
-  cleric: "✧", rogue: "🗡", sorcerer: "✦", wizard: "✦", bard: "♪",
-  fighter: "⚔", paladin: "✝", ranger: "➶", warlock: "◈", barbarian: "⚒",
-  druid: "❋", monk: "☯",
 }
 
 export function CombatHud(props: Props) {
@@ -226,13 +224,19 @@ export function CombatHud(props: Props) {
                   style={{ transform: active ? "translateY(-3px)" : undefined }}
                 >
                   <div className="h-[40px] bg-gradient-to-b from-[#1b1610] to-[#080604]">
-                    {art ? (
-                      <img src={art} alt="" className="h-full w-full object-contain object-top" />
-                    ) : (
-                      <span className={"grid h-full w-full place-items-center font-serif text-[15px] " + (entry.kind === "pc" ? "text-[#7d94b4]" : "text-[#a8635c]")}>
-                        {entry.label.slice(0, 1)}
-                      </span>
-                    )}
+                    {/* A PC gets the class-assembled medallion; an NPC has no
+                        class, so ClassMedallion falls through to their
+                        encounter portrait untouched. */}
+                    <ClassMedallion
+                      faceUrl={c?.face_image_url}
+                      portraitUrl={art}
+                      characterClass={c?.class}
+                      fallback={
+                        <span className={"font-serif text-[15px] " + (entry.kind === "pc" ? "text-[#7d94b4]" : "text-[#a8635c]")}>
+                          {entry.label.slice(0, 1)}
+                        </span>
+                      }
+                    />
                   </div>
                   {conds.length > 0 && (
                     <div className="absolute left-0 right-0 top-0 flex justify-center gap-[2px] bg-gradient-to-b from-black/80 to-transparent px-[2px] pt-[2px] pb-[3px]">
