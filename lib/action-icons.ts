@@ -8,6 +8,27 @@
 // must never blank a button.
 
 const BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/action-icons"
+const SPELL_BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/spell-icons"
+
+/**
+ * The 32 commissioned spell icons, keyed exactly as the manifest names them.
+ * A spell resolves by slugifying its name, so "Eldritch Blast" finds
+ * eldritch-blast and "Hunter's Mark" finds hunters-mark without a lookup
+ * table anyone has to maintain by hand.
+ */
+const SPELL_SLUGS = new Set([
+  "armor-of-agathys", "bardic-inspiration", "bless", "counterspell", "cure-wounds",
+  "dash", "detect-magic", "disengage", "dispel-magic", "eldritch-blast",
+  "faerie-fire", "fireball", "flame-strike", "greater-invisibility", "guidance",
+  "healing-word", "hellish-rebuke", "hex", "hide", "hold-person", "hunters-mark",
+  "magic-missile", "mirror-image", "misty-step", "sacred-flame", "shatter",
+  "shield", "sneak-attack", "spirit-guardians", "spiritual-weapon", "thunderwave",
+  "vicious-mockery",
+])
+
+/** "Hunter's Mark" -> "hunters-mark". Apostrophes vanish, spaces become dashes. */
+const slugify = (name: string) =>
+  name.toLowerCase().replace(/['\u2019]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 
 const SLUGS = [
   "attack", "bonus-attack", "offhand-attack", "opportunity-attack",
@@ -48,9 +69,17 @@ const BY_NAME: Record<string, ActionSlug> = {
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim()
 
 export function iconFor(name: string): string | null {
+  // A commissioned spell icon wins — it was drawn for this exact spell.
+  const spell = slugify(name)
+  if (SPELL_SLUGS.has(spell)) return `${SPELL_BASE}/${spell}.webp`
+  // Otherwise the generic action art, which covers Attack, Dash, Dodge and
+  // the rest of the universal 5e actions.
   const slug = BY_NAME[norm(name)]
   return slug ? actionIconUrl(slug) : null
 }
+
+/** Every spell that has art, for tooling that wants to report the gaps. */
+export const SPELLS_WITH_ART = [...SPELL_SLUGS].sort()
 
 /** The universal 5e actions every combatant has, in the order a table uses them. */
 export const CORE_ACTIONS: { name: string; slug: ActionSlug; kind: "action" | "bonus" | "reaction" }[] = [

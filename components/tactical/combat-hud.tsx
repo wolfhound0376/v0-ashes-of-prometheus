@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
+import { CharacterCard } from "./character-card"
 
 export interface HudCharacter {
   id: string
@@ -100,7 +101,6 @@ const CLASS_GLYPH: Record<string, string> = {
 
 export function CombatHud(props: Props) {
   const { characters, tokenToCharacter, turnOrder, activeIndex, round, log, dm, onEndTurn, focusId, onFocus } = props
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [ability, setAbility] = useState<string | null>(null)
 
   const focus = useMemo(
@@ -132,86 +132,23 @@ export function CombatHud(props: Props) {
 
   return (
     <>
-      {/* ─── LEFT: unit plates ─────────────────────────────────────────── */}
-      <div className="pointer-events-none absolute left-3 top-3 z-20 flex w-[212px] flex-col gap-1.5">
-        {characters.map((c) => {
-          const frac = hpFrac(c)
-          const open = expanded === c.id
-          const focused = focus?.id === c.id
-          return (
-            <button
-              key={c.id}
-              onMouseEnter={() => setExpanded(c.id)}
-              onMouseLeave={() => setExpanded(null)}
+      {/* ─── LEFT: the commissioned character cards ────────────────────
+          Sam's frame art carries the design; the card component only lays
+          live values into the sockets the artist left. Hover no longer
+          expands anything — the frame has no room for it, and the party
+          panels along the foot already carry the detail. */}
+      <div className="pointer-events-none absolute left-2 top-2 z-20 flex flex-col gap-1">
+        {characters.map((c) => (
+          <div key={c.id} className="pointer-events-auto">
+            <CharacterCard
+              character={c}
+              tone="blue"
+              active={focus?.id === c.id}
               onClick={() => onFocus(c.id)}
-              className={
-                "pointer-events-auto overflow-hidden rounded-sm border text-left transition-colors " +
-                (focused ? "border-[#a88745] bg-[#14100a]/95" : "border-[#3a2f1e] bg-[#0c0a06]/90 hover:border-[#6b5123]")
-              }
-              style={{ boxShadow: focused ? "0 0 18px #00000099, inset 0 0 24px #c9a2270f" : "0 0 14px #000000aa" }}
-            >
-              <div className="flex gap-2 p-2">
-                {/* Portrait: a carved frame, or the class glyph when the sheet has no art. */}
-                <div className="relative h-[54px] w-[46px] shrink-0 overflow-hidden rounded-[2px] border border-[#4a3a1e] bg-gradient-to-b from-[#241a0c] to-[#0a0805]">
-                  {c.portrait_image_url ? (
-                    <img src={c.portrait_image_url} alt="" className="h-full w-full object-cover object-top" />
-                  ) : (
-                    <span className="grid h-full w-full place-items-center text-[20px] text-[#6b5a34]">
-                      {CLASS_GLYPH[(c.class ?? "").toLowerCase()] ?? "✧"}
-                    </span>
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div
-                    title={c.name}
-                    className="truncate font-serif text-[12px] uppercase tracking-[0.08em] text-[#e8dcc0]"
-                  >
-                    {/* "Fifi of Copperas Cove" reads as "FIFI OF COPPER…" in a
-                        plate this size. Take the name people actually say. */}
-                    {c.name.split(/\s+of\s+|\s+the\s+/i)[0]}
-                  </div>
-                  <div className="truncate text-[9px] uppercase tracking-wider text-[#8a7952]">{c.class ?? "Adventurer"}</div>
-
-                  <div className="mt-1 flex items-baseline gap-1">
-                    <span className="font-serif text-[10px] text-[#c9bca0]">HP</span>
-                    <span className="font-serif text-[11px] font-semibold text-[#f0e6cc]">
-                      {c.hp_current ?? c.hp_max ?? "—"} <span className="text-[#7a6c50]">/ {c.hp_max ?? "—"}</span>
-                    </span>
-                  </div>
-                  {/* The bar is thin on purpose: a plate, not a form. */}
-                  <div className="mt-0.5 h-[3px] w-full overflow-hidden rounded-sm bg-[#1a0e0a]">
-                    <div className="h-full transition-[width] duration-300" style={{ width: `${frac * 100}%`, background: `linear-gradient(90deg, ${hpColour(frac)}, #c23b2e)` }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Three numbers, evenly weighted — AC, INIT, LVL. */}
-              <div className="flex border-t border-[#2a2216] text-center">
-                {[
-                  ["AC", c.ac ?? "—"],
-                  ["INIT", c.dex_modifier == null ? "—" : `${c.dex_modifier >= 0 ? "+" : ""}${c.dex_modifier}`],
-                  ["LVL", c.level ?? "—"],
-                ].map(([label, value]) => (
-                  <div key={label as string} className="flex-1 py-1">
-                    <div className="text-[7px] uppercase tracking-[0.16em] text-[#6b5a34]">{label}</div>
-                    <div className="font-serif text-[11px] text-[#e0d2ae]">{value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Everything else waits for a hover, so the collapsed plate stays clean. */}
-              {open && (
-                <div className="border-t border-[#2a2216] bg-black/40 px-2 py-1.5 text-[9px] leading-relaxed text-[#a89468]">
-                  <div>Speed <span className="text-[#e0d2ae]">{c.speed ?? "—"}</span></div>
-                  <div>Proficiency <span className="text-[#e0d2ae]">{c.proficiency_bonus == null ? "—" : `+${c.proficiency_bonus}`}</span></div>
-                  {c.sheet_spellcasting?.save_dc ? <div>Spell save <span className="text-[#e0d2ae]">DC {c.sheet_spellcasting.save_dc}</span></div> : null}
-                  {slotTally(c) ? <div>Slots <span className="text-[#e0d2ae]">{(slotTally(c)!.max - slotTally(c)!.used)} / {slotTally(c)!.max}</span></div> : null}
-                </div>
-              )}
-            </button>
-          )
-        })}
+              width={228}
+            />
+          </div>
+        ))}
       </div>
 
       {/* ─── TOP: initiative rail of portraits ─────────────────────────── */}
