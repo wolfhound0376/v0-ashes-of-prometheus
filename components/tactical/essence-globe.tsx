@@ -1,24 +1,32 @@
 "use client"
 
 // ============================================================================
-// THE ESSENCE GLOBE — the liquid inside the mount.
+// THE ESSENCE VESSEL — clear glass in a golden mount.
 //
-// Replaces the static CSS fill that used to live inside combat-hud.tsx. Same
-// mount, same 86px, same readout, same label. What changed is that the fill is
-// now real liquid on a canvas: it ebbs in place, it tilts and rings down when
-// the number moves, and the harder the hit the harder it slams.
+// Replaces the CSS fill that used to live inside combat-hud.tsx. Two vessels:
 //
-// The level is ALWAYS value / max. Nothing here decorates a number it does not
-// have — a martial with no slots gets a dark globe, exactly as before.
+//   Life  — fresh arterial blood. Thick, glossy, near-black in the column and
+//           bright crimson where light gets through. It clings to the glass
+//           and runs back down after a hit.
+//   Slots — a luminous blue gas with arcane lightning crawling through it.
 //
-// A globe is a sphere, so the fill is by VOLUME, not by height: one of nine
-// slots is one ninth of the liquid, which sits at ~21% of the way up the glass
-// rather than 11%. The slots globe also carries faint graduation marks, one
-// per slot, so a player can read "3 of 9" without reading the number.
+// The level is a share of the SPHERE'S VOLUME, so one of nine slots is one
+// ninth of what is in the vessel — not one ninth of the way up the glass.
+// A martial with no slots still gets an empty vessel; nothing invents a
+// resource it does not have.
+//
+// The canvas is taller than it is wide to leave room for the golden plinth.
 // ============================================================================
 
 import { useEffect, useRef } from "react"
 import { createOrbRenderer, type OrbHandle, type OrbVariant } from "@/lib/combat/orb-engine"
+
+/**
+ * `size` is the SPHERE's diameter. The canvas is larger on both axes: wider so
+ * the bloom has room and does not clip into a square, taller for the plinth.
+ */
+const CANVAS_SCALE = 1.25
+const ASPECT = 1.03
 
 export function Globe({
   value,
@@ -31,14 +39,12 @@ export function Globe({
   value: number
   max: number
   label: string
+  /** "life"/"blood" for the blood vessel, "mana"/"arcane" for the gas. */
   variant?: OrbVariant
   size?: number
-  /** Graduation marks. Defaults on for slots, off for HP. */
+  /** Graduations. Defaults on for slots, off for HP. */
   segments?: number | "auto"
 }) {
-  // HP is continuous — ticks every hit point would be static. Slots are
-  // discrete and few, so they get marks.
-  const marks = segments ?? (variant === "mana" ? "auto" : 0)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const orbRef = useRef<OrbHandle | null>(null)
   const mounted = useRef(false)
@@ -46,7 +52,12 @@ export function Globe({
   const safeMax = Math.max(1, max)
   const safeValue = Math.max(0, Math.min(value, safeMax))
   const frac = max > 0 ? safeValue / safeMax : 0
-  const critical = variant === "life" && max > 0 && frac > 0 && frac <= 0.25
+  const isGas = variant === "mana" || variant === "arcane"
+  const critical = !isGas && max > 0 && frac > 0 && frac <= 0.25
+
+  // HP is continuous, so a tick per hit point would be static noise. Slots
+  // are discrete and few, so they get marks.
+  const marks = segments ?? (isGas ? "auto" : 0)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -64,7 +75,7 @@ export function Globe({
     orbRef.current = orb
     orb.start()
 
-    // Pour in on mount rather than snapping — the HUD fades up around it.
+    // Fill on mount rather than snapping — the HUD fades up around it.
     const timer = window.setTimeout(() => orb.setValue(max > 0 ? safeValue : 0), 80)
     mounted.current = true
 
@@ -82,7 +93,7 @@ export function Globe({
       orbRef.current = null
       mounted.current = false
     }
-    // The renderer is created once. Live updates go through the effects below.
+    // The renderer is created once; live updates go through the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -103,32 +114,32 @@ export function Globe({
     orbRef.current?.setSegments(marks)
   }, [marks])
 
+  const canvasW = Math.round(size * CANVAS_SCALE)
+  const canvasH = Math.round(canvasW * ASPECT)
+
   return (
-    <div className="relative">
+    <div className="relative" style={{ width: canvasW }}>
+      <canvas
+        ref={canvasRef}
+        role="img"
+        aria-label={max > 0 ? `${label}: ${safeValue} of ${safeMax}` : `${label}: none`}
+        className="block"
+        style={{ width: canvasW, height: canvasH }}
+      />
+      {/* The readout floats over the glass, centred on the SPHERE — which sits
+          in the top square of the canvas, above the plinth. */}
       <div
-        className="relative overflow-hidden rounded-full border-[3px] border-[#3a2c1a]"
-        style={{
-          width: size,
-          height: size,
-          boxShadow: "0 0 22px #000, inset 0 0 20px #000",
-        }}
+        className="pointer-events-none absolute inset-x-0 top-0 grid place-items-center"
+        style={{ height: canvasW }}
       >
-        <canvas
-          ref={canvasRef}
-          role="img"
-          aria-label={max > 0 ? `${label}: ${safeValue} of ${safeMax}` : `${label}: none`}
-          className="block h-full w-full"
-        />
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <span
-            className={
-              "font-serif text-[13px] font-semibold [text-shadow:0_1px_3px_#000,0_0_8px_#000] " +
-              (critical ? "text-[#ff8a72]" : "text-[#f4ecd8]")
-            }
-          >
-            {max > 0 ? `${safeValue} / ${safeMax}` : "—"}
-          </span>
-        </div>
+        <span
+          className={
+            "font-serif text-[13px] font-semibold [text-shadow:0_1px_3px_#000,0_0_10px_#000] " +
+            (critical ? "text-[#ff8a72]" : "text-[#f4ecd8]")
+          }
+        >
+          {max > 0 ? `${safeValue} / ${safeMax}` : "—"}
+        </span>
       </div>
       <div className="mt-0.5 text-center font-serif text-[8px] uppercase tracking-[0.22em] text-[#8a7952]">
         {label}
