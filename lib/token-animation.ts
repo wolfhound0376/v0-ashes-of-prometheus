@@ -99,7 +99,7 @@ export type CastHand = "LeftHand" | "RightHand"
  * These are measured off the clips, not guessed: the release is the frame
  * where the casting hand reaches full extension. Firing the effect at t=0
  * instead is the tell that separates a game from a tech demo — the light
- * leaves her palm before she has moved.
+ * leaves his palm before he has moved.
  *
  * Measured 2026-08-27 by sampling the clips' forward kinematics — the release
  * is where the casting hand peaks in reach. Order matters: the longest name

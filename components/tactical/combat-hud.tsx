@@ -326,7 +326,7 @@ export function CombatHud(props: Props) {
                     const selecting = ability !== a.name
                     setAbility(selecting ? a.name : null)
                     // Selecting an ability performs it on the board: the
-                    // miniature casts, and the spell leaves her hand on the
+                    // miniature casts, and the spell leaves his hand on the
                     // release frame. Deselecting is just deselecting.
                     if (selecting) onCast?.(a.name, a.kind)
                   }}

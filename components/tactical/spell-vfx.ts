@@ -1,5 +1,5 @@
 // ============================================================================
-// SPELL VFX — the light that leaves her hand.
+// SPELL VFX — the light that leaves his hand.
 //
 // Raw Three.js, no new dependencies, no postprocessing package. Everything
 // here is spawned at the RELEASE frame of a cast animation (see
