@@ -23,6 +23,14 @@ export type MusicCategory =
 
 export const MUSIC_LIBRARY: MusicTrack[] = [
   {
+    id: "steel-in-the-dark",
+    name: "Steel in the Dark",
+    url: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/music/combat/steel-in-the-dark.mp3",
+    category: "combat",
+    mood: ["intense", "driving", "underdark"],
+    description: "Commissioned combat theme for Velkynvelve engagements.",
+  },
+  {
     // Sam's commissioned battle theme. Loudness-matched to the rest of the
     // library at -27 LUFS: it arrived at -13, roughly five times as loud as
     // every other track, which would have buried the dialogue the moment a
