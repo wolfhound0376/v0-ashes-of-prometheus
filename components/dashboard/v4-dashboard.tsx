@@ -963,7 +963,12 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
       setUploadingArtFor(null)
     }
   }
-  const portrait = character.portrait_image_url || character.avatar_image_url
+  // The ragdoll frame is tall and bottom-aligned: it wants a BODY. Avatars
+  // are the full-body character stills, portraits are the medallion faces
+  // used by the cards and the initiative rail - so avatar wins HERE, and
+  // only here. Getting this backwards put a cropped cartoon head in the
+  // equipment window for every character who had a medallion.
+  const portrait = character.avatar_image_url || character.portrait_image_url
   const equippedAt = (slot: EquipmentItem["slot"]) => equipment.find((item) => item.slot === slot && item.equipped !== false)
   const equip = async (item: InventoryItem, slot: EquipmentItem["slot"]) => {
     if (!item.equippable_slot || item.equippable_slot !== slot) { setMessage(`${item.name} cannot be equipped in ${equipmentSlots.find((entry) => entry.id === slot)?.label || slot}.`); return }
