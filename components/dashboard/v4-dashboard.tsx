@@ -21,6 +21,7 @@ import { onCinematicCue } from "@/lib/cinematic-cue"
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
 import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
+import { isCombatant } from "@/lib/challenge-rating"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
 import { isVideoUrl } from "@/lib/media-url"
 import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
@@ -234,7 +235,9 @@ type NpcEncounter = {
   hp_current?: number | null
   hp_max?: number | null
   conditions?: string[] | null
-  challenge_rating?: number | null
+  /** Text in Postgres: "8", "0.5" and "1/4" all occur. Read it through
+   *  parseChallengeRating/isCombatant rather than comparing it directly. */
+  challenge_rating?: string | number | null
   disposition?: string | null
   stage_scale?: number | string | null
   stage_offset_y?: number | string | null
@@ -441,7 +444,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   // falls below the panel and the feet meet the ground line. Both default to
   // the previous behaviour (1 / 0), so untuned characters are unchanged.
   const stageFrame = characterStageStyle(selected as (Character & StageFramingRow) | undefined)
-  const inCombat = props.npcEncounters.some((npc) => npc.is_active && (npc.challenge_rating ?? 0) > 0)
+  const inCombat = props.npcEncounters.some((npc) => npc.is_active && isCombatant(npc.challenge_rating))
   // A fight breaking out sends this browser to the board — once per fight,
   // and only the DM's browser: yanking every player off their sheet
   // mid-sentence would be worse than the fight starting quietly.

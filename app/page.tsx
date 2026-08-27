@@ -21,6 +21,7 @@ import { characterData, dialogueData, actionsData, inventoryData, environmentDat
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
+import { isCombatant } from "@/lib/challenge-rating"
 import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
@@ -152,7 +153,7 @@ export default function DashboardPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
-  const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; idle_url: string | null; talking_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: number | null; conditions: string[] | null }[]>([])
+  const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; idle_url: string | null; talking_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: string | number | null; conditions: string[] | null }[]>([])
   // The WHOLE NPC roster, not just the active-on-stage one. `is_active` is a
   // stage/portrait flag and must not gate who is allowed a voice, so the
   // narration queue reads this instead of `npcEncounters`.
@@ -947,7 +948,9 @@ if (error) {
   }
 
   // In combat when any active NPC has a Challenge Rating above 0 (monsters, not friendly prisoners).
-  const inCombat = npcEncounters.some(n => n.is_active && (n.challenge_rating ?? 0) > 0)
+  // isCombatant, not `(cr ?? 0) > 0`: the column is text, and a CR written as
+  // a fraction coerces to NaN, which is never greater than zero.
+  const inCombat = npcEncounters.some(n => n.is_active && isCombatant(n.challenge_rating))
 
   // Get available actions based on character class
   const availableActionIds = selectedCharacter
