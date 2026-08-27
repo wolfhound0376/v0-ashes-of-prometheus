@@ -816,6 +816,11 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 - One page per response at most. Keep it short — a few lines, the way someone writes by dim light with a stub of quill.
 - Never mention the tag or tell the player their journal updated. They will see the page.
 
+11. WORLD FLAGS: A few facts change the world permanently, and every screen at the table has to agree on them. When one happens, emit [FLAG: <key>] on its own line. Only these keys exist; never invent one.
+- pen-door-open — the slave pen's door is OPEN. Emit it whether it was unlocked with a stolen key, picked, forced, broken, or swung wide by a drow letting someone in or out. The test is the door, not who opened it or why.
+- Emit it ONCE, at the moment it happens. If the door was already open, it stays open; do not re-emit, and never emit it for a door that is merely being examined, reached for, or discussed.
+- If the door is shut and barred again later, that is a different fact and there is no tag for it yet. Narrate it and tell the DM.
+
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
 === EXAMPLE OF CORRECT OUTPUT ===
@@ -992,6 +997,12 @@ JOURNAL:
   - Write it as THEY would write it: first person, a few lines, what they saw and what they made of it.
   - The page is theirs. Never mock them inside the tag and never write something they did not mean to record. Be as cruel as you like in the prose around it.
   - Example: [JOURNAL: Three guards on the gate. They change on the fourth hour and there is a gap, maybe three minutes wide. Eldeth has been counting them longer than I have.]
+
+WORLD FLAGS:
+- [FLAG: <key>] — when a permanent, table-wide fact becomes true
+  - pen-door-open — the slave pen's door is open: unlocked, picked, forced, or opened by someone else
+  - Emit once, at the moment it happens. Never invent a key that is not listed here.
+  - Example: [FLAG: pen-door-open]
 
 HEALTH & CONDITIONS:
 - [DAMAGE: amount type] — when player takes damage. Include this EVERY time damage is dealt.
@@ -1275,6 +1286,33 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
     }
   } else if (journalTags.length) {
     console.warn("[v0] journal tag emitted with no acting character - page dropped:", journalTags[0].slice(0, 80))
+  }
+
+  // === WORLD FLAGS ===
+  // Durable, table-wide facts. The only one so far is the pen door, which
+  // swaps the NPC window's backdrop for every screen at once.
+  //
+  // The allow-list is the whole security model: Malachar writes prose, and
+  // prose is not permission to set arbitrary state. A key he invents is
+  // logged and dropped, never written.
+  const KNOWN_FLAGS = new Set(["pen-door-open"])
+  const flagTags = rawText.match(/\[FLAG:\s*([^\]]*)\]/gi) || []
+  for (const tag of flagTags) {
+    const key = tag.replace(/^\[FLAG:\s*/i, "").replace(/\]$/, "").trim().toLowerCase()
+    if (!KNOWN_FLAGS.has(key)) {
+      console.warn("[v0] unknown world flag ignored:", key)
+      continue
+    }
+    // Upsert, so a re-emitted flag is a no-op rather than an error. set_at
+    // keeps the first time it happened; that is the moment worth recording.
+    const { error: flagErr } = await supabase
+      .from("world_flags")
+      .upsert(
+        { campaign_id: "ashes-of-prometheus", key, value: true, set_by: "malachar" },
+        { onConflict: "campaign_id,key", ignoreDuplicates: true },
+      )
+    if (flagErr) console.error("[v0] world flag failed to write:", key, flagErr.message)
+    else console.log("[v0] world flag set:", key)
   }
 
   // Parse and process inventory tags from the response
@@ -2299,6 +2337,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
     .replace(/\[STORY_ADVANCE[^\]]*\]/gi, "")
     .replace(/\[CINEMATIC:[^\]]*\]/gi, "")
     .replace(/\[JOURNAL:[^\]]*\]/gi, "")
+    .replace(/\[FLAG:[^\]]*\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
     // somebody has to remember to add here — and forgetting means the tag is
     // printed to the table as raw text. This sweeps any [UPPERCASE_TAG: ...]

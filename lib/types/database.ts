@@ -6,6 +6,10 @@ export interface Environment {
   time_of_day: string
   background_image_url: string | null
   fog_overlay_url: string | null
+  /** Backdrop behind the NPC portrait for this scene. */
+  npc_backdrop_url?: string | null
+  /** The same room once the way out is open. Falls back to the closed art. */
+  npc_backdrop_open_url?: string | null
   ambient_animation: string | null
   description: string | null
   created_at: string

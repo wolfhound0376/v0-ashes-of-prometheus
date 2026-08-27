@@ -20,6 +20,7 @@ import { DynamicMusic } from "@/components/dashboard/dynamic-music"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions, CANONICAL_START_LOCATION } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
+import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
 import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
@@ -160,6 +161,9 @@ export default function DashboardPage() {
 
   // Current environment from database
   const [currentEnvironment, setCurrentEnvironment] = useState<Environment | null>(null)
+  // Set the moment the pen door is unlocked, picked, or opened from outside.
+  // The NPC window swaps to the open-door painting for everyone at once.
+  const penDoorOpen = useWorldFlag(PEN_DOOR_OPEN)
   // Player-safe vague time-of-day pushed by the chat route (derived from the
   // world clock). Takes precedence over the environment row's static value so
   // the scene header tracks the passage of time without exposing the DM clock.
@@ -1297,6 +1301,12 @@ if (error) {
           timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
           imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
           description: currentEnvironment?.description,
+          // The open-door painting only once the door is actually open, and
+          // only where the scene has one; otherwise the room as it stands.
+          npcBackdropUrl:
+            (penDoorOpen ? currentEnvironment?.npc_backdrop_open_url : null) ||
+            currentEnvironment?.npc_backdrop_url ||
+            null,
         }}
         dialogue={dialogue}
         dialogueInput={dialogueInput}
