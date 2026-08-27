@@ -1,3 +1,5 @@
+-- Applied to production 2026-08-27. Recorded here so the schema has a history.
+--
 -- The party moving is a moment, not a fact you find out on refresh.
 --
 -- `party_position` carries row-level security and a read-for-everyone policy
