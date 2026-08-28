@@ -931,7 +931,7 @@ FORMATTING — CRITICAL:
 
 NPC DIALOGUE OWNERSHIP — CRITICAL:
 - When an NPC answers, put that NPC's exact spoken words in quotation marks once. Never repeat, paraphrase, or claim the NPC's words as Malachar.
-- Wrap EVERY NPC's exact spoken words, including one-word replies, as [NPC_SPEECH: Exact Canonical Name]"their exact words"[/NPC_SPEECH]. The wrapper is required even when the NPC is the only speaker.
+- Wrap EVERY NPC's exact spoken words, including one-word replies, as [NPC_SPEECH: Exact Canonical Name]"their exact words"[/NPC_SPEECH]. The wrapper is required even when the NPC is the only speaker, even mid-narration, and even when your prose refers to the NPC only by a pronoun — if a quote belongs to an NPC, it is wrapped, no exceptions.
 - Preserve each NPC's established campaign personality, motives, knowledge, and diction. Do not invent a new personality or knowledge the NPC cannot have.
 - Malachar speaks only for necessary narration, rulings, and consequences. If the NPC's answer fully resolves the beat, let the NPC's quoted line stand alone and keep Malachar silent.
 - Never blend two NPCs into one voice. A change of speaker requires a new quoted span with clear attribution.
@@ -2390,9 +2390,25 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
         name: npc.name,
         aliases: Array.isArray(npc.aliases) ? npc.aliases : [],
       }))
+      // The narration alone often cannot name its own speaker — "He tilts his
+      // head" answers whoever the player just addressed. Hand the segmenter the
+      // exchange leading up to this turn so a pronoun-led quote resolves to the
+      // NPC in conversation instead of falling back to NARRATOR, which the
+      // client reads aloud in Malachar's voice.
+      const recentExchange = [...(recentDialogue || [])]
+        .slice(0, 6)
+        .reverse()
+        .map((entry: { speaker: string | null; text: string | null }) => `${entry.speaker || "?"}: ${(entry.text || "").slice(0, 300)}`)
+        .join("\n")
       const segmentationPrompt = `You attribute quoted speech in a D&D dungeon master's narration.
 
-NARRATION:
+RECENT CONVERSATION (oldest first — context only, do NOT attribute quotes from it):
+"""
+${recentExchange}
+${playerName}: ${String(message ?? "").slice(0, 300)}
+"""
+
+NARRATION (attribute the quotes in THIS text only):
 """
 ${responseText}
 """
@@ -2410,7 +2426,8 @@ Rules:
 - A name appearing after the closing quote in a descriptive aside (for example \"- Prince Derendil, if you catch his name later -\") is NOT the speaker.
 - Consecutive quotes with no new attribution keep the previous speaker.
 - Resolve aliases to the exact canonical NPC name from the roster.
-- Use PLAYER when a player character speaks; use NARRATOR only when no NPC/player speaker can be identified.
+- When the narration replies in quotes without naming a speaker, the speaker is almost always the NPC the player most recently addressed or was in conversation with (see RECENT CONVERSATION). Prefer that NPC over NARRATOR.
+- Use PLAYER when a player character speaks; use NARRATOR only when no NPC/player speaker can plausibly be identified even with the conversation context.
 - Preserve each quoted line verbatim and preserve quote order. Do not omit any quoted span.`
 
       const segmentationResult = await generateText({
