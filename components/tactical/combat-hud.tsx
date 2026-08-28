@@ -279,7 +279,10 @@ export function CombatHud(props: Props) {
       )}
 
       {/* ─── RIGHT: combat log + END TURN ──────────────────────────────── */}
-      <div className="pointer-events-none absolute right-3 top-3 z-20 flex w-[176px] flex-col gap-2">
+      {/* top-[72px], not top-3: the top-right corner belongs to the location
+          name and the ← SCENE exit. The log parked on top of them made the
+          only way off the board invisible during a fight. */}
+      <div className="pointer-events-none absolute right-3 top-[72px] z-20 flex w-[176px] flex-col gap-2">
         <div className="rounded-sm border border-[#3a2f1e] bg-[#0c0a06]/92 shadow-[0_0_14px_#000a]">
           <div className="border-b border-[#2a2216] px-2 py-1 font-serif text-[9px] uppercase tracking-[0.2em] text-[#a89468]">Combat Log</div>
           <div className="max-h-[210px] overflow-y-auto px-2 py-1.5">
