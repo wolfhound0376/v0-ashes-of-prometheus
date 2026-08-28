@@ -1467,8 +1467,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const data = await res.json().catch(() => null)
         say(data?.error ?? "The order would not hold.")
       }
+      return res.ok
     } catch {
       say("The order would not hold — the network blinked.")
+      return false
     } finally {
       setCombatBusy(false)
     }
@@ -1559,7 +1561,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       )}
 
       {/* Location name, D2 style: gold gothic caps, top right, unadorned. */}
-      <div className="pointer-events-none absolute right-3 top-3 z-10 text-right">
+      {/* z-30: this block must sit ABOVE the HUD (z-20) — the combat log
+          used to render on top of the SCENE button, burying the only exit. */}
+      <div className="pointer-events-none absolute right-3 top-3 z-30 text-right">
         <div className="max-w-[220px] truncate font-serif text-[12px] font-semibold uppercase tracking-[0.24em] text-[#d8b25a] [text-shadow:0_1px_3px_#000,0_0_14px_#00000088]">
           {(mapName || "").replace(/\s*[—(].*$/, "").trim() || "The Underdark"}
         </div>
@@ -1620,7 +1624,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         <div className="absolute bottom-3 right-3 z-30">
           <button
             disabled={combatBusy}
-            onClick={() => void combatAction("end")}
+            onClick={async () => {
+              // Ending the fight is also leaving it: once the end sticks, the
+              // table's next scene is the dashboard, so take the DM there.
+              // (The fight being over means the live-fight redirect stays
+              // quiet — no bounce back.)
+              if (await combatAction("end")) onBack?.()
+            }}
             className="rounded-sm border border-[#4a3a2a] bg-black/70 px-3 py-1 text-[9px] uppercase tracking-wider text-[#a89468] hover:border-[#8b6427] disabled:opacity-40"
           >
             End Combat
