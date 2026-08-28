@@ -117,7 +117,16 @@ function BattleBoardPage() {
           Rehearsal — nothing here is canon
         </div>
       )}
-      <CombatBoard3D sandbox={sandbox} onBack={() => router.push("/")} />
+      <CombatBoard3D
+        sandbox={sandbox}
+        onBack={() => {
+          // Mark this exit as deliberate. The dashboard's live-fight redirect
+          // checks this flag; without it, leaving the board during combat
+          // bounced the DM straight back to /battle on arrival.
+          try { sessionStorage.setItem("aop-left-battle", "1") } catch {}
+          router.push("/")
+        }}
+      />
       <BattleMusic />
     </div>
   )

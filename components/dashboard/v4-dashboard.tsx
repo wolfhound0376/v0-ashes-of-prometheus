@@ -450,7 +450,16 @@ export function V4Dashboard(props: V4DashboardProps) {
   // mid-sentence would be worse than the fight starting quietly.
   const wasInCombat = useRef(false)
   useEffect(() => {
-    if (inCombat && !wasInCombat.current && hasDmKey()) window.location.assign("/battle")
+    // "aop-left-battle" is set when the DM deliberately walks off the board
+    // via ← SCENE. Without it this redirect fires on every mount while a
+    // fight is live — so leaving /battle bounced the DM straight back, and
+    // there was effectively no way off the board until the fight ended. The
+    // flag is per-tab (sessionStorage) and cleared the moment the fight is
+    // over, so the NEXT fight redirects normally.
+    let leftDeliberately = false
+    try { leftDeliberately = sessionStorage.getItem("aop-left-battle") === "1" } catch {}
+    if (!inCombat) { try { sessionStorage.removeItem("aop-left-battle") } catch {} }
+    if (inCombat && !wasInCombat.current && hasDmKey() && !leftDeliberately) window.location.assign("/battle")
     wasInCombat.current = inCombat
   }, [inCombat])
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
