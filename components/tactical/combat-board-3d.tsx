@@ -46,7 +46,7 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
-import { castSpellKitVfx, kitVfxTypeFor, prewarmKit } from "./spell-vfx-kit"
+import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -207,6 +207,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // re-resolve to somebody else.
   const armedTokenRef = useRef<string | null>(null)
   const targetsRef = useRef<{ show: (t: string, r: number, h: boolean) => void; clear: () => void }>({ show: () => {}, clear: () => {} })
+
+  // ---- the hover read-out --------------------------------------------
+  // BG3 answers "what happens if I click here" before you click. While a
+  // spell is armed, the creature under the cursor reports what it would take:
+  // a chance to hit for an attack roll, the DC and which save otherwise.
+  /** Screen position and text of the read-out, or null when nothing is under it. */
+  const [hoverRead, setHoverRead] = useState<
+    { x: number; y: number; label: string; line: string; ok: boolean } | null
+  >(null)
+  /** token id → AC. Only for the read-out; the server still rolls the dice. */
+  const acRef = useRef<Map<string, number>>(new Map())
+  /**
+   * character id → the caster's own numbers, read straight off the sheet.
+   *
+   * `sheet_spellcasting` already carries `attack_bonus` and `save_dc`, both
+   * recorded with an SRD citation. Deriving them here from class and ability
+   * scores would be re-deriving something already verified, and this campaign
+   * has a history of invented mechanics reaching the table that way.
+   */
+  const casterRef = useRef<Map<string, { atk: number | null; dc: number | null }>>(new Map())
   const castVerbRef = useRef<(caster: string, target: string, ability: string) => Promise<void>>(async () => {})
 
   useEffect(() => {
@@ -588,6 +608,76 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
     renderer.domElement.addEventListener("click", onClick)
 
+    /** Which token is under this pointer event, if any. */
+    const tokenUnder = (ev: MouseEvent): string | null => {
+      const r = renderer.domElement.getBoundingClientRect()
+      pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1
+      pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1
+      raycaster.setFromCamera(pointer, activeCam())
+      const objs: THREE.Object3D[] = []
+      tokensRef.current.forEach((t) => objs.push(t.obj))
+      const hit = raycaster.intersectObjects(objs, true)[0]
+      if (!hit) return null
+      let o: THREE.Object3D | null = hit.object
+      while (o && !o.userData.tokenId) o = o.parent
+      return (o?.userData.tokenId as string | undefined) ?? null
+    }
+
+    /**
+     * The read-out under the cursor while a spell is armed.
+     *
+     * Only runs when something is armed, so ordinary panning costs nothing.
+     */
+    const onHover = (ev: MouseEvent) => {
+      const armed = armedRef.current
+      if (!armed) {
+        setHoverRead((cur) => (cur ? null : cur))
+        return
+      }
+      const id = tokenUnder(ev)
+      const shooter = tokensRef.current.get(armed.tokenId)
+      const victim = id ? tokensRef.current.get(id) : null
+      if (!id || !victim || !shooter || victim.row.id === shooter.row.id) {
+        setHoverRead((cur) => (cur ? null : cur))
+        return
+      }
+
+      const status = targetStatus(shooter, victim, armed.entry.rangeFt)
+      let line: string
+      if (!status.ok) {
+        line = status.reason === "sight" ? "no clear line" : `${status.squares * 5} ft — out of range`
+      } else if ((victim.row.hp_current ?? 1) <= 0) {
+        line = "down — a hit costs it a death save"
+      } else {
+        const e = armed.entry
+        const ac = acRef.current.get(victim.row.id)
+        const me = casterRef.current.get(armed.characterId)
+        if (e.resolve === "attack" && ac !== undefined && me?.atk != null) {
+          // d20 + bonus vs AC. A natural 1 always misses and a natural 20
+          // always hits, so the honest range is 5%..95% — never 0 or 100.
+          const need = ac - me.atk
+          const pct = Math.max(5, Math.min(95, Math.round(((21 - need) / 20) * 100)))
+          line = `${pct}% to hit  ·  AC ${ac}`
+        } else if (e.resolve === "save" && e.save && me?.dc != null) {
+          line = `${e.save} save vs DC ${me.dc}`
+        } else if (e.heals) {
+          line = "healing"
+        } else {
+          line = ac !== undefined ? `AC ${ac}` : "in range"
+        }
+      }
+
+      const r = renderer.domElement.getBoundingClientRect()
+      setHoverRead({
+        x: ev.clientX - r.left,
+        y: ev.clientY - r.top,
+        label: victim.row.label,
+        line,
+        ok: status.ok,
+      })
+    }
+    renderer.domElement.addEventListener("mousemove", onHover)
+
     // ---- token meshes -----------------------------------------------
     // ================= THE DARKNESS =================
     // Diablo II's world exists only inside light radii; everything else is
@@ -749,6 +839,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     /** At 0 HP. Null hp_current means "not tracked", which is not dead. */
     const isDowned = (row: TokenRow) =>
       row.hp_current !== null && row.hp_current !== undefined && row.hp_current <= 0
+
+    /**
+     * What last hit each creature, remembered so its death can look like it.
+     *
+     * The damage type is known when the effect LANDS, but the death is known
+     * later, when the server's HP write comes back down the wire. These are
+     * two separate moments, so the type has to be carried between them.
+     */
+    const lastHitBy = new Map<string, DamageType>()
 
     // ── CASTING ────────────────────────────────────────────────────────────
     // Live effects, advanced by the same clock as everything else. A cast
@@ -939,14 +1038,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const shooter = tokensRef.current.get(armed.tokenId)
       const victim = tokensRef.current.get(tokenId)
       if (!shooter || !victim) return
-      // Out of range says so. A button that was pressed and produced silence
-      // is indistinguishable from a broken one.
-      const squares = Math.max(
-        Math.abs((shooter.row.grid_x ?? 0) - (victim.row.grid_x ?? 0)),
-        Math.abs((shooter.row.grid_y ?? 0) - (victim.row.grid_y ?? 0)),
-      )
-      if (armed.entry.rangeFt > 0 && squares * 5 > armed.entry.rangeFt) {
-        say(`${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${squares * 5} ft away.`)
+      // A refusal always says why. A button that was pressed and produced
+      // silence is indistinguishable from a broken one — and this asks the
+      // same question the rings asked, through the same function, so a grey
+      // ring and a refused click can never disagree.
+      const status = targetStatus(shooter, victim, armed.entry.rangeFt)
+      if (!status.ok) {
+        say(
+          status.reason === "sight"
+            ? `${victim.row.label} is behind cover — ${armed.name} needs a clear line.`
+            : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
+        )
         return
       }
       windupRef.current?.stop(0.08)
@@ -1206,6 +1308,34 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // HP or identity changed → rebuild; position change → glide.
       const before = entry.row
       entry.row = row
+      // THE KILLING BLOW.
+      //
+      // SRD 5.1, Combat: "Most GMs have a monster die the instant it drops to
+      // 0 hit points, rather than having it fall unconscious and make death
+      // saving throws." So a monster crossing to 0 is a death, and it should
+      // look like whatever killed it — burn, dissolve, shatter.
+      //
+      // Player characters are excluded: they fall unconscious and roll death
+      // saves, which is a different thing entirely and must not be dressed up
+      // as a funeral.
+      //
+      // The body stays. spawnToken below rebuilds it into its death pose
+      // (HOLD_LAST), so the square remains occupied and the battlefield still
+      // reads.
+      const wasUp = (before.hp_current ?? 1) > 0
+      if (wasUp && isDowned(row) && !row.character_id) {
+        const type = lastHitBy.get(row.id)
+        if (type) {
+          vfx.push(deathVfx({
+            parent: scene,
+            position: new THREE.Vector3(entry.obj.position.x, 0.05, entry.obj.position.z),
+            type,
+            camera,
+            scale: radiusFor(row.token_size) / 0.75,
+          }))
+        }
+        lastHitBy.delete(row.id)
+      }
       if (before.hp_current !== row.hp_current || before.hp_max !== row.hp_max || before.is_visible !== row.is_visible || before.tint_color !== row.tint_color) {
         spawnToken(row)
         return
@@ -1272,37 +1402,114 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const reachGroup = new THREE.Group()
     scene.add(reachGroup)
     const reachGeo = new THREE.PlaneGeometry(SQ * 0.94, SQ * 0.94)
-    // LEGAL TARGETS. While a spell is armed, everything it could be thrown at
-    // wears a ring: red for a spell that harms, green for one that helps, so
-    // a healer never has to read a tooltip to find out who they can save.
+    // LEGAL TARGETS. While a spell is armed, every creature wears a ring, and
+    // the ring says what it is: red for a spell that harms, green for one that
+    // helps, amber for a body already down, and a dim grey for a creature the
+    // spell cannot reach.
+    //
+    // Showing the unreachable ones GREY rather than hiding them is the whole
+    // point. A creature with no ring is indistinguishable from a creature the
+    // board forgot about; a grey ring says "I see it, you can't hit it", and
+    // the click still explains why.
     const targetGroup = new THREE.Group()
     scene.add(targetGroup)
     const targetRingGeo = new THREE.RingGeometry(0.62, 0.86, 44)
     const hostileMat = new THREE.MeshBasicMaterial({ color: 0xff5a44, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
     const helpfulMat = new THREE.MeshBasicMaterial({ color: 0x53e07a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    /** Down but not gone: still a legal target, and worth finishing or saving. */
+    const downedMat = new THREE.MeshBasicMaterial({ color: 0xffab3d, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    /** Out of range, or nothing but wall between you and it. */
+    const deniedMat = new THREE.MeshBasicMaterial({ color: 0x6c6f7a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
+
+    /**
+     * Can this square see that one?
+     *
+     * Walks the cells between the two centres and asks whether each is part of
+     * the passable world — floor, or a door standing open. A wall cell, or a
+     * closed door, breaks the line. This is grid line-of-sight rather than a
+     * mesh raycast on purpose: the board already keeps the grid, the answer is
+     * stable as the camera moves, and it agrees with what movement does.
+     *
+     * The endpoints are exempt — a creature does not block sight to itself,
+     * and standing in a doorway is not standing in a wall.
+     */
+    const hasLineOfSight = (ax: number, ay: number, bx: number, by: number) => {
+      const dx = Math.abs(bx - ax)
+      const dy = Math.abs(by - ay)
+      const sx = ax < bx ? 1 : -1
+      const sy = ay < by ? 1 : -1
+      let err = dx - dy
+      let x = ax
+      let y = ay
+      let guard = dx + dy + 2 // a line can never be longer than this
+      while (guard-- > 0) {
+        if (x === bx && y === by) return true
+        const e2 = 2 * err
+        if (e2 > -dy) { err -= dy; x += sx }
+        if (e2 < dx) { err += dx; y += sy }
+        if (x === bx && y === by) return true
+        const k = x + "," + y
+        if (walkableRef.current.has(k)) continue
+        // Not floor. A door standing open is still a way through; a closed
+        // one is a wall, which is what makes shutting a door mean something.
+        const door = doorRecs.find((r) => r.cell === k)
+        if (!door || !door.open) return false
+      }
+      return true
+    }
 
     const clearTargets = () => {
       while (targetGroup.children.length) targetGroup.remove(targetGroup.children[0])
     }
 
-    /** Ring every token this spell could legally be thrown at. */
+    /**
+     * Why a given creature can or cannot be hit by the armed spell.
+     * Shared by the rings and by the click, so what you see and what the
+     * board allows can never disagree.
+     */
+    const targetStatus = (
+      me: { row: TokenRow },
+      t: { row: TokenRow },
+      rangeFt: number,
+    ): { ok: boolean; reason?: string; squares: number } => {
+      const squares = Math.max(
+        Math.abs((me.row.grid_x ?? 0) - (t.row.grid_x ?? 0)),
+        Math.abs((me.row.grid_y ?? 0) - (t.row.grid_y ?? 0)),
+      )
+      if (rangeFt > 0 && squares * 5 > rangeFt) {
+        return { ok: false, reason: "range", squares }
+      }
+      if (!hasLineOfSight(me.row.grid_x ?? 0, me.row.grid_y ?? 0, t.row.grid_x ?? 0, t.row.grid_y ?? 0)) {
+        return { ok: false, reason: "sight", squares }
+      }
+      return { ok: true, squares }
+    }
+
+    /**
+     * Ring every creature, and colour the ring by what it is.
+     *
+     * A body at 0 HP keeps its ring. It is still a legal target — SRD has
+     * attacks against an unconscious creature at advantage, a hit from within
+     * 5 ft is a critical, and damage at 0 HP costs a death save (two on a
+     * crit). Hiding it made a dying ally impossible to finish OR to reach
+     * with a heal, which is the opposite of what the rules do.
+     */
     const showTargets = (casterTokenId: string, rangeFt: number, helpful: boolean) => {
       clearTargets()
       const me = tokensRef.current.get(casterTokenId)
       if (!me) return
       tokensRef.current.forEach((t) => {
         if (t.row.id === casterTokenId) return
-        if ((t.row.hp_current ?? 1) <= 0) return
-        const squares = Math.max(
-          Math.abs((me.row.grid_x ?? 0) - (t.row.grid_x ?? 0)),
-          Math.abs((me.row.grid_y ?? 0) - (t.row.grid_y ?? 0)),
-        )
-        if (rangeFt > 0 && squares * 5 > rangeFt) return
-        const ring = new THREE.Mesh(targetRingGeo, helpful ? helpfulMat : hostileMat)
+        if (!t.row.is_visible) return
+        const { ok } = targetStatus(me, t, rangeFt)
+        const down = (t.row.hp_current ?? 1) <= 0
+        const mat = !ok ? deniedMat : down ? downedMat : helpful ? helpfulMat : hostileMat
+        const ring = new THREE.Mesh(targetRingGeo, mat)
         ring.rotation.x = -Math.PI / 2
         ring.position.set(t.obj.position.x, 0.09, t.obj.position.z)
         ring.scale.setScalar(radiusFor(t.row.token_size) / 0.75)
-        ring.userData.pulse = Math.random() * Math.PI * 2
+        // Denied rings sit still; a pulsing grey ring reads as available.
+        ring.userData.pulse = ok ? Math.random() * Math.PI * 2 : null
         targetGroup.add(ring)
       })
     }
@@ -1802,17 +2009,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // already knows what a giant spider looks like. The token's own
       // model_url still wins when set, which is how a named boss wears
       // different art from its kin.
+      //
+      // The same row also carries the creature's AC, which the hover read-out
+      // wants. Two features, one bestiary row, one round trip — they were
+      // written as separate queries on separate branches and there is no
+      // reason to keep them apart now they have met.
       const speciesIds = [...new Set(((tokenRows ?? []) as TokenRow[])
         .map((r: TokenRow) => r.bestiary_id)
         .filter((id: string | null): id is string => Boolean(id)))]
       const speciesModel = new Map<string, { url: string | null; scale: number | null; y: number | null }>()
+      const acByBeast = new Map<string, number>()
       if (speciesIds.length) {
         const { data: species } = await supabase
           .from("bestiary")
-          .select("id,model_url,model_scale,model_y_offset")
+          .select("id,ac,model_url,model_scale,model_y_offset")
           .in("id", speciesIds)
-        for (const b of (species ?? []) as Array<{ id: string; model_url: string | null; model_scale: number | null; model_y_offset: number | null }>) {
+        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null }>) {
           speciesModel.set(b.id, { url: b.model_url, scale: b.model_scale, y: b.model_y_offset })
+          if (typeof b.ac === "number") acByBeast.set(b.id, b.ac)
         }
       }
 
@@ -1824,7 +2038,40 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               model_scale: row.model_scale ?? fallback.scale,
               model_y_offset: row.model_y_offset ?? fallback.y }
           : row)
+        // Monsters can have their AC already: it came back with the art.
+        const beastAc = row.bestiary_id ? acByBeast.get(row.bestiary_id) : undefined
+        if (typeof beastAc === "number") acRef.current.set(row.id, beastAc)
       }
+
+      // ---- the rest of the hover read-out ----------------------------
+      // The party's own numbers. Nothing here decides anything: the server
+      // still rolls, and this is only what the cursor reports. A token whose
+      // AC cannot be found simply shows no number rather than a guessed one.
+      void (async () => {
+        const rows = (tokenRows ?? []) as TokenRow[]
+        const charIds = Array.from(new Set(rows.map((r) => r.character_id).filter(Boolean))) as string[]
+        if (!charIds.length) return
+        const { data } = await supabase
+          .from("characters")
+          .select("id,ac,sheet_spellcasting")
+          .in("id", charIds)
+        const acByChar = new Map<string, number>()
+        for (const c of data ?? []) {
+          if (typeof c.ac === "number") acByChar.set(c.id as string, c.ac)
+          // attack_bonus and save_dc are already on the sheet, each with an
+          // SRD citation. Read them; do not re-derive them from class.
+          const sc = (c.sheet_spellcasting ?? {}) as { attack_bonus?: number; save_dc?: number }
+          casterRef.current.set(c.id as string, {
+            atk: typeof sc.attack_bonus === "number" ? sc.attack_bonus : null,
+            dc: typeof sc.save_dc === "number" ? sc.save_dc : null,
+          })
+        }
+        for (const r of rows) {
+          const ac = r.character_id ? acByChar.get(r.character_id) : undefined
+          if (typeof ac === "number") acRef.current.set(r.id, ac)
+        }
+      })()
+
       // First paint of the reach overlay — combat may already be mid-turn
       // when this browser arrives (a refresh during a fight).
       computeReach()
@@ -2017,7 +2264,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Target rings breathe so they read as an invitation rather than decor.
       targetGroup.children.forEach((r) => {
         const m = r as THREE.Mesh
-        const phase = (m.userData.pulse as number) ?? 0
+        const phase = m.userData.pulse as number | null
+        // A denied ring (pulse null) holds a flat dim so it reads as "no",
+        // rather than breathing like the ones you can actually click.
+        if (phase === null) return
         m.scale.setScalar((m.scale.x || 1) > 0 ? m.scale.x : 1)
         ;(m.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.3 * Math.sin(clock.elapsedTime * 3 + phase)
       })
@@ -2068,6 +2318,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const flinch = () => {
           p.onLand?.()          // the bang, on the same frame as the flash
           if (!p.victimId) return
+          // Remember what hit it, so if this is the blow that kills it, the
+          // death can be made of the same stuff. Falls back to the spellbook
+          // for types the kit does not draw (lightning), and to physical for
+          // anything with no damage type at all — a weapon.
+          lastHitBy.set(
+            p.victimId,
+            kitType ?? ((spellEntry(p.spell).damage as DamageType | undefined) ?? "physical"),
+          )
           const victim = tokensRef.current.get(p.victimId)
           if (!victim?.anim || isDowned(victim.row)) return
           playState(victim.anim, "hurt", true)
@@ -2182,6 +2440,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       window.removeEventListener("keyup", onPanKeyUp)
       window.removeEventListener("blur", onPanBlur)
       renderer.domElement.removeEventListener("mousemove", onHoverMove)
+      renderer.domElement.removeEventListener("mousemove", onHover)
+      renderer.domElement.removeEventListener("click", onClick)
       refreshReachRef.current = () => {}
       reachGeo.dispose()
       ribbonGeo.dispose()
@@ -2289,10 +2549,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     return () => {
       h?.stop(0.18)
       if (windupRef.current === h) windupRef.current = null
-      // Cancelled, thrown, or unmounted — the pose must not be left held and
-      // the rings must not outlive the choice.
+      // Cancelled, thrown, or unmounted — the pose must not be left held,
+      // the rings must not outlive the choice, and the read-out must not be
+      // left hanging over a board with nothing armed.
       chargeRef.current.stop()
       targetsRef.current.clear()
+      setHoverRead(null)
       window.removeEventListener("keydown", onKey)
     }
   }, [armedSpell])
@@ -2580,6 +2842,35 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           >
             End Combat
           </button>
+        </div>
+      )}
+
+      {/* THE READ-OUT. What this click would actually do, before you make it:
+          the chance to hit, or the save and its DC, or why it cannot be done.
+          Follows the cursor and never eats the click. */}
+      {hoverRead && (
+        <div
+          className="pointer-events-none absolute z-40"
+          style={{ left: hoverRead.x + 16, top: hoverRead.y + 14 }}
+        >
+          <div
+            className={
+              "rounded-sm border bg-black/85 px-2.5 py-1.5 shadow-[0_2px_8px_#000] " +
+              (hoverRead.ok ? "border-[#6b5123]" : "border-[#4a3a2a]")
+            }
+          >
+            <div className="font-serif text-[11px] uppercase tracking-[0.16em] text-[#e8d9ae]">
+              {hoverRead.label}
+            </div>
+            <div
+              className={
+                "mt-0.5 font-mono text-[11px] " +
+                (hoverRead.ok ? "text-[#f0cd7a]" : "text-[#8a7f6a]")
+              }
+            >
+              {hoverRead.line}
+            </div>
+          </div>
         </div>
       )}
 
