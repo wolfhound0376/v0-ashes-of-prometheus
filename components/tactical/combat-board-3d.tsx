@@ -46,7 +46,7 @@ import {
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
-import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, type PlayHandle } from "@/lib/sfx"
+import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const TILE_BASE =
@@ -803,6 +803,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // SOUND. The school gives the spell its voice; the damage type decides
       // what the target hears when it lands. Both come off the spellbook, so
       // a new spell is one row of data rather than a code change.
+      if (kind === "weapon") {
+        // The swing itself. Whether it CONNECTS is the server's word, and the
+        // hit or the miss lands when that answer comes back.
+        playSfx(weaponSounds(ability).release, { volume: 0.9 })
+        return
+      }
       const sEntry = spellEntry(ability)
       playSfx(releaseFor(sEntry.school), { volume: 0.85 })
       window.setTimeout(() => playSfx(tailFor(sEntry.school), { volume: 0.5 }), 260)
@@ -2110,21 +2116,27 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // than the feature.
   useEffect(() => {
     if (!armedSpell) return
-    const h = playSfx(windupFor(armedSpell.entry.school), { loop: true, volume: 0.55, fadeIn: 0.25 })
+    // Steel has no windup to hum. A weapon arms silently and simply waits for
+    // a target; only magic gets the rising note.
+    const h = armedSpell.kind === "weapon"
+      ? null
+      : playSfx(windupFor(armedSpell.entry.school), { loop: true, volume: 0.55, fadeIn: 0.25 })
     windupRef.current = h
     // The visible half of the ramp: the caster holds the pose while choosing,
     // and everyone they could throw it at is ringed.
     chargeRef.current.start(armedSpell.tokenId)
     targetsRef.current.show(armedSpell.tokenId, armedSpell.entry.rangeFt, Boolean(armedSpell.entry.helpful))
     const e = armedSpell.entry
-    preloadSfx([releaseFor(e.school), tailFor(e.school), ...(e.damage ? [impactFor(e.damage)] : [])])
+    if (armedSpell.kind !== "weapon") {
+      preloadSfx([releaseFor(e.school), tailFor(e.school), ...(e.damage ? [impactFor(e.damage)] : [])])
+    }
     const onKey = (ev: KeyboardEvent) => {
       // Escape puts it away. Opening the wrong spell must not cost a turn.
       if (ev.key === "Escape") setArmedSpell(null)
     }
     window.addEventListener("keydown", onKey)
     return () => {
-      h.stop(0.18)
+      h?.stop(0.18)
       if (windupRef.current === h) windupRef.current = null
       // Cancelled, thrown, or unmounted — the pose must not be left held and
       // the rings must not outlive the choice.
@@ -2144,8 +2156,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           body: JSON.stringify({ action: "cast", caster_token, target_token, ability, sandbox }),
         })
         const data = await res.json().catch(() => null)
-        if (!res.ok) say(data?.error ?? "The spell would not resolve.")
-        else if (data?.resolved) say(data.line as string)
+        if (!res.ok) {
+          say(data?.error ?? "The strike would not resolve.")
+        } else if (data?.resolved) {
+          say(data.line as string)
+          // A weapon's impact is decided by the dice, not by the spell school:
+          // the crunch only plays if it actually connected, and a miss gets
+          // the whiff it earned.
+          if (data.weapon) {
+            playSfx(data.hit ? meleeHit(Boolean(data.crit)) : "combat/melee_miss", { volume: 0.9 })
+          }
+        }
       } catch {
         say("The spell landed, but the tally did not reach the server.")
       }

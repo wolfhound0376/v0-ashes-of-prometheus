@@ -368,12 +368,6 @@ export async function POST(req: NextRequest) {
     if (!caster_token || !target_token || !ability) {
       return NextResponse.json({ error: "cast needs caster_token, target_token and ability" }, { status: 400 })
     }
-    const entry = spellEntry(ability)
-    if (!entry.dice || entry.resolve === "none" || !entry.resolve) {
-      // Utility spells are real spells; they simply have nothing to roll.
-      return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this spell" })
-    }
-
     const { data: rows } = await db
       .from("vtt_tokens")
       .select("id,label,character_id,bestiary_id,hp_current,hp_max")
@@ -381,6 +375,25 @@ export async function POST(req: NextRequest) {
     const caster = rows?.find((r) => r.id === caster_token)
     const victim = rows?.find((r) => r.id === target_token)
     if (!caster || !victim) return NextResponse.json({ error: "token missing" }, { status: 409 })
+
+    // Is this a WEAPON off the caster's own sheet rather than a spell?
+    //
+    // Read from the sheet, never from the request: the client knows the
+    // weapon's name and nothing else it sends about damage is trusted. A
+    // browser claiming a dagger deals 40d6 gets a dagger.
+    let weapon: { name?: string; hit?: string; damage?: string } | null = null
+    if (caster.character_id) {
+      const { data: cs } = await db.from("characters")
+        .select("sheet_attacks").eq("id", caster.character_id).maybeSingle()
+      const list = (cs?.sheet_attacks ?? []) as { name?: string; hit?: string; damage?: string }[]
+      weapon = list.find((a) => (a?.name ?? "").toLowerCase() === ability.toLowerCase()) ?? null
+    }
+
+    const entry = spellEntry(ability)
+    if (!weapon && (!entry.dice || entry.resolve === "none" || !entry.resolve)) {
+      // Utility spells are real spells; they simply have nothing to roll.
+      return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this ability" })
+    }
 
     // AC and saves come from whichever sheet the target actually has.
     let ac = 10
@@ -421,7 +434,25 @@ export async function POST(req: NextRequest) {
     let amount = 0
     let line = ""
 
-    if (entry.resolve === "attack") {
+    if (weapon) {
+      // "1d6+1 Piercing" → dice and a type. The type is only used to colour
+      // the log; weapons make their noise from their own name.
+      const dmgSpec = String(weapon.damage ?? "")
+      const dicePart = dmgSpec.match(/\d+d\d+\s*(?:[+-]\s*\d+)?/)?.[0] ?? ""
+      const flat = dicePart ? 0 : Number.parseInt(dmgSpec.replace(/[^0-9]/g, ""), 10) || 1
+      const toHit = Number.parseInt(String(weapon.hit ?? "+0").replace(/[^0-9-]/g, ""), 10) || 0
+      const roll = d20()
+      crit = roll === 20
+      const total = roll + toHit
+      hit = crit || (roll !== 1 && total >= ac)
+      if (hit) {
+        amount = dicePart ? rollDice(dicePart) : flat
+        // A critical rolls the dice again, never the modifier.
+        if (crit && dicePart) amount += rollDice(dicePart.replace(/\s*[+-]\s*\d+$/, ""))
+        else if (crit) amount += flat
+      }
+      line = `${caster.label} strikes at ${victim.label} with ${weapon.name} — ${roll}${toHit >= 0 ? "+" : ""}${toHit} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.`
+    } else if (entry.resolve === "attack") {
       const roll = d20()
       crit = roll === 20
       const total = roll + attackBonus
@@ -460,12 +491,17 @@ export async function POST(req: NextRequest) {
     // The action is spent by the same call that resolved it, so a hit and its
     // cost can never drift apart.
     const st = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
-    const slot = entry.bonus ? "bonus" : "action"
+    const slot = !weapon && entry.bonus ? "bonus" : "action"
     await db.from("combat_state")
       .update({ turn_state: { ...st, [slot]: true }, updated_at: new Date().toISOString() })
       .eq("id", combat.id)
 
-    return NextResponse.json({ ok: true, resolved: true, hit, crit, amount, heals: Boolean(entry.heals), line })
+    return NextResponse.json({
+      ok: true, resolved: true, hit, crit, amount,
+      heals: Boolean(!weapon && entry.heals),
+      weapon: Boolean(weapon),
+      line,
+    })
   }
 
   if (action === "next") {
