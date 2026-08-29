@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
+import { blurbFor } from "@/lib/ability-blurbs"
 import { Globe } from "./essence-globe"
 import { CharacterCard } from "./character-card"
 import { ClassMedallion } from "./class-medallion"
@@ -92,6 +93,82 @@ const BONUS_ACTION_SPELLS = new Set([
 ])
 const phaseOf = (name: string): "action" | "bonus" =>
   BONUS_ACTION_SPELLS.has(name.toLowerCase().trim()) ? "bonus" : "action"
+
+/**
+ * The hover panel. Sam's brief: balloon the icon about 30%, and say clearly
+ * what the thing actually does — in a face that belongs to this game rather
+ * than to a browser's default tooltip.
+ *
+ * It renders ABOVE the rack and is pointer-events-none, so the panel can
+ * never eat the click that casts the spell.
+ */
+function AbilityTip({ name, kind }: { name: string; kind: string }) {
+  const b = blurbFor(name)
+  const kindLabel =
+    kind === "action" ? "Action" : kind === "cantrip" ? "Cantrip · at will" : "Prepared spell"
+  const facts: [string, string][] = []
+  if (b?.range) facts.push(["Range", b.range])
+  if (b?.duration) facts.push(["Duration", b.duration])
+  if (b?.save) facts.push(["Save", b.save])
+  if (b?.damage) facts.push(["Effect", b.damage])
+
+  return (
+    <div
+      className="pointer-events-none absolute bottom-[calc(100%+18px)] left-1/2 z-50 w-[290px] -translate-x-1/2"
+      style={{ animation: "aopTipIn 140ms ease-out both" }}
+    >
+      <div
+        className="relative border-2 px-4 pb-3 pt-3"
+        style={{
+          borderColor: "#a88745",
+          background: "linear-gradient(180deg,#1b1408 0%,#0d0906 60%,#150e07 100%)",
+          boxShadow: "0 10px 30px #000d, 0 0 22px #c9a2271f, inset 0 0 26px #00000099",
+        }}
+      >
+        {/* hairlines, the same carved trim the turn plate uses */}
+        <div className="absolute inset-x-4 top-[3px] h-px bg-gradient-to-r from-transparent via-[#f0cd7a] to-transparent" />
+        <div className="absolute inset-x-4 bottom-[3px] h-px bg-gradient-to-r from-transparent via-[#f0cd7a] to-transparent" />
+
+        <div
+          className="text-center text-[16px] leading-tight text-[#f4e6c4]"
+          style={{ fontFamily: "var(--font-display), var(--font-serif), serif", letterSpacing: "0.04em", textShadow: "0 2px 6px #000, 0 0 16px #c9a22755" }}
+        >
+          {name}
+        </div>
+        <div className="mt-[3px] text-center font-serif text-[8px] uppercase tracking-[0.28em] text-[#a89468]">
+          {kindLabel}
+        </div>
+
+        {b ? (
+          <>
+            <div className="mx-auto my-2 h-px w-2/3 bg-gradient-to-r from-transparent via-[#6b5123] to-transparent" />
+            <p className="text-center text-[12px] leading-[1.5] text-[#cdbfa0]" style={{ fontFamily: "var(--font-sans), Georgia, serif" }}>
+              {b.text}
+            </p>
+            {facts.length > 0 && (
+              <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+                {facts.map(([k, v]) => (
+                  <span key={k} className="text-[9px] uppercase tracking-wider text-[#8a7952]">
+                    {k} <span className="text-[#e0d2ae] normal-case tracking-normal">{v}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="mt-2 text-center text-[11px] italic text-[#8a7952]">Ask Malachar what it does.</p>
+        )}
+
+        {/* the little pointer down toward the icon */}
+        <div
+          className="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-[7px] rotate-45 border-b-2 border-r-2"
+          style={{ borderColor: "#a88745", background: "#120c06" }}
+        />
+      </div>
+      <style>{`@keyframes aopTipIn { from { opacity: 0; transform: translate(-50%, 6px) } to { opacity: 1; transform: translate(-50%, 0) } }`}</style>
+    </div>
+  )
+}
 
 function slotTally(c: HudCharacter): { used: number; max: number } | null {
   const slots = c.sheet_spellcasting?.slots
@@ -227,6 +304,9 @@ export function CombatHud(props: Props) {
   } = props
 
   const [ability, setAbility] = useState<string | null>(null)
+  // Which rack slot the cursor is over. Hover is a VIEW state and never
+  // touches the turn — looking at a spell must never cost you one.
+  const [hovered, setHovered] = useState<string | null>(null)
   // The turn economy as the banner knows it. The banner and this rack hang
   // from different parents, so the state crosses as a DOM event rather than
   // through a shared ancestor - the board file is deliberately untouched
@@ -393,10 +473,15 @@ export function CombatHud(props: Props) {
                 const kindLabel =
                   a.kind === "action" ? "action" : a.kind === "cantrip" ? "cantrip, always available" : "prepared spell"
                 const selected = ability === a.name
+                const isHovered = hovered === a.name
 
                 return (
                   <button
                     key={a.name}
+                    onMouseEnter={() => setHovered(a.name)}
+                    onMouseLeave={() => setHovered((h) => (h === a.name ? null : h))}
+                    onFocus={() => setHovered(a.name)}
+                    onBlur={() => setHovered((h) => (h === a.name ? null : h))}
                     onClick={() => {
                       const selecting = !selected
                       setAbility(selecting ? a.name : null)
@@ -407,9 +492,16 @@ export function CombatHud(props: Props) {
                         window.dispatchEvent(new CustomEvent("aop:ability-used", { detail: { phase } }))
                       }
                     }}
-                    title={`${a.name} — ${kindLabel}`}
+                    aria-label={`${a.name} — ${kindLabel}`}
                     className={
-                      "pointer-events-auto group relative h-[58px] w-[58px] shrink-0 overflow-hidden bg-[#080604] transition-all duration-150 hover:-translate-y-[2px]" +
+                      // Sam: balloon it about 30% on hover. Scaling from the
+                      // BOTTOM keeps the row's baseline still — a rack that
+                      // grows upward reads as the icon rising to meet you,
+                      // where centre-scaling just looks like the bar jitters.
+                      // z-40 so the growing tile passes over its neighbours
+                      // rather than being clipped by them.
+                      "pointer-events-auto group relative h-[58px] w-[58px] shrink-0 bg-[#080604] transition-transform duration-150 ease-out origin-bottom" +
+                      (isHovered ? " scale-[1.3] z-40" : " hover:-translate-y-[2px] z-0") +
                       (armedMute ? " opacity-35 saturate-50" : "")
                     }
                     style={{
@@ -422,6 +514,7 @@ export function CombatHud(props: Props) {
                           : "0 0 0 1px #59401f,0 3px 8px #000c",
                     }}
                   >
+                    {isHovered && <AbilityTip name={a.name} kind={a.kind} />}
                     {art ? (
                       <img
                         src={art}
