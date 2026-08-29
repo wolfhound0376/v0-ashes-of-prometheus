@@ -48,15 +48,17 @@ export async function POST(req: NextRequest) {
   // The DM gate applies to the verbs that change the SHAPE of the fight —
   // rolling initiative, passing the turn, ending combat. Marking your own
   // action spent is not one of them.
-  if (!["spend", "ack"].includes(action) && !authorized(req)) {
+  if (!["spend", "ack", "move"].includes(action) && !authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   }
-  // "spend" and "ack" are the PLAYER's verbs and are deliberately NOT
-  // DM-gated below: a player must be able to mark their own bonus action
-  // used, and acknowledge their own turn, without the DM clicking for them.
-  const PLAYER_VERBS = ["spend", "ack"]
+  // "spend", "ack" and "move" are the PLAYER's verbs and are deliberately
+  // NOT DM-gated below: a player must be able to mark their own bonus action
+  // used, acknowledge their own turn, and walk their own character, without
+  // the DM clicking for them. "move" is still fenced hard server-side: only
+  // the ACTIVE turn's own PC token may walk, only within its speed budget.
+  const PLAYER_VERBS = ["spend", "ack", "move"]
   if (!["start", "next", "end", ...PLAYER_VERBS].includes(action)) {
-    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'spend'|'ack' }" }, { status: 400 })
+    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'spend'|'ack'|'move' }" }, { status: 400 })
   }
   const db = createAdminClient()
   const sandbox = body?.sandbox === true
@@ -122,6 +124,60 @@ export async function POST(req: NextRequest) {
     .eq("status", "active")
     .maybeSingle()
   if (!combat) return NextResponse.json({ error: "no combat running" }, { status: 409 })
+
+  if (action === "move") {
+    // The player's walk. The client computed a real path over walkable
+    // squares; the server re-checks everything it can see without the cell
+    // geometry: right token, PC token, board bounds, and the speed budget.
+    // Chebyshev distance is a floor on any true path cost, so a client
+    // understating "feet" to stretch its budget is caught here too. The
+    // anti-stacking DB trigger relocates a contested square regardless.
+    const token_id = String(body?.token_id ?? "")
+    const gx = Number(body?.gx)
+    const gy = Number(body?.gy)
+    const feet = Number(body?.feet)
+    const order = combat.turn_order as { token_id: string; kind: string }[]
+    const entry = order[combat.active_index]
+    if (!entry || entry.token_id !== token_id) {
+      return NextResponse.json({ error: "not this combatant's turn" }, { status: 409 })
+    }
+    if (entry.kind !== "pc") {
+      return NextResponse.json({ error: "NPC movement is not a player verb" }, { status: 403 })
+    }
+    const { data: token } = await db
+      .from("vtt_tokens").select("id,grid_x,grid_y,character_id").eq("id", token_id).maybeSingle()
+    const { data: dims } = await db
+      .from("vtt_maps").select("grid_width,grid_height").eq("id", map.id).maybeSingle()
+    if (!token || !dims) return NextResponse.json({ error: "token or map missing" }, { status: 409 })
+    if (!Number.isInteger(gx) || !Number.isInteger(gy) || gx < 0 || gy < 0 || gx >= dims.grid_width || gy >= dims.grid_height) {
+      return NextResponse.json({ error: "destination off the board" }, { status: 400 })
+    }
+    const { data: sheet } = token.character_id
+      ? await db.from("characters").select("speed").eq("id", token.character_id).maybeSingle()
+      : { data: null }
+    const speedFt = Number.parseInt(String(sheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
+    const state = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
+    const usedFt = Number(state.moved_ft ?? 0)
+    const cheb = Math.max(Math.abs(gx - token.grid_x), Math.abs(gy - token.grid_y)) * 5
+    if (!Number.isFinite(feet) || feet <= 0 || feet < cheb) {
+      return NextResponse.json({ error: "path cost does not reach that square" }, { status: 400 })
+    }
+    if (usedFt + feet > speedFt) {
+      return NextResponse.json({ error: `not enough movement — ${speedFt - usedFt} ft left` }, { status: 409 })
+    }
+    const { error: moveErr } = await db
+      .from("vtt_tokens")
+      .update({ grid_x: gx, grid_y: gy, updated_by: "player-move", updated_at: new Date().toISOString() })
+      .eq("id", token_id)
+    if (moveErr) return NextResponse.json({ error: moveErr.message }, { status: 500 })
+    const next = { ...state, moved_ft: usedFt + feet }
+    const { error: stateErr } = await db
+      .from("combat_state")
+      .update({ turn_state: next, updated_at: new Date().toISOString() })
+      .eq("id", combat.id)
+    if (stateErr) return NextResponse.json({ error: stateErr.message }, { status: 500 })
+    return NextResponse.json({ ok: true, turn_state: next })
+  }
 
   if (action === "spend" || action === "ack") {
     const state = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
