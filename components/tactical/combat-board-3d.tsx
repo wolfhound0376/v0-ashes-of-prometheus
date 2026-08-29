@@ -40,6 +40,7 @@ import {
   castEventFor,
   castPlanFor,
   clipFor,
+  HOLD_LAST,
   ONE_SHOT,
   type CastHand,
   type TokenState,
@@ -723,7 +724,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const clip = anim.clips.find((c) => c.name === name)
       if (!clip) return null
       const next = anim.mixer.clipAction(clip)
-      const once = ONE_SHOT.includes(state)
+      const returns = ONE_SHOT.includes(state)
+      const hold = HOLD_LAST.includes(state)
+      const once = returns || hold
       next.reset()
       next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity)
       next.clampWhenFinished = once
@@ -731,7 +734,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (anim.current && anim.current !== next) anim.current.fadeOut(0.18)
       anim.current = next
       anim.state = state
-      if (once) {
+      if (returns) {
         // Back to the stance when the swing finishes — the mixer tells us.
         const onFinish = (e: { action: THREE.AnimationAction }) => {
           if (e.action !== next) return
@@ -742,6 +745,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
       return clip
     }
+
+    /** At 0 HP. Null hp_current means "not tracked", which is not dead. */
+    const isDowned = (row: TokenRow) =>
+      row.hp_current !== null && row.hp_current !== undefined && row.hp_current <= 0
 
     // ── CASTING ────────────────────────────────────────────────────────────
     // Live effects, advanced by the same clock as everything else. A cast
@@ -776,6 +783,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       console.log(`[cast] ${ability} → token "${found.row.label}" (character ${characterId.slice(0, 8)}…, model ${String(found.row.model_url ?? "none").split("/").pop()})`)
       const anim = found.anim
       if (!anim) return // a disc pawn has nothing to animate
+      if (isDowned(found.row)) return // a corpse casts nothing
 
       const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names) : null
       const clip = playState(anim, plan.state, true, explicit)
@@ -1055,7 +1063,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             }
             const entry = tokensRef.current.get(row.id)
             if (entry) entry.anim = anim
-            playState(anim, "idle", true)
+            // A token at 0 HP comes up already down. An HP change rebuilds the
+            // token (see glideToken), so this is also the path a creature
+            // takes the moment it drops.
+            playState(anim, isDowned(row) ? "dead" : "idle", true)
             console.log(
             `[board] ${row.label}: ${gltf.animations.length} clips, ` +
             `height ${(size.y * s).toFixed(2)}u (${(size.y * s * 5).toFixed(1)} ft) —`,
@@ -1179,6 +1190,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     moveTokenRef.current = (id, gx, gy) => {
       const entry = tokensRef.current.get(id)
       if (!entry) return
+      // No stacking. A square already held by another visible token rejects
+      // the move rather than burying one miniature inside another — which is
+      // exactly how Kenta ended up invisible on top of Prince Derendil.
+      // tokensRef holds only visible tokens (a hidden one is deleted), so
+      // membership at (gx,gy) is enough. The database enforces the same rule
+      // for every OTHER writer — the NPC AI, a manual edit — so two tokens can
+      // never share a cell from any direction, not just the DM's own click.
+      let taken = false
+      tokensRef.current.forEach((t) => {
+        if (t.row.id !== id && t.row.grid_x === gx && t.row.grid_y === gy) taken = true
+      })
+      if (taken) { say("That square is taken."); return }
       // Optimistic: glide now, persist behind it. Realtime echoes to others.
       glideToken({ ...entry.row, grid_x: gx, grid_y: gy })
       void supabase
@@ -1746,7 +1769,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           .order("name")
         const list = (rows ?? []) as HudCharacter[]
         setSheets(list)
-        setFocusId((cur) => cur ?? list[0]?.id ?? null)
+        // Focus THIS browser's own character by default, not merely the first
+        // plate. Otherwise a player opens the board driving someone else, and
+        // pressing a spell casts as the wrong character. Read localStorage
+        // fresh so effect-ordering can't hand us a stale value; the DM has no
+        // claimed character and correctly falls through to the first plate.
+        const mine = typeof window !== "undefined" ? window.localStorage.getItem("aop_character_id") : null
+        setFocusId((cur) => cur ?? (mine && list.some((c) => c.id === mine) ? mine : list[0]?.id) ?? null)
       }
       await loadSheets()
 
@@ -1967,12 +1996,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
       tokensRef.current.forEach((entry) => {
         const gl = entry.obj.userData.glide as { pts: THREE.Vector3[]; seg: number[]; total: number; s: number } | undefined
+        // The dead stay dead: a body dragged across the board must not
+        // stand up to walk, and must not be handed back to its stance.
+        const down = isDowned(entry.row)
         if (!gl) {
           // Standing still: stance, unless mid-swing.
-          if (entry.anim && entry.anim.state === "walk") playState(entry.anim, "idle")
+          if (!down && entry.anim && entry.anim.state === "walk") playState(entry.anim, "idle")
           return
         }
-        if (entry.anim) playState(entry.anim, "walk")
+        if (entry.anim && !down) playState(entry.anim, "walk")
         // Constant pace along the whole route: a long walk takes longer,
         // which is what makes it a walk. ~2.2 squares/s ≈ a brisk 11 ft/s.
         gl.s = Math.min(gl.total, gl.s + dt * 2.2)
@@ -1998,7 +2030,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (gl.s >= gl.total) {
           delete entry.obj.userData.glide
           entry.obj.position.y = 0
-          if (entry.anim) playState(entry.anim, "idle")
+          if (entry.anim && !down) playState(entry.anim, "idle")
         }
       })
       // Embers rise, wander, and are reborn at the floor.
@@ -2244,6 +2276,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     })()
   }
 
+  // The initiative rail should list only combatants ACTUALLY on this map.
+  // turn_order is authoritative for ORDER, but a combatant whose token has
+  // been hidden or removed must not keep a slot — the rail would show a ghost
+  // the board no longer draws, and Sam asked that an absent/unseated character
+  // carry neither a plate nor an initiative pip. tokensRef holds exactly the
+  // visible tokens (a non-visible one is deleted before it ever registers),
+  // so membership there IS presence. Preserve the active highlight by TOKEN
+  // id rather than index, so filtering can never desync whose turn it is.
+  // Guard the first frame, before any token has spawned: show the raw order
+  // rather than an empty rail.
+  const rawTurnOrder = combat?.turn_order ?? []
+  const rawActiveIndex = combat?.active_index ?? 0
+  const activeTokenId = rawTurnOrder[rawActiveIndex]?.token_id
+  const presentTokens = tokensRef.current
+  const shownTurnOrder = presentTokens.size
+    ? rawTurnOrder.filter((e) => presentTokens.has(e.token_id))
+    : rawTurnOrder
+  const shownActiveIndex = Math.max(0, shownTurnOrder.findIndex((e) => e.token_id === activeTokenId))
+
   return (
     // ABSOLUTE, not h-full. The stage container already holds a full-height
     // scene <img>; a static child after it lays out BELOW that image and is
@@ -2365,8 +2416,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         tokenToCharacter={tokenToCharacter}
         tokenPortrait={tokenPortrait}
         tokenConditions={tokenConditions}
-        turnOrder={combat?.turn_order ?? []}
-        activeIndex={combat?.active_index ?? 0}
+        turnOrder={shownTurnOrder}
+        activeIndex={shownActiveIndex}
         round={combat?.round ?? 1}
         log={log}
         dm={dm}

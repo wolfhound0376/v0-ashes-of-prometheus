@@ -63,6 +63,14 @@ export function clipFor(state: TokenState, available: string[]): string | null {
 /** States that play once and return to idle, rather than looping. */
 export const ONE_SHOT: TokenState[] = ["attack", "cast", "hurt"]
 
+/**
+ * States that play once and then HOLD their last frame. Death is not a loop
+ * and it is not something you come back from: looping it stands the body up
+ * to die again every three seconds, and handing it back to idle stands the
+ * body up for good. It plays once and stays down.
+ */
+export const HOLD_LAST: TokenState[] = ["dead"]
+
 // ────────────────────────────────────────────────────────────────────────────
 // CASTING
 //
