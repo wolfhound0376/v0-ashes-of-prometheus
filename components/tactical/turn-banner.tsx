@@ -186,7 +186,12 @@ export function TurnBanner({
 
       {/* The phase tray: what this turn still holds. Live for the owner and
           the DM; the table reads it. */}
-      <div className="pointer-events-none absolute left-1/2 top-[92px] z-30 -translate-x-1/2">
+      {/* Sam: "move this down so it isn't in the way of other boxes." The tray
+          used to sit at 92px, hard against the bottom of the initiative rail
+          and level with the top of the combat log — three panels competing
+          for the same band of screen. Dropped clear of the rail's round
+          counter, which is the lowest thing above it. */}
+      <div className="pointer-events-none absolute left-1/2 top-[168px] z-30 -translate-x-1/2">
         <div className="pointer-events-auto flex items-stretch gap-1 rounded-sm border border-[#6b5123] bg-[#0c0a06]/95 p-1 shadow-[0_0_24px_#000]">
           {/* Whose actions these are — the table shouldn't have to guess. */}
           <div className="grid min-w-[84px] place-items-center rounded-sm border border-[#4a3a1e] bg-black/40 px-2">
