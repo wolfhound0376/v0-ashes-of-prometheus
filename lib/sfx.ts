@@ -200,3 +200,28 @@ export const impactFor = (d: DamageType) => `magic/impact_${d}` as SfxName
 export function meleeHit(crit: boolean): SfxName {
   return crit ? "combat/crit_hit" : "combat/melee_hit_flesh"
 }
+
+/**
+ * The sounds a weapon makes, by name.
+ *
+ * Steel does not hum: routing a mace through the arcane windup was the first
+ * thing that gave away that weapons had been bolted onto the spell path.
+ * A bow is drawn and released; a blade is swung. Anything unrecognised gets
+ * the light swing, which is wrong for nothing in particular.
+ */
+export function weaponSounds(name: string): { windup: SfxName | null; release: SfxName } {
+  const n = name.toLowerCase()
+  if (/bow|sling/.test(n)) {
+    return { windup: null, release: /cross/.test(n) ? "combat/crossbow_release" : "combat/bow_release" }
+  }
+  if (/dagger|knife|shortsword|rapier|scimitar/.test(n)) {
+    return { windup: null, release: "combat/dagger_stab" }
+  }
+  if (/mace|hammer|maul|club|staff|greatsword|axe|halberd/.test(n)) {
+    return { windup: null, release: "combat/melee_swing_heavy" }
+  }
+  if (/unarmed|fist|punch/.test(n)) {
+    return { windup: null, release: "combat/unarmed_hit" }
+  }
+  return { windup: null, release: "combat/melee_swing_light" }
+}

@@ -169,6 +169,10 @@ export function castPlanFor(ability: string, kind: string): CastPlan | null {
     // attacking still performs a cast rather than freezing.
     return { state: "attack", weight: "quick" }
   }
+  // A weapon SWINGS. Falling through to the spell branch below made Samson's
+  // mace play a spell-cast clip, which is how a cleric ends up conjuring his
+  // own mace at somebody.
+  if (kind === "weapon") return { state: "attack", weight: "quick" }
   if (kind === "cantrip") return { state: "cast", weight: "quick" }
   const heavy = HEAVY_SPELLS.some((h) => name.includes(h))
   return { state: "cast", weight: heavy ? "heavy" : "ranged" }
