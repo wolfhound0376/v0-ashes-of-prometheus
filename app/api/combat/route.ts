@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
+import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -14,6 +15,12 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //               campaign does not do hidden numbers after the fake-table era.
 //     "next"  → pass the turn; wrapping the top of the order advances the round
 //     "end"   → close the fight
+//     "npc-turn" → the creature whose turn it is decides and acts for itself.
+//               Sam's ruling: NPC actions are never picked by the players or
+//               the DM. INT and WIS both ≤12 run the deterministic algorithm
+//               in lib/npc-ai; anything sharper is meant to route to a model,
+//               which does not exist yet and falls back to the algorithm
+//               rather than stalling the table.
 //
 // SRD 5.1, "Combat: Initiative": one Dexterity check per combatant, standing
 // for the whole fight. Ties: higher DEX modifier first, then the dice again.
@@ -27,6 +34,73 @@ function authorized(req: NextRequest): boolean {
 }
 
 const d20 = () => 1 + Math.floor(Math.random() * 20)
+
+
+/**
+ * Everything the AI needs about the board, fetched once.
+ *
+ * The walkable set comes from the SAME V5 cell geometry the board renders
+ * (vtt_maps.meta.cells_url), so the server and the client agree about where a
+ * wall is. If that fetch fails we fall back to an open rectangle rather than
+ * refusing to take the turn — a fight that stalls is worse at a live table
+ * than a goblin that walks through a rock once.
+ */
+async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string) {
+  const { data: mapRow } = await db
+    .from("vtt_maps").select("grid_width,grid_height,meta").eq("id", mapId).maybeSingle()
+  const width = mapRow?.grid_width ?? 12
+  const height = mapRow?.grid_height ?? 12
+  const cellsUrl = (mapRow?.meta as { cells_url?: string } | null)?.cells_url
+  let walkable = new Set<string>()
+  if (cellsUrl) {
+    try {
+      const res = await fetch(cellsUrl, { cache: "no-store" })
+      if (res.ok) walkable = walkableFrom((await res.json())?.cells)
+    } catch {
+      /* fall through to the open rectangle below */
+    }
+  }
+  if (walkable.size === 0) {
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) walkable.add(cellKey(x, y))
+  }
+
+  const { data: tokens } = await db
+    .from("vtt_tokens")
+    .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,hp_max,combat_disposition,is_visible")
+    .eq("map_id", mapId)
+    .eq("is_visible", true)
+
+  // AC lives on the sheet for PCs and the stat block for NPCs.
+  const charIds = (tokens ?? []).map((t) => t.character_id).filter(Boolean) as string[]
+  const beastIds = (tokens ?? []).map((t) => t.bestiary_id).filter(Boolean) as string[]
+  const [chars, beasts] = await Promise.all([
+    charIds.length ? db.from("characters").select("id,ac").in("id", charIds) : Promise.resolve({ data: [] }),
+    beastIds.length ? db.from("bestiary").select("id,ac,int,wis,speed,actions").in("id", beastIds) : Promise.resolve({ data: [] }),
+  ])
+  const charAc = new Map((chars.data ?? []).map((c: { id: string; ac: number | null }) => [c.id, c.ac]))
+  const beast = new Map((beasts.data ?? []).map((b: Record<string, unknown>) => [b.id as string, b]))
+
+  const combatants: (Combatant & { bestiary_id: string | null; disposition: string })[] = (tokens ?? []).map((t) => ({
+    token_id: t.id,
+    label: t.label ?? "Something",
+    kind: t.character_id ? "pc" : "npc",
+    x: t.grid_x ?? 0,
+    y: t.grid_y ?? 0,
+    hp_current: t.hp_current,
+    hp_max: t.hp_max,
+    ac: t.character_id
+      ? charAc.get(t.character_id) ?? 10
+      : ((beast.get(t.bestiary_id ?? "")?.ac as number | undefined) ?? 10),
+    bestiary_id: t.bestiary_id,
+    disposition: t.combat_disposition ?? "fights",
+  }))
+  return { width, height, walkable, combatants, beast }
+}
+
+/** The board's log is the dialogue feed; the HUD is already subscribed to it. */
+async function narrate(db: ReturnType<typeof createAdminClient>, speaker: string, text: string) {
+  await db.from("dialogue").insert({ speaker, text, channel: "dm" })
+}
 
 export async function GET(req: NextRequest) {
   const db = createAdminClient()
@@ -48,6 +122,8 @@ export async function POST(req: NextRequest) {
   // The DM gate applies to the verbs that change the SHAPE of the fight —
   // rolling initiative, passing the turn, ending combat. Marking your own
   // action spent is not one of them.
+  // "npc-turn" is DM-gated: it moves and swings on the NPCs' behalf, which is
+  // the DM's chair even when no human chooses the action.
   if (!["spend", "ack", "move"].includes(action) && !authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   }
@@ -57,8 +133,8 @@ export async function POST(req: NextRequest) {
   // the DM clicking for them. "move" is still fenced hard server-side: only
   // the ACTIVE turn's own PC token may walk, only within its speed budget.
   const PLAYER_VERBS = ["spend", "ack", "move"]
-  if (!["start", "next", "end", ...PLAYER_VERBS].includes(action)) {
-    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'spend'|'ack'|'move' }" }, { status: 400 })
+  if (!["start", "next", "end", "npc-turn", ...PLAYER_VERBS].includes(action)) {
+    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'npc-turn'|'spend'|'ack'|'move' }" }, { status: 400 })
   }
   const db = createAdminClient()
   const sandbox = body?.sandbox === true
@@ -71,12 +147,20 @@ export async function POST(req: NextRequest) {
       .from("combat_state").select("id").eq("map_id", map.id).eq("status", "active").maybeSingle()
     if (existing) return NextResponse.json({ error: "combat is already running — end it first" }, { status: 409 })
 
-    const { data: tokens } = await db
+    const { data: allTokens } = await db
       .from("vtt_tokens")
-      .select("id,label,character_id,bestiary_id,is_visible")
+      .select("id,label,character_id,bestiary_id,is_visible,combat_disposition")
       .eq("map_id", map.id)
       .eq("is_visible", true)
-    if (!tokens?.length) return NextResponse.json({ error: "no tokens on the board" }, { status: 409 })
+    if (!allTokens?.length) return NextResponse.json({ error: "no tokens on the board" }, { status: 409 })
+    // The prisoners who will not fight are not IN the fight. Sam's ruling:
+    // the twins, Stool, Jimjar, Shuushar and Buppido "never fight but runaway
+    // to the edge of the game map. They can still be hit and targeted but
+    // they don't roll initiative." So they are excluded here and moved by the
+    // end-of-round world step instead — present on the board, absent from the
+    // order, which is exactly how a panicking bystander behaves.
+    const tokens = allTokens.filter((t) => t.combat_disposition !== "flees")
+    if (!tokens.length) return NextResponse.json({ error: "nobody on this board is willing to fight" }, { status: 409 })
 
     // Both DEX sources in two queries, not 2N.
     const charIds = tokens.map((t) => t.character_id).filter(Boolean) as string[]
@@ -202,9 +286,104 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, turn_state: next })
   }
 
+  if (action === "npc-turn") {
+    const order = combat.turn_order as { token_id: string; label: string; kind: string }[]
+    const entry = order[combat.active_index]
+    if (!entry) return NextResponse.json({ error: "no active combatant" }, { status: 409 })
+    if (entry.kind !== "npc") {
+      return NextResponse.json({ error: "it is a player's turn — the AI does not take those" }, { status: 409 })
+    }
+
+    const board = await loadBoard(db, map.id)
+    const self = board.combatants.find((c) => c.token_id === entry.token_id)
+    if (!self) return NextResponse.json({ error: "that combatant is no longer on the board" }, { status: 409 })
+    if ((self.hp_current ?? 1) <= 0) {
+      await narrate(db, self.label, `${self.label} lies still.`)
+      return NextResponse.json({ ok: true, decision: { kind: "none" }, note: "down" })
+    }
+
+    const stat = (board.beast.get(self.bestiary_id ?? "") ?? {}) as Record<string, unknown>
+    const stats = {
+      int: (stat.int as number | null) ?? 10,
+      wis: (stat.wis as number | null) ?? 10,
+      speed: (stat.speed as string | null) ?? "30 ft.",
+      actions: stat.actions,
+    }
+
+    // Hostility is simply the other side of the PC line. A campaign with
+    // NPC-vs-NPC fights would need factions; this one does not yet, and
+    // inventing them now would be a schema nobody asked for.
+    const hostiles = board.combatants.filter((c) => c.kind === "pc" && (c.hp_current ?? 1) > 0)
+    const blocked = new Set(
+      board.combatants.filter((c) => c.token_id !== self.token_id).map((c) => cellKey(c.x, c.y)),
+    )
+
+    const decision = decideTurn({
+      self, stats, hostiles, walkable: board.walkable, blocked,
+      width: board.width, height: board.height,
+    })
+
+    // Apply. Movement and damage are the only two things this writes.
+    if (decision.kind === "move" || decision.kind === "move-attack" || decision.kind === "flee") {
+      await db.from("vtt_tokens")
+        .update({ grid_x: decision.to.x, grid_y: decision.to.y, updated_by: "npc-ai", updated_at: new Date().toISOString() })
+        .eq("id", self.token_id)
+    }
+    if ((decision.kind === "attack" || decision.kind === "move-attack") && decision.hit && decision.damage > 0) {
+      const target = board.combatants.find((c) => c.token_id === decision.target.token_id)
+      if (target) {
+        const left = Math.max(0, (target.hp_current ?? target.hp_max ?? 0) - decision.damage)
+        await db.from("vtt_tokens")
+          .update({ hp_current: left, updated_by: "npc-ai", updated_at: new Date().toISOString() })
+          .eq("id", target.token_id)
+      }
+    }
+    await narrate(db, self.label, decision.narration)
+
+    // The creature's whole turn is spent in one call, so the economy reads
+    // honestly for anyone watching the tray.
+    const spent = { action: decision.kind !== "none", bonus: false, reaction: false, moved_ft: 0, acknowledged: true }
+    await db.from("combat_state")
+      .update({ turn_state: spent, updated_at: new Date().toISOString() })
+      .eq("id", combat.id)
+
+    return NextResponse.json({
+      ok: true,
+      tier: usesAlgorithm(stats) ? "algorithm" : "algorithm-fallback",
+      decision,
+    })
+  }
+
   if (action === "next") {
     const count = (combat.turn_order as unknown[]).length
     const nextIndex = (combat.active_index + 1) % count
+
+    // END OF ROUND — the world step. Sam's ruling: the non-combatants move at
+    // the end of each round, automatically, toward the edge of the map. They
+    // never took a turn in the order; this is the fight happening AROUND them.
+    if (nextIndex === 0) {
+      const board = await loadBoard(db, map.id)
+      const fleeing = board.combatants.filter((c) => c.disposition === "flees" && (c.hp_current ?? 1) > 0)
+      for (const runner of fleeing) {
+        const blocked = new Set(
+          board.combatants.filter((c) => c.token_id !== runner.token_id).map((c) => cellKey(c.x, c.y)),
+        )
+        const stat = (board.beast.get(runner.bestiary_id ?? "") ?? {}) as Record<string, unknown>
+        const budget = speedSquares((stat.speed as string | null) ?? "30 ft.")
+        const to = stepToEdge(runner, board.walkable, blocked, budget, board.width, board.height)
+        if (to.x === runner.x && to.y === runner.y) continue
+        await db.from("vtt_tokens")
+          .update({ grid_x: to.x, grid_y: to.y, updated_by: "npc-flee", updated_at: new Date().toISOString() })
+          .eq("id", runner.token_id)
+        // Their own square is now taken, so the next runner routes around them.
+        runner.x = to.x
+        runner.y = to.y
+        const atEdge = Math.min(to.x, to.y, board.width - 1 - to.x, board.height - 1 - to.y) === 0
+        await narrate(db, runner.label, atEdge
+          ? `${runner.label} presses against the far wall, as far from the fighting as the cavern allows.`
+          : `${runner.label} scrambles away from the fighting.`)
+      }
+    }
     const { error } = await db
       .from("combat_state")
       .update({

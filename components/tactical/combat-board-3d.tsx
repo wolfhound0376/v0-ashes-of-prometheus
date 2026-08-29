@@ -1870,7 +1870,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const combatAction = async (action: "start" | "next" | "end") => {
+  const combatAction = async (action: "start" | "next" | "end" | "npc-turn") => {
     if (combatBusy) return
     setCombatBusy(true)
     try {
@@ -1891,6 +1891,39 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       setCombatBusy(false)
     }
   }
+
+  // ─── THE MONSTERS TAKE THEIR OWN TURNS ──────────────────────────────────
+  //
+  // Sam's ruling: "NPC action is not picked by the players or DM. It is
+  // automatic." So when the order lands on something that is not a player
+  // character, the DM's browser asks the server to decide and act, then
+  // passes the turn on by itself.
+  //
+  // Only the DM's browser fires it. Every screen at the table is watching the
+  // same combat_state over realtime, and four browsers racing to resolve one
+  // goblin's attack would deal its damage four times. The DM's is the one
+  // that holds the key, so the DM's is the one that acts.
+  //
+  // The beat before it moves is deliberate: an NPC turn that resolves in the
+  // same frame the banner announces it reads as a glitch, not a monster.
+  const npcTurnRef = useRef<string>("")
+  useEffect(() => {
+    if (!combat || combatBusy) return
+    if (!getDmKey()) return
+    const entry = combat.turn_order[combat.active_index]
+    if (!entry || entry.kind !== "npc") return
+    // One resolution per (fight, round, position) — realtime re-renders and
+    // React strict-mode double-invocation must not double-swing.
+    const stamp = `${combat.id}:${combat.round}:${combat.active_index}`
+    if (npcTurnRef.current === stamp) return
+    npcTurnRef.current = stamp
+    const timer = window.setTimeout(async () => {
+      const ok = await combatAction("npc-turn")
+      if (ok !== false) await combatAction("next")
+    }, 900)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combat?.id, combat?.round, combat?.active_index, combatBusy])
 
   const playerVerb = async (body: Record<string, unknown>) => {
     try {
