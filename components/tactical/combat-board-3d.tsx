@@ -524,6 +524,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const reach = reachRef.current
       const cellKey = gx + "," + gy
       if (reach && reach.cells.has(cellKey)) {
+        // Ship the route first, so every board (this one included) walks
+        // the real path when the move lands.
+        sendWalkPath(reach.tokenId, pathCells(cellKey))
         playerMoveRef.current(reach.tokenId, gx, gy, reach.cells.get(cellKey)!.cost * 5)
         clearReach() // repainted with the new budget when the server echoes
         return
@@ -968,7 +971,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return
       }
       const c = sqCentre(row.grid_x, row.grid_y)
-      entry.obj.userData.glide = { from: entry.obj.position.clone(), to: new THREE.Vector3(c.x, 0, c.z), t: 0 }
+      // Walk the broadcast route when one arrived for this move; otherwise a
+      // straight line. Either way the model WALKS it at ground level, at a
+      // constant pace — distance decides duration, not a fixed timer.
+      const stash = walkPaths.get(row.id)
+      walkPaths.delete(row.id)
+      let pts: THREE.Vector3[] = []
+      if (stash && Date.now() - stash.at < 4000) {
+        pts = stash.cells.map(([x, y]) => {
+          const p = sqCentre(x, y)
+          return new THREE.Vector3(p.x, 0, p.z)
+        })
+        // Trust the route only if it truly ends where the row says.
+        const last = pts[pts.length - 1]
+        if (!last || Math.abs(last.x - c.x) > 0.01 || Math.abs(last.z - c.z) > 0.01) pts = []
+      }
+      if (pts.length < 2) {
+        pts = [entry.obj.position.clone().setY(0), new THREE.Vector3(c.x, 0, c.z)]
+      } else {
+        pts[0] = entry.obj.position.clone().setY(0) // start where the model stands
+      }
+      const seg: number[] = [0]
+      for (let i = 1; i < pts.length; i++) seg.push(seg[i - 1] + pts[i - 1].distanceTo(pts[i]))
+      entry.obj.userData.glide = { pts, seg, total: seg[seg.length - 1], s: 0 }
       redrawDarkness() // the torch travels with its bearer
     }
 
@@ -996,20 +1021,52 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     scene.add(reachGroup)
     const reachGeo = new THREE.PlaneGeometry(SQ * 0.94, SQ * 0.94)
     const reachMat = new THREE.MeshBasicMaterial({ color: 0xf3c94b, transparent: true, opacity: 0.24, depthWrite: false, side: THREE.DoubleSide })
-    const pathLine = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xffe28a, transparent: true, opacity: 0.9 }),
-    )
-    pathLine.visible = false
-    scene.add(pathLine)
+    // The path is a RIBBON, not a hairline — THREE.Line renders one pixel
+    // whatever you ask for, so the ornate version is built from flat quads:
+    // a gold band laid square-centre to square-centre, a small diamond stud
+    // at each step, and a layered diamond seal on the destination.
+    const pathGroup = new THREE.Group()
+    pathGroup.visible = false
+    scene.add(pathGroup)
+    const ribbonGeo = new THREE.PlaneGeometry(1, 0.15)
+    const studGeo = new THREE.PlaneGeometry(0.16, 0.16)
+    const sealOuterGeo = new THREE.PlaneGeometry(0.44, 0.44)
+    const sealInnerGeo = new THREE.PlaneGeometry(0.3, 0.3)
+    const sealCoreGeo = new THREE.PlaneGeometry(0.16, 0.16)
+    const ribbonMat = new THREE.MeshBasicMaterial({ color: 0xe8c56a, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    const studMat = new THREE.MeshBasicMaterial({ color: 0xffe9ad, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    const sealDarkMat = new THREE.MeshBasicMaterial({ color: 0x1a1206, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })
     let reachParents = new Map<string, string>()
+
+    /** The cell chain start→destination, from the BFS parents. */
+    const pathCells = (k: string): [number, number][] => {
+      const out: [number, number][] = []
+      let cur: string | undefined = k
+      while (cur) {
+        const [x, y] = cur.split(",").map(Number)
+        out.push([x, y])
+        cur = reachParents.get(cur)
+      }
+      return out.reverse()
+    }
 
     const clearReach = () => {
       reachGroup.clear()
-      pathLine.visible = false
+      pathGroup.clear()
+      pathGroup.visible = false
       reachRef.current = null
       reachParents = new Map()
       setMoveHint(null)
+    }
+
+    // A committed walk carries its BFS path to every browser by broadcast,
+    // so tokens WALK the route — around rock, through the door — instead of
+    // cutting the corner straight-line when the row lands. The stash is
+    // consumed by glideToken when the realtime echo arrives; a stale one
+    // (no echo inside 4s) is ignored and the straight glide covers it.
+    const walkPaths = new Map<string, { cells: [number, number][]; at: number }>()
+    let sendWalkPath: (tokenId: string, cells: [number, number][]) => void = (tokenId, cells) => {
+      walkPaths.set(tokenId, { cells, at: Date.now() })
     }
 
     const computeReach = () => {
@@ -1086,17 +1143,47 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     refreshReachRef.current = computeReach
 
     const showPathTo = (k: string) => {
-      const pts: THREE.Vector3[] = []
-      let cur: string | undefined = k
-      while (cur) {
-        const [x, y] = cur.split(",").map(Number)
+      pathGroup.clear()
+      const cells = pathCells(k)
+      if (cells.length < 2) { pathGroup.visible = false; return }
+      const pts = cells.map(([x, y]) => {
         const cpos = sqCentre(x, y)
-        pts.push(new THREE.Vector3(cpos.x, 0.06, cpos.z))
-        cur = reachParents.get(cur)
+        return new THREE.Vector3(cpos.x, 0.055, cpos.z)
+      })
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i]
+        const b = pts[i + 1]
+        const len = a.distanceTo(b)
+        const band = new THREE.Mesh(ribbonGeo, ribbonMat)
+        band.scale.x = len
+        band.position.set((a.x + b.x) / 2, 0.055, (a.z + b.z) / 2)
+        band.rotation.x = -Math.PI / 2
+        band.rotation.z = -Math.atan2(b.z - a.z, b.x - a.x)
+        pathGroup.add(band)
+        // A diamond stud on every step but the last — the seal owns that.
+        if (i < pts.length - 2) {
+          const stud = new THREE.Mesh(studGeo, studMat)
+          stud.position.set(b.x, 0.057, b.z)
+          stud.rotation.x = -Math.PI / 2
+          stud.rotation.z = Math.PI / 4
+          pathGroup.add(stud)
+        }
       }
-      pathLine.geometry.dispose()
-      pathLine.geometry = new THREE.BufferGeometry().setFromPoints(pts.reverse())
-      pathLine.visible = pts.length > 1
+      // The destination seal: gold diamond, dark inlay, gold core.
+      const dest = pts[pts.length - 1]
+      const layers: [THREE.PlaneGeometry, THREE.Material, number][] = [
+        [sealOuterGeo, studMat, 0.057],
+        [sealInnerGeo, sealDarkMat, 0.058],
+        [sealCoreGeo, studMat, 0.059],
+      ]
+      for (const [geo, mat, y] of layers) {
+        const seal = new THREE.Mesh(geo, mat)
+        seal.position.set(dest.x, y, dest.z)
+        seal.rotation.x = -Math.PI / 2
+        seal.rotation.z = Math.PI / 4
+        pathGroup.add(seal)
+      }
+      pathGroup.visible = true
     }
 
     let lastHoverCell = ""
@@ -1106,7 +1193,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, activeCam())
       const hit = raycaster.intersectObject(floorPlane, false)[0]
-      if (!hit) { pathLine.visible = false; return }
+      if (!hit) { pathGroup.visible = false; return }
       const gx = Math.floor(hit.point.x / SQ)
       const gy = Math.floor(hit.point.z / SQ)
       const k = gx + "," + gy
@@ -1114,7 +1201,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       lastHoverCell = k
       const cell = reachRef.current.cells.get(k)
       if (!cell) {
-        pathLine.visible = false
+        pathGroup.visible = false
         setMoveHint(null)
         return
       }
@@ -1531,6 +1618,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "npc_encounters" }, () => void loadNpcs())
         .subscribe()
 
+      // The committed route travels ahead of the row change, so every board
+      // walks the same corners. Local set + broadcast (broadcast does not
+      // echo to its sender, hence the local set in sendWalkPath).
+      const walkChannel = supabase
+        .channel("board-walk")
+        .on("broadcast", { event: "walk" }, ({ payload }) => {
+          const p = payload as { token_id?: string; cells?: [number, number][] }
+          if (p?.token_id && Array.isArray(p.cells)) walkPaths.set(p.token_id, { cells: p.cells, at: Date.now() })
+        })
+        .subscribe()
+      sendWalkPath = (token_id, cells) => {
+        walkPaths.set(token_id, { cells, at: Date.now() })
+        void walkChannel.send({ type: "broadcast", event: "walk", payload: { token_id, cells } })
+      }
+
       // Live: any token change, from any hand, lands on every board.
       const channel = supabase
         .channel("vtt-tokens-board")
@@ -1551,6 +1653,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .subscribe()
       return () => {
         void supabase.removeChannel(channel)
+        void supabase.removeChannel(walkChannel)
         void supabase.removeChannel(combatChannel)
         void supabase.removeChannel(logChannel)
         void supabase.removeChannel(sheetsChannel)
@@ -1623,24 +1726,39 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
 
       tokensRef.current.forEach((entry) => {
-        const gl = entry.obj.userData.glide as { from: THREE.Vector3; to: THREE.Vector3; t: number } | undefined
+        const gl = entry.obj.userData.glide as { pts: THREE.Vector3[]; seg: number[]; total: number; s: number } | undefined
         if (!gl) {
           // Standing still: stance, unless mid-swing.
           if (entry.anim && entry.anim.state === "walk") playState(entry.anim, "idle")
           return
         }
         if (entry.anim) playState(entry.anim, "walk")
-        gl.t = Math.min(1, gl.t + dt * 2.6)
-        const ease = gl.t * gl.t * (3 - 2 * gl.t)
-        entry.obj.position.lerpVectors(gl.from, gl.to, ease)
-        // A step-height hop so the move reads as a move, not a teleport.
-        entry.obj.position.y = Math.sin(ease * Math.PI) * 0.22
-        if (gl.t >= 1) {
+        // Constant pace along the whole route: a long walk takes longer,
+        // which is what makes it a walk. ~2.2 squares/s ≈ a brisk 11 ft/s.
+        gl.s = Math.min(gl.total, gl.s + dt * 2.2)
+        let segIdx = 1
+        while (segIdx < gl.seg.length - 1 && gl.seg[segIdx] < gl.s) segIdx++
+        const a = gl.pts[segIdx - 1]
+        const b = gl.pts[segIdx]
+        const segLen = gl.seg[segIdx] - gl.seg[segIdx - 1]
+        const f = segLen > 1e-6 ? (gl.s - gl.seg[segIdx - 1]) / segLen : 1
+        entry.obj.position.lerpVectors(a, b, f)
+        // Models WALK, feet on the floor. Only the plain pawn discs keep a
+        // little hop, so their slide still reads as motion.
+        entry.obj.position.y = entry.anim ? 0 : Math.sin(f * Math.PI) * 0.18
+        // Face the way they are travelling — smoothly, leg by leg.
+        const dir = new THREE.Vector3().subVectors(b, a)
+        if (dir.lengthSq() > 1e-4) {
+          const want = Math.atan2(dir.x, dir.z)
+          let dyaw = want - entry.obj.rotation.y
+          while (dyaw > Math.PI) dyaw -= Math.PI * 2
+          while (dyaw < -Math.PI) dyaw += Math.PI * 2
+          entry.obj.rotation.y += dyaw * Math.min(1, dt * 10)
+        }
+        if (gl.s >= gl.total) {
           delete entry.obj.userData.glide
+          entry.obj.position.y = 0
           if (entry.anim) playState(entry.anim, "idle")
-          // Face the way they travelled, so a walk ends looking onward.
-          const dir = new THREE.Vector3().subVectors(gl.to, gl.from)
-          if (dir.lengthSq() > 0.01) entry.obj.rotation.y = Math.atan2(dir.x, dir.z)
         }
       })
       // Embers rise, wander, and are reborn at the floor.
@@ -1692,7 +1810,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       renderer.domElement.removeEventListener("mousemove", onHoverMove)
       refreshReachRef.current = () => {}
       reachGeo.dispose()
-      pathLine.geometry.dispose()
+      ribbonGeo.dispose()
+      studGeo.dispose()
+      sealOuterGeo.dispose()
+      sealInnerGeo.dispose()
+      sealCoreGeo.dispose()
       activeGlow.geometry.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
