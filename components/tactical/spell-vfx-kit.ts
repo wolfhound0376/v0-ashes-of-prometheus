@@ -77,13 +77,20 @@ export function hasKitEffect(type: DamageType): boolean {
 
 const FLAG_KEY = "ashes.vfxKit"
 
-/** Off unless explicitly switched on. `localStorage.setItem("ashes.vfxKit","1")`. */
+/**
+ * On by default — these are the spell effects now.
+ *
+ * The escape hatch is kept deliberately: if a cast ever looks wrong or costs
+ * too much mid-session, `localStorage.setItem("ashes.vfxKit","0")` and a
+ * reload puts the old sparks back instantly, without waiting for a deploy.
+ * Anything other than "0" (including nothing at all) means on.
+ */
 export function kitEnabled(): boolean {
-  if (typeof window === "undefined") return false
+  if (typeof window === "undefined") return true
   try {
-    return window.localStorage.getItem(FLAG_KEY) === "1"
+    return window.localStorage.getItem(FLAG_KEY) !== "0"
   } catch {
-    return false // private mode, blocked storage — just use the old path
+    return true // private mode, blocked storage — still show the effects
   }
 }
 
