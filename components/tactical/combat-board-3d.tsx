@@ -45,6 +45,8 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
+import { spellEntry, type SpellEntry } from "@/lib/spellbook"
+import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
 const TILE_BASE =
@@ -185,6 +187,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   /** The HUD's ability bar reaches the scene through here, the same way
    *  moves do. Set inside the scene effect; a no-op until the board is up. */
   const castRef = useRef<(characterId: string, ability: string, kind: string) => void>(() => {})
+  // THE ARMED SPELL. Sam: a press should "allow me to target some which
+  // starts up the ramp up animation, and when I click on the target, executes
+  // the animation and sounds involved." So a press no longer fires — it ARMS.
+  // The windup loops, the legal targets light, and the click is the throw.
+  const [armedSpell, setArmedSpell] = useState<
+    { characterId: string; name: string; kind: string; entry: SpellEntry } | null
+  >(null)
+  const armedRef = useRef<typeof armedSpell>(null)
+  useEffect(() => { armedRef.current = armedSpell }, [armedSpell])
+  const windupRef = useRef<PlayHandle | null>(null)
+  const releaseAtRef = useRef<(tokenId: string) => void>(() => {})
 
   useEffect(() => {
     setDm(Boolean(getDmKey()))
@@ -508,6 +521,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (id) {
           const entry = tokensRef.current.get(id)
           if (entry) {
+            // A spell is armed: this click is the throw, not a selection.
+            if (armedRef.current) {
+              releaseAtRef.current(id)
+              return
+            }
             setSelected((cur) => (cur?.id === id ? null : entry.row))
             return
           }
@@ -763,8 +781,47 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
       const { release, hand } = castEventFor(clip.name, clip.duration)
       pending.push({ wait: release, obj: found.obj, hand, spell: ability, target })
+
+      // SOUND. The school gives the spell its voice; the damage type decides
+      // what the target hears when it lands. Both come off the spellbook, so
+      // a new spell is one row of data rather than a code change.
+      const sEntry = spellEntry(ability)
+      playSfx(releaseFor(sEntry.school), { volume: 0.85 })
+      window.setTimeout(() => playSfx(tailFor(sEntry.school), { volume: 0.5 }), 260)
+      if (sEntry.damage && target) {
+        // The bang belongs on the flash, not ahead of it: the VFX mote flies
+        // at 26 units/sec, so the impact waits for it to arrive.
+        const dist = target.distanceTo(found.obj.position)
+        const dmg = sEntry.damage
+        window.setTimeout(() => playSfx(impactFor(dmg), { volume: 0.9 }), Math.min(1400, (dist / 26) * 1000 + 120))
+      }
     }
     castRef.current = performCast
+
+    /** The second half of the two-phase cast: the click that throws it. */
+    const releaseAt = (tokenId: string) => {
+      const armed = armedRef.current
+      if (!armed) return
+      const shooter = Array.from(tokensRef.current.values()).find((e) => e.row.character_id === armed.characterId)
+      const victim = tokensRef.current.get(tokenId)
+      if (!shooter || !victim) return
+      // Out of range says so. A button that was pressed and produced silence
+      // is indistinguishable from a broken one.
+      const squares = Math.max(
+        Math.abs((shooter.row.grid_x ?? 0) - (victim.row.grid_x ?? 0)),
+        Math.abs((shooter.row.grid_y ?? 0) - (victim.row.grid_y ?? 0)),
+      )
+      if (armed.entry.rangeFt > 0 && squares * 5 > armed.entry.rangeFt) {
+        say(`${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${squares * 5} ft away.`)
+        return
+      }
+      windupRef.current?.stop(0.08)
+      windupRef.current = null
+      setSelected(victim.row)
+      performCast(armed.characterId, armed.name, armed.kind)
+      setArmedSpell(null)
+    }
+    releaseAtRef.current = releaseAt
 
     const spawnToken = (row: TokenRow) => {
       const existing = tokensRef.current.get(row.id)
@@ -1929,6 +1986,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [combat?.id, combat?.round, combat?.active_index, combatBusy])
 
+  // While a spell is armed the school's windup loops. It stops the instant the
+  // spell is thrown, cancelled, or the component unmounts — a windup still
+  // humming after the fight ended is the kind of bug people remember longer
+  // than the feature.
+  useEffect(() => {
+    if (!armedSpell) return
+    const h = playSfx(windupFor(armedSpell.entry.school), { loop: true, volume: 0.55, fadeIn: 0.25 })
+    windupRef.current = h
+    const e = armedSpell.entry
+    preloadSfx([releaseFor(e.school), tailFor(e.school), ...(e.damage ? [impactFor(e.damage)] : [])])
+    const onKey = (ev: KeyboardEvent) => {
+      // Escape puts it away. Opening the wrong spell must not cost a turn.
+      if (ev.key === "Escape") setArmedSpell(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => {
+      h.stop(0.18)
+      if (windupRef.current === h) windupRef.current = null
+      window.removeEventListener("keydown", onKey)
+    }
+  }, [armedSpell])
+
   const playerVerb = async (body: Record<string, unknown>) => {
     try {
       await fetch("/api/combat", {
@@ -2114,7 +2193,20 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         onFocus={setFocusId}
         // The rack tells us who cast it. Deriving it here from focusId is how
         // the wrong miniature ended up animating.
-        onCast={(characterId, ability, kind) => castRef.current(characterId, ability, kind)}
+        // A press ARMS the spell. Only things with nobody to point at go off
+        // at once — making a player click themselves to Dodge would be
+        // theatre without meaning.
+        onCast={(characterId, ability, kind) => {
+          const e = spellEntry(ability)
+          if (kind === "action" || e.target === "self" || e.target === "none") {
+            castRef.current(characterId, ability, kind)
+            return
+          }
+          setArmedSpell({ characterId, name: ability, kind, entry: e })
+          say(`${ability} — choose a target${e.rangeFt ? ` within ${e.rangeFt} ft` : ""}.`)
+        }}
+        armedSpell={armedSpell ? { name: armedSpell.name, rangeFt: armedSpell.entry.rangeFt } : null}
+        onCancelArm={() => setArmedSpell(null)}
       />
 
       {/* Before the dice: the one button that starts a fight. Sits under the

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
 import { blurbFor } from "@/lib/ability-blurbs"
+import { rackFor, type RackItem } from "@/lib/spellbook"
 import { Globe } from "./essence-globe"
 import { CharacterCard } from "./character-card"
 import { ClassMedallion } from "./class-medallion"
@@ -84,6 +85,9 @@ interface Props {
    *  two disagree the moment focusId fails to resolve — at which point the
    *  rack shows one character's spells and a different miniature moves. */
   onCast?: (characterId: string, ability: string, kind: string) => void
+  /** Set while a spell waits for a target, so the rack can say so. */
+  armedSpell?: { name: string; rangeFt: number } | null
+  onCancelArm?: () => void
 }
 
 // Spells whose CASTING TIME is a bonus action (PHB). Everything else on the
@@ -306,6 +310,8 @@ export function CombatHud(props: Props) {
     focusId,
     onFocus,
     onCast,
+    armedSpell,
+    onCancelArm,
   } = props
 
   const [ability, setAbility] = useState<string | null>(null)
@@ -345,12 +351,22 @@ export function CombatHud(props: Props) {
     return characters[0] ?? null
   }, [characters, focusId])
 
-  const abilities = useMemo(() => {
-    const sc = focus?.sheet_spellcasting
-    const core = CORE_ACTIONS.slice(0, 5).map((a) => ({ name: a.name, kind: "action" as const }))
-    const cantrips = (sc?.cantrips ?? []).map((n) => ({ name: n, kind: "cantrip" as const }))
-    const prepared = (sc?.prepared ?? []).map((n) => ({ name: n, kind: "prepared" as const }))
-    return [...core, ...cantrips, ...prepared].slice(0, 12)
+  // Sam: "The spell and actions need to be specific to the character, only
+  // available spells based on DND 5E, inventory for that character."
+  //
+  // rackFor() reads THIS character's weapons out of sheet_attacks — the
+  // inventory gate, so a cleric with a mace gets Mace rather than a nameless
+  // "Attack" — then their own cantrips, then their prepared spells with the
+  // slots actually remaining. A spell with no slots left is DIMMED, not
+  // removed: a player needs to see that Guiding Bolt exists and is spent,
+  // rather than wonder where it went.
+  const abilities = useMemo<RackItem[]>(() => {
+    if (!focus) return []
+    return rackFor({
+      spellcasting: focus.sheet_spellcasting as Parameters<typeof rackFor>[0]["spellcasting"],
+      attacks: (focus as unknown as { sheet_attacks?: Parameters<typeof rackFor>[0]["attacks"] }).sheet_attacks,
+      coreActions: CORE_ACTIONS.slice(0, 5).map((a) => a.name),
+    }).slice(0, 14)
   }, [focus])
 
   useEffect(() => {
@@ -459,6 +475,41 @@ export function CombatHud(props: Props) {
         )}
       </div>
 
+      {/* ARMED. The windup is already looping; this is the half you can see.
+          It sits above the rack so it never covers the icons you are about to
+          choose from, and it names the range because "out of range" is the
+          most common reason a cast does nothing. */}
+      {armedSpell && (
+        <div className="pointer-events-none absolute bottom-[124px] left-1/2 z-30 -translate-x-1/2">
+          <div
+            className="flex items-center gap-3 border-2 px-5 py-2"
+            style={{
+              borderColor: "#7cc0ff",
+              background: "linear-gradient(180deg,#0b1420 0%,#060a10 100%)",
+              boxShadow: "0 0 26px #4fa8ff55, inset 0 0 22px #00000099",
+              animation: "aopArmPulse 1.6s ease-in-out infinite",
+            }}
+          >
+            <span
+              className="text-[15px] text-[#dbeeff]"
+              style={{ fontFamily: "var(--font-display), var(--font-serif), serif", letterSpacing: "0.05em" }}
+            >
+              {armedSpell.name}
+            </span>
+            <span className="font-serif text-[9px] uppercase tracking-[0.24em] text-[#7cc0ff]">
+              click a target{armedSpell.rangeFt ? ` · ${armedSpell.rangeFt} ft` : ""}
+            </span>
+            <button
+              onClick={() => onCancelArm?.()}
+              className="pointer-events-auto border border-[#3a556e] px-2 py-[2px] font-serif text-[8px] uppercase tracking-wider text-[#8fa8c0] hover:border-[#7cc0ff] hover:text-[#dbeeff]"
+            >
+              Esc
+            </button>
+          </div>
+          <style>{`@keyframes aopArmPulse { 0%,100% { box-shadow: 0 0 18px #4fa8ff44, inset 0 0 22px #00000099 } 50% { box-shadow: 0 0 34px #4fa8ff88, inset 0 0 22px #00000099 } }`}</style>
+        </div>
+      )}
+
       {focus && (
         <div className="pointer-events-none absolute bottom-1 left-1/2 z-20 flex -translate-x-1/2 items-end gap-1.5">
           <Globe
@@ -484,7 +535,10 @@ export function CombatHud(props: Props) {
                 const armedMatch = armedNow !== null && phase === armedNow
                 const armedMute = armedNow !== null && phase !== armedNow
                 const kindLabel =
-                  a.kind === "action" ? "action" : a.kind === "cantrip" ? "cantrip, always available" : "prepared spell"
+                  a.kind === "action" ? "action"
+                  : a.kind === "weapon" ? `${a.toHit ?? ""} ${a.damage ?? ""}`.trim() || "weapon"
+                  : a.kind === "cantrip" ? "cantrip, always available"
+                  : a.usable ? `level ${a.entry.level} spell` : (a.why ?? "no slots left")
                 const selected = ability === a.name
                 const isHovered = hovered === a.name
 
@@ -495,7 +549,9 @@ export function CombatHud(props: Props) {
                     onMouseLeave={() => setHovered((h) => (h === a.name ? null : h))}
                     onFocus={() => setHovered(a.name)}
                     onBlur={() => setHovered((h) => (h === a.name ? null : h))}
+                    disabled={!a.usable}
                     onClick={() => {
+                      if (!a.usable) return
                       const selecting = !selected
                       setAbility(selecting ? a.name : null)
                       if (selecting) {
@@ -515,7 +571,10 @@ export function CombatHud(props: Props) {
                       // rather than being clipped by them.
                       "pointer-events-auto group relative h-[58px] w-[58px] shrink-0 bg-[#080604] transition-transform duration-150 ease-out origin-bottom" +
                       (isHovered ? " scale-[1.3] z-40" : " hover:-translate-y-[2px] z-0") +
-                      (armedMute ? " opacity-35 saturate-50" : "")
+                      (armedMute ? " opacity-35 saturate-50" : "") +
+                      // Spent, not gone: grey and unclickable so the player
+                      // can see what they no longer have.
+                      (!a.usable ? " opacity-30 grayscale cursor-not-allowed" : "")
                     }
                     style={{
                       boxShadow: selected
