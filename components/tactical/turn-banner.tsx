@@ -87,6 +87,10 @@ export function TurnBanner({
   // change of whose turn it is, then gets out of the way.
   const [announce, setAnnounce] = useState(false)
   const lastTurnKey = useRef("")
+  // An ARMED phase: the player pressed Action (or Bonus Action) and the
+  // rack below is showing what it can buy. Purely local UI - the spend
+  // itself only happens when an option is used (or on Shift+click).
+  const [armed, setArmed] = useState<"action" | "bonus" | null>(null)
 
   useEffect(() => {
     if (active && isMine && !economy.acknowledged) {
@@ -105,6 +109,44 @@ export function TurnBanner({
     const t = window.setTimeout(() => setAnnounce(false), 2400)
     return () => window.clearTimeout(t)
   }, [active, characterName, isMine])
+
+  // Broadcast the economy to the rest of the HUD - the cards' gems and the
+  // rack's highlights. The banner and the rack hang from different parents,
+  // so the state crosses as a DOM event; the board file stays untouched
+  // (another session is live in it). Re-publish on request so a listener
+  // that mounted late still syncs.
+  useEffect(() => {
+    const publish = () =>
+      window.dispatchEvent(
+        new CustomEvent("aop:economy", {
+          detail: { action: Boolean(economy.action), bonus: Boolean(economy.bonus), armed, live: active },
+        }),
+      )
+    publish()
+    window.addEventListener("aop:economy-request", publish)
+    return () => window.removeEventListener("aop:economy-request", publish)
+  }, [economy.action, economy.bonus, armed, active])
+
+  // A new turn, or the armed phase getting spent elsewhere, disarms.
+  useEffect(() => {
+    setArmed(null)
+  }, [characterName])
+  useEffect(() => {
+    if (armed && economy[armed]) setArmed(null)
+  }, [economy.action, economy.bonus, armed])
+
+  // The rack reports a cast; the phase it cost is spent HERE, where the
+  // spend callback lives. Guarded to this browser's own live tray.
+  useEffect(() => {
+    const h = (e: Event) => {
+      const phase = (e as CustomEvent).detail?.phase as "action" | "bonus" | undefined
+      if (!phase || !active || !(isMine || dm)) return
+      if (!economy[phase]) onSpend(phase)
+      setArmed(null)
+    }
+    window.addEventListener("aop:ability-used", h)
+    return () => window.removeEventListener("aop:ability-used", h)
+  }, [active, isMine, dm, economy.action, economy.bonus, onSpend])
 
   if (!active) {
     lastTurnKey.current = ""
@@ -154,23 +196,54 @@ export function TurnBanner({
           </div>
           {PHASES.map((p) => {
             const spent = Boolean(economy[p.key])
+            const armedThis = armed === p.key && !spent
+            // Sam's brief: pressing Action shows you what it buys - the rack
+            // lights its legal options - rather than instantly marking it
+            // used. Spending happens when an option is used, on Shift+click
+            // (narrative spends: grapple, improvised nonsense), on any click
+            // from the DM's tray, and Reaction stays a straight toggle since
+            // the rack holds nothing it can buy.
+            const handleClick = (e: { shiftKey: boolean }) => {
+              if (spent) { onSpend(p.key); return }               // restore a mis-mark
+              if (p.key === "reaction" || e.shiftKey || (dm && !isMine)) {
+                onSpend(p.key)
+                setArmed(null)
+                return
+              }
+              setArmed(armedThis ? null : p.key)
+            }
             return (
               <button
                 key={p.key}
-                onClick={canTouch ? () => onSpend(p.key) : undefined}
+                onClick={canTouch ? handleClick : undefined}
                 disabled={!canTouch}
-                title={canTouch ? `${p.hint}${spent ? " — marked used, click to restore" : ""}` : p.hint}
+                title={
+                  canTouch
+                    ? spent
+                      ? `${p.hint} — marked used, click to restore`
+                      : p.key === "reaction" || (dm && !isMine)
+                        ? p.hint
+                        : `${p.hint} — click to see your options below · Shift+click to mark used`
+                    : p.hint
+                }
                 className={
                   "min-w-[104px] rounded-sm border px-3 py-1.5 text-center transition-colors " +
                   (spent
                     ? "border-[#2a2216] bg-black/50 text-[#5f5540] line-through"
-                    : "border-[#8b6427] bg-gradient-to-b from-[#2a1f10] to-[#140e07] text-[#f0cd7a]" +
-                      (canTouch ? " hover:border-[#f4e0a8]" : " opacity-80")) +
+                    : armedThis
+                      ? (p.key === "action"
+                          ? "border-[#7cc0ff] shadow-[0_0_12px_#4fa8ff88] "
+                          : "border-[#ff8a76] shadow-[0_0_12px_#ff5a4488] ") +
+                        "bg-gradient-to-b from-[#2a1f10] to-[#140e07] text-[#fff3cf]"
+                      : "border-[#8b6427] bg-gradient-to-b from-[#2a1f10] to-[#140e07] text-[#f0cd7a]" +
+                        (canTouch ? " hover:border-[#f4e0a8]" : " opacity-80")) +
                   (canTouch ? "" : " cursor-default")
                 }
               >
                 <div className="font-serif text-[10px] uppercase tracking-[0.18em]">{p.label}</div>
-                <div className="text-[8px] uppercase tracking-wider opacity-70">{spent ? "used" : "ready"}</div>
+                <div className="text-[8px] uppercase tracking-wider opacity-70">
+                  {spent ? "used" : armedThis ? "choose below" : "ready"}
+                </div>
               </button>
             )
           })}
