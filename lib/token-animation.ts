@@ -23,7 +23,11 @@ const CANDIDATES: Record<TokenState, string[]> = {
     "charged_ground_slam", "spell_cast_3", "spell_cast", "soell_cast", "cast",
   ],
   cast: ["charged_spell_cast", "spell_cast", "soell_cast", "cast", "attack"],
-  hurt: ["fall1", "fall", "hit", "hurt", "back_jump"],
+  // A flinch, THEN a fall. Leading with fall1 meant every hit read as a
+  // collapse: the creature dropped, stood back up, and did it again next
+  // round. A stagger is what taking damage looks like; falling is what dying
+  // looks like, and the dead clip already covers that.
+  hurt: ["hit", "hurt", "stagger", "impact", "damage", "back_jump", "fall1", "fall"],
   dead: ["dead", "death", "fall1", "fall"],
 }
 
@@ -85,18 +89,71 @@ export type CastWeight = "quick" | "ranged" | "heavy"
 /** Raw Meshy names are in these chains too, so this works on an unmerged
  *  Meshy export as well as on our merged assets. */
 const CAST_CANDIDATES: Record<CastWeight, string[]> = {
-  quick: ["spell_cast_3", "soell_cast_4", "spell_cast", "soell_cast", "charged_spell_cast", "cast", "attack"],
-  ranged: ["spell_cast_2", "soell_cast_3", "spell_cast", "soell_cast", "charged_spell_cast", "cast", "attack"],
-  heavy: ["charged_spell_cast", "charged_ground_slam", "spell_cast", "soell_cast", "cast", "attack"],
+  quick: ["spell_cast_3", "soell_cast_4", "spell_cast_4", "spell_cast", "soell_cast", "spell_cast_2", "charged_spell_cast"],
+  ranged: ["spell_cast_2", "soell_cast_3", "spell_cast", "soell_cast", "spell_cast_3", "charged_spell_cast"],
+  heavy: ["charged_spell_cast", "charged_ground_slam", "spell_cast_2", "spell_cast", "soell_cast", "spell_cast_3"],
 }
 
-export function castClipFor(weight: CastWeight, available: string[]): string | null {
+/**
+ * Clips that are a cast only because nothing better exists.
+ *
+ * These stay OUT of the variety pool. "attack" on a martial is a sword swing,
+ * and rotating spells onto it would have a cleric bless someone with an axe.
+ * They are reached only when a model has no spell clip at all.
+ */
+const CAST_GENERIC = ["cast", "attack"]
+
+/**
+ * A stable number from a string.
+ *
+ * Deliberately not Math.random(). A spell must look the SAME every time it is
+ * cast — that is how a player learns to recognise Fireball across the table —
+ * while DIFFERENT spells of the same weight should look different. A hash of
+ * the spell's name gives both: fixed per spell, spread across spells.
+ */
+function hashOf(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0)
+}
+
+/**
+ * Which cast motion this spell plays on this model.
+ *
+ * The old version took the FIRST candidate that matched, so every spell of a
+ * given weight played the identical clip — a caster with four spell clips
+ * still only ever used one of them per weight, and every cantrip looked the
+ * same. Now every clip the weight would accept goes into a pool, and the
+ * spell's own name chooses from it.
+ *
+ * The chain order still matters: it is a preference, not a filter, so a heavy
+ * spell still leans toward the charged clips. `spellName` is optional — with
+ * no name this behaves exactly as it always did and returns the best match.
+ */
+export function castClipFor(
+  weight: CastWeight,
+  available: string[],
+  spellName?: string,
+): string | null {
   if (!available.length) return null
+
+  const pool: string[] = []
   for (const want of CAST_CANDIDATES[weight]) {
     const hit = match(available, want)
-    if (hit) return hit
+    if (hit && !pool.includes(hit)) pool.push(hit)
   }
-  return clipFor("cast", available)
+  if (!pool.length) {
+    for (const want of CAST_GENERIC) {
+      const hit = match(available, want)
+      if (hit) return hit
+    }
+    return clipFor("cast", available)
+  }
+  if (!spellName || pool.length === 1) return pool[0]
+  return pool[hashOf(spellName.toLowerCase()) % pool.length]
 }
 
 export type CastHand = "LeftHand" | "RightHand"
