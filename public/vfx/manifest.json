@@ -1,0 +1,234 @@
+{
+  "acidImpact": {
+    "bytes": 92886,
+    "cols": 5,
+    "file": "acidImpact.webp",
+    "fps": 22,
+    "frames": 20,
+    "rows": 4
+  },
+  "eldBeam": {
+    "bytes": 186428,
+    "cols": 4,
+    "file": "eldBeam.webp",
+    "fps": 22,
+    "frames": 16,
+    "rows": 4
+  },
+  "eldImpact": {
+    "bytes": 169288,
+    "cols": 5,
+    "file": "eldImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "fireball": {
+    "bytes": 180318,
+    "cols": 8,
+    "file": "fireball.webp",
+    "fps": 24,
+    "frames": 32,
+    "rows": 4
+  },
+  "forceHit": {
+    "bytes": 107820,
+    "cols": 5,
+    "file": "forceHit.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "frostBeam": {
+    "bytes": 112564,
+    "cols": 4,
+    "file": "frostBeam.webp",
+    "fps": 20,
+    "frames": 16,
+    "rows": 4
+  },
+  "frostImpact": {
+    "bytes": 275926,
+    "cols": 6,
+    "file": "frostImpact.webp",
+    "fps": 24,
+    "frames": 24,
+    "rows": 4
+  },
+  "healingShimmer": {
+    "bytes": 113920,
+    "cols": 5,
+    "file": "healingShimmer.webp",
+    "fps": 18,
+    "frames": 20,
+    "rows": 4
+  },
+  "missileDart": {
+    "bytes": 60918,
+    "cols": 4,
+    "file": "missileDart.webp",
+    "fps": 20,
+    "frames": 16,
+    "rows": 4
+  },
+  "necroBeam": {
+    "bytes": 79854,
+    "cols": 4,
+    "file": "necroBeam.webp",
+    "fps": 20,
+    "frames": 16,
+    "rows": 4
+  },
+  "necroImpact": {
+    "bytes": 138492,
+    "cols": 5,
+    "file": "necroImpact.webp",
+    "fps": 22,
+    "frames": 20,
+    "rows": 4
+  },
+  "poisonBolt": {
+    "bytes": 54516,
+    "cols": 4,
+    "file": "poisonBolt.webp",
+    "fps": 16,
+    "frames": 16,
+    "rows": 4
+  },
+  "poisonCloud": {
+    "bytes": 84234,
+    "cols": 6,
+    "file": "poisonCloud.webp",
+    "fps": 20,
+    "frames": 24,
+    "rows": 4
+  },
+  "psychicHalo": {
+    "bytes": 95746,
+    "cols": 4,
+    "file": "psychicHalo.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "psychicImpact": {
+    "bytes": 103998,
+    "cols": 5,
+    "file": "psychicImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "radiantColumn": {
+    "bytes": 414446,
+    "cols": 5,
+    "file": "radiantColumn.webp",
+    "fps": 22,
+    "frames": 20,
+    "rows": 4
+  },
+  "runeAcid": {
+    "bytes": 404320,
+    "cols": 4,
+    "file": "runeAcid.webp",
+    "fps": 13,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeEldritch": {
+    "bytes": 476636,
+    "cols": 4,
+    "file": "runeEldritch.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeFire": {
+    "bytes": 505770,
+    "cols": 4,
+    "file": "runeFire.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeForce": {
+    "bytes": 409154,
+    "cols": 4,
+    "file": "runeForce.webp",
+    "fps": 15,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeFrost": {
+    "bytes": 464482,
+    "cols": 4,
+    "file": "runeFrost.webp",
+    "fps": 13,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeHealing": {
+    "bytes": 453256,
+    "cols": 4,
+    "file": "runeHealing.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeNecrotic": {
+    "bytes": 418166,
+    "cols": 4,
+    "file": "runeNecrotic.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 4
+  },
+  "runePsychic": {
+    "bytes": 393512,
+    "cols": 4,
+    "file": "runePsychic.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeRadiant": {
+    "bytes": 475678,
+    "cols": 4,
+    "file": "runeRadiant.webp",
+    "fps": 15,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeStorm": {
+    "bytes": 436540,
+    "cols": 4,
+    "file": "runeStorm.webp",
+    "fps": 16,
+    "frames": 16,
+    "rows": 4
+  },
+  "thunderGust": {
+    "bytes": 143650,
+    "cols": 5,
+    "file": "thunderGust.webp",
+    "fps": 22,
+    "frames": 20,
+    "rows": 4
+  },
+  "thunderImpact": {
+    "bytes": 265500,
+    "cols": 5,
+    "file": "thunderImpact.webp",
+    "fps": 26,
+    "frames": 20,
+    "rows": 4
+  },
+  "thunderWave": {
+    "bytes": 161616,
+    "cols": 5,
+    "file": "thunderWave.webp",
+    "fps": 24,
+    "frames": 18,
+    "rows": 4
+  }
+}
