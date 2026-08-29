@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
+import { spellEntry, rollDice } from "@/lib/spellbook"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
   // action spent is not one of them.
   // "npc-turn" is DM-gated: it moves and swings on the NPCs' behalf, which is
   // the DM's chair even when no human chooses the action.
-  if (!["spend", "ack", "move"].includes(action) && !authorized(req)) {
+  if (!["spend", "ack", "move", "cast"].includes(action) && !authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   }
   // "spend", "ack" and "move" are the PLAYER's verbs and are deliberately
@@ -132,9 +133,9 @@ export async function POST(req: NextRequest) {
   // used, acknowledge their own turn, and walk their own character, without
   // the DM clicking for them. "move" is still fenced hard server-side: only
   // the ACTIVE turn's own PC token may walk, only within its speed budget.
-  const PLAYER_VERBS = ["spend", "ack", "move"]
+  const PLAYER_VERBS = ["spend", "ack", "move", "cast"]
   if (!["start", "next", "end", "npc-turn", ...PLAYER_VERBS].includes(action)) {
-    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'npc-turn'|'spend'|'ack'|'move' }" }, { status: 400 })
+    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'npc-turn'|'spend'|'ack'|'move'|'cast' }" }, { status: 400 })
   }
   const db = createAdminClient()
   const sandbox = body?.sandbox === true
@@ -352,6 +353,119 @@ export async function POST(req: NextRequest) {
       tier: usesAlgorithm(stats) ? "algorithm" : "algorithm-fallback",
       decision,
     })
+  }
+
+  if (action === "cast") {
+    // A player's spell, resolved where the dice cannot be argued with.
+    //
+    // The client already played the animation and the sound; this is the part
+    // that changes the world, so it happens on the server with the service
+    // key and is written to the same log everyone reads. The client is never
+    // told "you hit" — it is told what happened.
+    const caster_token = String(body?.caster_token ?? "")
+    const target_token = String(body?.target_token ?? "")
+    const ability = String(body?.ability ?? "")
+    if (!caster_token || !target_token || !ability) {
+      return NextResponse.json({ error: "cast needs caster_token, target_token and ability" }, { status: 400 })
+    }
+    const entry = spellEntry(ability)
+    if (!entry.dice || entry.resolve === "none" || !entry.resolve) {
+      // Utility spells are real spells; they simply have nothing to roll.
+      return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this spell" })
+    }
+
+    const { data: rows } = await db
+      .from("vtt_tokens")
+      .select("id,label,character_id,bestiary_id,hp_current,hp_max")
+      .in("id", [caster_token, target_token])
+    const caster = rows?.find((r) => r.id === caster_token)
+    const victim = rows?.find((r) => r.id === target_token)
+    if (!caster || !victim) return NextResponse.json({ error: "token missing" }, { status: 409 })
+
+    // AC and saves come from whichever sheet the target actually has.
+    let ac = 10
+    let saveMod = 0
+    if (victim.character_id) {
+      const { data: c } = await db.from("characters")
+        .select("ac,str_score,dex_score,con_score,int_score,wis_score,cha_score")
+        .eq("id", victim.character_id).maybeSingle()
+      ac = c?.ac ?? 10
+      const scores: Record<string, number | undefined> = {
+        STR: c?.str_score, DEX: c?.dex_score, CON: c?.con_score,
+        INT: c?.int_score, WIS: c?.wis_score, CHA: c?.cha_score,
+      }
+      saveMod = Math.floor(((scores[entry.save ?? "WIS"] ?? 10) - 10) / 2)
+    } else if (victim.bestiary_id) {
+      const { data: b } = await db.from("bestiary")
+        .select("ac,str,dex,con,int,wis,cha").eq("id", victim.bestiary_id).maybeSingle()
+      ac = b?.ac ?? 10
+      const scores: Record<string, number | undefined> = {
+        STR: b?.str, DEX: b?.dex, CON: b?.con, INT: b?.int, WIS: b?.wis, CHA: b?.cha,
+      }
+      saveMod = Math.floor(((scores[entry.save ?? "WIS"] ?? 10) - 10) / 2)
+    }
+
+    // The caster's own numbers, off the sheet — never invented here.
+    let attackBonus = 4
+    let saveDc = 13
+    if (caster.character_id) {
+      const { data: c } = await db.from("characters")
+        .select("sheet_spellcasting").eq("id", caster.character_id).maybeSingle()
+      const sc = c?.sheet_spellcasting as { attack_bonus?: number; save_dc?: number } | null
+      attackBonus = sc?.attack_bonus ?? attackBonus
+      saveDc = sc?.save_dc ?? saveDc
+    }
+
+    let hit = true
+    let crit = false
+    let amount = 0
+    let line = ""
+
+    if (entry.resolve === "attack") {
+      const roll = d20()
+      crit = roll === 20
+      const total = roll + attackBonus
+      hit = crit || (roll !== 1 && total >= ac)
+      if (hit) {
+        amount = rollDice(entry.dice)
+        if (crit) amount += rollDice(entry.dice)
+      }
+      line = `${caster.label} casts ${ability} at ${victim.label} — ${roll}+${attackBonus} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.`
+    } else if (entry.resolve === "save") {
+      const roll = d20()
+      const total = roll + saveMod
+      const saved = total >= saveDc
+      const full = rollDice(entry.dice)
+      amount = saved ? (entry.halfOnSave ? Math.floor(full / 2) : 0) : full
+      hit = amount > 0
+      line = `${caster.label} casts ${ability} — ${victim.label} rolls ${roll}${saveMod >= 0 ? "+" : ""}${saveMod} = ${total} vs DC ${saveDc}: ${saved ? "saves" : "fails"}${amount ? ` and takes ${amount}` : ""}.`
+    } else {
+      amount = rollDice(entry.dice)
+      line = `${caster.label} casts ${ability} on ${victim.label} for ${amount}.`
+    }
+
+    if (amount > 0) {
+      const cur = victim.hp_current ?? victim.hp_max ?? 0
+      const max = victim.hp_max ?? cur
+      // Healing cannot exceed the maximum; damage cannot go below zero. A
+      // token at 0 is down, not negative — the dying rules are the DM's.
+      const next = entry.heals ? Math.min(max, cur + amount) : Math.max(0, cur - amount)
+      await db.from("vtt_tokens")
+        .update({ hp_current: next, updated_by: "player-cast", updated_at: new Date().toISOString() })
+        .eq("id", victim.id)
+      if (!entry.heals && next === 0) line += ` ${victim.label} goes down.`
+    }
+    await narrate(db, caster.label ?? "Someone", line)
+
+    // The action is spent by the same call that resolved it, so a hit and its
+    // cost can never drift apart.
+    const st = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
+    const slot = entry.bonus ? "bonus" : "action"
+    await db.from("combat_state")
+      .update({ turn_state: { ...st, [slot]: true }, updated_at: new Date().toISOString() })
+      .eq("id", combat.id)
+
+    return NextResponse.json({ ok: true, resolved: true, hit, crit, amount, heals: Boolean(entry.heals), line })
   }
 
   if (action === "next") {
