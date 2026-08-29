@@ -21,6 +21,7 @@
 // ============================================================================
 import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
+import { spellEntry } from "@/lib/spellbook"
 
 export type DamageType =
   | "fire" | "cold" | "lightning" | "thunder" | "acid" | "poison"
@@ -67,6 +68,42 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
 
 export function hasKitEffect(type: DamageType): boolean {
   return type in TYPES
+}
+
+// ── flag + resolver ─────────────────────────────────────────────────────────
+// One entry point for the board: given a spell name, either a type the kit can
+// draw, or null meaning "use the old effect". Keeping the flag and the lookup
+// here is what lets combat-board-3d.tsx take a six-line diff.
+
+const FLAG_KEY = "ashes.vfxKit"
+
+/** Off unless explicitly switched on. `localStorage.setItem("ashes.vfxKit","1")`. */
+export function kitEnabled(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    return window.localStorage.getItem(FLAG_KEY) === "1"
+  } catch {
+    return false // private mode, blocked storage — just use the old path
+  }
+}
+
+/**
+ * Which kit effect a spell should use, or null to fall back.
+ *
+ * The spellbook is the authority on damage type, so this reads it rather than
+ * carrying a second copy of that mapping. Two spellbook facts do not map
+ * straight across: Eldritch Blast is typed `force` but has always had its own
+ * violet look, and healing spells carry no damage type at all.
+ */
+export function kitVfxTypeFor(spellName: string): DamageType | null {
+  if (!kitEnabled()) return null
+  const e = spellEntry(spellName)
+  if (!e) return null
+  const type: DamageType | null =
+    e.school === "eldritch" ? "eldritch"
+    : e.heals ? "healing"
+    : ((e.damage as DamageType | undefined) ?? null)
+  return type && hasKitEffect(type) ? type : null
 }
 
 // ── asset loading ───────────────────────────────────────────────────────────
