@@ -117,6 +117,13 @@ function radiusFor(size: string | null): number {
   return 0.38
 }
 
+// ── Sam's combat baseline (8/29): the board opens in FREE camera with the
+// darkness lifted and DM move off — "This should be the baseline for combat
+// for now." Flip these two constants to change the opening state; the
+// buttons still toggle everything live.
+const DEFAULT_CLASSIC_CAM = false // false = FREE camera
+const DEFAULT_DARKNESS_ON = false // false = darkness lifted
+
 export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: () => void; sandbox?: boolean }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState("Summoning the board…")
@@ -127,7 +134,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // The darkness is the players' truth, not the DM's. Malachar can lift it
   // to place tokens and read the room, the way the local viewer hid its
   // DM markers at eye level.
-  const [darknessOn, setDarknessOn] = useState(true)
+  const [darknessOn, setDarknessOn] = useState(DEFAULT_DARKNESS_ON)
   // The DM's hand on the pieces is a MODE, not a default: with it off, a
   // stray click on the floor selects and inspects but never teleports.
   const [dmMove, setDmMove] = useState(false)
@@ -153,7 +160,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [log, setLog] = useState<HudLogLine[]>([])
   const [focusId, setFocusId] = useState<string | null>(null)
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
-  const [classicCam, setClassicCam] = useState(true)
+  const [classicCam, setClassicCam] = useState(DEFAULT_CLASSIC_CAM)
   const classicRef = useRef<((on: boolean) => void) | null>(null)
 
   // Refs bridging React and the imperative three scene.
@@ -229,7 +236,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const orthoCam = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 500)
     const CLASSIC_EL = Math.PI / 6          // 30 deg: the 2:1 foreshortening
     const CLASSIC_AZ = Math.PI * 0.75
-    let classic = true
+    let classic = DEFAULT_CLASSIC_CAM
     let orthoZoom = 1
     const activeCam = () => (classic ? orthoCam : camera)
     const sizeOrtho = () => {
@@ -1478,6 +1485,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       darknessPlane.rotation.x = -Math.PI / 2
       darknessPlane.position.set((W * SQ) / 2, 0.085, (H * SQ) / 2)
       darknessPlane.renderOrder = 5
+      // Built visible-by-default; the baseline says otherwise. The React
+      // state effect ran before this ref existed, so apply it here too.
+      darknessPlane.visible = DEFAULT_DARKNESS_ON
       // The oversized plane must be dark OUTSIDE the tile too: the canvas
       // maps to the whole plane, so scale the UVs to keep the lit region
       // aligned with the tile itself.
