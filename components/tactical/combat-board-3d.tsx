@@ -1795,7 +1795,36 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .from("vtt_tokens")
         .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
         .eq("map_id", map.id)
-      for (const row of (tokenRows ?? []) as TokenRow[]) spawnToken(row)
+
+      // A model belongs to the SPECIES. A token that names a bestiary entry
+      // and carries no model of its own inherits that entry's art, so placing
+      // the second giant spider needs no URL and no SQL — the bestiary row
+      // already knows what a giant spider looks like. The token's own
+      // model_url still wins when set, which is how a named boss wears
+      // different art from its kin.
+      const speciesIds = [...new Set(((tokenRows ?? []) as TokenRow[])
+        .map((r: TokenRow) => r.bestiary_id)
+        .filter((id: string | null): id is string => Boolean(id)))]
+      const speciesModel = new Map<string, { url: string | null; scale: number | null; y: number | null }>()
+      if (speciesIds.length) {
+        const { data: species } = await supabase
+          .from("bestiary")
+          .select("id,model_url,model_scale,model_y_offset")
+          .in("id", speciesIds)
+        for (const b of (species ?? []) as Array<{ id: string; model_url: string | null; model_scale: number | null; model_y_offset: number | null }>) {
+          speciesModel.set(b.id, { url: b.model_url, scale: b.model_scale, y: b.model_y_offset })
+        }
+      }
+
+      for (const row of (tokenRows ?? []) as TokenRow[]) {
+        const fallback = row.bestiary_id ? speciesModel.get(row.bestiary_id) : undefined
+        spawnToken(fallback?.url && !row.model_url
+          ? { ...row,
+              model_url: fallback.url,
+              model_scale: row.model_scale ?? fallback.scale,
+              model_y_offset: row.model_y_offset ?? fallback.y }
+          : row)
+      }
       // First paint of the reach overlay — combat may already be mid-turn
       // when this browser arrives (a refresh during a fight).
       computeReach()
