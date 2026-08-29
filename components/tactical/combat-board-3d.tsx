@@ -756,7 +756,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const vfx: VfxHandle[] = []
     /** Casts waiting for their release frame — the spell has not left the
      *  hand yet, because the hand has not got there yet. */
-    const pending: { wait: number; obj: THREE.Object3D; hand: CastHand; spell: string; target: THREE.Vector3 | null }[] = []
+    const pending: {
+      wait: number
+      obj: THREE.Object3D
+      hand: CastHand
+      spell: string
+      target: THREE.Vector3 | null
+      /** Who it was thrown at, so the effect can make them flinch when it lands. */
+      victimId: string | null
+    }[] = []
 
     /**
      * The HUD pressed an ability. Play the matching clip on that character's
@@ -821,8 +829,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (t) target = new THREE.Vector3(t.obj.position.x, 1.1, t.obj.position.z)
       }
 
+      // Turn to face what you are throwing it at. A caster who discharges a
+      // bolt over their own shoulder reads as a bug even when the bolt flies
+      // true, and the rune disc is drawn along the cast direction, so the
+      // facing has to be right BEFORE the clip starts rather than after.
+      if (target) {
+        const dx = target.x - found.obj.position.x
+        const dz = target.z - found.obj.position.z
+        if (dx * dx + dz * dz > 1e-4) found.obj.rotation.y = Math.atan2(dx, dz)
+      }
+
       const { release, hand } = castEventFor(clip.name, clip.duration)
-      pending.push({ wait: release, obj: found.obj, hand, spell: ability, target })
+      pending.push({
+        wait: release,
+        obj: found.obj,
+        hand,
+        spell: ability,
+        target,
+        victimId: victimRow?.id ?? null,
+      })
       // Pull this type's sheets during the windup, so the first cast of a
       // spell looks like every later one rather than arriving half-loaded.
       const warm = kitVfxTypeFor(ability)
@@ -1990,6 +2015,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // the original sparks otherwise. Both satisfy VfxHandle, so the loop
         // below does not care which one it got.
         const kitType = kitVfxTypeFor(p.spell)
+        /**
+         * It landed: make the body answer for it.
+         *
+         * Hung off the effect's own impact rather than a timer, because only
+         * the effect knows when it arrives — a dart lands sooner than a
+         * Fireball, and a beam sooner than either.
+         *
+         * A creature already at 0 HP does not flinch. "hurt" is a ONE_SHOT
+         * that hands the model back to its stance when it finishes, so
+         * flinching a corpse would stand it up — the same trap the death
+         * clip's HOLD_LAST exists to avoid.
+         */
+        const flinch = () => {
+          if (!p.victimId) return
+          const victim = tokensRef.current.get(p.victimId)
+          if (!victim?.anim || isDowned(victim.row)) return
+          playState(victim.anim, "hurt", true)
+        }
         vfx.push(
           kitType
             ? castSpellKitVfx({
@@ -1999,12 +2042,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
                 target: p.target,
                 camera,
                 spell: p.spell,   // an attack-roll spell flies, whatever its type
+                onImpact: flinch,
               })
             : castSpellVfx({
                 parent: scene,
                 anchor: bone,
                 palette: paletteForSpell(p.spell),
                 target: p.target,
+                onImpact: flinch,   // lightning and weapons land too
               }),
         )
       }

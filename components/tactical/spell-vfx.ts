@@ -68,6 +68,8 @@ export function castSpellVfx(opts: {
   anchor: THREE.Object3D
   palette: SpellPalette
   target?: THREE.Vector3 | null
+  /** Fired once, when the mote arrives. Same contract as the kit's. */
+  onImpact?: () => void
 }): VfxHandle {
   const { parent, anchor, palette } = opts
   const origin = new THREE.Vector3()
@@ -221,6 +223,7 @@ export function castSpellVfx(opts: {
           light.position.copy(target).sub(group.position)
           light.intensity = 16
           boltMat.opacity = 0
+          opts.onImpact?.()
         }
       } else if (impacted && light.intensity > 0) {
         light.intensity = Math.max(0, light.intensity - 60 * dt)

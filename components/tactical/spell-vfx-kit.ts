@@ -271,6 +271,16 @@ export function castSpellKitVfx(opts: {
    * its damage type. Optional: without it the type's default route is used.
    */
   spell?: string
+  /**
+   * Fired once, on the frame the effect actually reaches the target.
+   *
+   * Only the effect knows this moment: the charge time, the flight time and
+   * the route all differ per damage type, so a bolt lands later than a beam
+   * and a Fireball later than a dart. Anything that should coincide with the
+   * hit — the target's flinch, the impact sound, a damage number — hangs off
+   * this rather than off a guessed delay.
+   */
+  onImpact?: () => void
 }): VfxHandle {
   const { parent, anchor, type } = opts
   const spec = routeFor(type, opts.spell)
@@ -423,12 +433,19 @@ export function castSpellKitVfx(opts: {
 
       // ── 3. impact ──────────────────────────────────────────────────────
       const impactAt = charge + flightTime
-      if (t >= impactAt && impact) {
+      if (t >= impactAt) {
         if (!impacted) {
           impacted = true
+          // Announce the landing even when the impact sheet is still loading,
+          // so a flinch is never skipped just because a texture was slow.
+          opts.onImpact?.()
+        }
+        if (impact && impact.mesh.position.lengthSq() === 0) {
           impact.mesh.position.copy(dest)
           if (spec.route === "sky") impact.mesh.position.y += 0.9
         }
+      }
+      if (t >= impactAt && impact) {
         const p = Math.min(1, (t - impactAt) / impactLife)
         if (spec.route === "sky") {
           // A column stands upright rather than facing the camera.
