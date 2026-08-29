@@ -941,12 +941,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (!shooter || !victim) return
       // Out of range says so. A button that was pressed and produced silence
       // is indistinguishable from a broken one.
-      const squares = Math.max(
-        Math.abs((shooter.row.grid_x ?? 0) - (victim.row.grid_x ?? 0)),
-        Math.abs((shooter.row.grid_y ?? 0) - (victim.row.grid_y ?? 0)),
-      )
-      if (armed.entry.rangeFt > 0 && squares * 5 > armed.entry.rangeFt) {
-        say(`${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${squares * 5} ft away.`)
+      // The same question the rings asked, asked once. A grey ring and a
+      // refused click must always agree, and they can only be relied on to
+      // agree if they run the same code.
+      const status = targetStatus(shooter, victim, armed.entry.rangeFt)
+      if (!status.ok) {
+        say(
+          status.reason === "sight"
+            ? `${victim.row.label} is behind cover — ${armed.name} needs a clear line.`
+            : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
+        )
         return
       }
       windupRef.current?.stop(0.08)
@@ -1272,37 +1276,114 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const reachGroup = new THREE.Group()
     scene.add(reachGroup)
     const reachGeo = new THREE.PlaneGeometry(SQ * 0.94, SQ * 0.94)
-    // LEGAL TARGETS. While a spell is armed, everything it could be thrown at
-    // wears a ring: red for a spell that harms, green for one that helps, so
-    // a healer never has to read a tooltip to find out who they can save.
+    // LEGAL TARGETS. While a spell is armed, every creature wears a ring, and
+    // the ring says what it is: red for a spell that harms, green for one that
+    // helps, amber for a body already down, and a dim grey for a creature the
+    // spell cannot reach.
+    //
+    // Showing the unreachable ones GREY rather than hiding them is the whole
+    // point. A creature with no ring is indistinguishable from a creature the
+    // board forgot about; a grey ring says "I see it, you can't hit it", and
+    // the click still explains why.
     const targetGroup = new THREE.Group()
     scene.add(targetGroup)
     const targetRingGeo = new THREE.RingGeometry(0.62, 0.86, 44)
     const hostileMat = new THREE.MeshBasicMaterial({ color: 0xff5a44, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
     const helpfulMat = new THREE.MeshBasicMaterial({ color: 0x53e07a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    /** Down but not gone: still a legal target, and worth finishing or saving. */
+    const downedMat = new THREE.MeshBasicMaterial({ color: 0xffab3d, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    /** Out of range, or nothing but wall between you and it. */
+    const deniedMat = new THREE.MeshBasicMaterial({ color: 0x6c6f7a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
+
+    /**
+     * Can this square see that one?
+     *
+     * Walks the cells between the two centres and asks whether each is part of
+     * the passable world — floor, or a door standing open. A wall cell, or a
+     * closed door, breaks the line. This is grid line-of-sight rather than a
+     * mesh raycast on purpose: the board already keeps the grid, the answer is
+     * stable as the camera moves, and it agrees with what movement does.
+     *
+     * The endpoints are exempt — a creature does not block sight to itself,
+     * and standing in a doorway is not standing in a wall.
+     */
+    const hasLineOfSight = (ax: number, ay: number, bx: number, by: number) => {
+      const dx = Math.abs(bx - ax)
+      const dy = Math.abs(by - ay)
+      const sx = ax < bx ? 1 : -1
+      const sy = ay < by ? 1 : -1
+      let err = dx - dy
+      let x = ax
+      let y = ay
+      let guard = dx + dy + 2 // a line can never be longer than this
+      while (guard-- > 0) {
+        if (x === bx && y === by) return true
+        const e2 = 2 * err
+        if (e2 > -dy) { err -= dy; x += sx }
+        if (e2 < dx) { err += dx; y += sy }
+        if (x === bx && y === by) return true
+        const k = x + "," + y
+        if (walkableRef.current.has(k)) continue
+        // Not floor. A door standing open is still a way through; a closed
+        // one is a wall, which is what makes shutting a door mean something.
+        const door = doorRecs.find((r) => r.cell === k)
+        if (!door || !door.open) return false
+      }
+      return true
+    }
 
     const clearTargets = () => {
       while (targetGroup.children.length) targetGroup.remove(targetGroup.children[0])
     }
 
-    /** Ring every token this spell could legally be thrown at. */
+    /**
+     * Why a given creature can or cannot be hit by the armed spell.
+     * Shared by the rings and by the click, so what you see and what the
+     * board allows can never disagree.
+     */
+    const targetStatus = (
+      me: { row: TokenRow },
+      t: { row: TokenRow },
+      rangeFt: number,
+    ): { ok: boolean; reason?: string; squares: number } => {
+      const squares = Math.max(
+        Math.abs((me.row.grid_x ?? 0) - (t.row.grid_x ?? 0)),
+        Math.abs((me.row.grid_y ?? 0) - (t.row.grid_y ?? 0)),
+      )
+      if (rangeFt > 0 && squares * 5 > rangeFt) {
+        return { ok: false, reason: "range", squares }
+      }
+      if (!hasLineOfSight(me.row.grid_x ?? 0, me.row.grid_y ?? 0, t.row.grid_x ?? 0, t.row.grid_y ?? 0)) {
+        return { ok: false, reason: "sight", squares }
+      }
+      return { ok: true, squares }
+    }
+
+    /**
+     * Ring every creature, and colour the ring by what it is.
+     *
+     * A body at 0 HP keeps its ring. It is still a legal target — SRD has
+     * attacks against an unconscious creature at advantage, a hit from within
+     * 5 ft is a critical, and damage at 0 HP costs a death save (two on a
+     * crit). Hiding it made a dying ally impossible to finish OR to reach
+     * with a heal, which is the opposite of what the rules do.
+     */
     const showTargets = (casterTokenId: string, rangeFt: number, helpful: boolean) => {
       clearTargets()
       const me = tokensRef.current.get(casterTokenId)
       if (!me) return
       tokensRef.current.forEach((t) => {
         if (t.row.id === casterTokenId) return
-        if ((t.row.hp_current ?? 1) <= 0) return
-        const squares = Math.max(
-          Math.abs((me.row.grid_x ?? 0) - (t.row.grid_x ?? 0)),
-          Math.abs((me.row.grid_y ?? 0) - (t.row.grid_y ?? 0)),
-        )
-        if (rangeFt > 0 && squares * 5 > rangeFt) return
-        const ring = new THREE.Mesh(targetRingGeo, helpful ? helpfulMat : hostileMat)
+        if (!t.row.is_visible) return
+        const { ok } = targetStatus(me, t, rangeFt)
+        const down = (t.row.hp_current ?? 1) <= 0
+        const mat = !ok ? deniedMat : down ? downedMat : helpful ? helpfulMat : hostileMat
+        const ring = new THREE.Mesh(targetRingGeo, mat)
         ring.rotation.x = -Math.PI / 2
         ring.position.set(t.obj.position.x, 0.09, t.obj.position.z)
         ring.scale.setScalar(radiusFor(t.row.token_size) / 0.75)
-        ring.userData.pulse = Math.random() * Math.PI * 2
+        // Denied rings sit still; a pulsing grey ring reads as available.
+        ring.userData.pulse = ok ? Math.random() * Math.PI * 2 : null
         targetGroup.add(ring)
       })
     }
@@ -1988,7 +2069,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Target rings breathe so they read as an invitation rather than decor.
       targetGroup.children.forEach((r) => {
         const m = r as THREE.Mesh
-        const phase = (m.userData.pulse as number) ?? 0
+        const phase = m.userData.pulse as number | null
+        // A denied ring (pulse null) holds a flat dim so it reads as "no",
+        // rather than breathing like the ones you can actually click.
+        if (phase === null) return
         m.scale.setScalar((m.scale.x || 1) > 0 ? m.scale.x : 1)
         ;(m.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.3 * Math.sin(clock.elapsedTime * 3 + phase)
       })
