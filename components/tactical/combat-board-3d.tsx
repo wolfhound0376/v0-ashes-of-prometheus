@@ -46,7 +46,7 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
-import { castSpellKitVfx, kitVfxTypeFor, prewarmKit } from "./spell-vfx-kit"
+import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -750,6 +750,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const isDowned = (row: TokenRow) =>
       row.hp_current !== null && row.hp_current !== undefined && row.hp_current <= 0
 
+    /**
+     * What last hit each creature, remembered so its death can look like it.
+     *
+     * The damage type is known when the effect LANDS, but the death is known
+     * later, when the server's HP write comes back down the wire. These are
+     * two separate moments, so the type has to be carried between them.
+     */
+    const lastHitBy = new Map<string, DamageType>()
+
     // ── CASTING ────────────────────────────────────────────────────────────
     // Live effects, advanced by the same clock as everything else. A cast
     // that is still in the air when the board unmounts is disposed with it.
@@ -1206,6 +1215,34 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // HP or identity changed → rebuild; position change → glide.
       const before = entry.row
       entry.row = row
+      // THE KILLING BLOW.
+      //
+      // SRD 5.1, Combat: "Most GMs have a monster die the instant it drops to
+      // 0 hit points, rather than having it fall unconscious and make death
+      // saving throws." So a monster crossing to 0 is a death, and it should
+      // look like whatever killed it — burn, dissolve, shatter.
+      //
+      // Player characters are excluded: they fall unconscious and roll death
+      // saves, which is a different thing entirely and must not be dressed up
+      // as a funeral.
+      //
+      // The body stays. spawnToken below rebuilds it into its death pose
+      // (HOLD_LAST), so the square remains occupied and the battlefield still
+      // reads.
+      const wasUp = (before.hp_current ?? 1) > 0
+      if (wasUp && isDowned(row) && !row.character_id) {
+        const type = lastHitBy.get(row.id)
+        if (type) {
+          vfx.push(deathVfx({
+            parent: scene,
+            position: new THREE.Vector3(entry.obj.position.x, 0.05, entry.obj.position.z),
+            type,
+            camera,
+            scale: radiusFor(row.token_size) / 0.75,
+          }))
+        }
+        lastHitBy.delete(row.id)
+      }
       if (before.hp_current !== row.hp_current || before.hp_max !== row.hp_max || before.is_visible !== row.is_visible || before.tint_color !== row.tint_color) {
         spawnToken(row)
         return
@@ -2039,6 +2076,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const flinch = () => {
           p.onLand?.()          // the bang, on the same frame as the flash
           if (!p.victimId) return
+          // Remember what hit it, so if this is the blow that kills it, the
+          // death can be made of the same stuff. Falls back to the spellbook
+          // for types the kit does not draw (lightning), and to physical for
+          // anything with no damage type at all — a weapon.
+          lastHitBy.set(
+            p.victimId,
+            kitType ?? ((spellEntry(p.spell).damage as DamageType | undefined) ?? "physical"),
+          )
           const victim = tokensRef.current.get(p.victimId)
           if (!victim?.anim || isDowned(victim.row)) return
           playState(victim.anim, "hurt", true)

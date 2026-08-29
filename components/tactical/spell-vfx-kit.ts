@@ -472,6 +472,90 @@ export function castSpellKitVfx(opts: {
   }
 }
 
+/**
+ * What is left of a creature that was killed by this.
+ *
+ * SRD 5.1, Combat: "Most GMs have a monster die the instant it drops to 0 hit
+ * points" — so a monster's death is a moment, not a process, and it should
+ * look like whatever killed it. The type's own impact sheet is replayed over
+ * the body: bigger, slower, and lower to the ground than the hit that caused
+ * it, so it reads as consuming the creature rather than striking it again.
+ *
+ * The body is NOT removed. It holds its death pose on the square, which keeps
+ * the battlefield readable and leaves the square occupied until someone moves
+ * it.
+ */
+export function deathVfx(opts: {
+  parent: THREE.Object3D
+  position: THREE.Vector3
+  type: DamageType
+  camera?: THREE.Camera | null
+  /** Bigger creature, bigger death. 1 = a single square. */
+  scale?: number
+}): VfxHandle {
+  const spec = TYPES[opts.type]
+  // Lightning and physical have no CAST entry — lightning was always drawn as
+  // procedural bolts, and a sword is not a spell. They still kill things, so
+  // they get a death sheet here without changing how either one casts:
+  // a concussive burst for a weapon, a shock for lightning.
+  const deathSheet =
+    spec?.impact ?? (opts.type === "physical" ? "forceHit"
+      : opts.type === "lightning" ? "thunderImpact"
+      : null)
+  const tint = spec?.tint ?? 0xffffff
+  const size = 2.6 * (opts.scale ?? 1)
+  const life = 1.5
+
+  const group = new THREE.Group()
+  group.position.copy(opts.position)
+  opts.parent.add(group)
+
+  const light = new THREE.PointLight(0xfff0d0, 0, 10, 1.7)
+  light.castShadow = false
+  group.add(light)
+
+  let sheet: Flip | null = null
+  let t = 0
+  let disposed = false
+
+  if (deathSheet) {
+    void loadSheet(deathSheet).then((s) => {
+      if (disposed) return
+      sheet = new Flip(s, tint, size, size)
+      // Sits low: this is the body being consumed, not a burst in the air.
+      sheet.mesh.position.y = size * 0.32
+      group.add(sheet.mesh)
+    }).catch(() => {})
+  }
+
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    sheet?.dispose()
+    group.remove(light)
+    opts.parent.remove(group)
+  }
+
+  return {
+    update(dt: number) {
+      if (disposed) return false
+      t += dt
+      const p = Math.min(1, t / life)
+      if (sheet) {
+        // Slower than a hit — the sheet is stretched across the whole life.
+        sheet.setProgress(p)
+        sheet.opacity = 1 - Math.max(0, (p - 0.55) / 0.45)
+        sheet.mesh.scale.setScalar(1 + p * 0.5)
+        if (opts.camera) sheet.mesh.quaternion.copy(opts.camera.quaternion)
+      }
+      light.intensity = 20 * (1 - p) * (1 - p)
+      if (t >= life) { dispose(); return false }
+      return true
+    },
+    dispose,
+  }
+}
+
 /** Drop every cached sheet — used by tests and by dev hot-reload. */
 export function _resetKitCache() {
   manifestPromise = null
