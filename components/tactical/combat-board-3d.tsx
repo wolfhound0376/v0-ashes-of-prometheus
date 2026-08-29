@@ -311,6 +311,51 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     renderer.domElement.addEventListener("wheel", onWheel, { passive: true })
     renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault())
 
+    // ---- keyboard pan: arrows (or WASD) glide the view ---------------
+    // Held keys accumulate in a set and the render loop integrates them,
+    // so the glide is frame-smooth instead of stuttering on key repeat.
+    // Direction convention: an arrow moves the VIEW that way — ArrowRight
+    // shows you what lies to the right, mirroring every map tool going.
+    // Keys are ignored while anything typeable has focus, so the chat box
+    // never fights the camera for the letter A.
+    const heldPanKeys = new Set<string>()
+    const PAN_KEYS = ["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"]
+    const typingNow = () => {
+      const el = document.activeElement as HTMLElement | null
+      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)
+    }
+    const onPanKeyDown = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase()
+      if (!PAN_KEYS.includes(k) || typingNow() || e.metaKey || e.ctrlKey || e.altKey) return
+      e.preventDefault() // arrows must not scroll the page under the board
+      heldPanKeys.add(k)
+    }
+    const onPanKeyUp = (e: KeyboardEvent) => { heldPanKeys.delete(e.key.toLowerCase()) }
+    const onPanBlur = () => heldPanKeys.clear() // alt-tab with a key held must not leave the camera drifting
+    window.addEventListener("keydown", onPanKeyDown)
+    window.addEventListener("keyup", onPanKeyUp)
+    window.addEventListener("blur", onPanBlur)
+    const panFromKeys = (dt: number) => {
+      if (!heldPanKeys.size) return
+      // Same basis vectors the mouse drag uses, so both inputs agree on
+      // what "up the map" means at any orbit angle.
+      let x = 0
+      let y = 0
+      if (heldPanKeys.has("arrowleft") || heldPanKeys.has("a")) x += 1
+      if (heldPanKeys.has("arrowright") || heldPanKeys.has("d")) x -= 1
+      if (heldPanKeys.has("arrowup") || heldPanKeys.has("w")) y += 1
+      if (heldPanKeys.has("arrowdown") || heldPanKeys.has("s")) y -= 1
+      if (!x && !y) return
+      const right = new THREE.Vector3().subVectors(camera.position, target).cross(camera.up).normalize()
+      const fwd = new THREE.Vector3().crossVectors(camera.up, right)
+      // Speed scales with zoom the way the drag does: close in you pan
+      // gently, zoomed out you cross the cavern in a second.
+      const step = dist * 0.75 * dt
+      target.addScaledVector(right, x * step)
+      target.addScaledVector(fwd, y * step)
+      applyCamera()
+    }
+
     // ---- texture plumbing -------------------------------------------
     const loader = new THREE.TextureLoader()
     const texCache = new Map<string, THREE.Texture>()
@@ -1339,6 +1384,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const dt = Math.min(clock.getDelta(), 0.1)
+      // Keyboard pan first, so everything below renders from this frame's view.
+      panFromKeys(dt)
       // Door swings + locked rattles.
       for (const rec of doorRecs) {
         if (rec.t !== rec.targetT) {
@@ -1441,6 +1488,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       renderer.domElement.removeEventListener("mousedown", onDown)
       window.removeEventListener("mouseup", onUp)
       window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("keydown", onPanKeyDown)
+      window.removeEventListener("keyup", onPanKeyUp)
+      window.removeEventListener("blur", onPanBlur)
       renderer.dispose()
       mount.removeChild(renderer.domElement)
       tokensRef.current.clear()
@@ -1521,7 +1571,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[260px] rounded border border-[#3a3345] bg-black/70 px-2.5 py-1.5">
         {status && <div className="font-mono text-[10px] text-[#8a8678]">{status}</div>}
         <div className="text-[9px] leading-relaxed text-[#7a7568]">
-          drag · wheel zoom · click a door
+          drag or arrows · wheel zoom · click a door
           {dm && <span className="text-[#9a7fc0]"> · token then square to move</span>}
         </div>
         <div className="mt-1.5 flex gap-1.5">
