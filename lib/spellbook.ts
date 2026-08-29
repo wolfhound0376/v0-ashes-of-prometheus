@@ -140,7 +140,7 @@ export interface RackItem {
   damage?: string
 }
 
-interface Spellcasting {
+export interface Spellcasting {
   slots?: Record<string, { max?: number; used?: number }>
   cantrips?: string[]
   prepared?: string[]
@@ -152,6 +152,25 @@ interface SheetAttack {
   damage?: string
   range?: string
   type?: string
+}
+
+/**
+ * Is this ability on the character's sheet at all?
+ *
+ * The rack already only OFFERS what the sheet holds, but the rack is a
+ * browser and a browser can be told to say anything. The server calls this
+ * before it resolves a cast, so "Samson casts Fireball" is refused at the
+ * only place that matters rather than merely being hard to click.
+ */
+export function knowsSpell(sc: Spellcasting | null | undefined, name: string): boolean {
+  const want = norm(name)
+  return [...(sc?.cantrips ?? []), ...(sc?.always_prepared ?? []), ...(sc?.prepared ?? [])]
+    .some((n) => norm(n) === want)
+}
+
+/** Which half of the turn economy this costs. Weapons always cost the action. */
+export function phaseCost(entry: SpellEntry, isWeapon: boolean): "action" | "bonus" {
+  return !isWeapon && entry.bonus ? "bonus" : "action"
 }
 
 /** Slots left at a given level, per the sheet. */

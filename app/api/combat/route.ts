@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
-import { spellEntry, rollDice } from "@/lib/spellbook"
+import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasting } from "@/lib/spellbook"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -376,22 +376,100 @@ export async function POST(req: NextRequest) {
     const victim = rows?.find((r) => r.id === target_token)
     if (!caster || !victim) return NextResponse.json({ error: "token missing" }, { status: 409 })
 
-    // Is this a WEAPON off the caster's own sheet rather than a spell?
+    // ---- THE FENCE ---------------------------------------------------
+    // Up to here we have only proved the two tokens exist. "move" is
+    // already fenced hard a hundred lines above; "cast" was not, and the
+    // gap was total: any browser could POST this verb on someone else's
+    // turn, name a spell that is not on the sheet, and repeat it until
+    // the target fell over. Nothing was read before it was overwritten.
     //
-    // Read from the sheet, never from the request: the client knows the
-    // weapon's name and nothing else it sends about damage is trusted. A
-    // browser claiming a dagger deals 40d6 gets a dagger.
-    let weapon: { name?: string; hit?: string; damage?: string } | null = null
-    if (caster.character_id) {
-      const { data: cs } = await db.from("characters")
-        .select("sheet_attacks").eq("id", caster.character_id).maybeSingle()
-      const list = (cs?.sheet_attacks ?? []) as { name?: string; hit?: string; damage?: string }[]
-      weapon = list.find((a) => (a?.name ?? "").toLowerCase() === ability.toLowerCase()) ?? null
+    // Same shape as the move fence, deliberately: right combatant, PC
+    // token, and only then the 5E resource questions.
+    const order = combat.turn_order as { token_id: string; kind: string }[]
+    const turn = order?.[combat.active_index]
+    if (!turn || turn.token_id !== caster_token) {
+      return NextResponse.json({ error: "not this combatant's turn" }, { status: 409 })
+    }
+    if (turn.kind !== "pc") {
+      return NextResponse.json({ error: "NPC actions are not a player verb" }, { status: 403 })
     }
 
+    // One read of the caster's sheet, used for all three things that need
+    // it: which weapons they carry, which spells they hold, and their own
+    // attack bonus and save DC. Read from the sheet, never from the
+    // request — a browser claiming a dagger deals 40d6 gets a dagger.
+    let sheetAttacks: { name?: string; hit?: string; damage?: string }[] = []
+    let casterSc: Spellcasting | null = null
+    if (caster.character_id) {
+      const { data: cs } = await db.from("characters")
+        .select("sheet_attacks,sheet_spellcasting").eq("id", caster.character_id).maybeSingle()
+      sheetAttacks = (cs?.sheet_attacks ?? []) as typeof sheetAttacks
+      casterSc = (cs?.sheet_spellcasting ?? null) as Spellcasting | null
+    }
+    const weapon = sheetAttacks.find((a) => (a?.name ?? "").toLowerCase() === ability.toLowerCase()) ?? null
+
     const entry = spellEntry(ability)
+
+    // Does the caster actually have this? A spell absent from the
+    // spellbook registry falls back to DEFAULT_ENTRY and still casts —
+    // that fallback is deliberate — but it must still be on the sheet.
+    if (!weapon && !knowsSpell(casterSc, ability)) {
+      return NextResponse.json(
+        { error: `${caster.label} does not have ${ability} prepared` },
+        { status: 403 },
+      )
+    }
+
+    // Is the half of the turn it costs still there?
+    const st = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
+    const phase = phaseCost(entry, Boolean(weapon))
+    if (st[phase] === true) {
+      return NextResponse.json(
+        { error: `${caster.label} has already used their ${phase === "bonus" ? "bonus action" : "action"} this turn` },
+        { status: 409 },
+      )
+    }
+
+    // Is there a slot? Cantrips are at will, so slotsLeft returns Infinity.
+    if (!weapon && slotsLeft(casterSc, entry.level) <= 0) {
+      return NextResponse.json(
+        { error: `no level ${entry.level} slots left` },
+        { status: 409 },
+      )
+    }
+
+    /**
+     * Pay for the cast: the turn phase, and the slot if it burned one.
+     *
+     * Both writes happen here so a resolution and its cost can never drift
+     * apart, and so the utility-spell path below pays too. Sanctuary and
+     * Shield of Faith have no dice to roll and used to return early having
+     * cost the caster nothing at all — they were free, all day, forever.
+     */
+    const payFor = async () => {
+      await db.from("combat_state")
+        .update({ turn_state: { ...st, [phase]: true }, updated_at: new Date().toISOString() })
+        .eq("id", combat.id)
+      if (weapon || entry.level === 0 || !caster.character_id || !casterSc) return
+      const slots = (casterSc.slots ?? {}) as Record<string, { max?: number; used?: number }>
+      const lvl = String(entry.level)
+      const cur = slots[lvl] ?? {}
+      await db.from("characters")
+        .update({
+          sheet_spellcasting: {
+            ...casterSc,
+            slots: { ...slots, [lvl]: { ...cur, used: (cur.used ?? 0) + 1 } },
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", caster.character_id)
+    }
+
     if (!weapon && (!entry.dice || entry.resolve === "none" || !entry.resolve)) {
       // Utility spells are real spells; they simply have nothing to roll.
+      // They still cost a slot and half a turn.
+      await payFor()
+      await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability}.`)
       return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this ability" })
     }
 
@@ -418,16 +496,10 @@ export async function POST(req: NextRequest) {
       saveMod = Math.floor(((scores[entry.save ?? "WIS"] ?? 10) - 10) / 2)
     }
 
-    // The caster's own numbers, off the sheet — never invented here.
-    let attackBonus = 4
-    let saveDc = 13
-    if (caster.character_id) {
-      const { data: c } = await db.from("characters")
-        .select("sheet_spellcasting").eq("id", caster.character_id).maybeSingle()
-      const sc = c?.sheet_spellcasting as { attack_bonus?: number; save_dc?: number } | null
-      attackBonus = sc?.attack_bonus ?? attackBonus
-      saveDc = sc?.save_dc ?? saveDc
-    }
+    // The caster's own numbers, off the sheet read above — never invented here.
+    const scNums = casterSc as { attack_bonus?: number; save_dc?: number } | null
+    const attackBonus = scNums?.attack_bonus ?? 4
+    const saveDc = scNums?.save_dc ?? 13
 
     let hit = true
     let crit = false
@@ -484,17 +556,22 @@ export async function POST(req: NextRequest) {
       await db.from("vtt_tokens")
         .update({ hp_current: next, updated_by: "player-cast", updated_at: new Date().toISOString() })
         .eq("id", victim.id)
+      // The token and the sheet are one creature. Writing only the token is
+      // how the board came to believe Kenta was at 0 while his sheet still
+      // read 8/8 — the plates, the globes and the character sheet overlay all
+      // read `characters`, and none of them had heard about the fight.
+      if (victim.character_id) {
+        await db.from("characters")
+          .update({ hp_current: next, updated_at: new Date().toISOString() })
+          .eq("id", victim.character_id)
+      }
       if (!entry.heals && next === 0) line += ` ${victim.label} goes down.`
     }
     await narrate(db, caster.label ?? "Someone", line)
 
-    // The action is spent by the same call that resolved it, so a hit and its
-    // cost can never drift apart.
-    const st = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
-    const slot = !weapon && entry.bonus ? "bonus" : "action"
-    await db.from("combat_state")
-      .update({ turn_state: { ...st, [slot]: true }, updated_at: new Date().toISOString() })
-      .eq("id", combat.id)
+    // Paid by the same call that resolved it, so a hit and its cost can never
+    // drift apart.
+    await payFor()
 
     return NextResponse.json({
       ok: true, resolved: true, hit, crit, amount,
