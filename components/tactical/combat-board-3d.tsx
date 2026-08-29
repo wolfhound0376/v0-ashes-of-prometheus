@@ -45,6 +45,7 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
+import { castSpellKitVfx, kitVfxTypeFor, prewarmKit } from "./spell-vfx-kit"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -799,6 +800,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
       const { release, hand } = castEventFor(clip.name, clip.duration)
       pending.push({ wait: release, obj: found.obj, hand, spell: ability, target })
+      // Pull this type's sheets during the windup, so the first cast of a
+      // spell looks like every later one rather than arriving half-loaded.
+      const warm = kitVfxTypeFor(ability)
+      if (warm) prewarmKit(warm)
 
       // SOUND. The school gives the spell its voice; the damage type decides
       // what the target hears when it lands. Both come off the spellbook, so
@@ -1935,13 +1940,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (p.wait > 0) continue
         pending.splice(i, 1)
         const bone = p.obj.getObjectByName(p.hand) ?? p.obj
+        // The flipbook kit when it is switched on and knows this damage type;
+        // the original sparks otherwise. Both satisfy VfxHandle, so the loop
+        // below does not care which one it got.
+        const kitType = kitVfxTypeFor(p.spell)
         vfx.push(
-          castSpellVfx({
-            parent: scene,
-            anchor: bone,
-            palette: paletteForSpell(p.spell),
-            target: p.target,
-          }),
+          kitType
+            ? castSpellKitVfx({
+                parent: scene,
+                anchor: bone,
+                type: kitType,
+                target: p.target,
+                camera,
+              })
+            : castSpellVfx({
+                parent: scene,
+                anchor: bone,
+                palette: paletteForSpell(p.spell),
+                target: p.target,
+              }),
         )
       }
       for (let i = vfx.length - 1; i >= 0; i--) {
