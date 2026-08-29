@@ -38,6 +38,15 @@ export type DamageType =
  */
 export type TargetMode = "creature" | "self" | "point" | "none"
 
+/**
+ * How the spell decides whether it lands.
+ *   attack — a spell attack roll against the target's AC
+ *   save   — the target rolls; on a success it takes half (or nothing)
+ *   auto   — it just happens (Magic Missile, healing)
+ *   none   — no resolution at all (utility, illusions)
+ */
+export type Resolution = "attack" | "save" | "auto" | "none"
+
 export interface SpellEntry {
   /** 0 = cantrip, else the slot level it burns. */
   level: number
@@ -52,45 +61,56 @@ export interface SpellEntry {
   bonus?: boolean
   /** A friendly target: the board should light allies, not enemies. */
   helpful?: boolean
+  /** How it lands. Defaults to "none" — an unknown spell never deals damage
+   *  by accident, which is the safe direction for a mistake to fall. */
+  resolve?: Resolution
+  /** Damage or healing dice, e.g. "4d6". Scales with level elsewhere. */
+  dice?: string
+  /** Which save the target rolls, when resolve is "save". */
+  save?: "STR" | "DEX" | "CON" | "INT" | "WIS" | "CHA"
+  /** A successful save takes half rather than none. */
+  halfOnSave?: boolean
+  /** Heals instead of harming; dice are added to hp. */
+  heals?: boolean
 }
 
 const S = (e: SpellEntry) => e
 
 export const SPELLBOOK: Record<string, SpellEntry> = {
   // ---- Kenta, sorcerer ----------------------------------------------------
-  "ray of frost":      S({ level: 0, school: "cold",     damage: "cold",      rangeFt: 60,  target: "creature" }),
-  "shocking grasp":    S({ level: 0, school: "arcane",   damage: "lightning", rangeFt: 5,   target: "creature" }),
-  "chill touch":       S({ level: 0, school: "necrotic", damage: "necrotic",  rangeFt: 120, target: "creature" }),
+  "ray of frost":      S({ level: 0, school: "cold",     damage: "cold",      rangeFt: 60,  target: "creature", resolve: "attack", dice: "1d8" }),
+  "shocking grasp":    S({ level: 0, school: "arcane",   damage: "lightning", rangeFt: 5,   target: "creature", resolve: "attack", dice: "1d8" }),
+  "chill touch":       S({ level: 0, school: "necrotic", damage: "necrotic",  rangeFt: 120, target: "creature", resolve: "attack", dice: "1d8" }),
   "minor illusion":    S({ level: 0, school: "arcane",                        rangeFt: 30,  target: "point" }),
   "disguise self":     S({ level: 1, school: "arcane",                        rangeFt: 0,   target: "self" }),
   "fog cloud":         S({ level: 1, school: "nature",                        rangeFt: 120, target: "point", concentration: true }),
 
   // ---- Samson, cleric -----------------------------------------------------
   guidance:            S({ level: 0, school: "holy",                          rangeFt: 5,   target: "creature", concentration: true, helpful: true }),
-  "toll the dead":     S({ level: 0, school: "necrotic", damage: "necrotic",  rangeFt: 60,  target: "creature" }),
+  "toll the dead":     S({ level: 0, school: "necrotic", damage: "necrotic",  rangeFt: 60,  target: "creature", resolve: "save", save: "WIS", dice: "1d8" }),
   thaumaturgy:         S({ level: 0, school: "holy",                          rangeFt: 30,  target: "none" }),
   sanctuary:           S({ level: 1, school: "holy",                          rangeFt: 30,  target: "creature", bonus: true, helpful: true }),
-  "healing word":      S({ level: 1, school: "holy",                          rangeFt: 60,  target: "creature", bonus: true, helpful: true }),
-  "guiding bolt":      S({ level: 1, school: "holy",     damage: "radiant",   rangeFt: 120, target: "creature" }),
+  "healing word":      S({ level: 1, school: "holy",                          rangeFt: 60,  target: "creature", bonus: true, helpful: true, resolve: "auto", dice: "1d4", heals: true }),
+  "guiding bolt":      S({ level: 1, school: "holy",     damage: "radiant",   rangeFt: 120, target: "creature", resolve: "attack", dice: "4d6" }),
   "shield of faith":   S({ level: 1, school: "holy",                          rangeFt: 60,  target: "creature", bonus: true, helpful: true, concentration: true }),
 
   // ---- Scott, bard --------------------------------------------------------
   "mage hand":         S({ level: 0, school: "arcane",                        rangeFt: 30,  target: "point" }),
-  "vicious mockery":   S({ level: 0, school: "psychic",  damage: "psychic",   rangeFt: 60,  target: "creature" }),
-  "dissonant whispers":S({ level: 1, school: "psychic",  damage: "psychic",   rangeFt: 60,  target: "creature" }),
+  "vicious mockery":   S({ level: 0, school: "psychic",  damage: "psychic",   rangeFt: 60,  target: "creature", resolve: "save", save: "WIS", dice: "1d4" }),
+  "dissonant whispers":S({ level: 1, school: "psychic",  damage: "psychic",   rangeFt: 60,  target: "creature", resolve: "save", save: "WIS", dice: "3d6", halfOnSave: true }),
   "faerie fire":       S({ level: 1, school: "arcane",                        rangeFt: 60,  target: "point", concentration: true }),
   sleep:               S({ level: 1, school: "arcane",                        rangeFt: 90,  target: "point" }),
 
   // ---- commonly reached for, so the registry does not go stale the first
   //      time somebody levels ------------------------------------------------
-  "eldritch blast":    S({ level: 0, school: "eldritch", damage: "force",     rangeFt: 120, target: "creature" }),
-  "sacred flame":      S({ level: 0, school: "holy",     damage: "radiant",   rangeFt: 60,  target: "creature" }),
-  "fire bolt":         S({ level: 0, school: "fire",     damage: "fire",      rangeFt: 120, target: "creature" }),
-  "cure wounds":       S({ level: 1, school: "holy",                          rangeFt: 5,   target: "creature", helpful: true }),
-  "magic missile":     S({ level: 1, school: "arcane",   damage: "force",     rangeFt: 120, target: "creature" }),
+  "eldritch blast":    S({ level: 0, school: "eldritch", damage: "force",     rangeFt: 120, target: "creature", resolve: "attack", dice: "1d10" }),
+  "sacred flame":      S({ level: 0, school: "holy",     damage: "radiant",   rangeFt: 60,  target: "creature", resolve: "save", save: "DEX", dice: "1d8" }),
+  "fire bolt":         S({ level: 0, school: "fire",     damage: "fire",      rangeFt: 120, target: "creature", resolve: "attack", dice: "1d10" }),
+  "cure wounds":       S({ level: 1, school: "holy",                          rangeFt: 5,   target: "creature", helpful: true, resolve: "auto", dice: "1d8", heals: true }),
+  "magic missile":     S({ level: 1, school: "arcane",   damage: "force",     rangeFt: 120, target: "creature", resolve: "auto", dice: "3d4+3" }),
   "burning hands":     S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 15,  target: "point" }),
   "thunderwave":       S({ level: 1, school: "arcane",   damage: "thunder",   rangeFt: 15,  target: "point" }),
-  "inflict wounds":    S({ level: 1, school: "necrotic", damage: "necrotic",  rangeFt: 5,   target: "creature" }),
+  "inflict wounds":    S({ level: 1, school: "necrotic", damage: "necrotic",  rangeFt: 5,   target: "creature", resolve: "attack", dice: "3d10" }),
   "hellish rebuke":    S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 60,  target: "creature" }),
   "misty step":        S({ level: 2, school: "arcane",                        rangeFt: 30,  target: "point", bonus: true }),
   "spiritual weapon":  S({ level: 2, school: "holy",     damage: "force",     rangeFt: 60,  target: "creature", bonus: true }),
@@ -207,4 +227,16 @@ export function rackFor(args: {
   }
 
   return out
+}
+
+
+/** "3d4+3" → rolled total. Unknown shapes roll nothing rather than guessing. */
+export function rollDice(spec: string, rng: () => number = Math.random): number {
+  const m = spec.trim().match(/^(\d+)d(\d+)\s*(?:([+-])\s*(\d+))?$/i)
+  if (!m) return 0
+  const [, countS, dieS, sign, bonusS] = m
+  let total = 0
+  for (let i = 0; i < Number(countS); i++) total += 1 + Math.floor(rng() * Number(dieS))
+  if (bonusS) total += (sign === "-" ? -1 : 1) * Number(bonusS)
+  return Math.max(0, total)
 }

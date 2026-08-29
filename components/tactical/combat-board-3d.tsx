@@ -204,6 +204,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // Which token the board resolved for the armed spell, so the release cannot
   // re-resolve to somebody else.
   const armedTokenRef = useRef<string | null>(null)
+  const targetsRef = useRef<{ show: (t: string, r: number, h: boolean) => void; clear: () => void }>({ show: () => {}, clear: () => {} })
+  const castVerbRef = useRef<(caster: string, target: string, ability: string) => Promise<void>>(async () => {})
 
   useEffect(() => {
     setDm(Boolean(getDmKey()))
@@ -882,10 +884,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       windupRef.current?.stop(0.08)
       windupRef.current = null
       stopCharge()
+      clearTargets()
       setSelected(victim.row)
       // Cast from the token we locked, not from a fresh search.
       performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter)
       setArmedSpell(null)
+      // And let the server say what it did. The animation is already playing;
+      // the dice are rolled where they cannot be argued with, and the result
+      // arrives in the same combat log everyone at the table is reading.
+      void castVerbRef.current(shooter.row.id, victim.row.id, armed.name)
     }
     releaseAtRef.current = releaseAt
 
@@ -1180,6 +1187,42 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const reachGroup = new THREE.Group()
     scene.add(reachGroup)
     const reachGeo = new THREE.PlaneGeometry(SQ * 0.94, SQ * 0.94)
+    // LEGAL TARGETS. While a spell is armed, everything it could be thrown at
+    // wears a ring: red for a spell that harms, green for one that helps, so
+    // a healer never has to read a tooltip to find out who they can save.
+    const targetGroup = new THREE.Group()
+    scene.add(targetGroup)
+    const targetRingGeo = new THREE.RingGeometry(0.62, 0.86, 44)
+    const hostileMat = new THREE.MeshBasicMaterial({ color: 0xff5a44, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    const helpfulMat = new THREE.MeshBasicMaterial({ color: 0x53e07a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+
+    const clearTargets = () => {
+      while (targetGroup.children.length) targetGroup.remove(targetGroup.children[0])
+    }
+
+    /** Ring every token this spell could legally be thrown at. */
+    const showTargets = (casterTokenId: string, rangeFt: number, helpful: boolean) => {
+      clearTargets()
+      const me = tokensRef.current.get(casterTokenId)
+      if (!me) return
+      tokensRef.current.forEach((t) => {
+        if (t.row.id === casterTokenId) return
+        if ((t.row.hp_current ?? 1) <= 0) return
+        const squares = Math.max(
+          Math.abs((me.row.grid_x ?? 0) - (t.row.grid_x ?? 0)),
+          Math.abs((me.row.grid_y ?? 0) - (t.row.grid_y ?? 0)),
+        )
+        if (rangeFt > 0 && squares * 5 > rangeFt) return
+        const ring = new THREE.Mesh(targetRingGeo, helpful ? helpfulMat : hostileMat)
+        ring.rotation.x = -Math.PI / 2
+        ring.position.set(t.obj.position.x, 0.09, t.obj.position.z)
+        ring.scale.setScalar(radiusFor(t.row.token_size) / 0.75)
+        ring.userData.pulse = Math.random() * Math.PI * 2
+        targetGroup.add(ring)
+      })
+    }
+    targetsRef.current = { show: showTargets, clear: clearTargets }
+
     const reachMat = new THREE.MeshBasicMaterial({ color: 0xf3c94b, transparent: true, opacity: 0.24, depthWrite: false, side: THREE.DoubleSide })
     // The path is a RIBBON, not a hairline — THREE.Line renders one pixel
     // whatever you ask for, so the ornate version is built from flat quads:
@@ -1851,6 +1894,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         activeGlow.position.z = activeTok.obj.position.z
         activeGlow.scale.setScalar(radiusFor(activeTok.row.token_size))
         ;(activeGlow.material as THREE.MeshBasicMaterial).opacity = 0.26 + 0.14 * Math.sin(clock.elapsedTime * 2.4)
+      // Target rings breathe so they read as an invitation rather than decor.
+      targetGroup.children.forEach((r) => {
+        const m = r as THREE.Mesh
+        const phase = (m.userData.pulse as number) ?? 0
+        m.scale.setScalar((m.scale.x || 1) > 0 ? m.scale.x : 1)
+        ;(m.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.3 * Math.sin(clock.elapsedTime * 3 + phase)
+      })
       } else {
         activeGlow.visible = false
       }
@@ -1991,6 +2041,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // geometry and materials with it.
       vfx.forEach((v) => v.dispose())
       vfx.length = 0
+      clearTargets()
+      targetRingGeo.dispose()
       pending.length = 0
       castRef.current = () => {}
     }
@@ -2060,8 +2112,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     if (!armedSpell) return
     const h = playSfx(windupFor(armedSpell.entry.school), { loop: true, volume: 0.55, fadeIn: 0.25 })
     windupRef.current = h
-    // The visible half of the ramp: the caster holds the pose while choosing.
+    // The visible half of the ramp: the caster holds the pose while choosing,
+    // and everyone they could throw it at is ringed.
     chargeRef.current.start(armedSpell.tokenId)
+    targetsRef.current.show(armedSpell.tokenId, armedSpell.entry.rangeFt, Boolean(armedSpell.entry.helpful))
     const e = armedSpell.entry
     preloadSfx([releaseFor(e.school), tailFor(e.school), ...(e.damage ? [impactFor(e.damage)] : [])])
     const onKey = (ev: KeyboardEvent) => {
@@ -2072,11 +2126,31 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     return () => {
       h.stop(0.18)
       if (windupRef.current === h) windupRef.current = null
-      // Cancelled, thrown, or unmounted — the pose must not be left held.
+      // Cancelled, thrown, or unmounted — the pose must not be left held and
+      // the rings must not outlive the choice.
       chargeRef.current.stop()
+      targetsRef.current.clear()
       window.removeEventListener("keydown", onKey)
     }
   }, [armedSpell])
+
+  // Ask the server to resolve a spell that has just been thrown.
+  useEffect(() => {
+    castVerbRef.current = async (caster_token, target_token, ability) => {
+      try {
+        const res = await fetch("/api/combat", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...dmHeaders() },
+          body: JSON.stringify({ action: "cast", caster_token, target_token, ability, sandbox }),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok) say(data?.error ?? "The spell would not resolve.")
+        else if (data?.resolved) say(data.line as string)
+      } catch {
+        say("The spell landed, but the tally did not reach the server.")
+      }
+    }
+  }, [sandbox])
 
   const playerVerb = async (body: Record<string, unknown>) => {
     try {
