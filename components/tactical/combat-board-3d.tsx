@@ -1735,6 +1735,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     let lastHoverCell = ""
     const onHoverMove = (e: MouseEvent) => {
       if (!reachRef.current || !floorPlane) return
+      // While a spell is armed the cursor is asking a different question, and
+      // the targeting read-out answers it. Movement cost alongside it is a
+      // second answer to a question nobody asked - and the floor raycast still
+      // hits a reach square underneath the token being aimed at, so without
+      // this the board would price a walk the player is not taking.
+      if (armedRef.current) {
+        hoverGroup.visible = false
+        lastHoverCell = ""
+        setMoveHint(null)
+        return
+      }
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, activeCam())
@@ -2790,7 +2801,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         </div>
       )}
 
-      {/* The path's price, BG3-style, while a walk is being lined up. */}
+      {/* What the hovered square costs. Bottom-centre, clear of the cursor
+          read-out, which owns the same moment when a spell is armed. */}
       {moveHint && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded border border-[#8a6d2f] bg-black/75 px-2.5 py-0.5 font-mono text-[10px] text-[#ffe28a]">
           {moveHint}
