@@ -1563,6 +1563,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           .from("characters")
           .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,sheet_attacks,hero_image_url")
           .in("id", charIds)
+          // Without this the order is whatever Postgres feels like, which
+          // makes the default focus — and the fallback above — a coin flip
+          // that changes between reloads.
+          .order("name")
         const list = (rows ?? []) as HudCharacter[]
         setSheets(list)
         setFocusId((cur) => cur ?? list[0]?.id ?? null)
@@ -2108,9 +2112,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         onEndTurn={() => void combatAction("next")}
         focusId={focusId}
         onFocus={setFocusId}
-        onCast={(ability, kind) => {
-          if (focusId) castRef.current(focusId, ability, kind)
-        }}
+        // The rack tells us who cast it. Deriving it here from focusId is how
+        // the wrong miniature ended up animating.
+        onCast={(characterId, ability, kind) => castRef.current(characterId, ability, kind)}
       />
 
       {/* Before the dice: the one button that starts a fight. Sits under the

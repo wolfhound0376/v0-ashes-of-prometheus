@@ -78,7 +78,12 @@ interface Props {
   onEndTurn: () => void
   focusId: string | null
   onFocus: (id: string) => void
-  onCast?: (ability: string, kind: string) => void
+  /** The rack fires with the character it is ACTUALLY showing. It passes the
+   *  id rather than letting the caller re-derive it: the board used to cast
+   *  with its own `focusId` while this component displayed `focus`, and those
+   *  two disagree the moment focusId fails to resolve — at which point the
+   *  rack shows one character's spells and a different miniature moves. */
+  onCast?: (characterId: string, ability: string, kind: string) => void
 }
 
 // Spells whose CASTING TIME is a bonus action (PHB). Everything else on the
@@ -327,10 +332,18 @@ export function CombatHud(props: Props) {
     return tokenToCharacter[entry.token_id] ?? null
   }, [turnOrder, activeIndex, tokenToCharacter])
 
-  const focus = useMemo(
-    () => characters.find((c) => c.id === focusId) ?? characters[0] ?? null,
-    [characters, focusId],
-  )
+  const focus = useMemo(() => {
+    const exact = characters.find((c) => c.id === focusId)
+    if (exact) return exact
+    // Falling back is right — a HUD with no plate is worse than a HUD showing
+    // the wrong one — but doing it SILENTLY is what hid this bug: the rack
+    // rendered characters[0]'s spells while the board animated focusId's
+    // miniature, so pressing one of Samson's spells moved the bard.
+    if (focusId && characters.length) {
+      console.warn(`[hud] focusId ${focusId} is not in the loaded sheets — showing ${characters[0]?.name} instead`)
+    }
+    return characters[0] ?? null
+  }, [characters, focusId])
 
   const abilities = useMemo(() => {
     const sc = focus?.sheet_spellcasting
@@ -486,7 +499,7 @@ export function CombatHud(props: Props) {
                       const selecting = !selected
                       setAbility(selecting ? a.name : null)
                       if (selecting) {
-                        onCast?.(a.name, a.kind)
+                        if (focus) onCast?.(focus.id, a.name, a.kind)
                         // Tell the banner what this cast cost; the phase is
                         // spent there, where the spend callback lives.
                         window.dispatchEvent(new CustomEvent("aop:ability-used", { detail: { phase } }))
