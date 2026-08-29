@@ -2002,44 +2002,72 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .from("vtt_tokens")
         .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
         .eq("map_id", map.id)
-      for (const row of (tokenRows ?? []) as TokenRow[]) spawnToken(row)
 
-      // ---- numbers for the hover read-out ----------------------------
-      // Fetched once, alongside the tokens. Nothing here decides anything:
-      // the server still rolls, and this is only what the cursor reports.
-      // A token whose AC we cannot find simply shows no number rather than a
-      // guessed one.
+      // A model belongs to the SPECIES. A token that names a bestiary entry
+      // and carries no model of its own inherits that entry's art, so placing
+      // the second giant spider needs no URL and no SQL — the bestiary row
+      // already knows what a giant spider looks like. The token's own
+      // model_url still wins when set, which is how a named boss wears
+      // different art from its kin.
+      //
+      // The same row also carries the creature's AC, which the hover read-out
+      // wants. Two features, one bestiary row, one round trip — they were
+      // written as separate queries on separate branches and there is no
+      // reason to keep them apart now they have met.
+      const speciesIds = [...new Set(((tokenRows ?? []) as TokenRow[])
+        .map((r: TokenRow) => r.bestiary_id)
+        .filter((id: string | null): id is string => Boolean(id)))]
+      const speciesModel = new Map<string, { url: string | null; scale: number | null; y: number | null }>()
+      const acByBeast = new Map<string, number>()
+      if (speciesIds.length) {
+        const { data: species } = await supabase
+          .from("bestiary")
+          .select("id,ac,model_url,model_scale,model_y_offset")
+          .in("id", speciesIds)
+        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null }>) {
+          speciesModel.set(b.id, { url: b.model_url, scale: b.model_scale, y: b.model_y_offset })
+          if (typeof b.ac === "number") acByBeast.set(b.id, b.ac)
+        }
+      }
+
+      for (const row of (tokenRows ?? []) as TokenRow[]) {
+        const fallback = row.bestiary_id ? speciesModel.get(row.bestiary_id) : undefined
+        spawnToken(fallback?.url && !row.model_url
+          ? { ...row,
+              model_url: fallback.url,
+              model_scale: row.model_scale ?? fallback.scale,
+              model_y_offset: row.model_y_offset ?? fallback.y }
+          : row)
+        // Monsters can have their AC already: it came back with the art.
+        const beastAc = row.bestiary_id ? acByBeast.get(row.bestiary_id) : undefined
+        if (typeof beastAc === "number") acRef.current.set(row.id, beastAc)
+      }
+
+      // ---- the rest of the hover read-out ----------------------------
+      // The party's own numbers. Nothing here decides anything: the server
+      // still rolls, and this is only what the cursor reports. A token whose
+      // AC cannot be found simply shows no number rather than a guessed one.
       void (async () => {
         const rows = (tokenRows ?? []) as TokenRow[]
         const charIds = Array.from(new Set(rows.map((r) => r.character_id).filter(Boolean))) as string[]
-        const beastIds = Array.from(new Set(rows.map((r) => r.bestiary_id).filter(Boolean))) as string[]
-
+        if (!charIds.length) return
+        const { data } = await supabase
+          .from("characters")
+          .select("id,ac,sheet_spellcasting")
+          .in("id", charIds)
         const acByChar = new Map<string, number>()
-        const acByBeast = new Map<string, number>()
-        if (charIds.length) {
-          const { data } = await supabase
-            .from("characters")
-            .select("id,ac,sheet_spellcasting")
-            .in("id", charIds)
-          for (const c of data ?? []) {
-            if (typeof c.ac === "number") acByChar.set(c.id as string, c.ac)
-            // attack_bonus and save_dc are already on the sheet, each with an
-            // SRD citation. Read them; do not re-derive them from class.
-            const sc = (c.sheet_spellcasting ?? {}) as { attack_bonus?: number; save_dc?: number }
-            casterRef.current.set(c.id as string, {
-              atk: typeof sc.attack_bonus === "number" ? sc.attack_bonus : null,
-              dc: typeof sc.save_dc === "number" ? sc.save_dc : null,
-            })
-          }
-        }
-        if (beastIds.length) {
-          const { data } = await supabase.from("bestiary").select("id,ac").in("id", beastIds)
-          for (const b of data ?? []) {
-            if (typeof b.ac === "number") acByBeast.set(b.id as string, b.ac)
-          }
+        for (const c of data ?? []) {
+          if (typeof c.ac === "number") acByChar.set(c.id as string, c.ac)
+          // attack_bonus and save_dc are already on the sheet, each with an
+          // SRD citation. Read them; do not re-derive them from class.
+          const sc = (c.sheet_spellcasting ?? {}) as { attack_bonus?: number; save_dc?: number }
+          casterRef.current.set(c.id as string, {
+            atk: typeof sc.attack_bonus === "number" ? sc.attack_bonus : null,
+            dc: typeof sc.save_dc === "number" ? sc.save_dc : null,
+          })
         }
         for (const r of rows) {
-          const ac = r.character_id ? acByChar.get(r.character_id) : r.bestiary_id ? acByBeast.get(r.bestiary_id) : undefined
+          const ac = r.character_id ? acByChar.get(r.character_id) : undefined
           if (typeof ac === "number") acRef.current.set(r.id, ac)
         }
       })()
