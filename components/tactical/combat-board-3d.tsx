@@ -1884,10 +1884,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         )}
       </div>
 
-      {/* YOUR TURN — only for the browser whose character is up. */}
+      {/* THE TURN, ANNOUNCED — the owner gets the blocking call; the table
+          gets the transient centre plate and a read-only phase tray; the DM
+          gets a live tray. */}
       <TurnBanner
         active={Boolean(combat)}
         isMine={isMyTurn}
+        dm={dm}
         characterName={activeSheet?.name ?? activeEntry?.label ?? ""}
         economy={combat?.turn_state ?? {}}
         speedFt={speedFt}
