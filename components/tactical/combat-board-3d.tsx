@@ -31,6 +31,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { createClient } from "@/lib/supabase/client"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
 import { TurnBanner, type TurnEconomy } from "./turn-banner"
@@ -249,6 +250,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
+
+    // Image-based fill for the FIGURES ONLY, never the pre-lit artwork.
+    // A PBR material with no environment has nothing to shape its surface
+    // against; outside a torch radius it renders as a mud silhouette —
+    // which is every NPC, since only party tokens carry lights. A neutral
+    // room environment at half strength gives each model soft, directional
+    // definition everywhere on the board for the cost of one baked texture,
+    // where per-token fill lights would triple the light count.
+    const pmrem = new THREE.PMREMGenerator(renderer)
+    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    // Textures default to anisotropy 1 and smear at this camera's grazing
+    // angle — "not very well defined" is exactly what that looks like.
+    const maxAniso = renderer.capabilities.getMaxAnisotropy()
 
     // The tile art is pre-lit by the artist; lighting stays gentle so the
     // board reads as the drawn map, not a blown-out relight.
@@ -855,6 +869,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               // is 0.35 rather than 0.45 so highlights survive.
               if (typeof m.metalness === "number") m.metalness = Math.min(m.metalness, 0.35)
               if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.35)
+              // Sharp at grazing angles: the D2 camera looks across the
+              // board, not down at it, and without anisotropic filtering
+              // every texture mips into soup a few squares out.
+              for (const t of [m.map, m.normalMap, m.roughnessMap, m.metalnessMap]) {
+                if (t) t.anisotropy = maxAniso
+              }
+              m.envMap = envTex
+              m.envMapIntensity = 0.55
+              // Meshy flags some materials BLEND at full opacity; three
+              // then draws them in the transparent pass where rings and
+              // glow planes show through the body — the ghost figure.
+              // A surface with no actual alpha is opaque. Say so.
+              if (m.transparent && (m.opacity ?? 1) >= 0.98 && !m.alphaMap && !(m.alphaTest > 0)) {
+                m.transparent = false
+                m.depthWrite = true
+              }
               // Tone mapping desaturates; a touch of extra saturation in the
               // material colour puts the artist's palette back.
               if (m.color) m.color.offsetHSL(0, 0.08, 0.02)
@@ -1816,6 +1846,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       sealInnerGeo.dispose()
       sealCoreGeo.dispose()
       activeGlow.geometry.dispose()
+      pmrem.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
       tokensRef.current.clear()
