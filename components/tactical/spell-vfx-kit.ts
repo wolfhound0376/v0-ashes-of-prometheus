@@ -70,6 +70,35 @@ export function hasKitEffect(type: DamageType): boolean {
   return type in TYPES
 }
 
+/**
+ * The route a particular spell takes, which is not always its type's default.
+ *
+ * A damage type describes what the magic *is*; it does not describe how it
+ * crosses the room. Radiant is the clear case: Sacred Flame is a save-based
+ * column of light that falls on the target from above, while Guiding Bolt is
+ * a ranged spell **attack** — a bolt that leaves the hand and flies. Both are
+ * radiant, and drawing them the same way makes one of them wrong.
+ *
+ * The spellbook already records the difference in `resolve`, so read it: a
+ * spell resolved by an attack roll is a thrown thing, whatever it is made of.
+ */
+function routeFor(type: DamageType, spellName?: string): TypeSpec | undefined {
+  const spec = TYPES[type]
+  if (!spec || !spellName) return spec
+  const entry = spellEntry(spellName)
+  if (entry?.resolve !== "attack") return spec
+  if (spec.route === "ball" || spec.route === "beam") return spec // already thrown
+  return {
+    ...spec,
+    route: "ball",
+    // Sky and impact-only routes carry no travelling sheet, so borrow the
+    // impact art for the bolt itself and let it bloom again on arrival.
+    travel: spec.travel ?? spec.impact,
+    speed: spec.speed ?? 18,
+    impactScale: (spec.impactScale ?? 1.6) * 0.8,
+  }
+}
+
 // ── flag + resolver ─────────────────────────────────────────────────────────
 // One entry point for the board: given a spell name, either a type the kit can
 // draw, or null meaning "use the old effect". Keeping the flag and the lookup
@@ -237,9 +266,14 @@ export function castSpellKitVfx(opts: {
   camera?: THREE.Camera | null
   /** Area spells draw bigger. 1 = a single square. */
   scale?: number
+  /**
+   * The spell's own name, so the route can follow the spell rather than only
+   * its damage type. Optional: without it the type's default route is used.
+   */
+  spell?: string
 }): VfxHandle {
   const { parent, anchor, type } = opts
-  const spec = TYPES[type]
+  const spec = routeFor(type, opts.spell)
   const target = opts.target ? opts.target.clone() : null
   const areaScale = opts.scale ?? 1
 

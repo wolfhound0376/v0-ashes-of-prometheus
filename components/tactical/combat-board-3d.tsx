@@ -768,6 +768,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       ability: string,
       kind: string,
       explicitToken?: { row: TokenRow; obj: THREE.Object3D; anim?: TokenAnim },
+      /** The creature that was actually clicked. See "Where it is thrown". */
+      explicitTarget?: TokenRow | null,
     ) => {
       const plan = castPlanFor(ability, kind)
       if (!plan) return // Dash and friends animate nothing
@@ -796,13 +798,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const isSpell = plan.state === "cast" || /spell|cast|soell/i.test(clip.name)
       if (!isSpell) return
 
-      // Where it is thrown: the selected token if it is someone else, so a
-      // bolt actually flies at the target the DM has picked. Nothing
-      // selected — or the caster selected — and it is just a discharge.
-      const sel = selectedRef.current
+      // Where it is thrown.
+      //
+      // The victim is passed in when the caller already knows it — which the
+      // two-phase cast always does, because you clicked the creature. It must
+      // NOT be re-derived from selection here: releaseAt calls setSelected()
+      // and then this, in the same tick, and React has not updated the ref by
+      // then. That read returned the PREVIOUS selection — usually nothing, so
+      // target came back null and the spell discharged on the caster instead
+      // of flying at the creature under the cursor.
+      //
+      // This is the same bug the explicitToken parameter above was added to
+      // fix for the shooter, left unfixed for the target. Selection stays as
+      // the fallback for casts that begin somewhere other than a click.
       let target: THREE.Vector3 | null = null
-      if (sel && sel.id !== found.row.id) {
-        const t = tokensRef.current.get(sel.id)
+      const victimRow = explicitTarget ?? (() => {
+        const sel = selectedRef.current
+        return sel && sel.id !== found!.row.id ? sel : null
+      })()
+      if (victimRow) {
+        const t = tokensRef.current.get(victimRow.id)
         if (t) target = new THREE.Vector3(t.obj.position.x, 1.1, t.obj.position.z)
       }
 
@@ -905,8 +920,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       stopCharge()
       clearTargets()
       setSelected(victim.row)
-      // Cast from the token we locked, not from a fresh search.
-      performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter)
+      // Cast from the token we locked, AT the creature that was clicked.
+      // Both are passed explicitly: setSelected above has not reached the ref
+      // this function would otherwise read from.
+      performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, victim.row)
       setArmedSpell(null)
       // And let the server say what it did. The animation is already playing;
       // the dice are rolled where they cannot be argued with, and the result
@@ -1981,6 +1998,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
                 type: kitType,
                 target: p.target,
                 camera,
+                spell: p.spell,   // an attack-roll spell flies, whatever its type
               })
             : castSpellVfx({
                 parent: scene,
