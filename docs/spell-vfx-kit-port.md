@@ -3,8 +3,11 @@
 Porting the Faerzress VFX kit (baked flipbooks, per-damage-type delivery,
 school-specific rune discs, 556-spell resolver) into `components/tactical`.
 
-**Ships behind a flag.** `castSpellVfx` in `spell-vfx.ts` stays the default
-until Sam has looked at the new effects on a real board.
+**These are the spell effects now.** They shipped flag-gated off in #293, which
+meant nobody ever saw them; the flag now defaults ON. `castSpellVfx` in
+`spell-vfx.ts` remains as the fallback for lightning and physical, and as the
+escape hatch: `localStorage.setItem("ashes.vfxKit","0")` and reload restores it
+everywhere, no deploy needed.
 
 ## Why this is a port and not a drop-in
 
