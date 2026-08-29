@@ -81,7 +81,7 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
   const charAc = new Map((chars.data ?? []).map((c: { id: string; ac: number | null }) => [c.id, c.ac]))
   const beast = new Map((beasts.data ?? []).map((b: Record<string, unknown>) => [b.id as string, b]))
 
-  const combatants: (Combatant & { bestiary_id: string | null; disposition: string })[] = (tokens ?? []).map((t) => ({
+  const combatants: (Combatant & { bestiary_id: string | null; character_id: string | null; disposition: string })[] = (tokens ?? []).map((t) => ({
     token_id: t.id,
     label: t.label ?? "Something",
     kind: t.character_id ? "pc" : "npc",
@@ -93,6 +93,8 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
       ? charAc.get(t.character_id) ?? 10
       : ((beast.get(t.bestiary_id ?? "")?.ac as number | undefined) ?? 10),
     bestiary_id: t.bestiary_id,
+    // Carried so damage can reach the sheet as well as the token.
+    character_id: t.character_id,
     disposition: t.combat_disposition ?? "fights",
   }))
   return { width, height, walkable, combatants, beast }
@@ -334,9 +336,21 @@ export async function POST(req: NextRequest) {
       const target = board.combatants.find((c) => c.token_id === decision.target.token_id)
       if (target) {
         const left = Math.max(0, (target.hp_current ?? target.hp_max ?? 0) - decision.damage)
+        const stamp = new Date().toISOString()
         await db.from("vtt_tokens")
-          .update({ hp_current: left, updated_by: "npc-ai", updated_at: new Date().toISOString() })
+          .update({ hp_current: left, updated_by: "npc-ai", updated_at: stamp })
           .eq("id", target.token_id)
+        // The token and the sheet are one creature — and THIS is the path that
+        // hurts players. Found in a live rehearsal: a drow crit Kenta for 11,
+        // his token went to 0, and his card went on reading 8/8 because the
+        // plates, the globes and the sheet overlay all read `characters`. The
+        // player could not see that he was unconscious.
+        const victimCharId = (target as { character_id?: string | null }).character_id
+        if (victimCharId) {
+          await db.from("characters")
+            .update({ hp_current: left, updated_at: stamp })
+            .eq("id", victimCharId)
+        }
       }
     }
     await narrate(db, self.label, decision.narration)

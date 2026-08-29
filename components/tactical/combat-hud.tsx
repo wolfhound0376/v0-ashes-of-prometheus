@@ -558,7 +558,16 @@ export function CombatHud(props: Props) {
                         if (focus) onCast?.(focus.id, a.name, a.kind)
                         // Tell the banner what this cast cost; the phase is
                         // spent there, where the spend callback lives.
-                        window.dispatchEvent(new CustomEvent("aop:ability-used", { detail: { phase } }))
+                        // Spend it HERE only for things that fire the moment they are pressed.
+                        // A spell that ARMS is paid for by the server when it is
+                        // actually thrown — spending on the press meant opening a
+                        // spell and pressing Escape cost you your whole action.
+                        // Caught in a live rehearsal: the tray read ACTION · USED
+                        // before a target had been chosen.
+                        const armsFirst = a.kind !== "action" && a.entry.target !== "self" && a.entry.target !== "none"
+                        if (!armsFirst) {
+                          window.dispatchEvent(new CustomEvent("aop:ability-used", { detail: { phase } }))
+                        }
                       }
                     }}
                     aria-label={`${a.name} — ${kindLabel}`}
