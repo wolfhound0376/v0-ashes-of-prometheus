@@ -207,6 +207,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // re-resolve to somebody else.
   const armedTokenRef = useRef<string | null>(null)
   const targetsRef = useRef<{ show: (t: string, r: number, h: boolean) => void; clear: () => void }>({ show: () => {}, clear: () => {} })
+
+  // ---- the hover read-out --------------------------------------------
+  // BG3 answers "what happens if I click here" before you click. While a
+  // spell is armed, the creature under the cursor reports what it would take:
+  // a chance to hit for an attack roll, the DC and which save otherwise.
+  /** Screen position and text of the read-out, or null when nothing is under it. */
+  const [hoverRead, setHoverRead] = useState<
+    { x: number; y: number; label: string; line: string; ok: boolean } | null
+  >(null)
+  /** token id → AC. Only for the read-out; the server still rolls the dice. */
+  const acRef = useRef<Map<string, number>>(new Map())
+  /**
+   * character id → the caster's own numbers, read straight off the sheet.
+   *
+   * `sheet_spellcasting` already carries `attack_bonus` and `save_dc`, both
+   * recorded with an SRD citation. Deriving them here from class and ability
+   * scores would be re-deriving something already verified, and this campaign
+   * has a history of invented mechanics reaching the table that way.
+   */
+  const casterRef = useRef<Map<string, { atk: number | null; dc: number | null }>>(new Map())
   const castVerbRef = useRef<(caster: string, target: string, ability: string) => Promise<void>>(async () => {})
 
   useEffect(() => {
@@ -588,6 +608,76 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
     renderer.domElement.addEventListener("click", onClick)
 
+    /** Which token is under this pointer event, if any. */
+    const tokenUnder = (ev: MouseEvent): string | null => {
+      const r = renderer.domElement.getBoundingClientRect()
+      pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1
+      pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1
+      raycaster.setFromCamera(pointer, activeCam())
+      const objs: THREE.Object3D[] = []
+      tokensRef.current.forEach((t) => objs.push(t.obj))
+      const hit = raycaster.intersectObjects(objs, true)[0]
+      if (!hit) return null
+      let o: THREE.Object3D | null = hit.object
+      while (o && !o.userData.tokenId) o = o.parent
+      return (o?.userData.tokenId as string | undefined) ?? null
+    }
+
+    /**
+     * The read-out under the cursor while a spell is armed.
+     *
+     * Only runs when something is armed, so ordinary panning costs nothing.
+     */
+    const onHover = (ev: MouseEvent) => {
+      const armed = armedRef.current
+      if (!armed) {
+        setHoverRead((cur) => (cur ? null : cur))
+        return
+      }
+      const id = tokenUnder(ev)
+      const shooter = tokensRef.current.get(armed.tokenId)
+      const victim = id ? tokensRef.current.get(id) : null
+      if (!id || !victim || !shooter || victim.row.id === shooter.row.id) {
+        setHoverRead((cur) => (cur ? null : cur))
+        return
+      }
+
+      const status = targetStatus(shooter, victim, armed.entry.rangeFt)
+      let line: string
+      if (!status.ok) {
+        line = status.reason === "sight" ? "no clear line" : `${status.squares * 5} ft — out of range`
+      } else if ((victim.row.hp_current ?? 1) <= 0) {
+        line = "down — a hit costs it a death save"
+      } else {
+        const e = armed.entry
+        const ac = acRef.current.get(victim.row.id)
+        const me = casterRef.current.get(armed.characterId)
+        if (e.resolve === "attack" && ac !== undefined && me?.atk != null) {
+          // d20 + bonus vs AC. A natural 1 always misses and a natural 20
+          // always hits, so the honest range is 5%..95% — never 0 or 100.
+          const need = ac - me.atk
+          const pct = Math.max(5, Math.min(95, Math.round(((21 - need) / 20) * 100)))
+          line = `${pct}% to hit  ·  AC ${ac}`
+        } else if (e.resolve === "save" && e.save && me?.dc != null) {
+          line = `${e.save} save vs DC ${me.dc}`
+        } else if (e.heals) {
+          line = "healing"
+        } else {
+          line = ac !== undefined ? `AC ${ac}` : "in range"
+        }
+      }
+
+      const r = renderer.domElement.getBoundingClientRect()
+      setHoverRead({
+        x: ev.clientX - r.left,
+        y: ev.clientY - r.top,
+        label: victim.row.label,
+        line,
+        ok: status.ok,
+      })
+    }
+    renderer.domElement.addEventListener("mousemove", onHover)
+
     // ---- token meshes -----------------------------------------------
     // ================= THE DARKNESS =================
     // Diablo II's world exists only inside light radii; everything else is
@@ -939,11 +1029,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const shooter = tokensRef.current.get(armed.tokenId)
       const victim = tokensRef.current.get(tokenId)
       if (!shooter || !victim) return
-      // Out of range says so. A button that was pressed and produced silence
-      // is indistinguishable from a broken one.
-      // The same question the rings asked, asked once. A grey ring and a
-      // refused click must always agree, and they can only be relied on to
-      // agree if they run the same code.
+      // A refusal always says why. A button that was pressed and produced
+      // silence is indistinguishable from a broken one — and this asks the
+      // same question the rings asked, through the same function, so a grey
+      // ring and a refused click can never disagree.
       const status = targetStatus(shooter, victim, armed.entry.rangeFt)
       if (!status.ok) {
         say(
@@ -1877,6 +1966,47 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
         .eq("map_id", map.id)
       for (const row of (tokenRows ?? []) as TokenRow[]) spawnToken(row)
+
+      // ---- numbers for the hover read-out ----------------------------
+      // Fetched once, alongside the tokens. Nothing here decides anything:
+      // the server still rolls, and this is only what the cursor reports.
+      // A token whose AC we cannot find simply shows no number rather than a
+      // guessed one.
+      void (async () => {
+        const rows = (tokenRows ?? []) as TokenRow[]
+        const charIds = Array.from(new Set(rows.map((r) => r.character_id).filter(Boolean))) as string[]
+        const beastIds = Array.from(new Set(rows.map((r) => r.bestiary_id).filter(Boolean))) as string[]
+
+        const acByChar = new Map<string, number>()
+        const acByBeast = new Map<string, number>()
+        if (charIds.length) {
+          const { data } = await supabase
+            .from("characters")
+            .select("id,ac,sheet_spellcasting")
+            .in("id", charIds)
+          for (const c of data ?? []) {
+            if (typeof c.ac === "number") acByChar.set(c.id as string, c.ac)
+            // attack_bonus and save_dc are already on the sheet, each with an
+            // SRD citation. Read them; do not re-derive them from class.
+            const sc = (c.sheet_spellcasting ?? {}) as { attack_bonus?: number; save_dc?: number }
+            casterRef.current.set(c.id as string, {
+              atk: typeof sc.attack_bonus === "number" ? sc.attack_bonus : null,
+              dc: typeof sc.save_dc === "number" ? sc.save_dc : null,
+            })
+          }
+        }
+        if (beastIds.length) {
+          const { data } = await supabase.from("bestiary").select("id,ac").in("id", beastIds)
+          for (const b of data ?? []) {
+            if (typeof b.ac === "number") acByBeast.set(b.id as string, b.ac)
+          }
+        }
+        for (const r of rows) {
+          const ac = r.character_id ? acByChar.get(r.character_id) : r.bestiary_id ? acByBeast.get(r.bestiary_id) : undefined
+          if (typeof ac === "number") acRef.current.set(r.id, ac)
+        }
+      })()
+
       // First paint of the reach overlay — combat may already be mid-turn
       // when this browser arrives (a refresh during a fight).
       computeReach()
@@ -2237,6 +2367,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       window.removeEventListener("keyup", onPanKeyUp)
       window.removeEventListener("blur", onPanBlur)
       renderer.domElement.removeEventListener("mousemove", onHoverMove)
+      renderer.domElement.removeEventListener("mousemove", onHover)
+      renderer.domElement.removeEventListener("click", onClick)
       refreshReachRef.current = () => {}
       reachGeo.dispose()
       ribbonGeo.dispose()
@@ -2344,10 +2476,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     return () => {
       h?.stop(0.18)
       if (windupRef.current === h) windupRef.current = null
-      // Cancelled, thrown, or unmounted — the pose must not be left held and
-      // the rings must not outlive the choice.
+      // Cancelled, thrown, or unmounted — the pose must not be left held,
+      // the rings must not outlive the choice, and the read-out must not be
+      // left hanging over a board with nothing armed.
       chargeRef.current.stop()
       targetsRef.current.clear()
+      setHoverRead(null)
       window.removeEventListener("keydown", onKey)
     }
   }, [armedSpell])
@@ -2635,6 +2769,35 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           >
             End Combat
           </button>
+        </div>
+      )}
+
+      {/* THE READ-OUT. What this click would actually do, before you make it:
+          the chance to hit, or the save and its DC, or why it cannot be done.
+          Follows the cursor and never eats the click. */}
+      {hoverRead && (
+        <div
+          className="pointer-events-none absolute z-40"
+          style={{ left: hoverRead.x + 16, top: hoverRead.y + 14 }}
+        >
+          <div
+            className={
+              "rounded-sm border bg-black/85 px-2.5 py-1.5 shadow-[0_2px_8px_#000] " +
+              (hoverRead.ok ? "border-[#6b5123]" : "border-[#4a3a2a]")
+            }
+          >
+            <div className="font-serif text-[11px] uppercase tracking-[0.16em] text-[#e8d9ae]">
+              {hoverRead.label}
+            </div>
+            <div
+              className={
+                "mt-0.5 font-mono text-[11px] " +
+                (hoverRead.ok ? "text-[#f0cd7a]" : "text-[#8a7f6a]")
+              }
+            >
+              {hoverRead.line}
+            </div>
+          </div>
         </div>
       )}
 
