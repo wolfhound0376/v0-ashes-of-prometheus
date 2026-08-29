@@ -79,11 +79,46 @@ export interface CardCharacter {
   conditions?: string[]
 }
 
+/** A cut stone in the ironwork. Blue carries the action, red the bonus.
+ *  Multifaceted per Sam's sketch: a kite silhouette with a bright table
+ *  facet, two shaded pavilions and a sparkle when lit. */
+function EconomyGem({ hue, state, size = 14 }: { hue: "blue" | "red"; state: "lit" | "spent" | "dormant"; size?: number }) {
+  const P =
+    hue === "blue"
+      ? { hi: "#c8e8ff", mid: "#3f8fe0", lo: "#123c7a", glow: "#4fa8ff", dark: "#16202e", darkHi: "#243a52" }
+      : { hi: "#ffd2c4", mid: "#d84a3a", lo: "#6e100a", glow: "#ff5a44", dark: "#2a1512", darkHi: "#452420" }
+  const lit = state === "lit"
+  // spent goes to dead grey; dormant keeps a memory of its colour.
+  const body = lit ? P.mid : state === "dormant" ? P.dark : "#20201f"
+  const table = lit ? P.hi : state === "dormant" ? P.darkHi : "#2c2c2b"
+  const shade = lit ? P.lo : state === "dormant" ? P.dark : "#181817"
+  const edge = lit ? P.hi : state === "dormant" ? P.darkHi : "#3a3a3a"
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      style={{
+        filter: lit ? `drop-shadow(0 0 3px ${P.glow}) drop-shadow(0 0 7px ${P.glow}88)` : "none",
+        opacity: state === "spent" ? 0.45 : 1,
+        transition: "filter 220ms, opacity 220ms",
+      }}
+    >
+      <polygon points="10,0.8 18.4,7 10,19.2 1.6,7" fill={body} stroke={edge} strokeWidth="0.9" />
+      <polygon points="10,0.8 14.4,7 10,10.2 5.6,7" fill={table} />
+      <polygon points="1.6,7 5.6,7 10,10.2 10,19.2" fill={shade} />
+      <polygon points="18.4,7 14.4,7 10,10.2 10,19.2" fill={body} opacity="0.8" />
+      {lit && <polygon points="10,0.8 11.4,5.2 10,6.8 8.6,5.2" fill="#ffffff" opacity="0.85" />}
+    </svg>
+  )
+}
+
 export function CharacterCard({
   character: c,
   tone = "blue",
   active = false,
   isTurn = false,
+  gems,
   onClick,
   width = 236,
 }: {
@@ -95,6 +130,10 @@ export function CharacterCard({
   active?: boolean
   /** Up NOW, by initiative. The lamp's only meaning. */
   isTurn?: boolean
+  /** Action-economy stones under the class line: blue = the action, red =
+   *  the bonus action. "lit" is spendable and glows; "spent" has gone dark;
+   *  "dormant" is any card whose turn it is not. Omit to render none. */
+  gems?: { action: "lit" | "spent" | "dormant"; bonus: "lit" | "spent" | "dormant" } | null
   onClick?: () => void
   width?: number
 }) {
@@ -233,6 +272,26 @@ export function CharacterCard({
           }}
         />
       </div>
+
+      {/* THE ECONOMY GEMS - Sam's brief: blue diamonds for actions, red for
+          bonus actions, under the class line and in step with the lamp. The
+          count of glowing stones IS the count still available. */}
+      {gems && (
+        <div
+          style={{
+            position: "absolute",
+            left: `${SLOTS.statusIcon.left}%`,
+            top: "84.2%",
+            height: "12%",
+            display: "flex",
+            alignItems: "center",
+            gap: Math.max(3, Math.round(width * 0.018)),
+          }}
+        >
+          <EconomyGem hue="blue" state={gems.action} size={Math.round(width * 0.07)} />
+          <EconomyGem hue="red" state={gems.bonus} size={Math.round(width * 0.07)} />
+        </div>
+      )}
 
       {/* The wide field at the foot: conditions, or the class when clear. */}
       <div

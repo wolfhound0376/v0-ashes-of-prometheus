@@ -80,6 +80,19 @@ interface Props {
   onCast?: (ability: string, kind: string) => void
 }
 
+// Spells whose CASTING TIME is a bonus action (PHB). Everything else on the
+// rack - core actions, cantrips, prepared spells - costs the action. Extend
+// this as the party learns new tricks; unknown names default to the action,
+// which is the common case and the safe one.
+const BONUS_ACTION_SPELLS = new Set([
+  "healing word", "spiritual weapon", "misty step", "shield of faith",
+  "sanctuary", "expeditious retreat", "hex", "hunter's mark", "shillelagh",
+  "divine favor", "magic weapon", "searing smite", "thunderous smite",
+  "wrathful smite", "compelled duel", "ensnaring strike", "hail of thorns",
+])
+const phaseOf = (name: string): "action" | "bonus" =>
+  BONUS_ACTION_SPELLS.has(name.toLowerCase().trim()) ? "bonus" : "action"
+
 function slotTally(c: HudCharacter): { used: number; max: number } | null {
   const slots = c.sheet_spellcasting?.slots
   if (!slots) return null
@@ -214,6 +227,18 @@ export function CombatHud(props: Props) {
   } = props
 
   const [ability, setAbility] = useState<string | null>(null)
+  // The turn economy as the banner knows it. The banner and this rack hang
+  // from different parents, so the state crosses as a DOM event rather than
+  // through a shared ancestor - the board file is deliberately untouched
+  // (another session is live in it).
+  const [econ, setEcon] = useState<{ action: boolean; bonus: boolean; armed: "action" | "bonus" | null; live: boolean } | null>(null)
+  useEffect(() => {
+    const h = (e: Event) => setEcon((e as CustomEvent).detail)
+    window.addEventListener("aop:economy", h)
+    // Ask for the current state in case the banner mounted (and spoke) first.
+    window.dispatchEvent(new CustomEvent("aop:economy-request"))
+    return () => window.removeEventListener("aop:economy", h)
+  }, [])
   const [sheetFor, setSheetFor] = useState<string | null>(null)
 
   const activeCharacterId = useMemo(() => {
@@ -259,6 +284,11 @@ export function CombatHud(props: Props) {
               tone="blue"
               active={focus?.id === c.id}
               isTurn={activeCharacterId === c.id}
+              gems={
+                econ && econ.live && activeCharacterId === c.id
+                  ? { action: econ.action ? "spent" : "lit", bonus: econ.bonus ? "spent" : "lit" }
+                  : { action: "dormant", bonus: "dormant" }
+              }
               onClick={() => onFocus(c.id)}
               width={236}
             />
@@ -356,6 +386,10 @@ export function CombatHud(props: Props) {
 
               {abilities.map((a, i) => {
                 const art = iconFor(a.name)
+                const phase = phaseOf(a.name)
+                const armedNow = econ?.armed ?? null
+                const armedMatch = armedNow !== null && phase === armedNow
+                const armedMute = armedNow !== null && phase !== armedNow
                 const kindLabel =
                   a.kind === "action" ? "action" : a.kind === "cantrip" ? "cantrip, always available" : "prepared spell"
                 const selected = ability === a.name
@@ -366,14 +400,26 @@ export function CombatHud(props: Props) {
                     onClick={() => {
                       const selecting = !selected
                       setAbility(selecting ? a.name : null)
-                      if (selecting) onCast?.(a.name, a.kind)
+                      if (selecting) {
+                        onCast?.(a.name, a.kind)
+                        // Tell the banner what this cast cost; the phase is
+                        // spent there, where the spend callback lives.
+                        window.dispatchEvent(new CustomEvent("aop:ability-used", { detail: { phase } }))
+                      }
                     }}
                     title={`${a.name} — ${kindLabel}`}
-                    className="pointer-events-auto group relative h-[58px] w-[58px] shrink-0 overflow-hidden bg-[#080604] transition-transform duration-150 hover:-translate-y-[2px]"
+                    className={
+                      "pointer-events-auto group relative h-[58px] w-[58px] shrink-0 overflow-hidden bg-[#080604] transition-all duration-150 hover:-translate-y-[2px]" +
+                      (armedMute ? " opacity-35 saturate-50" : "")
+                    }
                     style={{
                       boxShadow: selected
                         ? "0 0 0 2px #f0d38b,0 0 16px #d6a63caa,0 4px 10px #000"
-                        : "0 0 0 1px #59401f,0 3px 8px #000c",
+                        : armedMatch
+                          ? phase === "action"
+                            ? "0 0 0 2px #7cc0ff,0 0 18px #4fa8ffcc,0 4px 10px #000"
+                            : "0 0 0 2px #ff8a76,0 0 18px #ff5a44cc,0 4px 10px #000"
+                          : "0 0 0 1px #59401f,0 3px 8px #000c",
                     }}
                   >
                     {art ? (
