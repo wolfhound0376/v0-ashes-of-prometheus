@@ -82,17 +82,20 @@ export interface CardCharacter {
 /** A cut stone in the ironwork. Blue carries the action, red the bonus.
  *  Multifaceted per Sam's sketch: a kite silhouette with a bright table
  *  facet, two shaded pavilions and a sparkle when lit. */
-function EconomyGem({ hue, state, size = 14 }: { hue: "blue" | "red"; state: "lit" | "spent" | "dormant"; size?: number }) {
+function EconomyGem({ hue, state, size = 14 }: { hue: "green" | "red"; state: "lit" | "spent" | "dormant"; size?: number }) {
   const P =
-    hue === "blue"
-      ? { hi: "#c8e8ff", mid: "#3f8fe0", lo: "#123c7a", glow: "#4fa8ff", dark: "#16202e", darkHi: "#243a52" }
-      : { hi: "#ffd2c4", mid: "#d84a3a", lo: "#6e100a", glow: "#ff5a44", dark: "#2a1512", darkHi: "#452420" }
+    hue === "green"
+      ? { hi: "#d2f5c8", mid: "#3dbb4e", lo: "#0e5c1b", glow: "#54e868", dark: "#152819", darkHi: "#2a5232" }
+      : { hi: "#ffd2c4", mid: "#d84a3a", lo: "#6e100a", glow: "#ff5a44", dark: "#2a1512", darkHi: "#57302a" }
   const lit = state === "lit"
-  // spent goes to dead grey; dormant keeps a memory of its colour.
-  const body = lit ? P.mid : state === "dormant" ? P.dark : "#20201f"
-  const table = lit ? P.hi : state === "dormant" ? P.darkHi : "#2c2c2b"
-  const shade = lit ? P.lo : state === "dormant" ? P.dark : "#181817"
-  const edge = lit ? P.hi : state === "dormant" ? P.darkHi : "#3a3a3a"
+  // spent goes to dead grey; dormant keeps a visible memory of its colour.
+  // Sam: "I only see one red diamond" — the old dormant/spent bodies sank
+  // into the card's black. Every state now keeps a readable silhouette:
+  // dormant wears its colour dimmed, spent greys out but holds its edge.
+  const body = lit ? P.mid : state === "dormant" ? P.darkHi : "#2c2c2b"
+  const table = lit ? P.hi : state === "dormant" ? P.mid : "#3a3a39"
+  const shade = lit ? P.lo : state === "dormant" ? P.dark : "#20201f"
+  const edge = lit ? P.hi : state === "dormant" ? P.mid : "#4a4a49"
   return (
     <svg
       width={size}
@@ -273,9 +276,11 @@ export function CharacterCard({
         />
       </div>
 
-      {/* THE ECONOMY GEMS - Sam's brief: blue diamonds for actions, red for
-          bonus actions, under the class line and in step with the lamp. The
-          count of glowing stones IS the count still available. */}
+      {/* THE ECONOMY GEMS - Sam's brief (revised 8/29): one GREEN diamond
+          per action, one RED per bonus action, under the class line and in
+          step with the lamp. The count of glowing stones IS the count still
+          available; a dim stone is one that exists but is not yours to spend
+          right now. */}
       {gems && (
         <div
           style={{
@@ -288,7 +293,7 @@ export function CharacterCard({
             gap: Math.max(3, Math.round(width * 0.018)),
           }}
         >
-          <EconomyGem hue="blue" state={gems.action} size={Math.round(width * 0.07)} />
+          <EconomyGem hue="green" state={gems.action} size={Math.round(width * 0.07)} />
           <EconomyGem hue="red" state={gems.bonus} size={Math.round(width * 0.07)} />
         </div>
       )}
