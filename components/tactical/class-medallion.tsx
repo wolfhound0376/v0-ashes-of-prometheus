@@ -50,7 +50,7 @@ export function ClassMedallion({
         </div>
       )
     }
-    return <img src={portraitUrl} alt="" className={"h-full w-full object-cover object-top " + className} />
+    return <img src={portraitUrl} alt="" className={"h-full w-full object-cover object-center " + className} />
   }
 
   return (
@@ -68,7 +68,7 @@ export function ClassMedallion({
         <img
           src={face}
           alt=""
-          className="absolute object-cover"
+          className="absolute object-cover object-center"
           style={{
             left: `${MEDALLION.faceLeft}%`,
             top: `${MEDALLION.faceTop}%`,
