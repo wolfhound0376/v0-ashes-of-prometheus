@@ -127,6 +127,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // to place tokens and read the room, the way the local viewer hid its
   // DM markers at eye level.
   const [darknessOn, setDarknessOn] = useState(true)
+  // The DM's hand on the pieces is a MODE, not a default: with it off, a
+  // stray click on the floor selects and inspects but never teleports.
+  const [dmMove, setDmMove] = useState(false)
+  // "15 ft" floating under the cursor while a walk is being lined up.
+  const [moveHint, setMoveHint] = useState<string | null>(null)
   const [combat, setCombat] = useState<{
     id: string
     round: number
@@ -157,6 +162,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const selectedRef = useRef<TokenRow | null>(null)
   const dmRef = useRef(false)
   const mapRef = useRef<MapRow | null>(null)
+  // ---- movement reach (BG3-style): who may walk, how far, over what ----
+  // The scene effect runs once; these refs are how per-render truth reaches
+  // its closures, the same trick dmRef and selectedRef already play.
+  const dmMoveRef = useRef(false)
+  const combatRef = useRef<{ active_index: number; turn_order: { token_id: string; kind: string }[]; turn_state?: TurnEconomy } | null>(null)
+  const myCharRef = useRef<string | null>(null)
+  const speedFtRef = useRef(30)
+  const walkableRef = useRef<Set<string>>(new Set())
+  const reachRef = useRef<{ tokenId: string; cells: Map<string, { cost: number }> } | null>(null)
+  const refreshReachRef = useRef<() => void>(() => {})
+  const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number) => void>(() => {})
   const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
   /** The HUD's ability bar reaches the scene through here, the same way
    *  moves do. Set inside the scene effect; a no-op until the board is up. */
@@ -175,6 +191,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   }, [])
   useEffect(() => { dmRef.current = dm }, [dm])
   useEffect(() => { selectedRef.current = selected }, [selected])
+  useEffect(() => { dmMoveRef.current = dmMove }, [dmMove])
+  useEffect(() => { myCharRef.current = myCharacterId }, [myCharacterId])
+  // Combat state feeds the reach overlay: turn passes, movement spent,
+  // fight ends — each repaints (or clears) the yellow squares.
+  useEffect(() => {
+    combatRef.current = combat
+    refreshReachRef.current()
+  }, [combat])
   useEffect(() => { darknessRef.current?.(darknessOn) }, [darknessOn])
   useEffect(() => { classicRef.current?.(classicCam) }, [classicCam])
 
@@ -481,19 +505,33 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           rec.open = !rec.open
           rec.targetT = rec.open ? 1 : 0
           say(rec.open ? `The ${rec.data.type ?? "iron"} door swings open.` : `The ${rec.data.type ?? "iron"} door closes.`)
+          // A door changing state redraws the world you can walk through.
+          refreshReachRef.current()
         }
         return
       }
 
-      // 3. The floor — a move order, if the DM has a token selected.
-      const sel = selectedRef.current
-      if (!dmRef.current || !sel || !floorPlane) return
+      // 3. The floor — a move order.
+      if (!floorPlane) return
       const floorHit = raycaster.intersectObject(floorPlane, false)[0]
       if (!floorHit) return
       const gx = Math.floor(floorHit.point.x / SQ)
       const gy = Math.floor(floorHit.point.z / SQ)
       const m = mapRef.current
       if (!m || gx < 0 || gy < 0 || gx >= m.grid_width || gy >= m.grid_height) return
+      // A player's walk: their turn, a yellow square → one click commits.
+      // The walk animation is the glide the realtime echo already plays.
+      const reach = reachRef.current
+      const cellKey = gx + "," + gy
+      if (reach && reach.cells.has(cellKey)) {
+        playerMoveRef.current(reach.tokenId, gx, gy, reach.cells.get(cellKey)!.cost * 5)
+        clearReach() // repainted with the new budget when the server echoes
+        return
+      }
+      // The DM's hand — only with the move toggle deliberately on, so a
+      // stray click while narrating never teleports a miniature.
+      const sel = selectedRef.current
+      if (!dmRef.current || !dmMoveRef.current || !sel) return
       moveTokenRef.current(sel.id, gx, gy)
     }
     renderer.domElement.addEventListener("click", onClick)
@@ -972,6 +1010,138 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         })
     }
 
+    // ---- movement reach: the BG3 grammar ----------------------------
+    // On your turn your reachable squares tint yellow, the cursor drags a
+    // path ribbon home with its cost in feet, and one click walks you there.
+    // Reach paints ONLY on the browser that owns the active character —
+    // everyone else watches the walk arrive by realtime.
+    const reachGroup = new THREE.Group()
+    scene.add(reachGroup)
+    const reachGeo = new THREE.PlaneGeometry(SQ * 0.94, SQ * 0.94)
+    const reachMat = new THREE.MeshBasicMaterial({ color: 0xf3c94b, transparent: true, opacity: 0.24, depthWrite: false, side: THREE.DoubleSide })
+    const pathLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xffe28a, transparent: true, opacity: 0.9 }),
+    )
+    pathLine.visible = false
+    scene.add(pathLine)
+    let reachParents = new Map<string, string>()
+
+    const clearReach = () => {
+      reachGroup.clear()
+      pathLine.visible = false
+      reachRef.current = null
+      reachParents = new Map()
+      setMoveHint(null)
+    }
+
+    const computeReach = () => {
+      clearReach()
+      const c = combatRef.current
+      const m = mapRef.current
+      if (!c || !m) return
+      const entry = c.turn_order?.[c.active_index]
+      if (!entry) return
+      const tok = tokensRef.current.get(entry.token_id)
+      if (!tok) return
+      // Mine to walk, or nobody's: the DM has their own mode, NPCs their own AI.
+      if (!tok.row.character_id || tok.row.character_id !== myCharRef.current) return
+      const usedFt = Number(c.turn_state?.moved_ft ?? 0)
+      const budget = Math.floor((speedFtRef.current - usedFt) / 5)
+      if (budget <= 0) return
+      // Open doors are floor; closed ones are wall. The V5 cells put door
+      // squares in neither set, so they join the walkable world only here.
+      const openDoors = new Set(doorRecs.filter((r) => r.open).map((r) => r.cell))
+      const passable = (k: string) => walkableRef.current.has(k) || openDoors.has(k)
+      // Other bodies: a foe's square stops the path dead (SRD: you can't
+      // willingly enter a hostile creature's space); a friend's square you
+      // may pass through but never end on. Nobody stands on anybody.
+      const blockStop = new Set<string>()
+      const blockPass = new Set<string>()
+      tokensRef.current.forEach(({ row }) => {
+        if (row.id === tok.row.id || !row.is_visible) return
+        const k = row.grid_x + "," + row.grid_y
+        blockStop.add(k)
+        if (!row.character_id) blockPass.add(k)
+      })
+      // 8-way BFS, one square = 5 ft, diagonals flat (PHB 5-5-5 — the same
+      // arithmetic the server's Chebyshev floor assumes).
+      const start = tok.row.grid_x + "," + tok.row.grid_y
+      const dist = new Map<string, number>([[start, 0]])
+      reachParents = new Map()
+      const queue: string[] = [start]
+      while (queue.length) {
+        const cur = queue.shift()!
+        const d = dist.get(cur)!
+        if (d >= budget) continue
+        const [cx, cy] = cur.split(",").map(Number)
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue
+            const nx = cx + dx
+            const ny = cy + dy
+            if (nx < 0 || ny < 0 || nx >= m.grid_width || ny >= m.grid_height) continue
+            const nk = nx + "," + ny
+            if (dist.has(nk) || !passable(nk) || blockPass.has(nk)) continue
+            dist.set(nk, d + 1)
+            reachParents.set(nk, cur)
+            queue.push(nk)
+          }
+        }
+      }
+      const cells = new Map<string, { cost: number }>()
+      dist.forEach((d, k) => {
+        if (d === 0 || blockStop.has(k)) return
+        cells.set(k, { cost: d })
+        const [x, y] = k.split(",").map(Number)
+        const cpos = sqCentre(x, y)
+        const p = new THREE.Mesh(reachGeo, reachMat)
+        p.rotation.x = -Math.PI / 2
+        p.position.set(cpos.x, 0.035, cpos.z)
+        reachGroup.add(p)
+      })
+      if (cells.size) reachRef.current = { tokenId: tok.row.id, cells }
+    }
+    refreshReachRef.current = computeReach
+
+    const showPathTo = (k: string) => {
+      const pts: THREE.Vector3[] = []
+      let cur: string | undefined = k
+      while (cur) {
+        const [x, y] = cur.split(",").map(Number)
+        const cpos = sqCentre(x, y)
+        pts.push(new THREE.Vector3(cpos.x, 0.06, cpos.z))
+        cur = reachParents.get(cur)
+      }
+      pathLine.geometry.dispose()
+      pathLine.geometry = new THREE.BufferGeometry().setFromPoints(pts.reverse())
+      pathLine.visible = pts.length > 1
+    }
+
+    let lastHoverCell = ""
+    const onHoverMove = (e: MouseEvent) => {
+      if (!reachRef.current || !floorPlane) return
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+      raycaster.setFromCamera(pointer, activeCam())
+      const hit = raycaster.intersectObject(floorPlane, false)[0]
+      if (!hit) { pathLine.visible = false; return }
+      const gx = Math.floor(hit.point.x / SQ)
+      const gy = Math.floor(hit.point.z / SQ)
+      const k = gx + "," + gy
+      if (k === lastHoverCell) return
+      lastHoverCell = k
+      const cell = reachRef.current.cells.get(k)
+      if (!cell) {
+        pathLine.visible = false
+        setMoveHint(null)
+        return
+      }
+      showPathTo(k)
+      setMoveHint(`${cell.cost * 5} ft`)
+    }
+    renderer.domElement.addEventListener("mousemove", onHoverMove)
+
     // ---- build the board from the database --------------------------
     const build = async () => {
       // The sandbox is a real board with real tokens — the mechanics under
@@ -991,6 +1161,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const W = map.grid_width
       const H = map.grid_height
       const meta = map.meta ?? {}
+
+      // Until (unless) the node declares its cells, every square is floor —
+      // the reach overlay on a plain board is bounded by the walls alone.
+      const allCells = new Set<string>()
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) allCells.add(x + "," + y)
+      walkableRef.current = allCells
 
       // The painted tile, one uncut plane.
       const floorMat = meta.art_url
@@ -1055,6 +1231,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             else walk.add(k)
           }
           const doorCells = new Set((cells.cells.doors ?? []).map((d) => d.sq.join(",")))
+          // The real walkable world for movement: floor and islands. Rock
+          // is absent, doors join at reach-time only while they stand open.
+          walkableRef.current = new Set([...walk, ...islandSet])
 
           const rockTex = tex(storageTex("tiles/floor_cave.png"))
           const plainSide = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x39332c, roughness: 1, metalness: 0 })
@@ -1241,6 +1420,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
         .eq("map_id", map.id)
       for (const row of (tokenRows ?? []) as TokenRow[]) spawnToken(row)
+      // First paint of the reach overlay — combat may already be mid-turn
+      // when this browser arrives (a refresh during a fight).
+      computeReach()
       const partyTokens = ((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id && r.is_visible)
       setTokenToCharacter(Object.fromEntries(
         ((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id).map((r) => [r.id, r.character_id as string]),
@@ -1364,6 +1546,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             return
           }
           glideToken(payload.new as TokenRow)
+          // Bodies moved: the reachable world changed shape for whoever's
+          // turn it is — and the mover's own board repaints its new budget.
+          refreshReachRef.current()
         })
         .subscribe()
       return () => {
@@ -1491,6 +1676,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       window.removeEventListener("keydown", onPanKeyDown)
       window.removeEventListener("keyup", onPanKeyUp)
       window.removeEventListener("blur", onPanBlur)
+      renderer.domElement.removeEventListener("mousemove", onHoverMove)
+      refreshReachRef.current = () => {}
+      reachGeo.dispose()
+      pathLine.geometry.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
       tokensRef.current.clear()
@@ -1547,6 +1736,38 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const activeSheet = sheets.find((c) => c.id === activeCharacterId)
   // "30 ft. (Walking)" -> 30. A sheet with prose speed still yields a budget.
   const speedFt = Number.parseInt(String(activeSheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
+  // The scene's reach overlay reads speed through a ref; repaint when the
+  // active character (and so their speed) changes.
+  useEffect(() => {
+    speedFtRef.current = speedFt
+    refreshReachRef.current()
+  }, [speedFt])
+
+  // The player's walk, server-checked: the API verifies whose turn it is
+  // and the budget, moves the token, and returns the spent economy. The
+  // glide (and the walking animation) arrives by the vtt_tokens realtime
+  // echo, same as every other move on this board.
+  playerMoveRef.current = (tokenId, gx, gy, feet) => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/combat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "move", token_id: tokenId, gx, gy, feet, sandbox }),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok) {
+          say(data?.error ?? "The move did not take.")
+          refreshReachRef.current() // repaint what is still true
+          return
+        }
+        if (data?.turn_state) setCombat((c) => (c ? { ...c, turn_state: data.turn_state } : c))
+      } catch {
+        say("That did not reach the table — check the connection.")
+        refreshReachRef.current()
+      }
+    })()
+  }
 
   return (
     // ABSOLUTE, not h-full. The stage container already holds a full-height
@@ -1572,7 +1793,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         {status && <div className="font-mono text-[10px] text-[#8a8678]">{status}</div>}
         <div className="text-[9px] leading-relaxed text-[#7a7568]">
           drag or arrows · wheel zoom · click a door
-          {dm && <span className="text-[#9a7fc0]"> · token then square to move</span>}
+          {dm && dmMove && <span className="text-[#9a7fc0]"> · token then square to move</span>}
+          {!dm && isMyTurn && <span className="text-[#f3c94b]"> · your turn — click a yellow square to walk</span>}
         </div>
         <div className="mt-1.5 flex gap-1.5">
           <button
@@ -1589,6 +1811,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               {darknessOn ? "Lift dark" : "Dark on"}
             </button>
           )}
+          {dm && (
+            <button
+              onClick={() => setDmMove((v) => !v)}
+              className={`pointer-events-auto rounded border px-2 py-[3px] text-[8px] uppercase tracking-wider ${
+                dmMove
+                  ? "border-[#c99a49] bg-[#2a1f09] text-[#f3c94b]"
+                  : "border-[#5a4a6a] bg-[#1a1226] text-[#c9b3e0] hover:border-[#b48fd8]"
+              }`}
+            >
+              {dmMove ? "DM move: on" : "DM move: off"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -1600,13 +1834,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               {selected.hp_current ?? selected.hp_max} / {selected.hp_max} HP
             </div>
           ) : null}
-          <div className="mt-0.5 text-[9px] text-[#8a8678]">{dm ? "click a square to move · click again to deselect" : "the DM commands the board"}</div>
+          <div className="mt-0.5 text-[9px] text-[#8a8678]">
+            {dm ? (dmMove ? "click a square to move · click again to deselect" : "DM move is off — toggle it to reposition") : "on your turn, yellow squares are yours to walk"}
+          </div>
         </div>
       )}
 
       {toast && (
         <div className="absolute bottom-14 left-1/2 z-10 -translate-x-1/2 rounded border border-[#c9a227] bg-black/85 px-4 py-1.5 text-[12px] text-[#e8e2d0]">
           {toast}
+        </div>
+      )}
+
+      {/* The path's price, BG3-style, while a walk is being lined up. */}
+      {moveHint && (
+        <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded border border-[#8a6d2f] bg-black/75 px-2.5 py-0.5 font-mono text-[10px] text-[#ffe28a]">
+          {moveHint}
         </div>
       )}
 
