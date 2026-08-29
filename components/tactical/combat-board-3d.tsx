@@ -756,7 +756,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const vfx: VfxHandle[] = []
     /** Casts waiting for their release frame — the spell has not left the
      *  hand yet, because the hand has not got there yet. */
-    const pending: {
+    interface PendingCast {
       wait: number
       obj: THREE.Object3D
       hand: CastHand
@@ -764,7 +764,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       target: THREE.Vector3 | null
       /** Who it was thrown at, so the effect can make them flinch when it lands. */
       victimId: string | null
-    }[] = []
+      /** Played on the frame the effect arrives — the impact sound. */
+      onLand?: () => void
+    }
+    const pending: PendingCast[] = []
 
     /**
      * The HUD pressed an ability. Play the matching clip on that character's
@@ -795,7 +798,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (!anim) return // a disc pawn has nothing to animate
       if (isDowned(found.row)) return // a corpse casts nothing
 
-      const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names) : null
+      // The spell's name picks its motion, so two cantrips off the same
+      // caster no longer play the identical clip — and the same spell always
+      // plays the same one, which is what makes it recognisable.
+      const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
       const clip = playState(anim, plan.state, true, explicit)
       if (!clip) return
       if (plan.state === "hurt") return // Dodge is a flinch, not a spell
@@ -840,14 +846,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
 
       const { release, hand } = castEventFor(clip.name, clip.duration)
-      pending.push({
+      const cast: PendingCast = {
         wait: release,
         obj: found.obj,
         hand,
         spell: ability,
         target,
         victimId: victimRow?.id ?? null,
-      })
+      }
+      pending.push(cast)
       // Pull this type's sheets during the windup, so the first cast of a
       // spell looks like every later one rather than arriving half-loaded.
       const warm = kitVfxTypeFor(ability)
@@ -866,11 +873,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       playSfx(releaseFor(sEntry.school), { volume: 0.85 })
       window.setTimeout(() => playSfx(tailFor(sEntry.school), { volume: 0.5 }), 260)
       if (sEntry.damage && target) {
-        // The bang belongs on the flash, not ahead of it: the VFX mote flies
-        // at 26 units/sec, so the impact waits for it to arrive.
-        const dist = target.distanceTo(found.obj.position)
+        // The bang belongs on the flash, not ahead of it — and the flash is
+        // no longer a mote at a fixed 26 units/sec. Each effect has its own
+        // charge and flight time, so the sound is handed to the effect and
+        // played on the frame it actually lands, alongside the target's
+        // flinch. Estimating the delay here is what let bang and flash drift.
         const dmg = sEntry.damage
-        window.setTimeout(() => playSfx(impactFor(dmg), { volume: 0.9 }), Math.min(1400, (dist / 26) * 1000 + 120))
+        cast.onLand = () => playSfx(impactFor(dmg), { volume: 0.9 })
       }
     }
     castRef.current = performCast
@@ -2028,6 +2037,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
          * clip's HOLD_LAST exists to avoid.
          */
         const flinch = () => {
+          p.onLand?.()          // the bang, on the same frame as the flash
           if (!p.victimId) return
           const victim = tokensRef.current.get(p.victimId)
           if (!victim?.anim || isDowned(victim.row)) return
