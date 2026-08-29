@@ -48,6 +48,7 @@ import {
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
+import { equipOnRig } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
@@ -157,6 +158,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [myCharacterId, setMyCharacterId] = useState<string | null>(null)
   const [combatBusy, setCombatBusy] = useState(false)
   const [sheets, setSheets] = useState<HudCharacter[]>([])
+  // Each character's weapons, by character id. Read when a model finishes
+  // loading so the figure can be given the thing it fights with.
+  const sheetAttacksRef = useRef<Record<string, { name?: string; rarity?: string }[]>>({})
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
   /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
   const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
@@ -1202,6 +1206,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           })
           g.add(obj)
 
+          // WHAT THEY ARE HOLDING.
+          //
+          // The weapon is parented to the RightHand BONE, not to the token
+          // group — which is why it swings with the arm through every clip
+          // without this file knowing anything about animation. Every model
+          // in this cast came through the same Meshy humanoid rig, so the
+          // bone name is identical on all of them and this needs no per
+          // character special-casing.
+          //
+          // The weapon comes from the same sheet_attacks the ability rack
+          // reads, so the miniature agrees with the buttons: if Samson's rack
+          // offers a Mace, Samson is holding a mace.
+          const primary = (row.character_id && sheetAttacksRef.current[row.character_id]?.[0]) || null
+          if (primary?.name) {
+            const held = equipOnRig(obj, {
+              name: primary.name,
+              itemType: "weapon",
+              rarity: primary.rarity ?? "common",
+              slot: "main_hand",
+            })
+            if (held) console.log(`[equip] ${row.label} holds ${primary.name}`)
+          }
+
           // ANIMATION. Meshy ships these with a dozen-plus clips whose names
           // come from whatever source animation was used, so the state is
           // resolved by lib/token-animation rather than by exact name.
@@ -2067,6 +2094,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // that changes between reloads.
           .order("name")
         const list = (rows ?? []) as HudCharacter[]
+        sheetAttacksRef.current = Object.fromEntries(
+          list.map((c) => [c.id, ((c as unknown as { sheet_attacks?: { name?: string }[] }).sheet_attacks ?? [])]),
+        )
+        // The models load asynchronously and the sheets arrive on their own
+        // schedule, so whichever wins the race, this pass makes sure everyone
+        // ends up armed. equipOnRig removes what is in the hand first, so
+        // running it twice is a no-op rather than a second sword.
+        tokensRef.current.forEach((t) => {
+          const held = t.row.character_id && sheetAttacksRef.current[t.row.character_id]?.[0]
+          if (!held?.name) return
+          const model = t.obj.children.find((c) => c.getObjectByName("RightHand"))
+          if (model) equipOnRig(model, { name: held.name, itemType: "weapon", slot: "main_hand" })
+        })
         setSheets(list)
         // Focus THIS browser's own character by default, not merely the first
         // plate. Otherwise a player opens the board driving someone else, and
