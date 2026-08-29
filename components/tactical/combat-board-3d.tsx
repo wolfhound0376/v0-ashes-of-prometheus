@@ -192,12 +192,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // the animation and sounds involved." So a press no longer fires — it ARMS.
   // The windup loops, the legal targets light, and the click is the throw.
   const [armedSpell, setArmedSpell] = useState<
-    { characterId: string; name: string; kind: string; entry: SpellEntry } | null
+    { characterId: string; tokenId: string; name: string; kind: string; entry: SpellEntry } | null
   >(null)
   const armedRef = useRef<typeof armedSpell>(null)
   useEffect(() => { armedRef.current = armedSpell }, [armedSpell])
   const windupRef = useRef<PlayHandle | null>(null)
   const releaseAtRef = useRef<(tokenId: string) => void>(() => {})
+  // The RAMP-UP. Sam asked for the windup animation to be wired, not just the
+  // windup sound: holding a spell should look like holding a spell.
+  const chargeRef = useRef<{ start: (tokenId: string) => void; stop: () => void }>({ start: () => {}, stop: () => {} })
+  // Which token the board resolved for the armed spell, so the release cannot
+  // re-resolve to somebody else.
+  const armedTokenRef = useRef<string | null>(null)
 
   useEffect(() => {
     setDm(Boolean(getDmKey()))
@@ -747,14 +753,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * miniature and, at the clip's release frame, throw the spell from the
      * hand that throws it.
      */
-    const performCast = (characterId: string, ability: string, kind: string) => {
+    const performCast = (
+      characterId: string,
+      ability: string,
+      kind: string,
+      explicitToken?: { row: TokenRow; obj: THREE.Object3D; anim?: TokenAnim },
+    ) => {
       const plan = castPlanFor(ability, kind)
       if (!plan) return // Dash and friends animate nothing
-      let found: { row: TokenRow; obj: THREE.Object3D; anim?: TokenAnim } | undefined
-      for (const e of Array.from(tokensRef.current.values())) {
-        if (e.row.character_id === characterId) { found = e; break }
+      let found = explicitToken
+      if (!found) {
+        for (const e of Array.from(tokensRef.current.values())) {
+          if (e.row.character_id === characterId) { found = e; break }
+        }
       }
       if (!found) return
+      // Say out loud which figure is about to move. When the wrong one does,
+      // this line names it instead of leaving us to guess.
+      console.log(`[cast] ${ability} → token "${found.row.label}" (character ${characterId.slice(0, 8)}…, model ${String(found.row.model_url ?? "none").split("/").pop()})`)
       const anim = found.anim
       if (!anim) return // a disc pawn has nothing to animate
 
@@ -798,11 +814,59 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
     castRef.current = performCast
 
+    /**
+     * Hold the cast pose while the player picks a target.
+     *
+     * The cast clip is played at a crawl and LOOPED rather than fired once:
+     * a spell being charged is a held gesture, and running the clip at full
+     * speed then freezing looks like a dropped frame. 0.28x reads as effort.
+     *
+     * If a model has no cast clip at all this does nothing and says nothing —
+     * a martial holding a dagger has no arcane pose to strike, and inventing
+     * one would look worse than stillness.
+     */
+    const startCharge = (tokenId: string) => {
+      const e = tokensRef.current.get(tokenId)
+      if (!e?.anim) return
+      const name = castClipFor("heavy", e.anim.names) ?? clipFor("cast", e.anim.names)
+      if (!name) return
+      const clip = e.anim.clips.find((c) => c.name === name)
+      if (!clip) return
+      const action = e.anim.mixer.clipAction(clip)
+      e.anim.current?.fadeOut(0.15)
+      action.reset()
+      action.setLoop(THREE.LoopRepeat, Infinity)
+      action.timeScale = 0.28
+      action.fadeIn(0.2).play()
+      e.anim.current = action
+      e.anim.state = "cast"
+      e.obj.userData.charging = true
+    }
+
+    const stopCharge = () => {
+      tokensRef.current.forEach((e) => {
+        if (!e.obj.userData.charging || !e.anim) return
+        e.obj.userData.charging = false
+        if (e.anim.current) e.anim.current.timeScale = 1
+        // Force the way back. Setting state to "idle" by hand would make
+        // playState believe it had already arrived and return without
+        // touching the mixer, leaving the figure looping its cast pose
+        // forever — which is a worse bug than the one being fixed.
+        playState(e.anim, "idle", true)
+      })
+    }
+
+    chargeRef.current = { start: startCharge, stop: stopCharge }
+
     /** The second half of the two-phase cast: the click that throws it. */
     const releaseAt = (tokenId: string) => {
       const armed = armedRef.current
       if (!armed) return
-      const shooter = Array.from(tokensRef.current.values()).find((e) => e.row.character_id === armed.characterId)
+      // The token was resolved when the spell was ARMED. Looking it up again
+      // here by character_id is what let the wrong miniature answer: two
+      // lookups of the same question can disagree, and this one is asked
+      // after the board may have changed underneath it.
+      const shooter = tokensRef.current.get(armed.tokenId)
       const victim = tokensRef.current.get(tokenId)
       if (!shooter || !victim) return
       // Out of range says so. A button that was pressed and produced silence
@@ -817,8 +881,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
       windupRef.current?.stop(0.08)
       windupRef.current = null
+      stopCharge()
       setSelected(victim.row)
-      performCast(armed.characterId, armed.name, armed.kind)
+      // Cast from the token we locked, not from a fresh search.
+      performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter)
       setArmedSpell(null)
     }
     releaseAtRef.current = releaseAt
@@ -1994,6 +2060,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     if (!armedSpell) return
     const h = playSfx(windupFor(armedSpell.entry.school), { loop: true, volume: 0.55, fadeIn: 0.25 })
     windupRef.current = h
+    // The visible half of the ramp: the caster holds the pose while choosing.
+    chargeRef.current.start(armedSpell.tokenId)
     const e = armedSpell.entry
     preloadSfx([releaseFor(e.school), tailFor(e.school), ...(e.damage ? [impactFor(e.damage)] : [])])
     const onKey = (ev: KeyboardEvent) => {
@@ -2004,6 +2072,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     return () => {
       h.stop(0.18)
       if (windupRef.current === h) windupRef.current = null
+      // Cancelled, thrown, or unmounted — the pose must not be left held.
+      chargeRef.current.stop()
       window.removeEventListener("keydown", onKey)
     }
   }, [armedSpell])
@@ -2202,7 +2272,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             castRef.current(characterId, ability, kind)
             return
           }
-          setArmedSpell({ characterId, name: ability, kind, entry: e })
+          // Resolve the caster's token HERE, once, while we know exactly whose
+          // rack was pressed — and carry it. The release then moves that
+          // figure and no other.
+          const mine = Array.from(tokensRef.current.values()).find((t) => t.row.character_id === characterId)
+          if (!mine) {
+            say("That character has no miniature on this board.")
+            return
+          }
+          setArmedSpell({ characterId, tokenId: mine.row.id, name: ability, kind, entry: e })
           say(`${ability} — choose a target${e.rangeFt ? ` within ${e.rangeFt} ft` : ""}.`)
         }}
         armedSpell={armedSpell ? { name: armedSpell.name, rangeFt: armedSpell.entry.rangeFt } : null}
