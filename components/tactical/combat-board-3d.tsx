@@ -639,28 +639,6 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       return g
     }
 
-    /** Name label as a sprite, so it always faces the camera. */
-    const buildLabel = (row: TokenRow) => {
-      const canvas = document.createElement("canvas")
-      canvas.width = 256
-      canvas.height = 56
-      const ctx = canvas.getContext("2d")!
-      ctx.font = "600 26px Georgia, serif"
-      ctx.textAlign = "center"
-      ctx.fillStyle = "rgba(0,0,0,0.55)"
-      const w = Math.min(248, ctx.measureText(row.label).width + 22)
-      ctx.beginPath()
-      ctx.roundRect((256 - w) / 2, 6, w, 40, 8)
-      ctx.fill()
-      ctx.fillStyle = row.character_id ? "#bfe3ff" : "#ffc9c9"
-      ctx.fillText(row.label, 128, 34, 236)
-      const t = new THREE.CanvasTexture(canvas)
-      t.colorSpace = THREE.SRGBColorSpace
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false }))
-      sprite.scale.set(1.7, 0.37, 1)
-      return sprite
-    }
-
     /** Everything needed to drive one skinned model's clips. */
     interface TokenAnim {
       mixer: THREE.AnimationMixer
@@ -969,10 +947,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         g.add(glow)
       }
 
-      const label = buildLabel(row)
-      label.position.y = 1.35
-      g.add(label)
-
+      // No floating name sprites: the board reads like a game, not a debug
+      // view. Identity lives in the cards and the initiative rail; the
+      // selected token's name shows in the bottom bar.
       const c = sqCentre(row.grid_x, row.grid_y)
       g.position.set(c.x, 0, c.z)
       tokenGroup.add(g)
@@ -1044,8 +1021,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (!entry) return
       const tok = tokensRef.current.get(entry.token_id)
       if (!tok) return
-      // Mine to walk, or nobody's: the DM has their own mode, NPCs their own AI.
-      if (!tok.row.character_id || tok.row.character_id !== myCharRef.current) return
+      // A PC's reach paints for the browser that claimed them — and for the
+      // DM, who may walk the active character on a player's behalf (same
+      // budget, same rules; the free hand stays behind the DM-move toggle).
+      // NPCs never paint reach here: theirs is the AI's to spend.
+      if (!tok.row.character_id) return
+      if (tok.row.character_id !== myCharRef.current && !dmRef.current) return
       const usedFt = Number(c.turn_state?.moved_ft ?? 0)
       const budget = Math.floor((speedFtRef.current - usedFt) / 5)
       if (budget <= 0) return
@@ -1141,6 +1122,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       setMoveHint(`${cell.cost * 5} ft`)
     }
     renderer.domElement.addEventListener("mousemove", onHoverMove)
+
+    // ---- whose turn it is, on the board itself ----------------------
+    // The active combatant's base breathes green — the same green as the
+    // lamp on their card, so the two indicators read as one fact. One
+    // shared ring follows whoever is up; no names needed.
+    const activeGlow = new THREE.Mesh(
+      new THREE.RingGeometry(1.08, 1.5, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0x35d94a, transparent: true, opacity: 0.3,
+        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
+      }),
+    )
+    activeGlow.rotation.x = -Math.PI / 2
+    activeGlow.position.y = 0.052
+    activeGlow.renderOrder = 7 // above the darkness plane, like the torch glow
+    activeGlow.visible = false
+    scene.add(activeGlow)
 
     // ---- build the board from the database --------------------------
     const build = async () => {
@@ -1571,6 +1569,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const dt = Math.min(clock.getDelta(), 0.1)
       // Keyboard pan first, so everything below renders from this frame's view.
       panFromKeys(dt)
+      // The active combatant's base breathes. Following per-frame keeps the
+      // glow under the token through glides without touching the glide code.
+      const combatNow = combatRef.current
+      const activeTok = combatNow
+        ? tokensRef.current.get(combatNow.turn_order?.[combatNow.active_index]?.token_id ?? "")
+        : undefined
+      if (activeTok && activeTok.row.is_visible) {
+        activeGlow.visible = true
+        activeGlow.position.x = activeTok.obj.position.x
+        activeGlow.position.z = activeTok.obj.position.z
+        activeGlow.scale.setScalar(radiusFor(activeTok.row.token_size))
+        ;(activeGlow.material as THREE.MeshBasicMaterial).opacity = 0.26 + 0.14 * Math.sin(clock.elapsedTime * 2.4)
+      } else {
+        activeGlow.visible = false
+      }
       // Door swings + locked rattles.
       for (const rec of doorRecs) {
         if (rec.t !== rec.targetT) {
@@ -1680,6 +1693,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       refreshReachRef.current = () => {}
       reachGeo.dispose()
       pathLine.geometry.dispose()
+      activeGlow.geometry.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
       tokensRef.current.clear()
