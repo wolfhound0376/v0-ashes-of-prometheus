@@ -1539,49 +1539,62 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const RAMP = 6
 
     /**
-     * THE PLATE. One baked texture, reused by every tile.
+     * THE GLOW RING. One baked texture, reused by every tile.
      *
-     * A hard-cut quad is what makes a VTT overlay look cheap: flat colour with
-     * an aliased edge, indistinguishable from a rendering fault. This bakes a
-     * rounded plate with a soft interior falloff and a lifted rim, once, and
-     * every square samples it. Cost is a single 128px canvas; it is most of
-     * the difference between "highlighted" and "beautifully highlighted".
+     * NOT a fill. Sam's note: "boxes should be highlighted and glowing, not
+     * filled in." A filled square hides the floor art underneath it — the rock,
+     * the blood, the node backdrop we spent the effort to get on screen — and a
+     * board carrying three filled bands reads as a heat map rather than as a
+     * dungeon. So the interior stays open and the EDGE carries the signal.
+     *
+     * The glow is built by stroking the same rounded rect many times under
+     * `lighter` compositing: wide and faint first, narrow and bright last, so
+     * the alpha accumulates into a soft falloff either side of a crisp core.
+     * That is cheaper and more portable than a canvas blur filter, and it
+     * bakes once for the life of the board.
      */
-    const plateTexture = () => {
+    const glowTexture = () => {
       const S = 128
       const cv = document.createElement("canvas")
       cv.width = cv.height = S
       const g = cv.getContext("2d")!
-      const R = S * 0.17
-      const pad = S * 0.055
+      const R = S * 0.16
+      const pad = S * 0.085
       const w = S - pad * 2
-      const round = (x: number, y: number, ww: number, hh: number, r: number) => {
+      const round = () => {
         g.beginPath()
-        g.moveTo(x + r, y)
-        g.arcTo(x + ww, y, x + ww, y + hh, r)
-        g.arcTo(x + ww, y + hh, x, y + hh, r)
-        g.arcTo(x, y + hh, x, y, r)
-        g.arcTo(x, y, x + ww, y, r)
+        g.moveTo(pad + R, pad)
+        g.arcTo(pad + w, pad, pad + w, pad + w, R)
+        g.arcTo(pad + w, pad + w, pad, pad + w, R)
+        g.arcTo(pad, pad + w, pad, pad, R)
+        g.arcTo(pad, pad, pad + w, pad, R)
         g.closePath()
       }
-      const grad = g.createRadialGradient(S / 2, S / 2, S * 0.05, S / 2, S / 2, S * 0.52)
-      grad.addColorStop(0, "rgba(255,255,255,1)")
-      grad.addColorStop(0.62, "rgba(255,255,255,.86)")
-      grad.addColorStop(1, "rgba(255,255,255,.34)")
-      g.fillStyle = grad
-      round(pad, pad, w, w, R)
+      // A whisper of interior, so the square still reads as a REGION you may
+      // stand in rather than as four unrelated edges. Low enough that the
+      // floor beneath stays legible.
+      g.fillStyle = "rgba(255,255,255,0.09)"
+      round()
       g.fill()
-      g.globalCompositeOperation = "source-atop"
-      g.strokeStyle = "rgba(255,255,255,.95)"
-      g.lineWidth = S * 0.028
-      round(pad, pad, w, w, R)
-      g.stroke()
-      const t = new THREE.CanvasTexture(cv)
-      t.minFilter = THREE.LinearFilter
-      return t
+      // The halo.
+      g.globalCompositeOperation = "lighter"
+      g.lineJoin = "round"
+      for (let lw = 22; lw >= 2; lw -= 2) {
+        const t = (22 - lw) / 20
+        g.lineWidth = lw
+        g.strokeStyle = `rgba(255,255,255,${(0.030 + t * t * 0.22).toFixed(3)})`
+        round()
+        g.stroke()
+      }
+      const t2 = new THREE.CanvasTexture(cv)
+      t2.minFilter = THREE.LinearFilter
+      return t2
     }
-    const PLATE = plateTexture()
+    const PLATE = glowTexture()
 
+    // ADDITIVE. A glow adds light to the floor rather than painting over it,
+    // which is what makes it read as emission instead of as a decal. It also
+    // means the band never darkens the map art it sits on.
     const rampMats = (color: number, peak: number, floorOpacity: number) =>
       Array.from({ length: RAMP }, (_, i) =>
         new THREE.MeshBasicMaterial({
@@ -1590,6 +1603,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           transparent: true,
           opacity: peak - ((peak - floorOpacity) * i) / (RAMP - 1),
           depthWrite: false,
+          blending: THREE.AdditiveBlending,
           side: THREE.DoubleSide,
         }),
       )
@@ -1609,9 +1623,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const DENY_COLOR = 0xa33b30
 
     // Within remaining movement: solid, strongest under the token's feet.
-    const moveMats = rampMats(MOVE_COLOR, 0.38, 0.18)
+    const moveMats = rampMats(MOVE_COLOR, 0.95, 0.44)
     // Beyond it but inside a Dash: azure, carried further and fainter.
-    const dashMats = rampMats(DASH_COLOR, 0.30, 0.15)
+    const dashMats = rampMats(DASH_COLOR, 0.88, 0.42)
     // The square under the cursor. Additive, so it lifts whatever it lands on
     // without inventing a fourth colour.
     const overMat = new THREE.MeshBasicMaterial({ map: PLATE, color: 0xffffff, transparent: true, opacity: 0.30, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
@@ -1621,7 +1635,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // and a board mostly red reads as an error state rather than as
     // information. The frontier is the only unreachable fact that changes a
     // decision — it says where the turn ends.
-    const denyMat = new THREE.MeshBasicMaterial({ map: PLATE, color: DENY_COLOR, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide })
+    const denyMat = new THREE.MeshBasicMaterial({ map: PLATE, color: DENY_COLOR, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
     // Contours. Solid for the walk, dashed for the dash, and corner ticks on
     // the frontier. A contour is what turns a wash of tinted squares into a
     // shape readable at a glance from across the room.
@@ -1813,7 +1827,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             const ny = y + dy
             if (nx < 0 || ny < 0 || nx >= m.grid_width || ny >= m.grid_height) continue
             const nk = nx + "," + ny
-            if (cells.has(nk) || nk === start || !passable(nk)) continue
+            if (cells.has(nk) || nk === start) continue
+            // Rock is INCLUDED, deliberately. It was excluded before on the
+            // reasoning that a wall already looks like a wall — but on a 12x12
+            // V5 tile a 30 ft Dash spans 12 squares and reaches corner to
+            // corner, so with rock excluded the frontier was almost always
+            // EMPTY and the red never drew. The boundary of a turn is the
+            // boundary whether stone or open floor stops you, and an unbroken
+            // ring around your reach is what Sam asked to see.
             frontier.add(nk)
           }
         }
@@ -1823,7 +1844,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const cpos = sqCentre(x, y)
         const p = new THREE.Mesh(reachGeo, denyMat)
         p.rotation.x = -Math.PI / 2
-        p.position.set(cpos.x, 0.022, cpos.z)
+        // Above a rock tile's own top face, so a frontier square that happens
+        // to be stone still shows its ring rather than z-fighting inside it.
+        p.position.set(cpos.x, passable(k) ? 0.022 : 0.026, cpos.z)
         reachGroup.add(p)
         // Corner ticks: four short marks pulled in from the corners. Reads as
         // "closed off" rather than as a fourth fill colour competing with the
