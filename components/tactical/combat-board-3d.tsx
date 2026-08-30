@@ -50,6 +50,12 @@ import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType }
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
+// FEET_PER_SQUARE only, deliberately. gridDistanceFeet is straight-line
+// (Chebyshev) and this overlay measures a PATH that bends around rock, so the
+// two disagree the moment a wall is involved - and the server rejects a client
+// that under-reports cost. The BFS counts squares; this constant turns them
+// into feet. One definition of a square, shared with the server.
+import { FEET_PER_SQUARE } from "@/lib/tactical"
 
 const TILE_BASE =
   "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/map-tiles/diablo-gothic"
@@ -182,7 +188,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const myCharRef = useRef<string | null>(null)
   const speedFtRef = useRef(30)
   const walkableRef = useRef<Set<string>>(new Set())
-  const reachRef = useRef<{ tokenId: string; cells: Map<string, { cost: number }> } | null>(null)
+  const reachRef = useRef<{
+    tokenId: string
+    /** cost is PATH length in squares (around walls), not straight-line. */
+    cells: Map<string, { cost: number; tier: "move" | "dash" }>
+    /** Movement left this turn, in feet — what the label measures "over". */
+    moveFt: number
+  } | null>(null)
   const refreshReachRef = useRef<() => void>(() => {})
   const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number) => void>(() => {})
   const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
@@ -596,7 +608,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // Ship the route first, so every board (this one included) walks
         // the real path when the move lands.
         sendWalkPath(reach.tokenId, pathCells(cellKey))
-        playerMoveRef.current(reach.tokenId, gx, gy, reach.cells.get(cellKey)!.cost * 5)
+        playerMoveRef.current(reach.tokenId, gx, gy, reach.cells.get(cellKey)!.cost * FEET_PER_SQUARE)
         clearReach() // repainted with the new budget when the server echoes
         return
       }
@@ -1515,22 +1527,45 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
     targetsRef.current = { show: showTargets, clear: clearTargets }
 
-    const reachMat = new THREE.MeshBasicMaterial({ color: 0xf3c94b, transparent: true, opacity: 0.24, depthWrite: false, side: THREE.DoubleSide })
-    // The path is a RIBBON, not a hairline — THREE.Line renders one pixel
-    // whatever you ask for, so the ornate version is built from flat quads:
-    // a gold band laid square-centre to square-centre, a small diamond stud
-    // at each step, and a layered diamond seal on the destination.
-    const pathGroup = new THREE.Group()
-    pathGroup.visible = false
-    scene.add(pathGroup)
-    const ribbonGeo = new THREE.PlaneGeometry(1, 0.15)
-    const studGeo = new THREE.PlaneGeometry(0.16, 0.16)
-    const sealOuterGeo = new THREE.PlaneGeometry(0.44, 0.44)
-    const sealInnerGeo = new THREE.PlaneGeometry(0.3, 0.3)
-    const sealCoreGeo = new THREE.PlaneGeometry(0.16, 0.16)
-    const ribbonMat = new THREE.MeshBasicMaterial({ color: 0xe8c56a, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
-    const studMat = new THREE.MeshBasicMaterial({ color: 0xffe9ad, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
-    const sealDarkMat = new THREE.MeshBasicMaterial({ color: 0x1a1206, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })
+    // GRADIENT, NOT A FLAT WASH. One material per opacity step, built once and
+    // shared, rather than a clone per square: a 12x12 board can light 140 cells
+    // and per-cell materials would churn the GPU every time the party moves.
+    //
+    // Gold throughout. Cyan is the party token ring and red is the hostile ring
+    // (see buildBase) — neither is available to this overlay, and the dash band
+    // is distinguished by its dashed perimeter rather than by a fifth hue.
+    const RAMP = 6
+    const rampMats = (peak: number, floorOpacity: number) =>
+      Array.from({ length: RAMP }, (_, i) =>
+        new THREE.MeshBasicMaterial({
+          color: 0xf3c94b,
+          transparent: true,
+          opacity: peak - ((peak - floorOpacity) * i) / (RAMP - 1),
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        }),
+      )
+    // Within remaining movement: solid, strongest under the token's feet.
+    const moveMats = rampMats(0.34, 0.17)
+    // Beyond it but inside a Dash: the same gold, carried further and fainter.
+    const dashMats = rampMats(0.13, 0.06)
+    // The square under the cursor when reaching it would cost a Dash. Red says
+    // "this spends your action", and appears nowhere else in this overlay.
+    const overMat = new THREE.MeshBasicMaterial({ color: 0xd04a3a, transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide })
+    // The dashed perimeter: short quads laid along the outer edge of the dash
+    // band, three to a square side.
+    const DASHES = 3
+    const edgeGeo = new THREE.PlaneGeometry((SQ / DASHES) * 0.55, 0.07)
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xf3c94b, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    // The hovered destination marker. The gold path ribbon that used to be
+    // drawn here is gone — the tiers say where you may go, so a line saying
+    // how you would get there was a second answer to a question already
+    // answered. pathCells() below survives it: the route is still computed,
+    // still broadcast, and tokens still WALK it rather than gliding through
+    // rock. Only the drawing was removed.
+    const hoverGroup = new THREE.Group()
+    hoverGroup.visible = false
+    scene.add(hoverGroup)
     let reachParents = new Map<string, string>()
 
     /** The cell chain start→destination, from the BFS parents. */
@@ -1547,8 +1582,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
     const clearReach = () => {
       reachGroup.clear()
-      pathGroup.clear()
-      pathGroup.visible = false
+      hoverGroup.clear()
+      hoverGroup.visible = false
       reachRef.current = null
       reachParents = new Map()
       setMoveHint(null)
@@ -1579,9 +1614,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // NPCs never paint reach here: theirs is the AI's to spend.
       if (!tok.row.character_id) return
       if (tok.row.character_id !== myCharRef.current && !dmRef.current) return
+      // Budget is what is LEFT this turn, not full speed: a token that has
+      // walked 15 of 30 shows 15 ft. Dash doubles the turn's total allowance,
+      // so what remains of it is speed*2 minus what is already spent.
       const usedFt = Number(c.turn_state?.moved_ft ?? 0)
-      const budget = Math.floor((speedFtRef.current - usedFt) / 5)
-      if (budget <= 0) return
+      const moveBudget = Math.floor((speedFtRef.current - usedFt) / FEET_PER_SQUARE)
+      const dashBudget = Math.floor((speedFtRef.current * 2 - usedFt) / FEET_PER_SQUARE)
+      if (dashBudget <= 0) return
       // Open doors are floor; closed ones are wall. The V5 cells put door
       // squares in neither set, so they join the walkable world only here.
       const openDoors = new Set(doorRecs.filter((r) => r.open).map((r) => r.cell))
@@ -1606,7 +1645,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       while (queue.length) {
         const cur = queue.shift()!
         const d = dist.get(cur)!
-        if (d >= budget) continue
+        if (d >= dashBudget) continue
         const [cx, cy] = cur.split(",").map(Number)
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
@@ -1622,73 +1661,96 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           }
         }
       }
-      const cells = new Map<string, { cost: number }>()
+      const cells = new Map<string, { cost: number; tier: "move" | "dash" }>()
       dist.forEach((d, k) => {
         if (d === 0 || blockStop.has(k)) return
-        cells.set(k, { cost: d })
+        const tier: "move" | "dash" = d <= moveBudget ? "move" : "dash"
+        cells.set(k, { cost: d, tier })
         const [x, y] = k.split(",").map(Number)
         const cpos = sqCentre(x, y)
-        const p = new THREE.Mesh(reachGeo, reachMat)
+        // Falloff runs across each band separately, so the dash band reads as
+        // its own gradient rather than the tail of the first one.
+        const span = tier === "move" ? moveBudget : Math.max(1, dashBudget - moveBudget)
+        const step = tier === "move" ? d - 1 : d - moveBudget - 1
+        const idx = Math.max(0, Math.min(RAMP - 1, Math.floor((step / Math.max(1, span)) * RAMP)))
+        const p = new THREE.Mesh(reachGeo, (tier === "move" ? moveMats : dashMats)[idx])
         p.rotation.x = -Math.PI / 2
         p.position.set(cpos.x, 0.035, cpos.z)
         reachGroup.add(p)
       })
-      if (cells.size) reachRef.current = { tokenId: tok.row.id, cells }
+
+      // The dashed perimeter marks where a Dash would take you and no further.
+      // Only drawn when a dash band actually exists — with no action left to
+      // spend, the outer edge is simply the edge of your walk.
+      if (dashBudget > moveBudget) {
+        const SIDES: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]]
+        cells.forEach((cell, k) => {
+          if (cell.tier !== "dash") return
+          const [x, y] = k.split(",").map(Number)
+          const cpos = sqCentre(x, y)
+          for (const [dx, dy] of SIDES) {
+            if (cells.has(x + dx + "," + (y + dy))) continue
+            for (let i = 0; i < DASHES; i++) {
+              const t = (i + 0.5) / DASHES - 0.5
+              const seg = new THREE.Mesh(edgeGeo, edgeMat)
+              seg.rotation.x = -Math.PI / 2
+              // Along the edge for a horizontal side, across it for a vertical.
+              if (dy !== 0) seg.position.set(cpos.x + t * SQ, 0.045, cpos.z + (dy * SQ) / 2)
+              else {
+                seg.position.set(cpos.x + (dx * SQ) / 2, 0.045, cpos.z + t * SQ)
+                seg.rotation.z = Math.PI / 2
+              }
+              reachGroup.add(seg)
+            }
+          }
+        })
+      }
+      // Clamped: a token that has somehow spent more than its speed would give
+      // a negative budget, and the label would then report a larger overspend
+      // than is real. Zero left is zero left.
+      if (cells.size)
+        reachRef.current = { tokenId: tok.row.id, cells, moveFt: Math.max(0, moveBudget) * FEET_PER_SQUARE }
     }
     refreshReachRef.current = computeReach
 
-    const showPathTo = (k: string) => {
-      pathGroup.clear()
-      const cells = pathCells(k)
-      if (cells.length < 2) { pathGroup.visible = false; return }
-      const pts = cells.map(([x, y]) => {
-        const cpos = sqCentre(x, y)
-        return new THREE.Vector3(cpos.x, 0.055, cpos.z)
-      })
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i]
-        const b = pts[i + 1]
-        const len = a.distanceTo(b)
-        const band = new THREE.Mesh(ribbonGeo, ribbonMat)
-        band.scale.x = len
-        band.position.set((a.x + b.x) / 2, 0.055, (a.z + b.z) / 2)
-        band.rotation.x = -Math.PI / 2
-        band.rotation.z = -Math.atan2(b.z - a.z, b.x - a.x)
-        pathGroup.add(band)
-        // A diamond stud on every step but the last — the seal owns that.
-        if (i < pts.length - 2) {
-          const stud = new THREE.Mesh(studGeo, studMat)
-          stud.position.set(b.x, 0.057, b.z)
-          stud.rotation.x = -Math.PI / 2
-          stud.rotation.z = Math.PI / 4
-          pathGroup.add(stud)
-        }
-      }
-      // The destination seal: gold diamond, dark inlay, gold core.
-      const dest = pts[pts.length - 1]
-      const layers: [THREE.PlaneGeometry, THREE.Material, number][] = [
-        [sealOuterGeo, studMat, 0.057],
-        [sealInnerGeo, sealDarkMat, 0.058],
-        [sealCoreGeo, studMat, 0.059],
-      ]
-      for (const [geo, mat, y] of layers) {
-        const seal = new THREE.Mesh(geo, mat)
-        seal.position.set(dest.x, y, dest.z)
-        seal.rotation.x = -Math.PI / 2
-        seal.rotation.z = Math.PI / 4
-        pathGroup.add(seal)
-      }
-      pathGroup.visible = true
+    /**
+     * Mark the square under the cursor when standing there would cost a Dash.
+     *
+     * Within the walk this draws nothing: the move band already says the
+     * square is free, and a second mark on top of it is noise. Red appears
+     * here and nowhere else on the overlay.
+     */
+    const showHover = (k: string, tier: "move" | "dash") => {
+      hoverGroup.clear()
+      if (tier !== "dash") { hoverGroup.visible = false; return }
+      const [x, y] = k.split(",").map(Number)
+      const cpos = sqCentre(x, y)
+      const mark = new THREE.Mesh(reachGeo, overMat)
+      mark.rotation.x = -Math.PI / 2
+      mark.position.set(cpos.x, 0.05, cpos.z)
+      hoverGroup.add(mark)
+      hoverGroup.visible = true
     }
 
     let lastHoverCell = ""
     const onHoverMove = (e: MouseEvent) => {
       if (!reachRef.current || !floorPlane) return
+      // While a spell is armed the cursor is asking a different question, and
+      // the targeting read-out answers it. Movement cost alongside it is a
+      // second answer to a question nobody asked - and the floor raycast still
+      // hits a reach square underneath the token being aimed at, so without
+      // this the board would price a walk the player is not taking.
+      if (armedRef.current) {
+        hoverGroup.visible = false
+        lastHoverCell = ""
+        setMoveHint(null)
+        return
+      }
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, activeCam())
       const hit = raycaster.intersectObject(floorPlane, false)[0]
-      if (!hit) { pathGroup.visible = false; return }
+      if (!hit) { hoverGroup.visible = false; return }
       const gx = Math.floor(hit.point.x / SQ)
       const gy = Math.floor(hit.point.z / SQ)
       const k = gx + "," + gy
@@ -1696,12 +1758,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       lastHoverCell = k
       const cell = reachRef.current.cells.get(k)
       if (!cell) {
-        pathGroup.visible = false
+        hoverGroup.visible = false
         setMoveHint(null)
         return
       }
-      showPathTo(k)
-      setMoveHint(`${cell.cost * 5} ft`)
+      showHover(k, cell.tier)
+      // Feet come from the BFS, which walked AROUND the rock. gridDistanceFeet
+      // is straight-line and would under-report a route that bends - and the
+      // server rejects a client understating path cost. One number, measured
+      // the same way on both sides.
+      const ft = cell.cost * FEET_PER_SQUARE
+      const over = ft - reachRef.current.moveFt
+      setMoveHint(over > 0 ? `${ft} FT · ${over} FT OVER` : `MOVE · ${ft} FT`)
     }
     renderer.domElement.addEventListener("mousemove", onHoverMove)
 
@@ -2444,11 +2512,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       renderer.domElement.removeEventListener("click", onClick)
       refreshReachRef.current = () => {}
       reachGeo.dispose()
-      ribbonGeo.dispose()
-      studGeo.dispose()
-      sealOuterGeo.dispose()
-      sealInnerGeo.dispose()
-      sealCoreGeo.dispose()
+      edgeGeo.dispose()
+      for (const m of [...moveMats, ...dashMats, overMat, edgeMat]) m.dispose()
       activeGlow.geometry.dispose()
       pmrem.dispose()
       renderer.dispose()
@@ -2736,7 +2801,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         </div>
       )}
 
-      {/* The path's price, BG3-style, while a walk is being lined up. */}
+      {/* What the hovered square costs. Bottom-centre, clear of the cursor
+          read-out, which owns the same moment when a spell is armed. */}
       {moveHint && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded border border-[#8a6d2f] bg-black/75 px-2.5 py-0.5 font-mono text-[10px] text-[#ffe28a]">
           {moveHint}
