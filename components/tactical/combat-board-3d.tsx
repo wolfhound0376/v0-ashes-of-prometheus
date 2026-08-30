@@ -2851,6 +2851,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const activeEntry = combat?.turn_order?.[combat.active_index] ?? null
   const activeCharacterId = activeEntry ? tokenToCharacter[activeEntry.token_id] : undefined
   const isMyTurn = Boolean(myCharacterId && activeCharacterId && myCharacterId === activeCharacterId)
+
+  /**
+   * THE RACK FOLLOWS THE TURN.
+   *
+   * `focusId` was set once, on the first sheet load, with `cur ?? …` — and
+   * never again. So the action rack kept showing whoever was focused when the
+   * board opened: Kenta's turn would come up, his plate would light green, his
+   * initiative pip would advance, and the rack would still be offering Fifi's
+   * spells. Pressing one armed a cast as the wrong character. Since PR #303 the
+   * server refuses those, so the visible symptom is now an error toast rather
+   * than a wrong result — better, but still the wrong rack.
+   *
+   * Follow the turn only for a browser that can actually ACT for the incoming
+   * character: the DM, who may drive anyone, or the player who claimed them.
+   * This is the same gate the reach overlay already uses. A spectating player
+   * keeps their own sheet in front of them rather than being handed a rack of
+   * spells the server would reject — and clicking a plate to inspect someone
+   * still works, it simply does not survive the next turn change.
+   */
+  useEffect(() => {
+    if (!activeCharacterId) return
+    if (!dm && activeCharacterId !== myCharacterId) return
+    setFocusId(activeCharacterId)
+  }, [activeCharacterId, dm, myCharacterId])
   const activeSheet = sheets.find((c) => c.id === activeCharacterId)
   // "30 ft. (Walking)" -> 30. A sheet with prose speed still yields a budget.
   const speedFt = Number.parseInt(String(activeSheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
