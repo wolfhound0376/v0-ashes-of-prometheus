@@ -53,6 +53,10 @@ import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 // outline a player is looking at and the creatures that actually take damage
 // are the same set by construction rather than by agreement.
 import { areaCells, aimInRange } from "@/lib/aoe"
+// The rack's weapons are DERIVED from what a character carries, not read from
+// a hand-kept list on the sheet. Shared with the cast handler so the board
+// cannot offer a weapon the server will refuse.
+import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -2814,25 +2818,100 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (!charIds.length) return
         const { data: rows } = await supabase
           .from("characters")
-          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,sheet_attacks,hero_image_url")
+          // sheet_attacks is DELIBERATELY not selected any more. It was a
+          // second, hand-kept copy of what a character carries, and it had
+          // already drifted from the first: the drow confiscated the party's
+          // gear, the inventories emptied correctly, and the sheets went on
+          // listing a spear locked in a store room down the hall. The rack is
+          // now derived from the inventory below, so there is one answer.
+          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,hero_image_url")
           .in("id", charIds)
           // Without this the order is whatever Postgres feels like, which
           // makes the default focus — and the fallback above — a coin flip
           // that changes between reloads.
           .order("name")
-        const list = (rows ?? []) as HudCharacter[]
+
+        // WHAT THEY ACTUALLY CARRY.
+        //
+        // One join, through the FK that already exists: the row says the
+        // character owns a thing, and the catalog says what that thing does.
+        // Pick up a rapier and it is on the rack next reload; have it taken
+        // and it is gone. Nobody edits a sheet.
+        // Named rather than inferred: the select string is past the point
+        // where the generated types can follow it, so without this every
+        // callback below lands as an implicit `any`.
+        type InvRow = {
+          character_id?: string | null
+          name?: string | null
+          item_type?: string | null
+          items?: { item_type?: string | null; properties?: Record<string, unknown> | null; rarity?: string | null } | null
+        }
+        const { data: invRows } = await supabase
+          .from("inventory_items")
+          .select("character_id,name,item_type,items(item_type,properties,rarity)")
+          .in("character_id", charIds)
+
+        const carried = new Map<string, InvRow[]>()
+        for (const r of (invRows ?? []) as unknown as InvRow[]) {
+          const k = r.character_id
+          if (!k) continue
+          const bucket = carried.get(k) ?? []
+          bucket.push(r)
+          carried.set(k, bucket)
+        }
+
+        type SheetRow = {
+          id: string
+          str_score?: number | null
+          dex_score?: number | null
+          proficiency_bonus?: number | null
+        }
+        const list = ((rows ?? []) as unknown as SheetRow[]).map((c) => {
+          const row = c
+          return {
+            ...c,
+            // The rack's weapons, computed from the inventory and this
+            // character's own arithmetic. Unarmed Strike is appended by
+            // attacksFromInventory — a fist is not inventory and should never
+            // have been stored as data, which is how Scott ended up unable to
+            // punch while everyone else could.
+            sheet_attacks: attacksFromInventory(carried.get(row.id), {
+              strScore: row.str_score,
+              dexScore: row.dex_score,
+              proficiencyBonus: row.proficiency_bonus,
+            }),
+          }
+        }) as unknown as HudCharacter[]
+
         sheetAttacksRef.current = Object.fromEntries(
           list.map((c) => [c.id, ((c as unknown as { sheet_attacks?: { name?: string }[] }).sheet_attacks ?? [])]),
         )
+        // What goes IN THE HAND, which is a different question from what is on
+        // the rack. A fist is a rack entry and not a prop, so equipping the
+        // first attack blindly would hand every model an "Unarmed Strike".
+        const heldWeapon = new Map<string, { name: string; rarity: string }>()
+        for (const [cid, items] of carried) {
+          const w = items.find(
+            (r: InvRow) => String(r.items?.item_type ?? r.item_type ?? "").toLowerCase() === "weapon",
+          )
+          if (!w?.name) continue
+          heldWeapon.set(cid, { name: w.name, rarity: w.items?.rarity ?? "common" })
+        }
         // The models load asynchronously and the sheets arrive on their own
         // schedule, so whichever wins the race, this pass makes sure everyone
         // ends up armed. equipOnRig removes what is in the hand first, so
         // running it twice is a no-op rather than a second sword.
         tokensRef.current.forEach((t) => {
           // A ternary rather than `&&`: character_id is nullable, and `&&`
-          // would widen this to `"" | SheetAttack` — falsy at runtime, but a
+          // would widen this to `"" | undefined` — falsy at runtime, but a
           // union that no longer has .name or .rarity on it.
-          const held = t.row.character_id ? sheetAttacksRef.current[t.row.character_id]?.[0] : null
+          //
+          // Read from the CARRIED WEAPONS map, not from the rack. The rack's
+          // first entry is now whatever the character can attack with, and for
+          // a disarmed prisoner that is their fist — which is not a prop and
+          // has no model. A hand holding an "Unarmed Strike" is the failure
+          // this map exists to avoid.
+          const held = t.row.character_id ? heldWeapon.get(t.row.character_id) : null
           if (!held?.name) return
           const model = t.obj.children.find((c) => c.getObjectByName("RightHand"))
           // Rarity travels with the re-equip. equipOnRig clears the hand

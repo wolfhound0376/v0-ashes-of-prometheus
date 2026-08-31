@@ -8,6 +8,10 @@ import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasti
 // player is looking at and the list of creatures this handler damages cannot
 // drift apart.
 import { areaCells, aimInRange } from "@/lib/aoe"
+// Weapons are derived from the inventory by the SAME function the board's rack
+// uses, so a weapon the board offers is a weapon this handler accepts — and a
+// confiscated one is refused by both.
+import { attacksFromInventory } from "@/lib/weapons"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -479,13 +483,30 @@ export async function POST(req: NextRequest) {
     // it: which weapons they carry, which spells they hold, and their own
     // attack bonus and save DC. Read from the sheet, never from the
     // request — a browser claiming a dagger deals 40d6 gets a dagger.
+    // WEAPONS COME FROM THE INVENTORY, NOT FROM A LIST ON THE SHEET.
+    //
+    // `sheet_attacks` was a second copy of what a character carries, kept by
+    // hand, and it had already drifted: the drow confiscated the party's gear
+    // and the sheets went on listing it. A browser naming "Spear" would have
+    // been believed by this handler for a spear locked in a store room.
+    //
+    // Derived through the same function the board builds its rack with, so the
+    // two cannot disagree about what exists.
     let sheetAttacks: { name?: string; hit?: string; damage?: string }[] = []
     let casterSc: Spellcasting | null = null
     if (caster.character_id) {
       const { data: cs } = await db.from("characters")
-        .select("sheet_attacks,sheet_spellcasting").eq("id", caster.character_id).maybeSingle()
-      sheetAttacks = (cs?.sheet_attacks ?? []) as typeof sheetAttacks
+        .select("sheet_spellcasting,str_score,dex_score,proficiency_bonus")
+        .eq("id", caster.character_id).maybeSingle()
       casterSc = (cs?.sheet_spellcasting ?? null) as Spellcasting | null
+      const { data: inv } = await db.from("inventory_items")
+        .select("name,item_type,items(item_type,properties)")
+        .eq("character_id", caster.character_id)
+      sheetAttacks = attacksFromInventory(inv as Parameters<typeof attacksFromInventory>[0], {
+        strScore: cs?.str_score,
+        dexScore: cs?.dex_score,
+        proficiencyBonus: cs?.proficiency_bonus,
+      })
     }
     const weapon = sheetAttacks.find((a) => (a?.name ?? "").toLowerCase() === ability.toLowerCase()) ?? null
 
