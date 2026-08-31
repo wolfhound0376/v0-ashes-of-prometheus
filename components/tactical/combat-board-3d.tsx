@@ -1736,9 +1736,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Budget is what is LEFT this turn, not full speed: a token that has
       // walked 15 of 30 shows 15 ft. Dash doubles the turn's total allowance,
       // so what remains of it is speed*2 minus what is already spent.
+      //
+      // BUT A DASH HAS TO BE AFFORDABLE. Dash costs your action, and the
+      // server refuses one when the action is already gone (see the move
+      // handler). The client did not mirror that check, so a character who
+      // had cast a spell still saw a full speed*2 azure band — 10 ft of real
+      // movement and 40 ft of promises. Clicking one raised the confirm,
+      // accepting it hit the server guard, and the token simply did not move.
+      // Painting reach the server will refuse is the same bug the azure band
+      // shipped with; this is the other half of it.
+      //
+      // Already dashed this turn? Then it is bought and the doubled ceiling
+      // stands regardless of the spent action.
       const usedFt = Number(c.turn_state?.moved_ft ?? 0)
+      const dashed = c.turn_state?.dashed === true
+      const canAffordDash = dashed || c.turn_state?.action !== true
       const moveBudget = Math.floor((speedFtRef.current - usedFt) / FEET_PER_SQUARE)
-      const dashBudget = Math.floor((speedFtRef.current * 2 - usedFt) / FEET_PER_SQUARE)
+      const ceilingFt = canAffordDash ? speedFtRef.current * 2 : speedFtRef.current
+      const dashBudget = Math.floor((ceilingFt - usedFt) / FEET_PER_SQUARE)
       if (dashBudget <= 0) return
       // Open doors are floor; closed ones are wall. The V5 cells put door
       // squares in neither set, so they join the walkable world only here.
