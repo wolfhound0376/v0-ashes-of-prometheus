@@ -565,7 +565,21 @@ export function CombatHud(props: Props) {
                         // Caught in a live rehearsal: the tray read ACTION · USED
                         // before a target had been chosen.
                         const armsFirst = a.kind !== "action" && a.entry.target !== "self" && a.entry.target !== "none"
-                        if (!armsFirst) {
+                        // DASH IS BOUGHT BY THE MOVE, NOT BY THIS PRESS.
+                        //
+                        // The server spends the action in the same write that
+                        // grants the doubled distance, so a Dash can never be
+                        // taken twice or taken for free. Spending it here paid
+                        // for nothing — and because the azure band is only
+                        // drawn while the action is still unspent, pressing
+                        // Dash removed the very band it promises. Silently:
+                        // a core action never reaches the server's cast gate,
+                        // so there was not even an error to read.
+                        //
+                        // The press still selects, which is the right signal —
+                        // the player then clicks an azure square and confirms.
+                        const boughtByTheMove = a.kind === "action" && a.name.trim().toLowerCase() === "dash"
+                        if (!armsFirst && !boughtByTheMove) {
                           window.dispatchEvent(new CustomEvent("aop:ability-used", { detail: { phase } }))
                         }
                       }
