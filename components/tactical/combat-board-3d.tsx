@@ -1814,13 +1814,37 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const entry = c.turn_order?.[c.active_index]
       if (!entry) return
       const tok = tokensRef.current.get(entry.token_id)
-      if (!tok) return
+      if (!tok) {
+        // The active combatant has no miniature on this map. Silence here
+        // looks exactly like a broken board.
+        setMoveHint(`${entry.label ?? "THE ACTIVE COMBATANT"} IS NOT ON THIS MAP`)
+        return
+      }
       // A PC's reach paints for the browser that claimed them — and for the
       // DM, who may walk the active character on a player's behalf (same
       // budget, same rules; the free hand stays behind the DM-move toggle).
       // NPCs never paint reach here: theirs is the AI's to spend.
       if (!tok.row.character_id) return
-      if (tok.row.character_id !== myCharRef.current && !dmRef.current) return
+
+      // WHY THE BOARD IS INERT.
+      //
+      // This gate is correct — a player drives their own character, not
+      // everyone's — but it used to `return` in silence. The result was a
+      // board with no gold squares, no message, and nothing to click, which
+      // is indistinguishable from a bug. It has now cost two separate
+      // "why can't I move Kenta" investigations, and both times the answer
+      // was that the browser had claimed a different character.
+      //
+      // A refusal always says why. The same rule the armed-spell click
+      // already follows, applied to the thing that fails far more often.
+      if (tok.row.character_id !== myCharRef.current && !dmRef.current) {
+        setMoveHint(
+          myCharRef.current
+            ? `${(entry.label ?? "THIS CHARACTER").toUpperCase()}'S TURN · NOT YOURS TO MOVE`
+            : `${(entry.label ?? "THIS CHARACTER").toUpperCase()}'S TURN · NO CHARACTER CLAIMED ON THIS BROWSER`,
+        )
+        return
+      }
       // Budget is what is LEFT this turn, not full speed: a token that has
       // walked 15 of 30 shows 15 ft. Dash doubles the turn's total allowance,
       // so what remains of it is speed*2 minus what is already spent.
@@ -1842,7 +1866,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const moveBudget = Math.floor((speedFtRef.current - usedFt) / FEET_PER_SQUARE)
       const ceilingFt = canAffordDash ? speedFtRef.current * 2 : speedFtRef.current
       const dashBudget = Math.floor((ceilingFt - usedFt) / FEET_PER_SQUARE)
-      if (dashBudget <= 0) return
+      if (dashBudget <= 0) {
+        // Out of movement is a legitimate state, but an unexplained empty
+        // board is not. Say which it is.
+        setMoveHint(
+          canAffordDash
+            ? `NO MOVEMENT LEFT · ${usedFt} FT SPENT`
+            : `NO MOVEMENT LEFT · ACTION SPENT, SO NO DASH`,
+        )
+        return
+      }
       // Open doors are floor; closed ones are wall. The V5 cells put door
       // squares in neither set, so they join the walkable world only here.
       const openDoors = new Set(doorRecs.filter((r) => r.open).map((r) => r.cell))
