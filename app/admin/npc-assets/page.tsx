@@ -267,6 +267,8 @@ export default function NpcAssetsAdmin() {
         </div>
       </header>
 
+        <LichAnimationsSection />
+
       {loading ? (
         <p className="text-stone-500">Loading NPCs…</p>
       ) : groups.length === 0 ? (
@@ -279,6 +281,144 @@ export default function NpcAssetsAdmin() {
         </div>
       )}
     </div>
+  )
+}
+
+// ============================================================================
+// DUNGEON MASTER — Malachar's looping portrait animations.
+//
+// Reads/writes public.lich_animations (RLS allows the anon client both). The
+// three states idle / speaking / casting are always rendered even when a row
+// is missing, so a gap is obvious. `state` has NO unique constraint, so the
+// upsert is done by hand: select by state, then update-by-id or insert. This
+// is URL-only — the loops are generated externally and pasted in as blob URLs.
+// ============================================================================
+const LICH_STATES = ["idle", "speaking", "casting"] as const
+
+interface LichRow {
+  id: string
+  state: string | null
+  video_url: string | null
+  prompt: string | null
+}
+
+function LichAnimationsSection() {
+  const [rows, setRows] = useState<Record<string, { id?: string; video_url: string; prompt: string }>>({})
+  const [status, setStatus] = useState<Record<string, { ok: boolean; msg: string }>>({})
+  const [loading, setLoading] = useState(true)
+
+  const fetchRows = useCallback(async () => {
+    setLoading(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.from("lich_animations").select("id, state, video_url, prompt")
+    if (error) console.error("[v0] fetch lich_animations error:", error)
+    const next: Record<string, { id?: string; video_url: string; prompt: string }> = {}
+    for (const s of LICH_STATES) next[s] = { video_url: "", prompt: "" }
+    for (const r of (data as LichRow[]) || []) {
+      if (!r.state) continue
+      next[r.state] = { id: r.id, video_url: r.video_url ?? "", prompt: r.prompt ?? "" }
+    }
+    setRows(next)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    fetchRows()
+  }, [fetchRows])
+
+  const setField = (state: string, field: "video_url" | "prompt", value: string) =>
+    setRows((r) => ({ ...r, [state]: { ...(r[state] ?? { video_url: "", prompt: "" }), [field]: value } }))
+
+  const save = async (state: string) => {
+    setStatus((s) => ({ ...s, [state]: { ok: true, msg: "Saving…" } }))
+    const supabase = createClient()
+    const row = rows[state] ?? { video_url: "", prompt: "" }
+    const payload = { video_url: row.video_url || null, prompt: row.prompt || null }
+    try {
+      // No unique constraint on `state`, so check for an existing row first and
+      // branch between update-by-id and insert.
+      const { data: existing, error: selErr } = await supabase
+        .from("lich_animations")
+        .select("id")
+        .eq("state", state)
+        .limit(1)
+      if (selErr) throw selErr
+      if (existing && existing.length > 0) {
+        const { error } = await supabase
+          .from("lich_animations")
+          .update(payload)
+          .eq("id", (existing[0] as { id: string }).id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from("lich_animations").insert({ state, ...payload })
+        if (error) throw error
+      }
+      setStatus((s) => ({ ...s, [state]: { ok: true, msg: "Saved." } }))
+      await fetchRows()
+    } catch (err) {
+      setStatus((s) => ({ ...s, [state]: { ok: false, msg: (err as Error).message } }))
+    }
+  }
+
+  return (
+    <section className="mb-8 rounded-sm border border-[#3d3428]/60 bg-gradient-to-b from-[#1a1614] to-[#0f0d0b] p-4">
+      <h2 className="font-serif text-lg text-[#c4a777]">Dungeon Master — Malachar</h2>
+      <p className="text-[11px] text-stone-500 mt-1 mb-4">
+        Paste externally-generated loop URLs (blob URLs) for each state. <span className="text-stone-400">Idle</span> plays while
+        Malachar is silent; <span className="text-stone-400">speaking</span> plays while he narrates aloud.
+      </p>
+
+      {loading ? (
+        <p className="text-stone-500 text-sm">Loading loops…</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {LICH_STATES.map((state) => {
+            const row = rows[state] ?? { video_url: "", prompt: "" }
+            const st = status[state]
+            return (
+              <div
+                key={state}
+                className="grid grid-cols-[84px_1fr_auto] items-start gap-3 rounded-sm border border-[#3d3428]/50 bg-[#0f0d0b] p-3"
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-[11px] uppercase tracking-wider text-[#c4a777]">{state}</span>
+                  {row.video_url ? (
+                    <div className="w-16 h-16 rounded-sm overflow-hidden border border-[#3d3428]/60 bg-[#0a0908]">
+                      <video src={row.video_url} muted loop autoPlay playsInline className="w-full h-full object-cover object-top" />
+                    </div>
+                  ) : (
+                    <div className="w-16 h-16 rounded-sm border border-[#3d3428]/60 bg-[#0a0908] flex items-center justify-center text-[10px] text-stone-600">
+                      none
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={row.video_url}
+                    onChange={(e) => setField(state, "video_url", e.target.value)}
+                    placeholder="https://…  (MP4/WebM blob URL)"
+                    className="w-full rounded-sm border border-[#3d3428]/70 bg-[#0a0908] px-2 py-1.5 text-xs text-[#e8dcc4] placeholder:text-stone-600"
+                  />
+                  <input
+                    value={row.prompt}
+                    onChange={(e) => setField(state, "prompt", e.target.value)}
+                    placeholder="Generation prompt (optional)"
+                    className="w-full rounded-sm border border-[#3d3428]/70 bg-[#0a0908] px-2 py-1.5 text-xs text-[#e8dcc4] placeholder:text-stone-600"
+                  />
+                  {st ? <p className={`text-[11px] ${st.ok ? "text-[#c4a777]" : "text-red-400"}`}>{st.msg}</p> : null}
+                </div>
+                <button
+                  onClick={() => save(state)}
+                  className="rounded-sm border border-[#a88745] px-3 py-1.5 text-xs text-[#d9c492] hover:bg-[#2a1e0e]"
+                >
+                  Save
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 
