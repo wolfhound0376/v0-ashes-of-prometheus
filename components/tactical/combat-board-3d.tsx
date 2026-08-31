@@ -2426,10 +2426,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // ends up armed. equipOnRig removes what is in the hand first, so
         // running it twice is a no-op rather than a second sword.
         tokensRef.current.forEach((t) => {
-          const held = t.row.character_id && sheetAttacksRef.current[t.row.character_id]?.[0]
+          // A ternary rather than `&&`: character_id is nullable, and `&&`
+          // would widen this to `"" | SheetAttack` — falsy at runtime, but a
+          // union that no longer has .name or .rarity on it.
+          const held = t.row.character_id ? sheetAttacksRef.current[t.row.character_id]?.[0] : null
           if (!held?.name) return
           const model = t.obj.children.find((c) => c.getObjectByName("RightHand"))
-          if (model) equipOnRig(model, { name: held.name, itemType: "weapon", slot: "main_hand" })
+          // Rarity travels with the re-equip. equipOnRig clears the hand
+          // first, so omitting it here would let this pass quietly strip the
+          // tint that the load-time equip had already applied.
+          if (model) equipOnRig(model, {
+            name: held.name,
+            itemType: "weapon",
+            rarity: held.rarity ?? "common",
+            slot: "main_hand",
+          })
         })
         setSheets(list)
         // Focus THIS browser's own character by default, not merely the first
