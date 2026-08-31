@@ -2,6 +2,7 @@ import { generateText, type ModelMessage } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, type RollRequestSpec } from "@/lib/roll-requests"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
@@ -167,26 +168,56 @@ async function resolveNpcStats(
  * put the wrong voice on a named character at the moment they die, which is
  * worse than the silence.
  */
-function deathCueFor(name: string | null | undefined): string | null {
+function deathCueFor(
+  name: string | null | undefined,
+  monsterType?: string | null,
+  voiceId?: string | null,
+): string | null {
   const n = (name || "").toLowerCase()
-  if (!n) return null
+  // A named creature has its own voice in death and outranks its type: a Hook
+  // Horror is a monstrosity, a Giant Spider is a beast, and both would land on
+  // the generic clip if type were consulted first.
   if (n.includes("hook horror")) return "creature/death_hook_horror"
   if (n.includes("quaggoth")) return "creature/death_quaggoth"
   if (n.includes("spider")) return "creature/death_spider"
+
+  const type = (monsterType || "").toLowerCase()
+  if (type.includes("beast")) return "creature/death_beast"
+
+  // A humanoid dies in a voice, and the bank has two. The gender comes from the
+  // ElevenLabs voice this NPC has been SPEAKING with all session - which is the
+  // right source rather than a new column, because it is the voice the table
+  // has already been hearing. A neutral or unrecognised voice returns null: a
+  // wrong-gendered death cry on a named character is worse than silence, and
+  // that was the reason these two stayed unwired until now.
+  if (type.includes("humanoid")) {
+    const voice = voiceId ? ELEVEN_VOICE_LIBRARY.find((v) => v.id === voiceId) : undefined
+    if (voice?.gender === "male") return "creature/death_humanoid_male"
+    if (voice?.gender === "female") return "creature/death_humanoid_female"
+  }
   return null
 }
 
 async function findSharedActiveEncounter(supabase: any, name: string) {
   const { data } = await supabase
     .from("npc_encounters")
-    .select("id, hp_current, hp_max, xp_value, is_active, name")
+    .select("id, hp_current, hp_max, xp_value, is_active, name, monster_type, voice_id")
     .ilike("name", name)
     .eq("is_active", true)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle()
   return data as
-    | { id: string; hp_current: number | null; hp_max: number | null; xp_value: number | null; is_active: boolean; name: string }
+    | {
+        id: string
+        hp_current: number | null
+        hp_max: number | null
+        xp_value: number | null
+        is_active: boolean
+        name: string
+        monster_type: string | null
+        voice_id: string | null
+      }
     | null
 }
 
@@ -2095,7 +2126,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
         // hp_current at 0 is what separates the two, the same test the XP award
         // below already trusts.
         if ((npc.hp_current || 0) <= 0) {
-          const death = deathCueFor(npc.name)
+          const death = deathCueFor(npc.name, npc.monster_type, npc.voice_id)
           if (death) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: death })
         }
 
