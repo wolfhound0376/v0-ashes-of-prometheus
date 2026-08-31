@@ -410,7 +410,7 @@ export async function POST(req: NextRequest) {
     }
     const { data: rows } = await db
       .from("vtt_tokens")
-      .select("id,label,character_id,bestiary_id,hp_current,hp_max")
+      .select("id,label,character_id,bestiary_id,hp_current,hp_max,allegiance")
       .in("id", [caster_token, target_token])
     const caster = rows?.find((r) => r.id === caster_token)
     const victim = rows?.find((r) => r.id === target_token)
@@ -449,6 +449,35 @@ export async function POST(req: NextRequest) {
     const weapon = sheetAttacks.find((a) => (a?.name ?? "").toLowerCase() === ability.toLowerCase()) ?? null
 
     const entry = spellEntry(ability)
+
+    // ---- WHOSE SIDE ---------------------------------------------------
+    // A heal reaches your own side; a harmful spell reaches the other.
+    //
+    // The client draws the same rule (targetStatus), but a client-only fence
+    // is not a fence — the dash band proved that twice. Nothing stops a
+    // browser POSTing any token id it likes, and until now this handler
+    // accepted whatever arrived: Healing Word on a drow healed the drow.
+    //
+    // 'neutral' is neither side: attackable, not healable. A null allegiance
+    // reads as hostile, because a wrongly-hostile token merely cannot be
+    // healed while a wrongly-friendly one cannot be attacked.
+    if (entry) {
+      const side = (a: string | null | undefined) => a === "party" || a === "ally"
+      const isSelf = victim.id === caster.id
+      const friendlyTarget = isSelf || side((victim as { allegiance?: string | null }).allegiance)
+      if (entry.helpful && !friendlyTarget) {
+        return NextResponse.json(
+          { error: `${ability} only helps your own — ${victim.label} is not one of yours.` },
+          { status: 409 },
+        )
+      }
+      if (!entry.helpful && friendlyTarget) {
+        return NextResponse.json(
+          { error: `${victim.label} is on your side. ${ability} is not for them.` },
+          { status: 409 },
+        )
+      }
+    }
 
     // Does the caster actually have this? A spell absent from the
     // spellbook registry falls back to DEFAULT_ENTRY and still casts —
