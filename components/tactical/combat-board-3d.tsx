@@ -610,7 +610,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return
       }
 
-      // 3. The floor — a move order.
+      // 3. The floor.
+      //
+      // While a spell is armed the ground is NOT a move order. Found in a
+      // live rehearsal: aiming Guiding Bolt and clicking near a drow walked
+      // Samson ten feet instead, spent his movement, and left the spell still
+      // armed. Targeting and walking are different intentions and the same
+      // click cannot mean both — so an armed caster clicking open floor is
+      // told to pick a target or press Escape, and stays put.
+      if (armedRef.current) {
+        say(`${armedRef.current.name} — click a creature, or press Escape.`)
+        return
+      }
       if (!floorPlane) return
       const floorHit = raycaster.intersectObject(floorPlane, false)[0]
       if (!floorHit) return
