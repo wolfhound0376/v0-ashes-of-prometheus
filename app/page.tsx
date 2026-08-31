@@ -173,6 +173,17 @@ export default function DashboardPage() {
   // Null when the node has no scene bound yet, in which case the backdrop
   // falls back to the old behaviour rather than blanking the window.
   const [nodeEnvironment, setNodeEnvironment] = useState<Environment | null>(null)
+  /** The jsonb payload of public.subnodal_backdrop_here(). */
+  type SubnodalBackdrop = {
+    node_number: number
+    node_name: string
+    backdrop_url: string | null
+  }
+  // The backdrop belonging to the tactical node the party occupies, which is a
+  // different thing from the scene bound to the travel node. Null whenever the
+  // party is not inside a subnodal map - the ordinary case out on the world
+  // map, not a failure, so the chain below simply falls through it.
+  const [nodeBackdropUrl, setNodeBackdropUrl] = useState<string | null>(null)
   // Set the moment the pen door is unlocked, picked, or opened from outside.
   // The NPC window swaps to the open-door painting for everyone at once.
   const penDoorOpen = useWorldFlag(PEN_DOOR_OPEN)
@@ -656,6 +667,14 @@ export default function DashboardPage() {
   // (party_position_read, and travel_nodes_read_discovered - the node the
   // party occupies is discovered by definition).
   const fetchNodeEnvironment = useCallback(async () => {
+    // FIRST, and unconditionally. This function has two early returns below,
+    // and a read placed after either of them stops refreshing on that path -
+    // leaving the window painting the node the party has just left. Called
+    // with no argument on purpose: p_run_id defaults through
+    // subnodal_active_run(), and only a specific run would pass one.
+    const { data: here } = await supabase.rpc('subnodal_backdrop_here')
+    setNodeBackdropUrl((here as SubnodalBackdrop | null)?.backdrop_url ?? null)
+
     const { data: position } = await supabase
       .from('party_position')
       .select('node_id')
@@ -1383,6 +1402,7 @@ if (error) {
             const room = nodeEnvironment ?? currentEnvironment
             return (
               (penDoorOpen ? room?.npc_backdrop_open_url : null) ||
+              nodeBackdropUrl ||
               room?.npc_backdrop_url ||
               null
             )
