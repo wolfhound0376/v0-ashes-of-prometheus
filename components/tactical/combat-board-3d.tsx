@@ -47,6 +47,7 @@ import {
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
+import { damageNumberVfx } from "./damage-numbers"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 import { equipOnRig } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
@@ -246,6 +247,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // Which token the board resolved for the armed spell, so the release cannot
   // re-resolve to somebody else.
   const armedTokenRef = useRef<string | null>(null)
+  // Whose next hit-point change was a CRITICAL, per the server's own word.
+  //
+  // The board cannot tell a crit from an ordinary hit by watching hit points:
+  // 14 damage looks identical either way. The server already says so in its
+  // cast response, so that answer is parked here and spent by the number that
+  // rises a moment later. If the realtime row beats the response the number
+  // simply is not gold — a missed flourish, never a wrong figure.
+  const critRef = useRef<Set<string>>(new Set())
   const targetsRef = useRef<{ show: (t: string, r: number, h: boolean) => void; clear: () => void }>({ show: () => {}, clear: () => {} })
 
   // ---- the hover read-out --------------------------------------------
@@ -1417,6 +1426,42 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // HP or identity changed → rebuild; position change → glide.
       const before = entry.row
       entry.row = row
+
+      // THE NUMBER OVER THE HEAD.
+      //
+      // Hung off the HIT-POINT DIFF rather than off the cast, deliberately.
+      // That way it covers everything that can hurt a creature — a player's
+      // spell, an NPC's attack resolved on the DM's browser, a trap, and
+      // Malachar reaching into the table mid-fight — instead of only the one
+      // path this client happened to animate. Every browser watching the same
+      // realtime row shows the same number, which is the whole point: the
+      // table should not have to ask "how much was that?"
+      //
+      // A null hp_current means "not tracked", which is not zero. A token
+      // going from untracked to 40/40 has not been healed for 40; it has just
+      // been brought into the fight, and announcing that as a heal would be a
+      // lie told in bright green.
+      const hpWas = before.hp_current
+      const hpNow = row.hp_current
+      if (hpWas != null && hpNow != null && hpWas !== hpNow) {
+        const delta = hpNow - hpWas
+        const healed = delta > 0
+        // Read the crit flag and spend it in the same breath, so a stale
+        // answer can never gild a later, ordinary blow.
+        const wasCrit = critRef.current.delete(row.id)
+        vfx.push(damageNumberVfx({
+          parent: scene,
+          position: new THREE.Vector3(entry.obj.position.x, 0, entry.obj.position.z),
+          amount: delta,
+          // What last landed on this body decides the colour; a weapon leaves
+          // no damage type at all, and bone-white is the honest answer for it.
+          type: lastHitBy.get(row.id) ?? "physical",
+          heals: healed,
+          crit: wasCrit && !healed,
+          scale: radiusFor(row.token_size) / 0.75,
+        }))
+      }
+
       // THE KILLING BLOW.
       //
       // SRD 5.1, Combat: "Most GMs have a monster die the instant it drops to
@@ -3063,6 +3108,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           say(data?.error ?? "The strike would not resolve.")
         } else if (data?.resolved) {
           say(data.line as string)
+          // The server is the only witness to the d20. Park its verdict so the
+          // number that rises off the body a moment later can wear it.
+          if (data.crit) critRef.current.add(target_token)
           // A weapon's impact is decided by the dice, not by the spell school:
           // the crunch only plays if it actually connected, and a miss gets
           // the whiff it earned.

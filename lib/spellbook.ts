@@ -39,6 +39,45 @@ export type DamageType =
 export type TargetMode = "creature" | "self" | "point" | "none"
 
 /**
+ * The footprint an area spell puts on the floor.
+ *
+ *   sphere   — a radius around the point. Fireball, Fog Cloud, Sleep.
+ *   cylinder — a radius, but it does not care about height. Moonbeam.
+ *   cone     — a wedge opening away from the caster. Burning Hands.
+ *   cube     — an axis-aligned box. Thunderwave, Web, Grease.
+ *   line     — a straight run of squares. Lightning Bolt.
+ */
+export type AreaShape = "sphere" | "cylinder" | "cone" | "cube" | "line"
+
+export interface AreaSpec {
+  shape: AreaShape
+  /**
+   * Feet. Its meaning follows the shape, exactly as the SRD states each one:
+   *   sphere / cylinder → RADIUS
+   *   cone / line       → LENGTH from the origin
+   *   cube              → EDGE
+   * Mixing radius and diameter is the classic way to make Fireball twice the
+   * spell it should be, so the unit is named per shape rather than guessed.
+   */
+  sizeFt: number
+  /** A line's width. Only lines have one. */
+  widthFt?: number
+  /**
+   * Where the shape is anchored.
+   *   self  — it opens from the caster; the player picks a DIRECTION.
+   *   point — it is centred where the player clicks, within rangeFt.
+   */
+  origin: "self" | "point"
+  /**
+   * The spell picks its victims and spares everyone else — Spirit Guardians'
+   * "creatures of your choice". Absent means the area is indiscriminate,
+   * which is the common case and the one that makes friendly fire a decision
+   * rather than an accident.
+   */
+  sparesAllies?: boolean
+}
+
+/**
  * How the spell decides whether it lands.
  *   attack — a spell attack roll against the target's AC
  *   save   — the target rolls; on a success it takes half (or nothing)
@@ -72,18 +111,32 @@ export interface SpellEntry {
   halfOnSave?: boolean
   /** Heals instead of harming; dice are added to hp. */
   heals?: boolean
+  /**
+   * The footprint, for spells that cover ground rather than pick a creature.
+   * Only ever set alongside target:"point" — an area with nowhere to be put
+   * is a contradiction the board cannot draw.
+   */
+  area?: AreaSpec
 }
 
 const S = (e: SpellEntry) => e
+
+// Shape constructors, so the table below stays readable at a glance and the
+// radius-vs-diameter trap is sprung once here rather than on every row.
+const sphere   = (sizeFt: number, origin: "self" | "point" = "point"): AreaSpec => ({ shape: "sphere", sizeFt, origin })
+const cylinder = (sizeFt: number): AreaSpec => ({ shape: "cylinder", sizeFt, origin: "point" })
+const cube     = (sizeFt: number, origin: "self" | "point" = "point"): AreaSpec => ({ shape: "cube", sizeFt, origin })
+const cone     = (sizeFt: number): AreaSpec => ({ shape: "cone", sizeFt, origin: "self" })
+const line     = (sizeFt: number, widthFt = 5): AreaSpec => ({ shape: "line", sizeFt, widthFt, origin: "self" })
 
 export const SPELLBOOK: Record<string, SpellEntry> = {
   // ---- Kenta, sorcerer ----------------------------------------------------
   "ray of frost":      S({ level: 0, school: "cold",     damage: "cold",      rangeFt: 60,  target: "creature", resolve: "attack", dice: "1d8" }),
   "shocking grasp":    S({ level: 0, school: "arcane",   damage: "lightning", rangeFt: 5,   target: "creature", resolve: "attack", dice: "1d8" }),
   "chill touch":       S({ level: 0, school: "necrotic", damage: "necrotic",  rangeFt: 120, target: "creature", resolve: "attack", dice: "1d8" }),
-  "minor illusion":    S({ level: 0, school: "arcane",                        rangeFt: 30,  target: "point" }),
+  "minor illusion":    S({ level: 0, school: "arcane",                        rangeFt: 30,  target: "point", area: cube(5) }),
   "disguise self":     S({ level: 1, school: "arcane",                        rangeFt: 0,   target: "self" }),
-  "fog cloud":         S({ level: 1, school: "nature",                        rangeFt: 120, target: "point", concentration: true }),
+  "fog cloud":         S({ level: 1, school: "nature",                        rangeFt: 120, target: "point", concentration: true, area: sphere(20) }),
 
   // ---- Samson, cleric -----------------------------------------------------
   guidance:            S({ level: 0, school: "holy",                          rangeFt: 5,   target: "creature", concentration: true, helpful: true }),
@@ -95,11 +148,14 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
   "shield of faith":   S({ level: 1, school: "holy",                          rangeFt: 60,  target: "creature", bonus: true, helpful: true, concentration: true }),
 
   // ---- Scott, bard --------------------------------------------------------
+  // Mage Hand and Misty Step are point-target with NO area: the player picks
+  // a square, and the square is the whole answer. An `area` here would have
+  // the board draw a blast template around a floating hand.
   "mage hand":         S({ level: 0, school: "arcane",                        rangeFt: 30,  target: "point" }),
   "vicious mockery":   S({ level: 0, school: "psychic",  damage: "psychic",   rangeFt: 60,  target: "creature", resolve: "save", save: "WIS", dice: "1d4" }),
   "dissonant whispers":S({ level: 1, school: "psychic",  damage: "psychic",   rangeFt: 60,  target: "creature", resolve: "save", save: "WIS", dice: "3d6", halfOnSave: true }),
-  "faerie fire":       S({ level: 1, school: "arcane",                        rangeFt: 60,  target: "point", concentration: true }),
-  sleep:               S({ level: 1, school: "arcane",                        rangeFt: 90,  target: "point" }),
+  "faerie fire":       S({ level: 1, school: "arcane",                        rangeFt: 60,  target: "point", concentration: true, save: "DEX", area: cube(20) }),
+  sleep:               S({ level: 1, school: "arcane",                        rangeFt: 90,  target: "point", area: sphere(20) }),
 
   // ---- commonly reached for, so the registry does not go stale the first
   //      time somebody levels ------------------------------------------------
@@ -108,15 +164,62 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
   "fire bolt":         S({ level: 0, school: "fire",     damage: "fire",      rangeFt: 120, target: "creature", resolve: "attack", dice: "1d10" }),
   "cure wounds":       S({ level: 1, school: "holy",                          rangeFt: 5,   target: "creature", helpful: true, resolve: "auto", dice: "1d8", heals: true }),
   "magic missile":     S({ level: 1, school: "arcane",   damage: "force",     rangeFt: 120, target: "creature", resolve: "auto", dice: "3d4+3" }),
-  "burning hands":     S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 15,  target: "point" }),
-  "thunderwave":       S({ level: 1, school: "arcane",   damage: "thunder",   rangeFt: 15,  target: "point" }),
+  // Self-origin shapes. rangeFt is 0 because the spell reaches nowhere on its
+  // own — the SHAPE is its reach, and the player picks a direction rather than
+  // a distant point. Leaving rangeFt at 15 made the board offer a 15 ft
+  // "range" it then had no way to honour.
+  "burning hands":     S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 0,   target: "point", save: "DEX", area: cone(15) }),
+  "thunderwave":       S({ level: 1, school: "arcane",   damage: "thunder",   rangeFt: 0,   target: "point", save: "CON", area: cube(15, "self") }),
+  "color spray":       S({ level: 1, school: "arcane",                        rangeFt: 0,   target: "point", area: cone(15) }),
   "inflict wounds":    S({ level: 1, school: "necrotic", damage: "necrotic",  rangeFt: 5,   target: "creature", resolve: "attack", dice: "3d10" }),
   "hellish rebuke":    S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 60,  target: "creature" }),
   "misty step":        S({ level: 2, school: "arcane",                        rangeFt: 30,  target: "point", bonus: true }),
   "spiritual weapon":  S({ level: 2, school: "holy",     damage: "force",     rangeFt: 60,  target: "creature", bonus: true }),
   "hex":               S({ level: 1, school: "eldritch", damage: "necrotic",  rangeFt: 90,  target: "creature", bonus: true, concentration: true }),
-  fireball:            S({ level: 3, school: "fire",     damage: "fire",      rangeFt: 150, target: "point" }),
+  fireball:            S({ level: 3, school: "fire",     damage: "fire",      rangeFt: 150, target: "point", save: "DEX", halfOnSave: true, area: sphere(20) }),
+
+  // ---- THE AREA SPELLS ----------------------------------------------------
+  // The ground-covering half of the book, gathered so the shapes can be read
+  // against each other. Every size below is stated in the unit AreaSpec names
+  // for that shape — radius for spheres and cylinders, edge for cubes, length
+  // for cones and lines — taken from SRD 5.1.
+  //
+  // Deliberately carrying NO dice or resolve yet. The cast handler resolves
+  // against exactly one victim; give Fireball 8d6 today and it would roll
+  // that against a single drow and call the other four untouched. The dice
+  // arrive with multi-target resolution, in the same change, so a spell can
+  // never know how to hurt more people than the server knows how to count.
+  shatter:             S({ level: 2, school: "arcane",   damage: "thunder",   rangeFt: 60,  target: "point", save: "CON", halfOnSave: true, area: sphere(10) }),
+  silence:             S({ level: 2, school: "holy",                          rangeFt: 120, target: "point", concentration: true, area: sphere(20) }),
+  web:                 S({ level: 2, school: "nature",                        rangeFt: 60,  target: "point", concentration: true, save: "DEX", area: cube(20) }),
+  grease:              S({ level: 1, school: "arcane",                        rangeFt: 60,  target: "point", save: "DEX", area: cube(10) }),
+  entangle:            S({ level: 1, school: "nature",                        rangeFt: 90,  target: "point", concentration: true, save: "STR", area: cube(20) }),
+  // Spike Growth deals PIERCING, which is not one of the magical damage types
+  // this registry names — so it carries none, and makes no impact sound. That
+  // is the honest answer, not a shrug.
+  "spike growth":      S({ level: 2, school: "nature",                        rangeFt: 150, target: "point", concentration: true, area: sphere(20) }),
+  moonbeam:            S({ level: 2, school: "holy",     damage: "radiant",   rangeFt: 120, target: "point", concentration: true, save: "CON", halfOnSave: true, area: cylinder(5) }),
+  "cloud of daggers":  S({ level: 2, school: "arcane",   damage: "force",     rangeFt: 60,  target: "point", concentration: true, area: cube(5) }),
+  // A 5-foot-DIAMETER sphere, so the radius is 2.5. Exactly the trap the
+  // shape constructors exist to make visible.
+  "flaming sphere":    S({ level: 2, school: "fire",     damage: "fire",      rangeFt: 60,  target: "point", concentration: true, save: "DEX", halfOnSave: true, area: sphere(2.5) }),
+  // Spares your own: "creatures of your choice that you can see". The only
+  // area in the book that does, which is why friendly fire is a decision
+  // everywhere else.
+  "spirit guardians":  S({ level: 3, school: "holy",     damage: "radiant",   rangeFt: 0,   target: "point", concentration: true, save: "WIS", halfOnSave: true, area: { shape: "sphere", sizeFt: 15, origin: "self", sparesAllies: true } }),
+  "lightning bolt":    S({ level: 3, school: "arcane",   damage: "lightning", rangeFt: 0,   target: "point", save: "DEX", halfOnSave: true, area: line(100, 5) }),
 }
+
+/**
+ * Every spell that puts a shape on the floor, for the board's template code
+ * and for anyone reading the book to see what it can already draw.
+ *
+ * DERIVED, never typed twice. A hand-kept second list is a list that drifts.
+ */
+export const AREA_SPELLS: { name: string; area: AreaSpec; entry: SpellEntry }[] =
+  Object.entries(SPELLBOOK)
+    .filter(([, e]) => e.area)
+    .map(([name, entry]) => ({ name, area: entry.area as AreaSpec, entry }))
 
 const norm = (n: string) => n.toLowerCase().replace(/['’]/g, "").trim()
 
