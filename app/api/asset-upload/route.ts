@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { normalizeCode, safeEquals } from '@/lib/access-code'
 
 // ============================================================================
 // THE WAY IN — uploads that land where the game actually looks.
@@ -94,11 +95,27 @@ function publicUrlFor(bucket: string, path: string): string {
   return supabaseAdmin.storage.from(bucket).getPublicUrl(path).data.publicUrl
 }
 
+// Everything below runs as service-role, which bypasses RLS entirely: an
+// unguarded caller could overwrite any rig in models/ or any cue in
+// vtt-assets/sfx/ and then point a token row at a URL of their choosing.
+// Same gate as /api/asset-media and /api/npc-asset — the DM's key in x-dm-key.
+function authorized(request: NextRequest): boolean {
+  const dmCode = process.env.DM_ACCESS_CODE
+  // Fail closed: if no DM access code is configured, nobody is a DM.
+  if (!dmCode) return false
+  const supplied = normalizeCode(request.headers.get('x-dm-key'))
+  return !!supplied && safeEquals(supplied, normalizeCode(dmCode))
+}
+
 // ---------------------------------------------------------------------------
 // GET — what is still missing, so the page can list it rather than ask Sam to
 // remember. Only meaningful for kinds backed by a table.
 // ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
+  if (!authorized(request)) {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  }
+
   const kind = request.nextUrl.searchParams.get('kind')
 
   if (!isKind(kind)) {
@@ -147,6 +164,10 @@ export async function GET(request: NextRequest) {
 // row that makes the uploaded file live.
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
+  if (!authorized(request)) {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+  }
+
   let body: Record<string, unknown>
   try {
     body = (await request.json()) as Record<string, unknown>

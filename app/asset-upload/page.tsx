@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AlertCircle, Check, Loader2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
 
 // The counterpart to /music-upload, for everything else the table needs. The
 // list on the right is the point: rather than remembering which token has no
@@ -69,7 +70,7 @@ export default function AssetUploadPage() {
   const loadRows = useCallback(async (which: Kind) => {
     setLoadingRows(true)
     try {
-      const res = await fetch(`/api/asset-upload?kind=${which}`)
+      const res = await fetch(`/api/asset-upload?kind=${which}`, { headers: dmHeaders() })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Could not load the list")
       setRows(data.rows ?? [])
@@ -99,12 +100,20 @@ export default function AssetUploadPage() {
     setMessage(null)
     setLastUrl(null)
 
+    // Ask once, up front, rather than letting the upload die on a silent 403.
+    if (!ensureDmKey("upload assets")) {
+      setMessage("Uploading assets needs the DM key.")
+      setPhase("error")
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
+
     try {
       // 1. ask for somewhere to put it
       setPhase("signing")
       const signRes = await fetch("/api/asset-upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...dmHeaders() },
         body: JSON.stringify({
           action: "sign",
           kind,
@@ -132,7 +141,7 @@ export default function AssetUploadPage() {
         setPhase("committing")
         const commitRes = await fetch("/api/asset-upload", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...dmHeaders() },
           body: JSON.stringify({ action: "commit", kind, rowId: selectedId, publicUrl: signed.publicUrl }),
         })
         const committed = await commitRes.json()
