@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client"
 import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
 import { isCombatant } from "@/lib/challenge-rating"
 import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
+import { playCues } from "@/lib/sfx-cues"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
 import { useLich } from "@/lib/hooks/use-lich"
@@ -1153,6 +1154,10 @@ if (error) {
         pendingRollRef.current = null
         setPendingRoll(null)
         setRollLifecycle("committed")
+        // The die has landed and the ledger has it. playCues is total - a
+        // missing key, an empty array or a slug with no audio behind it all do
+        // nothing - so this can never come between the player and their roll.
+        playCues(resolved.sfxCues)
         if (resolved.shouldDispatch && typeof resolved.message === "string") dmMessage = resolved.message
       } else if (opts.toLich) {
         dmMessage = `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`
