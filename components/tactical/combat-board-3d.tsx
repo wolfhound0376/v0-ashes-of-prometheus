@@ -49,6 +49,10 @@ import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { damageNumberVfx } from "./damage-numbers"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
+// The same geometry the SERVER resolves the blast with. One function, so the
+// outline a player is looking at and the creatures that actually take damage
+// are the same set by construction rather than by agreement.
+import { areaCells, aimInRange } from "@/lib/aoe"
 import { equipOnRig } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -235,7 +239,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // the animation and sounds involved." So a press no longer fires — it ARMS.
   // The windup loops, the legal targets light, and the click is the throw.
   const [armedSpell, setArmedSpell] = useState<
-    { characterId: string; tokenId: string; name: string; kind: string; entry: SpellEntry } | null
+    {
+      characterId: string
+      tokenId: string
+      name: string
+      kind: string
+      entry: SpellEntry
+      /**
+       * What the next click MEANS.
+       *
+       * "creature" — click a body; the rings say which ones are legal.
+       * "point"    — click the floor; a template follows the cursor.
+       *
+       * Carried on the armed spell rather than re-derived from the entry at
+       * each use, so the rings, the click handler, the hover read-out and the
+       * banner can never disagree about what the player is being asked for.
+       */
+      mode: "creature" | "point"
+    } | null
   >(null)
   const armedRef = useRef<typeof armedSpell>(null)
   useEffect(() => { armedRef.current = armedSpell }, [armedSpell])
@@ -256,6 +277,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // simply is not gold — a missed flourish, never a wrong figure.
   const critRef = useRef<Set<string>>(new Set())
   const targetsRef = useRef<{ show: (t: string, r: number, h: boolean) => void; clear: () => void }>({ show: () => {}, clear: () => {} })
+  // The blast outline, and the click that commits it. Point spells get their
+  // own pair because they answer a different question from creature spells,
+  // and sharing one path is what made Mage Hand demand a body to land on.
+  const templateRef = useRef<{
+    show: (casterTokenId: string, entry: SpellEntry, gx: number, gy: number) => void
+    clear: () => void
+  }>({ show: () => {}, clear: () => {} })
+  const releaseAtPointRef = useRef<(gx: number, gy: number) => void>(() => {})
+  const castPointVerbRef = useRef<(caster: string, gx: number, gy: number, ability: string) => Promise<void>>(async () => {})
 
   // ---- the hover read-out --------------------------------------------
   // BG3 answers "what happens if I click here" before you click. While a
@@ -643,6 +673,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // click cannot mean both — so an armed caster clicking open floor is
       // told to pick a target or press Escape, and stays put.
       if (armedRef.current) {
+        // ...unless the spell was aimed at the GROUND in the first place.
+        // Mage Hand, Fog Cloud, Fireball: the floor is not a consolation
+        // target for these, it is the only legal one. Refusing it here is
+        // what made nine spells in the book uncastable — the rack offered
+        // them, the windup played, and the click was always turned away.
+        if (armedRef.current.mode === "point") {
+          if (!floorPlane) return
+          const aimHit = raycaster.intersectObject(floorPlane, false)[0]
+          if (!aimHit) return
+          releaseAtPointRef.current(Math.floor(aimHit.point.x / SQ), Math.floor(aimHit.point.z / SQ))
+          return
+        }
         say(`${armedRef.current.name} — click a creature, or press Escape.`)
         return
       }
@@ -717,6 +759,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      */
     const onHover = (ev: MouseEvent) => {
       const armed = armedRef.current
+      // A point spell has no creature to interrogate — the template IS the
+      // read-out. Leaving this running would price a save against whichever
+      // body the cursor happened to pass over on the way to the floor.
+      if (armed?.mode === "point") {
+        setHoverRead(null)
+        return
+      }
       if (!armed) {
         setHoverRead((cur) => (cur ? null : cur))
         return
@@ -971,6 +1020,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       explicitToken?: { row: TokenRow; obj: THREE.Object3D; anim?: TokenAnim },
       /** The creature that was actually clicked. See "Where it is thrown". */
       explicitTarget?: TokenRow | null,
+      /**
+       * A SQUARE that was clicked, for spells thrown at the ground.
+       *
+       * An area spell has no victim to fly at, but it still has somewhere to
+       * go — and a Fireball that discharges in the caster's hand because no
+       * token was passed is worse than one that does not animate at all.
+       */
+      explicitPoint?: { x: number; z: number } | null,
     ) => {
       const plan = castPlanFor(ability, kind)
       if (!plan) return // Dash and friends animate nothing
@@ -1016,13 +1073,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // fix for the shooter, left unfixed for the target. Selection stays as
       // the fallback for casts that begin somewhere other than a click.
       let target: THREE.Vector3 | null = null
-      const victimRow = explicitTarget ?? (() => {
+      // A point cast must NOT fall back to the selection. The fallback exists
+      // for casts that begin somewhere other than a click; an area spell has
+      // already said where it is going, and letting a stale selection answer
+      // instead would fly a Fireball at whichever token was last clicked
+      // rather than at the square the player aimed it at.
+      const victimRow = explicitTarget ?? (explicitPoint ? null : (() => {
         const sel = selectedRef.current
         return sel && sel.id !== found!.row.id ? sel : null
-      })()
+      })())
       if (victimRow) {
         const t = tokensRef.current.get(victimRow.id)
         if (t) target = new THREE.Vector3(t.obj.position.x, 1.1, t.obj.position.z)
+      } else if (explicitPoint) {
+        // Lower than a creature's chest, because it lands ON the floor.
+        target = new THREE.Vector3(explicitPoint.x, 0.35, explicitPoint.z)
       }
 
       // Turn to face what you are throwing it at. A caster who discharges a
@@ -1162,6 +1227,77 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       void castVerbRef.current(shooter.row.id, victim.row.id, armed.name)
     }
     releaseAtRef.current = releaseAt
+
+    /**
+     * The other throw: a SQUARE, not a creature.
+     *
+     * Mage Hand does not want a body and Fireball does not want one either —
+     * it wants a spot with four drow standing round it. This is the whole
+     * reason nine spells in the book were uncastable: the board had exactly
+     * one release path and it demanded a token.
+     */
+    const releaseAtPoint = (gx: number, gy: number) => {
+      const armed = armedRef.current
+      if (!armed || armed.mode !== "point") return
+      const shooter = tokensRef.current.get(armed.tokenId)
+      if (!shooter) return
+      const m = mapRef.current
+      if (!m || gx < 0 || gy < 0 || gx >= m.grid_width || gy >= m.grid_height) return
+
+      const area = armed.entry.area
+      const origin = { x: shooter.row.grid_x ?? 0, y: shooter.row.grid_y ?? 0 }
+      const aim = { x: gx, y: gy }
+
+      // Range, refused out loud. A click that produces silence is
+      // indistinguishable from a broken button — the same rule releaseAt
+      // follows, asked through the same function the server uses.
+      const inRange = area
+        ? aimInRange(area, armed.entry.rangeFt, origin, aim)
+        : armed.entry.rangeFt <= 0 ||
+          Math.max(Math.abs(origin.x - gx), Math.abs(origin.y - gy)) * FEET_PER_SQUARE <= armed.entry.rangeFt
+      if (!inRange) {
+        say(`${armed.name} reaches ${armed.entry.rangeFt} ft — that square is further than that.`)
+        return
+      }
+
+      // FRIENDLY FIRE IS A DECISION, NOT AN ACCIDENT.
+      //
+      // An area covers ground, and the party is standing on ground. 5E does
+      // not spare them and neither does this — but it does not let a misjudged
+      // radius quietly cost the cleric half her hit points either. Naming who
+      // is in the blast, before it goes off, is the difference between a
+      // choice the player made and a thing that happened to them.
+      if (area && !area.sparesAllies) {
+        const covered = new Set(areaCells(area, origin, aim).map((c) => `${c.x},${c.y}`))
+        const own = Array.from(tokensRef.current.values()).filter(
+          (t) =>
+            t.row.is_visible &&
+            covered.has(`${t.row.grid_x},${t.row.grid_y}`) &&
+            (t.row.id === shooter.row.id || friendly(t.row)),
+        )
+        if (own.length > 0) {
+          const names = own.map((t) => t.row.label).join(", ")
+          const mine = own.some((t) => t.row.id === shooter.row.id)
+          if (!window.confirm(
+            `${armed.name} will also catch ${names}${mine ? " — including you" : ""}.\n\nThrow it anyway?`,
+          )) return
+        }
+      }
+
+      windupRef.current?.stop(0.08)
+      windupRef.current = null
+      stopCharge()
+      clearTargets()
+      templateRef.current.clear()
+
+      const p = sqCentre(gx, gy)
+      performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, null, { x: p.x, z: p.z })
+      setArmedSpell(null)
+      // And let the server say who was actually standing in it. The outline
+      // is already gone; the dice are rolled where they cannot be argued with.
+      void castPointVerbRef.current(shooter.row.id, gx, gy, armed.name)
+    }
+    releaseAtPointRef.current = releaseAtPoint
 
     const spawnToken = (row: TokenRow) => {
       const existing = tokensRef.current.get(row.id)
@@ -1822,6 +1958,75 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // information. The frontier is the only unreachable fact that changes a
     // decision — it says where the turn ends.
     const denyMat = new THREE.MeshBasicMaterial({ map: PLATE, color: DENY_COLOR, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+
+    // ---- THE BLAST TEMPLATE -------------------------------------------
+    //
+    // The shape of an area spell, lit on the floor and following the cursor.
+    //
+    // A FOURTH colour, and it has to be. Gold is the walk, azure the dash,
+    // oxblood the frontier — all three are answers to "where can I go", and a
+    // template answers "what will this cover". Ember reads as heat rather than
+    // as permission, and it is the only band on the board that appears solely
+    // while something is armed, so it never has to compete with the other
+    // three for meaning.
+    //
+    // Same PLATE glow as everything else: edges, not fills. Sam's rule — a
+    // filled square hides the floor art, and the floor art is what the blast
+    // is landing on.
+    const AOE_COLOR = 0xe07038
+    const aoeMat = new THREE.MeshBasicMaterial({ map: PLATE, color: AOE_COLOR, transparent: true, opacity: 0.66, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    // Out of reach: the shape still draws, in the frontier's oxblood and
+    // dimmer. Hiding it would leave the player waving an invisible template
+    // around wondering why nothing happens; showing it greyed says "this is
+    // the spell, and it does not get there from here".
+    const aoeDenyMat = new THREE.MeshBasicMaterial({ map: PLATE, color: DENY_COLOR, transparent: true, opacity: 0.34, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    const aoeGeo = new THREE.PlaneGeometry(SQ, SQ)
+    const templateGroup = new THREE.Group()
+    scene.add(templateGroup)
+
+    const clearTemplate = () => {
+      while (templateGroup.children.length) templateGroup.remove(templateGroup.children[0])
+    }
+
+    /**
+     * Light every square the shape covers, from the caster toward the cursor.
+     *
+     * areaCells() is imported rather than written here — it is the same
+     * function the cast handler uses to decide who takes damage. That is the
+     * point: this outline is not an illustration OF the rule, it is drawn BY
+     * the rule.
+     */
+    const showTemplate = (casterTokenId: string, entry: SpellEntry, gx: number, gy: number) => {
+      clearTemplate()
+      const me = tokensRef.current.get(casterTokenId)
+      const area = entry.area
+      if (!me) return
+      const origin = { x: me.row.grid_x ?? 0, y: me.row.grid_y ?? 0 }
+      const aim = { x: gx, y: gy }
+      const m = mapRef.current
+      const onMap = (x: number, y: number) =>
+        !m || (x >= 0 && y >= 0 && x < m.grid_width && y < m.grid_height)
+
+      // A point spell with no shape — Mage Hand, Misty Step — still needs to
+      // show WHERE. One square is the honest template for it.
+      const cells = area ? areaCells(area, origin, aim) : [{ x: gx, y: gy }]
+      const ok = area
+        ? aimInRange(area, entry.rangeFt, origin, aim)
+        : entry.rangeFt <= 0 ||
+          Math.max(Math.abs(origin.x - gx), Math.abs(origin.y - gy)) * FEET_PER_SQUARE <= entry.rangeFt
+
+      for (const c of cells) {
+        if (!onMap(c.x, c.y)) continue
+        const p = sqCentre(c.x, c.y)
+        const tile = new THREE.Mesh(aoeGeo, ok ? aoeMat : aoeDenyMat)
+        tile.rotation.x = -Math.PI / 2
+        // Under the target rings (0.09) and above the reach bands, so an area
+        // aimed over a creature does not swallow that creature's ring.
+        tile.position.set(p.x, 0.082, p.z)
+        templateGroup.add(tile)
+      }
+    }
+    templateRef.current = { show: showTemplate, clear: clearTemplate }
     // Contours. Solid for the walk, dashed for the dash, and corner ticks on
     // the frontier. A contour is what turns a wash of tinted squares into a
     // shape readable at a glance from across the room.
@@ -2141,18 +2346,40 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
     let lastHoverCell = ""
     const onHoverMove = (e: MouseEvent) => {
-      if (!reachRef.current || !floorPlane) return
-      // While a spell is armed the cursor is asking a different question, and
-      // the targeting read-out answers it. Movement cost alongside it is a
-      // second answer to a question nobody asked - and the floor raycast still
-      // hits a reach square underneath the token being aimed at, so without
-      // this the board would price a walk the player is not taking.
+      // The armed check runs BEFORE the reach guard, deliberately. Aiming a
+      // spell does not require a reach overlay to exist — and it usually does
+      // not, because you have already moved. Guarding on reachRef first is
+      // what would leave the template frozen for the rest of the turn.
       if (armedRef.current) {
+        // While a spell is armed the cursor is asking a different question, and
+        // the targeting read-out answers it. Movement cost alongside it is a
+        // second answer to a question nobody asked - and the floor raycast still
+        // hits a reach square underneath the token being aimed at, so without
+        // this the board would price a walk the player is not taking.
         hoverGroup.visible = false
         lastHoverCell = ""
         setMoveHint(null)
+        // A POINT spell's template follows the cursor. This is the only moving
+        // part of aiming an area, so it tracks every mouse event rather than
+        // being throttled to cell changes: a cone SWEEPS as you turn, and its
+        // shape changes on sub-cell movement even when the aimed square does not.
+        if (armedRef.current.mode === "point" && floorPlane) {
+          const r2 = renderer.domElement.getBoundingClientRect()
+          pointer.set(((e.clientX - r2.left) / r2.width) * 2 - 1, -((e.clientY - r2.top) / r2.height) * 2 + 1)
+          raycaster.setFromCamera(pointer, activeCam())
+          const fh = raycaster.intersectObject(floorPlane, false)[0]
+          if (fh) {
+            templateRef.current.show(
+              armedRef.current.tokenId,
+              armedRef.current.entry,
+              Math.floor(fh.point.x / SQ),
+              Math.floor(fh.point.z / SQ),
+            )
+          }
+        }
         return
       }
+      if (!reachRef.current || !floorPlane) return
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, activeCam())
@@ -2988,6 +3215,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       vfx.forEach((v) => v.dispose())
       vfx.length = 0
       clearTargets()
+      clearTemplate()
+      aoeGeo.dispose()
+      aoeMat.dispose()
+      aoeDenyMat.dispose()
       targetRingGeo.dispose()
       pending.length = 0
       castRef.current = () => {}
@@ -3071,7 +3302,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // The visible half of the ramp: the caster holds the pose while choosing,
     // and everyone they could throw it at is ringed.
     chargeRef.current.start(armedSpell.tokenId)
-    targetsRef.current.show(armedSpell.tokenId, armedSpell.entry.rangeFt, Boolean(armedSpell.entry.helpful))
+    // Creature spells ring the bodies. Point spells draw a shape instead —
+    // ringing every legal creature for a Fireball would say "pick one", which
+    // is the opposite of what a Fireball asks.
+    if (armedSpell.mode === "point") {
+      // Drawn once at the caster's own feet so the shape is on screen before
+      // the mouse moves. An area spell that shows nothing until you jiggle the
+      // cursor reads as not having armed at all.
+      const me = tokensRef.current.get(armedSpell.tokenId)
+      if (me) {
+        templateRef.current.show(
+          armedSpell.tokenId, armedSpell.entry, me.row.grid_x ?? 0, me.row.grid_y ?? 0,
+        )
+      }
+    } else {
+      targetsRef.current.show(armedSpell.tokenId, armedSpell.entry.rangeFt, Boolean(armedSpell.entry.helpful))
+    }
     const e = armedSpell.entry
     if (armedSpell.kind !== "weapon") {
       preloadSfx([releaseFor(e.school), tailFor(e.school), ...(e.damage ? [impactFor(e.damage)] : [])])
@@ -3089,6 +3335,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // left hanging over a board with nothing armed.
       chargeRef.current.stop()
       targetsRef.current.clear()
+      templateRef.current.clear()
       setHoverRead(null)
       window.removeEventListener("keydown", onKey)
     }
@@ -3117,6 +3364,34 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (data.weapon) {
             playSfx(data.hit ? meleeHit(Boolean(data.crit)) : "combat/melee_miss", { volume: 0.9 })
           }
+        }
+      } catch {
+        say("The spell landed, but the tally did not reach the server.")
+      }
+    }
+
+    /**
+     * The area cast, resolved server-side against everyone in the shape.
+     *
+     * Separate from castVerbRef because the answer has a different shape: not
+     * "did it hit", but "who was standing in it, and what did each of them
+     * roll". The log line the server builds names every one of them, which is
+     * the whole readout an area spell owes the table.
+     */
+    castPointVerbRef.current = async (caster_token, gx, gy, ability) => {
+      try {
+        const res = await fetch("/api/combat", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...dmHeaders() },
+          body: JSON.stringify({ action: "cast", caster_token, target_x: gx, target_y: gy, ability, sandbox }),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok) {
+          say(data?.error ?? "The spell would not resolve.")
+        } else if (data?.line) {
+          say(data.line as string)
+        } else if (data?.area && Array.isArray(data.victims) && data.victims.length === 0) {
+          say(`${ability} catches no one.`)
         }
       } catch {
         say("The spell landed, but the tally did not reach the server.")
@@ -3402,10 +3677,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             say("That character has no miniature on this board.")
             return
           }
-          setArmedSpell({ characterId, tokenId: mine.row.id, name: ability, kind, entry: e })
-          say(`${ability} — choose a target${e.rangeFt ? ` within ${e.rangeFt} ft` : ""}.`)
+          // A weapon always wants a body. Everything else asks the spellbook:
+          // `point` spells are aimed at the FLOOR, and treating them as
+          // creature spells is what made Mage Hand impossible to cast.
+          const mode: "creature" | "point" =
+            kind !== "weapon" && e.target === "point" ? "point" : "creature"
+          setArmedSpell({ characterId, tokenId: mine.row.id, name: ability, kind, entry: e, mode })
+          say(
+            mode === "point"
+              ? `${ability} — choose a spot${e.rangeFt ? ` within ${e.rangeFt} ft` : ""}.`
+              : `${ability} — choose a target${e.rangeFt ? ` within ${e.rangeFt} ft` : ""}.`,
+          )
         }}
-        armedSpell={armedSpell ? { name: armedSpell.name, rangeFt: armedSpell.entry.rangeFt } : null}
+        armedSpell={armedSpell ? { name: armedSpell.name, rangeFt: armedSpell.entry.rangeFt, mode: armedSpell.mode } : null}
         onCancelArm={() => setArmedSpell(null)}
       />
 

@@ -86,7 +86,7 @@ interface Props {
    *  rack shows one character's spells and a different miniature moves. */
   onCast?: (characterId: string, ability: string, kind: string) => void
   /** Set while a spell waits for a target, so the rack can say so. */
-  armedSpell?: { name: string; rangeFt: number } | null
+  armedSpell?: { name: string; rangeFt: number; mode?: "creature" | "point" } | null
   onCancelArm?: () => void
 }
 
@@ -497,7 +497,11 @@ export function CombatHud(props: Props) {
               {armedSpell.name}
             </span>
             <span className="font-serif text-[9px] uppercase tracking-[0.24em] text-[#7cc0ff]">
-              click a target{armedSpell.rangeFt ? ` · ${armedSpell.rangeFt} ft` : ""}
+              {/* An area spell wants GROUND. Telling a player to click a
+                  target while the board is waiting for a square is how a
+                  working spell reads as a broken one. */}
+              {armedSpell.mode === "point" ? "click a spot" : "click a target"}
+              {armedSpell.rangeFt ? ` · ${armedSpell.rangeFt} ft` : ""}
             </span>
             <button
               onClick={() => onCancelArm?.()}

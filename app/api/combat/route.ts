@@ -3,6 +3,11 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
 import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasting } from "@/lib/spellbook"
+// The SAME geometry the board draws its template with. Not a second
+// implementation that agrees today — the identical function, so an outline a
+// player is looking at and the list of creatures this handler damages cannot
+// drift apart.
+import { areaCells, aimInRange } from "@/lib/aoe"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -426,16 +431,31 @@ export async function POST(req: NextRequest) {
     const caster_token = String(body?.caster_token ?? "")
     const target_token = String(body?.target_token ?? "")
     const ability = String(body?.ability ?? "")
-    if (!caster_token || !target_token || !ability) {
-      return NextResponse.json({ error: "cast needs caster_token, target_token and ability" }, { status: 400 })
+    // A POINT cast names a SQUARE instead of a creature. Both forms arrive
+    // here and part company below, after the shared fence: the turn, the
+    // sheet, the slot and the action are the same questions whether the spell
+    // is thrown at one drow or at the floor between four of them.
+    const px = Number(body?.target_x)
+    const py = Number(body?.target_y)
+    const aim = Number.isFinite(px) && Number.isFinite(py)
+      ? { x: Math.trunc(px), y: Math.trunc(py) }
+      : null
+    if (!caster_token || !ability || (!target_token && !aim)) {
+      return NextResponse.json(
+        { error: "cast needs caster_token, ability, and either target_token or target_x/target_y" },
+        { status: 400 },
+      )
     }
     const { data: rows } = await db
       .from("vtt_tokens")
-      .select("id,label,character_id,bestiary_id,hp_current,hp_max,allegiance")
-      .in("id", [caster_token, target_token])
+      .select("id,map_id,label,character_id,bestiary_id,hp_current,hp_max,allegiance,grid_x,grid_y,is_visible")
+      .in("id", [caster_token, target_token].filter(Boolean))
     const caster = rows?.find((r) => r.id === caster_token)
-    const victim = rows?.find((r) => r.id === target_token)
-    if (!caster || !victim) return NextResponse.json({ error: "token missing" }, { status: 409 })
+    // An aimed square wins over a token id if both somehow arrive: a point
+    // spell has no single victim, and picking one would quietly turn Fireball
+    // back into a dart.
+    const victim = aim ? null : rows?.find((r) => r.id === target_token)
+    if (!caster || (!aim && !victim)) return NextResponse.json({ error: "token missing" }, { status: 409 })
 
     // ---- THE FENCE ---------------------------------------------------
     // Up to here we have only proved the two tokens exist. "move" is
@@ -482,7 +502,10 @@ export async function POST(req: NextRequest) {
     // 'neutral' is neither side: attackable, not healable. A null allegiance
     // reads as hostile, because a wrongly-hostile token merely cannot be
     // healed while a wrongly-friendly one cannot be attacked.
-    if (entry) {
+    // An AREA does not choose sides. It covers ground, and whoever is standing
+    // on that ground is in it — which is exactly what makes aiming one a
+    // decision. So this fence guards the single-creature path only.
+    if (entry && victim) {
       const side = (a: string | null | undefined) => a === "party" || a === "ally"
       const isSelf = victim.id === caster.id
       const friendlyTarget = isSelf || side((victim as { allegiance?: string | null }).allegiance)
@@ -554,6 +577,144 @@ export async function POST(req: NextRequest) {
         })
         .eq("id", caster.character_id)
     }
+
+    // ---- THE AREA CAST ------------------------------------------------
+    //
+    // Everything above this line was the same question for every spell. Here
+    // the point cast leaves: it has no single victim to roll against, it has
+    // a SHAPE, and everyone standing in that shape rolls their own save.
+    //
+    // The cells come from lib/aoe — the identical function the board drew the
+    // template with. That is deliberate and load-bearing: a player watching a
+    // drow glow inside the Fireball outline and then take nothing is the exact
+    // failure this codebase has already shipped twice by other means.
+    if (aim) {
+      if (!entry.area) {
+        // A point spell with no shape lands on its square and does nothing to
+        // anybody — Mage Hand, Misty Step, Minor Illusion. Real spells with
+        // nothing to roll.
+        await payFor()
+        await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability}.`)
+        return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this ability" })
+      }
+
+      const origin = { x: caster.grid_x ?? 0, y: caster.grid_y ?? 0 }
+      // Range is checked HERE and not only on the board. Nothing stops a
+      // browser posting a square on the far side of the map.
+      if (!aimInRange(entry.area, entry.rangeFt, origin, aim)) {
+        return NextResponse.json(
+          { error: `${ability} reaches ${entry.rangeFt} ft — that square is further than that.` },
+          { status: 409 },
+        )
+      }
+
+      const covered = new Set(areaCells(entry.area, origin, aim).map((c) => `${c.x},${c.y}`))
+
+      // Everyone standing on the map, so the shape can be tested against them.
+      // Scoped to the caster's map: a Fireball must not reach a token parked
+      // on another board at the same coordinates.
+      const { data: onMap } = await db
+        .from("vtt_tokens")
+        .select("id,label,character_id,bestiary_id,hp_current,hp_max,allegiance,grid_x,grid_y,is_visible")
+        .eq("map_id", caster.map_id)
+
+      const side = (a: string | null | undefined) => a === "party" || a === "ally"
+      const caught = (onMap ?? []).filter((t) => {
+        if (!t.is_visible) return false
+        if (!covered.has(`${t.grid_x},${t.grid_y}`)) return false
+        // Spirit Guardians and its kin: "creatures of your choice". The
+        // caster's own side walks through it untouched.
+        if (entry.area?.sparesAllies && (t.id === caster.id || side(t.allegiance))) return false
+        return true
+      })
+
+      await payFor()
+
+      if (caught.length === 0) {
+        await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability} — it catches no one.`)
+        return NextResponse.json({ ok: true, resolved: true, area: true, hit: false, victims: [] })
+      }
+
+      // Utility areas — Fog Cloud, Web, Silence — cover the ground and roll
+      // nothing. They are real spells that have already cost a slot.
+      if (!entry.dice || !entry.resolve || entry.resolve === "none") {
+        await narrate(
+          db, caster.label ?? "Someone",
+          `${caster.label} casts ${ability} — it covers ${caught.map((t) => t.label).join(", ")}.`,
+        )
+        return NextResponse.json({ ok: true, resolved: false, area: true, note: "no dice to roll for this ability" })
+      }
+
+      const scNumsArea = casterSc as { save_dc?: number } | null
+      const dcArea = scNumsArea?.save_dc ?? 13
+      // ONE roll of the damage dice for the whole blast, as 5E does it: a
+      // Fireball is one explosion, and everyone in it is measured against the
+      // same fire. Rolling per creature would make a wide blast statistically
+      // gentler than a narrow one, which is not the spell.
+      const full = rollDice(entry.dice)
+
+      const victims: { id: string; label: string; amount: number; saved: boolean }[] = []
+      const parts: string[] = []
+
+      for (const t of caught) {
+        let saveMod = 0
+        if (t.character_id) {
+          const { data: c } = await db.from("characters")
+            .select("str_score,dex_score,con_score,int_score,wis_score,cha_score")
+            .eq("id", t.character_id).maybeSingle()
+          const sc: Record<string, number | undefined> = {
+            STR: c?.str_score, DEX: c?.dex_score, CON: c?.con_score,
+            INT: c?.int_score, WIS: c?.wis_score, CHA: c?.cha_score,
+          }
+          saveMod = Math.floor(((sc[entry.save ?? "DEX"] ?? 10) - 10) / 2)
+        } else if (t.bestiary_id) {
+          const { data: b } = await db.from("bestiary")
+            .select("str,dex,con,int,wis,cha").eq("id", t.bestiary_id).maybeSingle()
+          const sc: Record<string, number | undefined> = {
+            STR: b?.str, DEX: b?.dex, CON: b?.con, INT: b?.int, WIS: b?.wis, CHA: b?.cha,
+          }
+          saveMod = Math.floor(((sc[entry.save ?? "DEX"] ?? 10) - 10) / 2)
+        }
+
+        let amount = full
+        let saved = false
+        if (entry.resolve === "save") {
+          const roll = d20()
+          saved = roll + saveMod >= dcArea
+          amount = saved ? (entry.halfOnSave ? Math.floor(full / 2) : 0) : full
+          parts.push(
+            `${t.label} ${roll}${saveMod >= 0 ? "+" : ""}${saveMod} vs DC ${dcArea} ${saved ? "saves" : "fails"}${amount ? ` (${amount})` : ""}`,
+          )
+        } else {
+          parts.push(`${t.label} takes ${amount}`)
+        }
+
+        if (amount > 0) {
+          const cur = t.hp_current ?? t.hp_max ?? 0
+          const max = t.hp_max ?? cur
+          const next = entry.heals ? Math.min(max, cur + amount) : Math.max(0, cur - amount)
+          await db.from("vtt_tokens")
+            .update({ hp_current: next, updated_by: "player-cast", updated_at: new Date().toISOString() })
+            .eq("id", t.id)
+          // The token and the sheet are one creature — the same rule the
+          // single-target path learned the hard way.
+          if (t.character_id) {
+            await db.from("characters")
+              .update({ hp_current: next, updated_at: new Date().toISOString() })
+              .eq("id", t.character_id)
+          }
+        }
+        victims.push({ id: t.id, label: t.label ?? "", amount, saved })
+      }
+
+      const line = `${caster.label} casts ${ability} — ${parts.join("; ")}.`
+      await narrate(db, caster.label ?? "Someone", line)
+      return NextResponse.json({ ok: true, resolved: true, area: true, line, victims })
+    }
+
+    // Past here the spell has exactly one victim. Narrowing it once, out
+    // loud, rather than asserting it at each of the dozen uses below.
+    if (!victim) return NextResponse.json({ error: "token missing" }, { status: 409 })
 
     if (!weapon && (!entry.dice || entry.resolve === "none" || !entry.resolve)) {
       // Utility spells are real spells; they simply have nothing to roll.
