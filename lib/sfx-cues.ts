@@ -30,6 +30,7 @@
 
 import { playSfx, impactFor, meleeHit, type SfxName } from "@/lib/sfx"
 import type { DamageType } from "@/lib/spellbook"
+import { createClient } from "@/lib/supabase/client"
 
 /**
  * A sound named outright.
@@ -39,7 +40,20 @@ import type { DamageType } from "@/lib/spellbook"
  * lookup table, so there is no mapping to drift out of step with the bucket,
  * and SfxName already admits `ui/${string}` and its siblings unchanged.
  */
-export type RawCue = { type: "raw"; key: string }
+export type RawCue = { type: "raw"; key: string; scope?: CueScope }
+
+/**
+ * Who hears it.
+ *
+ *   "self"   only the seat that acted. UI feedback - a page turning, a coin
+ *            purse - which is nobody else's business.
+ *   "party"  everyone at the table. A natural 20, a PC going down, a monster
+ *            dying: things the whole table is watching happen.
+ *
+ * Defaults to "self" when absent, so a producer that forgets to say cannot
+ * accidentally put a sound on five machines.
+ */
+export type CueScope = "self" | "party"
 
 /** A spell landing. Family and damage type resolve through lib/sfx's helpers. */
 export type SpellCue = { type: "spell"; damage?: string | null }
@@ -49,8 +63,13 @@ export type AttackCue = { type: "attack"; crit?: boolean }
 
 export type SfxCue = RawCue | SpellCue | AttackCue
 
-/** Whatever the server sent, played. Never throws. */
-export function playCues(cues: unknown): void {
+/**
+ * Play locally and nothing more.
+ *
+ * This is what the broadcast receiver calls. It must never relay, or two seats
+ * would bounce the same cue back and forth for as long as the channel is open.
+ */
+export function playCuesLocal(cues: unknown): void {
   try {
     if (!Array.isArray(cues)) return
     for (const cue of cues) playCue(cue)
@@ -58,6 +77,61 @@ export function playCues(cues: unknown): void {
     // Reaching here means a bug in this module rather than a missing file.
     // Say so once in the console and let the turn carry on regardless.
     console.warn("[sfx] cue batch failed, ignored:", err)
+  }
+}
+
+/**
+ * Play here, and hand the party-scoped ones to the other seats.
+ *
+ * The relay is client-side on purpose: the seat that acted already has the
+ * cues, and this is the same shape the cinematic player uses for a group
+ * moment (see v4-dashboard). No server-side channel is needed for either.
+ */
+export function playCues(cues: unknown): void {
+  playCuesLocal(cues)
+  try {
+    if (!Array.isArray(cues)) return
+    const shared = cues.filter(
+      (c) => c && typeof c === "object" && (c as { scope?: unknown }).scope === "party",
+    )
+    if (!shared.length) return
+    void createClient()
+      .channel(CUE_CHANNEL)
+      .subscribe()
+      .send({ type: "broadcast", event: CUE_EVENT, payload: { cues: shared } })
+  } catch (err) {
+    // The table missing a sound is not worth taking the turn down for.
+    console.warn("[sfx] cue relay failed, played locally only:", err)
+  }
+}
+
+const CUE_CHANNEL = "sfx-broadcast"
+const CUE_EVENT = "cue"
+
+/**
+ * Listen for cues from the other seats. Returns its own teardown.
+ *
+ * Received cues are played with playCuesLocal, never playCues - see above.
+ */
+export function subscribeSfxCues(): () => void {
+  try {
+    const client = createClient()
+    const channel = client
+      .channel(CUE_CHANNEL)
+      .on("broadcast", { event: CUE_EVENT }, (message: { payload?: unknown }) => {
+        playCuesLocal((message?.payload as { cues?: unknown })?.cues)
+      })
+      .subscribe()
+    return () => {
+      try {
+        void client.removeChannel(channel)
+      } catch {
+        /* teardown must never throw during unmount */
+      }
+    }
+  } catch (err) {
+    console.warn("[sfx] cue subscription unavailable:", err)
+    return () => {}
   }
 }
 

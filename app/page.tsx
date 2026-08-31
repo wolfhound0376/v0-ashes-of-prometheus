@@ -23,7 +23,7 @@ import { createClient } from "@/lib/supabase/client"
 import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
 import { isCombatant } from "@/lib/challenge-rating"
 import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
-import { playCues } from "@/lib/sfx-cues"
+import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
 import { useLich } from "@/lib/hooks/use-lich"
@@ -804,6 +804,13 @@ if (error) {
       supabase.removeChannel(npcChannel)
     }
   }, [fetchNpcEncounters, fetchNodeEnvironment])
+
+  // Sounds another seat earned. A party-scoped cue is relayed by whoever acted
+  // (see lib/sfx-cues), so this is how the rest of the table hears the natural
+  // 20 somebody else rolled, or the monster that died on the DM's screen.
+  // Received cues play locally and are never relayed on - otherwise two seats
+  // would bounce the same sound between them for as long as both are open.
+  useEffect(() => subscribeSfxCues(), [])
 
   // Fetch character data function - callable from multiple places
   const fetchCharacterData = useCallback(async () => {

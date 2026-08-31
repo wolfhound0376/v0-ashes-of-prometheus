@@ -28,7 +28,7 @@ interface LichResponse {
   timeOfDay?: string
   cinematicCue?: string
   /** Sounds this turn earned, as full bucket paths. Played by lib/sfx-cues. */
-  sfxCues?: { type: "raw"; key: string }[]
+  sfxCues?: { type: "raw"; key: string; scope?: "self" | "party" }[]
   rollRequest?: RollRequestSpec
 }
 

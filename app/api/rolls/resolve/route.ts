@@ -107,15 +107,15 @@ export async function POST(req: Request) {
   //
   // Suppressed on a duplicate: a retried POST must not sound the horn twice
   // for one roll.
-  const sfxCues: { type: "raw"; key: string }[] = []
+  const sfxCues: { type: "raw"; scope: "party"; key: string }[] = []
   if (!duplicate) {
     const d20 = transport.die.toLowerCase() === "d20"
     // Advantage and disadvantage roll two dice and keep one, so ANY natural 20
     // among the faces is worth the sound - the kept die is what the total
     // already reflects.
-    if (d20 && transport.rolls.includes(20)) sfxCues.push({ type: "raw", key: "ui/nat20" })
-    else if (d20 && transport.rolls.includes(1)) sfxCues.push({ type: "raw", key: "ui/nat1" })
-    else sfxCues.push({ type: "raw", key: "ui/dice_settle" })
+    if (d20 && transport.rolls.includes(20)) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/nat20" })
+    else if (d20 && transport.rolls.includes(1)) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/nat1" })
+    else sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/dice_settle" })
   }
 
   return Response.json({

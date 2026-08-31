@@ -291,7 +291,7 @@ export async function POST(req: Request) {
   // silence is correct rather than a dropped cue. Compare [CINEMATIC:], which
   // depends on the model choosing to speak and has never once fired in
   // production. Full bucket paths; unknown slugs are ignored downstream.
-  const sfxCues: { type: "raw"; key: string }[] = []
+  const sfxCues: { type: "raw"; scope: "party"; key: string }[] = []
 
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
@@ -1656,7 +1656,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
           } else {
             console.log("[v0] HP updated:", char.hp_current, "->", newHp)
             // Dropping to 0 is a different sound from being hurt and standing.
-            sfxCues.push({ type: "raw", key: newHp <= 0 ? "creature/player_downed" : "creature/player_hurt" })
+            sfxCues.push({ type: "raw" as const, scope: "party" as const, key: newHp <= 0 ? "creature/player_downed" : "creature/player_hurt" })
           }
         }
       }
@@ -2096,7 +2096,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
         // below already trusts.
         if ((npc.hp_current || 0) <= 0) {
           const death = deathCueFor(npc.name)
-          if (death) sfxCues.push({ type: "raw", key: death })
+          if (death) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: death })
         }
 
         // Award XP if the NPC has xp_value (true defeat)
@@ -2129,7 +2129,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
 
               if (leveledUp) {
                 console.log("[v0] LEVEL UP! New level:", currentLevel, '| XP:', newXp)
-                sfxCues.push({ type: "raw", key: "ui/level_up" })
+                sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
               } else {
                 console.log("[v0] XP awarded. Total XP:", newXp, "| Next level at:", xpThresholds[Math.min((char.level || 1) + 1, xpThresholds.length - 1)])
               }
