@@ -1070,6 +1070,7 @@ if (error) {
         }
         setClockRefresh((n) => n + 1)
         if (response.cinematicCue) emitCinematicCue(response.cinematicCue)
+        playCues(response.sfxCues)
         // Refresh NPC encounters so the center column shows newly encountered NPCs
         await fetchCharacterData()
       }
@@ -1098,6 +1099,7 @@ if (error) {
         if (response.timeOfDay) setLiveTimeOfDay(response.timeOfDay)
         setClockRefresh((n) => n + 1)
         if (response.cinematicCue) emitCinematicCue(response.cinematicCue)
+        playCues(response.sfxCues)
         await fetchCharacterData()
       }
     },
@@ -1176,6 +1178,7 @@ if (error) {
           if (response.timeOfDay) setLiveTimeOfDay(response.timeOfDay)
           setClockRefresh((n) => n + 1)
           if (response.cinematicCue) emitCinematicCue(response.cinematicCue)
+          playCues(response.sfxCues)
           await fetchCharacterData()
         }
       }
