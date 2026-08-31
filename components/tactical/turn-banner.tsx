@@ -168,7 +168,9 @@ export function TurnBanner({
     )
   }
 
-  const canTouch = isMine || dm
+  // Only the DM may touch the economy now; for everyone else these are a
+  // readout. See the note at handleClick.
+  const canTouch = dm
   const moved = economy.moved_ft ?? 0
 
   return (
@@ -202,20 +204,23 @@ export function TurnBanner({
           {PHASES.map((p) => {
             const spent = Boolean(economy[p.key])
             const armedThis = armed === p.key && !spent
-            // Sam's brief: pressing Action shows you what it buys - the rack
-            // lights its legal options - rather than instantly marking it
-            // used. Spending happens when an option is used, on Shift+click
-            // (narrative spends: grapple, improvised nonsense), on any click
-            // from the DM's tray, and Reaction stays a straight toggle since
-            // the rack holds nothing it can buy.
-            const handleClick = (e: { shiftKey: boolean }) => {
-              if (spent) { onSpend(p.key); return }               // restore a mis-mark
-              if (p.key === "reaction" || e.shiftKey || (dm && !isMine)) {
-                onSpend(p.key)
-                setArmed(null)
-                return
-              }
-              setArmed(armedThis ? null : p.key)
+            // DISPLAY ONLY, for players. Sam (8/31): "we shouldn't be able to
+            // click on actions/bonus action/movement — this updates
+            // automatically." A pip is a readout of what the server says you
+            // have left, not a control. Casting spends the action; confirming
+            // a Dash spends it; ending the turn clears them.
+            //
+            // This reverses the 8/29 brief, where pressing Action armed the
+            // rack. The rack now follows the turn on its own (PR #307), so
+            // the arming click no longer earns its keep.
+            //
+            // The DM keeps the click, as a straight toggle. Someone has to be
+            // able to correct a mis-mark at the table, and it is the person
+            // running the game.
+            const handleClick = () => {
+              if (!dm) return
+              onSpend(p.key)
+              setArmed(null)
             }
             return (
               <button
