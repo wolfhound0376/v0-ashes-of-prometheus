@@ -96,7 +96,12 @@ async function fetchTacticalBoard(sceneName?: string): Promise<TacticalBoard | n
     // walking out — so the scene is asked first and the flag is only the
     // fallback. A board from the wrong room is worse than no board: it would
     // hand Malachar exact distances for a fight that is not happening.
-    let map: { id: string; name: string; grid_width: number; grid_height: number } | null = null
+    // Named rather than inlined: the assignments below used `as typeof map`,
+    // which resolves against the CONTROL-FLOW-NARROWED type (`null` at that
+    // point), not the declaration — so `map` stayed `null`, then `never`, and
+    // every read of it failed to compile.
+    type TacticalMapRow = { id: string; name: string; grid_width: number; grid_height: number }
+    let map: TacticalMapRow | null = null
     if (sceneName) {
       const { data: env } = await supabase
         .from("environments")
@@ -111,7 +116,7 @@ async function fetchTacticalBoard(sceneName?: string): Promise<TacticalBoard | n
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle()
-        if (byEnv) map = byEnv as typeof map
+        if (byEnv) map = byEnv as TacticalMapRow
       }
     }
     if (!map) {
@@ -122,7 +127,7 @@ async function fetchTacticalBoard(sceneName?: string): Promise<TacticalBoard | n
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle()
-      if (byFlag) map = byFlag as typeof map
+      if (byFlag) map = byFlag as TacticalMapRow
     }
     if (!map) return null
 

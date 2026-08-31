@@ -251,7 +251,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
     const playback = speakBlob(
       u.kind === "player" ? "player" : u.kind === "npc" ? "npc" : "dm",
       await res.blob(),
-      { speaker: u.kind === "npc" ? u.npc : u.kind === "player" ? u.pc : "Malachar" },
+      { speaker: u.kind === "npc" ? u.npc.name : u.kind === "player" ? u.pc.name : "Malachar" },
     )
     audioRef.current = playback
     setStatus("speaking")

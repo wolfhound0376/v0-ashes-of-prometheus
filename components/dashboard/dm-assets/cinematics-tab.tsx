@@ -68,7 +68,7 @@ export function CinematicsTab() {
       .from("environments")
       .select("name")
       .order("name")
-      .then(({ data }) => setLocations([...new Set((data || []).map((r: { name: string }) => r.name).filter(Boolean))]))
+      .then(({ data }: { data: { name: string }[] | null }) => setLocations([...new Set((data || []).map((r) => r.name).filter(Boolean))]))
   }, [fetchClips])
 
   // A 403 means the stored code is missing or stale. Drop it, ask once, retry.

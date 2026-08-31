@@ -82,7 +82,6 @@ export function CampaignBookModal({ section, inventory, characterId = null, onCl
           <h3 className="mt-8 border-b border-[#92704a]/45 pb-3 text-center font-serif text-xl text-[#4b2d19]">Campaign Record</h3>
           <div className="mt-7 space-y-5 font-serif text-[#583a25]">
             {section === "quests" && <><BookLine label="Active missions" value="None recorded" /><BookLine label="Completed missions" value="None recorded" /></>}
-            {section === "maps" && <><BookLine label="Explored regions" value="None recorded" /><BookLine label="Journal annotations" value="Unavailable" /></>}
             {section === "lore" && <><BookLine label="Arcana discoveries" value="None recorded" /><BookLine label="Historical discoveries" value="None recorded" /></>}
             {section === "journal" && <><BookLine label="Owned journals" value={String(journals.length)} /><BookLine label="Maximum allowed" value="2" /></>}
           </div>

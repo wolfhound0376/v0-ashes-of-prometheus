@@ -63,7 +63,7 @@ function BattleMusic() {
     async function loadCombat() {
       const { data } = await supabase
         .from("npc_encounters").select("is_active, challenge_rating").eq("is_active", true)
-      if (alive) setThreat((data ?? []).some(n => isCombatant(n.challenge_rating)))
+      if (alive) setThreat((data ?? []).some((n: { challenge_rating: unknown }) => isCombatant(n.challenge_rating)))
     }
 
     // ...but on the BOARD there is, and it is the authority. A fight here is

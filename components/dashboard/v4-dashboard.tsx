@@ -559,7 +559,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   useEffect(() => {
     const channel = createClient()
       .channel("cinematic-broadcast")
-      .on("broadcast", { event: "play" }, (message) => {
+      .on("broadcast", { event: "play" }, (message: { payload?: unknown }) => {
         const url = (message?.payload as { video_url?: string })?.video_url
         if (url) setCinematicSrc(url)
       })

@@ -91,7 +91,7 @@ export function DmSheetEditor({
       .select("*")
       .eq("id", characterId)
       .single()
-      .then(({ data, error }) => {
+      .then(({ data, error }: { data: Row | null; error: { message: string } | null }) => {
         if (cancelled) return
         if (error) setError(`Could not load the sheet: ${error.message}`)
         else setRow(data as Row)
