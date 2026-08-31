@@ -256,6 +256,14 @@ age: (selectedCharacter as any).age,
     spellcastingAbility: (selectedCharacter as any).spellcasting_ability,
     spellSaveDC: (selectedCharacter as any).spell_save_dc,
     spellAttackBonus: (selectedCharacter as any).spell_attack_bonus,
+    // Read by AttacksSpellcasting's prepared-spell readout. They have never
+    // been derived here, so the panel has always shown 0 prepared and no
+    // maximum. Declared explicitly rather than wired up: sourcing them from
+    // `sheet_spellcasting` (as v4-dashboard's toSheetCharacter does) is a
+    // behaviour change, not a type fix. See PR notes.
+    spellPrepared: undefined as string[] | undefined,
+    spellPreparedMax: undefined as number | undefined,
+    spellSwapCadence: undefined as string | undefined,
     avatarUrl: selectedCharacter.avatar_image_url,
     experiencePoints: (selectedCharacter as any).experience_points || 0,
     personality: (selectedCharacter as any).sheet_personality ?? null,
@@ -299,6 +307,9 @@ age: (selectedCharacter as any).age,
     spellcastingAbility: null,
     spellSaveDC: null,
     spellAttackBonus: null,
+    spellPrepared: undefined as string[] | undefined,
+    spellPreparedMax: undefined as number | undefined,
+    spellSwapCadence: undefined as string | undefined,
     avatarUrl: null,
     experiencePoints: 0,
     personality: null,

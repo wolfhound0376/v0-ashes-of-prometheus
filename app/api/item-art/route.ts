@@ -82,7 +82,11 @@ export async function POST(request: NextRequest) {
   // Resolve the item's display name. An inventory row id is the friendlier
   // caller (the modal has one to hand); a bare name is accepted so the DM
   // panel can use the same endpoint.
-  let inventoryRow: { name: string; item_type: string | null; equippable_slot: string | null } | null = null
+  // Named for the same reason as the map row in world-context.ts: the
+  // assignment below used `as typeof inventoryRow`, which picks up the
+  // narrowed type (`null`) instead of the declared one.
+  type InventoryRow = { name: string; item_type: string | null; equippable_slot: string | null }
+  let inventoryRow: InventoryRow | null = null
   if (inventoryItemId) {
     const { data } = await admin
       .from("inventory_items")
@@ -90,7 +94,7 @@ export async function POST(request: NextRequest) {
       .eq("id", inventoryItemId)
       .maybeSingle()
     if (!data) return NextResponse.json({ error: "Inventory item not found" }, { status: 404 })
-    inventoryRow = data as typeof inventoryRow
+    inventoryRow = data as InventoryRow
     if (!name) name = data.name as string
   }
   if (!name) return NextResponse.json({ error: "An item name is required" }, { status: 400 })

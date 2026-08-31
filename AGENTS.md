@@ -58,6 +58,25 @@ Supabase vars; the full set is in §6.
 > **`next.config.mjs` sets `typescript.ignoreBuildErrors: true`.** A green build proves
 > nothing about types. Always run `tsc --noEmit` yourself before claiming a change compiles.
 
+> **`tsc --noEmit` does not currently exit 0 on `main`, and never has recently.** The gate
+> is therefore **no NEW errors against `main`'s baseline**, plus `pnpm build` exiting 0 —
+> not "both exit 0". Do not repair pre-existing errors you did not cause; they are out of
+> scope and belong to whoever owns those files. Measure it like this, on a clean tree:
+>
+> ```bash
+> git stash list && git diff --stat origin/main   # must be EMPTY before you measure
+> rm -f tsconfig.tsbuildinfo
+> npx tsc --noEmit 2>/dev/null | grep "error TS" | sed 's/(\([0-9]*\),[0-9]*)/(/' | sort > /tmp/before.txt
+> # ...make changes, then repeat into /tmp/after.txt...
+> diff /tmp/before.txt /tmp/after.txt            # only deletions are acceptable
+> ```
+>
+> Strip the line numbers as shown, or your own edits will make unchanged errors look like
+> both an addition and a removal. **As of 2026-08-31 the baseline is 14 errors in 3 files**
+> (`app/api/chat/route.ts`, `app/api/combat/route.ts`,
+> `components/tactical/combat-board-3d.tsx`). When that reaches zero, delete this note and
+> make the gate a plain `exit 0`.
+
 > **`pnpm lint` does not work.** The script is `eslint .` but no ESLint config exists in
 > the repo. The `eslint-disable-next-line` comments in source are vestigial.
 
@@ -434,7 +453,8 @@ a Vercel preview, **not yet merged**.
 - **Never invent game data.** No fabricated stat blocks, no improvised loot, no NPC facts
   that aren't in the DB or the guide. If the source is silent, say so rather than filling
   the gap.
-- **Verify before claiming done.** `npx tsc --noEmit` at minimum; the plan docs carry
-  numbered post-deploy checklists — use them.
+- **Verify before claiming done.** `npx tsc --noEmit` must report **no new errors against
+  `main`'s baseline** (see the note in §1 — it does not exit 0 on `main`), and `pnpm build`
+  must exit 0. The plan docs carry numbered post-deploy checklists — use them.
 - Branch, push, and let Sam merge from GitHub's banner. Don't push to `main` unasked.
 - 

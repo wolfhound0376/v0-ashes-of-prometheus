@@ -73,7 +73,9 @@ The spellbook animation now uses the supplied cinematic artwork rather than the 
 
 ## Verification completed
 
-- TypeScript: `tsc --noEmit` passes after the latest D20 replacement.
+- TypeScript: no new `tsc --noEmit` errors against `main`'s baseline after the latest D20
+  replacement. (`tsc --noEmit` does **not** exit 0 on `main` — see the baseline note in
+  AGENTS.md §1. An earlier revision of this line claimed it passed; that was never true.)
 - Browser: all seven die-image paths render in the Dice Roller.
 - Browser: the separate Interactive Log D20 launcher resolves `d20-launcher.png` with its opaque background intact.
 - Browser: Dice Roller opens and roll controls remain present.
