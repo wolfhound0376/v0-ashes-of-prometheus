@@ -86,6 +86,13 @@ interface TokenRow {
   rotation_y: number | null
   token_size: string | null
   tint_color: string | null
+  /**
+   * Who this token fights FOR, right now. Nothing else in the row answers it:
+   * character_id marks only the 4 PCs, so Eldeth and Derendil looked like
+   * enemies, and combat_disposition holds 'fights'/'flees' — behaviour, not
+   * side. Mutable mid-fight: Ront and Sarith are allies until they aren't.
+   */
+  allegiance: "party" | "ally" | "hostile" | "neutral" | null
   is_visible: boolean
   hp_current: number | null
   hp_max: number | null
@@ -687,10 +694,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return
       }
 
-      const status = targetStatus(shooter, victim, armed.entry.rangeFt)
+      const status = targetStatus(shooter, victim, armed.entry.rangeFt, Boolean(armed.entry.helpful))
       let line: string
       if (!status.ok) {
-        line = status.reason === "sight" ? "no clear line" : `${status.squares * 5} ft — out of range`
+        line =
+          status.reason === "sight" ? "no clear line"
+          : status.reason === "foe" ? "not one of yours"
+          : status.reason === "friend" ? "on your side"
+          : `${status.squares * 5} ft — out of range`
       } else if ((victim.row.hp_current ?? 1) <= 0) {
         line = "down — a hit costs it a death save"
       } else {
@@ -1087,12 +1098,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // silence is indistinguishable from a broken one — and this asks the
       // same question the rings asked, through the same function, so a grey
       // ring and a refused click can never disagree.
-      const status = targetStatus(shooter, victim, armed.entry.rangeFt)
+      const status = targetStatus(shooter, victim, armed.entry.rangeFt, Boolean(armed.entry.helpful))
       if (!status.ok) {
         say(
           status.reason === "sight"
             ? `${victim.row.label} is behind cover — ${armed.name} needs a clear line.`
-            : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
+            : status.reason === "foe"
+              ? `${armed.name} only helps your own — ${victim.row.label} is not one of yours.`
+              : status.reason === "friend"
+                ? `${victim.row.label} is on your side. ${armed.name} is not for them.`
+                : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
         )
         return
       }
@@ -1512,10 +1527,35 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * Shared by the rings and by the click, so what you see and what the
      * board allows can never disagree.
      */
+    /**
+     * Is this token on the caster's side?
+     *
+     * 'party' and 'ally' are one side; 'hostile' the other. 'neutral' is
+     * neither, so it can be attacked but not healed — a bystander is not a
+     * friend. A null allegiance is treated as hostile: a wrongly-hostile
+     * token merely cannot be healed, while a wrongly-friendly one cannot be
+     * attacked, and the second failure is worse at the table.
+     */
+    const friendly = (row: TokenRow) => row.allegiance === "party" || row.allegiance === "ally"
+
+    /**
+     * TARGET LEGALITY — range, sight, AND side.
+     *
+     * `helpful` used to be a paint colour. showTargets ringed every visible
+     * token in range and only chose helpfulMat over hostileMat, so Healing
+     * Word offered Samson the whole board, drow included; the click sent that
+     * token id and the server healed the enemy. That is the bug Sam hit, and
+     * it applied to every spell in the book, not just this one.
+     *
+     * Now `helpful` is a rule. A heal reaches your own side; a harmful spell
+     * reaches the other. The server enforces the same rule independently —
+     * the dash band taught us twice that a client-only fence is not a fence.
+     */
     const targetStatus = (
       me: { row: TokenRow },
       t: { row: TokenRow },
       rangeFt: number,
+      helpful?: boolean,
     ): { ok: boolean; reason?: string; squares: number } => {
       const squares = Math.max(
         Math.abs((me.row.grid_x ?? 0) - (t.row.grid_x ?? 0)),
@@ -1526,6 +1566,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
       if (!hasLineOfSight(me.row.grid_x ?? 0, me.row.grid_y ?? 0, t.row.grid_x ?? 0, t.row.grid_y ?? 0)) {
         return { ok: false, reason: "sight", squares }
+      }
+      // Self is always a legal target for a helpful spell and never for a
+      // harmful one. 5e lets a cleric Healing Word himself; the old code
+      // skipped the caster outright, so Samson could not.
+      if (helpful !== undefined) {
+        const isSelf = t.row.id === me.row.id
+        if (helpful && !(isSelf || friendly(t.row))) return { ok: false, reason: "foe", squares }
+        if (!helpful && (isSelf || friendly(t.row))) return { ok: false, reason: "friend", squares }
       }
       return { ok: true, squares }
     }
@@ -1544,9 +1592,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const me = tokensRef.current.get(casterTokenId)
       if (!me) return
       tokensRef.current.forEach((t) => {
-        if (t.row.id === casterTokenId) return
+        // The caster is NOT skipped any more — a helpful spell may land on
+        // yourself, and targetStatus decides that rather than this loop.
         if (!t.row.is_visible) return
-        const { ok } = targetStatus(me, t, rangeFt)
+        if (t.row.id === casterTokenId && !helpful) return
+        const { ok } = targetStatus(me, t, rangeFt, helpful)
         const down = (t.row.hp_current ?? 1) <= 0
         const mat = !ok ? deniedMat : down ? downedMat : helpful ? helpfulMat : hostileMat
         const ring = new THREE.Mesh(targetRingGeo, mat)
@@ -2296,7 +2346,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // The combatants.
       const { data: tokenRows } = await supabase
         .from("vtt_tokens")
-        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max")
+        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max,allegiance")
         .eq("map_id", map.id)
 
       // A model belongs to the SPECIES. A token that names a bestiary entry
