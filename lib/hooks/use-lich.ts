@@ -27,6 +27,8 @@ interface LichResponse {
   /** Player-safe vague time-of-day derived server-side from the world clock. */
   timeOfDay?: string
   cinematicCue?: string
+  /** Sounds this turn earned, as full bucket paths. Played by lib/sfx-cues. */
+  sfxCues?: { type: "raw"; key: string; scope?: "self" | "party" }[]
   rollRequest?: RollRequestSpec
 }
 
@@ -104,6 +106,9 @@ export function useLich(campaignId: string = "abyss") {
         updatedLocation: data.updatedLocation,
         timeOfDay: typeof data.timeOfDay === "string" ? data.timeOfDay : undefined,
         cinematicCue: typeof data.cinematicCue === "string" ? data.cinematicCue : undefined,
+        // Shape-checked here rather than trusted: playCues tolerates rubbish,
+        // but the hook is where this response stops being untyped JSON.
+        sfxCues: Array.isArray(data.sfxCues) ? data.sfxCues : undefined,
         rollRequest:
           data.rollRequest && typeof data.rollRequest.id === "string"
             ? (data.rollRequest as RollRequestSpec)

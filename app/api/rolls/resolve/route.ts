@@ -98,10 +98,33 @@ export async function POST(req: Request) {
     ", ",
   )}]${transport.modifier >= 0 ? ` +${transport.modifier}` : ` ${transport.modifier}`}). Narrate this committed result; do not re-roll or change its numbers.`
 
+  // === SOUND CUES ===
+  // Derived here, from the faces the server has just COMMITTED, rather than
+  // asked of Malachar. The cinematic tag next door records what happens when a
+  // cue depends on the model choosing to emit it: it never fired in production
+  // and needed a fallback. A natural 20 is not a matter of narration - it is a
+  // 20 on the die this route just wrote to the ledger.
+  //
+  // Suppressed on a duplicate: a retried POST must not sound the horn twice
+  // for one roll.
+  const sfxCues: { type: "raw"; scope: "party"; key: string }[] = []
+  if (!duplicate) {
+    const d20 = transport.die.toLowerCase() === "d20"
+    // Advantage and disadvantage roll two dice and keep one, so ANY natural 20
+    // among the faces is worth the sound - the kept die is what the total
+    // already reflects.
+    if (d20 && transport.rolls.includes(20)) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/nat20" })
+    else if (d20 && transport.rolls.includes(1)) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/nat1" })
+    else sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/dice_settle" })
+  }
+
   return Response.json({
     accepted: true,
     duplicate,
     shouldDispatch: !duplicate,
+    // Full bucket paths, not bare slugs: the client plays what it is given and
+    // keeps no category lookup that could drift from the bucket.
+    sfxCues,
     requestId,
     correlationId: resolution.correlation_id,
     status: resolution.status,

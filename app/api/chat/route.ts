@@ -155,6 +155,27 @@ async function resolveNpcStats(
 // Find the single SHARED active encounter row for a name (case-insensitive),
 // regardless of which character engaged it. This is the read used by the
 // damage/leave handlers so all players act on one truth row.
+/**
+ * Which death is heard, from the NPC's canonical name.
+ *
+ * Name-matched on purpose. npc_encounters carries monster_type, but the shared
+ * encounter read does not select it, and widening that helper's shape to reach
+ * one more sound is a bigger change than this is worth.
+ *
+ * The two humanoid deaths are deliberately NOT wired: the bank has a male and a
+ * female clip and nothing on the row says which a given NPC is. Guessing would
+ * put the wrong voice on a named character at the moment they die, which is
+ * worse than the silence.
+ */
+function deathCueFor(name: string | null | undefined): string | null {
+  const n = (name || "").toLowerCase()
+  if (!n) return null
+  if (n.includes("hook horror")) return "creature/death_hook_horror"
+  if (n.includes("quaggoth")) return "creature/death_quaggoth"
+  if (n.includes("spider")) return "creature/death_spider"
+  return null
+}
+
 async function findSharedActiveEncounter(supabase: any, name: string) {
   const { data } = await supabase
     .from("npc_encounters")
@@ -262,6 +283,15 @@ const isPlayerCharacterRow = (
 
 export async function POST(req: Request) {
   const { message, campaignId = "abyss", characterId = null, claimToken = null } = await req.json()
+
+  // === SOUND CUES ===
+  // Collected as this turn's tags are ACTED ON, never parsed out of Malachar's
+  // prose. The distinction matters: the cue follows the write. If the model
+  // never emitted [DAMAGE:], no HP moved and no hurt sound is owed - so the
+  // silence is correct rather than a dropped cue. Compare [CINEMATIC:], which
+  // depends on the model choosing to speak and has never once fired in
+  // production. Full bucket paths; unknown slugs are ignored downstream.
+  const sfxCues: { type: "raw"; scope: "party"; key: string }[] = []
 
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
@@ -1625,6 +1655,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
             console.error("[v0] Error applying damage:", error)
           } else {
             console.log("[v0] HP updated:", char.hp_current, "->", newHp)
+            // Dropping to 0 is a different sound from being hurt and standing.
+            sfxCues.push({ type: "raw" as const, scope: "party" as const, key: newHp <= 0 ? "creature/player_downed" : "creature/player_hurt" })
           }
         }
       }
@@ -2058,6 +2090,15 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
           console.warn("[v0] WARNING: [NPC_LEAVE:] emitted for", name, 'but hp_current is', npc.hp_current, '— NPC defeated narratively without [NPC_DAMAGE:] tags!')
         }
 
+        // A death sound only on a TRUE defeat. [NPC_LEAVE:] also covers an NPC
+        // that flees or simply stops interacting, and those must stay silent -
+        // hp_current at 0 is what separates the two, the same test the XP award
+        // below already trusts.
+        if ((npc.hp_current || 0) <= 0) {
+          const death = deathCueFor(npc.name)
+          if (death) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: death })
+        }
+
         // Award XP if the NPC has xp_value (true defeat)
         if (npc.xp_value && (npc.hp_current || 0) <= 0) {
           console.log("[v0] Awarding", npc.xp_value, 'XP for defeating', name)
@@ -2088,6 +2129,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
 
               if (leveledUp) {
                 console.log("[v0] LEVEL UP! New level:", currentLevel, '| XP:', newXp)
+                sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
               } else {
                 console.log("[v0] XP awarded. Total XP:", newXp, "| Next level at:", xpThresholds[Math.min((char.level || 1) + 1, xpThresholds.length - 1)])
               }
@@ -2920,6 +2962,9 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
     // A validated action-cinematic cue, if this turn earned one. The client
     // asks /api/cinematics to resolve it; a null cue means no film this turn.
     cinematicCue: cinematicCue || undefined,
+    // Derived from writes this turn actually made. Reaches the caller only -
+    // see the note in lib/sfx-cues.ts about table-wide delivery.
+    sfxCues,
     rollRequest,
   })
 }

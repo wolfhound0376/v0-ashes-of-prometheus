@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/client"
 import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
 import { isCombatant } from "@/lib/challenge-rating"
 import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
+import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
 import { useLich } from "@/lib/hooks/use-lich"
@@ -173,6 +174,17 @@ export default function DashboardPage() {
   // Null when the node has no scene bound yet, in which case the backdrop
   // falls back to the old behaviour rather than blanking the window.
   const [nodeEnvironment, setNodeEnvironment] = useState<Environment | null>(null)
+  /** The jsonb payload of public.subnodal_backdrop_here(). */
+  type SubnodalBackdrop = {
+    node_number: number
+    node_name: string
+    backdrop_url: string | null
+  }
+  // The backdrop belonging to the tactical node the party occupies, which is a
+  // different thing from the scene bound to the travel node. Null whenever the
+  // party is not inside a subnodal map - the ordinary case out on the world
+  // map, not a failure, so the chain below simply falls through it.
+  const [nodeBackdropUrl, setNodeBackdropUrl] = useState<string | null>(null)
   // Set the moment the pen door is unlocked, picked, or opened from outside.
   // The NPC window swaps to the open-door painting for everyone at once.
   const penDoorOpen = useWorldFlag(PEN_DOOR_OPEN)
@@ -656,6 +668,14 @@ export default function DashboardPage() {
   // (party_position_read, and travel_nodes_read_discovered - the node the
   // party occupies is discovered by definition).
   const fetchNodeEnvironment = useCallback(async () => {
+    // FIRST, and unconditionally. This function has two early returns below,
+    // and a read placed after either of them stops refreshing on that path -
+    // leaving the window painting the node the party has just left. Called
+    // with no argument on purpose: p_run_id defaults through
+    // subnodal_active_run(), and only a specific run would pass one.
+    const { data: here } = await supabase.rpc('subnodal_backdrop_here')
+    setNodeBackdropUrl((here as SubnodalBackdrop | null)?.backdrop_url ?? null)
+
     const { data: position } = await supabase
       .from('party_position')
       .select('node_id')
@@ -784,6 +804,13 @@ if (error) {
       supabase.removeChannel(npcChannel)
     }
   }, [fetchNpcEncounters, fetchNodeEnvironment])
+
+  // Sounds another seat earned. A party-scoped cue is relayed by whoever acted
+  // (see lib/sfx-cues), so this is how the rest of the table hears the natural
+  // 20 somebody else rolled, or the monster that died on the DM's screen.
+  // Received cues play locally and are never relayed on - otherwise two seats
+  // would bounce the same sound between them for as long as both are open.
+  useEffect(() => subscribeSfxCues(), [])
 
   // Fetch character data function - callable from multiple places
   const fetchCharacterData = useCallback(async () => {
@@ -1050,6 +1077,7 @@ if (error) {
         }
         setClockRefresh((n) => n + 1)
         if (response.cinematicCue) emitCinematicCue(response.cinematicCue)
+        playCues(response.sfxCues)
         // Refresh NPC encounters so the center column shows newly encountered NPCs
         await fetchCharacterData()
       }
@@ -1078,6 +1106,7 @@ if (error) {
         if (response.timeOfDay) setLiveTimeOfDay(response.timeOfDay)
         setClockRefresh((n) => n + 1)
         if (response.cinematicCue) emitCinematicCue(response.cinematicCue)
+        playCues(response.sfxCues)
         await fetchCharacterData()
       }
     },
@@ -1134,6 +1163,10 @@ if (error) {
         pendingRollRef.current = null
         setPendingRoll(null)
         setRollLifecycle("committed")
+        // The die has landed and the ledger has it. playCues is total - a
+        // missing key, an empty array or a slug with no audio behind it all do
+        // nothing - so this can never come between the player and their roll.
+        playCues(resolved.sfxCues)
         if (resolved.shouldDispatch && typeof resolved.message === "string") dmMessage = resolved.message
       } else if (opts.toLich) {
         dmMessage = `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`
@@ -1152,6 +1185,7 @@ if (error) {
           if (response.timeOfDay) setLiveTimeOfDay(response.timeOfDay)
           setClockRefresh((n) => n + 1)
           if (response.cinematicCue) emitCinematicCue(response.cinematicCue)
+          playCues(response.sfxCues)
           await fetchCharacterData()
         }
       }
@@ -1383,6 +1417,7 @@ if (error) {
             const room = nodeEnvironment ?? currentEnvironment
             return (
               (penDoorOpen ? room?.npc_backdrop_open_url : null) ||
+              nodeBackdropUrl ||
               room?.npc_backdrop_url ||
               null
             )
