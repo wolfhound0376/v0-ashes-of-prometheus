@@ -150,15 +150,52 @@ export function CharacterCard({
   // enough for both and keeps the row even.
   const height = Math.round(width * (752 / 1004))
 
+  /**
+   * THE PERIPHERY.
+   *
+   * Three states, and they are not the same question:
+   *
+   *   isTurn  — the initiative has reached this character. Not a preference,
+   *             a fact about the round. This is the one that must be readable
+   *             across the room, on a stream, at a glance.
+   *   active  — you clicked this plate to look at it. A quiet distinction.
+   *   neither — dimmed back so the lit card has something to be brighter than.
+   *
+   * Built from STACKED drop-shadows rather than a border or a ring. A ring
+   * draws a rectangle, and this card is not a rectangle — the frame webp has
+   * an arched crown and cut corners. `drop-shadow` follows the composited
+   * alpha silhouette, so the light hugs the actual frame the artist drew
+   * instead of boxing it. Three layers: a tight near-white core so the edge
+   * reads as hot metal, a mid gold spread, and a wide soft falloff for the
+   * halo.
+   *
+   * Gold, not green. Green already means "up" on the status lamp two
+   * elements down, and a green wash over gold frame art turns it sickly.
+   * The lamp says whose turn it is in colour; the periphery says it in light.
+   */
+  const rim = isTurn
+    ? "brightness-[1.14] scale-[1.03] " +
+      "drop-shadow-[0_0_3px_#ffeab0] " +
+      "drop-shadow-[0_0_11px_#f3c94bcc] " +
+      "drop-shadow-[0_0_24px_#f3c94b66]"
+    : active
+      ? "brightness-110 drop-shadow-[0_0_14px_#c9a22755]"
+      : "brightness-[0.82] hover:brightness-100"
+
   return (
     <button
       onClick={onClick}
       title={c.name}
-      style={{ width, height, position: "relative", flexShrink: 0 }}
-      className={
-        "block transition-[filter,transform] duration-200 " +
-        (active ? "brightness-110 drop-shadow-[0_0_14px_#c9a22755]" : "brightness-[0.82] hover:brightness-100")
-      }
+      style={{
+        width,
+        height,
+        position: "relative",
+        flexShrink: 0,
+        // Lift the lit card over its neighbours so the rim glow spills across
+        // them rather than being painted under the next card in the row.
+        zIndex: isTurn ? 2 : 1,
+      }}
+      className={"block transition-[filter,transform] duration-200 " + rim}
     >
       {/* 1. The portrait, BEHIND the frame — the arched window masks it.
              Face + class frame, assembled by the one component that knows how. */}
