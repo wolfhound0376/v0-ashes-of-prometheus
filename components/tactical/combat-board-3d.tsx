@@ -50,6 +50,12 @@ import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType }
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
+// FEET_PER_SQUARE only, deliberately. gridDistanceFeet is straight-line
+// (Chebyshev) and this overlay measures a PATH that bends around rock, so the
+// two disagree the moment a wall is involved - and the server rejects a client
+// that under-reports cost. The BFS counts squares; this constant turns them
+// into feet. One definition of a square, shared with the server.
+import { FEET_PER_SQUARE } from "@/lib/tactical"
 
 const TILE_BASE =
   "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/map-tiles/diablo-gothic"
@@ -182,9 +188,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const myCharRef = useRef<string | null>(null)
   const speedFtRef = useRef(30)
   const walkableRef = useRef<Set<string>>(new Set())
-  const reachRef = useRef<{ tokenId: string; cells: Map<string, { cost: number }> } | null>(null)
+  const reachRef = useRef<{
+    tokenId: string
+    /** cost is PATH length in squares (around walls), not straight-line. */
+    cells: Map<string, { cost: number; tier: "move" | "dash" }>
+    /** Movement left this turn, in feet — what the label measures "over". */
+    moveFt: number
+    /** Total reach including a Dash, in feet — what the frontier sits beyond. */
+    dashFt: number
+  } | null>(null)
   const refreshReachRef = useRef<() => void>(() => {})
-  const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number) => void>(() => {})
+  const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number, dash?: boolean) => void>(() => {})
+  /**
+   * A move the player has asked for that would cost their Dash, parked here
+   * until they confirm. Blue squares are no longer clicked-and-refused: the
+   * board asks first, because spending your action is not something to
+   * discover from an error toast after the fact.
+   */
+  const [pendingDash, setPendingDash] = useState<
+    { feet: number; commit: () => void } | null
+  >(null)
   const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
   /** The HUD's ability bar reaches the scene through here, the same way
    *  moves do. Set inside the scene effect; a no-op until the board is up. */
@@ -604,10 +627,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const reach = reachRef.current
       const cellKey = gx + "," + gy
       if (reach && reach.cells.has(cellKey)) {
+        const cell = reach.cells.get(cellKey)!
+        const feet = cell.cost * FEET_PER_SQUARE
+        // An azure square costs the Dash. ASK before spending it — a player
+        // should never learn they burned their action by reading a toast.
+        // Gold squares are free movement and commit on the single click, as
+        // they always have.
+        if (cell.tier === "dash") {
+          // Capture the commit HERE, where sendWalkPath, pathCells and
+          // clearReach are in scope. The dialog lives out in the JSX and has
+          // no reach into this effect's closure, so it gets a function rather
+          // than coordinates to reassemble.
+          const key = cellKey
+          setPendingDash({
+            feet,
+            commit: () => {
+              sendWalkPath(reach.tokenId, pathCells(key))
+              playerMoveRef.current(reach.tokenId, gx, gy, feet, true)
+              clearReach()
+            },
+          })
+          return
+        }
         // Ship the route first, so every board (this one included) walks
         // the real path when the move lands.
         sendWalkPath(reach.tokenId, pathCells(cellKey))
-        playerMoveRef.current(reach.tokenId, gx, gy, reach.cells.get(cellKey)!.cost * 5)
+        playerMoveRef.current(reach.tokenId, gx, gy, feet)
         clearReach() // repainted with the new budget when the server echoes
         return
       }
@@ -1526,23 +1571,131 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
     targetsRef.current = { show: showTargets, clear: clearTargets }
 
-    const reachMat = new THREE.MeshBasicMaterial({ color: 0xf3c94b, transparent: true, opacity: 0.24, depthWrite: false, side: THREE.DoubleSide })
-    // The path is a RIBBON, not a hairline — THREE.Line renders one pixel
-    // whatever you ask for, so the ornate version is built from flat quads:
-    // a gold band laid square-centre to square-centre, a small diamond stud
-    // at each step, and a layered diamond seal on the destination.
-    const pathGroup = new THREE.Group()
-    pathGroup.visible = false
-    scene.add(pathGroup)
-    const ribbonGeo = new THREE.PlaneGeometry(1, 0.15)
-    const studGeo = new THREE.PlaneGeometry(0.16, 0.16)
-    const sealOuterGeo = new THREE.PlaneGeometry(0.44, 0.44)
-    const sealInnerGeo = new THREE.PlaneGeometry(0.3, 0.3)
-    const sealCoreGeo = new THREE.PlaneGeometry(0.16, 0.16)
-    const ribbonMat = new THREE.MeshBasicMaterial({ color: 0xe8c56a, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
-    const studMat = new THREE.MeshBasicMaterial({ color: 0xffe9ad, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
-    const sealDarkMat = new THREE.MeshBasicMaterial({ color: 0x1a1206, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })
+    // GRADIENT, NOT A FLAT WASH. One material per opacity step, built once and
+    // shared, rather than a clone per square: a 12x12 board can light 140 cells
+    // and per-cell materials would churn the GPU every time the party moves.
+    //
+    // Gold throughout. Cyan is the party token ring and red is the hostile ring
+    // (see buildBase) — neither is available to this overlay, and the dash band
+    // is distinguished by its dashed perimeter rather than by a fifth hue.
+    const RAMP = 6
+
+    /**
+     * THE GLOW RING. One baked texture, reused by every tile.
+     *
+     * NOT a fill. Sam's note: "boxes should be highlighted and glowing, not
+     * filled in." A filled square hides the floor art underneath it — the rock,
+     * the blood, the node backdrop we spent the effort to get on screen — and a
+     * board carrying three filled bands reads as a heat map rather than as a
+     * dungeon. So the interior stays open and the EDGE carries the signal.
+     *
+     * The glow is built by stroking the same rounded rect many times under
+     * `lighter` compositing: wide and faint first, narrow and bright last, so
+     * the alpha accumulates into a soft falloff either side of a crisp core.
+     * That is cheaper and more portable than a canvas blur filter, and it
+     * bakes once for the life of the board.
+     */
+    const glowTexture = () => {
+      const S = 128
+      const cv = document.createElement("canvas")
+      cv.width = cv.height = S
+      const g = cv.getContext("2d")!
+      const R = S * 0.16
+      const pad = S * 0.085
+      const w = S - pad * 2
+      const round = () => {
+        g.beginPath()
+        g.moveTo(pad + R, pad)
+        g.arcTo(pad + w, pad, pad + w, pad + w, R)
+        g.arcTo(pad + w, pad + w, pad, pad + w, R)
+        g.arcTo(pad, pad + w, pad, pad, R)
+        g.arcTo(pad, pad, pad + w, pad, R)
+        g.closePath()
+      }
+      // A whisper of interior, so the square still reads as a REGION you may
+      // stand in rather than as four unrelated edges. Low enough that the
+      // floor beneath stays legible.
+      g.fillStyle = "rgba(255,255,255,0.09)"
+      round()
+      g.fill()
+      // The halo.
+      g.globalCompositeOperation = "lighter"
+      g.lineJoin = "round"
+      for (let lw = 22; lw >= 2; lw -= 2) {
+        const t = (22 - lw) / 20
+        g.lineWidth = lw
+        g.strokeStyle = `rgba(255,255,255,${(0.030 + t * t * 0.22).toFixed(3)})`
+        round()
+        g.stroke()
+      }
+      const t2 = new THREE.CanvasTexture(cv)
+      t2.minFilter = THREE.LinearFilter
+      return t2
+    }
+    const PLATE = glowTexture()
+
+    // ADDITIVE. A glow adds light to the floor rather than painting over it,
+    // which is what makes it read as emission instead of as a decal. It also
+    // means the band never darkens the map art it sits on.
+    const rampMats = (color: number, peak: number, floorOpacity: number) =>
+      Array.from({ length: RAMP }, (_, i) =>
+        new THREE.MeshBasicMaterial({
+          map: PLATE,
+          color,
+          transparent: true,
+          opacity: peak - ((peak - floorOpacity) * i) / (RAMP - 1),
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+        }),
+      )
+
+    // THREE BANDS, THREE COLOURS.
+    //
+    // Gold is the free walk. Azure is the Dash — a second-choice option that
+    // costs your action, so it runs cooler and quieter and never shouts as
+    // loud as the walk. Oxblood is the frontier: the wall of your turn.
+    //
+    // The dash blue is DELIBERATELY not 0x38bdf8. That value is already the
+    // party token ring (see buildBase), and a sky-blue floor tile under a
+    // sky-blue-ringed ally reads as one object. 0x2f7fd6 is darker and sits
+    // flat, so the additive rings still float clear of it.
+    const MOVE_COLOR = 0xf3c94b
+    const DASH_COLOR = 0x2f7fd6
+    const DENY_COLOR = 0xa33b30
+
+    // Within remaining movement: solid, strongest under the token's feet.
+    const moveMats = rampMats(MOVE_COLOR, 0.95, 0.44)
+    // Beyond it but inside a Dash: azure, carried further and fainter.
+    const dashMats = rampMats(DASH_COLOR, 0.88, 0.42)
+    // The square under the cursor. Additive, so it lifts whatever it lands on
+    // without inventing a fourth colour.
+    const overMat = new THREE.MeshBasicMaterial({ map: PLATE, color: 0xffffff, transparent: true, opacity: 0.30, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    // THE DENIAL FRONTIER. One square deep, immediately outside Dash reach.
+    //
+    // NOT every unreachable square: on a 12x12 board that is most of the board,
+    // and a board mostly red reads as an error state rather than as
+    // information. The frontier is the only unreachable fact that changes a
+    // decision — it says where the turn ends.
+    const denyMat = new THREE.MeshBasicMaterial({ map: PLATE, color: DENY_COLOR, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    // Contours. Solid for the walk, dashed for the dash, and corner ticks on
+    // the frontier. A contour is what turns a wash of tinted squares into a
+    // shape readable at a glance from across the room.
+    const contourMoveMat = new THREE.LineBasicMaterial({ color: MOVE_COLOR, transparent: true, opacity: 0.9 })
+    const contourDashMat = new THREE.LineBasicMaterial({ color: DASH_COLOR, transparent: true, opacity: 0.75 })
+    const denyEdgeMat = new THREE.LineBasicMaterial({ color: DENY_COLOR, transparent: true, opacity: 0.7 })
+    // The hovered destination marker. The gold path ribbon that used to be
+    // drawn here is gone — the tiers say where you may go, so a line saying
+    // how you would get there was a second answer to a question already
+    // answered. pathCells() below survives it: the route is still computed,
+    // still broadcast, and tokens still WALK it rather than gliding through
+    // rock. Only the drawing was removed.
+    const hoverGroup = new THREE.Group()
+    hoverGroup.visible = false
+    scene.add(hoverGroup)
     let reachParents = new Map<string, string>()
+    /** Walkable squares one step outside reach — the wall of the turn. */
+    const frontier = new Set<string>()
 
     /** The cell chain start→destination, from the BFS parents. */
     const pathCells = (k: string): [number, number][] => {
@@ -1558,8 +1711,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
     const clearReach = () => {
       reachGroup.clear()
-      pathGroup.clear()
-      pathGroup.visible = false
+      frontier.clear()
+      hoverGroup.clear()
+      hoverGroup.visible = false
       reachRef.current = null
       reachParents = new Map()
       setMoveHint(null)
@@ -1590,9 +1744,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // NPCs never paint reach here: theirs is the AI's to spend.
       if (!tok.row.character_id) return
       if (tok.row.character_id !== myCharRef.current && !dmRef.current) return
+      // Budget is what is LEFT this turn, not full speed: a token that has
+      // walked 15 of 30 shows 15 ft. Dash doubles the turn's total allowance,
+      // so what remains of it is speed*2 minus what is already spent.
+      //
+      // BUT A DASH HAS TO BE AFFORDABLE. Dash costs your action, and the
+      // server refuses one when the action is already gone (see the move
+      // handler). The client did not mirror that check, so a character who
+      // had cast a spell still saw a full speed*2 azure band — 10 ft of real
+      // movement and 40 ft of promises. Clicking one raised the confirm,
+      // accepting it hit the server guard, and the token simply did not move.
+      // Painting reach the server will refuse is the same bug the azure band
+      // shipped with; this is the other half of it.
+      //
+      // Already dashed this turn? Then it is bought and the doubled ceiling
+      // stands regardless of the spent action.
       const usedFt = Number(c.turn_state?.moved_ft ?? 0)
-      const budget = Math.floor((speedFtRef.current - usedFt) / 5)
-      if (budget <= 0) return
+      const dashed = c.turn_state?.dashed === true
+      const canAffordDash = dashed || c.turn_state?.action !== true
+      const moveBudget = Math.floor((speedFtRef.current - usedFt) / FEET_PER_SQUARE)
+      const ceilingFt = canAffordDash ? speedFtRef.current * 2 : speedFtRef.current
+      const dashBudget = Math.floor((ceilingFt - usedFt) / FEET_PER_SQUARE)
+      if (dashBudget <= 0) return
       // Open doors are floor; closed ones are wall. The V5 cells put door
       // squares in neither set, so they join the walkable world only here.
       const openDoors = new Set(doorRecs.filter((r) => r.open).map((r) => r.cell))
@@ -1617,7 +1790,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       while (queue.length) {
         const cur = queue.shift()!
         const d = dist.get(cur)!
-        if (d >= budget) continue
+        if (d >= dashBudget) continue
         const [cx, cy] = cur.split(",").map(Number)
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
@@ -1633,73 +1806,177 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           }
         }
       }
-      const cells = new Map<string, { cost: number }>()
+      const cells = new Map<string, { cost: number; tier: "move" | "dash" }>()
       dist.forEach((d, k) => {
         if (d === 0 || blockStop.has(k)) return
-        cells.set(k, { cost: d })
+        const tier: "move" | "dash" = d <= moveBudget ? "move" : "dash"
+        cells.set(k, { cost: d, tier })
         const [x, y] = k.split(",").map(Number)
         const cpos = sqCentre(x, y)
-        const p = new THREE.Mesh(reachGeo, reachMat)
+        // Falloff runs across each band separately, so the dash band reads as
+        // its own gradient rather than the tail of the first one.
+        const span = tier === "move" ? moveBudget : Math.max(1, dashBudget - moveBudget)
+        const step = tier === "move" ? d - 1 : d - moveBudget - 1
+        const idx = Math.max(0, Math.min(RAMP - 1, Math.floor((step / Math.max(1, span)) * RAMP)))
+        const p = new THREE.Mesh(reachGeo, (tier === "move" ? moveMats : dashMats)[idx])
         p.rotation.x = -Math.PI / 2
         p.position.set(cpos.x, 0.035, cpos.z)
         reachGroup.add(p)
       })
-      if (cells.size) reachRef.current = { tokenId: tok.row.id, cells }
+
+      /**
+       * Trace the outer boundary of a region and draw it as line segments.
+       * Solid for the walk band; dashed for the dash band, so the two edges
+       * stay distinguishable even for a colour-blind viewer.
+       */
+      const addContour = (inSet: (k: string) => boolean, mat: THREE.Material, y: number, dashed: boolean) => {
+        const pts: number[] = []
+        // dx, dy, and the two corners of the shared edge, in cell units.
+        const SIDES: [number, number, [number, number], [number, number]][] = [
+          [0, -1, [0, 0], [1, 0]],
+          [0, 1, [0, 1], [1, 1]],
+          [-1, 0, [0, 0], [0, 1]],
+          [1, 0, [1, 0], [1, 1]],
+        ]
+        cells.forEach((_c, k) => {
+          if (!inSet(k)) return
+          const [x, y0] = k.split(",").map(Number)
+          for (const [dx, dy, a, b] of SIDES) {
+            if (inSet(x + dx + "," + (y0 + dy))) continue
+            const ax = (x + a[0]) * SQ
+            const az = (y0 + a[1]) * SQ
+            const bx = (x + b[0]) * SQ
+            const bz = (y0 + b[1]) * SQ
+            if (!dashed) {
+              pts.push(ax, y, az, bx, y, bz)
+            } else {
+              const N = 3
+              for (let i = 0; i < N; i++) {
+                const t0 = (i + 0.18) / N
+                const t1 = (i + 0.82) / N
+                pts.push(ax + (bx - ax) * t0, y, az + (bz - az) * t0)
+                pts.push(ax + (bx - ax) * t1, y, az + (bz - az) * t1)
+              }
+            }
+          }
+        })
+        if (!pts.length) return
+        const g = new THREE.BufferGeometry()
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3))
+        reachGroup.add(new THREE.LineSegments(g, mat))
+      }
+
+      addContour((k) => cells.get(k)?.tier === "move", contourMoveMat, 0.052, false)
+      // Only when a dash band actually exists — with no action left to spend,
+      // the outer edge is simply the edge of your walk.
+      if (dashBudget > moveBudget) addContour((k) => cells.has(k), contourDashMat, 0.048, true)
+
+      // THE FRONTIER. Walkable squares one step outside the whole reach set.
+      // Rock is skipped: it already looks like rock, and painting it red would
+      // say "you may not walk into this wall", which nobody needed telling.
+      frontier.clear()
+      cells.forEach((_c, k) => {
+        const [x, y] = k.split(",").map(Number)
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue
+            const nx = x + dx
+            const ny = y + dy
+            if (nx < 0 || ny < 0 || nx >= m.grid_width || ny >= m.grid_height) continue
+            const nk = nx + "," + ny
+            if (cells.has(nk) || nk === start) continue
+            // Rock is INCLUDED, deliberately. It was excluded before on the
+            // reasoning that a wall already looks like a wall — but on a 12x12
+            // V5 tile a 30 ft Dash spans 12 squares and reaches corner to
+            // corner, so with rock excluded the frontier was almost always
+            // EMPTY and the red never drew. The boundary of a turn is the
+            // boundary whether stone or open floor stops you, and an unbroken
+            // ring around your reach is what Sam asked to see.
+            frontier.add(nk)
+          }
+        }
+      })
+      frontier.forEach((k) => {
+        const [x, y] = k.split(",").map(Number)
+        const cpos = sqCentre(x, y)
+        const p = new THREE.Mesh(reachGeo, denyMat)
+        p.rotation.x = -Math.PI / 2
+        // Above a rock tile's own top face, so a frontier square that happens
+        // to be stone still shows its ring rather than z-fighting inside it.
+        p.position.set(cpos.x, passable(k) ? 0.022 : 0.026, cpos.z)
+        reachGroup.add(p)
+        // Corner ticks: four short marks pulled in from the corners. Reads as
+        // "closed off" rather than as a fourth fill colour competing with the
+        // hostile token ring, which is the other red on this board.
+        const pts: number[] = []
+        const L = 0.20 * SQ
+        const o = 0.06 * SQ
+        const yy = 0.044
+        const x0 = x * SQ + o
+        const x1 = (x + 1) * SQ - o
+        const z0 = y * SQ + o
+        const z1 = (y + 1) * SQ - o
+        const corners: [number, number, number, number][] = [
+          [x0, z0, 1, 1], [x1, z0, -1, 1], [x0, z1, 1, -1], [x1, z1, -1, -1],
+        ]
+        for (const [cx, cz, sx, sz] of corners) {
+          pts.push(cx, yy, cz, cx + L * sx, yy, cz)
+          pts.push(cx, yy, cz, cx, yy, cz + L * sz)
+        }
+        const g = new THREE.BufferGeometry()
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3))
+        reachGroup.add(new THREE.LineSegments(g, denyEdgeMat))
+      })
+      // Clamped: a token that has somehow spent more than its speed would give
+      // a negative budget, and the label would then report a larger overspend
+      // than is real. Zero left is zero left.
+      if (cells.size)
+        reachRef.current = {
+          tokenId: tok.row.id,
+          cells,
+          moveFt: Math.max(0, moveBudget) * FEET_PER_SQUARE,
+          dashFt: Math.max(0, dashBudget) * FEET_PER_SQUARE,
+        }
     }
     refreshReachRef.current = computeReach
 
-    const showPathTo = (k: string) => {
-      pathGroup.clear()
-      const cells = pathCells(k)
-      if (cells.length < 2) { pathGroup.visible = false; return }
-      const pts = cells.map(([x, y]) => {
-        const cpos = sqCentre(x, y)
-        return new THREE.Vector3(cpos.x, 0.055, cpos.z)
-      })
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i]
-        const b = pts[i + 1]
-        const len = a.distanceTo(b)
-        const band = new THREE.Mesh(ribbonGeo, ribbonMat)
-        band.scale.x = len
-        band.position.set((a.x + b.x) / 2, 0.055, (a.z + b.z) / 2)
-        band.rotation.x = -Math.PI / 2
-        band.rotation.z = -Math.atan2(b.z - a.z, b.x - a.x)
-        pathGroup.add(band)
-        // A diamond stud on every step but the last — the seal owns that.
-        if (i < pts.length - 2) {
-          const stud = new THREE.Mesh(studGeo, studMat)
-          stud.position.set(b.x, 0.057, b.z)
-          stud.rotation.x = -Math.PI / 2
-          stud.rotation.z = Math.PI / 4
-          pathGroup.add(stud)
-        }
-      }
-      // The destination seal: gold diamond, dark inlay, gold core.
-      const dest = pts[pts.length - 1]
-      const layers: [THREE.PlaneGeometry, THREE.Material, number][] = [
-        [sealOuterGeo, studMat, 0.057],
-        [sealInnerGeo, sealDarkMat, 0.058],
-        [sealCoreGeo, studMat, 0.059],
-      ]
-      for (const [geo, mat, y] of layers) {
-        const seal = new THREE.Mesh(geo, mat)
-        seal.position.set(dest.x, y, dest.z)
-        seal.rotation.x = -Math.PI / 2
-        seal.rotation.z = Math.PI / 4
-        pathGroup.add(seal)
-      }
-      pathGroup.visible = true
+    /**
+     * Mark the square under the cursor when standing there would cost a Dash.
+     *
+     * Within the walk this draws nothing: the move band already says the
+     * square is free, and a second mark on top of it is noise. Red appears
+     * here and nowhere else on the overlay.
+     */
+    const showHover = (k: string) => {
+      hoverGroup.clear()
+      const [x, y] = k.split(",").map(Number)
+      const cpos = sqCentre(x, y)
+      const mark = new THREE.Mesh(reachGeo, overMat)
+      mark.rotation.x = -Math.PI / 2
+      mark.position.set(cpos.x, 0.05, cpos.z)
+      hoverGroup.add(mark)
+      hoverGroup.visible = true
     }
 
     let lastHoverCell = ""
     const onHoverMove = (e: MouseEvent) => {
       if (!reachRef.current || !floorPlane) return
+      // While a spell is armed the cursor is asking a different question, and
+      // the targeting read-out answers it. Movement cost alongside it is a
+      // second answer to a question nobody asked - and the floor raycast still
+      // hits a reach square underneath the token being aimed at, so without
+      // this the board would price a walk the player is not taking.
+      if (armedRef.current) {
+        hoverGroup.visible = false
+        lastHoverCell = ""
+        setMoveHint(null)
+        return
+      }
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, activeCam())
       const hit = raycaster.intersectObject(floorPlane, false)[0]
-      if (!hit) { pathGroup.visible = false; return }
+      if (!hit) { hoverGroup.visible = false; return }
       const gx = Math.floor(hit.point.x / SQ)
       const gy = Math.floor(hit.point.z / SQ)
       const k = gx + "," + gy
@@ -1707,12 +1984,31 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       lastHoverCell = k
       const cell = reachRef.current.cells.get(k)
       if (!cell) {
-        pathGroup.visible = false
-        setMoveHint(null)
+        // Outside reach. The frontier squares say so out loud; everything
+        // beyond them is simply not part of this turn's question.
+        if (frontier.has(k)) {
+          showHover(k)
+          setMoveHint(`OUT OF REACH · BEYOND ${reachRef.current.dashFt} FT`)
+        } else {
+          hoverGroup.visible = false
+          setMoveHint(null)
+        }
         return
       }
-      showPathTo(k)
-      setMoveHint(`${cell.cost * 5} ft`)
+      showHover(k)
+      // Feet come from the BFS, which walked AROUND the rock. gridDistanceFeet
+      // is straight-line and would under-report a route that bends - and the
+      // server rejects a client understating path cost. One number, measured
+      // the same way on both sides.
+      const ft = cell.cost * FEET_PER_SQUARE
+      const over = ft - reachRef.current.moveFt
+      // Name the band. "45 FT · 15 FT OVER" prices the move but never says
+      // what spending it costs you, and Dash costs your action.
+      setMoveHint(
+        over > 0
+          ? `DASH · ${ft} FT · SPENDS YOUR ACTION`
+          : `WALK · ${ft} FT · ${reachRef.current.moveFt - ft} FT LEFT`,
+      )
     }
     renderer.domElement.addEventListener("mousemove", onHoverMove)
 
@@ -2455,11 +2751,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       renderer.domElement.removeEventListener("click", onClick)
       refreshReachRef.current = () => {}
       reachGeo.dispose()
-      ribbonGeo.dispose()
-      studGeo.dispose()
-      sealOuterGeo.dispose()
-      sealInnerGeo.dispose()
-      sealCoreGeo.dispose()
+      for (const m of [...moveMats, ...dashMats, overMat, denyMat, contourMoveMat, contourDashMat, denyEdgeMat]) m.dispose()
+      PLATE.dispose()
       activeGlow.geometry.dispose()
       pmrem.dispose()
       renderer.dispose()
@@ -2615,6 +2908,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const activeEntry = combat?.turn_order?.[combat.active_index] ?? null
   const activeCharacterId = activeEntry ? tokenToCharacter[activeEntry.token_id] : undefined
   const isMyTurn = Boolean(myCharacterId && activeCharacterId && myCharacterId === activeCharacterId)
+
+  /**
+   * THE RACK FOLLOWS THE TURN.
+   *
+   * `focusId` was set once, on the first sheet load, with `cur ?? …` — and
+   * never again. So the action rack kept showing whoever was focused when the
+   * board opened: Kenta's turn would come up, his plate would light green, his
+   * initiative pip would advance, and the rack would still be offering Fifi's
+   * spells. Pressing one armed a cast as the wrong character. Since PR #303 the
+   * server refuses those, so the visible symptom is now an error toast rather
+   * than a wrong result — better, but still the wrong rack.
+   *
+   * Follow the turn only for a browser that can actually ACT for the incoming
+   * character: the DM, who may drive anyone, or the player who claimed them.
+   * This is the same gate the reach overlay already uses. A spectating player
+   * keeps their own sheet in front of them rather than being handed a rack of
+   * spells the server would reject — and clicking a plate to inspect someone
+   * still works, it simply does not survive the next turn change.
+   */
+  useEffect(() => {
+    if (!activeCharacterId) return
+    if (!dm && activeCharacterId !== myCharacterId) return
+    setFocusId(activeCharacterId)
+  }, [activeCharacterId, dm, myCharacterId])
   const activeSheet = sheets.find((c) => c.id === activeCharacterId)
   // "30 ft. (Walking)" -> 30. A sheet with prose speed still yields a budget.
   const speedFt = Number.parseInt(String(activeSheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
@@ -2629,13 +2946,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // and the budget, moves the token, and returns the spent economy. The
   // glide (and the walking animation) arrives by the vtt_tokens realtime
   // echo, same as every other move on this board.
-  playerMoveRef.current = (tokenId, gx, gy, feet) => {
+  playerMoveRef.current = (tokenId, gx, gy, feet, dash) => {
     void (async () => {
       try {
         const res = await fetch("/api/combat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "move", token_id: tokenId, gx, gy, feet, sandbox }),
+          body: JSON.stringify({ action: "move", token_id: tokenId, gx, gy, feet, dash, sandbox }),
         })
         const data = await res.json().catch(() => null)
         if (!res.ok) {
@@ -2747,7 +3064,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         </div>
       )}
 
-      {/* The path's price, BG3-style, while a walk is being lined up. */}
+      {/* What the hovered square costs. Bottom-centre, clear of the cursor
+          read-out, which owns the same moment when a spell is armed. */}
       {moveHint && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded border border-[#8a6d2f] bg-black/75 px-2.5 py-0.5 font-mono text-[10px] text-[#ffe28a]">
           {moveHint}
@@ -2771,9 +3089,41 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         )}
       </div>
 
-      {/* THE TURN, ANNOUNCED — the owner gets the blocking call; the table
-          gets the transient centre plate and a read-only phase tray; the DM
-          gets a live tray. */}
+      {/* THE DASH CONFIRM.
+          An azure square is reachable only by spending your action, and that
+          is a real cost — a Dash you did not mean to take is a turn you cannot
+          get back. So the board asks, naming the price plainly, before it
+          sends anything. Escape or CANCEL leaves the turn untouched. */}
+      {pendingDash && (
+        <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-black/55 backdrop-blur-[2px]">
+          <div className="w-[290px] border border-[#2f7fd6] bg-[#0b0d12]/95 p-4 font-mono shadow-[0_0_28px_#2f7fd655]">
+            <div className="text-[10px] tracking-[0.2em] text-[#7ab8ff]">DASH</div>
+            <p className="mt-2 text-[11px] leading-relaxed text-[#d8e4f2]">
+              That square is {pendingDash.feet} ft away — past your walk. Reaching it spends your{" "}
+              <span className="text-[#f3c94b]">action</span> for the turn.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  const p = pendingDash
+                  setPendingDash(null)
+                  p.commit()
+                }}
+                className="flex-1 border border-[#2f7fd6] bg-[#12314f] px-3 py-1.5 text-[10px] tracking-wider text-[#cfe4ff] hover:bg-[#194570]"
+              >
+                DASH
+              </button>
+              <button
+                onClick={() => setPendingDash(null)}
+                className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <TurnBanner
         active={Boolean(combat)}
         isMine={isMyTurn}

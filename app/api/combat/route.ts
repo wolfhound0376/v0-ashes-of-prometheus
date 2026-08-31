@@ -249,15 +249,55 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(feet) || feet <= 0 || feet < cheb) {
       return NextResponse.json({ error: "path cost does not reach that square" }, { status: 400 })
     }
-    if (usedFt + feet > speedFt) {
-      return NextResponse.json({ error: `not enough movement — ${speedFt - usedFt} ft left` }, { status: 409 })
+
+    // DASH.
+    //
+    // The board has drawn an azure band at speed x2 since the movement overlay
+    // shipped, but nothing here ever agreed to it: the fence below was a hard
+    // cap at speed, so every square in that band was refused. The overlay was
+    // promising movement the server would not sell.
+    //
+    // `dash` is requested by the client only after the player confirms the
+    // dialog. It is granted here, and the action is spent in the SAME write as
+    // the move, so a Dash can never be taken twice or taken for free. Once
+    // dashed, the doubled ceiling persists for the rest of the turn — you may
+    // keep moving into it without confirming again, because you already paid.
+    const alreadyDashed = state.dashed === true
+    const wantsDash = body?.dash === true
+    const dashing = alreadyDashed || wantsDash
+
+    if (wantsDash && !alreadyDashed && state.action === true) {
+      return NextResponse.json({ error: "your action is already spent — no Dash this turn" }, { status: 409 })
     }
+
+    const ceilingFt = dashing ? speedFt * 2 : speedFt
+    if (usedFt + feet > ceilingFt) {
+      const left = ceilingFt - usedFt
+      return NextResponse.json(
+        {
+          error: dashing
+            ? `not enough movement — ${left} ft left`
+            : `not enough movement — ${left} ft left without a Dash`,
+          // Tells the client the square is reachable IF the player dashes, so
+          // it can offer the confirm rather than just failing.
+          dash_would_reach: !dashing && usedFt + feet <= speedFt * 2 && state.action !== true,
+        },
+        { status: 409 },
+      )
+    }
+
     const { error: moveErr } = await db
       .from("vtt_tokens")
       .update({ grid_x: gx, grid_y: gy, updated_by: "player-move", updated_at: new Date().toISOString() })
       .eq("id", token_id)
     if (moveErr) return NextResponse.json({ error: moveErr.message }, { status: 500 })
     const next = { ...state, moved_ft: usedFt + feet }
+    // Spending the action in the same write as the move: no window exists in
+    // which the player has the extra movement but has not yet paid for it.
+    if (wantsDash && !alreadyDashed) {
+      next.dashed = true
+      next.action = true
+    }
     const { error: stateErr } = await db
       .from("combat_state")
       .update({ turn_state: next, updated_at: new Date().toISOString() })
