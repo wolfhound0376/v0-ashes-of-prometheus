@@ -457,4 +457,97 @@ a Vercel preview, **not yet merged**.
   `main`'s baseline** (see the note in §1 — it does not exit 0 on `main`), and `pnpm build`
   must exit 0. The plan docs carry numbered post-deploy checklists — use them.
 - Branch, push, and let Sam merge from GitHub's banner. Don't push to `main` unasked.
-- 
+
+---
+
+## 11. Lanes — how work reaches `main`
+
+Sam runs several sessions at once and they cannot see each other. Every rule
+below is here because something went wrong at least once, and the cost was
+always the same: work done twice, or work lost.
+
+**A lane is one branch, one worktree, one PR.** Name the worktree after the
+branch — `C:\ashes-wt-<slug>` for `feat/<slug>` — so `git worktree list` is the
+board. A directory whose name stops matching what is checked out in it will lie
+to you a week later.
+
+**Branch from a freshly fetched `origin/main`, never from local `main`.** Local
+`main` is routinely a hundred commits behind and nothing warns you.
+
+```bash
+git fetch origin && git worktree add C:\ashes-wt-<slug> -b <slug> origin/main
+```
+
+**Three open lanes at most, and they must be file-disjoint.** Run the collision
+check before the first edit, not after — once code exists, sunk cost starts
+arguing about whether the overlap really matters.
+
+```bash
+node scripts/who-else.mjs <every file you intend to touch>
+```
+
+`app/page.tsx` is the repeat offender. If your change needs it, expect to
+sequence behind someone.
+
+**Push the moment the branch exists**, even as an empty commit. The collision
+check only sees pushed branches. Until you push, you are invisible to every
+other session and they are building on sand.
+
+**A lane grows; it does not get a new name each time it grows.** Four branches
+once turned out to be one job snapshotted at four points — three of them
+ancestors of the fourth, with no unique commits at all. Proving that cost more
+than the work did.
+
+**Pushing is where an agent stops.** There is no `gh` CLI on the machine, so
+agents cannot open or merge PRs. Say the branch name plainly when you hand it
+over, or it joins the pile nobody can see.
+
+### Finishing
+
+**Opening a PR is not merging it.** Two PRs sat open while `main` stayed exactly
+where it was, and everyone believed the work had shipped. `main` is the only
+source of truth about what shipped — not the PR page, not a branch name, not a
+previous session's summary.
+
+```bash
+git fetch origin && git log origin/main -1 --oneline
+```
+
+### Deleting a branch
+
+The branch list lies in both directions. Squash-merged work still reads as
+"ahead of main", so merged branches look unmerged forever; and a branch can
+carry commits pushed *after* its PR merged, which are in no PR and in no `main`.
+
+What settles it: GitHub keeps `refs/pull/<n>/head` permanently, even after the
+branch is deleted.
+
+```bash
+git ls-remote origin 'refs/pull/<n>/head'
+```
+
+Equal to the branch tip → the work is recoverable forever, delete freely. Ahead
+of the tip → something never reached a PR. **A branch that never had a PR has no
+safety net at all; deleting it is permanent.** Three `v0/*` branches that looked
+disposable turned out to hold a media manifest, a set of item-removal rules, and
+an admin section, none of which had ever reached `main`.
+
+### The type gate
+
+`tsc` does not exit 0 on `main` (see §1), so compare the error **sets**, never
+the counts:
+
+```bash
+git checkout origin/main && npx tsc --noEmit | grep "error TS" | sort > base.txt
+git checkout <branch>    && npx tsc --noEmit | grep "error TS" | sort > mine.txt
+comm -13 base.txt mine.txt      # anything printed here is yours
+```
+
+Inserting code pushes every error below it downward, so a pre-existing error
+reappears at a new line number and reads as new. Same file, same column, same
+code means displaced, not introduced. Measure the baseline yourself on the day —
+never quote a number from an earlier session.
+
+That last rule is not pedantry: on 2026-08-31 the baseline fell from 36 errors
+to 14 in a single evening, because another session was fixing them while three
+lanes were being verified against the old number.
