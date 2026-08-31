@@ -664,7 +664,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           setPendingDash({
             feet,
             commit: () => {
-              sendWalkPath(reach.tokenId, pathCells(key))
+              sendWalkPath(reach.tokenId, pathCells(key), true)
               playerMoveRef.current(reach.tokenId, gx, gy, feet, true)
               clearReach()
             },
@@ -1455,6 +1455,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // constant pace — distance decides duration, not a fixed timer.
       const stash = walkPaths.get(row.id)
       walkPaths.delete(row.id)
+      // Read before the stash is discarded below; the footstep loop is started
+      // further down, after the glide is built.
+      const walkedFast = Boolean(stash?.dash)
       let pts: THREE.Vector3[] = []
       if (stash && Date.now() - stash.at < 4000) {
         pts = stash.cells.map(([x, y]) => {
@@ -1477,7 +1480,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // starting, or the old loop is orphaned and plays until the page closes.
       stopFootsteps(row.id)
       try {
-        footsteps.set(row.id, playSfx(surfaceLoop(row.grid_x, row.grid_y), { loop: true, volume: 0.4, fadeIn: 0.08 }))
+        footsteps.set(row.id, playSfx(surfaceLoop(row.grid_x, row.grid_y, walkedFast), { loop: true, volume: 0.4, fadeIn: 0.08 }))
       } catch {
         /* a missing clip is not a reason to stop the miniature walking */
       }
@@ -1820,7 +1823,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // cutting the corner straight-line when the row lands. The stash is
     // consumed by glideToken when the realtime echo arrives; a stale one
     // (no echo inside 4s) is ignored and the straight glide covers it.
-    const walkPaths = new Map<string, { cells: [number, number][]; at: number }>()
+    const walkPaths = new Map<string, { cells: [number, number][]; at: number; dash?: boolean }>()
     // One footstep loop per token in motion, stopped when its glide ends.
     //
     // LOCAL, and deliberately not broadcast. Every browser runs glideToken for
@@ -1830,11 +1833,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // interface motion sounds for itself.
     const footsteps = new Map<string, PlayHandle>()
 
-    /** What this square sounds like underfoot. */
-    const surfaceLoop = (gx: number, gy: number): SfxName => {
+    /**
+     * What this square sounds like underfoot.
+     *
+     * Surface outranks pace. A bridge and water say WHERE the miniature is,
+     * which is the more useful fact; running only replaces the ordinary stone.
+     */
+    const surfaceLoop = (gx: number, gy: number, dash?: boolean): SfxName => {
       const k = gx + "," + gy
       if (bridgeRef.current.has(k)) return "movement/rope_bridge" as SfxName
       if (waterRef.current.has(k)) return "movement/footsteps_water" as SfxName
+      if (dash) return "movement/footsteps_run" as SfxName
       // Velkynvelve is a wet stone pen. There is no gravel anywhere in the cell
       // geometry to distinguish, so this is the floor of the whole node set
       // rather than a default standing in for something unknown.
@@ -1852,7 +1861,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         /* a stuck loop must never take the frame loop down */
       }
     }
-    let sendWalkPath: (tokenId: string, cells: [number, number][]) => void = (tokenId, cells) => {
+    let sendWalkPath: (tokenId: string, cells: [number, number][], dash?: boolean) => void = (tokenId, cells) => {
       walkPaths.set(tokenId, { cells, at: Date.now() })
     }
 
@@ -2670,13 +2679,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const walkChannel = supabase
         .channel("board-walk")
         .on("broadcast", { event: "walk" }, ({ payload }) => {
-          const p = payload as { token_id?: string; cells?: [number, number][] }
-          if (p?.token_id && Array.isArray(p.cells)) walkPaths.set(p.token_id, { cells: p.cells, at: Date.now() })
+          const p = payload as { token_id?: string; cells?: [number, number][]; dash?: boolean }
+          if (p?.token_id && Array.isArray(p.cells)) walkPaths.set(p.token_id, { cells: p.cells, at: Date.now(), dash: p.dash })
         })
         .subscribe()
-      sendWalkPath = (token_id, cells) => {
-        walkPaths.set(token_id, { cells, at: Date.now() })
-        void walkChannel.send({ type: "broadcast", event: "walk", payload: { token_id, cells } })
+      sendWalkPath = (token_id, cells, dash) => {
+        walkPaths.set(token_id, { cells, at: Date.now(), dash })
+        // The dash rides WITH the route. It is known only to the seat that gave
+        // the order, and every other board animates this walk from the realtime
+        // row - which carries no such flag. Without this the mover would hear a
+        // run and the rest of the table a walk, for the same miniature.
+        void walkChannel.send({ type: "broadcast", event: "walk", payload: { token_id, cells, dash } })
       }
 
       // Live: any token change, from any hand, lands on every board.
