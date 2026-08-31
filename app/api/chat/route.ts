@@ -520,7 +520,9 @@ ${inventoryLines.length > 0 ? inventoryLines.join("\n") : "- (empty — the char
 INVENTORY RULES — ENFORCE STRICTLY:
 - The character possesses ONLY the items listed above. Do NOT invent, assume, reference, or let the player use any item that is not on this list (aside from an item you award this turn).
 - Whenever you award, grant, or let the character pick up a NEW item, you MUST emit an [ITEM_AWARD: name | qty | description | item_type | icon_hint] tag (or [ITEM_ADD: ...]) so it is inserted into inventory_items. Narrating an item without the tag does NOT actually give it to the player.
-- When an item is consumed, dropped, or lost, emit [ITEM_REMOVE: name | quantity].
+- When an item leaves the character's possession FOR GOOD, emit [ITEM_REMOVE: name | quantity]. This includes: consumed (potions, food, scrolls), given away or traded to anyone, stolen or confiscated, destroyed or broken, dropped and left behind, and thrown or fired somewhere it cannot be recovered (into a chasm, deep water, off a cliff, or carried away in a fleeing enemy). Ammunition and thrown weapons that land somewhere RETRIEVABLE are not removed if the character can plausibly collect them when the scene allows — but if the scene moves on without retrieval, emit the removal then.
+  - Example: a dagger thrown at a guard who falls into the abyss with it → [ITEM_REMOVE: Dagger | 1]
+  - Narrating a loss without the tag means the item is NOT actually removed and the world state is now wrong. The tag is the removal.
 === END INVENTORY ===`
 
   // Authoritative d100 scavenged-items table with a hard binding rule so the
@@ -863,7 +865,7 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 6b. NPC DISPOSITION: Every NPC holds one attitude toward the party on a single axis, from worst to best: hostile, wary, neutral, warm, devoted. Emit [NPC_DISPOSITION: <Name> <value>] whenever an NPC's feeling toward the party FIRST becomes clear, and again every time it MOVES — a kindness, an insult, a betrayal, a shared danger, a lie they caught. Use ONLY those five words; anything else is discarded. Move one rung at a time unless something drastic happened (a murder in front of them can go straight to hostile). This is the NPC's private truth, not what they are showing: an NPC can be hostile while smiling. Do not announce the value in your prose — narrate the behaviour and let the tag carry the number.
 
-7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] when they lose/use items.
+ 7. ITEMS: You MUST emit [ITEM_ADD: name | quantity | type | description] when player acquires items and [ITEM_REMOVE: name | quantity] whenever an item leaves the character's possession FOR GOOD — consumed, given away or traded, stolen or confiscated, destroyed or broken, dropped and left behind, or thrown/fired somewhere unrecoverable (into a chasm, deep water, off a cliff, or carried off by a fleeing enemy). Thrown weapons or ammunition that land somewhere retrievable are only removed if the scene moves on without the character collecting them. Narrating a loss without the tag does NOT actually remove the item — the tag is the removal.
 
 8. ITEM AWARDS: When narrating the player finding, picking up, receiving, or being given an item, you MUST emit [ITEM_AWARD: name | qty | description | item_type | icon_hint] where icon_hint is a keyword for matching existing icons (e.g., "dagger", "potion", "key", "torch").
 
@@ -1299,6 +1301,22 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
     console.warn("[v0] WARNING: Response describes condition but contains no [CONDITION_ADD:] tag!")
   }
 
+  // Check for item-loss-like prose without tag. Log-only: false positives would
+  // eat inventories, so we never auto-remove — we just flag the possible miss.
+  const hasItemRemoveTag = /\[ITEM_REMOVE:/i.test(rawText)
+  const lossProseRegex =
+    /\b(throws the|hurls|shatters|drinks the|hands over|gives (?:him|her|them) the|tumbles into|falls into the (?:chasm|abyss|water) with)\b/i
+  if (!hasItemRemoveTag) {
+    const lossMatch = lossProseRegex.exec(rawText)
+    if (lossMatch) {
+      const snippet = rawText.slice(lossMatch.index, lossMatch.index + 120)
+      console.warn(
+        "[v0] POSSIBLE UNTAGGED ITEM LOSS — prose suggests an item left play but no [ITEM_REMOVE:] was emitted:",
+        snippet,
+      )
+    }
+  }
+
   // Track which NPCs are present in THIS turn's scene. Any NPC not named here
   // gets hidden from the panel below, so the player only sees who they're
   // actually interacting with (e.g. talking to Eldeth shows only Eldeth).
@@ -1654,6 +1672,26 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
           await supabase.from("inventory_items")
             .update({ quantity: existing.quantity - quantity })
             .eq("id", existing.id)
+        }
+
+        // Mirror the award-beat write so item losses reach the shotlist/video
+        // pipeline too. Best-effort: never let it break the removal.
+        if (!activeSessionId) {
+          console.warn("[v0] item_loss beat skipped: no active session")
+        } else {
+          const { error: lossBeatError } = await supabase.from("session_beats").insert({
+            session_id: activeSessionId,
+            beat_type: "item_loss",
+            character_id: playerCharacter.id,
+            subject: itemName,
+            summary: `${playerName} lost ${quantity}x ${itemName}`,
+            priority: 5,
+          })
+          if (lossBeatError) {
+            console.error("[v0] Error writing item_loss session_beat:", lossBeatError.message)
+          } else {
+            console.log("[v0] item_loss session_beat written for:", itemName)
+          }
         }
       }
     }
