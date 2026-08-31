@@ -168,15 +168,15 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
   // own — the SHAPE is its reach, and the player picks a direction rather than
   // a distant point. Leaving rangeFt at 15 made the board offer a 15 ft
   // "range" it then had no way to honour.
-  "burning hands":     S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 0,   target: "point", save: "DEX", area: cone(15) }),
-  "thunderwave":       S({ level: 1, school: "arcane",   damage: "thunder",   rangeFt: 0,   target: "point", save: "CON", area: cube(15, "self") }),
+  "burning hands":     S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 0,   target: "point", resolve: "save", save: "DEX", dice: "3d6", halfOnSave: true, area: cone(15) }),
+  "thunderwave":       S({ level: 1, school: "arcane",   damage: "thunder",   rangeFt: 0,   target: "point", resolve: "save", save: "CON", dice: "2d8", halfOnSave: true, area: cube(15, "self") }),
   "color spray":       S({ level: 1, school: "arcane",                        rangeFt: 0,   target: "point", area: cone(15) }),
   "inflict wounds":    S({ level: 1, school: "necrotic", damage: "necrotic",  rangeFt: 5,   target: "creature", resolve: "attack", dice: "3d10" }),
   "hellish rebuke":    S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 60,  target: "creature" }),
   "misty step":        S({ level: 2, school: "arcane",                        rangeFt: 30,  target: "point", bonus: true }),
   "spiritual weapon":  S({ level: 2, school: "holy",     damage: "force",     rangeFt: 60,  target: "creature", bonus: true }),
   "hex":               S({ level: 1, school: "eldritch", damage: "necrotic",  rangeFt: 90,  target: "creature", bonus: true, concentration: true }),
-  fireball:            S({ level: 3, school: "fire",     damage: "fire",      rangeFt: 150, target: "point", save: "DEX", halfOnSave: true, area: sphere(20) }),
+  fireball:            S({ level: 3, school: "fire",     damage: "fire",      rangeFt: 150, target: "point", resolve: "save", save: "DEX", dice: "8d6", halfOnSave: true, area: sphere(20) }),
 
   // ---- THE AREA SPELLS ----------------------------------------------------
   // The ground-covering half of the book, gathered so the shapes can be read
@@ -184,12 +184,12 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
   // for that shape — radius for spheres and cylinders, edge for cubes, length
   // for cones and lines — taken from SRD 5.1.
   //
-  // Deliberately carrying NO dice or resolve yet. The cast handler resolves
-  // against exactly one victim; give Fireball 8d6 today and it would roll
-  // that against a single drow and call the other four untouched. The dice
-  // arrive with multi-target resolution, in the same change, so a spell can
-  // never know how to hurt more people than the server knows how to count.
-  shatter:             S({ level: 2, school: "arcane",   damage: "thunder",   rangeFt: 60,  target: "point", save: "CON", halfOnSave: true, area: sphere(10) }),
+  // These now carry their dice. The cast handler resolves a point spell
+  // against EVERY creature standing in the shape, rolling one save each, so
+  // a spell can no longer know how to hurt more people than the server knows
+  // how to count. Utility areas — Fog Cloud, Web, Silence — still have no
+  // dice, because they have nothing to roll, not because anything is missing.
+  shatter:             S({ level: 2, school: "arcane",   damage: "thunder",   rangeFt: 60,  target: "point", resolve: "save", save: "CON", dice: "3d8", halfOnSave: true, area: sphere(10) }),
   silence:             S({ level: 2, school: "holy",                          rangeFt: 120, target: "point", concentration: true, area: sphere(20) }),
   web:                 S({ level: 2, school: "nature",                        rangeFt: 60,  target: "point", concentration: true, save: "DEX", area: cube(20) }),
   grease:              S({ level: 1, school: "arcane",                        rangeFt: 60,  target: "point", save: "DEX", area: cube(10) }),
@@ -198,16 +198,16 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
   // this registry names — so it carries none, and makes no impact sound. That
   // is the honest answer, not a shrug.
   "spike growth":      S({ level: 2, school: "nature",                        rangeFt: 150, target: "point", concentration: true, area: sphere(20) }),
-  moonbeam:            S({ level: 2, school: "holy",     damage: "radiant",   rangeFt: 120, target: "point", concentration: true, save: "CON", halfOnSave: true, area: cylinder(5) }),
-  "cloud of daggers":  S({ level: 2, school: "arcane",   damage: "force",     rangeFt: 60,  target: "point", concentration: true, area: cube(5) }),
+  moonbeam:            S({ level: 2, school: "holy",     damage: "radiant",   rangeFt: 120, target: "point", concentration: true, resolve: "save", save: "CON", dice: "2d10", halfOnSave: true, area: cylinder(5) }),
+  "cloud of daggers":  S({ level: 2, school: "arcane",   damage: "force",     rangeFt: 60,  target: "point", concentration: true, resolve: "auto", dice: "4d4", area: cube(5) }),
   // A 5-foot-DIAMETER sphere, so the radius is 2.5. Exactly the trap the
   // shape constructors exist to make visible.
-  "flaming sphere":    S({ level: 2, school: "fire",     damage: "fire",      rangeFt: 60,  target: "point", concentration: true, save: "DEX", halfOnSave: true, area: sphere(2.5) }),
+  "flaming sphere":    S({ level: 2, school: "fire",     damage: "fire",      rangeFt: 60,  target: "point", concentration: true, resolve: "save", save: "DEX", dice: "2d6", halfOnSave: true, area: sphere(2.5) }),
   // Spares your own: "creatures of your choice that you can see". The only
   // area in the book that does, which is why friendly fire is a decision
   // everywhere else.
-  "spirit guardians":  S({ level: 3, school: "holy",     damage: "radiant",   rangeFt: 0,   target: "point", concentration: true, save: "WIS", halfOnSave: true, area: { shape: "sphere", sizeFt: 15, origin: "self", sparesAllies: true } }),
-  "lightning bolt":    S({ level: 3, school: "arcane",   damage: "lightning", rangeFt: 0,   target: "point", save: "DEX", halfOnSave: true, area: line(100, 5) }),
+  "spirit guardians":  S({ level: 3, school: "holy",     damage: "radiant",   rangeFt: 0,   target: "point", concentration: true, resolve: "save", save: "WIS", dice: "3d8", halfOnSave: true, area: { shape: "sphere", sizeFt: 15, origin: "self", sparesAllies: true } }),
+  "lightning bolt":    S({ level: 3, school: "arcane",   damage: "lightning", rangeFt: 0,   target: "point", resolve: "save", save: "DEX", dice: "8d6", halfOnSave: true, area: line(100, 5) }),
 }
 
 /**
