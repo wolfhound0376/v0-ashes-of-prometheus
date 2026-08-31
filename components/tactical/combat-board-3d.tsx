@@ -198,7 +198,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     dashFt: number
   } | null>(null)
   const refreshReachRef = useRef<() => void>(() => {})
-  const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number) => void>(() => {})
+  const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number, dash?: boolean) => void>(() => {})
+  /**
+   * A move the player has asked for that would cost their Dash, parked here
+   * until they confirm. Blue squares are no longer clicked-and-refused: the
+   * board asks first, because spending your action is not something to
+   * discover from an error toast after the fact.
+   */
+  const [pendingDash, setPendingDash] = useState<
+    { feet: number; commit: () => void } | null
+  >(null)
   const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
   /** The HUD's ability bar reaches the scene through here, the same way
    *  moves do. Set inside the scene effect; a no-op until the board is up. */
@@ -607,10 +616,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const reach = reachRef.current
       const cellKey = gx + "," + gy
       if (reach && reach.cells.has(cellKey)) {
+        const cell = reach.cells.get(cellKey)!
+        const feet = cell.cost * FEET_PER_SQUARE
+        // An azure square costs the Dash. ASK before spending it — a player
+        // should never learn they burned their action by reading a toast.
+        // Gold squares are free movement and commit on the single click, as
+        // they always have.
+        if (cell.tier === "dash") {
+          // Capture the commit HERE, where sendWalkPath, pathCells and
+          // clearReach are in scope. The dialog lives out in the JSX and has
+          // no reach into this effect's closure, so it gets a function rather
+          // than coordinates to reassemble.
+          const key = cellKey
+          setPendingDash({
+            feet,
+            commit: () => {
+              sendWalkPath(reach.tokenId, pathCells(key))
+              playerMoveRef.current(reach.tokenId, gx, gy, feet, true)
+              clearReach()
+            },
+          })
+          return
+        }
         // Ship the route first, so every board (this one included) walks
         // the real path when the move lands.
         sendWalkPath(reach.tokenId, pathCells(cellKey))
-        playerMoveRef.current(reach.tokenId, gx, gy, reach.cells.get(cellKey)!.cost * FEET_PER_SQUARE)
+        playerMoveRef.current(reach.tokenId, gx, gy, feet)
         clearReach() // repainted with the new budget when the server echoes
         return
       }
@@ -2889,13 +2920,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // and the budget, moves the token, and returns the spent economy. The
   // glide (and the walking animation) arrives by the vtt_tokens realtime
   // echo, same as every other move on this board.
-  playerMoveRef.current = (tokenId, gx, gy, feet) => {
+  playerMoveRef.current = (tokenId, gx, gy, feet, dash) => {
     void (async () => {
       try {
         const res = await fetch("/api/combat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "move", token_id: tokenId, gx, gy, feet, sandbox }),
+          body: JSON.stringify({ action: "move", token_id: tokenId, gx, gy, feet, dash, sandbox }),
         })
         const data = await res.json().catch(() => null)
         if (!res.ok) {
@@ -3032,9 +3063,41 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         )}
       </div>
 
-      {/* THE TURN, ANNOUNCED — the owner gets the blocking call; the table
-          gets the transient centre plate and a read-only phase tray; the DM
-          gets a live tray. */}
+      {/* THE DASH CONFIRM.
+          An azure square is reachable only by spending your action, and that
+          is a real cost — a Dash you did not mean to take is a turn you cannot
+          get back. So the board asks, naming the price plainly, before it
+          sends anything. Escape or CANCEL leaves the turn untouched. */}
+      {pendingDash && (
+        <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-black/55 backdrop-blur-[2px]">
+          <div className="w-[290px] border border-[#2f7fd6] bg-[#0b0d12]/95 p-4 font-mono shadow-[0_0_28px_#2f7fd655]">
+            <div className="text-[10px] tracking-[0.2em] text-[#7ab8ff]">DASH</div>
+            <p className="mt-2 text-[11px] leading-relaxed text-[#d8e4f2]">
+              That square is {pendingDash.feet} ft away — past your walk. Reaching it spends your{" "}
+              <span className="text-[#f3c94b]">action</span> for the turn.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  const p = pendingDash
+                  setPendingDash(null)
+                  p.commit()
+                }}
+                className="flex-1 border border-[#2f7fd6] bg-[#12314f] px-3 py-1.5 text-[10px] tracking-wider text-[#cfe4ff] hover:bg-[#194570]"
+              >
+                DASH
+              </button>
+              <button
+                onClick={() => setPendingDash(null)}
+                className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <TurnBanner
         active={Boolean(combat)}
         isMine={isMyTurn}
