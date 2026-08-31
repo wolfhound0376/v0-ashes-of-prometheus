@@ -201,7 +201,14 @@ export async function POST(req: NextRequest) {
       .select("id,round,active_index,turn_order,status")
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true, combat: row })
+    // Initiative is rolled and the order is written. Party-scoped: every seat
+    // should hear the fight start, not only whoever pressed it. Derived from
+    // the row this route has just committed, never from narration.
+    return NextResponse.json({
+      ok: true,
+      combat: row,
+      sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/initiative_start" }],
+    })
   }
 
   const { data: combat } = await db
@@ -706,7 +713,12 @@ export async function POST(req: NextRequest) {
       })
       .eq("id", combat.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true })
+    // The turn has passed to the next combatant. Party-scoped: the chime
+    // is how the table knows to look up, not just the seat that clicked.
+    return NextResponse.json({
+      ok: true,
+      sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/turn_chime" }],
+    })
   }
 
   // end
@@ -715,5 +727,7 @@ export async function POST(req: NextRequest) {
     .update({ status: "ended", updated_at: new Date().toISOString() })
     .eq("id", combat.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // Ending combat is deliberately silent. The bank has no clip for it, and a
+  // turn chime here would say the wrong thing - the fight is over, nobody is up.
   return NextResponse.json({ ok: true })
 }

@@ -49,8 +49,9 @@ import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 import { equipOnRig } from "@/lib/equipment"
-import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle } from "@/lib/sfx"
+import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
+import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 // FEET_PER_SQUARE only, deliberately. gridDistanceFeet is straight-line
 // (Chebyshev) and this overlay measures a PATH that bends around rock, so the
 // two disagree the moment a wall is involved - and the server rejects a client
@@ -199,6 +200,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const myCharRef = useRef<string | null>(null)
   const speedFtRef = useRef(30)
   const walkableRef = useRef<Set<string>>(new Set())
+  // Which squares sound different underfoot. Both are read from the node's own
+  // cell geometry, so a footstep is a fact about where the party is standing
+  // rather than a guess from the map's name.
+  const waterRef = useRef<Set<string>>(new Set())
+  const bridgeRef = useRef<Set<string>>(new Set())
   const reachRef = useRef<{
     tokenId: string
     /** cost is PATH length in squares (around walls), not straight-line. */
@@ -275,6 +281,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
   }, [])
   useEffect(() => { dmRef.current = dm }, [dm])
+
+  // Sounds another seat earned. The board is its own route, so it needs its own
+  // subscription - a player watching /battle should hear the natural 20 rolled
+  // on the dashboard, and the turn chime the DM advanced from theirs.
+  useEffect(() => subscribeSfxCues(), [])
   useEffect(() => { selectedRef.current = selected }, [selected])
   useEffect(() => { dmMoveRef.current = dmMove }, [dmMove])
   useEffect(() => { myCharRef.current = myCharacterId }, [myCharacterId])
@@ -1462,6 +1473,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const seg: number[] = [0]
       for (let i = 1; i < pts.length; i++) seg.push(seg[i - 1] + pts[i - 1].distanceTo(pts[i]))
       entry.obj.userData.glide = { pts, seg, total: seg[seg.length - 1], s: 0 }
+      // A second move order landing mid-walk replaces the first: stop before
+      // starting, or the old loop is orphaned and plays until the page closes.
+      stopFootsteps(row.id)
+      try {
+        footsteps.set(row.id, playSfx(surfaceLoop(row.grid_x, row.grid_y), { loop: true, volume: 0.4, fadeIn: 0.08 }))
+      } catch {
+        /* a missing clip is not a reason to stop the miniature walking */
+      }
       redrawDarkness() // the torch travels with its bearer
     }
 
@@ -1802,6 +1821,37 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // consumed by glideToken when the realtime echo arrives; a stale one
     // (no echo inside 4s) is ignored and the straight glide covers it.
     const walkPaths = new Map<string, { cells: [number, number][]; at: number }>()
+    // One footstep loop per token in motion, stopped when its glide ends.
+    //
+    // LOCAL, and deliberately not broadcast. Every browser runs glideToken for
+    // every token off the same realtime row, so each seat starts and stops its
+    // own loop and the table hears the walk without a single cue crossing the
+    // wire. This is the Layer 3 split: turn RESULTS are cued from the server,
+    // interface motion sounds for itself.
+    const footsteps = new Map<string, PlayHandle>()
+
+    /** What this square sounds like underfoot. */
+    const surfaceLoop = (gx: number, gy: number): SfxName => {
+      const k = gx + "," + gy
+      if (bridgeRef.current.has(k)) return "movement/rope_bridge" as SfxName
+      if (waterRef.current.has(k)) return "movement/footsteps_water" as SfxName
+      // Velkynvelve is a wet stone pen. There is no gravel anywhere in the cell
+      // geometry to distinguish, so this is the floor of the whole node set
+      // rather than a default standing in for something unknown.
+      return "movement/footsteps_wet_stone" as SfxName
+    }
+
+    /** Silence a token's walk, whether it arrived or was interrupted. */
+    const stopFootsteps = (id: string) => {
+      const h = footsteps.get(id)
+      if (!h) return
+      footsteps.delete(id)
+      try {
+        h.stop(0.12)
+      } catch {
+        /* a stuck loop must never take the frame loop down */
+      }
+    }
     let sendWalkPath: (tokenId: string, cells: [number, number][]) => void = (tokenId, cells) => {
       walkPaths.set(tokenId, { cells, at: Date.now() })
     }
@@ -2194,6 +2244,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             if (c.island) islandSet.add(k)
             else walk.add(k)
           }
+          // Water is its own cell list, not a flag on the floor cells - the V5
+          // exporter writes cells.water and leaves floor[].water unset, which
+          // is why this reads the array rather than the flag.
+          waterRef.current = new Set((cells.cells.water ?? []).map((c) => c.sq.join(",")))
+          // A walkway exit is the rope bridge between two nodes. The type has
+          // been declared on this shape all along; nothing read it until now.
+          bridgeRef.current = new Set(
+            (cells.exits ?? [])
+              .filter((e) => (e.type ?? "").toLowerCase() === "walkway")
+              .flatMap((e) => (e.cells ?? []).map((sq) => sq.join(","))),
+          )
           const doorCells = new Set((cells.cells.doors ?? []).map((d) => d.sq.join(",")))
           // The real walkable world for movement: floor and islands. Rock
           // is absent, doors join at reach-time only while they stand open.
@@ -2797,6 +2858,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
         if (gl.s >= gl.total) {
           delete entry.obj.userData.glide
+          stopFootsteps(entry.row.id)
           entry.obj.position.y = 0
           if (entry.anim && !down) playState(entry.anim, "idle")
         }
@@ -2851,6 +2913,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       renderer.domElement.removeEventListener("mousemove", onHover)
       renderer.domElement.removeEventListener("click", onClick)
       refreshReachRef.current = () => {}
+      // Any walk still in motion when the board goes away. Without this an
+      // unmount mid-stride leaves a footstep loop running with nothing on
+      // screen to explain it.
+      for (const id of [...footsteps.keys()]) stopFootsteps(id)
       reachGeo.dispose()
       for (const m of [...moveMats, ...dashMats, overMat, denyMat, contourMoveMat, contourDashMat, denyEdgeMat]) m.dispose()
       PLATE.dispose()
@@ -2880,9 +2946,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         headers: { "content-type": "application/json", ...dmHeaders() },
         body: JSON.stringify({ action, sandbox }),
       })
+      const data = await res.json().catch(() => null)
       if (!res.ok) {
-        const data = await res.json().catch(() => null)
         say(data?.error ?? "The order would not hold.")
+      } else {
+        // Party-scoped cues relay themselves to the other seats (lib/sfx-cues),
+        // so the whole table hears initiative roll and the turn pass, not only
+        // whoever pressed the button. Total: a failure here cannot stop the
+        // order going through.
+        playCues(data?.sfxCues)
       }
       return res.ok
     } catch {
