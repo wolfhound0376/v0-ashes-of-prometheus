@@ -85,6 +85,14 @@ interface Props {
    *  two disagree the moment focusId fails to resolve — at which point the
    *  rack shows one character's spells and a different miniature moves. */
   onCast?: (characterId: string, ability: string, kind: string) => void
+  /**
+   * The combat log is now a WINDOW, opened from the board's control bar.
+   *
+   * It used to be nailed to the right of the board permanently, covering a
+   * third of the dungeon with text that is mostly scrollback. Off by default;
+   * the board owns the toggle.
+   */
+  showLog?: boolean
   /** Set while a spell waits for a target, so the rack can say so. */
   armedSpell?: { name: string; rangeFt: number; mode?: "creature" | "point" } | null
   onCancelArm?: () => void
@@ -310,6 +318,7 @@ export function CombatHud(props: Props) {
     focusId,
     onFocus,
     onCast,
+    showLog = false,
     armedSpell,
     onCancelArm,
   } = props
@@ -441,7 +450,12 @@ export function CombatHud(props: Props) {
         </div>
       )}
 
-      <div className="pointer-events-none absolute right-3 top-[72px] z-20 flex w-[194px] flex-col gap-2">
+      {/* The right-hand column. Pushed down clear of the board's control bar,
+          and now only as tall as whatever is actually open — the log is a
+          window rather than a fixture, so on a closed board this column is
+          just the End Turn button. */}
+      <div className="pointer-events-none absolute right-3 top-[110px] z-20 flex w-[194px] flex-col gap-2">
+        {showLog && (
         <div className="relative overflow-hidden rounded-[3px] border border-[#5a4426] bg-[linear-gradient(180deg,rgba(18,13,8,.95),rgba(7,5,3,.92))] shadow-[0_7px_24px_#000c,inset_0_0_0_1px_#c99a4920]">
           <div className="pointer-events-none absolute left-[5px] top-[5px] h-[7px] w-[7px] rotate-45 border border-[#80612c] bg-[#100b06]" />
           <div className="pointer-events-none absolute right-[5px] top-[5px] h-[7px] w-[7px] rotate-45 border border-[#80612c] bg-[#100b06]" />
@@ -463,6 +477,7 @@ export function CombatHud(props: Props) {
             )}
           </div>
         </div>
+        )}
 
         {dm && (
           <button
