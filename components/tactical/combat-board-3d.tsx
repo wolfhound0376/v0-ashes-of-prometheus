@@ -152,6 +152,38 @@ function radiusFor(size: string | null): number {
 const DEFAULT_CLASSIC_CAM = false // false = FREE camera
 const DEFAULT_DARKNESS_ON = false // false = darkness lifted
 
+/**
+ * One button in the board's control bar.
+ *
+ * `on` is for the toggles that have a state worth seeing at a glance — the
+ * log being open, darkness being down, DM move being armed. A button with no
+ * `on` (the scene exit) simply never lights, which is correct: it is a door,
+ * not a switch.
+ */
+function BoardBtn({
+  children, onClick, on = false, title,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  on?: boolean
+  title?: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={
+        "pointer-events-auto rounded border px-2 py-[3px] font-mono text-[9px] tracking-wider transition " +
+        (on
+          ? "border-[#c99a49] bg-[#2a1f09] text-[#f3c94b] shadow-[0_0_8px_#c9a22755]"
+          : "border-[#6b5123] bg-black/70 text-[#cdb276] hover:border-[#c99a49] hover:text-[#f0d9a4]")
+      }
+    >
+      {children}
+    </button>
+  )
+}
+
 export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: () => void; sandbox?: boolean }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState("Summoning the board…")
@@ -166,6 +198,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // The DM's hand on the pieces is a MODE, not a default: with it off, a
   // stray click on the floor selects and inspects but never teleports.
   const [dmMove, setDmMove] = useState(false)
+  /**
+   * Is the combat log window open?
+   *
+   * Closed by default. It used to be nailed to the right edge permanently,
+   * covering a third of the dungeon with what is mostly scrollback — and the
+   * one line that matters arrives as a toast anyway.
+   */
+  const [showLog, setShowLog] = useState(false)
   // "15 ft" floating under the cursor while a walk is being lined up.
   const [moveHint, setMoveHint] = useState<string | null>(null)
   const [combat, setCombat] = useState<{
@@ -968,6 +1008,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         )
         arc.rotation.x = -Math.PI / 2
         arc.position.y = 0.065
+        // Hidden with the ring for everyone but the active combatant.
+        //
+        // An earlier pass kept these on the grounds that health is
+        // information rather than decoration. On the board that reasoning did
+        // not survive contact: eleven green arcs ARE eleven circles, and Sam
+        // asked for one. The health of the party is on the character plates
+        // down the left, in numbers, permanently — so nothing is lost here
+        // that is not better said over there.
+        arc.userData.isHpArc = true
+        g.userData.hpArc = arc
         g.add(arc)
       }
       return g
@@ -2477,13 +2527,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     renderer.domElement.addEventListener("mousemove", onHoverMove)
 
     // ---- whose turn it is, on the board itself ----------------------
-    // The active combatant's base breathes green — the same green as the
-    // lamp on their card, so the two indicators read as one fact. One
-    // shared ring follows whoever is up; no names needed.
+    // THE ACTIVE RING — white-hot platinum, and used for nothing else.
+    //
+    // It was green, matching the status lamp on the card. But green had to
+    // fight ten allegiance rings for attention, and once those were hidden the
+    // remaining problem was that the board and the character plate announced
+    // the same fact in two different colours: green under the miniature, gold
+    // around the card.
+    //
+    // Platinum is now BOTH (see the card's `rim`), and it is the only place
+    // this hue appears. Gold is the walk band, azure the dash, oxblood the
+    // frontier, ember the blast template — every other colour on this board is
+    // already spoken for, and a highlight that shares a hue with a floor
+    // overlay under the same character is not a highlight.
+    const ACTIVE_HUE = 0xfff2d0
     const activeGlow = new THREE.Mesh(
       new THREE.RingGeometry(1.08, 1.5, 48),
       new THREE.MeshBasicMaterial({
-        color: 0x35d94a, transparent: true, opacity: 0.3,
+        color: ACTIVE_HUE, transparent: true, opacity: 0.3,
         side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
       }),
     )
@@ -3149,8 +3210,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // then there is no "whose turn" for it to compete with.
       const activeId = activeTok?.row.id ?? null
       tokensRef.current.forEach((t) => {
+        const lit = !combatNow || t.row.id === activeId
         const r = t.obj.userData.baseRing as THREE.Mesh | undefined
-        if (r) r.visible = !combatNow || t.row.id === activeId
+        if (r) r.visible = lit
+        // The HP arc travels with the ring. Both are circles on a base, and
+        // "only the active character wears one" has to mean both or it means
+        // nothing — leaving the arcs behind is what left the board still
+        // covered in green rings after the first pass at this.
+        const a = t.obj.userData.hpArc as THREE.Mesh | undefined
+        if (a) a.visible = lit
       })
       if (activeTok && activeTok.row.is_visible) {
         activeGlow.visible = true
@@ -3688,34 +3756,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             </span>
           )}
         </div>
-        <div className="mt-1.5 flex gap-1.5">
-          <button
-            onClick={() => setClassicCam((v) => !v)}
-            className="pointer-events-auto rounded border border-[#6b5123] bg-[#171109] px-2 py-[3px] text-[8px] uppercase tracking-wider text-[#cdb276] hover:border-[#c99a49]"
-          >
-            {classicCam ? "Classic" : "Free"}
-          </button>
-          {dm && (
-            <button
-              onClick={() => setDarknessOn((v) => !v)}
-              className="pointer-events-auto rounded border border-[#5a4a6a] bg-[#1a1226] px-2 py-[3px] text-[8px] uppercase tracking-wider text-[#c9b3e0] hover:border-[#b48fd8]"
-            >
-              {darknessOn ? "Lift dark" : "Dark on"}
-            </button>
-          )}
-          {dm && (
-            <button
-              onClick={() => setDmMove((v) => !v)}
-              className={`pointer-events-auto rounded border px-2 py-[3px] text-[8px] uppercase tracking-wider ${
-                dmMove
-                  ? "border-[#c99a49] bg-[#2a1f09] text-[#f3c94b]"
-                  : "border-[#5a4a6a] bg-[#1a1226] text-[#c9b3e0] hover:border-[#b48fd8]"
-              }`}
-            >
-              {dmMove ? "DM move: on" : "DM move: off"}
-            </button>
-          )}
-        </div>
+        {/* The buttons that used to sit here have moved into the board's
+            control bar, top right. Three clusters of chrome in three corners
+            was the clutter Sam asked to clear; this corner keeps only the
+            hint text, which is prose about what you are doing rather than a
+            control you go looking for. */}
       </div>
 
       {selected && (
@@ -3753,14 +3798,35 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         <div className="max-w-[220px] truncate font-serif text-[12px] font-semibold uppercase tracking-[0.24em] text-[#d8b25a] [text-shadow:0_1px_3px_#000,0_0_14px_#00000088]">
           {(mapName || "").replace(/\s*[—(].*$/, "").trim() || "The Underdark"}
         </div>
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="pointer-events-auto mt-1.5 rounded border border-[#6b5123] bg-black/70 px-3 py-1 font-mono text-[9px] tracking-wider text-[#e1d0a8] hover:border-[#c99a49]"
-          >
-            ← SCENE
-          </button>
-        )}
+        {/* THE CONTROL BAR.
+            One row, one corner. The board's chrome used to be spread across
+            three: the camera and darkness toggles bottom-left inside the hint
+            box, the combat log nailed down the right edge covering a third of
+            the dungeon, and the exit up here on its own. Every one of them is
+            a thing you reach for occasionally and look at never, so they now
+            live together and the board keeps its floor.
+
+            Short labels rather than icons: a gothic glyph set would need art,
+            and four letters read correctly the first time without one. */}
+        <div className="pointer-events-auto mt-1.5 flex justify-end gap-1">
+          <BoardBtn on={showLog} onClick={() => setShowLog((v) => !v)} title="Combat log">LOG</BoardBtn>
+          <BoardBtn on={classicCam} onClick={() => setClassicCam((v) => !v)} title={classicCam ? "Classic camera — click for free look" : "Free camera — click for classic"}>
+            {classicCam ? "CLSC" : "FREE"}
+          </BoardBtn>
+          {dm && (
+            <BoardBtn on={darknessOn} onClick={() => setDarknessOn((v) => !v)} title={darknessOn ? "Darkness on — click to lift" : "Darkness lifted — click to lower"}>
+              DARK
+            </BoardBtn>
+          )}
+          {dm && (
+            <BoardBtn on={dmMove} onClick={() => setDmMove((v) => !v)} title="DM free move: click a token, then a square">
+              MOVE
+            </BoardBtn>
+          )}
+          {onBack && (
+            <BoardBtn onClick={onBack} title="Back to the scene">← SCENE</BoardBtn>
+          )}
+        </div>
       </div>
 
       {/* THE DASH CONFIRM.
@@ -3854,6 +3920,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               : `${ability} — choose a target${e.rangeFt ? ` within ${e.rangeFt} ft` : ""}.`,
           )
         }}
+        showLog={showLog}
         armedSpell={armedSpell ? { name: armedSpell.name, rangeFt: armedSpell.entry.rangeFt, mode: armedSpell.mode } : null}
         onCancelArm={() => setArmedSpell(null)}
       />

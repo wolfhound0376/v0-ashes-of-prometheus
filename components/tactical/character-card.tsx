@@ -173,11 +173,21 @@ export function CharacterCard({
    * elements down, and a green wash over gold frame art turns it sickly.
    * The lamp says whose turn it is in colour; the periphery says it in light.
    */
+  // PLATINUM, AND THE SAME PLATINUM THE BOARD USES.
+  //
+  // This was gold. The board's active ring was green. So the one fact that
+  // matters most — whose turn it is — was announced in two different colours
+  // depending on where you happened to be looking, and gold additionally
+  // collided with the walk-range squares painted under that same character.
+  //
+  // #fff2d0 here and ACTIVE_HUE in combat-board-3d are one decision. Change
+  // one and change the other, or the board and the plate start disagreeing
+  // again.
   const rim = isTurn
-    ? "brightness-[1.14] scale-[1.03] " +
-      "drop-shadow-[0_0_3px_#ffeab0] " +
-      "drop-shadow-[0_0_11px_#f3c94bcc] " +
-      "drop-shadow-[0_0_24px_#f3c94b66]"
+    ? "brightness-[1.16] scale-[1.03] " +
+      "drop-shadow-[0_0_3px_#ffffff] " +
+      "drop-shadow-[0_0_11px_#fff2d0dd] " +
+      "drop-shadow-[0_0_26px_#fff2d077]"
     : active
       ? "brightness-110 drop-shadow-[0_0_14px_#c9a22755]"
       : "brightness-[0.82] hover:brightness-100"
