@@ -224,6 +224,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     dashFt: number
   } | null>(null)
   const refreshReachRef = useRef<() => void>(() => {})
+  /**
+   * WHICH TOKEN HAS ITS MOVEMENT OPEN.
+   *
+   * Sam: "When I click the character then movement options open."
+   *
+   * The reach overlay used to paint itself the moment a turn began, which
+   * meant the board lit up forty squares of gold before the player had said
+   * they were thinking about walking — and it stayed lit while they read the
+   * rack, aimed a spell, or talked. Movement is a CHOICE now: click your own
+   * miniature and the squares appear, click it again and they go away.
+   *
+   * Holds a token id rather than a boolean so a stale open state cannot
+   * survive the turn passing to somebody else.
+   */
+  const reachOpenRef = useRef<string | null>(null)
   const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number, dash?: boolean) => void>(() => {})
   /**
    * A move the player has asked for that would cost their Dash, parked here
@@ -644,6 +659,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               releaseAtRef.current(id)
               return
             }
+            // CLICKING YOUR OWN MINIATURE OPENS ITS MOVEMENT.
+            //
+            // Only for the combatant whose turn it actually is, and only for
+            // a browser that may drive them — the same gate computeReach
+            // uses, asked here so a click that cannot open anything falls
+            // through to plain selection instead of silently doing nothing.
+            const c = combatRef.current
+            const activeTokenId = c?.turn_order?.[c.active_index]?.token_id
+            const mayDrive =
+              Boolean(entry.row.character_id) &&
+              (entry.row.character_id === myCharRef.current || dmRef.current)
+            if (c && id === activeTokenId && mayDrive) {
+              // Second click closes it again. A player who opened their reach
+              // to look, and then decided to cast instead, needs the gold off
+              // the floor without having to end their turn to clear it.
+              reachOpenRef.current = reachOpenRef.current === id ? null : id
+              refreshReachRef.current()
+              setSelected(entry.row)
+              return
+            }
             setSelected((cur) => (cur?.id === id ? null : entry.row))
             return
           }
@@ -910,6 +945,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       )
       ring.rotation.x = -Math.PI / 2
       ring.position.y = 0.06
+      // Held on the group so the animate loop can show it for the combatant
+      // whose turn it is and hide it for everyone else.
+      //
+      // Sam: "the only ring highlighted on the base should be the active
+      // character." Ringing all eleven tokens at once made the board a field
+      // of lit discs with a green glow somewhere in it — the ONE fact that
+      // changes what you can do, competing with ten that do not.
+      //
+      // The HP arc below is deliberately NOT hidden. It is information the
+      // table reads at a glance, not a highlight, and losing it would mean
+      // clicking each body to find out who is hurt.
+      ring.userData.isBaseRing = true
+      g.userData.baseRing = ring
       g.add(ring)
 
       if (row.hp_max && row.hp_max > 0) {
@@ -2134,6 +2182,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // NPCs never paint reach here: theirs is the AI's to spend.
       if (!tok.row.character_id) return
       if (tok.row.character_id !== myCharRef.current && !dmRef.current) return
+      // ...and only once the player has actually asked for it by clicking
+      // their miniature. clearReach() has already run at the top, so a closed
+      // token simply shows nothing rather than keeping a stale band.
+      if (reachOpenRef.current !== tok.row.id) return
       // Budget is what is LEFT this turn, not full speed: a token that has
       // walked 15 of 30 shows 15 ft. Dash doubles the turn's total allowance,
       // so what remains of it is speed*2 minus what is already spent.
@@ -3088,6 +3140,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const activeTok = combatNow
         ? tokensRef.current.get(combatNow.turn_order?.[combatNow.active_index]?.token_id ?? "")
         : undefined
+      // ONE RING, ON THE ONE THAT MATTERS.
+      //
+      // Every token used to wear its allegiance ring permanently — cyan for
+      // the party, red for hostiles — so the board read as a constellation
+      // and the active combatant's green glow had to fight ten other lit
+      // discs to be seen. Out of combat everyone keeps their ring, because
+      // then there is no "whose turn" for it to compete with.
+      const activeId = activeTok?.row.id ?? null
+      tokensRef.current.forEach((t) => {
+        const r = t.obj.userData.baseRing as THREE.Mesh | undefined
+        if (r) r.visible = !combatNow || t.row.id === activeId
+      })
       if (activeTok && activeTok.row.is_visible) {
         activeGlow.visible = true
         activeGlow.position.x = activeTok.obj.position.x
@@ -3520,6 +3584,20 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     if (!dm && activeCharacterId !== myCharacterId) return
     setFocusId(activeCharacterId)
   }, [activeCharacterId, dm, myCharacterId])
+
+  // A NEW TURN STARTS CLOSED.
+  //
+  // Movement is opened by clicking your miniature, so it has to shut again
+  // when the turn moves on — otherwise the next combatant inherits an open
+  // overlay they never asked for, and the one after that inherits the gold
+  // band of somebody who has already walked.
+  useEffect(() => {
+    reachOpenRef.current = null
+    refreshReachRef.current()
+    // Combat ending makes active_index undefined, which fires this too — so
+    // there is no separate status to watch, and the board's combat type does
+    // not carry one anyway.
+  }, [combat?.active_index, combat?.round])
   const activeSheet = sheets.find((c) => c.id === activeCharacterId)
   // "30 ft. (Walking)" -> 30. A sheet with prose speed still yields a budget.
   const speedFt = Number.parseInt(String(activeSheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
@@ -3600,7 +3678,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         <div className="text-[9px] leading-relaxed text-[#7a7568]">
           drag or arrows · wheel zoom · click a door
           {dm && dmMove && <span className="text-[#9a7fc0]"> · token then square to move</span>}
-          {!dm && isMyTurn && <span className="text-[#f3c94b]"> · your turn — click a yellow square to walk</span>}
+          {/* The hint has to name the FIRST step now. "Click a yellow square"
+              was true only once the squares existed, and they no longer paint
+              themselves — so for a player whose turn had just begun it named
+              something that was not on screen yet. */}
+          {!dm && isMyTurn && (
+            <span className="text-[#f3c94b]">
+              {" · your turn — click your miniature to see where you can move"}
+            </span>
+          )}
         </div>
         <div className="mt-1.5 flex gap-1.5">
           <button
