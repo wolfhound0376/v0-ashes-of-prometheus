@@ -279,6 +279,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * survive the turn passing to somebody else.
    */
   const reachOpenRef = useRef<string | null>(null)
+  /**
+   * A move that has been sent and not yet answered.
+   *
+   * THE BUG THIS EXISTS TO KILL. Committing a walk clears the overlay and
+   * relies on it being repainted "with the new budget when the server
+   * echoes". Two things echo, though, and they do not arrive in a fixed
+   * order: the vtt_tokens realtime row (fast, and carrying no economy) and
+   * the move endpoint's own reply (carrying the authoritative turn_state).
+   *
+   * When the realtime row won that race the overlay repainted from the OLD
+   * moved_ft — so a character who had walked 15 of 30 was shown a full 30 ft
+   * band again, and the next click inside it was refused by the server with
+   * "not enough movement". Intermittent, and only ever after a partial move,
+   * which is exactly how it was reported from the table.
+   *
+   * While this is set, reach does not repaint. The server's reply clears it,
+   * and the repaint that follows is the one holding real numbers.
+   */
+  const moveInFlightRef = useRef(false)
   const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number, dash?: boolean) => void>(() => {})
   /**
    * A move the player has asked for that would cost their Dash, parked here
@@ -2279,6 +2298,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
     const computeReach = () => {
       clearReach()
+      // A move is out and unanswered: every number this would paint from is
+      // one move out of date. Better a blank floor for a beat than a gold
+      // band promising movement the server has already spent.
+      if (moveInFlightRef.current) return
       const c = combatRef.current
       const m = mapRef.current
       if (!c || !m) return
@@ -3744,6 +3767,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // glide (and the walking animation) arrives by the vtt_tokens realtime
   // echo, same as every other move on this board.
   playerMoveRef.current = (tokenId, gx, gy, feet, dash) => {
+    // Shut the overlay's mouth until the server has answered. See
+    // moveInFlightRef — the realtime token row and this reply race, and the
+    // row carries no economy, so a repaint triggered by it paints the budget
+    // this move has already spent.
+    moveInFlightRef.current = true
     void (async () => {
       try {
         const res = await fetch("/api/combat", {
@@ -3754,12 +3782,31 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const data = await res.json().catch(() => null)
         if (!res.ok) {
           say(data?.error ?? "The move did not take.")
+          moveInFlightRef.current = false
           refreshReachRef.current() // repaint what is still true
+          // The server already worked out whether a Dash would have covered
+          // it, and says so. Offering the confirm turns a dead end into the
+          // choice it actually is, rather than leaving the player to guess
+          // that the square was reachable for the price of their action.
+          if (data?.dash_would_reach) {
+            setPendingDash({ feet, commit: () => playerMoveRef.current(tokenId, gx, gy, feet, true) })
+          }
           return
         }
-        if (data?.turn_state) setCombat((c) => (c ? { ...c, turn_state: data.turn_state } : c))
+        // The reply is the authority on what is left. Clear the flag FIRST,
+        // then hand over the new turn_state, so the repaint that follows reads
+        // the budget after this move rather than before it.
+        moveInFlightRef.current = false
+        if (data?.turn_state) {
+          setCombat((c) => (c ? { ...c, turn_state: data.turn_state } : c))
+        } else {
+          // No economy came back — repaint anyway rather than leaving the
+          // floor dark, since setCombat is what would otherwise have done it.
+          refreshReachRef.current()
+        }
       } catch {
         say("That did not reach the table — check the connection.")
+        moveInFlightRef.current = false
         refreshReachRef.current()
       }
     })()
