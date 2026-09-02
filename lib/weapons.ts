@@ -56,6 +56,23 @@ export interface DerivedAttack {
   damage: string
   /** "5 ft." / "20 ft." — what the board parses into a reach. */
   range: string
+  /**
+   * SNEAK ATTACK asks two questions of the weapon and this is where the
+   * answers survive.
+   *
+   * The catalogue's `properties` array is read here to work out which ability
+   * swings the thing, and was then thrown away — so by the time the cast
+   * handler had a `DerivedAttack` it could no longer tell a rapier from a
+   * mace. That is exactly the distinction the rogue's own feature turns on:
+   * "the attack uses a Finesse or Ranged weapon."
+   *
+   * Kept as two booleans rather than passing the raw property list on,
+   * because these two are the only ones anything downstream has ever needed
+   * and a full property bag invites guessing at the rest.
+   */
+  finesse: boolean
+  /** A weapon that takes ammunition. A thrown dagger is NOT this. */
+  ranged: boolean
 }
 
 const mod = (score: number | null | undefined) => Math.floor(((score ?? 10) - 10) / 2)
@@ -127,6 +144,11 @@ export function attackFrom(w: CarriedWeapon, s: Wielder): DerivedAttack {
     hit: sign(ab + prof),
     damage: dmg,
     range: `${reachFt(w)} ft.`,
+    finesse: has(w, "finesse"),
+    // The same test `abilityMod` uses, and for the same reason: ammunition is
+    // the honest signal. A dagger has a thrown range and is still a weapon in
+    // the hand.
+    ranged: has(w, "ammunition"),
   }
 }
 
@@ -148,6 +170,12 @@ export function unarmedStrike(s: Wielder): DerivedAttack {
     hit: sign(str + (s.proficiencyBonus ?? 2)),
     damage: `${Math.max(1, 1 + str)} Bludgeoning`,
     range: "5 ft.",
+    // Neither, and that is a RULE rather than an omission: a fist is not a
+    // finesse weapon, so a rogue with no blade gets no sneak attack. It is
+    // the party's current state — the drow took everything — and it is the
+    // correct answer, not a gap to paper over.
+    finesse: false,
+    ranged: false,
   }
 }
 

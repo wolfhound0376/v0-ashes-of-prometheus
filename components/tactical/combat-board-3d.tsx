@@ -67,7 +67,7 @@ import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 // cannot offer a weapon the server will refuse.
 import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig, unequipSlot } from "@/lib/equipment"
-import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, type PlayHandle, type SfxName } from "@/lib/sfx"
+import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 // An NPC's swing, carried from the DM's seat to the rest of the table.
@@ -4679,6 +4679,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // sprite kit calls all of them "physical".
           if (typeof data.damageType === "string") {
             lastHitWithRef.current.set(target_token, data.damageType)
+          }
+          // THE ROGUE'S MOMENT. `combat/sneak_attack` was recorded with the
+          // rest of the pack and had never once played, because until now
+          // nothing on the wire could say a sneak attack had happened.
+          //
+          // Slightly behind the swing rather than on top of it: the blow
+          // lands, and THEN you hear what it cost them. Played over the blow
+          // it is one muddy noise.
+          if (data.sneak === true) {
+            window.setTimeout(() => playSfx(SNEAK_ATTACK, { volume: 0.95, rate: variedRate(0.03) }), 150)
           }
           // A weapon's impact is decided by the dice, not by the spell school:
           // the crunch only plays if it actually connected, and a miss gets
