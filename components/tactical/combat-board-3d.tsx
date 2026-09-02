@@ -461,7 +461,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * Separate from targetsRef: that one answers who is eligible, this one
    * answers who is caught right now.
    */
-  const affectedRef = useRef<{ show: (ids: string[], helpful: boolean) => void; clear: () => void }>({
+  const affectedRef = useRef<{ show: (ids: string[], helpful: boolean, cross?: boolean) => void; clear: () => void }>({
     show: () => {},
     clear: () => {},
   })
@@ -2312,16 +2312,33 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const affectRingGeo = new THREE.RingGeometry(0.90, 1.20, 44)
     const affectHarmMat = new THREE.MeshBasicMaterial({ color: 0xff2f1c, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
     const affectHelpMat = new THREE.MeshBasicMaterial({ color: 0x46ff86, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    // ACROSS THE LINE, THE MARK STAYS VIOLET.
+    //
+    // The eligibility ring under a cross-side target is violet (crossMat,
+    // below), and violet has one meaning on this board: "the click will ask
+    // you first". Painting the hover mark red over it — because a harm is a
+    // harm — let the loudest ring answer the wrong question. Red says "this
+    // will hurt them"; what the player needs to know first is "this will
+    // stop and ask". So the mark BRIGHTENS the violet rather than replacing
+    // it: same hue as crossMat, lifted, at the mark's own opacity.
+    const affectCrossMat = new THREE.MeshBasicMaterial({ color: 0xd3b3ff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
     const clearAffected = () => {
       while (affectGroup.children.length) affectGroup.remove(affectGroup.children[0])
     }
-    /** Mark exactly these tokens as about to be hit. */
-    const showAffected = (ids: string[], helpful: boolean) => {
+    /**
+     * Mark exactly these tokens as about to be hit.
+     *
+     * `cross` is true when the release would cross sides and a dialog will
+     * come first. Only the creature path ever sets it: an area does not
+     * choose sides, so nobody in a blast is "across the line".
+     */
+    const showAffected = (ids: string[], helpful: boolean, cross = false) => {
       clearAffected()
+      const mat = cross ? affectCrossMat : helpful ? affectHelpMat : affectHarmMat
       for (const id of ids) {
         const t = tokensRef.current.get(id)
         if (!t) continue
-        const ring = new THREE.Mesh(affectRingGeo, helpful ? affectHelpMat : affectHarmMat)
+        const ring = new THREE.Mesh(affectRingGeo, mat)
         ring.rotation.x = -Math.PI / 2
         // Above the eligibility ring at 0.09, so the two read as layers
         // rather than fighting for the same pixels.
@@ -3054,7 +3071,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const over = overId ? tokensRef.current.get(overId) : null
           if (over && shooter && over.row.is_visible) {
             const st = targetStatus(shooter, over, armedNow.entry.rangeFt, armedNow.entry.helpful)
-            affectedRef.current.show(st.ok ? [over.row.id] : [], helpfulNow)
+            // A cross-side body keeps its violet under the cursor: the mark
+            // must say "this will ask first" louder, not say "red" instead.
+            affectedRef.current.show(st.ok ? [over.row.id] : [], helpfulNow, Boolean(st.confirm))
           } else {
             affectedRef.current.clear()
           }
