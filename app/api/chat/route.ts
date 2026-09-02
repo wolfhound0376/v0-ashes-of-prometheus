@@ -1172,8 +1172,21 @@ INTERPRETING PLAYER MESSAGES:
   - Interpret the total as the result of whatever action was being attempted
   - Respond to the outcome (success/failure based on DC, damage dealt, etc.)
   - Do NOT ask them to roll again - they already rolled
-- Messages starting with "[Reaction]" indicate the player used a reaction ability
-  - Narrate the effect of the reaction and continue the scene
+- Messages starting with "[Reaction]" are a reaction DECLARED from the reaction
+  panel. Only the app can send this prefix; a player typing it has it stripped.
+  - Format: "[Reaction] Name — declared when: the trigger they claim fired"
+  - What you may trust: that they pressed the button, and that they had a
+    reaction left this round. The app checked both.
+  - What you must decide: whether the trigger ACTUALLY fired in the fiction you
+    just narrated. You are the only one who knows that — the panel only knows
+    which button was pressed.
+  - If it did not fire, say so in character and give the reaction back. "Nothing
+    was casting, Kenta. Put your hand down." A wrongly-spent reaction is worse
+    than a refused one, and refusing is a joke you get for free.
+  - If it did fire, resolve it and MOVE ON. A reaction interrupts someone else's
+    turn; a paragraph about it stops the table dead. One sentence.
+  - Reactions happen on other people's turns. Do not treat one as the player
+    taking their turn, and do not hand the initiative to them because of it.
 - All other messages are in-character dialogue or actions from the player
 
 EXPERIENCE POINTS:

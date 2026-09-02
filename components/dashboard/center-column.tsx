@@ -127,6 +127,17 @@ interface CenterColumnProps {
   availableActionIds?: string[]
   onTelemetryPush?: (actionType: string, intent: string, roll?: number) => void
   onSendToLich?: (message: string) => void
+  /**
+   * Declare a reaction to Malachar.
+   *
+   * SEPARATE from onSendToLich on purpose. The dashboard composes the
+   * "[Reaction]" prefix itself and sends it unfiltered, exactly as the dice
+   * engine alone is allowed to speak as the dice — a player typing the
+   * prefix by hand gets it stripped (see stripReservedPrefixes in page.tsx).
+   * Routing this through onSendToLich would mean either trusting typed input
+   * with a reserved prefix, or stripping the app's own message.
+   */
+  onDeclareReaction?: (reaction: { id: string; name: string; trigger: string }) => void
   sceneImageUrl?: string
   // Large cinematic environment/location image shown beneath the NPC window.
   environmentImageUrl?: string
@@ -346,7 +357,7 @@ const actionTypeColors = {
 
 type ActionTab = "action" | "bonus" | "reaction"
 
-export function CenterColumn({ characterClass, characterLevel, onSendToLich, sceneImageUrl, environmentImageUrl, npcEncounters = [], dialogue = [] }: CenterColumnProps) {
+export function CenterColumn({ characterClass, characterLevel, onSendToLich, onDeclareReaction, resources, sceneImageUrl, environmentImageUrl, npcEncounters = [], dialogue = [] }: CenterColumnProps) {
   // Filter active encounters for the tile strip, but attribution uses a separate
   // one-time fetch of the FULL roster so inactive NPCs remain resolvable.
   const activeEncounters = npcEncounters.filter(e => e.is_active)
@@ -573,6 +584,32 @@ export function CenterColumn({ characterClass, characterLevel, onSendToLich, sce
             <div className="absolute inset-0 bg-gradient-to-br from-[#1a1614] via-[#2a2018] to-[#1a1614]" />
           )}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0a0908]/70 via-transparent to-[#0a0908]/20" />
+
+          {/*
+            THE REACTION CONTROL, finally mounted.
+
+            ReactionsPanel has been imported by this file and never rendered —
+            a complete, styled component with no call site, and an
+            onReactionUse nobody implemented. Meanwhile app/api/chat's system
+            prompt has been telling Malachar for months how to interpret
+            messages beginning "[Reaction]" that nothing in the app has ever
+            sent. Both halves existed; the wire between them did not.
+
+            It sits over the scene rather than in the action list because a
+            reaction is the one thing you take on SOMEONE ELSE'S turn — it
+            belongs next to what is happening, not inside your own turn's
+            menu, which is closed when you need this most.
+          */}
+          {onDeclareReaction && (
+            <div className="absolute bottom-2 right-2 z-20">
+              <ReactionsPanel
+                reactionCount={resources?.reaction ?? 1}
+                characterClass={characterClass}
+                characterLevel={characterLevel}
+                onReactionUse={onDeclareReaction}
+              />
+            </div>
+          )}
         </div>
       </FantasyPanel>
     </div>

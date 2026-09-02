@@ -1020,12 +1020,73 @@ if (error) {
     setRollLifecycle("pending")
   }, [])
 
-  // Typed messages cannot impersonate the dice engine. "[Dice Roll]" and the 🎲
-  // prefix are reserved for rolls the physics engine actually resolved; a player
-  // typing them gets the plain text sent instead, which Malachar is instructed
-  // to treat as table talk, not as a result.
-  const stripRollSpoof = (text: string) =>
-    text.replace(/^\s*(\[\s*dice\s*roll\s*\]|🎲)\s*/i, "")
+  /**
+   * Send one line to Malachar and fold his answer back into the board.
+
+   * Extracted from the CenterColumn JSX so the reaction panel can reach it.
+   * There are now two producers of player lines - the chat box, whose text is
+   * stripped of reserved prefixes first, and the reaction panel, which is
+   * ALLOWED to use one. Duplicating forty lines of response handling for the
+   * second producer would have guaranteed the two drifted; the cinematic cue
+   * or the XP refetch would have been wired into one and not the other.
+   */
+  const submitToLich = useCallback(async (message: string) => {
+          // Optimistically add player message to dialogue immediately (pending
+          // → reconciled by id when the realtime echo of the row arrives).
+          const playerName = selectedCharacter?.name || "Player"
+          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
+
+          // Send to Lich, carrying THIS browser's character + claim token.
+          const response = await sendToLich(message, selectedCharacterId, claimToken)
+          if (response) {
+            // Optimistically add Malachar's response to dialogue (also pending)
+            if (response.text) {
+              setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
+            }
+            // Advance the player-facing time-of-day if the clock moved.
+            if (response.timeOfDay) {
+              setLiveTimeOfDay(response.timeOfDay)
+            }
+            // Malachar cued a filmed moment. The dashboard owns the overlay,
+            // so hand the cue name over and let /api/cinematics decide
+            // whether anything actually plays.
+            if (response.cinematicCue) {
+              emitCinematicCue(response.cinematicCue)
+            }
+            setClockRefresh((n) => n + 1)
+            // Update NPC image if the response includes one
+            if (response.npcImageUrl) {
+              setNpcImageUrl(response.npcImageUrl)
+            }
+            // Update scene image if the location changed
+            if (response.locationImageUrl) {
+              setSceneImageUrl(response.locationImageUrl)
+            }
+            // Optimistically update environment if location changed
+            if (response.updatedLocation) {
+              setCurrentEnvironment(prev => ({
+                ...prev,
+                name: response.updatedLocation,
+                background_image_url: response.locationImageUrl || prev?.background_image_url,
+              } as any))
+            }
+            // Refresh character data to pick up any XP or items from the Lich
+            await fetchCharacterData()
+          }
+  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData])
+
+  // Typed messages cannot impersonate the app. "[Dice Roll]" and the 🎲 prefix
+  // are reserved for rolls the physics engine actually resolved; "[Reaction]"
+  // is reserved for the reaction panel, which is the only thing that knows a
+  // reaction was actually spent. A player typing either gets the plain text
+  // sent instead, which Malachar is instructed to treat as table talk rather
+  // than as a result.
+  //
+  // The reaction prefix earns its place here for the same reason the dice one
+  // did: Malachar is told to TRUST it. A prefix the model trusts and a player
+  // can type is a prefix a player can use to award themselves a free Shield.
+  const stripReservedPrefixes = (text: string) =>
+    text.replace(/^\s*(\[\s*dice\s*roll\s*\]|\[\s*reaction\s*\]|🎲)\s*/i, "")
 
   // When Malachar cannot answer, SAY SO in the log. Silence reads as a broken
   // app: the player types, nothing happens, and they type again. The line is
@@ -1042,7 +1103,7 @@ if (error) {
 
   const handleDialogueSubmit = async () => {
     if (dialogueInput.trim()) {
-      const text = stripRollSpoof(dialogueInput.trim())
+      const text = stripReservedPrefixes(dialogueInput.trim())
       setDialogueInput("")
 
       // Optimistically add player message to dialogue immediately. It is marked
@@ -1502,53 +1563,23 @@ if (error) {
             }
             npcEncounters={npcEncounters}
             dialogue={dialogue}
-          onSendToLich={async (rawMessage) => {
-            // Reserved roll prefixes are stripped from anything typed by hand —
-            // only the dice engine speaks as the dice (see stripRollSpoof).
-            const message = stripRollSpoof(rawMessage)
-            // Optimistically add player message to dialogue immediately (pending
-            // → reconciled by id when the realtime echo of the row arrives).
-            const playerName = selectedCharacter?.name || "Player"
-            setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
-
-            // Send to Lich, carrying THIS browser's character + claim token.
-            const response = await sendToLich(message, selectedCharacterId, claimToken)
-            if (response) {
-              // Optimistically add Malachar's response to dialogue (also pending)
-              if (response.text) {
-                setDialogue(prev => optimisticLichEntries(response).reduce(mergeDialogue, prev))
-              }
-              // Advance the player-facing time-of-day if the clock moved.
-              if (response.timeOfDay) {
-                setLiveTimeOfDay(response.timeOfDay)
-              }
-              // Malachar cued a filmed moment. The dashboard owns the overlay,
-              // so hand the cue name over and let /api/cinematics decide
-              // whether anything actually plays.
-              if (response.cinematicCue) {
-                emitCinematicCue(response.cinematicCue)
-              }
-              setClockRefresh((n) => n + 1)
-              // Update NPC image if the response includes one
-              if (response.npcImageUrl) {
-                setNpcImageUrl(response.npcImageUrl)
-              }
-              // Update scene image if the location changed
-              if (response.locationImageUrl) {
-                setSceneImageUrl(response.locationImageUrl)
-              }
-              // Optimistically update environment if location changed
-              if (response.updatedLocation) {
-                setCurrentEnvironment(prev => ({
-                  ...prev,
-                  name: response.updatedLocation,
-                  background_image_url: response.locationImageUrl || prev?.background_image_url,
-                } as any))
-              }
-              // Refresh character data to pick up any XP or items from the Lich
-              await fetchCharacterData()
-            }
+          onDeclareReaction={(reaction) => {
+            // The app composes the reserved prefix and submits it WITHOUT the
+            // strip that typed input goes through. That asymmetry is the whole
+            // security property: Malachar may trust "[Reaction]" precisely
+            // because only this line can produce one.
+            //
+            // The message carries the TRIGGER as well as the name, because
+            // Malachar has to rule on whether this was a legal moment to react.
+            // He holds what just happened in the fiction; the dashboard only
+            // knows which button was pressed. Sending the claimed trigger lets
+            // him answer "nothing was casting" and hand the reaction back —
+            // the correct outcome, and impossible if all he receives is a name.
+            void submitToLich(
+              `[Reaction] ${reaction.name} — declared when: ${reaction.trigger}`,
+            )
           }}
+          onSendToLich={(rawMessage) => submitToLich(stripReservedPrefixes(rawMessage))}
         />
 
           {/* Party Status row (v3.0 design) sits under the center column */}
