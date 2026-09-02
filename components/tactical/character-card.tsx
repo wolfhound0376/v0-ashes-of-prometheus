@@ -24,6 +24,7 @@
 
 import type { CSSProperties } from "react"
 import { frameForClass } from "@/lib/class-frames"
+import type { DeathSaves } from "@/lib/death-saves"
 import { ClassMedallion } from "./class-medallion"
 
 // The frame is chosen by CLASS - see cardFrameUrl in lib/class-frames.ts.
@@ -101,6 +102,8 @@ export interface CardCharacter {
   xp_to_next?: number | null
   inspiration?: boolean | number | null
   conditions?: string[]
+  /** Death saving throws while at 0 - drawn in the conditions chamber. */
+  deathSaves?: DeathSaves | null
   /**
    * The line under the name - `characters.sheet_background`.
    *
@@ -217,6 +220,13 @@ export function CharacterCard({
   const frac = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0
   const xpFrac = Math.max(0, Math.min(1, c.xpFraction ?? 0))
   const conditions = c.conditions ?? []
+  // AT 0, THE CONDITIONS CHAMBER SHOWS THE DEATH SAVES.
+  // Three green pips for successes, three red for failures, filled as they
+  // land - the same tally a paper sheet keeps in the same corner. It takes
+  // the first slot of the chamber; the SRD's own word, Unconscious, sits
+  // beside it as an ordinary condition.
+  const down = max > 0 && cur <= 0
+  const saves = down ? (c.deathSaves ?? { successes: 0, failures: 0 }) : null
   const insp = typeof c.inspiration === "number" ? c.inspiration : c.inspiration ? 1 : 0
   const g = gems ?? { action: "dormant" as GemState, bonus: "dormant" as GemState, reaction: "dormant" as GemState }
   // Background, first segment only. Never the class - the class bar says that.
@@ -375,12 +385,28 @@ export function CharacterCard({
             paddingLeft: W * 0.010,
           }}
         >
-          {conditions.length === 0 ? (
+          {saves && (
+            <span
+              title={`Death saves: ${saves.successes} of 3 successes, ${saves.failures} of 3 failures`}
+              style={{
+                fontSize: Math.max(7, W * 0.025),
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                whiteSpace: "nowrap",
+                textShadow: "0 1px 2px #000, 0 0 7px rgba(0,0,0,0.9)",
+              }}
+            >
+              <span style={{ color: "#6fe08a" }}>{"\u25cf".repeat(saves.successes)}{"\u25cb".repeat(3 - saves.successes)}</span>
+              {" "}
+              <span style={{ color: "#ff5a44" }}>{"\u25cf".repeat(saves.failures)}{"\u25cb".repeat(3 - saves.failures)}</span>
+            </span>
+          )}
+          {conditions.length === 0 && !saves ? (
             <span style={{ fontFamily: "Georgia, serif", fontSize: Math.max(6, W * 0.022), color: "#6d6552", fontStyle: "italic" }}>
               none
             </span>
           ) : (
-            conditions.slice(0, 3).map((cond) => (
+            conditions.slice(0, saves ? 2 : 3).map((cond) => (
               <span
                 key={cond}
                 title={cond}

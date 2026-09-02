@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
+import { normaliseSaves } from "@/lib/death-saves"
 import { blurbFor } from "@/lib/ability-blurbs"
 import { rackFor, phaseCost, type RackItem } from "@/lib/spellbook"
 import { Globe } from "./essence-globe"
@@ -44,6 +45,8 @@ export interface HudCharacter {
   sheet_skill_proficiencies?: unknown
   sheet_attacks?: unknown
   conditions?: unknown
+  /** `characters.death_saves` — the tally while at 0 hit points. */
+  death_saves?: unknown
   sheet_spellcasting: {
     slots?: Record<string, { max?: number; used?: number }>
     cantrips?: string[]
@@ -509,6 +512,7 @@ export function CombatHud(props: Props) {
               character={{
                 ...c,
                 conditions: normalizeConditions(c.conditions),
+                deathSaves: normaliseSaves(c.death_saves),
                 // XP is on the sheet as a running total and a target; the card
                 // wants the fraction through the level.
                 xpFraction:
