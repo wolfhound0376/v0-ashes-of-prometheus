@@ -1134,12 +1134,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         line =
           status.reason === "sight" ? "no clear line"
           : status.reason === "self" ? "not on yourself"
+          : status.reason === "downed" ? "already down"
           : `${status.squares * 5} ft — out of range`
       } else if (status.confirm) {
         // Violet ring: a legal target, but the click will ask first.
         line = status.confirm === "foe" ? "not one of yours — will ask first" : "on your side — will ask first"
       } else if ((victim.row.hp_current ?? 1) <= 0) {
-        line = "down — a hit costs it a death save"
+        // Only a HELPFUL spell reaches here now — a harmful one was refused
+        // above. So this read is no longer a warning that you are about to
+        // finish somebody off; it is the reason to cast.
+        line = "down — this brings them back"
       } else {
         const e = armed.entry
         const ac = acRef.current.get(victim.row.id)
@@ -1803,7 +1807,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             ? `${victim.row.label} is behind cover — ${armed.name} needs a clear line.`
             : status.reason === "self"
               ? `${armed.name} is not for turning on yourself.`
-              : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
+              : status.reason === "downed"
+                ? `${victim.row.label} is already down.`
+                : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
         )
         return
       }
@@ -2264,7 +2270,36 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             // A token at 0 HP comes up already down. An HP change rebuilds the
             // token (see glideToken), so this is also the path a creature
             // takes the moment it drops.
-            playState(anim, isDowned(row) ? "dead" : "idle", true)
+            const laid = playState(anim, isDowned(row) ? "dead" : "idle", true)
+            // ...UNLESS THE MODEL HAS NO "dead" CLIP.
+            //
+            // playState returns null when the state has no clip, and does
+            // nothing — so a creature whose GLB never got a death animation
+            // stood upright at 0 hit points, on its feet, rolling death saves.
+            // Reported against Kenta, who was both standing AND being offered
+            // as a target.
+            //
+            // deathSceneVfx already knows how to lay an unposed body down, so
+            // this settles one to its FINAL frame rather than writing a second
+            // opinion about what a corpse looks like: update() once with the
+            // whole lifetime, which paints the end pose and leaves it. Its
+            // particles are at zero opacity by then — right, because this body
+            // did not die just now. It was already dead when we arrived, and a
+            // corpse must not re-explode every time the board reloads.
+            if (isDowned(row) && !laid) {
+              deathSceneVfx({
+                parent: scene,
+                position: new THREE.Vector3(entry?.obj.position.x ?? 0, 0.05, entry?.obj.position.z ?? 0),
+                // "collapse" for everyone here, deliberately. What killed it is
+                // not knowable at mount — lastHitWith is empty on a fresh board
+                // — and inventing a cause to make a nicer corpse would be the
+                // board asserting something it does not know.
+                kind: "collapse",
+                scale: radiusFor(row.token_size) / 0.75,
+                posed: false,
+                resolve: () => tokensRef.current.get(row.id)?.obj ?? null,
+              }).update(999)
+            }
             console.log(
             `[board] ${row.label}: ${gltf.animations.length} clips, ` +
             `height ${(size.y * s).toFixed(2)}u (${(size.y * s * 5).toFixed(1)} ft) —`,
@@ -2710,6 +2745,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
       if (!hasLineOfSight(me.row.grid_x ?? 0, me.row.grid_y ?? 0, t.row.grid_x ?? 0, t.row.grid_y ?? 0)) {
         return { ok: false, reason: "sight", squares }
+      }
+      // A BODY ON THE FLOOR IS NOT A TARGET — unless you are trying to help it.
+      //
+      // Kenta was offered as a legal target for an Unarmed Strike while lying
+      // at 0 hit points, rolling death saves. Nothing stopped it: downed was a
+      // thing the board DREW (the dead pose, the dimmed plate) and never a
+      // thing it CHECKED.
+      //
+      // Helpful is deliberately still allowed, and this is the whole reason
+      // the check is not simply "skip the downed": a Cure Wounds or a Healing
+      // Word on an unconscious friend is the most important spell in the game
+      // at that moment. Refusing it to keep a rogue from kicking a corpse
+      // would be a far worse bug than the one being fixed.
+      if (isDowned(t.row) && !helpful) {
+        return { ok: false, reason: "downed", squares }
       }
       // Self is always a legal target for a helpful spell and never for a
       // harmful one. 5e lets a cleric Healing Word himself; the old code
