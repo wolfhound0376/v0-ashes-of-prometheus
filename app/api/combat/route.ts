@@ -810,7 +810,16 @@ export async function POST(req: NextRequest) {
       // gentler than a narrow one, which is not the spell.
       const full = rollDice(entry.dice)
 
-      const victims: { id: string; label: string; amount: number; saved: boolean }[] = []
+      // Per victim, the same words the single-target verdict uses (outcome,
+      // margin, roll, total, dc), so the board can hand each body in the
+      // blast to the same defenceFor: the drow who saved steps out of the
+      // fire, the one who failed is caught in it. `saved` stays a boolean
+      // for anyone already reading it; `outcome` is the honest version,
+      // since a spell that never asked for a save has not been "not saved".
+      const victims: {
+        id: string; label: string; amount: number; saved: boolean
+        outcome: string; margin: number; roll: number; total: number; dc: number; heals: boolean
+      }[] = []
       const parts: string[] = []
 
       for (const t of caught) {
@@ -835,9 +844,12 @@ export async function POST(req: NextRequest) {
 
         let amount = full
         let saved = false
+        let roll = 0
+        let total = 0
         if (entry.resolve === "save") {
-          const roll = d20()
-          saved = roll + saveMod >= dcArea
+          roll = d20()
+          total = roll + saveMod
+          saved = total >= dcArea
           amount = saved ? (entry.halfOnSave ? Math.floor(full / 2) : 0) : full
           parts.push(
             `${t.label} ${roll}${saveMod >= 0 ? "+" : ""}${saveMod} vs DC ${dcArea} ${saved ? "saves" : "fails"}${amount ? ` (${amount})` : ""}`,
@@ -861,7 +873,19 @@ export async function POST(req: NextRequest) {
               .eq("id", t.character_id)
           }
         }
-        victims.push({ id: t.id, label: t.label ?? "", amount, saved })
+        victims.push({
+          id: t.id, label: t.label ?? "", amount, saved,
+          // The TARGET rolled, so a positive margin is how well they got out
+          // of the way — the same reading the single-target save path asks
+          // for. A spell with no save has no margin to speak of.
+          outcome: verdictWord({
+            heals: entry.heals, crit: false, fumble: false,
+            saved: entry.resolve === "save" ? saved : null, amount, hit: amount > 0,
+          }),
+          margin: entry.resolve === "save" ? total - dcArea : 0,
+          roll, total, dc: entry.resolve === "save" ? dcArea : 0,
+          heals: Boolean(entry.heals),
+        })
       }
 
       const line = `${caster.label} casts ${ability} — ${parts.join("; ")}.`
