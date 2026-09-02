@@ -47,6 +47,9 @@ const IDENT: Record<DamageType, { fill: string; ink: string; glow: string }> = {
   physical:  { fill: "#f0e6d4", ink: "#241b10", glow: "#c9b48a" },
   healing:   { fill: "#7df08e", ink: "#082a14", glow: "#33c94d" },
   eldritch:  { fill: "#d09aff", ink: "#22083a", glow: "#8a2fd6" },
+  // Fog harms nobody, so no number is ever typed with it; the table is keyed
+  // by the kit's whole union and this row is what keeps it honest.
+  fog:       { fill: "#d9dfe8", ink: "#1a2028", glow: "#98a6b8" },
 }
 
 /** A number nobody typed a colour for still gets one. */
