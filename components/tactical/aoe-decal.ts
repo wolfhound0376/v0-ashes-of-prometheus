@@ -128,10 +128,32 @@ interface Bucket {
  * itself when a lingering Web re-renders would be worse than the tiling.
  */
 function turnFor(c: Cell): number {
-  // A cheap integer hash. The multiplications are odd primes so x and y
-  // contribute independently and neighbours land in different buckets.
-  const h = (c.x * 73856093) ^ (c.y * 19349663)
-  return (h >>> 0) % 4
+  // An avalanche mix, NOT just two big primes XORed.
+  //
+  // The first version of this was `(x * 73856093) ^ (y * 19349663)` — the
+  // standard spatial-hash pair — and taking it modulo 4 threw away everything
+  // that made it a hash. Only the bottom two bits survive %4, and the bottom
+  // bits of an odd multiply are just the bottom bits of the input, so the
+  // "hash" reduced to (x ^ 3y) mod 4: a perfectly regular pinwheel lattice
+  // repeating every four squares. Neighbours never matched, which looks
+  // healthy and is the tell — a real hash matches its neighbour a quarter of
+  // the time. Trading a grid of identical stamps for a grid of identical
+  // pinwheels is not a fix.
+  //
+  // So the bits are mixed downward first, xorshift-multiply style, and only
+  // then reduced. Verified in lib/__tests__/aoe-visual.test.mjs, which asserts
+  // the neighbour match rate sits near chance rather than at zero.
+  //
+  // The final `>>> 0` is load-bearing, not decoration. `^` in JavaScript
+  // yields a SIGNED 32-bit int, so once the top bit is set the result is
+  // negative — and (-1 % 4) is -1, which indexes UV_TURNS out of bounds and
+  // hands undefined to the geometry builder. The test caught it as a skewed
+  // turn distribution (25/12/12/12 instead of four even quarters) before it
+  // could reach a board.
+  let h = (Math.imul(c.x, 0x27d4eb2d) ^ Math.imul(c.y, 0x165667b1)) >>> 0
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0
+  h = Math.imul(h ^ (h >>> 12), 0x297a2d39) >>> 0
+  return ((h ^ (h >>> 15)) >>> 0) % 4
 }
 
 /** The 0..1 UV corners of a quad, turned a quarter at a time. */
