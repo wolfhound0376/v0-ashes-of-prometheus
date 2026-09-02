@@ -112,17 +112,55 @@ export function scaleFor(size: string | null | undefined, catalogueScale?: numbe
 }
 
 /**
- * Which side a spawn fights on when the row does not say.
+ * Which side a creature is on, read from its bestiary role.
  *
- * The bestiary is a monster manual, so its default is hostile; a player
- * character is always party. An NPC has a disposition and it is respected —
- * these are the same three words vtt_tokens.allegiance already uses on the
- * live board, not a new vocabulary.
+ * THE BUG THIS EXISTS FOR. The first cut defaulted the bestiary to hostile
+ * and NPCs to ally, on the reasoning that a bestiary is a monster manual.
+ * Both halves were wrong against the actual data:
+ *
+ *   - all 19 npc_encounters rows have a NULL disposition, so every NPC
+ *     spawned as an ally — including Ilvara Mizzrym (CR 8), Shoor Vandree
+ *     (CR 5) and the hook horror;
+ *   - and this bestiary is not a monster manual. 18 of its 43 rows are
+ *     role "ally/prisoner", because it holds the whole Velkynvelve cast:
+ *     Stool, Jimjar, Buppido, Prince Derendil, Eldeth. Those all spawned
+ *     hostile.
+ *
+ * So the side comes from bestiary.role, which is the column that has known
+ * the answer all along:
+ *
+ *   ally/prisoner (18)  →  ally
+ *   enemy (6), boss (1), named_npc (1), null (17)  →  hostile
+ *
+ * ONLY "ally/prisoner" IS AN ALLY, and everything else — including a role
+ * nobody has written yet — is hostile. That asymmetry is deliberate. An ally
+ * spawned as an enemy is obvious the moment you look at the board and takes
+ * one click to fix. A hostile spawned as a friend is invisible: it sits in
+ * the initiative order on your side, is skipped by every targeting filter,
+ * and quietly makes the whole rehearsal meaningless. When the data is
+ * missing, be wrong in the direction somebody will notice.
+ *
+ * "named_npc" is hostile on a sample of ONE (the Drow Elite Warrior), which
+ * is not enough to write a rule about — it is hostile here because it is not
+ * "ally/prisoner", not because anyone decided named NPCs are enemies.
+ */
+export function sideForRole(role: string | null | undefined): Allegiance {
+  return (role ?? "").trim().toLowerCase() === "ally/prisoner" ? "ally" : "hostile"
+}
+
+/**
+ * Which side a spawn fights on.
+ *
+ * An explicit allegiance always wins — the drawer lets you set one before
+ * placing, because "what if the drow were on our side" is exactly the sort of
+ * question a rehearsal room exists to answer.
  */
 export function allegianceFor(src: SpawnSource): Allegiance {
   if (src.allegiance) return src.allegiance
   if (src.kind === "character") return "party"
-  if (src.kind === "npc") return "ally"
+  // No role reached us — the caller could not find one. Same asymmetry as
+  // above: unknown means hostile, because that is the wrong answer somebody
+  // will spot.
   return "hostile"
 }
 
