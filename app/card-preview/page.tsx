@@ -1,6 +1,6 @@
 "use client"
 
-// DEV PREVIEW ONLY — the battlefield character card in every state that
+// DEV PREVIEW ONLY - the battlefield character card in every state that
 // matters, at the size it actually renders on the board, so it can be held
 // against the locked reference sheet without starting a fight to see it.
 //
@@ -32,10 +32,10 @@ export default function CardPreview() {
 
       {/* THE REAL THING: four plates stacked exactly as the board stacks
           them, so the footprint is judged rather than assumed. */}
-      <Case title={`Battlefield stack · ${W}px · Kenta is up`}>
+      <Case title={`Battlefield stack - ${W}px - Kenta is up`}>
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {/* Only the focused card carries a sheet bar, exactly as the board
-              passes it — so this stack is the real height, not an optimistic one. */}
+              passes it - so this stack is the real height, not an optimistic one. */}
           <CharacterCard width={W} character={FIFI} isTurn={false} gems={DORMANT} movement={FULL} slots={null} />
           <CharacterCard width={W} character={KENTA} isTurn active gems={{ action: "lit", bonus: "lit", reaction: "lit" }} movement={FULL} slots={{ total: 4, used: 1, levels: [{ level: 1, total: 4, used: 1 }] }} onExpand={() => {}} />
           <CharacterCard width={W} character={SAMSON} isTurn={false} gems={DORMANT} movement={FULL} slots={{ total: 2, used: 0, levels: [{ level: 1, total: 2, used: 0 }] }} />
@@ -44,19 +44,19 @@ export default function CardPreview() {
       </Case>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <Case title="Active · everything available">
+        <Case title="Active - everything available">
           <CharacterCard width={W} character={KENTA} isTurn active
             gems={{ action: "lit", bonus: "lit", reaction: "lit" }}
             movement={FULL} slots={{ total: 4, used: 1, levels: [{ level: 1, total: 4, used: 1 }] }} onExpand={() => {}} />
         </Case>
 
-        <Case title="Active · action + bonus SPENT, 10 ft left, 3 of 4 slots gone">
+        <Case title="Active - action + bonus SPENT, 10 ft left, 3 of 4 slots gone">
           <CharacterCard width={W} character={{ ...KENTA, hp_current: 5 }} isTurn
             gems={{ action: "spent", bonus: "spent", reaction: "lit" }}
             movement={{ remainingFt: 10, speedFt: 30 }} slots={{ total: 4, used: 3, levels: [{ level: 1, total: 4, used: 3 }] }} onExpand={() => {}} />
         </Case>
 
-        <Case title="Inactive · no active orb, all dormant">
+        <Case title="Inactive - no active orb, all dormant">
           <CharacterCard width={W} character={SAMSON} isTurn={false}
             gems={DORMANT} movement={FULL} slots={{ total: 2, used: 0, levels: [{ level: 1, total: 2, used: 0 }] }} onExpand={() => {}} />
         </Case>
