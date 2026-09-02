@@ -49,6 +49,8 @@ import {
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
+import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
+import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
 // A zero is an outcome, not an absence — see outcome-word.ts.
 import { outcomeWordVfx } from "./outcome-word"
@@ -56,7 +58,7 @@ import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 // The same geometry the SERVER resolves the blast with. One function, so the
 // outline a player is looking at and the creatures that actually take damage
 // are the same set by construction rather than by agreement.
-import { areaCells, aimInRange } from "@/lib/aoe"
+import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 // The rack's weapons are DERIVED from what a character carries, not read from
 // a hand-kept list on the sheet. Shared with the cast handler so the board
 // cannot offer a weapon the server will refuse.
@@ -1393,8 +1395,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       victims?: { id: string; reaction: TokenState | null; amount: number; heals: boolean; word: "saved" | "miss" | null }[]
       /** Played on the frame the effect arrives — the impact sound. */
       onLand?: () => void
+      /**
+       * The squares the shape covered, already clipped to the map.
+       *
+       * Carried from the release rather than recomputed here, so the mark the
+       * blast leaves is the SAME cell list the template outlined and the
+       * server charged — recomputing would be a third opinion about the shape
+       * and eventually a disagreeing one.
+       */
+      cells?: Cell[]
+      /** Where the bloom radiates from: the aimed square, or the caster's for a cone. */
+      centre?: Cell
+      /** Whose concentration holds a lingering mark, so it can be ended. */
+      casterTokenId?: string
     }
     const pending: PendingCast[] = []
+
+    /**
+     * Ground marks that outlive their cast, keyed by the caster holding them.
+     *
+     * A Fireball's scorch fades on its own and never lands here. A Web does
+     * not: it is terrain, and it stays until the concentration that made it
+     * stops. Keyed by caster because that is the thing that ends it — and
+     * because one caster can hold only one concentration, so arming a second
+     * area spell is itself the signal to drop the first.
+     */
+    const areaDecals = new Map<string, AreaDecalHandle>()
 
     /**
      * What the target does about a cast, given what the server said.
@@ -1463,6 +1489,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        * did; see reactionFor for how a real verdict is turned into a motion.
        */
       outcome?: CastAnswer | null,
+      /**
+       * The ground an area cast covers, for the mark it leaves behind.
+       * Absent for everything thrown at a creature.
+       */
+      shape?: { cells: Cell[]; centre: Cell; casterTokenId: string } | null,
     ) => {
       const plan = castPlanFor(ability, kind)
       if (!plan) return // Dash and friends animate nothing
@@ -1585,6 +1616,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         reaction: reactionFor(outcome, victimRow),
         victims: areaVictims(outcome),
         victimId: victimRow?.id ?? null,
+        cells: shape?.cells,
+        centre: shape?.centre,
+        casterTokenId: shape?.casterTokenId,
       }
       pending.push(cast)
       // Pull this type's sheets during the windup, so the first cast of a
@@ -1826,10 +1860,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // radius quietly cost the cleric half her hit points either. Naming who
       // is in the blast, before it goes off, is the difference between a
       // choice the player made and a thing that happened to them.
+      // The shape, computed ONCE. It answers two questions that must not be
+      // allowed to disagree: who is standing in the blast, and which squares
+      // the mark covers afterwards. Clipped to the map here, the same way the
+      // template clips, so the mark and the outline cover identical ground.
+      const shapeCells = (area ? areaCells(area, origin, aim) : [{ x: gx, y: gy }])
+        .filter((c) => c.x >= 0 && c.y >= 0 && c.x < m.grid_width && c.y < m.grid_height)
+
       let caught: string[] = []
       let mine = false
       if (area && !area.sparesAllies) {
-        const covered = new Set(areaCells(area, origin, aim).map((c) => `${c.x},${c.y}`))
+        const covered = new Set(shapeCells.map((c) => `${c.x},${c.y}`))
         const own = Array.from(tokensRef.current.values()).filter(
           (t) =>
             t.row.is_visible &&
@@ -1867,6 +1908,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           performCast(
             shooter.row.character_id as string, armed.name, armed.kind,
             shooter, null, { x: p.x, z: p.z }, res,
+            {
+              cells: shapeCells,
+              // A cone or a Thunderwave opens FROM the caster, so its bloom
+              // radiates from the caster's square. Averaging the cells would
+              // start the wave out in the middle of the spray.
+              centre: area?.origin === "self" ? origin : aim,
+              casterTokenId: shooter.row.id,
+            },
           )
         })()
       }
@@ -4076,6 +4125,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             applyCastOutcomeRef.current(v.id, { amount: v.amount, hit: v.amount > 0, heals: v.heals, word: v.word })
             answerFor(v.id, v.reaction)
           }
+          // THE MARK IT LEAVES, on the same frame the shape resolves.
+          //
+          // Not on release, and not when the realtime rows land: on impact.
+          // Painted at release, the scorch would appear while the bolt was
+          // still in the air; painted later, the blast would clear and the
+          // floor would light up a beat afterwards for no visible reason.
+          // This is the frame the effect arrives and everyone in it answers,
+          // so it is the frame the ground changes too.
+          const visual = p.cells?.length ? areaVisualFor(p.spell) : null
+          if (visual && p.cells && p.centre) {
+            const mark = layAreaDecal({
+              parent: scene,
+              cells: p.cells,
+              centre: p.centre,
+              visual,
+              cellToWorld: (x, y) => sqCentre(x, y),
+              squareSize: SQ,
+            })
+            if (visual.lingers && p.casterTokenId) {
+              // One concentration, one mark. Starting a new one ends the old,
+              // which is the rule 5E already enforces on the caster.
+              areaDecals.get(p.casterTokenId)?.end()
+              areaDecals.set(p.casterTokenId, mark)
+            }
+            vfx.push(mark)
+          }
         }
         // A swing spawns no effect: the contact frame IS the impact.
         if (p.swing) { flinch(); continue }
@@ -4099,8 +4174,36 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               }),
         )
       }
+      // A LINGERING MARK OUTLIVES ITS CASTER'S CONCENTRATION, NOT THEIR BODY.
+      //
+      // There is no concentration tracker in this codebase yet — only a sound
+      // cue named for it — so the mark cannot be told directly that the spell
+      // ended. What the board DOES know is when the caster goes down, and
+      // that is how concentration most often breaks at the table: the wizard
+      // holding the Web is knocked out and the web should go with them.
+      //
+      // Checked here rather than on the realtime row so it also covers a
+      // token being removed outright. The map is empty on almost every frame.
+      if (areaDecals.size) {
+        for (const [casterId, mark] of areaDecals) {
+          const caster = tokensRef.current.get(casterId)
+          if (caster && !isDowned(caster.row)) continue
+          mark.end()
+          areaDecals.delete(casterId)
+        }
+      }
       for (let i = vfx.length - 1; i >= 0; i--) {
-        if (!vfx[i].update(dt)) vfx.splice(i, 1)
+        if (vfx[i].update(dt)) continue
+        // DISPOSE, not just drop.
+        //
+        // This spliced the handle out and left it at that, which leaks every
+        // geometry, material and cloned texture a finished effect allocated —
+        // silently, because a leak looks like nothing until an hour into a
+        // session. Cheap to miss with a spark burst; not cheap with a
+        // twenty-square blast mark, which owns up to six merged geometries
+        // and six texture clones of its own and is what made this visible.
+        vfx[i].dispose()
+        vfx.splice(i, 1)
       }
 
       tokensRef.current.forEach((entry) => {
@@ -4197,6 +4300,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // unmount mid-stride leaves a footstep loop running with nothing on
       // screen to explain it.
       for (const id of [...footsteps.keys()]) stopFootsteps(id)
+      // Effects still running when the board goes away. Lingering ground
+      // marks are the ones that matter: a Web holds its handle until the
+      // concentration ends, which may be long after this component does.
+      for (const v of vfx) v.dispose()
+      vfx.length = 0
+      areaDecals.clear()
       reachGeo.dispose()
       for (const m of [...moveMats, ...dashMats, overMat, denyMat, contourMoveMat, contourDashMat, denyEdgeMat]) m.dispose()
       PLATE.dispose()
