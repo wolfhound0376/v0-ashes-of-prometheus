@@ -519,6 +519,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * inside the scene effect. A ref is the only thing both can see.
    */
   const lastHitWithRef = useRef<Map<string, string>>(new Map())
+  /** Token ids currently sneaking. Set by Hide; see the note where it is used. */
+  const sneakingRef = useRef<Set<string>>(new Set())
   const targetsRef = useRef<{ show: (t: string, r: number, h: boolean) => void; clear: () => void }>({ show: () => {}, clear: () => {} })
   // The blast outline, and the click that commits it. Point spells get their
   // own pair because they answer a different question from creature spells,
@@ -1393,6 +1395,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const lastHitWith = lastHitWithRef.current
 
     /**
+     * Who is currently sneaking, by token id.
+     *
+     * Set by pressing Hide, and it is the only thing that makes `Hide` more
+     * than a noise: a sneaking miniature's footsteps use the quiet loop that
+     * has been sitting in the bucket unplayed since the pack was recorded.
+     *
+     * CLIENT-SIDE ONLY, deliberately. Nothing in the schema records stealth -
+     * there is no `hidden` column on vtt_tokens and no condition for it - so
+     * this is one browser's memory of what it just watched, not a fact about
+     * the world. It is honest at that scope: the seat that pressed Hide hears
+     * the difference. Making it a fact for the whole table means a column, a
+     * server rule for what breaks it, and a Stealth check to set it, which is
+     * a bigger change than a sound.
+     */
+    const sneaking = sneakingRef.current
+
+    /**
      * Conditions off a token row, lower-cased, as a plain array.
      *
      * vtt_tokens has no conditions column; the row can still carry them when
@@ -1556,6 +1575,45 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        */
       shape?: { cells: Cell[]; centre: Cell; casterTokenId: string } | null,
     ) => {
+      // HIDE, WHICH USED TO BE NOTHING AT ALL.
+      //
+      // `castPlanFor` mutes it - correctly, since slipping into shadow is not
+      // a swing and the board has no clip for it - and the early return below
+      // meant the button did nothing whatsoever. No animation, no sound, no
+      // state. A player pressed it and the game did not acknowledge it.
+      //
+      // So it is answered here, ABOVE the mute, with the two things it can
+      // honestly have: a sound, and the fact of being hidden. The fact is what
+      // makes the sound worth anything - it changes how this character's next
+      // move sounds, which is the whole point of sneaking.
+      if (kind === "action" && ability.trim().toLowerCase() === "hide") {
+        const mine = Array.from(tokensRef.current.values())
+          .find((t) => t.row.character_id === characterId)
+        if (mine) {
+          sneakingRef.current.add(mine.row.id)
+          // Any footsteps already running belong to a walk that was not
+          // sneaking. Cut them so the next step starts quiet.
+          stopFootsteps(mine.row.id)
+        }
+        playSfx("combat/hide", { volume: 0.7, rate: variedRate(0.05) })
+        return
+      }
+
+      // AND ANYTHING ELSE BREAKS IT.
+      //
+      // PHB: attacking gives away your position. This is the loose version of
+      // that - any ability other than Hide ends the sneaking, because a rogue
+      // who stays quiet through casting Fireball is a bug the player would
+      // hear immediately. Dash and Disengage break it too, which is stricter
+      // than the book and is the safe direction for a guess: the cost of
+      // wrongly going loud is one ordinary footstep, and the cost of wrongly
+      // staying quiet is the feature lying.
+      {
+        const mine = Array.from(tokensRef.current.values())
+          .find((t) => t.row.character_id === characterId)
+        if (mine) sneaking.delete(mine.row.id)
+      }
+
       const plan = castPlanFor(ability, kind)
       if (!plan) return // Dash and friends animate nothing
       // A swing's noise belongs to the contact frame, and that frame is
@@ -2583,7 +2641,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // starting, or the old loop is orphaned and plays until the page closes.
       stopFootsteps(row.id)
       try {
-        footsteps.set(row.id, playSfx(surfaceLoop(row.grid_x, row.grid_y, walkedFast), { loop: true, volume: 0.4, fadeIn: 0.08 }))
+        const creeping = sneaking.has(row.id)
+        footsteps.set(row.id, playSfx(
+          surfaceLoop(row.grid_x, row.grid_y, walkedFast, creeping),
+          // Quieter still when sneaking. The clip is already the softest in
+          // the pack; this is the difference between "a quiet walk" and
+          // "someone trying not to be heard".
+          { loop: true, volume: creeping ? 0.26 : 0.4, fadeIn: creeping ? 0.15 : 0.08 },
+        ))
       } catch {
         /* a missing clip is not a reason to stop the miniature walking */
       }
@@ -3108,10 +3173,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * Surface outranks pace. A bridge and water say WHERE the miniature is,
      * which is the more useful fact; running only replaces the ordinary stone.
      */
-    const surfaceLoop = (gx: number, gy: number, dash?: boolean): SfxName => {
+    const surfaceLoop = (gx: number, gy: number, dash?: boolean, sneak?: boolean): SfxName => {
       const k = gx + "," + gy
       if (bridgeRef.current.has(k)) return "movement/rope_bridge" as SfxName
       if (waterRef.current.has(k)) return "movement/footsteps_water" as SfxName
+      // SNEAKING OUTRANKS PACE, and loses to surface.
+      //
+      // A rogue creeping over a rope bridge still makes the bridge creak -
+      // that is the bridge's noise, not hers, and she cannot sneak it away.
+      // But on ordinary floor, a character who has taken the Hide action
+      // moves quietly, and `movement/footsteps_sneak` is what that sounds
+      // like. The clip has existed since the pack was recorded and nothing
+      // had ever returned it, so nobody has heard it.
+      //
+      // Placed above `dash` because the two are mutually exclusive in the
+      // fiction anyway: you do not sprint quietly.
+      if (sneak) return "movement/footsteps_sneak" as SfxName
       if (dash) return "movement/footsteps_run" as SfxName
       // Velkynvelve is a wet stone pen. There is no gravel anywhere in the cell
       // geometry to distinguish, so this is the floor of the whole node set
