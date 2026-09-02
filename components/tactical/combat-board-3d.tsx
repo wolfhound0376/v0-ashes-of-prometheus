@@ -40,8 +40,10 @@ import {
   castEventFor,
   castPlanFor,
   clipFor,
+  defenceFor,
   HOLD_LAST,
   ONE_SHOT,
+  type AttackOutcome,
   type CastHand,
   type TokenState,
 } from "@/lib/token-animation"
@@ -59,7 +61,7 @@ import { areaCells, aimInRange } from "@/lib/aoe"
 // a hand-kept list on the sheet. Shared with the cast handler so the board
 // cannot offer a weapon the server will refuse.
 import { attacksFromInventory } from "@/lib/weapons"
-import { equipOnRig } from "@/lib/equipment"
+import { equipOnRig, unequipSlot } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
@@ -186,6 +188,31 @@ function BoardBtn({
   )
 }
 
+/**
+ * What the server said when the cast verb was asked to resolve a throw.
+ *
+ * `ok` is whether it resolved at all — a refusal has already been said out
+ * loud by then. `hurt` is whether hit points moved. `verdict` is the rest of
+ * the story, outcome and margin from the widened cast response, and is null
+ * against an older server, in which case the target has only `hurt` to go
+ * on. `weapon` carries what a swing needs to make its own noise at the frame
+ * the arm actually gets there, rather than the moment the fetch returned.
+ */
+type CastAnswer = {
+  ok: boolean
+  hurt?: boolean
+  verdict?: { outcome: AttackOutcome; margin: number } | null
+  weapon?: { hit: boolean; crit: boolean } | null
+}
+
+const ATTACK_OUTCOMES: readonly string[] = [
+  "hit", "crit", "miss", "fumble", "saved", "saved-half", "failed-save", "heal",
+]
+/** The server's `outcome` is a string on the wire; only the eight words the
+ *  board knows how to draw are let through. Anything else is "no verdict". */
+const isAttackOutcome = (v: unknown): v is AttackOutcome =>
+  typeof v === "string" && ATTACK_OUTCOMES.includes(v)
+
 export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: () => void; sandbox?: boolean }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState("Summoning the board…")
@@ -226,6 +253,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // Each character's weapons, by character id. Read when a model finishes
   // loading so the figure can be given the thing it fights with.
   const sheetAttacksRef = useRef<Record<string, { name?: string; rarity?: string }[]>>({})
+  /**
+   * Who carries a shield, by character id, from the same inventory pass that
+   * arms the rack.
+   *
+   * A shield changes what a near miss looks like — the blow is taken on the
+   * boss rather than turned aside with steel — and it is the one thing
+   * defenceFor asks about the target that the server does not report.
+   * Detected by name, exactly as lib/armor-class.ts does, so the miniature
+   * and the AC arithmetic agree on who has one. NPCs have no inventory rows
+   * and so never block; they parry, which is wrong but not absurd.
+   */
+  const shieldRef = useRef<Map<string, { name: string; rarity: string; itemType: string | null }>>(new Map())
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
   /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
   const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
@@ -421,7 +460,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // Returns whether the server RESOLVED it, because the animation now waits
   // on that answer instead of running ahead of it.
   const castVerbRef = useRef<
-    (caster: string, target: string, ability: string, crossSide?: boolean) => Promise<{ ok: boolean; hurt?: boolean }>
+    (caster: string, target: string, ability: string, crossSide?: boolean) => Promise<CastAnswer>
   >(async () => ({ ok: false }))
   /**
    * Put the server's verdict on the body at once: hit points if they moved,
@@ -1239,21 +1278,47 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       /** Who it was thrown at, so the effect can make them flinch when it lands. */
       victimId: string | null
       /**
-       * Did it actually HURT them?
+       * What the target does about it when the effect lands.
        *
-       * The flinch used to play whenever the effect arrived, win or lose. So
-       * a target who made their save doubled over exactly as if they had not
-       * — reported as "she acted like she was hit as opposed to resisting
-       * it." The body was contradicting the dice.
-       *
-       * Now the server's verdict travels with the cast, and a save or a miss
-       * leaves the target standing.
+       * "hurt" is the flinch. "dodge", "parry" and "block" are the server's
+       * verdict turned into a motion by defenceFor: a save or a near miss no
+       * longer doubles the target over as though it had connected — which
+       * was reported as "she acted like she was hit as opposed to resisting
+       * it" — and a miss by nine is a step out of the way, not a parry of a
+       * blade that passed a foot wide. null means the body does not answer
+       * at all: a heal, a fumble, a verdict this model has no clip for.
        */
-      hurt: boolean
+      reaction: TokenState | null
+      /**
+       * A weapon swing rather than a spell. Nothing is thrown and no light is
+       * spawned; the entry exists so the CONTACT frame can make the target
+       * react and the blade make its noise — instead of both happening the
+       * moment the server answered, which since the board started asking
+       * first was half a second before the arm had moved.
+       */
+      swing?: boolean
       /** Played on the frame the effect arrives — the impact sound. */
       onLand?: () => void
     }
     const pending: PendingCast[] = []
+
+    /**
+     * What the target does about a cast, given what the server said.
+     *
+     * No answer at all means no ruling reached this path — an NPC turn, a DM
+     * flourish — and those keep the old behaviour of flinching on arrival.
+     * A full verdict goes through defenceFor, which also gets told whether
+     * this target carries a shield. An answer with no verdict is an older
+     * server: hit points are all there is, so flinch or stand, never guess.
+     */
+    const reactionFor = (answer: CastAnswer | null | undefined, victim: TokenRow | null): TokenState | null => {
+      if (!answer) return "hurt"
+      if (answer.verdict) {
+        const hasShield = Boolean(victim?.character_id && shieldRef.current.has(victim.character_id))
+        return defenceFor(answer.verdict.outcome, answer.verdict.margin, { hasShield })
+      }
+      return answer.hurt ? "hurt" : null
+    }
 
     /**
      * The HUD pressed an ability. Play the matching clip on that character's
@@ -1276,41 +1341,81 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        */
       explicitPoint?: { x: number; z: number } | null,
       /**
-       * The server's verdict, when there is one. `hurt: false` means the
-       * target saved, was missed, or took nothing — the effect still flies
-       * and still lands, but the body does not double over.
+       * The server's answer, when there is one. Absent means no ruling
+       * reached this path and the target flinches on arrival as it always
+       * did; see reactionFor for how a real verdict is turned into a motion.
        */
-      outcome?: { hurt: boolean } | null,
+      outcome?: CastAnswer | null,
     ) => {
       const plan = castPlanFor(ability, kind)
       if (!plan) return // Dash and friends animate nothing
+      // A swing's noise belongs to the contact frame, and that frame is
+      // scheduled further down. Every early return before it is a miniature
+      // that cannot swing — a disc pawn, a corpse, a model with no clip — and
+      // the blow still happened, so the sound plays now rather than never.
+      const w = outcome?.weapon ?? null
+      const swingSound = w
+        ? () => playSfx(w.hit ? meleeHit(w.crit) : "combat/melee_miss", { volume: 0.9 })
+        : null
       let found = explicitToken
       if (!found) {
         for (const e of Array.from(tokensRef.current.values())) {
           if (e.row.character_id === characterId) { found = e; break }
         }
       }
-      if (!found) return
+      if (!found) { swingSound?.(); return }
       // Say out loud which figure is about to move. When the wrong one does,
       // this line names it instead of leaving us to guess.
       console.log(`[cast] ${ability} → token "${found.row.label}" (character ${characterId.slice(0, 8)}…, model ${String(found.row.model_url ?? "none").split("/").pop()})`)
       const anim = found.anim
-      if (!anim) return // a disc pawn has nothing to animate
-      if (isDowned(found.row)) return // a corpse casts nothing
+      if (!anim) { swingSound?.(); return } // a disc pawn has nothing to animate
+      if (isDowned(found.row)) { swingSound?.(); return } // a corpse casts nothing
 
       // The spell's name picks its motion, so two cantrips off the same
       // caster no longer play the identical clip — and the same spell always
       // plays the same one, which is what makes it recognisable.
       const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
       const clip = playState(anim, plan.state, true, explicit)
-      if (!clip) return
+      if (!clip) { swingSound?.(); return }
       if (plan.state === "hurt") return // Dodge is a flinch, not a spell
 
       // Only magic throws light. "Attack" resolves to a cast clip for a
       // caster — Kenta's attack IS an Eldritch Blast — but for a martial it
       // resolves to a sword swing, and a swing must not emit arcane sparks.
       const isSpell = plan.state === "cast" || /spell|cast|soell/i.test(clip.name)
-      if (!isSpell) return
+      if (!isSpell) {
+        // A SWING THROWS NOTHING, BUT IT STILL LANDS.
+        //
+        // Weapons never reached the impact handler: the flinch hangs off the
+        // spell effect's arrival, and a sword spawns no effect. So a hit
+        // rogue and a missed rogue looked identical, and both looked like
+        // nothing. This entry gives the swing a contact frame of its own —
+        // the same release point the cast table uses, which for an attack
+        // clip is the 45% mark where the arm is furthest forward — and on
+        // that frame the blade makes its noise and the target answers.
+        //
+        // The victim is the creature that was clicked, or nobody. A swing
+        // that began somewhere other than a click (an NPC turn drawn by the
+        // DM's browser) has no one to make react, and reacts no one.
+        const swingVictim = explicitTarget ? tokensRef.current.get(explicitTarget.id) : undefined
+        if (swingVictim) {
+          const dx = swingVictim.obj.position.x - found.obj.position.x
+          const dz = swingVictim.obj.position.z - found.obj.position.z
+          if (dx * dx + dz * dz > 1e-4) found.obj.rotation.y = Math.atan2(dx, dz)
+        }
+        pending.push({
+          wait: castEventFor(clip.name, clip.duration).release,
+          obj: found.obj,
+          hand: "RightHand",
+          spell: ability,
+          target: null,
+          victimId: swingVictim?.row.id ?? null,
+          reaction: reactionFor(outcome, explicitTarget ?? null),
+          swing: true,
+          onLand: swingSound ?? undefined,
+        })
+        return
+      }
 
       // Where it is thrown.
       //
@@ -1360,10 +1465,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         hand,
         spell: ability,
         target,
-        // Absent verdict means "no server ruling reached this path" — an NPC
-        // turn, a DM flourish — and those keep the old behaviour of flinching
-        // on arrival. Only a cast the server actually resolved can say no.
-        hurt: outcome ? outcome.hurt : true,
+        reaction: reactionFor(outcome, victimRow),
         victimId: victimRow?.id ?? null,
       }
       pending.push(cast)
@@ -1499,11 +1601,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         void (async () => {
           const res = await castVerbRef.current(shooter.row.id, victim.row.id, armed.name, crossSide)
           if (!res?.ok) return   // castVerb has already said why
-          // The verdict travels with the animation, so a target who saved
-          // does not double over as though they had not.
+          // The whole answer travels with the animation: a target who saved
+          // does not double over, a near miss is turned aside, a wide one is
+          // stepped out of, and a swing makes its noise when the arm arrives.
           performCast(
             shooter.row.character_id as string, armed.name, armed.kind,
-            shooter, victim.row, null, { hurt: Boolean(res.hurt) },
+            shooter, victim.row, null, res,
           )
         })()
       }
@@ -1832,6 +1935,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               slot: "main_hand",
             })
             if (held) console.log(`[equip] ${row.label} holds ${primary.name}`)
+          }
+          // The other hand, from the same inventory pass. A model that loads
+          // before the sheets do is handed its shield by the equip pass in
+          // the sheets loader instead, so whichever wins the race the arm
+          // ends up carrying it.
+          const shield = row.character_id ? shieldRef.current.get(row.character_id) : null
+          if (shield) {
+            equipOnRig(obj, { name: shield.name, itemType: shield.itemType, rarity: shield.rarity, slot: "off_hand" })
           }
 
           // ANIMATION. Meshy ships these with a dozen-plus clips whose names
@@ -3311,6 +3422,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (!w?.name) continue
           heldWeapon.set(cid, { name: w.name, rarity: w.items?.rarity ?? "common" })
         }
+        // WHAT THEY HOLD IN THE OTHER HAND.
+        //
+        // Detected by name against what the inventory says they carry — the
+        // same /shield/ test lib/armor-class.ts uses to award the +2 — so
+        // the +2 on the plate and the shield on the arm never disagree. This
+        // is what lets a near miss be BLOCKED rather than parried, and it is
+        // the one fact about the target the server's verdict cannot supply.
+        const shieldHeld = new Map<string, { name: string; rarity: string; itemType: string | null }>()
+        for (const [cid, items] of carried) {
+          const s = items.find((r: InvRow) => /shield|buckler/i.test(String(r.name ?? "")))
+          if (!s?.name) continue
+          shieldHeld.set(cid, {
+            name: s.name,
+            rarity: s.items?.rarity ?? "common",
+            itemType: s.items?.item_type ?? s.item_type ?? null,
+          })
+        }
+        shieldRef.current = shieldHeld
         // The models load asynchronously and the sheets arrive on their own
         // schedule, so whichever wins the race, this pass makes sure everyone
         // ends up armed. equipOnRig removes what is in the hand first, so
@@ -3326,8 +3455,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // has no model. A hand holding an "Unarmed Strike" is the failure
           // this map exists to avoid.
           const held = t.row.character_id ? heldWeapon.get(t.row.character_id) : null
-          if (!held?.name) return
+          const shield = t.row.character_id ? shieldHeld.get(t.row.character_id) : null
           const model = t.obj.children.find((c) => c.getObjectByName("RightHand"))
+          if (!model) return
+          // The off hand: a shield if the inventory says so, and EMPTY if it
+          // no longer does. The drow confiscated the party's gear once
+          // already; a shield that lingers on the arm after the row is gone
+          // is the same lie the rack was cured of.
+          if (shield) {
+            equipOnRig(model, { name: shield.name, itemType: shield.itemType, rarity: shield.rarity, slot: "off_hand" })
+          } else {
+            unequipSlot(model, "off_hand")
+          }
+          if (!held?.name) return
           // Rarity travels with the re-equip. equipOnRig clears the hand
           // first, so omitting it here would let this pass quietly strip the
           // tint that the load-time equip had already applied.
@@ -3602,11 +3742,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           )
           const victim = tokensRef.current.get(p.victimId)
           if (!victim?.anim || isDowned(victim.row)) return
-          // A save is not a wound. The effect still arrives and still makes
-          // its noise; the body simply does not answer for it.
-          if (!p.hurt) return
-          playState(victim.anim, "hurt", true)
+          // WHAT THE TARGET DOES ABOUT IT.
+          //
+          // This used to be an unconditional flinch. The verdict now arrives
+          // already turned into a motion this model can perform (see
+          // reactionFor), and null is an honest answer: a heal, a fumble the
+          // attacker earned on their own, or a model rigged with no dodge —
+          // which stands still rather than borrowing the flinch, because a
+          // miniature that recoils on a miss is lying to the table.
+          if (!p.reaction) return
+          // Steel turned aside and a shield taking a blow are their own
+          // noises, on top of whatever the effect made arriving. A dodge is
+          // not: the sound of not being there is the whiff already playing.
+          if (p.reaction === "parry") playSfx("combat/parry_blade", { volume: 0.8 })
+          else if (p.reaction === "block") playSfx("combat/block_shield", { volume: 0.8 })
+          playState(victim.anim, p.reaction, true)
         }
+        // A swing spawns no effect: the contact frame IS the impact.
+        if (p.swing) { flinch(); continue }
         vfx.push(
           kitType
             ? castSpellKitVfx({
@@ -3889,10 +4042,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (data.crit) critRef.current.add(target_token)
           // A weapon's impact is decided by the dice, not by the spell school:
           // the crunch only plays if it actually connected, and a miss gets
-          // the whiff it earned.
-          if (data.weapon) {
-            playSfx(data.hit ? meleeHit(Boolean(data.crit)) : "combat/melee_miss", { volume: 0.9 })
-          }
+          // the whiff it earned. It is no longer played HERE, though — since
+          // the board started asking before it animates, "here" is before
+          // the arm has moved. The verdict is handed to performCast below and
+          // the noise waits for the contact frame.
           // THE OUTCOME, ON THE BODY, NOW.
           //
           // Two reasons this cannot wait for the realtime echo:
@@ -3915,8 +4068,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             heals: Boolean(data.heals),
           })
           // Real damage means the body answers for it. A save, a miss, or a
-          // pure utility spell leaves the target standing.
-          return { ok: true, hurt: Number(data.amount ?? 0) > 0 && !data.heals }
+          // pure utility spell leaves the target standing — or, with the rest
+          // of the verdict below, gets out of the way.
+          const hurt = Number(data.amount ?? 0) > 0 && !data.heals
+          // `outcome` and `margin` come from the widened cast response. An
+          // older server omits them, and the target then has only `hurt` to
+          // go on — flinch or stand — rather than a guessed dodge.
+          const verdict = isAttackOutcome(data.outcome)
+            ? { outcome: data.outcome, margin: typeof data.margin === "number" ? data.margin : 0 }
+            : null
+          return {
+            ok: true,
+            hurt,
+            verdict,
+            weapon: data.weapon ? { hit: data.hit !== false, crit: Boolean(data.crit) } : null,
+          }
         }
         return { ok: true, hurt: false }
       } catch {
