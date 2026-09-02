@@ -1,0 +1,400 @@
+{
+  "pack": "aop-spell-sfx-01",
+  "title": "Ashes of Prometheus - Spell SFX Pack 01",
+  "version": "1.0.0",
+  "generated": "2026-09-02",
+  "source": "ElevenLabs sound-effect generations (Sam's workspace)",
+  "basePath": "/audio/sfx/spells/",
+  "defaults": {
+    "preferredFormat": "ogg",
+    "fallbackFormat": "mp3",
+    "sampleRate": 44100,
+    "channels": 1
+  },
+  "notes": "Every cue is trimmed of trailing silence, faded out, and level-matched. Play at the per-sound `volume` value for a balanced mix. `spellIndex` maps a spell slug to a sound id; fall back to `cast-wind-gust` for any unmapped spell.",
+  "fallbackSound": "cast-wind-gust",
+  "sounds": [
+    {
+      "id": "cast-wind-gust",
+      "label": "Wind Gust Cast",
+      "description": "Wand-flick attack with an immediate rushing air whoosh. Hard front attack, fast decay - reads as the instant of casting.",
+      "files": {
+        "ogg": "cast-wind-gust.ogg",
+        "mp3": "cast-wind-gust.mp3"
+      },
+      "durationSeconds": 3.109,
+      "category": "evocation",
+      "character": "one-shot / impact",
+      "volume": 0.9,
+      "loop": false,
+      "tags": [
+        "whoosh",
+        "wind",
+        "wand-flick",
+        "cast",
+        "transient"
+      ],
+      "primarySpell": "gust-of-wind",
+      "spells": [
+        "gust-of-wind",
+        "thunderwave",
+        "wind-wall",
+        "warding-wind",
+        "eldritch-blast",
+        "magic-missile",
+        "fly",
+        "feather-fall",
+        "expeditious-retreat"
+      ],
+      "sourceAssetId": "fB5c05mfdDzgLlGQCVIA",
+      "sourceName": "Cinematic wind magic spell. Wand flick -> rushing m..."
+    },
+    {
+      "id": "portal-time-tunnel",
+      "label": "Portal / Time Tunnel Opening",
+      "description": "Long low-frequency swell into a sustained ancient roar, then a slow settle. Big, ceremonial. Best under a 3-6 second visual.",
+      "files": {
+        "ogg": "portal-time-tunnel.ogg",
+        "mp3": "portal-time-tunnel.mp3"
+      },
+      "durationSeconds": 10.031,
+      "category": "conjuration",
+      "character": "sustained / cinematic",
+      "volume": 0.85,
+      "loop": false,
+      "tags": [
+        "portal",
+        "riser",
+        "low-end",
+        "epic",
+        "ancient"
+      ],
+      "primarySpell": "teleportation-circle",
+      "spells": [
+        "teleportation-circle",
+        "gate",
+        "plane-shift",
+        "arcane-gate",
+        "demiplane",
+        "banishment",
+        "wish",
+        "astral-projection"
+      ],
+      "sourceAssetId": "ENR5LCJmBubDgAGuWaIt",
+      "sourceName": "Epic magical time tunnel activation sound, an anci..."
+    },
+    {
+      "id": "divine-celestial-voice",
+      "label": "Celestial Voice",
+      "description": "Wordless female choral breath - swells, holds, fades. The only vocal cue in the pack, so save it for moments that should feel holy rather than magical.",
+      "files": {
+        "ogg": "divine-celestial-voice.ogg",
+        "mp3": "divine-celestial-voice.mp3"
+      },
+      "durationSeconds": 11.546,
+      "category": "divine",
+      "character": "sustained / vocal",
+      "volume": 0.8,
+      "loop": false,
+      "tags": [
+        "vocal",
+        "choir",
+        "holy",
+        "breath",
+        "celestial"
+      ],
+      "primarySpell": "divine-word",
+      "spells": [
+        "divine-word",
+        "commune",
+        "heal",
+        "bless",
+        "guardian-of-faith",
+        "resurrection",
+        "holy-aura",
+        "planar-ally",
+        "hallow"
+      ],
+      "sourceAssetId": "0lTQDfFpZRnDdpLBxld9",
+      "sourceName": "Celestial female breath, ahhh, aww, yeaah, g..."
+    },
+    {
+      "id": "teleport-psychic-charge",
+      "label": "Psychic Teleport Charge",
+      "description": "Two-second pressure riser that cuts off dead at the peak. Built to be followed by a pop/arrival - trigger it as the wind-up, not the landing.",
+      "files": {
+        "ogg": "teleport-psychic-charge.ogg",
+        "mp3": "teleport-psychic-charge.mp3"
+      },
+      "durationSeconds": 2.038,
+      "category": "conjuration",
+      "character": "riser / wind-up",
+      "volume": 1.0,
+      "loop": false,
+      "tags": [
+        "riser",
+        "psychic",
+        "teleport",
+        "charge",
+        "pressure"
+      ],
+      "primarySpell": "misty-step",
+      "spells": [
+        "misty-step",
+        "dimension-door",
+        "blink",
+        "teleport",
+        "detect-thoughts",
+        "dominate-person",
+        "telekinesis",
+        "mind-spike"
+      ],
+      "sourceAssetId": "EqGGVaWMohnYqDGbG5dh",
+      "sourceName": "psychic teleport charge rising mind-pressure hum,..."
+    },
+    {
+      "id": "ambience-arcane-shimmer",
+      "label": "Arcane Shimmer (Ambience)",
+      "description": "Quiet high shimmer with a soft tail. Deliberately the softest cue in the pack - a background 'magic is present here' texture, not a cast.",
+      "files": {
+        "ogg": "ambience-arcane-shimmer.ogg",
+        "mp3": "ambience-arcane-shimmer.mp3"
+      },
+      "durationSeconds": 3.239,
+      "category": "ambience",
+      "character": "soft / background",
+      "volume": 0.7,
+      "loop": false,
+      "tags": [
+        "shimmer",
+        "ambience",
+        "subtle",
+        "high-end",
+        "atmosphere"
+      ],
+      "primarySpell": "detect-magic",
+      "spells": [
+        "detect-magic",
+        "guidance",
+        "light",
+        "dancing-lights",
+        "alarm",
+        "arcane-lock",
+        "nystuls-magic-aura",
+        "see-invisibility"
+      ],
+      "sourceAssetId": "0vMnN5LJOB2zNsWZSSST",
+      "sourceName": "Soft mystical ambience begins as a character enter..."
+    },
+    {
+      "id": "control-time-stop",
+      "label": "Time Stop",
+      "description": "Deep sub-bass rumble that drags into slow motion. Nearly all energy below 200 Hz, so it hits hard on speakers and thins out on laptops - pair it with a visual.",
+      "files": {
+        "ogg": "control-time-stop.ogg",
+        "mp3": "control-time-stop.mp3"
+      },
+      "durationSeconds": 3.03,
+      "category": "transmutation",
+      "character": "sub-bass / drone",
+      "volume": 0.85,
+      "loop": false,
+      "tags": [
+        "sub-bass",
+        "time",
+        "slow-motion",
+        "rumble",
+        "drone"
+      ],
+      "primarySpell": "time-stop",
+      "spells": [
+        "time-stop",
+        "slow",
+        "hold-person",
+        "hold-monster",
+        "haste",
+        "contingency",
+        "foresight"
+      ],
+      "sourceAssetId": "ThU8xOk7h5k0z5vQb7q2",
+      "sourceName": "Time stop sound effect, slow motion atmosphere, ti..."
+    },
+    {
+      "id": "cantrip-soft-sparkle",
+      "label": "Soft Cantrip Sparkle",
+      "description": "Light sparkle with a quick tail - the small, harmless magic sound. Also the best fit for UI confirmations in the dashboard.",
+      "files": {
+        "ogg": "cantrip-soft-sparkle.ogg",
+        "mp3": "cantrip-soft-sparkle.mp3"
+      },
+      "durationSeconds": 2.638,
+      "category": "cantrip",
+      "character": "one-shot / light",
+      "volume": 0.75,
+      "loop": false,
+      "tags": [
+        "sparkle",
+        "cantrip",
+        "ui",
+        "light",
+        "chime"
+      ],
+      "primarySpell": "prestidigitation",
+      "spells": [
+        "prestidigitation",
+        "mage-hand",
+        "minor-illusion",
+        "mending",
+        "druidcraft",
+        "thaumaturgy",
+        "spare-the-dying",
+        "message"
+      ],
+      "sourceAssetId": "gWwftrXDtO6qdU2YAhUI",
+      "sourceName": "Create a collection of soft, magical sound effects..."
+    },
+    {
+      "id": "divine-transformation",
+      "label": "Divine Transformation",
+      "description": "Gentle eight-second bloom that peaks around 3.5s then releases. Reads as a body or soul changing state - slower and warmer than the portal cue.",
+      "files": {
+        "ogg": "divine-transformation.ogg",
+        "mp3": "divine-transformation.mp3"
+      },
+      "durationSeconds": 8.229,
+      "category": "transmutation",
+      "character": "sustained / swell",
+      "volume": 0.85,
+      "loop": false,
+      "tags": [
+        "transformation",
+        "swell",
+        "divine",
+        "warm",
+        "bloom"
+      ],
+      "primarySpell": "polymorph",
+      "spells": [
+        "polymorph",
+        "true-polymorph",
+        "divine-intervention",
+        "revivify",
+        "raise-dead",
+        "alter-self",
+        "disguise-self",
+        "wild-shape",
+        "greater-restoration"
+      ],
+      "sourceAssetId": "KLoqnqD1OxuozbTZR7s9",
+      "sourceName": "Divine spiritual transformation sound effect. A ge..."
+    },
+    {
+      "id": "melee-dagger-stab",
+      "label": "Silent Dagger Stab",
+      "description": "One second: draw, then a muffled hit. Not a spell - this is the rogue cue, and the shortest file in the pack so it can fire on every attack without fatigue.",
+      "files": {
+        "ogg": "melee-dagger-stab.ogg",
+        "mp3": "melee-dagger-stab.mp3"
+      },
+      "durationSeconds": 1.045,
+      "category": "martial",
+      "character": "one-shot / impact",
+      "volume": 0.9,
+      "loop": false,
+      "tags": [
+        "dagger",
+        "stab",
+        "melee",
+        "rogue",
+        "stealth"
+      ],
+      "primarySpell": "sneak-attack",
+      "spells": [
+        "sneak-attack",
+        "shadow-blade",
+        "booming-blade",
+        "green-flame-blade",
+        "inflict-wounds",
+        "vampiric-touch",
+        "true-strike"
+      ],
+      "sourceAssetId": "jg3zxCPyfO9EDSW3O2HM",
+      "sourceName": "Silent dagger draw and swift, muffled stab. A quic..."
+    }
+  ],
+  "spellIndex": {
+    "alarm": "ambience-arcane-shimmer",
+    "alter-self": "divine-transformation",
+    "arcane-gate": "portal-time-tunnel",
+    "arcane-lock": "ambience-arcane-shimmer",
+    "astral-projection": "portal-time-tunnel",
+    "banishment": "portal-time-tunnel",
+    "bless": "divine-celestial-voice",
+    "blink": "teleport-psychic-charge",
+    "booming-blade": "melee-dagger-stab",
+    "commune": "divine-celestial-voice",
+    "contingency": "control-time-stop",
+    "dancing-lights": "ambience-arcane-shimmer",
+    "demiplane": "portal-time-tunnel",
+    "detect-magic": "ambience-arcane-shimmer",
+    "detect-thoughts": "teleport-psychic-charge",
+    "dimension-door": "teleport-psychic-charge",
+    "disguise-self": "divine-transformation",
+    "divine-intervention": "divine-transformation",
+    "divine-word": "divine-celestial-voice",
+    "dominate-person": "teleport-psychic-charge",
+    "druidcraft": "cantrip-soft-sparkle",
+    "eldritch-blast": "cast-wind-gust",
+    "expeditious-retreat": "cast-wind-gust",
+    "feather-fall": "cast-wind-gust",
+    "fly": "cast-wind-gust",
+    "foresight": "control-time-stop",
+    "gate": "portal-time-tunnel",
+    "greater-restoration": "divine-transformation",
+    "green-flame-blade": "melee-dagger-stab",
+    "guardian-of-faith": "divine-celestial-voice",
+    "guidance": "ambience-arcane-shimmer",
+    "gust-of-wind": "cast-wind-gust",
+    "hallow": "divine-celestial-voice",
+    "haste": "control-time-stop",
+    "heal": "divine-celestial-voice",
+    "hold-monster": "control-time-stop",
+    "hold-person": "control-time-stop",
+    "holy-aura": "divine-celestial-voice",
+    "inflict-wounds": "melee-dagger-stab",
+    "light": "ambience-arcane-shimmer",
+    "mage-hand": "cantrip-soft-sparkle",
+    "magic-missile": "cast-wind-gust",
+    "mending": "cantrip-soft-sparkle",
+    "message": "cantrip-soft-sparkle",
+    "mind-spike": "teleport-psychic-charge",
+    "minor-illusion": "cantrip-soft-sparkle",
+    "misty-step": "teleport-psychic-charge",
+    "nystuls-magic-aura": "ambience-arcane-shimmer",
+    "planar-ally": "divine-celestial-voice",
+    "plane-shift": "portal-time-tunnel",
+    "polymorph": "divine-transformation",
+    "prestidigitation": "cantrip-soft-sparkle",
+    "raise-dead": "divine-transformation",
+    "resurrection": "divine-celestial-voice",
+    "revivify": "divine-transformation",
+    "see-invisibility": "ambience-arcane-shimmer",
+    "shadow-blade": "melee-dagger-stab",
+    "slow": "control-time-stop",
+    "sneak-attack": "melee-dagger-stab",
+    "spare-the-dying": "cantrip-soft-sparkle",
+    "telekinesis": "teleport-psychic-charge",
+    "teleport": "teleport-psychic-charge",
+    "teleportation-circle": "portal-time-tunnel",
+    "thaumaturgy": "cantrip-soft-sparkle",
+    "thunderwave": "cast-wind-gust",
+    "time-stop": "control-time-stop",
+    "true-polymorph": "divine-transformation",
+    "true-strike": "melee-dagger-stab",
+    "vampiric-touch": "melee-dagger-stab",
+    "warding-wind": "cast-wind-gust",
+    "wild-shape": "divine-transformation",
+    "wind-wall": "cast-wind-gust",
+    "wish": "portal-time-tunnel"
+  }
+}

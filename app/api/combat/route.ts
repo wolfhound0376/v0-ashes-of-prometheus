@@ -1274,10 +1274,16 @@ export async function POST(req: NextRequest) {
     // that in 1985 by saying the class out loud. So: look up who is up, and
     // if they are a player with a recorded line, play it.
     //
-    // Falls back to the old chime for an NPC's turn, deliberately. Gauntlet
-    // never announced the monsters, but the table still needs to know the
-    // turn moved — silence there would read as the board having hung.
-    let cue = "ui/turn_chime"
+    // A MONSTER'S TURN GETS ITS OWN CUE, not the players' bell.
+    //
+    // Gauntlet never announced the monsters and neither does this — but the
+    // table still needs to know the turn moved, and hearing the SAME sound
+    // for "you are up" and "something else is up" makes four people look up
+    // every time anything happens. ui/turn_foe is the same cabinet saying the
+    // opposite thing: the players' figure rises through a major triad, this
+    // one falls through a minor third into a tritone, an octave lower and
+    // half as long. No voice, because nobody is being addressed.
+    let cue = "ui/turn_foe"
     const nextEntry = (combat.turn_order as { token_id: string }[])[nextIndex]
     if (nextEntry?.token_id) {
       const { data: tok } = await db
