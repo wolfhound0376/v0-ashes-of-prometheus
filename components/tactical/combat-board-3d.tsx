@@ -723,6 +723,71 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const tokenObjs: THREE.Object3D[] = []
       tokensRef.current.forEach((t) => tokenObjs.push(t.obj))
       const tokenHit = raycaster.intersectObjects(tokenObjs, true)[0]
+
+      /**
+       * WHICH SQUARE IS UNDER THE CURSOR, whatever the cursor is over.
+       *
+       * A miniature is a TALL object standing on a ONE-SQUARE base, and the
+       * board is drawn at an angle. So a model's body is painted across the
+       * squares in front of it — and the raycast tests token meshes before
+       * the floor, which means clicking the square in front of a character
+       * hits that character instead of the ground.
+       *
+       * Reported exactly that way: "Samson won't move to the block in front
+       * of the bard." Not any square — the one the bard's body covers.
+       */
+      const floorCellUnderCursor = (): string | null => {
+        if (!floorPlane) return null
+        const hit = raycaster.intersectObject(floorPlane, false)[0]
+        if (!hit) return null
+        const fx = Math.floor(hit.point.x / SQ)
+        const fy = Math.floor(hit.point.z / SQ)
+        const mm = mapRef.current
+        if (!mm || fx < 0 || fy < 0 || fx >= mm.grid_width || fy >= mm.grid_height) return null
+        return fx + "," + fy
+      }
+
+      // A MOVE BEATS A SELECTION when the ground under the cursor is legally
+      // walkable. Safe by construction: a token's OWN square is never in the
+      // reach set (you may pass through a friend but never end on one), so
+      // this can only ever fire where a model OVERHANGS a different square —
+      // which is the bug, not a case anyone wants selection for.
+      //
+      // Deliberately below the armed check and above plain selection: aiming
+      // a spell still belongs to the creature, and inspecting a body still
+      // works everywhere the ground is not walkable.
+      if (tokenHit && !armedRef.current) {
+        const reachNow = reachRef.current
+        const k = floorCellUnderCursor()
+        let o: THREE.Object3D | null = tokenHit.object
+        while (o && !o.userData.tokenId) o = o.parent
+        const hitId = o?.userData.tokenId as string | undefined
+        const c = combatRef.current
+        const activeTokenId = c?.turn_order?.[c.active_index]?.token_id
+        // The active miniature keeps its click — that is how movement opens
+        // and closes — so only OTHER bodies give way to the floor beneath.
+        if (k && reachNow?.cells.has(k) && hitId !== activeTokenId) {
+          const cell = reachNow.cells.get(k)!
+          const [cgx, cgy] = k.split(",").map(Number)
+          const feet = cell.cost * FEET_PER_SQUARE
+          if (cell.tier === "dash") {
+            setPendingDash({
+              feet,
+              commit: () => {
+                sendWalkPath(reachNow.tokenId, pathCells(k), true)
+                playerMoveRef.current(reachNow.tokenId, cgx, cgy, feet, true)
+                clearReach()
+              },
+            })
+            return
+          }
+          sendWalkPath(reachNow.tokenId, pathCells(k))
+          playerMoveRef.current(reachNow.tokenId, cgx, cgy, feet)
+          clearReach()
+          return
+        }
+      }
+
       if (tokenHit) {
         let o: THREE.Object3D | null = tokenHit.object
         while (o && !o.userData.tokenId) o = o.parent
