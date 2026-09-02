@@ -208,6 +208,37 @@ type CastAnswer = {
   hurt?: boolean
   verdict?: { outcome: AttackOutcome; margin: number } | null
   weapon?: { hit: boolean; crit: boolean } | null
+  /**
+   * An AREA cast: everyone the server found standing in the shape, each with
+   * their own verdict. Null or absent for a cast with one target.
+   */
+  victims?: AreaVictim[] | null
+}
+
+/**
+ * One body in an area cast, as the server reports it — the single-target
+ * verdict's vocabulary, per creature. The target rolled the save, so a
+ * positive margin is how well THEY got out of the way.
+ */
+type AreaVictim = { id: string; amount: number; heals: boolean; outcome: string; margin: number }
+
+/** `victims` off the wire → the ones with enough fields to draw. */
+const parseVictims = (v: unknown): AreaVictim[] => {
+  if (!Array.isArray(v)) return []
+  const out: AreaVictim[] = []
+  for (const raw of v) {
+    if (!raw || typeof raw !== "object") continue
+    const r = raw as Record<string, unknown>
+    if (typeof r.id !== "string" || !r.id) continue
+    out.push({
+      id: r.id,
+      amount: typeof r.amount === "number" ? r.amount : 0,
+      heals: r.heals === true,
+      outcome: typeof r.outcome === "string" ? r.outcome : "",
+      margin: typeof r.margin === "number" ? r.margin : 0,
+    })
+  }
+  return out
 }
 
 const ATTACK_OUTCOMES: readonly string[] = [
@@ -482,7 +513,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     show: () => {},
     clear: () => {},
   })
-  const castPointVerbRef = useRef<(caster: string, gx: number, gy: number, ability: string) => Promise<void>>(async () => {})
+  // Answers with who was standing in the shape and what each of them rolled,
+  // because — like the creature cast since #333 — the effect now waits on the
+  // server's answer instead of going off ahead of it.
+  const castPointVerbRef = useRef<
+    (caster: string, gx: number, gy: number, ability: string) => Promise<CastAnswer>
+  >(async () => ({ ok: false }))
 
   // ---- the hover read-out --------------------------------------------
   // BG3 answers "what happens if I click here" before you click. While a
@@ -516,7 +552,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * indistinguishable from a broken spell.
    */
   const applyCastOutcomeRef = useRef<
-    (tokenId: string, r: { amount: number; hit: boolean; heals: boolean }) => void
+    (tokenId: string, r: { amount: number; hit: boolean; heals: boolean; word?: "saved" | "miss" | null }) => void
   >(() => {})
 
   useEffect(() => {
@@ -1347,6 +1383,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        * first was half a second before the arm had moved.
        */
       swing?: boolean
+      /**
+       * An area cast's bodies, resolved to what each one does when the shape
+       * lands. The effect flies to a SQUARE, not a creature, so `victimId`
+       * is null for these and this list is how the impact reaches the people
+       * standing in it — until now nobody in a Fireball reacted at all,
+       * because the impact handler only ever knew about one victim.
+       */
+      victims?: { id: string; reaction: TokenState | null; amount: number; heals: boolean; word: "saved" | "miss" | null }[]
       /** Played on the frame the effect arrives — the impact sound. */
       onLand?: () => void
     }
@@ -1368,6 +1412,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return defenceFor(answer.verdict.outcome, answer.verdict.margin, { hasShield })
       }
       return answer.hurt ? "hurt" : null
+    }
+
+    /**
+     * Everyone the server found in an area cast, each turned into a reaction
+     * the way a single target is — through reactionFor, so a shield-bearer
+     * braces and the model's own clips decide what a dodge looks like. A zero
+     * carries the word that explains it (SAVED, or MISS for the odd area
+     * spell that rolls to hit); real damage carries no word, the number says
+     * enough.
+     */
+    const areaVictims = (answer: CastAnswer | null | undefined) => {
+      if (!answer?.victims?.length) return undefined
+      return answer.victims.map((v) => {
+        const row = tokensRef.current.get(v.id)?.row ?? null
+        const verdict = isAttackOutcome(v.outcome) ? { outcome: v.outcome, margin: v.margin } : null
+        return {
+          id: v.id,
+          amount: v.amount,
+          heals: v.heals,
+          word: v.amount > 0 ? null : v.outcome === "saved" ? ("saved" as const) : ("miss" as const),
+          reaction: reactionFor({ ok: true, hurt: v.amount > 0 && !v.heals, verdict }, row),
+        }
+      })
     }
 
     /**
@@ -1516,6 +1583,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         spell: ability,
         target,
         reaction: reactionFor(outcome, victimRow),
+        victims: areaVictims(outcome),
         victimId: victimRow?.id ?? null,
       }
       pending.push(cast)
@@ -1787,11 +1855,20 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         affectedRef.current.clear()
 
         const p = sqCentre(gx, gy)
-        performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, null, { x: p.x, z: p.z })
         setArmedSpell(null)
-        // And let the server say who was actually standing in it. The outline
-        // is already gone; the dice are rolled where they cannot be argued with.
-        void castPointVerbRef.current(shooter.row.id, gx, gy, armed.name)
+        // ASK FIRST, ANIMATE SECOND — the same order the creature cast has
+        // kept since #333, and for the same reason: a refused Fireball must
+        // not go off on screen. It also means the answer is in hand before
+        // the effect flies, so everyone the server found standing in the
+        // shape can react on the frame it lands rather than not at all.
+        void (async () => {
+          const res = await castPointVerbRef.current(shooter.row.id, gx, gy, armed.name)
+          if (!res?.ok) return   // the verb has already said why
+          performCast(
+            shooter.row.character_id as string, armed.name, armed.kind,
+            shooter, null, { x: p.x, z: p.z }, res,
+          )
+        })()
       }
 
       // THE FLOOR ASKS FIRST — EVERY TIME.
@@ -1849,7 +1926,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         outcomeWordVfx({
           parent: scene,
           position: new THREE.Vector3(t.obj.position.x, 0, t.obj.position.z),
-          outcome: r.hit ? "saved" : "miss",
+          // The verdict's own word when the caller has one. Reconstructing
+          // it from `hit` was wrong for exactly the case the word exists
+          // for: the single-target save path reports hit = amount > 0, so a
+          // clean save arrived here as hit:false and was painted MISS.
+          outcome: r.word ?? (r.hit ? "saved" : "miss"),
           scale: radiusFor(t.row.token_size) / 0.75,
         }),
       )
@@ -3953,18 +4034,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
          * flinching a corpse would stand it up — the same trap the death
          * clip's HOLD_LAST exists to avoid.
          */
-        const flinch = () => {
-          p.onLand?.()          // the bang, on the same frame as the flash
-          if (!p.victimId) return
+        /** One body answering for the impact: the flinch, or the defence. */
+        const answerFor = (victimId: string, reaction: TokenState | null) => {
           // Remember what hit it, so if this is the blow that kills it, the
           // death can be made of the same stuff. Falls back to the spellbook
           // for types the kit does not draw (lightning), and to physical for
           // anything with no damage type at all — a weapon.
           lastHitBy.set(
-            p.victimId,
+            victimId,
             kitType ?? ((spellEntry(p.spell).damage as DamageType | undefined) ?? "physical"),
           )
-          const victim = tokensRef.current.get(p.victimId)
+          const victim = tokensRef.current.get(victimId)
           if (!victim?.anim || isDowned(victim.row)) return
           // WHAT THE TARGET DOES ABOUT IT.
           //
@@ -3974,13 +4054,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // attacker earned on their own, or a model rigged with no dodge —
           // which stands still rather than borrowing the flinch, because a
           // miniature that recoils on a miss is lying to the table.
-          if (!p.reaction) return
+          if (!reaction) return
           // Steel turned aside and a shield taking a blow are their own
           // noises, on top of whatever the effect made arriving. A dodge is
           // not: the sound of not being there is the whiff already playing.
-          if (p.reaction === "parry") playSfx("combat/parry_blade", { volume: 0.8 })
-          else if (p.reaction === "block") playSfx("combat/block_shield", { volume: 0.8 })
-          playState(victim.anim, p.reaction, true)
+          if (reaction === "parry") playSfx("combat/parry_blade", { volume: 0.8 })
+          else if (reaction === "block") playSfx("combat/block_shield", { volume: 0.8 })
+          playState(victim.anim, reaction, true)
+        }
+        const flinch = () => {
+          p.onLand?.()          // the bang, on the same frame as the flash
+          if (p.victimId) answerFor(p.victimId, p.reaction)
+          // EVERYONE IN THE SHAPE. An area effect lands on a square and the
+          // impact handler used to stop there; the bodies standing on it were
+          // nobody's business. Each one now takes its hit points (or its
+          // SAVED) and its reaction on this frame, from the server's own
+          // per-victim verdict. When the realtime row for the same damage
+          // arrives a moment later, glideToken sees no change and draws no
+          // second number.
+          for (const v of p.victims ?? []) {
+            applyCastOutcomeRef.current(v.id, { amount: v.amount, hit: v.amount > 0, heals: v.heals, word: v.word })
+            answerFor(v.id, v.reaction)
+          }
         }
         // A swing spawns no effect: the contact frame IS the impact.
         if (p.swing) { flinch(); continue }
@@ -4320,6 +4415,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             amount: Number(data.amount ?? 0),
             hit: data.hit !== false,
             heals: Boolean(data.heals),
+            // The verdict's own word. The server reports hit = amount > 0 on
+            // a save, so without this a clean save read as MISS.
+            word: data.outcome === "saved" ? "saved"
+              : data.outcome === "miss" || data.outcome === "fumble" ? "miss"
+              : null,
           })
           // Real damage means the body answers for it. A save, a miss, or a
           // pure utility spell leaves the target standing — or, with the rest
@@ -4363,13 +4463,20 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const data = await res.json().catch(() => null)
         if (!res.ok) {
           say(data?.error ?? "The spell would not resolve.")
-        } else if (data?.line) {
+          return { ok: false }
+        }
+        if (data?.line) {
           say(data.line as string)
         } else if (data?.area && Array.isArray(data.victims) && data.victims.length === 0) {
           say(`${ability} catches no one.`)
         }
+        // Who was standing in it, with what each of them rolled. Empty for a
+        // blast that caught nobody and for a utility area (Fog Cloud), both
+        // of which still animate — the spell happened, it just hurt no one.
+        return { ok: true, victims: parseVictims(data?.victims) }
       } catch {
-        say("The spell landed, but the tally did not reach the server.")
+        say("The spell did not reach the server — nothing was spent.")
+        return { ok: false }
       }
     }
   }, [sandbox])
