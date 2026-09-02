@@ -10,7 +10,9 @@
 //   • a school-specific rune disc spins up off the hand,
 //   • the spell leaves by a route chosen by its damage type — a thrown ball, a
 //     held beam, a radiating gust, a column from the sky,
-//   • and it blooms on arrival with that type's impact sheet.
+//   • it blooms on arrival with that type's impact sheet,
+//   • and an AREA spell lays that type's looping floor mark where it landed —
+//     burning ground, rime, fog, holy light — that stays while the spell does.
 //
 // Everything is a baked sprite sheet under public/vfx/, fetched lazily and
 // cached across casts, so a fireball costs one 176 KB sheet and a rune disc,
@@ -21,12 +23,16 @@
 // ============================================================================
 import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
-import { spellEntry } from "@/lib/spellbook"
+import { spellEntry, type AreaSpec } from "@/lib/spellbook"
+import { FEET_PER_SQUARE } from "@/lib/aoe"
 
 export type DamageType =
   | "fire" | "cold" | "lightning" | "thunder" | "acid" | "poison"
   | "necrotic" | "radiant" | "force" | "psychic" | "physical"
   | "healing" | "eldritch"
+  // Not a damage type in 5e and not pretending to be: the kit's name for a
+  // conjured bank of fog, which harms nobody and still needs drawing.
+  | "fog"
 
 /** How the spell gets from the hand to the target. From the kit's DELIVERY. */
 type Route = "ball" | "beam" | "radiate" | "sky" | "impact-only"
@@ -56,6 +62,12 @@ interface TypeSpec {
   speed?: number
   /** Tint applied to the (grayscale-ish) baked art. */
   tint: number
+  /**
+   * Looping sheet laid flat on the floor where an AREA spell of this type
+   * lands, the size of the area, for as long as the spell lasts. Absent for
+   * types with no loop art yet; a single-target cast never lays one.
+   */
+  decal?: string
 }
 
 // Every damage type is now covered.
@@ -72,8 +84,8 @@ interface TypeSpec {
 // PHYSICAL is the one that genuinely had nothing, and the only entry here
 // that is not a spell. It gets an impact and no charge disc.
 const TYPES: Partial<Record<DamageType, TypeSpec>> = {
-  fire:     { rune: "runeFire",     route: "ball",        travel: "fireball",      impact: "fireball",       impactScale: 2.6, charge: 0.80, speed: 15, tint: 0xffffff },
-  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff },
+  fire:     { rune: "runeFire",     route: "ball",        travel: "fireball",      impact: "fireball",       impactScale: 2.6, charge: 0.80, speed: 15, tint: 0xffffff, decal: "aoeFire" },
+  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff, decal: "aoeFrost" },
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff },
   poison:   { rune: "runeAcid",     route: "ball",        travel: "poisonBolt",    impact: "poisonCloud",    charge: 0.65, speed: 11, tint: 0xffffff },
@@ -90,12 +102,28 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   // borrowed sheet had no descent and no ground crawl, so every Lightning
   // Bolt read as a small thunderclap. Same sheet, wrong verb.
   lightning:{ rune: "runeStorm",    route: "beam",        travel: "thunderGust",   impact: "lightningStrike", impactScale: 1.5, charge: 0.45, tint: 0xffffff },
-  radiant:  { rune: "runeRadiant",  route: "sky",         impact: "radiantColumn",  impactScale: 1.0, charge: 0.85, tint: 0xffffff },
-  healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff },
+  radiant:  { rune: "runeRadiant",  route: "sky",         impact: "radiantColumn",  impactScale: 1.0, charge: 0.85, tint: 0xffffff, decal: "aoeHoly" },
+  healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff, decal: "aoeHoly" },
   acid:     { rune: "runeAcid",     route: "impact-only", impact: "acidImpact",     charge: 0.60, tint: 0xffffff },
   // No rune, and a charge short enough to read as a swing rather than a cast.
   // A weapon hit has no windup to show: the animation IS the windup.
   physical: {                       route: "impact-only", impact: "physicalImpact", impactScale: 1.3, charge: 0.12, tint: 0xffffff },
+  // Nothing flies and nothing blooms: the fog IS the arrival. The storm sigil
+  // is the closest rune to a weather conjuration, and a spell still needs a
+  // charge — that is what casting looks like.
+  fog:      { rune: "runeStorm",    route: "impact-only",                                             charge: 0.60, tint: 0xffffff, decal: "aoeFog" },
+}
+
+/**
+ * Spells the kit draws by NAME rather than by damage type.
+ *
+ * Fog Cloud deals no damage and heals nobody, so by type it was nothing and
+ * fell through to the old sparks — which, for a spell whose entire effect is
+ * a bank of fog on the floor, drew a cast and no fog. Consulted before the
+ * damage type, so it holds whatever the spellbook says the spell is made of.
+ */
+const BY_SPELL: Record<string, DamageType> = {
+  "fog cloud": "fog",
 }
 
 export function hasKitEffect(type: DamageType): boolean {
@@ -165,6 +193,8 @@ export function kitEnabled(): boolean {
  */
 export function kitVfxTypeFor(spellName: string): DamageType | null {
   if (!kitEnabled()) return null
+  const named = BY_SPELL[spellName.trim().toLowerCase()]
+  if (named) return hasKitEffect(named) ? named : null
   const e = spellEntry(spellName)
   if (!e) return null
   const type: DamageType | null =
@@ -178,7 +208,19 @@ export function kitVfxTypeFor(spellName: string): DamageType | null {
 // Lazy and cached. The manifest is fetched once; each sheet at most once, no
 // matter how many casts ask for it.
 
-export interface SheetMeta { file: string; cols: number; rows: number; frames: number; fps: number }
+export interface SheetMeta {
+  file: string
+  cols: number
+  rows: number
+  frames: number
+  fps: number
+  /**
+   * The sheet was cut to cycle — its last frame runs back into its first —
+   * so a Flip driven past the end wraps instead of holding the last frame.
+   * Written by `scripts/vfx/bake_video_sheet.py --loop`; absent is one-shot.
+   */
+  loop?: boolean
+}
 export interface Sheet extends SheetMeta { tex: THREE.Texture }
 
 const VFX_BASE = "/vfx"
@@ -234,6 +276,7 @@ export function prewarmKit(type: DamageType): void {
   if (spec.rune) void loadSheet(spec.rune).catch(() => {})
   if (spec.travel) void loadSheet(spec.travel).catch(() => {})
   if (spec.impact) void loadSheet(spec.impact).catch(() => {})
+  if (spec.decal) void loadSheet(spec.decal).catch(() => {})
 }
 
 // ── one animated quad ───────────────────────────────────────────────────────
@@ -268,8 +311,15 @@ class Flip {
     this.setFrame(0)
   }
 
-  /** `p` is 0..1 through the sheet. Past 1 it holds the last frame. */
+  /**
+   * `p` is 0..1 through the sheet. Past 1 it holds the last frame — unless
+   * the sheet was baked to loop, in which case it wraps and keeps cycling for
+   * as long as it is driven. A one-shot sheet ends on a fade to nothing, so
+   * holding its last frame is invisible; a looping sheet's last frame is a
+   * full picture, and holding it would freeze the fire.
+   */
   setProgress(p: number) {
+    if (this.sheet.loop) { this.setLooping(p); return }
     this.setFrame(Math.min(this.sheet.frames - 1, Math.floor(p * this.sheet.frames)))
   }
 
@@ -292,6 +342,121 @@ class Flip {
     this.mat.dispose()
     this.tex.dispose()
   }
+}
+
+// ── the floor mark ──────────────────────────────────────────────────────────
+// An area spell's mark on the ground: one flat looping quad at the area's
+// centre, the size of the area, that stays while the spell does.
+//
+// This is NOT the cell-accurate aftermath mark in aoe-decal.ts. That one draws
+// exactly the squares areaCells() returned and needs the board to hand it the
+// list; this one is spawned from inside the cast, which knows only where the
+// spell landed and how big the spellbook says it is. They are meant to share
+// the floor: this is the live effect — fire still burning, fog still hanging —
+// and the other is what the stone remembers afterwards.
+
+/**
+ * A hair above the floor. The same slot aoe-decal.ts uses (its DECAL_Y), so
+ * the two marks never z-fight, and under the movement bands at 0.035 so a
+ * burning floor never hides the live answer to "where can I go".
+ */
+const DECAL_Y = 0.025
+/** Seconds a one-shot mark stays lit before it fades. */
+const DECAL_HOLD = 6
+/** Seconds the mark takes to fade out. */
+const DECAL_FADE = 1
+/** Seconds it takes to arrive — short, so it reads as part of the impact. */
+const DECAL_FADE_IN = 0.35
+/**
+ * Seconds a concentration mark may stay if nobody calls end().
+ *
+ * The honest duration of a concentration spell is "until concentration
+ * drops", and nothing on either side of the wire tracks concentration yet,
+ * so the kit cannot be told. end() is the hook for when it can be. Until then
+ * this cap — ten minutes, the SRD's middle duration for lingering areas — is a
+ * leak guard rather than a rule: it keeps a Fog Cloud from surviving a whole
+ * session in a browser that never heard the caster drop it.
+ */
+const DECAL_CONCENTRATION_CAP = 600
+
+/**
+ * How wide the mark is, in squares — the unit aoe-decal.ts measures in (one
+ * board unit per square; the board's SQ is 1.0).
+ *
+ * Follows the spellbook's per-shape meaning of sizeFt exactly: a sphere and a
+ * cylinder give a RADIUS, so the mark is twice it; a cube's edge and a cone's
+ * or a line's length are already the full span.
+ */
+function decalDiameter(area: AreaSpec): number {
+  const s = area.sizeFt / FEET_PER_SQUARE
+  switch (area.shape) {
+    case "sphere":
+    case "cylinder":
+      return s * 2
+    case "cube":
+      return Math.max(1, Math.round(s))
+    case "cone":
+    case "line":
+      return s
+  }
+}
+
+/**
+ * Where the mark is centred, on the floor.
+ *
+ * A point spell is centred where it was aimed. A self-origin one opens from
+ * the caster, so its centre is out along the cast: halfway down a cone or a
+ * line, the middle of the cube areaCells() lays in front of the caster
+ * (axis-snapped, as the cells are), and the caster's own square for a sphere
+ * on self (Spirit Guardians).
+ *
+ * `foot` is the caster's hand dropped to the floor. The kit is handed a hand
+ * bone, not the token, and does not know the board's scene hierarchy well
+ * enough to climb to the token safely — and a hand is within a third of a
+ * square of the token's centre, which is inside the error of a soft-edged
+ * disc.
+ */
+function decalCentre(area: AreaSpec, foot: THREE.Vector3, aim: THREE.Vector3): THREE.Vector3 {
+  const c = new THREE.Vector3()
+  if (area.origin === "point") return c.set(aim.x, DECAL_Y, aim.z)
+  const size = area.sizeFt / FEET_PER_SQUARE
+  const dir = new THREE.Vector3(aim.x - foot.x, 0, aim.z - foot.z)
+  // No direction at all (aimed at your own square): areaCells defaults to
+  // north, which is -y on the grid and -z on the board.
+  if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1)
+  else dir.normalize()
+  switch (area.shape) {
+    case "sphere":
+    case "cylinder":
+      return c.set(foot.x, DECAL_Y, foot.z)
+    case "cube": {
+      const edge = Math.max(1, Math.round(size))
+      const horiz = Math.abs(dir.x) >= Math.abs(dir.z)
+      const sx = horiz ? Math.sign(dir.x) || 1 : 0
+      const sz = horiz ? 0 : Math.sign(dir.z) || 1
+      const reach = (edge + 1) / 2
+      return c.set(foot.x + sx * reach, DECAL_Y, foot.z + sz * reach)
+    }
+    case "cone":
+    case "line":
+      return c.set(foot.x + (dir.x * size) / 2, DECAL_Y, foot.z + (dir.z * size) / 2)
+  }
+}
+
+/**
+ * A cast's handle, plus the one thing an area cast needs that a bolt does
+ * not: a way to be told the spell is over.
+ *
+ * Mirrors AreaDecalHandle in aoe-decal.ts, so whichever board code ends a
+ * concentration can end both marks the same way.
+ */
+export interface CastHandle extends VfxHandle {
+  /**
+   * End a lingering floor mark early — concentration broke, the caster went
+   * down. Starts its fade; update() keeps returning true until it finishes.
+   * Safe to call twice, and a no-op on a cast that laid no mark.
+   */
+  end(): void
 }
 
 // ── the cast ────────────────────────────────────────────────────────────────
@@ -321,11 +486,20 @@ export function castSpellKitVfx(opts: {
    * this rather than off a guessed delay.
    */
   onImpact?: () => void
-}): VfxHandle {
+}): CastHandle {
   const { parent, anchor, type } = opts
   const spec = routeFor(type, opts.spell)
   const target = opts.target ? opts.target.clone() : null
   const areaScale = opts.scale ?? 1
+
+  // The floor mark, for an area spell whose type has one. Read off the
+  // spellbook: `area` is what makes a spell an area, and `concentration` is
+  // what makes its mark linger rather than burn out.
+  const entry = opts.spell ? spellEntry(opts.spell) : null
+  const mark =
+    spec && spec.decal && entry?.area
+      ? { sheet: spec.decal, area: entry.area, lingers: entry.concentration === true }
+      : null
 
   const group = new THREE.Group()
   parent.add(group)
@@ -334,6 +508,9 @@ export function castSpellKitVfx(opts: {
   let travel: Flip | null = null
   let impact: Flip | null = null
   let light: THREE.PointLight | null = null
+  let decal: Flip | null = null
+  let decalSheet: Sheet | null = null
+  let decalFailed = false
 
   const hand = new THREE.Vector3()
   anchor.getWorldPosition(hand)
@@ -345,12 +522,16 @@ export function castSpellKitVfx(opts: {
       : spec && (spec.route === "beam" || spec.route === "radiate")
         ? 0.55
         : 0.0
+  const impactAt = charge + flightTime
   const impactLife = 0.9
-  const lifetime = charge + flightTime + impactLife
+  const lifetime = impactAt + impactLife
 
   let t = 0
   let disposed = false
+  let castGone = false
   let impacted = false
+  let ended = false
+  let endedAt = 0
 
   // Sheets may still be in flight. Each builder is a no-op until its sheet
   // lands, and the effect simply starts from wherever it has got to — a cast
@@ -358,7 +539,7 @@ export function castSpellKitVfx(opts: {
   if (spec) {
     if (spec.rune) {
       void loadSheet(spec.rune).then((s) => {
-        if (disposed) return
+        if (disposed || castGone) return
         disc = new Flip(s, spec.tint, 1.1, 1.1)
         group.add(disc.mesh)
       }).catch(() => {})
@@ -366,7 +547,7 @@ export function castSpellKitVfx(opts: {
 
     if (spec.travel) {
       void loadSheet(spec.travel).then((s) => {
-        if (disposed) return
+        if (disposed || castGone) return
         const isBeam = spec.route === "beam" || spec.route === "radiate"
         travel = new Flip(s, spec.tint, isBeam ? 1 : 0.9, isBeam ? 0.55 : 0.9)
         travel.opacity = 0
@@ -376,12 +557,22 @@ export function castSpellKitVfx(opts: {
 
     if (spec.impact) {
       void loadSheet(spec.impact).then((s) => {
-        if (disposed) return
+        if (disposed || castGone) return
         const k = (spec.impactScale ?? 1.6) * areaScale
         impact = new Flip(s, spec.tint, 2.0 * k, 2.0 * k)
         impact.opacity = 0
         group.add(impact.mesh)
       }).catch(() => {})
+    }
+
+    if (mark) {
+      // Only the sheet is fetched here; the quad is built at impact, where
+      // the landing point is known. A sheet that never arrives costs the
+      // mark and nothing else — the cast ends on schedule without it.
+      void loadSheet(mark.sheet).then((s) => {
+        if (disposed) return
+        decalSheet = s
+      }).catch(() => { decalFailed = true })
     }
 
     // One non-shadowing light, matching the board's stated budget.
@@ -390,13 +581,30 @@ export function castSpellKitVfx(opts: {
     group.add(light)
   }
 
+  /**
+   * Tear down the cast — disc, delivery, bloom, light — and nothing else.
+   *
+   * Split from dispose() because a floor mark outlives the cast that laid it
+   * by seconds or minutes, and keeping four invisible quads and a dead light
+   * in the scene for a ten-minute Fog Cloud is four draw calls for nothing.
+   */
+  const disposeCast = () => {
+    if (castGone) return
+    castGone = true
+    for (const f of [disc, travel, impact]) {
+      if (!f) continue
+      group.remove(f.mesh)
+      f.dispose()
+    }
+    disc = travel = impact = null
+    if (light) { group.remove(light); light = null }
+  }
+
   const dispose = () => {
     if (disposed) return
     disposed = true
-    disc?.dispose()
-    travel?.dispose()
-    impact?.dispose()
-    if (light) group.remove(light)
+    disposeCast()
+    if (decal) { group.remove(decal.mesh); decal.dispose(); decal = null }
     parent.remove(group)
   }
 
@@ -407,6 +615,7 @@ export function castSpellKitVfx(opts: {
 
   const dest = new THREE.Vector3()
   const dir = new THREE.Vector3()
+  const foot = new THREE.Vector3()
 
   return {
     update(dt: number) {
@@ -416,6 +625,11 @@ export function castSpellKitVfx(opts: {
 
       anchor.getWorldPosition(hand)
       dest.copy(target ?? hand)
+
+      // The cast is over; only the floor mark, if any, is still going. Every
+      // section below is guarded on the piece it draws, so once these are
+      // null they fall through.
+      if (t >= lifetime) disposeCast()
 
       // ── 1. the disc spins up off the hand ──────────────────────────────
       if (disc) {
@@ -474,7 +688,6 @@ export function castSpellKitVfx(opts: {
       }
 
       // ── 3. impact ──────────────────────────────────────────────────────
-      const impactAt = charge + flightTime
       if (t >= impactAt) {
         if (!impacted) {
           impacted = true
@@ -507,8 +720,44 @@ export function castSpellKitVfx(opts: {
         }
       }
 
-      if (t >= lifetime) { dispose(); return false }
+      // ── 4. the floor mark ──────────────────────────────────────────────
+      // Laid on the impact frame, flat on the floor at the area's centre and
+      // the area's size; fades in with the bloom, loops while it lives, then
+      // fades over a second. A lingering (concentration) mark lives until
+      // end() — or the cap — and a one-shot one for DECAL_HOLD seconds.
+      let markOver = true
+      if (mark && t >= impactAt) {
+        const mt = t - impactAt
+        if (!decal && decalSheet) {
+          const d = decalDiameter(mark.area) * areaScale
+          decal = new Flip(decalSheet, spec.tint, d, d)
+          decal.mesh.rotation.x = -Math.PI / 2
+          decal.mesh.position.copy(decalCentre(mark.area, foot.set(hand.x, 0, hand.z), dest))
+          decal.opacity = 0
+          group.add(decal.mesh)
+        }
+        const hold = mark.lingers ? DECAL_CONCENTRATION_CAP : DECAL_HOLD
+        const endAt = ended ? Math.min(endedAt, hold) : hold
+        if (decal && decalSheet) {
+          let a = Math.min(1, mt / DECAL_FADE_IN)
+          if (mt > endAt) a *= Math.max(0, 1 - (mt - endAt) / DECAL_FADE)
+          decal.opacity = a
+          // A clock, not a 0..1 progress: the sheet loops (Flip.setProgress),
+          // so this plays it at its own frame rate for as long as it lives.
+          decal.setProgress((mt * decalSheet.fps) / decalSheet.frames)
+        }
+        markOver = decalFailed || mt >= endAt + DECAL_FADE
+      } else if (mark) {
+        markOver = false
+      }
+
+      if (t >= lifetime && markOver) { dispose(); return false }
       return true
+    },
+    end() {
+      if (ended) return
+      ended = true
+      endedAt = Math.max(0, t - impactAt)
     },
     dispose,
   }

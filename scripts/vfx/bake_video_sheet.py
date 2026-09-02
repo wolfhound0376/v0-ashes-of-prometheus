@@ -101,8 +101,13 @@ def bake(frame_glob, out_dir, name, crop_x=None, crop_w=None, loop=False,
 
     path = os.path.join(out_dir, f"{name}.webp")
     sheet.save(path, "WEBP", quality=90, method=6)
-    return {"file": f"{name}.webp", "cols": cols, "rows": rows,
-            "frames": want, "fps": fps, "bytes": os.path.getsize(path)}
+    entry = {"file": f"{name}.webp", "cols": cols, "rows": rows,
+             "frames": want, "fps": fps, "bytes": os.path.getsize(path)}
+    if loop:
+        # The player reads this: a looping sheet wraps instead of holding its
+        # last frame (SheetMeta.loop in spell-vfx-kit.ts).
+        entry["loop"] = True
+    return entry
 
 
 if __name__ == "__main__":
