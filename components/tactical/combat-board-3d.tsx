@@ -289,6 +289,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [pendingDash, setPendingDash] = useState<
     { feet: number; commit: () => void } | null
   >(null)
+  /**
+   * A cast that CROSSES SIDES — a heal aimed at a hostile, a harmful spell
+   * aimed at your own — parked here until the player confirms it.
+   *
+   * Sam's ruling: "Sometimes you want to heal an enemy; that's ok. We just
+   * need confirmation." So crossing the line is a question, not a refusal.
+   * Same shape as the Dash confirm above, for the same reason: the cost is
+   * real, so the board asks before it sends anything.
+   *
+   * `commit` captures shooter, victim and the armed spell BY VALUE at the
+   * moment the dialog opens. The dialog can sit open while armedRef changes
+   * underneath it, and re-reading refs inside the commit is exactly the bug
+   * that once made the wrong miniature answer.
+   */
+  const [pendingCross, setPendingCross] = useState<
+    { kind: "foe" | "friend"; spell: string; target: string; commit: () => void } | null
+  >(null)
   const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
   /** The HUD's ability bar reaches the scene through here, the same way
    *  moves do. Set inside the scene effect; a no-op until the board is up. */
@@ -365,7 +382,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * has a history of invented mechanics reaching the table that way.
    */
   const casterRef = useRef<Map<string, { atk: number | null; dc: number | null }>>(new Map())
-  const castVerbRef = useRef<(caster: string, target: string, ability: string) => Promise<void>>(async () => {})
+  const castVerbRef = useRef<(caster: string, target: string, ability: string, crossSide?: boolean) => Promise<void>>(async () => {})
 
   useEffect(() => {
     setDm(Boolean(getDmKey()))
@@ -862,9 +879,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (!status.ok) {
         line =
           status.reason === "sight" ? "no clear line"
-          : status.reason === "foe" ? "not one of yours"
-          : status.reason === "friend" ? "on your side"
+          : status.reason === "self" ? "not on yourself"
           : `${status.squares * 5} ft — out of range`
+      } else if (status.confirm) {
+        // Violet ring: a legal target, but the click will ask first.
+        line = status.confirm === "foe" ? "not one of yours — will ask first" : "on your side — will ask first"
       } else if ((victim.row.hp_current ?? 1) <= 0) {
         line = "down — a hit costs it a death save"
       } else {
@@ -1305,28 +1324,48 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         say(
           status.reason === "sight"
             ? `${victim.row.label} is behind cover — ${armed.name} needs a clear line.`
-            : status.reason === "foe"
-              ? `${armed.name} only helps your own — ${victim.row.label} is not one of yours.`
-              : status.reason === "friend"
-                ? `${victim.row.label} is on your side. ${armed.name} is not for them.`
-                : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
+            : status.reason === "self"
+              ? `${armed.name} is not for turning on yourself.`
+              : `${armed.name} reaches ${armed.entry.rangeFt} ft — ${victim.row.label} is ${status.squares * 5} ft away.`,
         )
         return
       }
-      windupRef.current?.stop(0.08)
-      windupRef.current = null
-      stopCharge()
-      clearTargets()
-      setSelected(victim.row)
-      // Cast from the token we locked, AT the creature that was clicked.
-      // Both are passed explicitly: setSelected above has not reached the ref
-      // this function would otherwise read from.
-      performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, victim.row)
-      setArmedSpell(null)
-      // And let the server say what it did. The animation is already playing;
-      // the dice are rolled where they cannot be argued with, and the result
-      // arrives in the same combat log everyone at the table is reading.
-      void castVerbRef.current(shooter.row.id, victim.row.id, armed.name)
+      // THE THROW, as one closure over the three things it needs. `armed`,
+      // `shooter` and `victim` are the locals resolved above — values, not
+      // refs — so a confirm dialog can hold this for as long as it likes and
+      // still throw the spell that was armed AT the creature that was
+      // clicked, whatever armedRef says by then.
+      const commit = (crossSide: boolean) => {
+        windupRef.current?.stop(0.08)
+        windupRef.current = null
+        stopCharge()
+        clearTargets()
+        setSelected(victim.row)
+        // Cast from the token we locked, AT the creature that was clicked.
+        // Both are passed explicitly: setSelected above has not reached the ref
+        // this function would otherwise read from.
+        performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, victim.row)
+        setArmedSpell(null)
+        // And let the server say what it did. The animation is already playing;
+        // the dice are rolled where they cannot be argued with, and the result
+        // arrives in the same combat log everyone at the table is reading.
+        // `crossSide` is the record of the player's consent — the server
+        // keeps its fence up unless it arrives.
+        void castVerbRef.current(shooter.row.id, victim.row.id, armed.name, crossSide)
+      }
+      // CROSSING SIDES IS A DECISION, NOT AN ACCIDENT — and not a refusal.
+      // A heal on a hostile, a harm on your own: the board asks, and CANCEL
+      // leaves the spell armed and the turn untouched.
+      if (status.confirm) {
+        setPendingCross({
+          kind: status.confirm,
+          spell: armed.name,
+          target: victim.row.label,
+          commit: () => commit(true),
+        })
+        return
+      }
+      commit(false)
     }
     releaseAtRef.current = releaseAt
 
@@ -1807,13 +1846,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const reachGeo = new THREE.PlaneGeometry(SQ * 0.94, SQ * 0.94)
     // LEGAL TARGETS. While a spell is armed, every creature wears a ring, and
     // the ring says what it is: red for a spell that harms, green for one that
-    // helps, amber for a body already down, and a dim grey for a creature the
-    // spell cannot reach.
+    // helps, violet for a creature on the WRONG side of the spell, amber for a
+    // body already down, and a dim grey for a creature the spell cannot reach.
     //
     // Showing the unreachable ones GREY rather than hiding them is the whole
     // point. A creature with no ring is indistinguishable from a creature the
     // board forgot about; a grey ring says "I see it, you can't hit it", and
     // the click still explains why.
+    //
+    // VIOLET MEANS "A DIALOG IS COMING". A heal on a hostile or a harm on your
+    // own is legal — Sam's ruling — but the click asks first, and the ring has
+    // to say so before the click does. It outranks amber: a downed enemy you
+    // are about to heal is a question before it is a death save.
     const targetGroup = new THREE.Group()
     scene.add(targetGroup)
     const targetRingGeo = new THREE.RingGeometry(0.62, 0.86, 44)
@@ -1823,6 +1867,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const downedMat = new THREE.MeshBasicMaterial({ color: 0xffab3d, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
     /** Out of range, or nothing but wall between you and it. */
     const deniedMat = new THREE.MeshBasicMaterial({ color: 0x6c6f7a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
+    /** Across the line: a legal target the click will ask about first. */
+    const crossMat = new THREE.MeshBasicMaterial({ color: 0xb47dff, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
 
     /**
      * Can this square see that one?
@@ -1893,13 +1939,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * Now `helpful` is a rule. A heal reaches your own side; a harmful spell
      * reaches the other. The server enforces the same rule independently —
      * the dash band taught us twice that a client-only fence is not a fence.
+     *
+     * CROSSING THE LINE IS A QUESTION, NOT A REFUSAL. Sam: "Sometimes you
+     * want to heal an enemy; that's ok. We just need confirmation." So a side
+     * violation comes back `ok` with `confirm` set — 'foe' for a heal aimed
+     * at a hostile, 'friend' for a harm aimed at your own — and the click
+     * raises a dialog instead of casting. Range and sight stay hard refusals:
+     * there is no consenting your way through a wall.
+     *
+     * The one exception is a harmful spell aimed at YOURSELF. That is the
+     * single cross-side act with no tactical reading, so it stays refused,
+     * as `self`.
      */
     const targetStatus = (
       me: { row: TokenRow },
       t: { row: TokenRow },
       rangeFt: number,
       helpful?: boolean,
-    ): { ok: boolean; reason?: string; squares: number } => {
+    ): { ok: boolean; reason?: string; confirm?: "foe" | "friend"; squares: number } => {
       const squares = Math.max(
         Math.abs((me.row.grid_x ?? 0) - (t.row.grid_x ?? 0)),
         Math.abs((me.row.grid_y ?? 0) - (t.row.grid_y ?? 0)),
@@ -1915,8 +1972,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // skipped the caster outright, so Samson could not.
       if (helpful !== undefined) {
         const isSelf = t.row.id === me.row.id
-        if (helpful && !(isSelf || friendly(t.row))) return { ok: false, reason: "foe", squares }
-        if (!helpful && (isSelf || friendly(t.row))) return { ok: false, reason: "friend", squares }
+        if (!helpful && isSelf) return { ok: false, reason: "self", squares }
+        if (helpful && !(isSelf || friendly(t.row))) return { ok: true, confirm: "foe", squares }
+        if (!helpful && friendly(t.row)) return { ok: true, confirm: "friend", squares }
       }
       return { ok: true, squares }
     }
@@ -1939,9 +1997,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // yourself, and targetStatus decides that rather than this loop.
         if (!t.row.is_visible) return
         if (t.row.id === casterTokenId && !helpful) return
-        const { ok } = targetStatus(me, t, rangeFt, helpful)
+        const { ok, confirm } = targetStatus(me, t, rangeFt, helpful)
         const down = (t.row.hp_current ?? 1) <= 0
-        const mat = !ok ? deniedMat : down ? downedMat : helpful ? helpfulMat : hostileMat
+        // Violet before amber: "the click will ask" is what the player needs
+        // to know first, and the dialog names the body either way.
+        const mat = !ok ? deniedMat : confirm ? crossMat : down ? downedMat : helpful ? helpfulMat : hostileMat
         const ring = new THREE.Mesh(targetRingGeo, mat)
         ring.rotation.x = -Math.PI / 2
         ring.position.set(t.obj.position.x, 0.09, t.obj.position.z)
@@ -3554,12 +3614,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
   // Ask the server to resolve a spell that has just been thrown.
   useEffect(() => {
-    castVerbRef.current = async (caster_token, target_token, ability) => {
+    castVerbRef.current = async (caster_token, target_token, ability, crossSide) => {
       try {
+        // `allow_cross_side` is the record of the player's consent. It is sent
+        // as a strict boolean and only ever true off the confirm dialog, so a
+        // stray or replayed POST without it still meets the server's fence.
         const res = await fetch("/api/combat", {
           method: "POST",
           headers: { "content-type": "application/json", ...dmHeaders() },
-          body: JSON.stringify({ action: "cast", caster_token, target_token, ability, sandbox }),
+          body: JSON.stringify({ action: "cast", caster_token, target_token, ability, sandbox, allow_cross_side: crossSide === true }),
         })
         const data = await res.json().catch(() => null)
         if (!res.ok) {
@@ -3855,6 +3918,51 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               </button>
               <button
                 onClick={() => setPendingDash(null)}
+                className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* THE CROSS-SIDE CONFIRM.
+          A violet ring said the click would ask, and this is the asking. A
+          heal on a hostile or a harm on your own is allowed — Sam's ruling —
+          but it is a decision, so the board names the body and the spell and
+          waits. CANCEL leaves the spell armed and the turn untouched; the
+          rings are still lit and the next click is still the throw. */}
+      {pendingCross && (
+        <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-black/55 backdrop-blur-[2px]">
+          <div className="w-[290px] border border-[#b47dff] bg-[#0b0d12]/95 p-4 font-mono shadow-[0_0_28px_#b47dff55]">
+            <div className="text-[10px] tracking-[0.2em] text-[#d3b3ff]">ACROSS THE LINE</div>
+            <p className="mt-2 text-[11px] leading-relaxed text-[#d8e4f2]">
+              {pendingCross.kind === "foe" ? (
+                <>
+                  <span className="text-[#f3c94b]">{pendingCross.target}</span> is not one of yours.{" "}
+                  {pendingCross.spell} will help them anyway.
+                </>
+              ) : (
+                <>
+                  <span className="text-[#f3c94b]">{pendingCross.target}</span> is on your side.{" "}
+                  {pendingCross.spell} will hurt them anyway.
+                </>
+              )}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  const p = pendingCross
+                  setPendingCross(null)
+                  p.commit()
+                }}
+                className="flex-1 border border-[#b47dff] bg-[#2a1a4a] px-3 py-1.5 text-[10px] tracking-wider text-[#ecdcff] hover:bg-[#3a2566]"
+              >
+                CAST
+              </button>
+              <button
+                onClick={() => setPendingCross(null)}
                 className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
               >
                 CANCEL
