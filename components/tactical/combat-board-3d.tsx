@@ -50,6 +50,7 @@ import {
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
+import { defenceMotion } from "./defence-motion"
 import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
 // Twelve deaths, one per way of being killed - see death-vfx.ts.
@@ -4283,7 +4284,31 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // not: the sound of not being there is the whiff already playing.
           if (reaction === "parry") playSfx("combat/parry_blade", { volume: 0.8 })
           else if (reaction === "block") playSfx("combat/block_shield", { volume: 0.8 })
-          playState(victim.anim, reaction, true)
+          // THE RIG FIRST, THE BODY SECOND.
+          //
+          // playState returns null when the model has no clip for this state,
+          // and until now that was the end of it: the target stood perfectly
+          // still while a blade went past. Five of the six models on this
+          // board have no dodge clip and two have no hit clip, so "stood
+          // still" was the common case, not the edge.
+          //
+          // Falling back to the flinch would be worse - a miniature that
+          // recoils on a miss is lying - so the fallback moves the BODY
+          // instead: a short scripted lean and step, the same trick death-vfx
+          // uses on a model with no death clip. It is replaced for free the
+          // day a real clip exists, because this only runs when there is not
+          // one.
+          const played = playState(victim.anim, reaction, true)
+          if (!played) {
+            const m = defenceMotion({
+              body: victim.obj,
+              state: reaction,
+              // Oriented away from whoever swung, so a dodge goes the right
+              // way rather than an arbitrary one.
+              from: p.obj?.position ?? null,
+            })
+            if (m) vfx.push(m)
+          }
         }
         const flinch = () => {
           p.onLand?.()          // the bang, on the same frame as the flash
