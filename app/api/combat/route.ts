@@ -529,6 +529,11 @@ export async function POST(req: NextRequest) {
             outcome: verdictWord({
               weapon: true, crit: swung.crit, fumble, saved: null, amount: swung.damage, hit: swung.hit,
             }),
+            // Read off the stat block's own "Hit: 5 (1d6+2) piercing damage".
+            // The player's cast response has carried this for weeks; the NPC's
+            // swing never did, so every monster attack in the game produced the
+            // same corpse.
+            damageType: swung.attack.damageType ?? null,
             sandbox: Boolean(sandbox),
           }
         })()
@@ -890,7 +895,15 @@ export async function POST(req: NextRequest) {
 
       const line = `${caster.label} casts ${ability} — ${parts.join("; ")}.`
       await narrate(db, caster.label ?? "Someone", line)
-      return NextResponse.json({ ok: true, resolved: true, area: true, line, victims })
+      // The blast's damage type travels with it. Without this a Fireball kill
+      // produced a bone-white number and a generic corpse, because the board
+      // had no word for what had just happened to five creatures at once —
+      // the single-target path has carried `damageType` for weeks and the
+      // area path simply never did.
+      return NextResponse.json({
+        ok: true, resolved: true, area: true, line, victims,
+        damageType: entry.damage ?? null,
+      })
     }
 
     // Past here the spell has exactly one victim. Narrowing it once, out

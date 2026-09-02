@@ -45,6 +45,16 @@ export interface Attack {
   ranged: boolean
   reachFt: number
   rangeFt: number
+  /**
+   * The SRD damage word, lower-cased, or null when the prose does not say.
+   *
+   * It has been sitting in the book's own text this whole time — every stat
+   * block prints "Hit: 5 (1d6+2) piercing damage" — and we were already
+   * regex-ing that same sentence for the dice. Reading four more words out of
+   * it is what lets a drow's crossbow kill a player differently from a
+   * quaggoth's claws.
+   */
+  damageType: string | null
 }
 
 // ---------------------------------------------------------------- dice ----
@@ -95,6 +105,13 @@ export function parseAttacks(actions: unknown): Attack[] {
       ranged: Boolean(rangeMatch),
       reachFt: reachMatch ? Number.parseInt(reachMatch[1], 10) : 5,
       rangeFt: rangeMatch ? Number.parseInt(rangeMatch[1], 10) : 0,
+      // "Hit: 5 (1d6+2) piercing damage." — the word before "damage".
+      // Anchored on that noun so a creature that is merely DESCRIBED as
+      // fiery does not end up dealing fire with its fists.
+      damageType:
+        desc.match(
+          /\b(bludgeoning|piercing|slashing|acid|cold|fire|force|lightning|necrotic|poison|psychic|radiant|thunder)\s+damage/i,
+        )?.[1]?.toLowerCase() ?? null,
     })
   }
   return out
