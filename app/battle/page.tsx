@@ -12,6 +12,7 @@
 import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import CombatBoard3D from "@/components/tactical/combat-board-3d"
+import SandboxDrawer from "@/components/tactical/sandbox-drawer"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
 import { createClient } from "@/lib/supabase/client"
 import { isCombatant } from "@/lib/challenge-rating"
@@ -117,6 +118,15 @@ function BattleBoardPage() {
           Rehearsal — nothing here is canon
         </div>
       )}
+      {/*
+        The stage door — the way things get ONTO the rehearsal board.
+        Mounted here, beside the board, rather than inside it: the board is
+        already subscribed to vtt_tokens on its own map, so a row written
+        through /api/sandbox arrives by the same realtime path a drow walking
+        does, and this whole feature needs no change to a 5,000-line file that
+        three other branches are currently editing.
+      */}
+      {sandbox && <SandboxDrawer />}
       <CombatBoard3D
         sandbox={sandbox}
         onBack={() => {
