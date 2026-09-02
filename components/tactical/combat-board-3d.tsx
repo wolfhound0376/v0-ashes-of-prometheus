@@ -65,6 +65,8 @@ import { equipOnRig, unequipSlot } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
+// An NPC's swing, carried from the DM's seat to the rest of the table.
+import { parseSwing, relaySwing, subscribeSwings, type SwingEvent } from "@/lib/combat-relay"
 // The interface's own click — synthesised, so a targeting tick never waits on
 // a fetch. Deliberately not part of lib/sfx, which is the campaign's sound.
 import { uiTick } from "@/lib/ui-tick"
@@ -388,6 +390,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   /** The HUD's ability bar reaches the scene through here, the same way
    *  moves do. Set inside the scene effect; a no-op until the board is up. */
   const castRef = useRef<(characterId: string, ability: string, kind: string) => void>(() => {})
+  /**
+   * An NPC's attack reaches the scene through here.
+   *
+   * The monsters take their own turns on the server, and until now nothing
+   * on the board moved for it: the flinch and the dodge hang off a cast the
+   * player made, and a goblin's swing was never a cast. Its target neither
+   * flinched nor got out of the way; the only evidence anything had happened
+   * was a number over a head half a second later.
+   *
+   * The npc-turn response now reports the blow in the same vocabulary the
+   * cast verb uses, and this hands it to the same performCast — so a
+   * goblin's near miss is turned aside exactly the way a rogue's is. Set
+   * inside the scene effect; a no-op until the board is up.
+   */
+  const swingRef = useRef<(swing: SwingEvent) => void>(() => {})
   // THE ARMED SPELL. Sam: a press should "allow me to target some which
   // starts up the ramp up animation, and when I click on the target, executes
   // the animation and sounds involved." So a press no longer fires — it ARMS.
@@ -502,6 +519,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // subscription - a player watching /battle should hear the natural 20 rolled
   // on the dashboard, and the turn chime the DM advanced from theirs.
   useEffect(() => subscribeSfxCues(), [])
+  // The other seats' swings. The DM's seat animates its own from the response
+  // and relays; everyone else gets them here. Whichever seat this is, the
+  // handler is the same, so every screen draws the blow from the same dice.
+  useEffect(() => subscribeSwings((s) => swingRef.current(s)), [])
   useEffect(() => { selectedRef.current = selected }, [selected])
   useEffect(() => { dmMoveRef.current = dmMove }, [dmMove])
   useEffect(() => { myCharRef.current = myCharacterId }, [myCharacterId])
@@ -1509,6 +1530,43 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
     }
     castRef.current = performCast
+    swingRef.current = (s) => {
+      // The sandbox and the live board share a relay channel. A goblin
+      // swinging on the practice board must not make a live miniature duck.
+      if (s.sandbox !== sandbox) return
+      const caster = tokensRef.current.get(s.caster_token)
+      if (!caster) return
+      const victim = tokensRef.current.get(s.target_token)
+      // Gild the number that will rise off the target when the HP row lands,
+      // the same way a player's crit is parked for glideToken to spend.
+      if (s.crit && s.amount > 0) critRef.current.add(s.target_token)
+      const answer: CastAnswer = {
+        ok: true,
+        hurt: s.amount > 0,
+        verdict: isAttackOutcome(s.outcome) ? { outcome: s.outcome, margin: s.margin } : null,
+        weapon: { hit: s.hit, crit: s.crit },
+      }
+      const strike = () =>
+        performCast(caster.row.id, s.weapon, "weapon", caster, victim?.row ?? null, null, answer)
+      if (!s.to) { strike(); return }
+
+      // IT MOVED FIRST. The server wrote the new square before it answered,
+      // but on this seat the miniature reaches that square by realtime row
+      // and then by glide, on their own schedules. A swing that starts while
+      // the body is still crossing the floor is a swing from the wrong
+      // square. So wait for the row to say it has arrived AND for the glide
+      // to finish — with a deadline, because a seat that never gets the row
+      // should still see the blow rather than nothing at all.
+      const to = s.to
+      const deadline = performance.now() + 2500
+      const arrived = () =>
+        caster.row.grid_x === to.x && caster.row.grid_y === to.y && !caster.obj.userData.glide
+      const wait = () => {
+        if (arrived() || performance.now() > deadline) { strike(); return }
+        requestAnimationFrame(wait)
+      }
+      wait()
+    }
 
     /**
      * Hold the cast pose while the player picks a target.
@@ -4033,6 +4091,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // whoever pressed the button. Total: a failure here cannot stop the
         // order going through.
         playCues(data?.sfxCues)
+        // THE MONSTER'S SWING. Only this seat has the response; animate it
+        // here and hand it to the other seats, which play it locally and
+        // never relay (lib/combat-relay), so it cannot echo.
+        if (action === "npc-turn") {
+          const swing = parseSwing(data?.swing)
+          if (swing) {
+            swingRef.current(swing)
+            relaySwing(swing)
+          }
+        }
       }
       return res.ok
     } catch {

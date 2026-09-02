@@ -37,6 +37,45 @@ import { attacksFromInventory } from "@/lib/weapons"
 
 export const dynamic = "force-dynamic"
 
+/**
+ * One word for what happened, so nothing downstream has to reconstruct it
+ * from a boolean pair.
+ *
+ * `hit === false` covers four genuinely different events — a clean miss, a
+ * fumble, a save that shrugged the whole spell off, and a save that took
+ * half — and every one of them should look and sound different on the
+ * board. Collapsing them into !hit is what made every failure render as
+ * the same nothing.
+ *
+ * ONE function, called by both the player's cast verb and the NPC turn, so
+ * a goblin's miss and a rogue's miss are the same word and the board draws
+ * them with the same defenceFor. lib/__tests__/defence.test.mjs mirrors
+ * this expression; change one and change the other.
+ */
+function verdictWord(v: {
+  heals?: boolean | null
+  weapon?: boolean
+  crit: boolean
+  fumble: boolean
+  saved: boolean | null
+  amount: number
+  hit: boolean
+}): string {
+  return v.heals && !v.weapon
+    ? "heal"
+    : v.crit
+      ? "crit"
+      : v.fumble
+        ? "fumble"
+        : v.saved === true
+          ? (v.amount > 0 ? "saved-half" : "saved")
+          : v.saved === false
+            ? "failed-save"
+            : v.hit
+              ? "hit"
+              : "miss"
+}
+
 function authorized(req: NextRequest): boolean {
   const required = process.env.DM_ACCESS_CODE
   if (!required) return true
@@ -418,10 +457,55 @@ export async function POST(req: NextRequest) {
       .update({ turn_state: spent, updated_at: new Date().toISOString() })
       .eq("id", combat.id)
 
+    // THE SWING, FOR THE BOARD.
+    //
+    // decideTurn already rolled the d20 and compared it to AC; until now the
+    // response threw that away behind `decision`, and the board had nothing
+    // to animate for an NPC attack — the target neither flinched nor dodged,
+    // and the only evidence a goblin had swung was a number over a head half
+    // a second later. This reports the blow in exactly the vocabulary the
+    // player's cast verb uses (outcome, margin, hit, crit), so the board can
+    // hand it to the same performCast / defenceFor and a goblin's near miss
+    // is turned aside the same way a rogue's is.
+    //
+    // Only the DM's seat receives this response — npc-turn is DM-gated. The
+    // board relays it to the other seats itself (lib/combat-relay), the same
+    // client-side pattern sfx cues use, so no server channel is needed.
+    const swung = decision.kind === "attack" || decision.kind === "move-attack" ? decision : null
+    const swing = swung
+      ? (() => {
+          // The same default resolveAttack measured against.
+          const dc = swung.target.ac ?? 10
+          const fumble = swung.roll === 1
+          return {
+            caster_token: self.token_id,
+            target_token: swung.target.token_id,
+            weapon: swung.attack.name,
+            ranged: swung.attack.ranged,
+            // Where the creature ended up before it struck, so a seat whose
+            // miniature is still gliding there can wait for it to arrive.
+            to: swung.kind === "move-attack" ? swung.to : null,
+            hit: swung.hit,
+            crit: swung.crit,
+            fumble,
+            amount: swung.damage,
+            roll: swung.roll,
+            total: swung.total,
+            dc,
+            margin: swung.total - dc,
+            outcome: verdictWord({
+              weapon: true, crit: swung.crit, fumble, saved: null, amount: swung.damage, hit: swung.hit,
+            }),
+            sandbox: Boolean(sandbox),
+          }
+        })()
+      : null
+
     return NextResponse.json({
       ok: true,
       tier: usesAlgorithm(stats) ? "algorithm" : "algorithm-fallback",
       decision,
+      swing,
     })
   }
 
@@ -905,29 +989,10 @@ export async function POST(req: NextRequest) {
     // drift apart.
     await payFor()
 
-    /**
-     * One word for what happened, so nothing downstream has to reconstruct it
-     * from a boolean pair.
-     *
-     * `hit === false` covers four genuinely different events — a clean miss, a
-     * fumble, a save that shrugged the whole spell off, and a save that took
-     * half — and every one of them should look and sound different on the
-     * board. Collapsing them into !hit is what made every failure render as
-     * the same nothing.
-     */
-    const outcome: string = entry.heals && !weapon
-      ? "heal"
-      : crit
-        ? "crit"
-        : fumble
-          ? "fumble"
-          : saved === true
-            ? (amount > 0 ? "saved-half" : "saved")
-            : saved === false
-              ? "failed-save"
-              : hit
-                ? "hit"
-                : "miss"
+    // One word for what happened — see verdictWord at the top of the file.
+    const outcome: string = verdictWord({
+      heals: entry.heals, weapon: Boolean(weapon), crit, fumble, saved, amount, hit,
+    })
 
     return NextResponse.json({
       ok: true, resolved: true, hit, crit, amount,
