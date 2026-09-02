@@ -45,7 +45,7 @@ const slugify = (name: string) =>
   name.toLowerCase().replace(/['\u2019]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 
 const SLUGS = [
-  "attack", "bonus-attack", "offhand-attack", "opportunity-attack",
+  "attack", "unarmed-strike", "bonus-attack", "offhand-attack", "opportunity-attack",
   "dash", "disengage", "dodge", "hide", "search", "ready", "help",
   "use-item", "second-wind", "uncanny-dodge",
   "mage-hand", "detect-magic", "shield", "shield-of-faith",
@@ -58,6 +58,14 @@ export const actionIconUrl = (slug: ActionSlug) => `${BASE}/${slug}.webp`
 /** Spell / action name → icon slug. Case and punctuation insensitive. */
 const BY_NAME: Record<string, ActionSlug> = {
   attack: "attack",
+  // Every character carries one: attacksFromInventory appends an unarmed
+  // strike to the rack whatever else they are holding, so this is the icon
+  // most often on screen — and until now it was the only weapon with none.
+  // It matters more since the Attack action started resolving to the weapon
+  // in hand, which for a stripped Velkynvelve prisoner IS the fist.
+  "unarmed strike": "unarmed-strike",
+  "unarmed-strike": "unarmed-strike",
+  unarmed: "unarmed-strike",
   "bonus action attack": "bonus-attack",
   "offhand attack": "offhand-attack",
   "off-hand attack": "offhand-attack",
