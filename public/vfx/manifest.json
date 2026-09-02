@@ -32,7 +32,7 @@
     "rows": 4
   },
   "forceHit": {
-    "bytes": 107820,
+    "bytes": 318986,
     "cols": 5,
     "file": "forceHit.webp",
     "fps": 24,
@@ -63,6 +63,14 @@
     "frames": 20,
     "rows": 4
   },
+  "lightningStrike": {
+    "bytes": 297828,
+    "cols": 5,
+    "file": "lightningStrike.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
   "missileDart": {
     "bytes": 60918,
     "cols": 4,
@@ -80,10 +88,10 @@
     "rows": 4
   },
   "necroImpact": {
-    "bytes": 138492,
+    "bytes": 375720,
     "cols": 5,
     "file": "necroImpact.webp",
-    "fps": 22,
+    "fps": 24,
     "frames": 20,
     "rows": 4
   },
