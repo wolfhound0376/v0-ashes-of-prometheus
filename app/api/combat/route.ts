@@ -12,6 +12,7 @@ import { areaCells, aimInRange } from "@/lib/aoe"
 // uses, so a weapon the board offers is a weapon this handler accepts — and a
 // confiscated one is refused by both.
 import { attacksFromInventory } from "@/lib/weapons"
+import { announcementFor, justBecameDying } from "@/lib/announcer"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -554,6 +555,15 @@ export async function POST(req: NextRequest) {
     // that changes the world, so it happens on the server with the service
     // key and is written to the same log everyone reads. The client is never
     // told "you hit" — it is told what happened.
+    /**
+     * Announcer warnings raised while resolving this cast.
+     *
+     * Collected rather than sent as they happen, because a cast has one
+     * response and an area spell can push several people to the brink at
+     * once. Each is party-scoped: a warning only the wounded player hears is
+     * not a warning, it is a private notification.
+     */
+    const dyingCues: { type: "raw"; scope: "party"; key: string }[] = []
     const caster_token = String(body?.caster_token ?? "")
     const target_token = String(body?.target_token ?? "")
     const ability = String(body?.ability ?? "")
@@ -877,6 +887,15 @@ export async function POST(req: NextRequest) {
               .update({ hp_current: next, updated_at: new Date().toISOString() })
               .eq("id", t.character_id)
           }
+          // Same rule as the single-target path, through the same function.
+          // A Fireball that leaves three people on the brink says so about
+          // each of them.
+          if (!entry.heals && t.character_id && justBecameDying(cur, next, max)) {
+            const { data: ch } = await db
+              .from("characters").select("class").eq("id", t.character_id).maybeSingle()
+            const warn = announcementFor("dying", ch?.class as string | null)
+            if (warn) dyingCues.push({ type: "raw" as const, scope: "party" as const, key: warn })
+          }
         }
         victims.push({
           id: t.id, label: t.label ?? "", amount, saved,
@@ -903,6 +922,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ok: true, resolved: true, area: true, line, victims,
         damageType: entry.damage ?? null,
+        ...(dyingCues.length ? { sfxCues: dyingCues } : {}),
       })
     }
 
@@ -1051,6 +1071,19 @@ export async function POST(req: NextRequest) {
           .update({ hp_current: next, updated_at: new Date().toISOString() })
           .eq("id", victim.character_id)
       }
+      // THE CABINET WARNS BEFORE IT MOURNS.
+      //
+      // Announced on the hit that CROSSES the line, not while they sit below
+      // it — see justBecameDying. Asking "are they low" would say it again on
+      // every scratch afterwards, four times a round, in a voice that fills
+      // the room. The board already marks 0 with a body on the floor; this is
+      // the beat before that.
+      if (!entry.heals && victim.character_id && justBecameDying(cur, next, max)) {
+        const { data: ch } = await db
+          .from("characters").select("class").eq("id", victim.character_id).maybeSingle()
+        const warn = announcementFor("dying", ch?.class as string | null)
+        if (warn) dyingCues.push({ type: "raw" as const, scope: "party" as const, key: warn })
+      }
       if (!entry.heals && next === 0) line += ` ${victim.label} goes down.`
     }
     await narrate(db, caster.label ?? "Someone", line)
@@ -1069,6 +1102,11 @@ export async function POST(req: NextRequest) {
       heals: Boolean(!weapon && entry.heals),
       weapon: Boolean(weapon),
       line,
+      // Empty unless this hit put somebody on the brink. Spread rather than
+      // sent as [] so a cast that changed nothing carries no sound key at
+      // all — the cue reader ignores unknown and absent alike, but an empty
+      // array in every response is noise in the logs.
+      ...(dyingCues.length ? { sfxCues: dyingCues } : {}),
 
       // ---- ADDED: the facts behind the verdict -------------------------
       // Every field here was already computed above. None of it is new
@@ -1144,11 +1182,36 @@ export async function POST(req: NextRequest) {
       })
       .eq("id", combat.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    // The turn has passed to the next combatant. Party-scoped: the chime
-    // is how the table knows to look up, not just the seat that clicked.
+    // THE TURN HAS PASSED — AND THE CABINET SAYS WHOSE.
+    //
+    // This rang a bell. A bell tells the table that SOMETHING happened and
+    // makes each of four people check whether it was them; the arcade solved
+    // that in 1985 by saying the class out loud. So: look up who is up, and
+    // if they are a player with a recorded line, play it.
+    //
+    // Falls back to the old chime for an NPC's turn, deliberately. Gauntlet
+    // never announced the monsters, but the table still needs to know the
+    // turn moved — silence there would read as the board having hung.
+    let cue = "ui/turn_chime"
+    const nextEntry = (combat.turn_order as { token_id: string }[])[nextIndex]
+    if (nextEntry?.token_id) {
+      const { data: tok } = await db
+        .from("vtt_tokens")
+        .select("character_id")
+        .eq("id", nextEntry.token_id)
+        .maybeSingle()
+      if (tok?.character_id) {
+        const { data: ch } = await db
+          .from("characters")
+          .select("class")
+          .eq("id", tok.character_id)
+          .maybeSingle()
+        cue = announcementFor("turn", ch?.class as string | null) ?? cue
+      }
+    }
     return NextResponse.json({
       ok: true,
-      sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/turn_chime" }],
+      sfxCues: [{ type: "raw" as const, scope: "party" as const, key: cue }],
     })
   }
 
