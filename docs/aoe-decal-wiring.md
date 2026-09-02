@@ -73,6 +73,21 @@ areaDecalsRef.current.delete(tokenId)
 `end()` starts a fade and `update()` keeps returning true until it finishes, so
 the existing effect loop disposes it normally. It is safe to call twice.
 
+## Clouds need one extra thing
+
+An area whose visual has `form: "cloud"` — poison, and the gloom spells (Fog
+Cloud, Silence, Sleep) — renders as crossed vertical quads standing in each
+covered cell rather than as a quad lying on the floor. The call site above is
+unchanged, because `layAreaDecal` reads the form itself. Two things follow:
+
+- **Do not clip a cloud into the floor's y-stack.** It deliberately sits at
+  y = 0 and takes its height (~10 ft) from its geometry. If anything on the
+  board flattens effect groups to a decal height, clouds squash to nothing.
+- **`end()` is not optional for them.** The spells that make gas are
+  concentration spells, so a cloud is almost always a lingering mark — and a
+  Fog Cloud whose concentration broke but which is still hanging in the room
+  is worse than no cloud at all.
+
 ## What to check on the board
 
 - **A Fireball's mark covers the squares the template outlined** — not a circle
@@ -87,6 +102,9 @@ the existing effect loop disposes it normally. It is safe to call twice.
   obscure the live answer to "where can I go".
 - **A 20 ft radius costs six draw calls, not sixty-nine.** If the frame rate
   moves on a Fireball, the bucketing is not merging.
+- **A cloud reads as one mass, not a row of separate puffs.** The quads are
+  drawn wider than their square so neighbours overlap. Daylight between cells
+  means that overlap is being clipped somewhere.
 
 ## Known gaps, deliberately left
 
