@@ -101,6 +101,19 @@ export interface CardCharacter {
   xp_to_next?: number | null
   inspiration?: boolean | number | null
   conditions?: string[]
+  /**
+   * The line under the name - `characters.sheet_background`.
+   *
+   * It used to be the class, which is what the class bar three inches to the
+   * right was already saying, in bigger letters, in the class's own colour.
+   * Two words for one fact and no word for the character.
+   *
+   * The sheet has no subclass column, so background is the truest thing the
+   * plate can carry: Acolyte, Merchant, Criminal. Absent for a character
+   * whose sheet does not record one, and the line simply is not drawn - a
+   * name plate with a name on it is complete.
+   */
+  background?: string | null
 }
 
 /**
@@ -206,6 +219,8 @@ export function CharacterCard({
   const conditions = c.conditions ?? []
   const insp = typeof c.inspiration === "number" ? c.inspiration : c.inspiration ? 1 : 0
   const g = gems ?? { action: "dormant" as GemState, bonus: "dormant" as GemState, reaction: "dormant" as GemState }
+  // Background, first segment only. Never the class - the class bar says that.
+  const plateLine = (c.background ?? "").split(/[\/,|(]/)[0].trim().toUpperCase()
 
   const W = width
   // The artwork's own ratio. Anything else stretches the filigree.
@@ -320,9 +335,15 @@ export function CharacterCard({
         <div style={{ ...box(SLOTS.name), ...fitted(W, 0.045), letterSpacing: "0.02em" }}>
           {c.name.split(" ")[0].toUpperCase()}
         </div>
-        <div style={{ ...box(SLOTS.subclass), ...fitted(W, 0.019, cls.accent), letterSpacing: "0.12em" }}>
-          {(c.class ?? "").toUpperCase()}
-        </div>
+        {/* The plate's second line. Cut at the first separator, so
+            "Criminal / Spy" becomes "CRIMINAL" - one word, the same length
+            class the artist ruled the plate for. A slash and a second noun
+            overflow it and lose both. */}
+        {plateLine && (
+          <div style={{ ...box(SLOTS.subclass), ...fitted(W, 0.019, cls.accent), letterSpacing: "0.12em" }}>
+            {plateLine}
+          </div>
+        )}
 
         {/* Movement is the one resource the art states in words. */}
         <div
