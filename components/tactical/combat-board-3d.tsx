@@ -69,6 +69,7 @@ import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig, unequipSlot } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
+import { packSoundFor, packKey } from "@/lib/spell-sfx-pack"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 // An NPC's swing, carried from the DM's seat to the rest of the table.
@@ -1715,7 +1716,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return
       }
       const sEntry = spellEntry(ability)
-      playSfx(releaseFor(sEntry.school), { volume: 0.85, rate: variedRate(0.04) })
+      // THE SPELL'S OWN VOICE, WHERE IT HAS ONE.
+      //
+      // The school chain answers every spell in the book and always has —
+      // "arcane, released" is a fine sound for most of them. Pack 01 gives
+      // nine cues to particular spells, so a Misty Step sounds like a
+      // teleport rather than like a generic discharge.
+      //
+      // It replaces the RELEASE only. The windup still ramps by school while
+      // you are choosing a target, and the tail still decays by school, so a
+      // packed spell still belongs to its family — only the moment it leaves
+      // the hand is its own.
+      //
+      // No rate variation on a pack cue, deliberately. The school sounds are
+      // detuned a few percent per cast so a repeated cantrip does not read as
+      // one file playing twice; these are longer and more characterful, and
+      // pitching a recorded teleport around is audible as a wobble.
+      const pack = packSoundFor(ability)
+      if (pack) {
+        playSfx(packKey(pack), { volume: pack.volume })
+      } else {
+        playSfx(releaseFor(sEntry.school), { volume: 0.85, rate: variedRate(0.04) })
+      }
       window.setTimeout(() => playSfx(tailFor(sEntry.school), { volume: 0.5, rate: variedRate(0.04) }), 260)
       if (sEntry.damage && target) {
         // The bang belongs on the flash, not ahead of it — and the flash is
@@ -4650,7 +4672,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
     const e = armedSpell.entry
     if (armedSpell.kind !== "weapon") {
-      preloadSfx([releaseFor(e.school), tailFor(e.school), ...(e.damage ? [impactFor(e.damage)] : [])])
+      const packWarm = packSoundFor(armedSpell.name)
+      preloadSfx([
+        ...(packWarm ? [packKey(packWarm)] : [releaseFor(e.school)]),
+        tailFor(e.school),
+        ...(e.damage ? [impactFor(e.damage)] : []),
+      ])
     }
     const onKey = (ev: KeyboardEvent) => {
       // Escape puts it away. Opening the wrong spell must not cost a turn.

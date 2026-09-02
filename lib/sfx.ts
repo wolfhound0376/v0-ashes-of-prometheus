@@ -34,6 +34,11 @@ export type SfxName =
   | `creature/${string}`
   | `movement/${string}`
   | `ui/${string}`
+  // Pack 01: cues that belong to a particular SPELL rather than to its
+  // school. A prefix of their own so they cannot be confused with the
+  // school chain in `magic/`, which answers a different question — what
+  // KIND of magic this is, rather than which spell it is.
+  | `spells/${string}`
 
 let ctx: AudioContext | null = null
 const buffers = new Map<string, AudioBuffer>()
