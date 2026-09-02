@@ -26,7 +26,10 @@ import type { CSSProperties } from "react"
 import { frameForClass } from "@/lib/class-frames"
 import { ClassMedallion } from "./class-medallion"
 
-const FRAME = "/ui-frames/card-frame-sorcerer.webp"
+// The frame is chosen by CLASS - see cardFrameUrl in lib/class-frames.ts.
+// One painting, recut thirteen ways, so a cleric stops wearing a sorcerer's
+// card. All thirteen share the same geometry, so SLOTS below is correct for
+// every one of them.
 
 /** Measured from the artwork. Percentages of the card's own box. */
 const SLOTS = {
@@ -268,7 +271,7 @@ export function CharacterCard({
 
         {/* 3. THE FRAME, over portrait and bars. */}
         <img
-          src={FRAME}
+          src={cls.cardFrameUrl}
           alt=""
           className="pointer-events-none absolute inset-0 h-full w-full"
           style={{ objectFit: "fill" }}
