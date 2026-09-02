@@ -354,22 +354,47 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
-  // The DM gate applies to the verbs that change the SHAPE of the fight —
-  // rolling initiative, passing the turn, ending combat. Marking your own
-  // action spent is not one of them.
-  // "npc-turn" is DM-gated: it moves and swings on the NPCs' behalf, which is
-  // the DM's chair even when no human chooses the action.
-  if (!["spend", "ack", "move", "cast"].includes(action) && !authorized(req)) {
+  // THE PLAYER'S VERBS — one list, used twice, deliberately.
+  //
+  // A player must be able to mark their own bonus action used, acknowledge
+  // their own turn, walk their own character, cast, hide and summon without
+  // the DM clicking for them. Everything else — rolling initiative, passing
+  // the turn, ending the fight, and "npc-turn", which swings on the monsters'
+  // behalf — is the DM's chair and stays behind the key.
+  //
+  // These were TWO hand-written lists, and keeping them in step was left to
+  // whoever added a verb next. Two of us in a row failed to: "hide" was in
+  // neither, "summon" (Mage Hand, #373) is in the accepted list but not the
+  // gate. Both shipped complete, tested, and unreachable — a 403 before the
+  // first line of their handler.
+  //
+  // That failure is silent in the worst way. The hide handler narrates even
+  // when it REFUSES, so a player would see "somebody has a clear view of
+  // you" — but the one refusal it could not narrate was the one that stopped
+  // it running, which is why the evidence was an empty log rather than a
+  // wrong row.
+  //
+  // So: one list. A verb added here is accepted AND ungated, and the third
+  // person to add one cannot make this mistake, because there is no longer a
+  // second place to forget.
+  //
+  // Ungated means the player may ASK, not that the answer is yes. Every
+  // handler still fences server-side: only the ACTIVE turn's own PC token
+  // moves, and only within its speed budget.
+  const PLAYER_VERBS = ["spend", "ack", "move", "cast", "hide", "summon"]
+  const DM_VERBS = ["start", "next", "end", "npc-turn"]
+  if (!PLAYER_VERBS.includes(action) && !authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   }
-  // "spend", "ack" and "move" are the PLAYER's verbs and are deliberately
-  // NOT DM-gated below: a player must be able to mark their own bonus action
-  // used, acknowledge their own turn, and walk their own character, without
-  // the DM clicking for them. "move" is still fenced hard server-side: only
-  // the ACTIVE turn's own PC token may walk, only within its speed budget.
-  const PLAYER_VERBS = ["spend", "ack", "move", "cast", "summon"]
-  if (!["start", "next", "end", "npc-turn", ...PLAYER_VERBS].includes(action)) {
-    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'npc-turn'|'spend'|'ack'|'move'|'cast'|'summon' }" }, { status: 400 })
+  if (![...DM_VERBS, ...PLAYER_VERBS].includes(action)) {
+    // Derived, not hand-written. The old message listed the verbs as a string
+    // literal that had already drifted from the list it described, and a 400
+    // that lies about what the endpoint accepts is how the next verb goes
+    // missing quietly.
+    return NextResponse.json(
+      { error: `unknown action ${String(action)} — expected one of ${[...DM_VERBS, ...PLAYER_VERBS].join(", ")}` },
+      { status: 400 },
+    )
   }
   const db = createAdminClient()
   const sandbox = body?.sandbox === true
