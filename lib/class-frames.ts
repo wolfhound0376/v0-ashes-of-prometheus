@@ -51,6 +51,21 @@ export interface ClassFrame {
    *  unaligned ring — so a class awaiting art looks deliberate rather than
    *  broken, and never borrows another class's iconography. */
   frameUrl: string | null
+  /**
+   * The whole CARD the character's plate is painted on - the baroque surround
+   * with the portrait arch, the stat plaques and the five resource chambers.
+   *
+   * Unlike `frameUrl` this is never null. It is one painting recut thirteen
+   * ways by `scripts/recut-card-frames.py`, which rotates the violet magework
+   * onto each class's accent and leaves the gold ironwork and the resource
+   * gems exactly as painted. So a class awaiting medallion art still gets a
+   * card in its own colour.
+   *
+   * These ship from `public/`, not the VTT bucket, because the card is chrome
+   * the app cannot render without - a frame that 404s is a blank rectangle
+   * where a character used to be.
+   */
+  cardFrameUrl: string
   /** The class's colour, used for the sigil, the active glow, and anywhere
    *  else the HUD wants to say "this one" without spelling it out. */
   accent: string
@@ -58,21 +73,28 @@ export interface ClassFrame {
   sigil: string
 }
 
+/** Every card frame lives at the same shape of path, so the table below says
+ *  it once instead of thirteen times. */
+const CARD = (key: ClassKey) => `/ui-frames/card-frame-${key}.webp`
+
 /** Ordered so the admin picker reads like the Player's Handbook. */
 export const CLASS_FRAMES: Record<ClassKey, ClassFrame> = {
-  barbarian: { key: "barbarian", label: "Barbarian", frameUrl: null, accent: "#b4432a", sigil: "⚒" },
-  bard:      { key: "bard",      label: "Bard",      frameUrl: `${VTT}/ui-frames/class/bard.webp`,      accent: "#5c7ce0", sigil: "♪" },
-  cleric:    { key: "cleric",    label: "Cleric",    frameUrl: `${VTT}/ui-frames/class/cleric.webp`,    accent: "#e0b53c", sigil: "✝" },
-  druid:     { key: "druid",     label: "Druid",     frameUrl: null,     accent: "#4f9a5c", sigil: "❋" },
-  fighter:   { key: "fighter",   label: "Fighter",   frameUrl: `${VTT}/ui-frames/class/fighter.webp`,   accent: "#9aa4b0", sigil: "⚔" },
-  monk:      { key: "monk",      label: "Monk",      frameUrl: null,      accent: "#d8cfae", sigil: "☯" },
-  paladin:   { key: "paladin",   label: "Paladin",   frameUrl: null,   accent: "#f0dc8a", sigil: "✚" },
-  ranger:    { key: "ranger",    label: "Ranger",    frameUrl: null,    accent: "#4e8a52", sigil: "➶" },
-  rogue:     { key: "rogue",     label: "Rogue",     frameUrl: `${VTT}/ui-frames/class/rogue.webp`,     accent: "#3f7a4e", sigil: "🗡" },
-  sorcerer:  { key: "sorcerer",  label: "Sorcerer",  frameUrl: `${VTT}/ui-frames/class/sorcerer.webp`, accent: "#e0553c", sigil: "✦" },
-  warlock:   { key: "warlock",   label: "Warlock",   frameUrl: `${VTT}/ui-frames/class/warlock.webp`,   accent: "#9a4fd0", sigil: "◈" },
-  wizard:    { key: "wizard",    label: "Wizard",    frameUrl: null,    accent: "#4fa8d8", sigil: "✧" },
-  unaligned: { key: "unaligned", label: "Unaligned", frameUrl: `${VTT}/ui-frames/class/unaligned.webp`, accent: "#a89468", sigil: "✧" },
+  barbarian: { key: "barbarian", label: "Barbarian", frameUrl: null, cardFrameUrl: CARD("barbarian"), accent: "#b4432a", sigil: "⚒" },
+  bard:      { key: "bard",      label: "Bard",      frameUrl: `${VTT}/ui-frames/class/bard.webp`,      cardFrameUrl: CARD("bard"),      accent: "#5c7ce0", sigil: "♪" },
+  cleric:    { key: "cleric",    label: "Cleric",    frameUrl: `${VTT}/ui-frames/class/cleric.webp`,    cardFrameUrl: CARD("cleric"),    accent: "#e0b53c", sigil: "✝" },
+  druid:     { key: "druid",     label: "Druid",     frameUrl: null,     cardFrameUrl: CARD("druid"),     accent: "#4f9a5c", sigil: "❋" },
+  fighter:   { key: "fighter",   label: "Fighter",   frameUrl: `${VTT}/ui-frames/class/fighter.webp`,   cardFrameUrl: CARD("fighter"),   accent: "#9aa4b0", sigil: "⚔" },
+  monk:      { key: "monk",      label: "Monk",      frameUrl: null,      cardFrameUrl: CARD("monk"),      accent: "#d8cfae", sigil: "☯" },
+  paladin:   { key: "paladin",   label: "Paladin",   frameUrl: null,   cardFrameUrl: CARD("paladin"),   accent: "#f0dc8a", sigil: "✚" },
+  ranger:    { key: "ranger",    label: "Ranger",    frameUrl: null,    cardFrameUrl: CARD("ranger"),    accent: "#4e8a52", sigil: "➶" },
+  rogue:     { key: "rogue",     label: "Rogue",     frameUrl: `${VTT}/ui-frames/class/rogue.webp`,     cardFrameUrl: CARD("rogue"),     accent: "#3f7a4e", sigil: "🗡" },
+  // Sorcerer and warlock share the original painting, uncut. It was made for
+  // Kenta, who is the sorcerer, and it came from a card labelled warlock -
+  // recutting either would be recolouring a thing to look like itself.
+  sorcerer:  { key: "sorcerer",  label: "Sorcerer",  frameUrl: `${VTT}/ui-frames/class/sorcerer.webp`, cardFrameUrl: CARD("sorcerer"),  accent: "#e0553c", sigil: "✦" },
+  warlock:   { key: "warlock",   label: "Warlock",   frameUrl: `${VTT}/ui-frames/class/warlock.webp`,   cardFrameUrl: CARD("warlock"),   accent: "#9a4fd0", sigil: "◈" },
+  wizard:    { key: "wizard",    label: "Wizard",    frameUrl: null,    cardFrameUrl: CARD("wizard"),    accent: "#4fa8d8", sigil: "✧" },
+  unaligned: { key: "unaligned", label: "Unaligned", frameUrl: `${VTT}/ui-frames/class/unaligned.webp`, cardFrameUrl: CARD("unaligned"), accent: "#a89468", sigil: "✧" },
 }
 
 /** Every alias the campaign has actually used, lower-cased. `characters.class`

@@ -9,6 +9,7 @@
 
 import type { ReactNode } from "react"
 import { CharacterCard } from "@/components/tactical/character-card"
+import { CLASS_FRAMES } from "@/lib/class-frames"
 
 const W = 210 // the width the board actually passes
 
@@ -25,6 +26,10 @@ const SCOTT = { ...KENTA, id: "c", name: "Scott", class: "Bard", hp_current: 9, 
 
 const DORMANT = { action: "dormant", bonus: "dormant", reaction: "dormant" } as const
 const FULL = { remainingFt: 30, speedFt: 30 }
+
+/** Read off CLASS_FRAMES rather than typed out, so a class added to the table
+ *  turns up here on its own instead of being quietly missing from the check. */
+const CLASSES = Object.keys(CLASS_FRAMES)
 
 export default function CardPreview() {
   return (
@@ -61,6 +66,20 @@ export default function CardPreview() {
             gems={DORMANT} movement={FULL} slots={{ total: 2, used: 0, levels: [{ level: 1, total: 2, used: 0 }] }} onExpand={() => {}} />
         </Case>
       </div>
+
+      {/* EVERY FRAME AT ONCE. Thirteen recuts of one painting, so a palette
+          that has drifted - a gold that went green, a resource gem that moved
+          when only the magework should have - is visible in one glance
+          instead of being found at the table six weeks later. */}
+      <Case title="All thirteen class frames">
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(3, ${W}px)`, gap: 8 }}>
+          {CLASSES.map((cls) => (
+            <CharacterCard key={cls} width={W} isTurn={false} gems={DORMANT} movement={FULL}
+              slots={{ total: 4, used: 1 }}
+              character={{ ...KENTA, id: cls, name: cls, class: cls, conditions: [] }} />
+          ))}
+        </div>
+      </Case>
     </div>
   )
 }
