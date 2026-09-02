@@ -11,8 +11,11 @@ import { areaCells, aimInRange } from "@/lib/aoe"
 // Weapons are derived from the inventory by the SAME function the board's rack
 // uses, so a weapon the board offers is a weapon this handler accepts — and a
 // confiscated one is refused by both.
-import { attacksFromInventory } from "@/lib/weapons"
+import { attacksFromInventory, type DerivedAttack } from "@/lib/weapons"
 import { announcementFor, justBecameDying } from "@/lib/announcer"
+// The rogue's feature, as its own testable rule rather than four conditions
+// buried in the damage roll.
+import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -624,13 +627,20 @@ export async function POST(req: NextRequest) {
     //
     // Derived through the same function the board builds its rack with, so the
     // two cannot disagree about what exists.
-    let sheetAttacks: { name?: string; hit?: string; damage?: string }[] = []
+    let sheetAttacks: DerivedAttack[] = []
     let casterSc: Spellcasting | null = null
+    // Hoisted out of the block below because SNEAK ATTACK needs them at the
+    // damage roll, three hundred lines down. `cs` itself is block-scoped and
+    // stays that way; only the two fields the rule asks for travel.
+    let casterClass: string | null = null
+    let casterLevel = 1
     if (caster.character_id) {
       const { data: cs } = await db.from("characters")
-        .select("sheet_spellcasting,str_score,dex_score,proficiency_bonus")
+        .select("sheet_spellcasting,str_score,dex_score,proficiency_bonus,class,level")
         .eq("id", caster.character_id).maybeSingle()
       casterSc = (cs?.sheet_spellcasting ?? null) as Spellcasting | null
+      casterClass = (cs?.class as string | null) ?? null
+      casterLevel = Number(cs?.level ?? 1) || 1
       const { data: inv } = await db.from("inventory_items")
         .select("name,item_type,items(item_type,properties)")
         .eq("character_id", caster.character_id)
@@ -733,7 +743,14 @@ export async function POST(req: NextRequest) {
      */
     const payFor = async () => {
       await db.from("combat_state")
-        .update({ turn_state: { ...st, [phase]: true }, updated_at: new Date().toISOString() })
+        .update({
+          // `sneak_used` is the ONCE PER TURN latch. It rides in turn_state
+          // because that object is already wiped wholesale when the turn
+          // passes (action:"next" rewrites it), so the latch clears itself
+          // and there is no second thing to remember to reset.
+          turn_state: { ...st, [phase]: true, ...(sneak.applies ? { sneak_used: true } : {}) },
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", combat.id)
       if (weapon || entry.level === 0 || !caster.character_id || !casterSc) return
       const slots = (casterSc.slots ?? {}) as Record<string, { max?: number; used?: number }>
@@ -995,6 +1012,9 @@ export async function POST(req: NextRequest) {
     // spells carry it on the registry entry. Either way the board gets one
     // lowercase word and does not have to parse a sheet to find it.
     let damageType: string | null = entry.damage ?? null
+    // The rogue's verdict, so the log line and the response can both read it.
+    // Declared not-applying, because most attacks are not sneak attacks.
+    let sneak: SneakAttackVerdict = { applies: false, dice: "", reason: "" }
 
     if (weapon) {
       // "1d6+1 Piercing" → dice and a type. The type is only used to colour
@@ -1020,8 +1040,66 @@ export async function POST(req: NextRequest) {
         // A critical rolls the dice again, never the modifier.
         if (crit && dicePart) amount += rollDice(dicePart.replace(/\s*[+-]\s*\d+$/, ""))
         else if (crit) amount += flat
+
+        // ---- SNEAK ATTACK ------------------------------------------------
+        // Fifi's sheet has carried this feature, in full, from the day she
+        // was imported. Nothing has ever read it: the extra dice were never
+        // rolled and the sound recorded for it was never played.
+        //
+        // The condition needs one fact this path did not have — who is
+        // standing next to the target — so it is fetched here rather than
+        // for every cast, because only a rogue's landed weapon hit can
+        // possibly qualify and that is a small fraction of the traffic.
+        const mightSneak =
+          !sneak.applies &&
+          /\brogue\b/i.test(casterClass ?? "") &&
+          Boolean(weapon && (weapon.finesse || weapon.ranged)) &&
+          st.sneak_used !== true
+        if (mightSneak) {
+          const { data: near } = await db.from("vtt_tokens")
+            .select("id,allegiance,grid_x,grid_y,is_visible,hp_current")
+            .eq("map_id", caster.map_id)
+          const mySide = caster.allegiance === "party" || caster.allegiance === "ally"
+          const allies = (near ?? [])
+            // The rogue is not her own ally. Counting her would qualify every
+            // attack she ever made, which is the feature given away.
+            .filter((t) => t.id !== caster.id && t.id !== victim.id)
+            .filter((t) => t.is_visible !== false)
+            // "the ally isn't Incapacitated" — a body at 0 is not helping.
+            .filter((t) => (t.hp_current ?? 1) > 0)
+            .filter((t) => {
+              const theirSide = t.allegiance === "party" || t.allegiance === "ally"
+              return theirSide === mySide
+            })
+            .map((t) => ({ x: t.grid_x as number, y: t.grid_y as number }))
+
+          sneak = sneakAttackFor({
+            attackerClass: casterClass,
+            attackerLevel: casterLevel,
+            hit: true,
+            weaponFinesse: Boolean(weapon?.finesse),
+            weaponRanged: Boolean(weapon?.ranged),
+            alreadyUsedThisTurn: st.sneak_used === true,
+            // Advantage is not modelled anywhere in this route — five roll
+            // sites, one d20 each. Passed explicitly so the gap is visible.
+            hasAdvantage: false,
+            target: { x: victim.grid_x as number, y: victim.grid_y as number },
+            allies,
+          })
+
+          if (sneak.applies) {
+            // A critical doubles sneak-attack dice too — they are dice of the
+            // attack's damage, and the rule doubles all of them.
+            amount += rollDice(sneak.dice)
+            if (crit) amount += rollDice(sneak.dice)
+          }
+        }
       }
-      line = `${caster.label} strikes at ${victim.label} with ${weapon.name} — ${roll}${toHit >= 0 ? "+" : ""}${toHit} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.`
+      // The sneak attack is NAMED in the log. A rogue's damage doubling with
+      // no explanation reads as a bug; "Sneak Attack (2d6) - an ally has them
+      // occupied" reads as the rule it is.
+      const sneakNote = sneak.applies ? ` Sneak Attack (${sneak.dice}) — ${sneak.reason}.` : ""
+      line = `${caster.label} strikes at ${victim.label} with ${weapon.name} — ${roll}${toHit >= 0 ? "+" : ""}${toHit} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.${sneakNote}`
     } else if (entry.resolve === "attack") {
       roll = d20()
       crit = roll === 20
@@ -1134,6 +1212,13 @@ export async function POST(req: NextRequest) {
       saved,
       /** Lowercase 5E damage type, or null when the ability deals none. */
       damageType,
+      /**
+       * The rogue's moment, for the board's ear. `combat/sneak_attack` has
+       * been in the bucket since the sound pack was recorded and there has
+       * never been a field on the wire that could ask for it.
+       */
+      sneak: sneak.applies,
+      sneakDice: sneak.applies ? sneak.dice : null,
       /** Echoed so a late response cannot be applied to the wrong miniature. */
       target_token: victim.id,
       caster_token: caster.id,

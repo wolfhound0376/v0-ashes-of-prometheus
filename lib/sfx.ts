@@ -220,16 +220,19 @@ export function meleeHit(
   crit: boolean,
   opts: { ranged?: boolean; damageType?: string | null; targetAc?: number | null; hit?: boolean } = {},
 ): SfxName {
+  // Every return goes through pickVariant, so a second take of any of these
+  // starts playing the moment it is uploaded - see the variants section.
+  const pick = (n: SfxName) => pickVariant(n)
   // A miss by an arrow is the shaft hitting stone somewhere past the target.
-  if (opts.ranged && opts.hit === false) return "combat/arrow_hit_stone"
-  if (opts.ranged) return "combat/arrow_hit_flesh"
+  if (opts.ranged && opts.hit === false) return pick("combat/arrow_hit_stone")
+  if (opts.ranged) return pick("combat/arrow_hit_flesh")
   // The crit is its own sound and outranks the surface it landed on.
-  if (crit) return "combat/crit_hit"
-  if ((opts.damageType ?? "").toLowerCase() === "bludgeoning") return "combat/melee_hit_bludgeon"
+  if (crit) return pick("combat/crit_hit")
+  if ((opts.damageType ?? "").toLowerCase() === "bludgeoning") return pick("combat/melee_hit_bludgeon")
   const ac = opts.targetAc ?? 0
-  if (ac >= 17) return "combat/melee_hit_plate"
-  if (ac >= 14) return "combat/melee_hit_chainmail"
-  return "combat/melee_hit_flesh"
+  if (ac >= 17) return pick("combat/melee_hit_plate")
+  if (ac >= 14) return pick("combat/melee_hit_chainmail")
+  return pick("combat/melee_hit_flesh")
 }
 
 /**
@@ -257,31 +260,93 @@ export function variedRate(spread = 0.06): number {
  */
 export function weaponSounds(name: string): { windup: SfxName | null; release: SfxName } {
   const n = name.toLowerCase()
+  // Swings go through the variant pool too, so an extra take of any of these
+  // joins the rotation on upload.
+  const pick = (s: SfxName) => ({ windup: null, release: pickVariant(s) })
   if (/bow|sling/.test(n)) {
-    return { windup: null, release: /cross/.test(n) ? "combat/crossbow_release" : "combat/bow_release" }
+    return pick(/cross/.test(n) ? "combat/crossbow_release" : "combat/bow_release")
   }
   if (/dagger|knife|shortsword|rapier|scimitar/.test(n)) {
-    return { windup: null, release: "combat/dagger_stab" }
+    return pick("combat/dagger_stab")
   }
   if (/mace|hammer|maul|club|staff|greatsword|axe|halberd/.test(n)) {
-    return { windup: null, release: "combat/melee_swing_heavy" }
+    return pick("combat/melee_swing_heavy")
   }
   // Checked BEFORE the light-swing fallback, and it has to be: an unarmed
   // strike has no blade to whistle, so the fallback was giving a punch the
   // sound of a sword being swung.
+  // This is the one Sam asked for a second take of. Drop
+  // `combat/unarmed_hit_2.ogg` in the bucket and it starts alternating.
   if (/unarmed|fist|punch|claw|bite|slam|kick/.test(n)) {
-    return { windup: null, release: "combat/unarmed_hit" }
+    return pick("combat/unarmed_hit")
   }
-  return { windup: null, release: "combat/melee_swing_light" }
+  return pick("combat/melee_swing_light")
+}
+
+/** The rogue's one moment, played when the server says the feature fired. */
+export const SNEAK_ATTACK: SfxName = "combat/sneak_attack"
+
+// ------------------------------------------------------------- variants ----
+//
+// A SECOND TAKE OF A CLIP PLAYS THE MOMENT IT EXISTS, WITH NO CODE CHANGE.
+//
+// Sam asked for two unarmed sounds. One is recorded. Wiring a name for a file
+// that is not there would make three quarters of the punches silent, and
+// waiting for the recording means the wiring never gets done — so instead the
+// pool ASKS.
+//
+// Upload `combat/unarmed_hit_2.ogg` to the bucket and the next punch may use
+// it. Upload a `_3` and it joins too. Nothing here needs editing, no manifest
+// needs updating, and a variant that does not exist is asked about exactly
+// once and then forgotten.
+//
+// The probe is the same `load()` every play already goes through, so a variant
+// that IS there is warm by the time it is first chosen rather than arriving a
+// beat late.
+
+/** How many extra takes to look for. `_2` through `_4`. */
+const MAX_VARIANTS = 4
+
+/** base slug -> the takes confirmed to exist, base included. Built once. */
+const pools = new Map<string, SfxName[]>()
+/** base slug -> the last one played, so a pool of two never repeats. */
+const lastPick = new Map<string, SfxName>()
+
+function ensurePool(base: SfxName): SfxName[] {
+  const known = pools.get(base)
+  if (known) return known
+  // The base is in from the start, so the very first call has something to
+  // play. Variants join asynchronously as their probes come back.
+  const pool: SfxName[] = [base]
+  pools.set(base, pool)
+  for (let n = 2; n <= MAX_VARIANTS; n++) {
+    const name = `${base}_${n}` as SfxName
+    void load(name).then((buf) => {
+      if (buf) pool.push(name)
+    })
+  }
+  return pool
 }
 
 /**
- * The rogue's one moment. `combat/sneak_attack` has existed in the bucket
- * since the sound pack was recorded and nothing has ever played it.
+ * One take of `base`, avoiding the one played last.
  *
- * Not wired to a caller yet — the board does not know a sneak attack from an
- * ordinary one, because nothing on the wire says advantage-from-hiding. Named
- * here so the clip is findable, and so the next person to add that flag has
- * one obvious thing to call.
+ * Avoiding the repeat matters more than the randomness: with two clips, a
+ * fair coin plays the same one twice in a row half the time, and a player
+ * hears "it did not change" rather than "there are two".
  */
-export const SNEAK_ATTACK: SfxName = "combat/sneak_attack"
+export function pickVariant(base: SfxName): SfxName {
+  const pool = ensurePool(base)
+  if (pool.length === 1) return pool[0]
+  const previous = lastPick.get(base)
+  const fresh = pool.filter((n) => n !== previous)
+  const chosen = fresh[Math.floor(Math.random() * fresh.length)] ?? pool[0]
+  lastPick.set(base, chosen)
+  return chosen
+}
+
+/** Testing seam: forget every probe. Not used by the app. */
+export function _resetVariantPools() {
+  pools.clear()
+  lastPick.clear()
+}
