@@ -7,6 +7,42 @@
     "frames": 20,
     "rows": 4
   },
+  "aoeFire": {
+    "bytes": 1014436,
+    "cols": 6,
+    "file": "aoeFire.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
+  "aoeFog": {
+    "bytes": 457994,
+    "cols": 6,
+    "file": "aoeFog.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
+  "aoeFrost": {
+    "bytes": 763154,
+    "cols": 6,
+    "file": "aoeFrost.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
+  "aoeHoly": {
+    "bytes": 932666,
+    "cols": 6,
+    "file": "aoeHoly.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
   "eldBeam": {
     "bytes": 186428,
     "cols": 4,
