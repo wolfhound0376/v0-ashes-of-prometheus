@@ -2521,7 +2521,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // with a rotation is a body that falls twice. So for those, only the
         // colour, the dissolve and the particles run — which is the half the
         // clip cannot do, and the half that says what killed it.
-        const posed = Boolean(entry.anim?.names.has("dead"))
+        const posed = Boolean(entry.anim?.names.includes("dead"))
         vfx.push(deathSceneVfx({
           parent: scene,
           position: at,
