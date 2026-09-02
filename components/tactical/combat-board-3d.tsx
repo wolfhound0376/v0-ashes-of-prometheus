@@ -50,6 +50,7 @@ import {
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
+import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
 import { defenceMotion } from "./defence-motion"
 import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
@@ -96,7 +97,7 @@ interface MapRow {
   grid_width: number
   grid_height: number
   cell_size: number
-  meta: { node?: number; art_url?: string; cells_url?: string } | null
+  meta: { node?: number; art_url?: string; cells_url?: string; marks?: unknown } | null
 }
 
 interface TokenRow {
@@ -1478,6 +1479,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * area spell is itself the signal to drop the first.
      */
     const areaDecals = new Map<string, AreaDecalHandle>()
+    // Blood on the tiles. Laid by the route into vtt_maps.meta.marks; this
+    // only paints what the row says, at load and again on every change.
+    let blood: BloodDecalHandle | null = null
 
     /**
      * What the target does about a cast, given what the server said.
@@ -3565,6 +3569,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       floorPlane.position.set((W * SQ) / 2, 0, (H * SQ) / 2)
       floorPlane.receiveShadow = true
       boardGroup.add(floorPlane)
+      // What has already been spilled here. Persisted on the map row, so a
+      // reload does not mop the floor.
+      blood = layBloodDecals({ parent: boardGroup, cellToWorld: (x, y) => sqCentre(x, y), squareSize: SQ })
+      blood.sync(meta.marks)
       if (meta.art_url) {
         void sobelNormalMap(meta.art_url).then((nm) => {
           if (nm && !disposed) {
@@ -4156,6 +4164,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         void walkChannel.send({ type: "broadcast", event: "walk", payload: { token_id, cells, dash } })
       }
 
+      // Blood laid by the route lands on every board the moment the map row
+      // changes. Nothing else on the row moves mid-fight, so this is cheap.
+      const marksChannel = supabase
+        .channel("vtt-marks-board")
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "vtt_maps", filter: `id=eq.${map.id}` }, (payload: { new?: unknown }) => {
+          const next = (payload.new as { meta?: { marks?: unknown } } | undefined)?.meta?.marks
+          blood?.sync(next)
+        })
+        .subscribe()
+
       // Live: any token change, from any hand, lands on every board.
       const channel = supabase
         .channel("vtt-tokens-board")
@@ -4181,6 +4199,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         void supabase.removeChannel(logChannel)
         void supabase.removeChannel(sheetsChannel)
         void supabase.removeChannel(npcChannel)
+        void supabase.removeChannel(marksChannel)
       }
     }
 
@@ -4531,6 +4550,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       for (const m of [...moveMats, ...dashMats, overMat, denyMat, contourMoveMat, contourDashMat, denyEdgeMat]) m.dispose()
       PLATE.dispose()
       activeGlow.geometry.dispose()
+      blood?.dispose()
       pmrem.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
