@@ -52,6 +52,9 @@ import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType }
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
+// Twelve deaths, one per way of being killed - see death-vfx.ts.
+import { deathSceneVfx } from "./death-vfx"
+import { deathKindFor, type DeathKind } from "@/lib/damage-type"
 // A zero is an outcome, not an absence — see outcome-word.ts.
 import { outcomeWordVfx } from "./outcome-word"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
@@ -497,6 +500,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // rises a moment later. If the realtime row beats the response the number
   // simply is not gold — a missed flourish, never a wrong figure.
   const critRef = useRef<Set<string>>(new Set())
+  /**
+   * WHAT the damage was, in the server's own words — "piercing", "fire",
+   * "necrotic". Parked here for exactly the same reason as the crit flag, and
+   * spent by the death that follows a moment later.
+   *
+   * A REF and not a local, because the two ends live in different scopes: the
+   * cast response is read out here in a callback, and the death is drawn deep
+   * inside the scene effect. A ref is the only thing both can see.
+   */
+  const lastHitWithRef = useRef<Map<string, string>>(new Map())
   const targetsRef = useRef<{ show: (t: string, r: number, h: boolean) => void; clear: () => void }>({ show: () => {}, clear: () => {} })
   // The blast outline, and the click that commits it. Point spells get their
   // own pair because they answer a different question from creature spells,
@@ -1351,6 +1364,38 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      */
     const lastHitBy = new Map<string, DamageType>()
 
+    /**
+     * The SAME question, in the server's vocabulary rather than the sprite
+     * kit's — and this is the one the death reads.
+     *
+     * `lastHitBy` holds the kit's 13 types, which is what a sprite sheet needs
+     * and all it needs. But the kit has ONE word for every weapon, "physical",
+     * and an arrow through the chest is not the same corpse as a mace. The
+     * server has always known the difference — it parses "1d6+1 Piercing" at
+     * /api/combat and puts the word on the wire — and the board has always
+     * thrown it away.
+     *
+     * So both maps are kept. The sheet reads one, the body reads the other.
+     */
+    const lastHitWith = lastHitWithRef.current
+
+    /**
+     * Conditions off a token row, lower-cased, as a plain array.
+     *
+     * vtt_tokens has no conditions column; the row can still carry them when
+     * the board was handed a joined shape. Written defensively rather than
+     * optimistically because the ONE thing this feeds — "did it die of sleep"
+     * — is asked at the exact moment a creature has just hit zero, and an
+     * exception there loses the whole death.
+     */
+    const normaliseConditions = (row: TokenRow): string[] => {
+      const raw = (row as unknown as { conditions?: unknown }).conditions
+      if (Array.isArray(raw)) {
+        return raw.map((c) => (typeof c === "string" ? c : String((c as { name?: string })?.name ?? ""))).filter(Boolean)
+      }
+      return []
+    }
+
     // ── CASTING ────────────────────────────────────────────────────────────
     // Live effects, advanced by the same clock as everything else. A cast
     // that is still in the air when the board unmounts is disposed with it.
@@ -1659,6 +1704,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Gild the number that will rise off the target when the HP row lands,
       // the same way a player's crit is parked for glideToken to spend.
       if (s.crit && s.amount > 0) critRef.current.add(s.target_token)
+      // And WHAT it was, off the stat block, for the same reason and the same
+      // way. A player felled by a hand crossbow should be pinned, not simply
+      // knocked over — which is the difference between "piercing" and the
+      // "physical" every NPC attack used to collapse into.
+      if (s.damageType && s.amount > 0) lastHitWithRef.current.set(s.target_token, s.damageType)
       const answer: CastAnswer = {
         ok: true,
         hurt: s.amount > 0,
@@ -2341,26 +2391,59 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // saving throws." So a monster crossing to 0 is a death, and it should
       // look like whatever killed it — burn, dissolve, shatter.
       //
-      // Player characters are excluded: they fall unconscious and roll death
-      // saves, which is a different thing entirely and must not be dressed up
-      // as a funeral.
+      // Player characters get a DIFFERENT one: they fall unconscious and roll
+      // death saves, which must not be dressed up as a funeral. They collapse,
+      // keep their colour, and go on breathing.
       //
       // The body stays. spawnToken below rebuilds it into its death pose
       // (HOLD_LAST), so the square remains occupied and the battlefield still
-      // reads.
+      // reads — and the body treatment re-attaches itself to the rebuilt mesh
+      // rather than being lost with the old one.
       const wasUp = (before.hp_current ?? 1) > 0
-      if (wasUp && isDowned(row) && !row.character_id) {
-        const type = lastHitBy.get(row.id)
-        if (type) {
-          vfx.push(deathVfx({
-            parent: scene,
-            position: new THREE.Vector3(entry.obj.position.x, 0.05, entry.obj.position.z),
-            type,
-            camera,
-            scale: radiusFor(row.token_size) / 0.75,
-          }))
+      if (wasUp && isDowned(row)) {
+        const scale = radiusFor(row.token_size) / 0.75
+        const at = new THREE.Vector3(entry.obj.position.x, 0.05, entry.obj.position.z)
+
+        // A PLAYER always collapses, whatever hit them. They are unconscious
+        // and rolling death saves, and the whole point of the collapse
+        // treatment is that it keeps their colour: a downed friend must not
+        // be dressed as a corpse. A MONSTER dies the way it was killed.
+        const kind: DeathKind = row.character_id
+          ? "collapse"
+          : deathKindFor(lastHitWith.get(row.id) ?? null, normaliseConditions(row))
+
+        // The BODY. Asks tokensRef for the mesh every frame rather than
+        // holding this one, because spawnToken three lines below is about to
+        // throw it away and reload the GLB.
+        //
+        // `posed` is the deference. A creature whose GLB carries its own
+        // "dead" clip already falls the way an animator drew it, and the board
+        // freezes that on its last frame (HOLD_LAST). Laying it down AGAIN
+        // with a rotation is a body that falls twice. So for those, only the
+        // colour, the dissolve and the particles run — which is the half the
+        // clip cannot do, and the half that says what killed it.
+        const posed = Boolean(entry.anim?.names.has("dead"))
+        vfx.push(deathSceneVfx({
+          parent: scene,
+          position: at,
+          kind,
+          scale,
+          posed,
+          resolve: () => tokensRef.current.get(row.id)?.obj ?? null,
+        }))
+
+        // The AIR. The older sheet-based effect still plays over the top for
+        // monsters, because a sprite of the thing that killed it is a better
+        // impact than any number of particles - but it is no longer the whole
+        // death, and it no longer decides whether there IS one.
+        if (!row.character_id) {
+          const type = lastHitBy.get(row.id)
+          if (type) {
+            vfx.push(deathVfx({ parent: scene, position: at, type, camera, scale }))
+          }
         }
         lastHitBy.delete(row.id)
+        lastHitWith.delete(row.id)
       }
       if (before.hp_current !== row.hp_current || before.hp_max !== row.hp_max || before.is_visible !== row.is_visible || before.tint_color !== row.tint_color) {
         spawnToken(row)
@@ -4498,6 +4581,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // The server is the only witness to the d20. Park its verdict so the
           // number that rises off the body a moment later can wear it.
           if (data.crit) critRef.current.add(target_token)
+          // And its verdict on WHAT the damage was. The server has computed
+          // this since the day weapons started carrying their type in the
+          // damage string; the board simply never read the field. Without it
+          // every arrow and every mace produced the same corpse, because the
+          // sprite kit calls all of them "physical".
+          if (typeof data.damageType === "string") {
+            lastHitWithRef.current.set(target_token, data.damageType)
+          }
           // A weapon's impact is decided by the dice, not by the spell school:
           // the crunch only plays if it actually connected, and a miss gets
           // the whiff it earned. It is no longer played HERE, though — since
@@ -4573,6 +4664,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (!res.ok) {
           say(data?.error ?? "The spell would not resolve.")
           return { ok: false }
+        }
+        // EVERY creature standing in the blast, tagged with what the blast
+        // was made of — so five drow caught by one Fireball all burn, rather
+        // than five identical generic corpses appearing on the flagstones.
+        //
+        // A single-target spell parks one word; an area spell parks one word
+        // per victim. Same map, same spend, and glideToken clears each entry
+        // as it draws that creature's death.
+        if (typeof data?.damageType === "string" && Array.isArray(data.victims)) {
+          for (const v of data.victims as Array<{ id?: string }>) {
+            if (v?.id) lastHitWithRef.current.set(v.id, data.damageType)
+          }
         }
         if (data?.line) {
           say(data.line as string)

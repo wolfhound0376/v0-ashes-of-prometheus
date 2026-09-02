@@ -47,6 +47,18 @@ export interface SwingEvent {
   margin: number
   /** hit | crit | miss | fumble — a weapon never asks for a save. */
   outcome: string
+  /**
+   * The SRD damage word the stat block's attack deals — "piercing",
+   * "slashing", "bludgeoning", and occasionally "poison" or "necrotic" off a
+   * monster's bite. Optional, because an older seat broadcasting into a newer
+   * board will not send it, and a missing word costs a nuance rather than an
+   * animation.
+   *
+   * This is what makes a drow's hand crossbow kill a player differently from
+   * a quaggoth's claws. Without it every NPC attack in the game produced the
+   * same corpse, because the sprite kit has one word for all of them.
+   */
+  damageType?: string | null
   /** The sandbox board and the live one share a channel; this keeps them apart. */
   sandbox: boolean
 }
@@ -81,6 +93,9 @@ export function parseSwing(v: unknown): SwingEvent | null {
       dc: num(s.dc) ? s.dc : 0,
       margin: s.margin,
       outcome: s.outcome,
+      // Never fabricated. An absent word stays absent, and the death falls
+      // back to a plain weapon death rather than guessing at piercing.
+      damageType: typeof s.damageType === "string" && s.damageType ? s.damageType : null,
       sandbox: s.sandbox === true,
     }
   } catch {
