@@ -229,6 +229,12 @@ export function CharacterCard({
             faceUrl={c.face_image_url}
             portraitUrl={c.portrait_image_url}
             characterClass={c.class}
+            // The painted arch is 492x412 - WIDER than it is tall - and the
+            // hero art is 9:16. Cover keeps 47% of the source height, and
+            // centring takes that 47% out of the middle, which is the torso.
+            // Anchored to the top it is head-to-waist, which is what a
+            // character card has always been.
+            portraitPosition="top"
             fallback={<span style={{ fontSize: W * 0.12, color: cls.accent }}>{cls.sigil}</span>}
           />
         </div>

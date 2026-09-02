@@ -28,12 +28,27 @@ export function ClassMedallion({
   /** Shown when there is no art at all. */
   fallback,
   className = "",
+  portraitPosition = "center",
 }: {
   faceUrl?: string | null
   portraitUrl?: string | null
   characterClass?: string | null
   fallback?: React.ReactNode
   className?: string
+  /**
+   * Where the UNLAYERED portrait is anchored when it has to be cropped.
+   *
+   * Only the raw-portrait path uses it. The layered path is a face crop the
+   * artist already centred, and the medallion registers it against the class
+   * ring - moving that would separate the two halves.
+   *
+   * The party's hero art is 9:16 full-body. Anywhere it lands in a window
+   * wider than it is tall, cover throws away more than half the height, and
+   * centring throws it away from BOTH ends - which is how four characters
+   * ended up beheaded on their own cards. Callers with a squarish window pass
+   * "top", because on a full-body render the head is in the first tenth.
+   */
+  portraitPosition?: "center" | "top"
 }) {
   const cls = frameForClass(characterClass)
   // Both halves or neither. A face with no ring is a portrait in a hole, which
@@ -50,7 +65,17 @@ export function ClassMedallion({
         </div>
       )
     }
-    return <img src={portraitUrl} alt="" className={"h-full w-full object-cover object-center " + className} />
+    return (
+      <img
+        src={portraitUrl}
+        alt=""
+        className={
+          "h-full w-full object-cover " +
+          (portraitPosition === "top" ? "object-top " : "object-center ") +
+          className
+        }
+      />
+    )
   }
 
   return (
