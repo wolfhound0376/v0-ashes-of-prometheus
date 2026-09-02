@@ -58,7 +58,7 @@ TARGET_COVER = {
     "groundScorch":   0.55,  # a burn is nearly complete, but always cracked
     "groundFrost":    0.36,  # rime, not a snowfield
     "groundShock":    0.20,  # forks and nothing else
-    "groundPoison":   0.50,  # a pool with its edges still creeping
+    "groundAcid":     0.50,  # a pool with its edges still creeping
     "groundWeb":      0.28,  # strands and the holes you see the rogue through
     "groundGloom":    0.45,
     "groundHallowed": 0.38,  # filigree and glow, never a gold floor
@@ -68,7 +68,7 @@ TARGET_COVER = {
 # Solved by calibrate(). Edit TARGET_COVER, not this.
 CEILINGS = {
     "groundScorch": 0.72, "groundFrost": 0.62, "groundShock": 0.30,
-    "groundPoison": 0.70, "groundWeb": 0.34, "groundGloom": 0.66,
+    "groundAcid": 0.70, "groundWeb": 0.34, "groundGloom": 0.66,
     "groundHallowed": 0.74, "groundArcane": 0.48,
 }
 
@@ -224,7 +224,7 @@ def shock():
     return frame
 
 
-def poison():
+def acid():
     f = smooth(fbm(FRAME, 4, 4), 2.0); tex = grain()
     # One bubble field for the whole sheet. Drawn per frame it was not
     # bubbling, it was static — a different random pattern every frame reads
@@ -232,7 +232,7 @@ def poison():
     # through it as t rises, and THAT is the bubbling.
     bub = smooth(fbm(FRAME, 14, 3), 0.4)
     def frame(t):
-        body, rim = coverage(f, t, 0.12, CEILINGS["groundPoison"], 0.14)
+        body, rim = coverage(f, t, 0.12, CEILINGS["groundAcid"], 0.14)
         # A moving band of the held bubble field surfaces through the pool.
         pop = np.clip(1.0 - np.abs(bub - (0.35 + 0.4 * t)) / 0.05, 0, 1) * body
         rgb = tint(body, rim + pop * 0.8, (0.10, 0.17, 0.05),
@@ -296,7 +296,7 @@ def arcane():
 
 KINDS = {
     "groundScorch": scorch, "groundFrost": frost, "groundShock": shock,
-    "groundPoison": poison, "groundWeb": web, "groundGloom": gloom,
+    "groundAcid": acid, "groundWeb": web, "groundGloom": gloom,
     "groundHallowed": hallowed, "groundArcane": arcane,
 }
 

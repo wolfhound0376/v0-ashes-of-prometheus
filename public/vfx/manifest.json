@@ -55,6 +55,14 @@
     "frames": 24,
     "rows": 4
   },
+  "groundAcid": {
+    "bytes": 200270,
+    "cols": 4,
+    "file": "groundAcid.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
   "groundArcane": {
     "bytes": 170910,
     "cols": 4,
@@ -87,12 +95,12 @@
     "frames": 16,
     "rows": 4
   },
-  "groundPoison": {
-    "bytes": 200270,
-    "cols": 4,
-    "file": "groundPoison.webp",
-    "fps": 18,
-    "frames": 16,
+  "groundMiasma": {
+    "bytes": 821958,
+    "cols": 5,
+    "file": "groundMiasma.webp",
+    "fps": 20,
+    "frames": 20,
     "rows": 4
   },
   "groundScorch": {

@@ -79,6 +79,18 @@ const FADE_OUT = 0.55
  */
 const DECAL_Y = 0.025
 
+/**
+ * How tall a gas cloud stands, in squares.
+ *
+ * Roughly ten feet — head height and then some, so a cloud reads as something
+ * you are INSIDE rather than something you are looking over. Shorter than
+ * this and it becomes a knee-high mist, which is a different spell.
+ */
+const CLOUD_HEIGHT = 1.9
+
+/** How far the cloud sinks below the floor line, hiding its bottom edge. */
+const CLOUD_SINK = 0.15
+
 export interface AreaDecalHandle extends VfxHandle {
   /**
    * End a lingering mark — concentration broke, the duration ran out, the
@@ -165,6 +177,22 @@ const UV_TURNS: [number, number][][] = [
 ]
 
 /**
+ * A cloud gets MIRRORED, never turned.
+ *
+ * A quarter turn is fine on a floor mark, which has no up. A standing cloud
+ * has a very definite up — it was painted with heavy vapour sinking at the
+ * bottom and plumes rising off the top — and rotating it ninety degrees lays
+ * the gas on its side. Mirroring left-to-right breaks the repeat without
+ * arguing with gravity.
+ */
+const UV_FLIPS: [number, number][][] = [
+  [[0, 0], [1, 0], [1, 1], [0, 1]],
+  [[1, 0], [0, 0], [0, 1], [1, 1]],
+]
+
+const TRI = [0, 1, 2, 0, 2, 3]
+
+/**
  * One flat quad per cell, merged into a single geometry.
  *
  * Every quad carries a full 0..1 UV square — turned, per turnFor above — so
@@ -191,8 +219,7 @@ function mergedQuads(
       [x + h, z + h],
       [x - h, z + h],
     ]
-    const tri = [0, 1, 2, 0, 2, 3]
-    tri.forEach((corner, k) => {
+    TRI.forEach((corner, k) => {
       const p = i * 18 + k * 3
       pos[p] = xy[corner][0]
       pos[p + 1] = 0
@@ -201,6 +228,66 @@ function mergedQuads(
       uv[q] = t[corner][0]
       uv[q + 1] = t[corner][1]
     })
+  })
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2))
+  return geo
+}
+
+/**
+ * Two crossed vertical quads per cell — gas standing IN the square.
+ *
+ * WHY CROSSED QUADS RATHER THAN CAMERA-FACING BILLBOARDS
+ *
+ * The instinct for smoke is a billboard that turns to face the camera. That
+ * cannot be done here: the whole reason a bucket is one draw call is that its
+ * cells share one merged geometry, and a shared mesh can only be rotated as a
+ * block — swinging it would carry every quad off the square it belongs to.
+ * Rotating them individually means one mesh per cell, and a twenty-square
+ * Cloudkill becomes twenty draw calls that all overdraw each other.
+ *
+ * Crossing two quads at ninety degrees is the old foliage trick and it solves
+ * exactly this: there is always a face roughly toward the camera at any orbit
+ * angle, it costs nothing per frame, and it stays inside the merge. The board
+ * orbits but does not go underneath, so the two upright faces are enough.
+ *
+ * They are also drawn a little wider than the square they sit in, so
+ * neighbouring cells overlap into each other rather than lining up as a row
+ * of separate puffs with daylight between them.
+ */
+function mergedCloudQuads(
+  cells: Cell[],
+  cellToWorld: (x: number, y: number) => { x: number; z: number },
+  size: number,
+): THREE.BufferGeometry {
+  const w = size * 0.78          // half-width, so each cell overlaps its neighbour
+  const top = size * CLOUD_HEIGHT
+  const bottom = -size * CLOUD_SINK
+  const quads = cells.length * 2
+  const pos = new Float32Array(quads * 18)
+  const uv = new Float32Array(quads * 12)
+  cells.forEach((c, i) => {
+    const { x, z } = cellToWorld(c.x, c.y)
+    const t = UV_FLIPS[turnFor(c) % 2]
+    // Quad 0 spans X, quad 1 spans Z. Corners run bottom-left, bottom-right,
+    // top-right, top-left so the UV corner order matches the floor case.
+    for (let q = 0; q < 2; q++) {
+      const along: [number, number][] = q === 0
+        ? [[x - w, z], [x + w, z], [x + w, z], [x - w, z]]
+        : [[x, z - w], [x, z + w], [x, z + w], [x, z - w]]
+      const ys = [bottom, bottom, top, top]
+      const base = (i * 2 + q)
+      TRI.forEach((corner, k) => {
+        const p = base * 18 + k * 3
+        pos[p] = along[corner][0]
+        pos[p + 1] = ys[corner]
+        pos[p + 2] = along[corner][1]
+        const o = base * 12 + k * 2
+        uv[o] = t[corner][0]
+        uv[o + 1] = t[corner][1]
+      })
+    }
   })
   const geo = new THREE.BufferGeometry()
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3))
@@ -237,8 +324,12 @@ export function layAreaDecal(opts: {
   const { parent, cells, centre, visual, cellToWorld } = opts
   const size = opts.squareSize ?? 1
 
+  const cloud = visual.form === "cloud"
+
   const group = new THREE.Group()
-  group.position.y = DECAL_Y
+  // A floor mark is pinned under the movement bands; a cloud stands on the
+  // floor line itself and gets its height from its geometry.
+  group.position.y = cloud ? 0 : DECAL_Y
   parent.add(group)
 
   let buckets: Bucket[] = []
@@ -290,8 +381,13 @@ export function layAreaDecal(opts: {
             blending: THREE.NormalBlending,
             side: THREE.DoubleSide,
             toneMapped: false,
+            // A cloud must not z-fight with the cell behind it. Floor marks
+            // all share one plane and are ordered explicitly instead.
+            depthTest: true,
           })
-          const geo = mergedQuads(cs, cellToWorld, size)
+          const geo = cloud
+            ? mergedCloudQuads(cs, cellToWorld, size)
+            : mergedQuads(cs, cellToWorld, size)
           const mesh = new THREE.Mesh(geo, mat)
           mesh.frustumCulled = false
           // Every decal shares one plane at one height, so the depth buffer
@@ -348,7 +444,14 @@ export function layAreaDecal(opts: {
         } else if (visual.lingers) {
           // Settled terrain. The sheet keeps turning over slowly so a Web
           // creeps and a fog drifts rather than sitting as a frozen stamp.
-          const loop = ((local - visual.bloom) * fps * 0.25) % frames
+          //
+          // Gas runs its loop far faster than a floor mark does. A web that
+          // creeps is unsettling; a cloud that creeps is a photograph. The
+          // poison sheet is cut from real volumetric motion, so playing it
+          // near its native rate is what makes the cloud read as gas rather
+          // than as a green shape sitting in the room.
+          const rate = cloud ? 0.85 : 0.25
+          const loop = ((local - visual.bloom) * fps * rate) % frames
           setFrame(b, Math.floor(loop))
           b.mat.opacity = visual.restOpacity
         } else {

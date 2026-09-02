@@ -45,14 +45,32 @@ export type DecalKind =
   | "scorch"   // fire — blackened stone, embers cooling in the cracks
   | "frost"    // cold — rime creeping out from the centre
   | "shock"    // lightning / thunder — a struck, crazed burn
-  | "poison"   // poison / acid — pooled, faintly bubbling
+  | "acid"     // acid, grease — pooled on the floor, faintly bubbling
+  | "miasma"   // poison — a cloud of gas STANDING in the squares
   | "web"      // web, entangle, spike growth — clinging growth
-  | "gloom"    // necrotic, darkness, fog, silence — a soft dimming
+  | "gloom"    // darkness, fog, silence — a soft dimming, also airborne
   | "hallowed" // radiant, holy — a lit ring
   | "arcane"   // everything else, and the honest default
 
+/**
+ * Is this mark ON the floor, or standing IN the air above it?
+ *
+ * THE DISTINCTION THAT WAS MISSING. Everything here began as a flat quad
+ * lying on the ground, and for a scorch or a web that is exactly right — they
+ * ARE marks on stone. Applied to poison it was quietly wrong: a cloud of gas
+ * is not a stain, it is a volume you are standing inside, and painting it on
+ * the floor says the opposite. The first poison texture came out looking like
+ * a pool of acid, which is a fair description of what a floor decal can be.
+ *
+ * So poison keeps the pool — relabelled `acid`, which is what it always was —
+ * and gets a second form that occupies the square rather than covering it.
+ */
+export type DecalForm = "floor" | "cloud"
+
 export interface AreaVisual {
   decal: DecalKind
+  /** Lying on the stone, or hanging in the air above it. */
+  form: DecalForm
   /** Multiplied into the (near-grayscale) baked sheet. */
   tint: number
   /**
@@ -87,7 +105,7 @@ const BY_SPELL: Record<string, DecalKind> = {
   web: "web",
   entangle: "web",
   "spike growth": "web",
-  grease: "poison",
+  grease: "acid",   // a slick on the floor, not a vapour
   "fog cloud": "gloom",
   silence: "gloom",
   sleep: "gloom",
@@ -107,8 +125,10 @@ const BY_DAMAGE: Record<string, DecalKind> = {
   cold: "frost",
   lightning: "shock",
   thunder: "shock",
-  acid: "poison",
-  poison: "poison",
+  // Acid eats the floor; poison hangs in the air. They used to share one
+  // texture, and sharing it made the gas look like a puddle.
+  acid: "acid",
+  poison: "miasma",
   necrotic: "gloom",
   radiant: "hallowed",
   psychic: "arcane",
@@ -119,7 +139,8 @@ const TINTS: Record<DecalKind, number> = {
   scorch:   0xff7a3c,
   frost:    0xa8e2ff,
   shock:    0x9fd0ff,
-  poison:   0x9ad14a,
+  acid:     0x9ad14a,
+  miasma:   0xbaff5c,
   web:      0xd8d2c2,
   gloom:    0x8d7ad0,
   hallowed: 0xffe6a8,
@@ -134,7 +155,8 @@ const BLOOMS: Record<DecalKind, number> = {
   scorch:   0.45,
   frost:    0.70,
   shock:    0.30,
-  poison:   0.60,
+  acid:     0.60,
+  miasma:   1.10,   // gas fills a room slowly; that slowness is the menace
   web:      0.90,
   gloom:    0.80,
   hallowed: 0.55,
@@ -151,11 +173,28 @@ const REST: Record<DecalKind, number> = {
   scorch:   0.30,
   frost:    0.34,
   shock:    0.22,
-  poison:   0.38,
+  acid:     0.38,
+  // Higher than any floor mark, and it has to be: a cloud you can see
+  // straight through is not blocking anyone's line of sight, and the whole
+  // tactical point of standing gas is that it does.
+  miasma:   0.62,
   web:      0.46, // the one you most need to keep reading — it costs movement
   gloom:    0.40,
   hallowed: 0.32,
   arcane:   0.26,
+}
+
+/**
+ * Which kinds hang in the air.
+ *
+ * Gloom joins poison here because its users are Fog Cloud, Silence and Sleep —
+ * all things that fill a space rather than mark a floor. Necrotic falls here
+ * too, which is a fair reading: a necrotic area is a pall, not a stain.
+ */
+const FORMS: Record<DecalKind, DecalForm> = {
+  scorch: "floor", frost: "floor", shock: "floor", acid: "floor",
+  web: "floor", hallowed: "floor", arcane: "floor",
+  miasma: "cloud", gloom: "cloud",
 }
 
 function kindFor(name: string, entry: SpellEntry | undefined): DecalKind {
@@ -182,6 +221,7 @@ export function areaVisualFor(spellName: string): AreaVisual | null {
   const decal = kindFor(spellName, entry)
   return {
     decal,
+    form: FORMS[decal],
     tint: TINTS[decal],
     bloom: BLOOMS[decal],
     lingers: entry.concentration === true,
