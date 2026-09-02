@@ -65,6 +65,9 @@ import { equipOnRig, unequipSlot } from "@/lib/equipment"
 import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
+// The interface's own click — synthesised, so a targeting tick never waits on
+// a fetch. Deliberately not part of lib/sfx, which is the campaign's sound.
+import { uiTick } from "@/lib/ui-tick"
 // FEET_PER_SQUARE only, deliberately. gridDistanceFeet is straight-line
 // (Chebyshev) and this overlay measures a PATH that bends around rock, so the
 // two disagree the moment a wall is involved - and the server rejects a client
@@ -436,6 +439,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     clear: () => void
   }>({ show: () => {}, clear: () => {} })
   const releaseAtPointRef = useRef<(gx: number, gy: number) => void>(() => {})
+  /**
+   * The live "this is who you are about to hit" mark, driven by the cursor.
+   * Separate from targetsRef: that one answers who is eligible, this one
+   * answers who is caught right now.
+   */
+  const affectedRef = useRef<{ show: (ids: string[], helpful: boolean) => void; clear: () => void }>({
+    show: () => {},
+    clear: () => {},
+  })
   const castPointVerbRef = useRef<(caster: string, gx: number, gy: number, ability: string) => Promise<void>>(async () => {})
 
   // ---- the hover read-out --------------------------------------------
@@ -1574,10 +1586,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // still throw the spell that was armed AT the creature that was
       // clicked, whatever armedRef says by then.
       const commit = (crossSide: boolean) => {
+        // The click that locks a target on. Sam asked for it to feel like an
+        // iPhone keypad — instant, dry, and unmistakably a CHOICE having been
+        // made, which is exactly the beat that used to pass in silence while
+        // the server was consulted.
+        uiTick("firm")
         windupRef.current?.stop(0.08)
         windupRef.current = null
         stopCharge()
         clearTargets()
+        affectedRef.current.clear()
         setSelected(victim.row)
         setArmedSpell(null)
 
@@ -1682,11 +1700,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
       }
 
+      uiTick("firm")
       windupRef.current?.stop(0.08)
       windupRef.current = null
       stopCharge()
       clearTargets()
       templateRef.current.clear()
+      affectedRef.current.clear()
 
       const p = sqCentre(gx, gy)
       performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, null, { x: p.x, z: p.z })
@@ -2209,6 +2229,50 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const targetGroup = new THREE.Group()
     scene.add(targetGroup)
     const targetRingGeo = new THREE.RingGeometry(0.62, 0.86, 44)
+
+    // ---- WHO THIS WILL ACTUALLY HIT, RIGHT NOW -------------------------
+    //
+    // The target rings below say who is ELIGIBLE. They cannot say who is
+    // about to be caught, because that changes with every pixel the mouse
+    // moves — and for an area spell it is a whole group rather than one body.
+    //
+    // Sam: "we need a high speed targeting system to pick target so when we
+    // hover the glow in red indicated they will be effect. Area of effect
+    // spells that effect multiple people negatively will show the area
+    // negatively targeted."
+    //
+    // So this is a SECOND, brighter mark that follows the cursor: a thick
+    // ring on everyone the release would touch this instant. Red for harm,
+    // green for help — the colour answers "what happens to them", not "may I
+    // click them", which is what the thinner eligibility ring already says.
+    //
+    // Rebuilt on pointer move rather than per frame. Eleven tokens is a dozen
+    // ring meshes; rebuilding that on mousemove costs nothing and keeps the
+    // marks exact rather than interpolated.
+    const affectGroup = new THREE.Group()
+    scene.add(affectGroup)
+    const affectRingGeo = new THREE.RingGeometry(0.90, 1.20, 44)
+    const affectHarmMat = new THREE.MeshBasicMaterial({ color: 0xff2f1c, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    const affectHelpMat = new THREE.MeshBasicMaterial({ color: 0x46ff86, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+    const clearAffected = () => {
+      while (affectGroup.children.length) affectGroup.remove(affectGroup.children[0])
+    }
+    /** Mark exactly these tokens as about to be hit. */
+    const showAffected = (ids: string[], helpful: boolean) => {
+      clearAffected()
+      for (const id of ids) {
+        const t = tokensRef.current.get(id)
+        if (!t) continue
+        const ring = new THREE.Mesh(affectRingGeo, helpful ? affectHelpMat : affectHarmMat)
+        ring.rotation.x = -Math.PI / 2
+        // Above the eligibility ring at 0.09, so the two read as layers
+        // rather than fighting for the same pixels.
+        ring.position.set(t.obj.position.x, 0.105, t.obj.position.z)
+        ring.scale.setScalar(radiusFor(t.row.token_size) / 0.75)
+        affectGroup.add(ring)
+      }
+    }
+    affectedRef.current = { show: showAffected, clear: clearAffected }
     const hostileMat = new THREE.MeshBasicMaterial({ color: 0xff5a44, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
     const helpfulMat = new THREE.MeshBasicMaterial({ color: 0x53e07a, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
     /** Down but not gone: still a legal target, and worth finishing or saving. */
@@ -2881,22 +2945,66 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // part of aiming an area, so it tracks every mouse event rather than
         // being throttled to cell changes: a cone SWEEPS as you turn, and its
         // shape changes on sub-cell movement even when the aimed square does not.
-        if (armedRef.current.mode === "point" && floorPlane) {
+        const armedNow = armedRef.current
+        const helpfulNow = Boolean(armedNow.entry.helpful)
+
+        if (armedNow.mode === "point" && floorPlane) {
           const r2 = renderer.domElement.getBoundingClientRect()
           pointer.set(((e.clientX - r2.left) / r2.width) * 2 - 1, -((e.clientY - r2.top) / r2.height) * 2 + 1)
           raycaster.setFromCamera(pointer, activeCam())
           const fh = raycaster.intersectObject(floorPlane, false)[0]
           if (fh) {
-            templateRef.current.show(
-              armedRef.current.tokenId,
-              armedRef.current.entry,
-              Math.floor(fh.point.x / SQ),
-              Math.floor(fh.point.z / SQ),
-            )
+            const agx = Math.floor(fh.point.x / SQ)
+            const agy = Math.floor(fh.point.z / SQ)
+            templateRef.current.show(armedNow.tokenId, armedNow.entry, agx, agy)
+
+            // EVERYONE STANDING IN THE SHAPE, marked as it sweeps.
+            //
+            // The template says where the blast lands; it does not say who is
+            // in it, and at a glance a body half-overlapping an ember square
+            // is ambiguous. This resolves that with the SAME areaCells the
+            // server damages from, so the marked set and the damaged set are
+            // the same set — including the caster's own side, which is the
+            // whole reason a player needs to see it before committing.
+            const area = armedNow.entry.area
+            const shooter = tokensRef.current.get(armedNow.tokenId)
+            if (area && shooter) {
+              const origin = { x: shooter.row.grid_x ?? 0, y: shooter.row.grid_y ?? 0 }
+              const covered = new Set(
+                areaCells(area, origin, { x: agx, y: agy }).map((c) => `${c.x},${c.y}`),
+              )
+              const caught: string[] = []
+              tokensRef.current.forEach((t) => {
+                if (!t.row.is_visible) return
+                if (!covered.has(`${t.row.grid_x},${t.row.grid_y}`)) return
+                // Spirit Guardians and its kin spare their own; the mark has
+                // to agree with the spell or it is worse than no mark.
+                if (area.sparesAllies && (t.row.id === shooter.row.id || friendly(t.row))) return
+                caught.push(t.row.id)
+              })
+              affectedRef.current.show(caught, helpfulNow)
+            } else {
+              affectedRef.current.clear()
+            }
+          }
+        } else {
+          // CREATURE MODE: mark whoever is under the cursor, if the release
+          // would actually reach them. A red ring on a body the spell cannot
+          // touch would be a promise the click then breaks.
+          const overId = tokenUnder(e)
+          const shooter = tokensRef.current.get(armedNow.tokenId)
+          const over = overId ? tokensRef.current.get(overId) : null
+          if (over && shooter && over.row.is_visible) {
+            const st = targetStatus(shooter, over, armedNow.entry.rangeFt, armedNow.entry.helpful)
+            affectedRef.current.show(st.ok ? [over.row.id] : [], helpfulNow)
+          } else {
+            affectedRef.current.clear()
           }
         }
         return
       }
+      // Nothing armed: no marks.
+      affectedRef.current.clear()
       if (!reachRef.current || !floorPlane) return
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
@@ -3892,6 +4000,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       vfx.length = 0
       window.removeEventListener("keydown", onMoveKey)
       clearTargets()
+      clearAffected()
+      affectRingGeo.dispose()
+      affectHarmMat.dispose()
+      affectHelpMat.dispose()
       clearTemplate()
       aoeGeo.dispose()
       aoeMat.dispose()
@@ -3978,7 +4090,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     windupRef.current = h
     // The visible half of the ramp: the caster holds the pose while choosing,
     // and everyone they could throw it at is ringed.
-    chargeRef.current.start(armedSpell.tokenId)
+    // A SWORD DOES NOT HOLD ITS SWING WHILE YOU CHOOSE.
+    //
+    // The charge pose plays the cast clip on a loop, which for a weapon IS
+    // the attack animation — so arming a melee attack made the character
+    // visibly swing before a target had been picked or a die rolled.
+    // Reported exactly that way: "when I hit attack/melee the animation for
+    // attack starts. It should NOT start until AFTER I select and rolls are
+    // made."
+    //
+    // Magic keeps it. A spell being charged is a held gesture that reads as
+    // gathering rather than as striking, and it is what Sam asked for when
+    // the two-phase cast was built. Steel simply waits.
+    if (armedSpell.kind !== "weapon") chargeRef.current.start(armedSpell.tokenId)
     // Creature spells ring the bodies. Point spells draw a shape instead —
     // ringing every legal creature for a Fireball would say "pick one", which
     // is the opposite of what a Fireball asks.
@@ -4013,6 +4137,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       chargeRef.current.stop()
       targetsRef.current.clear()
       templateRef.current.clear()
+      affectedRef.current.clear()
       setHoverRead(null)
       window.removeEventListener("keydown", onKey)
     }
