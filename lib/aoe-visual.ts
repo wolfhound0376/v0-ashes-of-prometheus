@@ -107,6 +107,10 @@ const BY_SPELL: Record<string, DecalKind> = {
   "spike growth": "web",
   grease: "acid",   // a slick on the floor, not a vapour
   "fog cloud": "gloom",
+  // No damage type of its own, so the name is the only thing that can say
+  // this is gas rather than a smudge on the floor. Cloudkill needs no entry:
+  // it deals poison, and poison already means miasma.
+  "stinking cloud": "miasma",
   silence: "gloom",
   sleep: "gloom",
   "minor illusion": "arcane",

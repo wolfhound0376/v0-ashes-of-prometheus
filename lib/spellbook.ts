@@ -198,6 +198,16 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
   // this registry names — so it carries none, and makes no impact sound. That
   // is the honest answer, not a shrug.
   "spike growth":      S({ level: 2, school: "nature",                        rangeFt: 150, target: "point", concentration: true, area: sphere(20) }),
+  // The two gas clouds, SRD 5.1. Both are 20-ft-radius spheres of standing
+  // vapour, and both are concentration — which is what makes the board hold
+  // the cloud on the floor between turns rather than flashing it once.
+  //
+  // Stinking Cloud carries a save but NO resolve, deliberately: it deals no
+  // damage at all, it costs you your action to retching. That is the same
+  // shape Web, Entangle and Faerie Fire use, and setting resolve:"save" with
+  // no dice would invite the cast handler to roll damage that does not exist.
+  "stinking cloud":    S({ level: 3, school: "nature",                        rangeFt: 90,  target: "point", concentration: true, save: "CON", area: sphere(20) }),
+  cloudkill:           S({ level: 5, school: "nature",   damage: "poison",    rangeFt: 120, target: "point", concentration: true, resolve: "save", save: "CON", dice: "5d8", halfOnSave: true, area: sphere(20) }),
   moonbeam:            S({ level: 2, school: "holy",     damage: "radiant",   rangeFt: 120, target: "point", concentration: true, resolve: "save", save: "CON", dice: "2d10", halfOnSave: true, area: cylinder(5) }),
   "cloud of daggers":  S({ level: 2, school: "arcane",   damage: "force",     rangeFt: 60,  target: "point", concentration: true, resolve: "auto", dice: "4d4", area: cube(5) }),
   // A 5-foot-DIAMETER sphere, so the radius is 2.5. Exactly the trap the
