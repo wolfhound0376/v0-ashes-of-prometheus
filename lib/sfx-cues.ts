@@ -28,7 +28,7 @@
 // never take the dashboard down. Every entry point here is total.
 // ============================================================================
 
-import { playSfx, impactFor, meleeHit, type SfxName } from "@/lib/sfx"
+import { playSfx, impactFor, meleeHit, variedRate, type SfxName } from "@/lib/sfx"
 import type { DamageType } from "@/lib/spellbook"
 import { createClient } from "@/lib/supabase/client"
 
@@ -151,10 +151,14 @@ function playCue(cue: unknown): void {
         if (typeof c.key === "string" && c.key) playSfx(c.key as SfxName)
         return
       case "spell":
-        if (c.damage) playSfx(impactFor(c.damage as DamageType), { volume: 0.9 })
+        if (c.damage) playSfx(impactFor(c.damage as DamageType), { volume: 0.9, rate: variedRate(0.04) })
         return
       case "attack":
-        playSfx(meleeHit(Boolean(c.crit)))
+        // A cue carries no target, so this one cannot know what the blow
+        // landed on — it gets the crit or the flesh, as it always did, plus
+        // the detune so a relayed hit is not identical to the local one that
+        // just played.
+        playSfx(meleeHit(Boolean(c.crit)), { rate: variedRate() })
         return
       default:
         return

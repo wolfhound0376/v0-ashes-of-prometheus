@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
 import { blurbFor } from "@/lib/ability-blurbs"
-import { rackFor, type RackItem } from "@/lib/spellbook"
+import { rackFor, phaseCost, type RackItem } from "@/lib/spellbook"
 import { Globe } from "./essence-globe"
 import { CharacterCard } from "./character-card"
 import { ClassMedallion } from "./class-medallion"
@@ -110,18 +110,16 @@ interface Props {
   onCancelArm?: () => void
 }
 
-// Spells whose CASTING TIME is a bonus action (PHB). Everything else on the
-// rack - core actions, cantrips, prepared spells - costs the action. Extend
-// this as the party learns new tricks; unknown names default to the action,
-// which is the common case and the safe one.
-const BONUS_ACTION_SPELLS = new Set([
-  "healing word", "spiritual weapon", "misty step", "shield of faith",
-  "sanctuary", "expeditious retreat", "hex", "hunter's mark", "shillelagh",
-  "divine favor", "magic weapon", "searing smite", "thunderous smite",
-  "wrathful smite", "compelled duel", "ensnaring strike", "hail of thorns",
-])
-const phaseOf = (name: string): "action" | "bonus" =>
-  BONUS_ACTION_SPELLS.has(name.toLowerCase().trim()) ? "bonus" : "action"
+// What a rack entry COSTS is `phaseCost` in lib/spellbook, and nowhere else.
+//
+// This file used to keep its own hand-written Set of bonus-action spell NAMES
+// and decide from that. It was a second source of truth for a question the
+// spellbook already answers with `entry.bonus`, and the server was reading the
+// spellbook's answer — so the rack could grey an icon the server would have
+// allowed, or offer one the server was about to refuse with a 409.
+//
+// It also ignored whether the entry was a weapon, which `phaseCost` does not:
+// a weapon named after a bonus-action spell was priced as a bonus action.
 
 /**
  * The hover panel. Sam's brief: balloon the icon about 30%, and say clearly
@@ -697,7 +695,7 @@ export function CombatHud(props: Props) {
 
               {abilities.map((a, i) => {
                 const art = iconFor(a.name)
-                const phase = phaseOf(a.name)
+                const phase = phaseCost(a.entry, a.kind === "weapon")
                 const armedNow = econ?.armed ?? null
                 const armedMatch = armedNow !== null && phase === armedNow
                 const armedMute = armedNow !== null && phase !== armedNow
@@ -724,8 +722,25 @@ export function CombatHud(props: Props) {
                 // Only ever applied to the character whose turn it actually
                 // is: `econ.live` gates that, so another player's plate is
                 // never greyed by someone else's spent action.
+                //
+                // CORE ACTIONS ARE NOT EXEMPT. They used to be — the clause
+                // was `&& a.kind !== "action"`, which spared Attack, Dash,
+                // Disengage, Dodge and Hide from the grey. Those are the
+                // first five icons on the rack, so with the action spent the
+                // player was looking at a row that began with five lit,
+                // clickable buttons, every one of which the server would
+                // refuse with a 409. Attack costs the action exactly as a
+                // cantrip does; there was never a reason for the exemption.
+                //
+                // Dash greys with the rest, and that is correct: Dash IS the
+                // action (PHB, "Dash ... you gain extra movement for the
+                // current turn"), so a spent action means no Dash. The
+                // `boughtByTheMove` guard further down is a different
+                // question — it stops the PRESS from spending the action a
+                // second time, since the azure band is confirmed by clicking
+                // a square rather than by pressing the icon.
                 const phaseGone =
-                  isFocusActive && Boolean(econ?.live) && Boolean(econ && econ[phase]) && a.kind !== "action"
+                  isFocusActive && Boolean(econ?.live) && Boolean(econ && econ[phase])
                 // AND NOTHING IS SPENDABLE ON SOMEBODY ELSE'S TURN.
                 //
                 // The economy broadcast describes the ACTIVE combatant. The
