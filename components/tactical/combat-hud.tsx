@@ -194,10 +194,24 @@ function speedFtOf(c: HudCharacter): number {
   return Number.parseInt(String(c.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
 }
 
-/** The card counts crystals, so it wants a total and how many are gone. */
-function slotsForCard(c: HudCharacter): { total: number; used: number } | null {
-  const t = slotTally(c)
-  return t ? { total: t.max, used: t.used } : null
+/** Preserve spell level as well as totals so the crystal groups are honest. */
+function slotsForCard(c: HudCharacter): { total: number; used: number; levels: Array<{ level: number; total: number; used: number }> } | null {
+  const slots = c.sheet_spellcasting?.slots
+  if (!slots) return null
+  const levels = Object.entries(slots)
+    .map(([key, entry]) => ({
+      level: Number.parseInt(key.replace(/[^0-9]/g, ""), 10),
+      total: entry?.max ?? 0,
+      used: entry?.used ?? 0,
+    }))
+    .filter((entry) => Number.isFinite(entry.level) && entry.level > 0 && entry.total > 0)
+    .sort((a, b) => a.level - b.level)
+  if (levels.length === 0) return null
+  return {
+    total: levels.reduce((sum, entry) => sum + entry.total, 0),
+    used: levels.reduce((sum, entry) => sum + entry.used, 0),
+    levels,
+  }
 }
 
 function slotTally(c: HudCharacter): { used: number; max: number } | null {
