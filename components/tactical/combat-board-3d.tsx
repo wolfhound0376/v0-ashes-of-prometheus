@@ -279,6 +279,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * survive the turn passing to somebody else.
    */
   const reachOpenRef = useRef<string | null>(null)
+  /**
+   * Open (or close) movement for the active combatant.
+   *
+   * THREE doors into the same room: click the miniature on the board, click
+   * the character's plate on the left, or press M. They all land here rather
+   * than each re-deriving who may move and re-painting in its own way — three
+   * copies of that rule is three chances for them to disagree, which is the
+   * bug this codebase keeps re-learning.
+   *
+   * Returns why it refused, so a caller can say so out loud instead of
+   * appearing broken.
+   */
+  const toggleReachRef = useRef<(characterId?: string) => "ok" | "not-your-turn" | "no-claim" | "no-combat">(
+    () => "no-combat",
+  )
   const playerMoveRef = useRef<(tokenId: string, gx: number, gy: number, feet: number, dash?: boolean) => void>(() => {})
   /**
    * A move the player has asked for that would cost their Dash, parked here
@@ -707,16 +722,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             // through to plain selection instead of silently doing nothing.
             const c = combatRef.current
             const activeTokenId = c?.turn_order?.[c.active_index]?.token_id
-            const mayDrive =
-              Boolean(entry.row.character_id) &&
-              (entry.row.character_id === myCharRef.current || dmRef.current)
-            if (c && id === activeTokenId && mayDrive) {
+            if (c && id === activeTokenId) {
               // Second click closes it again. A player who opened their reach
               // to look, and then decided to cast instead, needs the gold off
               // the floor without having to end their turn to clear it.
-              reachOpenRef.current = reachOpenRef.current === id ? null : id
-              refreshReachRef.current()
+              const why = toggleReachRef.current()
               setSelected(entry.row)
+              if (why === "no-claim") {
+                say("This browser is not driving that character — claim them, or unlock as DM.")
+              }
               return
             }
             setSelected((cur) => (cur?.id === id ? null : entry.row))
@@ -1400,6 +1414,48 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       void castPointVerbRef.current(shooter.row.id, gx, gy, armed.name)
     }
     releaseAtPointRef.current = releaseAtPoint
+
+    /**
+     * The one implementation behind all three ways of asking to move.
+     *
+     * `characterId` is passed when the ask came from a character PLATE, so a
+     * click on someone else's card cannot open the active character's reach
+     * by accident. Omitted (board click, M key) means "whoever is up".
+     */
+    toggleReachRef.current = (characterId) => {
+      const c = combatRef.current
+      const entry = c?.turn_order?.[c.active_index]
+      if (!c || !entry) return "no-combat"
+      const tok = tokensRef.current.get(entry.token_id)
+      if (!tok?.row.character_id) return "no-combat"
+      // Asked for a specific character who is not the one up: not a refusal
+      // the player needs shouting about, just not their turn.
+      if (characterId && tok.row.character_id !== characterId) return "not-your-turn"
+      if (tok.row.character_id !== myCharRef.current && !dmRef.current) return "no-claim"
+      reachOpenRef.current = reachOpenRef.current === tok.row.id ? null : tok.row.id
+      refreshReachRef.current()
+      return "ok"
+    }
+
+    /**
+     * M for move.
+     *
+     * Ignored while a text field has focus, so typing "m" into the DM's
+     * console does not light up the floor behind it.
+     */
+    const onMoveKey = (ev: KeyboardEvent) => {
+      if (ev.key !== "m" && ev.key !== "M") return
+      const t = ev.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      if (armedRef.current) return   // a spell is being aimed; M is not the question
+      const why = toggleReachRef.current()
+      if (why === "no-claim") {
+        say("This browser is not driving that character — claim them, or unlock as DM.")
+      } else if (why === "no-combat") {
+        say("Nobody is up yet.")
+      }
+    }
+    window.addEventListener("keydown", onMoveKey)
 
     const spawnToken = (row: TokenRow) => {
       const existing = tokensRef.current.get(row.id)
@@ -3201,24 +3257,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const activeTok = combatNow
         ? tokensRef.current.get(combatNow.turn_order?.[combatNow.active_index]?.token_id ?? "")
         : undefined
-      // ONE RING, ON THE ONE THAT MATTERS.
+      // ONE ring means ONE ring, including on the active character.
       //
-      // Every token used to wear its allegiance ring permanently — cyan for
-      // the party, red for hostiles — so the board read as a constellation
-      // and the active combatant's green glow had to fight ten other lit
-      // discs to be seen. Out of combat everyone keeps their ring, because
-      // then there is no "whose turn" for it to compete with.
-      const activeId = activeTok?.row.id ?? null
+      // The pass before this showed the base ring and HP arc for whoever was
+      // up — which stacked THREE concentric circles under that one miniature:
+      // cyan allegiance, green health, platinum active. "Only the active
+      // character is ringed" was satisfied and the board still looked wrong,
+      // because the count that mattered was rings per character, not
+      // characters wearing rings.
+      //
+      // In combat, nobody wears a base ring. The platinum glow below is the
+      // whole vocabulary. Out of combat the rings come back, because then
+      // they are how you tell friend from foe at a glance and no turn order
+      // exists to say it instead.
       tokensRef.current.forEach((t) => {
-        const lit = !combatNow || t.row.id === activeId
         const r = t.obj.userData.baseRing as THREE.Mesh | undefined
-        if (r) r.visible = lit
-        // The HP arc travels with the ring. Both are circles on a base, and
-        // "only the active character wears one" has to mean both or it means
-        // nothing — leaving the arcs behind is what left the board still
-        // covered in green rings after the first pass at this.
+        if (r) r.visible = !combatNow
         const a = t.obj.userData.hpArc as THREE.Mesh | undefined
-        if (a) a.visible = lit
+        if (a) a.visible = !combatNow
       })
       if (activeTok && activeTok.row.is_visible) {
         activeGlow.visible = true
@@ -3425,6 +3481,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // geometry and materials with it.
       vfx.forEach((v) => v.dispose())
       vfx.length = 0
+      window.removeEventListener("keydown", onMoveKey)
       clearTargets()
       clearTemplate()
       aoeGeo.dispose()
@@ -3750,9 +3807,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               was true only once the squares existed, and they no longer paint
               themselves — so for a player whose turn had just begun it named
               something that was not on screen yet. */}
-          {!dm && isMyTurn && (
+          {isMyTurn && (
             <span className="text-[#f3c94b]">
-              {" · your turn — click your miniature to see where you can move"}
+              {" · your turn — press M, or click your miniature or plate, to move"}
             </span>
           )}
         </div>
@@ -3888,7 +3945,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         dm={dm}
         onEndTurn={() => void combatAction("next")}
         focusId={focusId}
-        onFocus={setFocusId}
+        // Clicking a plate still focuses it — that is how you read someone
+        // else's slots. It ALSO opens movement when the plate you clicked
+        // belongs to the character whose turn it is, which is the third door
+        // into the same room (board click and M are the other two).
+        onFocus={(id) => {
+          setFocusId(id)
+          const why = toggleReachRef.current(id)
+          if (why === "no-claim") {
+            say("This browser is not driving that character — claim them, or unlock as DM.")
+          }
+        }}
         // The rack tells us who cast it. Deriving it here from focusId is how
         // the wrong miniature ended up animating.
         // A press ARMS the spell. Only things with nobody to point at go off
