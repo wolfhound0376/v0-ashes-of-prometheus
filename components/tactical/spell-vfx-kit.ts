@@ -32,8 +32,17 @@ export type DamageType =
 type Route = "ball" | "beam" | "radiate" | "sky" | "impact-only"
 
 interface TypeSpec {
-  /** Sprite sheet for the charge disc. */
-  rune: string
+  /**
+   * Sprite sheet for the charge disc, or absent for effects that have no
+   * windup.
+   *
+   * Optional because of `physical`: a sword swing does not spin up an arcane
+   * sigil off the caster's palm first. Every SPELL has a charge — that is
+   * what casting looks like — but a weapon hit is the one entry in this table
+   * that is not a spell, and giving it a rune to justify a non-optional field
+   * would put a glowing circle under every dagger in the game.
+   */
+  rune?: string
   route: Route
   /** Sheet that travels (ball) or stretches (beam). */
   travel?: string
@@ -49,9 +58,19 @@ interface TypeSpec {
   tint: number
 }
 
-// Two types have no baked sheet: lightning was drawn procedurally as branching
-// bolts, and physical is a weapon hit. Both fall through to the older effect —
-// see hasKitEffect below. Everything else is covered.
+// Every damage type is now covered.
+//
+// LIGHTNING needed no new art. thunderImpact is already a painted branching
+// bolt striking downward and runeStorm is already the storm sigil — the two
+// types were only ever separated by 5e's damage table, not by how they look.
+// What differs is the DELIVERY: thunder is a concussion that radiates from
+// where it lands, lightning is a line that travels. So lightning takes the
+// same sheets on a beam route, cooled to blue by its tint, and thunder keeps
+// the white radiate. Adding a second, near-identical set of storm art would
+// have cost ~800 KB to say the same thing twice.
+//
+// PHYSICAL is the one that genuinely had nothing, and the only entry here
+// that is not a spell. It gets an impact and no charge disc.
 const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   fire:     { rune: "runeFire",     route: "ball",        travel: "fireball",      impact: "fireball",       impactScale: 2.6, charge: 0.80, speed: 15, tint: 0xffffff },
   cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff },
@@ -61,9 +80,15 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   force:    { rune: "runeForce",    route: "ball",        travel: "missileDart",   impact: "forceHit",       charge: 0.65, speed: 20, tint: 0xffffff },
   psychic:  { rune: "runePsychic",  route: "ball",        travel: "psychicHalo",   impact: "psychicImpact",  charge: 0.70, speed: 14, tint: 0xffffff },
   thunder:  { rune: "runeStorm",    route: "radiate",     travel: "thunderGust",   impact: "thunderImpact",  charge: 0.60, tint: 0xffffff },
+  // Same storm art as thunder, thrown down a line and tinted cold rather than
+  // white — Lightning Bolt is a 100 ft line, Thunderwave is a cube around you.
+  lightning:{ rune: "runeStorm",    route: "beam",        travel: "thunderGust",   impact: "thunderImpact",  charge: 0.55, tint: 0xbcd8ff },
   radiant:  { rune: "runeRadiant",  route: "sky",         impact: "radiantColumn",  impactScale: 1.0, charge: 0.85, tint: 0xffffff },
   healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff },
   acid:     { rune: "runeAcid",     route: "impact-only", impact: "acidImpact",     charge: 0.60, tint: 0xffffff },
+  // No rune, and a charge short enough to read as a swing rather than a cast.
+  // A weapon hit has no windup to show: the animation IS the windup.
+  physical: {                       route: "impact-only", impact: "physicalImpact", impactScale: 1.3, charge: 0.12, tint: 0xffffff },
 }
 
 export function hasKitEffect(type: DamageType): boolean {
@@ -191,7 +216,7 @@ function loadSheet(key: string): Promise<Sheet> {
 export function prewarmKit(type: DamageType): void {
   const spec = TYPES[type]
   if (!spec) return
-  void loadSheet(spec.rune).catch(() => {})
+  if (spec.rune) void loadSheet(spec.rune).catch(() => {})
   if (spec.travel) void loadSheet(spec.travel).catch(() => {})
   if (spec.impact) void loadSheet(spec.impact).catch(() => {})
 }
@@ -316,11 +341,13 @@ export function castSpellKitVfx(opts: {
   // lands, and the effect simply starts from wherever it has got to — a cast
   // never blocks on IO.
   if (spec) {
-    void loadSheet(spec.rune).then((s) => {
-      if (disposed) return
-      disc = new Flip(s, spec.tint, 1.1, 1.1)
-      group.add(disc.mesh)
-    }).catch(() => {})
+    if (spec.rune) {
+      void loadSheet(spec.rune).then((s) => {
+        if (disposed) return
+        disc = new Flip(s, spec.tint, 1.1, 1.1)
+        group.add(disc.mesh)
+      }).catch(() => {})
+    }
 
     if (spec.travel) {
       void loadSheet(spec.travel).then((s) => {
@@ -494,14 +521,15 @@ export function deathVfx(opts: {
   scale?: number
 }): VfxHandle {
   const spec = TYPES[opts.type]
-  // Lightning and physical have no CAST entry — lightning was always drawn as
-  // procedural bolts, and a sword is not a spell. They still kill things, so
-  // they get a death sheet here without changing how either one casts:
-  // a concussive burst for a weapon, a shock for lightning.
-  const deathSheet =
-    spec?.impact ?? (opts.type === "physical" ? "forceHit"
-      : opts.type === "lightning" ? "thunderImpact"
-      : null)
+  // Every type now has a CAST entry, so this reads straight off it.
+  //
+  // It used to special-case lightning and physical, which had none: a weapon
+  // death borrowed forceHit and a lightning death borrowed thunderImpact.
+  // Lightning still resolves to thunderImpact, by the entry rather than by
+  // the exception — but a creature cut down by a sword now bursts as struck
+  // steel instead of as arcane force, which is what it was always meant to
+  // be and could not be while there was no sheet for it.
+  const deathSheet = spec?.impact ?? null
   const tint = spec?.tint ?? 0xffffff
   const size = 2.6 * (opts.scale ?? 1)
   const life = 1.5

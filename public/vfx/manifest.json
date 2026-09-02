@@ -87,6 +87,14 @@
     "frames": 20,
     "rows": 4
   },
+  "physicalImpact": {
+    "bytes": 372784,
+    "cols": 5,
+    "file": "physicalImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
   "poisonBolt": {
     "bytes": 54516,
     "cols": 4,
