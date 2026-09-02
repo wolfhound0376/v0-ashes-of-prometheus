@@ -1375,6 +1375,29 @@ if (error) {
     await fetchCharacterData()
   }
 
+  // Out of the pack and onto the board, at the character's feet. The route
+  // fences it (on the board, catalogue item, their turn if a fight is on)
+  // and narrates it; the inventory channel above redraws the pack.
+  const handleDropItem = async (itemId: string) => {
+    if (!selectedCharacterId) return
+    try {
+      const res = await fetch('/api/ground-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...dmHeaders() },
+        body: JSON.stringify({ action: 'drop', character_id: selectedCharacterId, inventory_item_id: itemId }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        console.warn('[drop] refused:', data?.error)
+        window.alert(data?.error ?? 'It could not be set down.')
+        return
+      }
+    } catch (err) {
+      console.error('[drop] failed:', err)
+    }
+    await fetchCharacterData()
+  }
+
   return (
     <DiceProvider onAnnounce={handleDiceAnnounce}>
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
@@ -1499,6 +1522,7 @@ if (error) {
         equipment={characterEquipment}
         onEquipItem={handleEquipItem}
         onUnequipItem={handleUnequipItem}
+        onDropItem={handleDropItem}
         npcEncounters={npcEncounters}
         npcRoster={npcRoster}
         isThinking={lichLoading}
