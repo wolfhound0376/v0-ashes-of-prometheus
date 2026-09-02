@@ -420,7 +420,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * that once made the wrong miniature answer.
    */
   const [pendingCross, setPendingCross] = useState<
-    { kind: "foe" | "friend"; spell: string; target: string; commit: () => void } | null
+    { kind: "foe" | "friend"; spell: string; target: string; verb: string; commit: () => void } | null
   >(null)
   /**
    * A POINT cast — a spell thrown at a SQUARE — parked here until the player
@@ -1863,6 +1863,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           kind: status.confirm,
           spell: armed.name,
           target: victim.row.label,
+          // The button says what the button DOES. It read CAST for everything,
+          // so confirming a punch asked you to confirm a spell — reported as
+          // "asking me to confirm cast when it is not a cast". A weapon
+          // strikes; only a spell is cast.
+          verb: armed.kind === "weapon" ? "STRIKE" : "CAST",
           commit: () => commit(true),
         })
         return
@@ -5003,7 +5008,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
                 }}
                 className="flex-1 border border-[#b47dff] bg-[#2a1a4a] px-3 py-1.5 text-[10px] tracking-wider text-[#ecdcff] hover:bg-[#3a2566]"
               >
-                CAST
+                {pendingCross.verb}
               </button>
               <button
                 onClick={() => setPendingCross(null)}
@@ -5099,8 +5104,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // A press ARMS the spell. Only things with nobody to point at go off
         // at once — making a player click themselves to Dodge would be
         // theatre without meaning.
-        onCast={(characterId, ability, kind) => {
-          const e = spellEntry(ability)
+        onCast={(characterId, ability, kind, rackEntry) => {
+          // THE RACK'S ENTRY WINS.
+          //
+          // spellEntry() is the right answer for a spell and the wrong one for
+          // a weapon: no weapon is in the spellbook, so every one of them fell
+          // through to DEFAULT_ENTRY — target "creature", range SIXTY FEET.
+          // Reported as a punch that offered a downed ally on the far side of
+          // the room as a legal target, and it would have done the same for a
+          // mace. The rack parsed the weapon's real reach when it built the
+          // button; this just stops throwing that away.
+          const e = rackEntry ?? spellEntry(ability)
           if (kind === "action" || e.target === "self" || e.target === "none") {
             castRef.current(characterId, ability, kind)
             return
