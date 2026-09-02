@@ -15,13 +15,13 @@ const W = 210 // the width the board actually passes
 const KENTA = {
   id: "k", name: "Kenta", class: "Sorcerer", level: 1, ac: 10,
   hp_current: 8, hp_max: 8, dex_modifier: 0,
-  portrait_image_url: null, face_image_url: null,
-  xpFraction: 0.53, inspiration: 0,
+  portrait_image_url: "/characters/kenta/kenta-hero-hd.webp", face_image_url: null,
+  xpFraction: 0.53, xp: 3200, xp_to_next: 6000, inspiration: 0,
   conditions: ["Poisoned", "Darkvision", "Blessed"],
 }
-const SAMSON = { ...KENTA, id: "s", name: "Samson", class: "Cleric", hp_current: 9, hp_max: 9, dex_modifier: 2, conditions: ["Blessed"] }
-const FIFI = { ...KENTA, id: "f", name: "Fifi of Copperas Cove", class: "Rogue", hp_current: 2, hp_max: 8, dex_modifier: 3, conditions: ["Frightened"] }
-const SCOTT = { ...KENTA, id: "c", name: "Scott", class: "Bard", hp_current: 9, hp_max: 9, dex_modifier: 2, conditions: [] }
+const SAMSON = { ...KENTA, id: "s", name: "Samson", class: "Cleric", hp_current: 9, hp_max: 9, dex_modifier: 2, portrait_image_url: "/characters/samson/samson-hero-4k.webp", conditions: ["Blessed"] }
+const FIFI = { ...KENTA, id: "f", name: "Fifi of Copperas Cove", class: "Rogue", hp_current: 2, hp_max: 8, dex_modifier: 3, portrait_image_url: "/characters/fifi/fifi-hero-4k.webp", conditions: ["Frightened"] }
+const SCOTT = { ...KENTA, id: "c", name: "Scott", class: "Bard", hp_current: 9, hp_max: 9, dex_modifier: 2, portrait_image_url: "/characters/scott/scott-bard-hero-4k.webp", conditions: [] }
 
 const DORMANT = { action: "dormant", bonus: "dormant", reaction: "dormant" } as const
 const FULL = { remainingFt: 30, speedFt: 30 }
@@ -37,8 +37,8 @@ export default function CardPreview() {
           {/* Only the focused card carries a sheet bar, exactly as the board
               passes it — so this stack is the real height, not an optimistic one. */}
           <CharacterCard width={W} character={FIFI} isTurn={false} gems={DORMANT} movement={FULL} slots={null} />
-          <CharacterCard width={W} character={KENTA} isTurn active gems={{ action: "lit", bonus: "lit", reaction: "lit" }} movement={FULL} slots={{ total: 4, used: 1 }} onExpand={() => {}} />
-          <CharacterCard width={W} character={SAMSON} isTurn={false} gems={DORMANT} movement={FULL} slots={{ total: 2, used: 0 }} />
+          <CharacterCard width={W} character={KENTA} isTurn active gems={{ action: "lit", bonus: "lit", reaction: "lit" }} movement={FULL} slots={{ total: 4, used: 1, levels: [{ level: 1, total: 4, used: 1 }] }} onExpand={() => {}} />
+          <CharacterCard width={W} character={SAMSON} isTurn={false} gems={DORMANT} movement={FULL} slots={{ total: 2, used: 0, levels: [{ level: 1, total: 2, used: 0 }] }} />
           <CharacterCard width={W} character={SCOTT} isTurn={false} gems={DORMANT} movement={FULL} slots={null} />
         </div>
       </Case>
@@ -47,18 +47,18 @@ export default function CardPreview() {
         <Case title="Active · everything available">
           <CharacterCard width={W} character={KENTA} isTurn active
             gems={{ action: "lit", bonus: "lit", reaction: "lit" }}
-            movement={FULL} slots={{ total: 4, used: 1 }} onExpand={() => {}} />
+            movement={FULL} slots={{ total: 4, used: 1, levels: [{ level: 1, total: 4, used: 1 }] }} onExpand={() => {}} />
         </Case>
 
         <Case title="Active · action + bonus SPENT, 10 ft left, 3 of 4 slots gone">
           <CharacterCard width={W} character={{ ...KENTA, hp_current: 5 }} isTurn
             gems={{ action: "spent", bonus: "spent", reaction: "lit" }}
-            movement={{ remainingFt: 10, speedFt: 30 }} slots={{ total: 4, used: 3 }} onExpand={() => {}} />
+            movement={{ remainingFt: 10, speedFt: 30 }} slots={{ total: 4, used: 3, levels: [{ level: 1, total: 4, used: 3 }] }} onExpand={() => {}} />
         </Case>
 
-        <Case title="Inactive · red sphere, all dormant">
+        <Case title="Inactive · no active orb, all dormant">
           <CharacterCard width={W} character={SAMSON} isTurn={false}
-            gems={DORMANT} movement={FULL} slots={{ total: 2, used: 0 }} onExpand={() => {}} />
+            gems={DORMANT} movement={FULL} slots={{ total: 2, used: 0, levels: [{ level: 1, total: 2, used: 0 }] }} onExpand={() => {}} />
         </Case>
       </div>
     </div>
