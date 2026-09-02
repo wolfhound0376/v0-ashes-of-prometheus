@@ -386,6 +386,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [pendingCross, setPendingCross] = useState<
     { kind: "foe" | "friend"; spell: string; target: string; commit: () => void } | null
   >(null)
+  /**
+   * A POINT cast — a spell thrown at a SQUARE — parked here until the player
+   * confirms it.
+   *
+   * A floor click used to be the throw. That is also what a floor click is
+   * when you are trying to WALK, and with Minor Illusion armed Kenta spent
+   * his action on a patch of empty floor he had meant to step onto. A
+   * creature spell already asks before it crosses sides; the floor asked
+   * nothing at all, and the floor is the one target you can hit by accident.
+   *
+   * Same shape as the two confirms above. `commit` captures the shooter, the
+   * spell and the square BY VALUE when the dialog opens, for the same reason
+   * pendingCross does. CANCEL leaves the spell armed and the turn untouched.
+   */
+  const [pendingPoint, setPendingPoint] = useState<
+    { spell: string; feet: number; caught: string[]; mine: boolean; commit: () => void } | null
+  >(null)
   const moveTokenRef = useRef<(id: string, x: number, y: number) => void>(() => {})
   /** The HUD's ability bar reaches the scene through here, the same way
    *  moves do. Set inside the scene effect; a no-op until the board is up. */
@@ -1741,6 +1758,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // radius quietly cost the cleric half her hit points either. Naming who
       // is in the blast, before it goes off, is the difference between a
       // choice the player made and a thing that happened to them.
+      let caught: string[] = []
+      let mine = false
       if (area && !area.sparesAllies) {
         const covered = new Set(areaCells(area, origin, aim).map((c) => `${c.x},${c.y}`))
         const own = Array.from(tokensRef.current.values()).filter(
@@ -1749,29 +1768,49 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             covered.has(`${t.row.grid_x},${t.row.grid_y}`) &&
             (t.row.id === shooter.row.id || friendly(t.row)),
         )
-        if (own.length > 0) {
-          const names = own.map((t) => t.row.label).join(", ")
-          const mine = own.some((t) => t.row.id === shooter.row.id)
-          if (!window.confirm(
-            `${armed.name} will also catch ${names}${mine ? " — including you" : ""}.\n\nThrow it anyway?`,
-          )) return
-        }
+        caught = own.map((t) => t.row.label)
+        mine = own.some((t) => t.row.id === shooter.row.id)
       }
 
-      uiTick("firm")
-      windupRef.current?.stop(0.08)
-      windupRef.current = null
-      stopCharge()
-      clearTargets()
-      templateRef.current.clear()
-      affectedRef.current.clear()
+      // THE THROW, as one closure over the things it needs. `armed`,
+      // `shooter`, `gx` and `gy` are the locals resolved above — values, not
+      // refs — so the dialog can hold this open for as long as it likes and
+      // still throw the spell that was armed AT the square that was clicked,
+      // whatever armedRef says by then.
+      const commit = () => {
+        uiTick("firm")
+        windupRef.current?.stop(0.08)
+        windupRef.current = null
+        stopCharge()
+        clearTargets()
+        templateRef.current.clear()
+        affectedRef.current.clear()
 
-      const p = sqCentre(gx, gy)
-      performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, null, { x: p.x, z: p.z })
-      setArmedSpell(null)
-      // And let the server say who was actually standing in it. The outline
-      // is already gone; the dice are rolled where they cannot be argued with.
-      void castPointVerbRef.current(shooter.row.id, gx, gy, armed.name)
+        const p = sqCentre(gx, gy)
+        performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, null, { x: p.x, z: p.z })
+        setArmedSpell(null)
+        // And let the server say who was actually standing in it. The outline
+        // is already gone; the dice are rolled where they cannot be argued with.
+        void castPointVerbRef.current(shooter.row.id, gx, gy, armed.name)
+      }
+
+      // THE FLOOR ASKS FIRST — EVERY TIME.
+      //
+      // This used to ask only when the blast caught your own side, through a
+      // native window.confirm. An empty square went off on the click. But an
+      // empty square is exactly where a player clicks to WALK, and with a
+      // point spell armed that click was the throw: Kenta lost his action to
+      // Minor Illusion on the floor he was trying to reach. A creature spell
+      // already asks before it crosses sides; the floor is the one target you
+      // can hit by accident, so it asks before it does anything. The names of
+      // anyone caught travel with the same question rather than a second one.
+      setPendingPoint({
+        spell: armed.name,
+        feet: Math.max(Math.abs(origin.x - gx), Math.abs(origin.y - gy)) * FEET_PER_SQUARE,
+        caught,
+        mine,
+        commit,
+      })
     }
     releaseAtPointRef.current = releaseAtPoint
 
@@ -4207,6 +4246,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       templateRef.current.clear()
       affectedRef.current.clear()
       setHoverRead(null)
+      // A disarmed spell cannot be thrown from a dialog that outlived it.
+      // Escape puts the spell away; the floor's question goes with it.
+      setPendingPoint(null)
       window.removeEventListener("keydown", onKey)
     }
   }, [armedSpell])
@@ -4627,6 +4669,49 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               </button>
               <button
                 onClick={() => setPendingCross(null)}
+                className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* THE FLOOR CONFIRM.
+          A square, not a body. A floor click is also how you walk, so with a
+          point spell armed the board asks before it throws anything — naming
+          the spell, the distance, and anyone of your own standing in the
+          blast. Ember, the template's own colour: this is the outline asking.
+          CANCEL leaves the spell armed and the turn untouched; the template
+          still follows the cursor and the next click is still the throw. */}
+      {pendingPoint && (
+        <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-black/55 backdrop-blur-[2px]">
+          <div className="w-[290px] border border-[#e07038] bg-[#0b0d12]/95 p-4 font-mono shadow-[0_0_28px_#e0703855]">
+            <div className="text-[10px] tracking-[0.2em] text-[#ffb27a]">AT THE FLOOR</div>
+            <p className="mt-2 text-[11px] leading-relaxed text-[#d8e4f2]">
+              {pendingPoint.spell} at that square, {pendingPoint.feet} ft away.
+              {pendingPoint.caught.length > 0 && (
+                <>
+                  {" "}It will also catch{" "}
+                  <span className="text-[#f3c94b]">{pendingPoint.caught.join(", ")}</span>
+                  {pendingPoint.mine ? " — including you" : ""}.
+                </>
+              )}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  const p = pendingPoint
+                  setPendingPoint(null)
+                  p.commit()
+                }}
+                className="flex-1 border border-[#e07038] bg-[#4a2412] px-3 py-1.5 text-[10px] tracking-wider text-[#ffe0c8] hover:bg-[#66311a]"
+              >
+                THROW
+              </button>
+              <button
+                onClick={() => setPendingPoint(null)}
                 className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
               >
                 CANCEL
