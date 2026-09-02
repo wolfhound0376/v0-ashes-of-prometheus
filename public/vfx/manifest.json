@@ -55,6 +55,78 @@
     "frames": 24,
     "rows": 4
   },
+  "groundAcid": {
+    "bytes": 200270,
+    "cols": 4,
+    "file": "groundAcid.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundArcane": {
+    "bytes": 170910,
+    "cols": 4,
+    "file": "groundArcane.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundFrost": {
+    "bytes": 219306,
+    "cols": 4,
+    "file": "groundFrost.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundGloom": {
+    "bytes": 154148,
+    "cols": 4,
+    "file": "groundGloom.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundHallowed": {
+    "bytes": 209452,
+    "cols": 4,
+    "file": "groundHallowed.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundMiasma": {
+    "bytes": 821958,
+    "cols": 5,
+    "file": "groundMiasma.webp",
+    "fps": 20,
+    "frames": 20,
+    "rows": 4
+  },
+  "groundScorch": {
+    "bytes": 161314,
+    "cols": 4,
+    "file": "groundScorch.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundShock": {
+    "bytes": 111004,
+    "cols": 4,
+    "file": "groundShock.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundWeb": {
+    "bytes": 86784,
+    "cols": 4,
+    "file": "groundWeb.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
   "healingShimmer": {
     "bytes": 113920,
     "cols": 5,
