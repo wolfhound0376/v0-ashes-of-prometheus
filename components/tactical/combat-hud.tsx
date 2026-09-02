@@ -470,6 +470,9 @@ export function CombatHud(props: Props) {
                     : 0,
                 inspiration: (c as unknown as { sheet_heroic_inspiration?: boolean | null })
                   .sheet_heroic_inspiration ?? 0,
+                // The line under the name. It used to be the class, which the
+                // class bar two inches to the right was already saying.
+                background: c.sheet_background,
               }}
               active={focus?.id === c.id}
               isTurn={activeCharacterId === c.id}
