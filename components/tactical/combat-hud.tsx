@@ -36,6 +36,8 @@ export interface HudCharacter {
   initiative?: number | null
   xp?: number | null
   xp_to_next?: number | null
+  /** `characters.sheet_heroic_inspiration` — the card's INSP socket. */
+  sheet_heroic_inspiration?: boolean | null
   sheet_species?: string | null
   sheet_background?: string | null
   sheet_save_proficiencies?: unknown
@@ -187,6 +189,17 @@ function AbilityTip({ name, kind }: { name: string; kind: string }) {
   )
 }
 
+/** "30 ft. (Walking)" → 30. Prose speed still yields a number. */
+function speedFtOf(c: HudCharacter): number {
+  return Number.parseInt(String(c.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
+}
+
+/** The card counts crystals, so it wants a total and how many are gone. */
+function slotsForCard(c: HudCharacter): { total: number; used: number } | null {
+  const t = slotTally(c)
+  return t ? { total: t.max, used: t.used } : null
+}
+
 function slotTally(c: HudCharacter): { used: number; max: number } | null {
   const slots = c.sheet_spellcasting?.slots
   if (!slots) return null
@@ -331,7 +344,15 @@ export function CombatHud(props: Props) {
   // from different parents, so the state crosses as a DOM event rather than
   // through a shared ancestor - the board file is deliberately untouched
   // (another session is live in it).
-  const [econ, setEcon] = useState<{ action: boolean; bonus: boolean; armed: "action" | "bonus" | null; live: boolean } | null>(null)
+  const [econ, setEcon] = useState<{
+    action: boolean
+    bonus: boolean
+    /** Both added so the card can draw the amber stone and the feet left. */
+    reaction?: boolean
+    movedFt?: number
+    armed: "action" | "bonus" | null
+    live: boolean
+  } | null>(null)
   useEffect(() => {
     const h = (e: Event) => setEcon((e as CustomEvent).detail)
     window.addEventListener("aop:economy", h)
@@ -398,26 +419,51 @@ export function CombatHud(props: Props) {
         {characters.map((c) => (
           <div key={c.id} className="pointer-events-auto">
             <CharacterCard
-              character={{ ...c, conditions: normalizeConditions(c.conditions) }}
-              tone="blue"
+              character={{
+                ...c,
+                conditions: normalizeConditions(c.conditions),
+                // XP is on the sheet as a running total and a target; the card
+                // wants the fraction through the level.
+                xpFraction:
+                  c.xp != null && c.xp_to_next
+                    ? Math.max(0, Math.min(1, c.xp / c.xp_to_next))
+                    : 0,
+                inspiration: (c as unknown as { sheet_heroic_inspiration?: boolean | null })
+                  .sheet_heroic_inspiration ?? 0,
+              }}
               active={focus?.id === c.id}
               isTurn={activeCharacterId === c.id}
+              // The three halves of the turn, live only for the character
+              // whose turn it actually is. Everyone else's stones are dormant
+              // rather than lit — a card cannot offer what it cannot spend.
               gems={
                 econ && econ.live && activeCharacterId === c.id
-                  ? { action: econ.action ? "spent" : "lit", bonus: econ.bonus ? "spent" : "lit" }
-                  : { action: "dormant", bonus: "dormant" }
+                  ? {
+                      action: econ.action ? "spent" : "lit",
+                      bonus: econ.bonus ? "spent" : "lit",
+                      reaction: econ.reaction ? "spent" : "lit",
+                    }
+                  : { action: "dormant", bonus: "dormant", reaction: "dormant" }
               }
+              movement={
+                econ && econ.live && activeCharacterId === c.id
+                  ? { remainingFt: Math.max(0, speedFtOf(c) - (econ.movedFt ?? 0)), speedFt: speedFtOf(c) }
+                  : { remainingFt: speedFtOf(c), speedFt: speedFtOf(c) }
+              }
+              slots={slotsForCard(c)}
               onClick={() => onFocus(c.id)}
-              width={236}
+              // The sheet bar belongs to the card you are LOOKING at, not to
+              // all four. Four bars cost ~80px of a column that has ~700, and
+              // three of them open a sheet nobody asked for. This is also how
+              // the plate behaved before the redesign.
+              onExpand={focus?.id === c.id ? () => setSheetFor(c.id) : undefined}
+              // 210, not 236. The card carries more rows than the plate it
+              // replaces — a whole resource row and a conditions strip — so at
+              // the old width four of them ran off the bottom of the column.
+              // Narrowing scales the card as a unit and puts the stack back
+              // inside the footprint the board actually has for it.
+              width={210}
             />
-            {focus?.id === c.id && (
-              <button
-                onClick={() => setSheetFor(c.id)}
-                className="mt-[-3px] w-full border border-t-0 border-[#7b5d28] bg-gradient-to-b from-[#20160a]/95 to-[#0b0704]/95 py-[4px] font-serif text-[8px] uppercase tracking-[0.22em] text-[#d8b45b] shadow-[0_3px_10px_#000b] transition hover:border-[#c99a49] hover:text-[#fff0bd]"
-              >
-                Open Character Sheet
-              </button>
-            )}
           </div>
         ))}
       </div>

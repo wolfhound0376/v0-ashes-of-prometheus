@@ -3211,7 +3211,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // gear, the inventories emptied correctly, and the sheets went on
           // listing a spear locked in a store room down the hall. The rack is
           // now derived from the inventory below, so there is one answer.
-          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,hero_image_url")
+          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,sheet_heroic_inspiration,hero_image_url")
           .in("id", charIds)
           // Without this the order is whatever Postgres feels like, which
           // makes the default focus — and the fallback above — a coin flip

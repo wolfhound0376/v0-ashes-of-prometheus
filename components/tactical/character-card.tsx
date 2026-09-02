@@ -1,63 +1,32 @@
-"use client"
-
 // ============================================================================
-// THE CHARACTER CARD — Sam's commissioned frame, with live numbers laid into it.
+// THE CHARACTER CARD — combat telemetry, in the game's own dress.
 //
-// The frame is the art: gold gothic ironwork, an arched portrait window, a
-// red HP bar, a gold XP bar, and three recessed sockets labelled AC / INIT /
-// LVL. Nothing here re-draws any of that. The PNG is the card; this component
-// only positions real values into the holes the artist left.
+// Rebuilt to Sam's locked reference sheet (the Kenta card). The reference is
+// the authority on layout, hierarchy and styling; this file reproduces it and
+// does not reinterpret it.
 //
-// EVERY COORDINATE BELOW WAS MEASURED, not guessed. The frame was analysed
-// pixel-by-pixel: the portrait window is the one fully transparent interior
-// region, and each recessed field is a large opaque near-black blob. Their
-// bounding boxes, as percentages of the card, are the constants in SLOTS.
-// If Sam ever re-cuts the frame, re-run that measurement and edit this block
-// alone — no layout code changes.
+// WHY THIS IS DRAWN AND NOT PHOTOGRAPHED. The previous card laid live values
+// into holes in a commissioned PNG. That is why it could never satisfy the
+// brief's quality bar: a raster frame scaled to 236px on a retina panel is a
+// soft frame, and every socket position was a measured constant that broke if
+// the art moved a pixel. Everything here except the portrait is CSS and SVG,
+// so it is crisp at any size and any device pixel ratio, and the layout is
+// laid out rather than measured.
+//
+// WHAT IT DELIBERATELY DOES NOT SHOW. Inventory, equipment, weapons, feature
+// text, ability scores, saves, skills, sorcery points. Those belong to the
+// expanded sheet, reachable from the bar at the foot of the card. This is a
+// combat card: what is true right now, and what you may still spend.
+//
+// One stone per resource. No counters under them, no "1 / 1", no secondary
+// dots, no icons inside the stones. The stone IS the readout — stated in the
+// brief, and repeated here because earlier passes drifted into all of them.
 // ============================================================================
 
-import type { CSSProperties } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { frameForClass } from "@/lib/class-frames"
 import { ClassMedallion } from "./class-medallion"
-
-const FRAME = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/ui-frames"
-
-/** Measured from the artwork. Percentages of the card's own box. */
-const SLOTS = {
-  portrait: { left: 6.9, top: 12.0, width: 32.4, height: 62.5 },
-  namePlate: { left: 12.2, top: 77.9, width: 28.8, height: 9.6 },
-  classSigil: { left: 2.2, top: 9.4, width: 8.9, height: 12.5 },
-  hpBar: { left: 46.5, top: 29.5, width: 31.5, height: 7.5 },
-  hpCurrent: { left: 80.5, top: 29.0, width: 7.0, height: 9.0 },
-  hpMax: { left: 90.5, top: 29.0, width: 7.0, height: 9.0 },
-  xpBar: { left: 50.1, top: 40.4, width: 45.4, height: 2.8 },
-  ac: { left: 51.6, top: 53.3, width: 6.8, height: 9.2 },
-  init: { left: 70.4, top: 53.3, width: 6.8, height: 9.2 },
-  lvl: { left: 88.2, top: 53.3, width: 6.9, height: 9.3 },
-  statusIcon: { left: 47.8, top: 71.4, width: 7.9, height: 10.8 },
-  statusText: { left: 57.5, top: 72.5, width: 38.0, height: 8.5 },
-} as const
-
-const box = (s: { left: number; top: number; width: number; height: number }): CSSProperties => ({
-  position: "absolute",
-  left: `${s.left}%`,
-  top: `${s.top}%`,
-  width: `${s.width}%`,
-  height: `${s.height}%`,
-})
-
-/** Text that fills its slot and stays readable at any card size. */
-const fitted: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontFamily: "Georgia, serif",
-  fontSize: "clamp(7px, 1.05vw, 13px)",
-  lineHeight: 1,
-  color: "#f4e6c4",
-  textShadow: "0 1px 2px #000, 0 0 6px #0009",
-  whiteSpace: "nowrap",
-}
+import { ResourceGem, SlotCrystal } from "./card-gems"
 
 export interface CardCharacter {
   id: string
@@ -69,297 +38,682 @@ export interface CardCharacter {
   hp_max: number | null
   dex_modifier: number | null
   portrait_image_url: string | null
-  /** The FACE alone, with no ornament — `portraits/face-{slug}.webp`. When it
-   *  exists the card composites it under the class frame, so the box is chosen
-   *  by class rather than baked into the art. When it is null the card falls
-   *  back to `portrait_image_url` and looks exactly as it always did. */
+  /** The FACE alone, with no ornament. Composited under the class frame. */
   face_image_url?: string | null
   /** 0–1 through the current level, when the campaign tracks it. */
   xpFraction?: number
+  xp?: number | null
+  xp_to_next?: number | null
+  /** `characters.sheet_heroic_inspiration`. */
+  inspiration?: boolean | number | null
   conditions?: string[]
 }
 
-/** A cut stone in the ironwork. Blue carries the action, red the bonus.
- *  Multifaceted per Sam's sketch: a kite silhouette with a bright table
- *  facet, two shaded pavilions and a sparkle when lit. */
-function EconomyGem({ hue, state, size = 14 }: { hue: "green" | "red"; state: "lit" | "spent" | "dormant"; size?: number }) {
-  const P =
-    hue === "green"
-      ? { hi: "#d2f5c8", mid: "#3dbb4e", lo: "#0e5c1b", glow: "#54e868", dark: "#152819", darkHi: "#2a5232" }
-      : { hi: "#ffd2c4", mid: "#d84a3a", lo: "#6e100a", glow: "#ff5a44", dark: "#2a1512", darkHi: "#57302a" }
-  const lit = state === "lit"
-  // spent goes to dead grey; dormant keeps a visible memory of its colour.
-  // Sam: "I only see one red diamond" — the old dormant/spent bodies sank
-  // into the card's black. Every state now keeps a readable silhouette:
-  // dormant wears its colour dimmed, spent greys out but holds its edge.
-  const body = lit ? P.mid : state === "dormant" ? P.darkHi : "#2c2c2b"
-  const table = lit ? P.hi : state === "dormant" ? P.mid : "#3a3a39"
-  const shade = lit ? P.lo : state === "dormant" ? P.dark : "#20201f"
-  const edge = lit ? P.hi : state === "dormant" ? P.mid : "#4a4a49"
+/** Spendable, gone, or not this character's turn to spend anything. */
+export type GemState = "lit" | "spent" | "dormant"
+
+// ---- the palette, one place -------------------------------------------
+const GOLD = "#c9a24a"
+const GOLD_HI = "#f0d79a"
+const GOLD_DIM = "#6b5320"
+const CREAM = "#f4e6c4"
+const INK = "#0b0a09"
+
+/** Antique gold that reads as metal rather than as orange. */
+const goldEdge = (a = 1): CSSProperties => ({
+  border: `1px solid rgba(201,162,74,${a})`,
+  // Four layers, and each is doing a job: a lit top edge and a dark bottom
+  // edge give the panel thickness; the inner hairline reads as the bevel's
+  // inside face; the outer drop separates it from the card behind. Without
+  // these the boxes flatten into the Material-UI look the brief rules out.
+  boxShadow:
+    `inset 0 1px 0 rgba(240,215,154,0.26),` +
+    ` inset 0 -1px 0 rgba(0,0,0,0.75),` +
+    ` inset 0 0 0 1px rgba(240,215,154,0.06),` +
+    ` 0 1px 2px rgba(0,0,0,0.85)`,
+})
+
+/** Charcoal with visible grain, so panels separate without borders shouting. */
+const panel: CSSProperties = {
+  background:
+    "linear-gradient(180deg, #16151a 0%, #0d0c10 55%, #08080b 100%)",
+  backgroundBlendMode: "normal",
+}
+
+/**
+ * THE ACTIVE SPHERE — upper-left of the frame, and functional.
+ *
+ * Green is the character whose turn it is; red is everyone else. That is its
+ * only meaning: it does not track selection, because a light that moves when
+ * you merely LOOK at something is a light nobody at the table can trust.
+ *
+ * It is the only sphere on the card. The blue stone the old commissioned
+ * frame carried in its lower-left socket is gone with the frame.
+ */
+function ActiveSphere({ on, size }: { on: boolean; size: number }) {
+  const C = on
+    ? { hi: "#e6ffe0", mid: "#35d94a", lo: "#0b4d16", glow: "rgba(53,217,74,0.9)" }
+    : { hi: "#ffd6d2", mid: "#c92f2f", lo: "#4a0b0b", glow: "rgba(201,47,47,0.55)" }
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 20 20"
+    <span
+      aria-label={on ? "active" : "waiting"}
       style={{
-        filter: lit ? `drop-shadow(0 0 3px ${P.glow}) drop-shadow(0 0 7px ${P.glow}88)` : "none",
-        opacity: state === "spent" ? 0.45 : 1,
-        transition: "filter 220ms, opacity 220ms",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        display: "block",
+        background: `radial-gradient(circle at 34% 28%, ${C.hi} 0%, ${C.mid} 52%, ${C.lo} 100%)`,
+        boxShadow: `0 0 ${on ? 9 : 4}px ${on ? 2 : 1}px ${C.glow}, inset 0 0 3px rgba(255,255,255,0.55), 0 1px 2px #000`,
+        border: `1px solid rgba(201,162,74,0.75)`,
+        transition: "background 180ms, box-shadow 180ms",
+      }}
+    />
+  )
+}
+
+/** One of the three stat sockets: AC, INITIATIVE, LEVEL. */
+function StatBox({ label, value, w }: { label: string; value: ReactNode; w: number }) {
+  return (
+    <div
+      style={{
+        ...panel,
+        ...goldEdge(0.55),
+        borderRadius: 2,
+        flex: 1,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: `${w * 0.008}px 0 ${w * 0.012}px`,
       }}
     >
-      <polygon points="10,0.8 18.4,7 10,19.2 1.6,7" fill={body} stroke={edge} strokeWidth="0.9" />
-      <polygon points="10,0.8 14.4,7 10,10.2 5.6,7" fill={table} />
-      <polygon points="1.6,7 5.6,7 10,10.2 10,19.2" fill={shade} />
-      <polygon points="18.4,7 14.4,7 10,10.2 10,19.2" fill={body} opacity="0.8" />
-      {lit && <polygon points="10,0.8 11.4,5.2 10,6.8 8.6,5.2" fill="#ffffff" opacity="0.85" />}
-    </svg>
+      <div
+        style={{
+          fontFamily: "Georgia, serif",
+          fontSize: Math.max(5.5, w * 0.030),
+          letterSpacing: "0.09em",
+          color: GOLD,
+          textTransform: "uppercase",
+          lineHeight: 1,
+          textShadow: "0 1px 1px #000",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: "Georgia, serif",
+          fontSize: Math.max(9, w * 0.058),
+          fontWeight: 700,
+          color: CREAM,
+          lineHeight: 1.05,
+          textShadow: "0 1px 2px #000, 0 0 7px rgba(201,162,74,0.35)",
+        }}
+      >
+        {value}
+      </div>
+    </div>
   )
+}
+
+/** One cell of the combat-resource row. */
+function ResourceBox({
+  label, tint, w, children,
+}: { label: string; tint: string; w: number; children: ReactNode }) {
+  return (
+    <div
+      style={{
+        ...goldEdge(0.5),
+        borderRadius: 2,
+        flex: 1,
+        minWidth: 0,
+        // A whisper of the resource's own colour in the well, so the five
+        // boxes are distinguishable before you have read a single word.
+        background: `linear-gradient(180deg, ${tint} 0%, rgba(8,8,11,0.96) 62%, rgba(4,4,6,1) 100%)`,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "flex-start",
+        gap: w * 0.006,
+        padding: `${w * 0.012}px 0 ${w * 0.014}px`,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: "Georgia, serif",
+          fontSize: Math.max(5, w * 0.0255),
+          letterSpacing: "0.05em",
+          textTransform: "uppercase",
+          color: GOLD,
+          lineHeight: 1.05,
+          textAlign: "center",
+          textShadow: "0 1px 1px #000",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * How a condition is coloured.
+ *
+ * Crimson harms, green helps, violet is a sense or a neutral state. The lists
+ * are the ones that actually turn up at this table; anything unrecognised
+ * reads as a debuff, which is the safe direction for a mistake to fall — a
+ * player who checks an unexpected crimson word has lost two seconds, where one
+ * who ignores a green word may have missed the thing that is killing them.
+ */
+const BUFFS = new Set([
+  "blessed", "bless", "hasted", "haste", "aided", "aid", "inspired", "raging",
+  "concentrating", "shielded", "invisible", "flying",
+])
+const SENSES = new Set([
+  "darkvision", "truesight", "blindsight", "tremorsense", "detect magic",
+  "faerie fire", "marked", "hunter's mark",
+])
+function conditionTone(name: string): { fg: string; glow: string } {
+  const n = name.toLowerCase().replace(/\s*\d+.*$/, "").trim()
+  if (BUFFS.has(n)) return { fg: "#7bea86", glow: "rgba(53,217,74,0.5)" }
+  if (SENSES.has(n)) return { fg: "#c79bff", glow: "rgba(160,90,255,0.5)" }
+  return { fg: "#ff6b5e", glow: "rgba(230,60,45,0.5)" }
 }
 
 export function CharacterCard({
   character: c,
-  tone = "blue",
   active = false,
   isTurn = false,
   gems,
+  movement,
+  slots,
   onClick,
+  onExpand,
   width = 236,
 }: {
   character: CardCharacter
-  /** blue for the party, red for hostiles — the artist cut both. */
-  tone?: "blue" | "red"
-  /** Focused — this is the card whose globes and ability rack are showing.
-   *  A view state. It brightens the card and nothing more. */
+  /** Focused — the card whose rack is showing. A view state; brightens only. */
   active?: boolean
-  /** Up NOW, by initiative. The lamp's only meaning. */
+  /** Up NOW, by initiative. The sphere's only meaning. */
   isTurn?: boolean
-  /** Action-economy stones under the class line: blue = the action, red =
-   *  the bonus action. "lit" is spendable and glows; "spent" has gone dark;
-   *  "dormant" is any card whose turn it is not. Omit to render none. */
-  gems?: { action: "lit" | "spent" | "dormant"; bonus: "lit" | "spent" | "dormant" } | null
+  /** The three spendable halves of the turn. Omit to render all dormant. */
+  gems?: { action: GemState; bonus: GemState; reaction: GemState } | null
+  /** Feet left this turn, and the character's full speed. */
+  movement?: { remainingFt: number; speedFt: number } | null
+  /** Spell slots across every level, flattened: total mounted, how many spent. */
+  slots?: { total: number; used: number } | null
   onClick?: () => void
+  /** The expand bar at the foot. Omitted, the bar is not rendered. */
+  onExpand?: () => void
   width?: number
 }) {
-  // The class decides the box. Not the artist, not the filename, not whoever
-  // happened to be holding the lute the day the medallion was rendered.
   const cls = frameForClass(c.class)
   const max = c.hp_max ?? 0
   const cur = c.hp_current ?? max
   const frac = max > 0 ? Math.max(0, Math.min(1, cur / max)) : 0
-  // The frames are 1004x752 (blue) and 1004x782 (red); one ratio is close
-  // enough for both and keeps the row even.
-  const height = Math.round(width * (752 / 1004))
+  const xpFrac = Math.max(0, Math.min(1, c.xpFraction ?? 0))
+  const conditions = c.conditions ?? []
+  const insp = typeof c.inspiration === "number" ? c.inspiration : c.inspiration ? 1 : 0
+
+  // Proportional to the card's own width so one number drives every size and
+  // the card scales as a unit. The reference is 1400x1100; the foot bars make
+  // it a touch taller in proportion at compact size, where they need real
+  // pixels to stay legible.
+  const W = width
+  const height = Math.round(W * 0.795)
+  const g = gems ?? { action: "dormant" as GemState, bonus: "dormant" as GemState, reaction: "dormant" as GemState }
+  // The stones carry the row, so they get the pixels. Everything around them
+  // was tightened rather than the card being allowed to grow — the brief is
+  // explicit that the reference is art direction, not licence to make the
+  // battlefield card enormous.
+  const gemPx = Math.max(15, W * 0.086)
 
   /**
-   * THE PERIPHERY.
-   *
-   * Three states, and they are not the same question:
-   *
-   *   isTurn  — the initiative has reached this character. Not a preference,
-   *             a fact about the round. This is the one that must be readable
-   *             across the room, on a stream, at a glance.
-   *   active  — you clicked this plate to look at it. A quiet distinction.
-   *   neither — dimmed back so the lit card has something to be brighter than.
-   *
-   * Built from STACKED drop-shadows rather than a border or a ring. A ring
-   * draws a rectangle, and this card is not a rectangle — the frame webp has
-   * an arched crown and cut corners. `drop-shadow` follows the composited
-   * alpha silhouette, so the light hugs the actual frame the artist drew
-   * instead of boxing it. Three layers: a tight near-white core so the edge
-   * reads as hot metal, a mid gold spread, and a wide soft falloff for the
-   * halo.
-   *
-   * Gold, not green. Green already means "up" on the status lamp two
-   * elements down, and a green wash over gold frame art turns it sickly.
-   * The lamp says whose turn it is in colour; the periphery says it in light.
+   * THE PERIPHERY. Platinum, and the same platinum the board's active ring
+   * uses — one fact, one colour, wherever you happen to be looking.
+   * `drop-shadow` follows the composited silhouette rather than boxing it.
    */
-  // PLATINUM, AND THE SAME PLATINUM THE BOARD USES.
-  //
-  // This was gold. The board's active ring was green. So the one fact that
-  // matters most — whose turn it is — was announced in two different colours
-  // depending on where you happened to be looking, and gold additionally
-  // collided with the walk-range squares painted under that same character.
-  //
-  // #fff2d0 here and ACTIVE_HUE in combat-board-3d are one decision. Change
-  // one and change the other, or the board and the plate start disagreeing
-  // again.
   const rim = isTurn
-    ? "brightness-[1.16] scale-[1.03] " +
+    ? "brightness-[1.10] " +
       "drop-shadow-[0_0_3px_#ffffff] " +
       "drop-shadow-[0_0_11px_#fff2d0dd] " +
       "drop-shadow-[0_0_26px_#fff2d077]"
     : active
-      ? "brightness-110 drop-shadow-[0_0_14px_#c9a22755]"
-      : "brightness-[0.82] hover:brightness-100"
+      ? "brightness-105 drop-shadow-[0_0_12px_#c9a22755]"
+      : "brightness-[0.86] hover:brightness-100"
 
   return (
-    <button
-      onClick={onClick}
-      title={c.name}
-      style={{
-        width,
-        height,
-        position: "relative",
-        flexShrink: 0,
-        // Lift the lit card over its neighbours so the rim glow spills across
-        // them rather than being painted under the next card in the row.
-        zIndex: isTurn ? 2 : 1,
-      }}
-      className={"block transition-[filter,transform] duration-200 " + rim}
-    >
-      {/* 1. The portrait, BEHIND the frame — the arched window masks it.
-             Face + class frame, assembled by the one component that knows how. */}
-      <div style={{ ...box(SLOTS.portrait), overflow: "hidden" }}>
-        <ClassMedallion
-          faceUrl={c.face_image_url}
-          portraitUrl={c.portrait_image_url}
-          characterClass={c.class}
-          fallback={<span style={{ fontSize: width * 0.13, color: cls.accent }}>{cls.sigil}</span>}
-        />
-      </div>
-
-      {/* 2. The frame itself, over the portrait. */}
-      <img
-        src={`${FRAME}/card-${tone}.webp`}
-        alt=""
-        className="pointer-events-none absolute inset-0 h-full w-full"
-        style={{ objectFit: "fill" }}
-      />
-
-      {/* 3. Live values, laid into the sockets the artist left. */}
-      {/* HP fill — the frame already paints the empty bar's housing. */}
-      <div style={{ ...box(SLOTS.hpBar), overflow: "hidden", borderRadius: "999px" }}>
-        <div
-          className="h-full transition-[width] duration-300"
-          style={{
-            width: `${frac * 100}%`,
-            background: frac > 0.5
-              ? "linear-gradient(180deg,#e5523f,#8f1810)"
-              : frac > 0.25
-                ? "linear-gradient(180deg,#e0a33c,#8a5410)"
-                : "linear-gradient(180deg,#c23b2e,#5a0d08)",
-            boxShadow: "inset 0 1px 2px #ffffff55, inset 0 -2px 4px #00000088",
-          }}
-        />
-      </div>
-      <div style={{ ...box(SLOTS.hpCurrent), ...fitted }}>{cur}</div>
-      <div style={{ ...box(SLOTS.hpMax), ...fitted }}>{max || "—"}</div>
-
-      {/* XP, when the campaign tracks it; the bar sits empty rather than lying. */}
-      <div style={{ ...box(SLOTS.xpBar), overflow: "hidden", borderRadius: "999px" }}>
-        <div
-          className="h-full"
-          style={{
-            width: `${Math.max(0, Math.min(1, c.xpFraction ?? 0)) * 100}%`,
-            background: "linear-gradient(180deg,#f0c860,#a87820)",
-          }}
-        />
-      </div>
-
-      <div style={{ ...box(SLOTS.ac), ...fitted }}>{c.ac ?? "—"}</div>
-      <div style={{ ...box(SLOTS.init), ...fitted }}>
-        {c.dex_modifier == null ? "—" : `${c.dex_modifier >= 0 ? "+" : ""}${c.dex_modifier}`}
-      </div>
-      <div style={{ ...box(SLOTS.lvl), ...fitted }}>{c.level ?? "—"}</div>
-
-      {/* The name plate under the portrait. Long names lose their epithet
-          rather than overflowing the ironwork. */}
-      <div
+    <div style={{ width: W, flexShrink: 0, position: "relative" }} className={`transition duration-200 ${rim}`}>
+      <button
+        onClick={onClick}
+        title={c.name}
         style={{
-          ...box(SLOTS.namePlate),
-          ...fitted,
-          fontSize: "clamp(7px, 0.95vw, 12px)",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          color: "#e8dcc0",
+          width: W,
+          height,
+          position: "relative",
+          display: "block",
+          textAlign: "left",
+          padding: W * 0.018,
+          borderRadius: 3,
+          overflow: "hidden",
+          // The card's own body: charcoal, with the faintest violet lift at
+          // the top so it does not read as a flat web panel.
+          background:
+            "radial-gradient(120% 80% at 20% 0%, rgba(60,30,90,0.20) 0%, rgba(0,0,0,0) 60%)," +
+            "linear-gradient(180deg, #131218 0%, #0a0a0d 60%, #060608 100%)",
+          border: `1px solid ${GOLD}`,
+          boxShadow:
+            `inset 0 0 0 1px rgba(240,215,154,0.10), inset 0 1px 0 rgba(240,215,154,0.25),` +
+            ` 0 3px 10px rgba(0,0,0,0.85)`,
+          cursor: onClick ? "pointer" : "default",
         }}
       >
-        {c.name.split(/\s+of\s+|\s+the\s+/i)[0]}
-      </div>
+        {/* ---------- UPPER: portrait left, vitals right ---------- */}
+        <div style={{ display: "flex", gap: W * 0.020, height: height * 0.575 }}>
 
-      {/* The class sigil in the small top-left socket. Glyph and colour come
-          from the class registry, not a hardcoded table. */}
-      <div style={{ ...box(SLOTS.classSigil), ...fitted, fontSize: width * 0.055, color: cls.accent }}>
-        {cls.sigil}
-      </div>
+          {/* PORTRAIT COLUMN. Kenta's own art, untouched — only the frame
+              around it is new: gold trim over a violet arcane bed.
+              The portrait is the dominant element per the brief, so it takes
+              the largest single share of the card. */}
+          <div style={{ width: W * 0.375, display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <div
+              style={{
+                position: "relative",
+                flex: 1,
+                borderRadius: `${W * 0.09}px ${W * 0.09}px 3px 3px`,
+                overflow: "hidden",
+                border: `1px solid ${GOLD}`,
+                background:
+                  "radial-gradient(80% 70% at 50% 40%, rgba(120,50,200,0.42) 0%, rgba(30,10,55,0.9) 60%, #07060b 100%)",
+                boxShadow:
+                  "inset 0 0 10px rgba(150,70,240,0.35), inset 0 0 0 1px rgba(240,215,154,0.18), 0 2px 6px #000",
+              }}
+            >
+              <ClassMedallion
+                faceUrl={c.face_image_url}
+                portraitUrl={c.portrait_image_url}
+                characterClass={c.class}
+                fallback={
+                  <span style={{ fontSize: W * 0.13, color: cls.accent }}>{cls.sigil}</span>
+                }
+              />
+            </div>
 
-      {/* THE TURN LAMP.
-          Red at rest, green when this character is up. Every playable
-          character carries one, so the party reads as a row of red lights with
-          exactly one green in it — and the green travels as initiative passes.
+            {/* Name, immediately beneath the portrait, class under it. */}
+            <div
+              style={{
+                marginTop: W * 0.012,
+                textAlign: "center",
+                fontFamily: "Georgia, serif",
+                fontSize: Math.max(8.5, W * 0.055),
+                fontWeight: 700,
+                letterSpacing: "0.03em",
+                color: CREAM,
+                lineHeight: 1,
+                textShadow: "0 1px 2px #000, 0 0 8px rgba(201,162,74,0.35)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {c.name.split(" ")[0].toUpperCase()}
+            </div>
+            <div
+              style={{
+                textAlign: "center",
+                fontFamily: "Georgia, serif",
+                fontSize: Math.max(5.5, W * 0.030),
+                letterSpacing: "0.14em",
+                color: cls.accent,
+                lineHeight: 1.3,
+                textShadow: "0 1px 2px #000",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {(c.class ?? "").toUpperCase()}
+            </div>
+          </div>
 
-          The red matters. An unlit socket says "this card has a lamp that is
-          off"; a red one says "waiting", which is the actual state, and it
-          makes the single green unmistakable at a glance across four cards.
+          {/* VITALS COLUMN. */}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: W * 0.014 }}>
 
-          What it does NOT track is selection. Selection is a view state; it
-          changes every time you click across the party to read someone's
-          slots, and a light that moves when you merely LOOK at something is a
-          light nobody at the table can trust.
+            {/* HP + INSPIRATION share the top line: the bar takes the room,
+                inspiration takes a small bright socket at the corner. */}
+            <div style={{ display: "flex", gap: W * 0.018, alignItems: "stretch" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: W * 0.016 }}>
+                  <span style={{ fontFamily: "Georgia, serif", fontSize: Math.max(6, W * 0.036), color: GOLD, letterSpacing: "0.06em" }}>HP</span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: Math.max(7, W * 0.042),
+                      borderRadius: 999,
+                      overflow: "hidden",
+                      ...goldEdge(0.6),
+                      background: "linear-gradient(180deg,#1a0a0a,#080404)",
+                    }}
+                  >
+                    <div
+                      className="transition-[width] duration-300"
+                      style={{
+                        width: `${frac * 100}%`,
+                        height: "100%",
+                        background:
+                          frac > 0.5
+                            ? "linear-gradient(180deg,#ff6a54 0%,#d3281c 55%,#7d0f08 100%)"
+                            : frac > 0.25
+                              ? "linear-gradient(180deg,#f0b451 0%,#c07a15 55%,#6a3c05 100%)"
+                              : "linear-gradient(180deg,#e0574a 0%,#8f1810 55%,#450703 100%)",
+                        boxShadow: "inset 0 1px 2px rgba(255,255,255,0.35), inset 0 -2px 4px rgba(0,0,0,0.6)",
+                      }}
+                    />
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: "Georgia, serif",
+                      fontSize: Math.max(8, W * 0.050),
+                      fontWeight: 700,
+                      color: CREAM,
+                      textShadow: "0 1px 2px #000",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {cur} / {max || "—"}
+                  </span>
+                </div>
 
-          It is a glance signal, not the announcement — the turn banner already
-          tells the active player in words. This is what the rest of the table
-          reads without being told.
+                {/* XP — thinner, per the brief's compact priority order. */}
+                <div style={{ display: "flex", alignItems: "center", gap: W * 0.016, marginTop: W * 0.014 }}>
+                  <span style={{ fontFamily: "Georgia, serif", fontSize: Math.max(6, W * 0.036), color: GOLD, letterSpacing: "0.06em" }}>XP</span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: Math.max(3.5, W * 0.020),
+                      borderRadius: 999,
+                      overflow: "hidden",
+                      ...goldEdge(0.45),
+                      background: "#0a0906",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${xpFrac * 100}%`,
+                        height: "100%",
+                        background: "linear-gradient(180deg,#ffd977 0%,#c9932a 60%,#7a5510 100%)",
+                        boxShadow: "inset 0 1px 1px rgba(255,255,255,0.4)",
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
 
-          It sits in SLOTS.statusIcon, the round housing at the left of the
-          status band, which had been empty since the card shipped. */}
-      <div
-        aria-label={isTurn ? `${c.name} is up` : `${c.name} is waiting`}
-        style={{ ...box(SLOTS.statusIcon), display: "grid", placeItems: "center" }}
-      >
+              {/* INSPIRATION. Brighter gold than the trim, and a number —
+                  no crystal, no diamond, per the brief. */}
+              <div
+                style={{
+                  width: W * 0.115,
+                  ...panel,
+                  border: `1px solid ${GOLD_HI}`,
+                  borderRadius: 2,
+                  boxShadow: "0 0 7px rgba(255,208,90,0.30), inset 0 1px 0 rgba(255,235,180,0.3)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: `${W * 0.006}px 0`,
+                }}
+              >
+                <div style={{ fontFamily: "Georgia, serif", fontSize: Math.max(4.5, W * 0.021), color: "#ffdd8a", letterSpacing: "0.04em", lineHeight: 1, textShadow: "0 0 5px rgba(255,200,80,0.55)" }}>
+                  INSP
+                </div>
+                <div style={{ fontFamily: "Georgia, serif", fontSize: Math.max(9, W * 0.055), fontWeight: 700, color: "#ffe9a8", lineHeight: 1.1, textShadow: "0 0 8px rgba(255,190,60,0.7), 0 1px 2px #000" }}>
+                  {insp}
+                </div>
+              </div>
+            </div>
+
+            {/* AC | INITIATIVE | LEVEL. No star on the level, per the brief. */}
+            <div style={{ display: "flex", gap: W * 0.016 }}>
+              <StatBox label="AC" value={c.ac ?? "—"} w={W} />
+              <StatBox
+                label="Init"
+                value={
+                  c.dex_modifier == null
+                    ? "—"
+                    : `${c.dex_modifier >= 0 ? "+" : ""}${c.dex_modifier}`
+                }
+                w={W}
+              />
+              <StatBox label="Level" value={c.level ?? "—"} w={W} />
+            </div>
+
+            {/* THE CLASS BAR. Sigil left, class in violet, arcane bed. */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: W * 0.020,
+                padding: `${W * 0.012}px ${W * 0.020}px`,
+                borderRadius: 2,
+                ...goldEdge(0.55),
+                background:
+                  "linear-gradient(90deg, rgba(58,22,92,0.85) 0%, rgba(24,10,40,0.9) 45%, rgba(8,7,12,0.95) 100%)",
+              }}
+            >
+              <span
+                style={{
+                  width: Math.max(11, W * 0.058),
+                  height: Math.max(11, W * 0.058),
+                  borderRadius: "50%",
+                  display: "grid",
+                  placeItems: "center",
+                  flexShrink: 0,
+                  background: "radial-gradient(circle at 35% 30%, rgba(220,170,255,0.55), rgba(80,20,140,0.9) 60%, #1a0630 100%)",
+                  border: `1px solid ${GOLD}`,
+                  boxShadow: `0 0 6px ${cls.accent}66, inset 0 0 4px rgba(255,255,255,0.25)`,
+                  fontSize: Math.max(7, W * 0.038),
+                  color: "#f2dcff",
+                  lineHeight: 1,
+                }}
+              >
+                {cls.sigil}
+              </span>
+              <span
+                style={{
+                  fontFamily: "Georgia, serif",
+                  fontSize: Math.max(7.5, W * 0.046),
+                  letterSpacing: "0.10em",
+                  color: cls.accent,
+                  textShadow: `0 0 8px ${cls.accent}66, 0 1px 2px #000`,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {(c.class ?? "Adventurer").toUpperCase()}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* ---------- THE COMBAT RESOURCE ROW ----------
+            Five boxes, one line, read at a glance. One stone each for the
+            three spendable halves of the turn; movement in feet; the slots
+            as crystals, which are the one resource where a count belongs. */}
+        <div style={{ display: "flex", gap: W * 0.014, marginTop: W * 0.020 }}>
+          <ResourceBox label="Action" tint="rgba(90,14,10,0.55)" w={W}>
+            <ResourceGem hue="ruby" spent={g.action === "spent"} size={gemPx} />
+          </ResourceBox>
+
+          <ResourceBox label={"Bonus"} tint="rgba(58,14,92,0.55)" w={W}>
+            <ResourceGem hue="amethyst" spent={g.bonus === "spent"} size={gemPx} />
+          </ResourceBox>
+
+          <ResourceBox label="Movement" tint="rgba(12,58,24,0.5)" w={W}>
+            <span
+              style={{
+                fontFamily: "Georgia, serif",
+                fontSize: Math.max(8.5, W * 0.052),
+                fontWeight: 700,
+                color: movement && movement.remainingFt <= 0 ? "#6f6f6c" : "#b8f2c0",
+                lineHeight: 1.35,
+                whiteSpace: "nowrap",
+                textShadow: "0 1px 2px #000, 0 0 8px rgba(60,220,110,0.35)",
+              }}
+            >
+              {movement ? `${Math.max(0, Math.round(movement.remainingFt))} FT.` : "—"}
+            </span>
+          </ResourceBox>
+
+          <ResourceBox label="Reaction" tint="rgba(92,64,6,0.5)" w={W}>
+            <ResourceGem hue="amber" spent={g.reaction === "spent"} size={gemPx} />
+          </ResourceBox>
+
+          {/* SPELL SLOTS — the widest box, and the only stack of stones. */}
+          <ResourceBox label="Slots" tint="rgba(10,42,92,0.55)" w={W}>
+            {slots && slots.total > 0 ? (
+              <span style={{ display: "flex", gap: Math.max(1.5, W * 0.008), alignItems: "flex-end" }}>
+                {Array.from({ length: Math.min(slots.total, 6) }, (_, i) => (
+                  <SlotCrystal key={i} spent={i >= slots.total - slots.used} height={gemPx * 1.24} />
+                ))}
+              </span>
+            ) : (
+              <span style={{ fontFamily: "Georgia, serif", fontSize: Math.max(8, W * 0.05), color: "#4a4a48", lineHeight: 1.35 }}>—</span>
+            )}
+          </ResourceBox>
+        </div>
+
+        {/* ---------- CONDITIONS ----------
+            One strip, colour-coded, and legible at battlefield size — which
+            is why it is cream-on-black at a real font size rather than the
+            muddy brown micro-type the brief called out. */}
         <div
           style={{
-            width: "74%",
-            height: "74%",
-            borderRadius: "50%",
-            background: isTurn
-              ? "radial-gradient(circle at 35% 30%, #d8ffd4, #35d94a 55%, #0d5c18)"
-              : "radial-gradient(circle at 35% 30%, #ffcfcb, #c92f2f 55%, #560c0c)",
-            boxShadow: isTurn
-              ? "0 0 8px 2px rgba(53,217,74,0.85), inset 0 0 3px rgba(255,255,255,0.65)"
-              : "0 0 4px 1px rgba(201,47,47,0.45), inset 0 0 3px rgba(255,255,255,0.4)",
-            transition: "background 160ms, box-shadow 160ms",
-          }}
-        />
-      </div>
-
-      {/* THE ECONOMY GEMS - Sam's brief (revised 8/29): one GREEN diamond
-          per action, one RED per bonus action, under the class line and in
-          step with the lamp. The count of glowing stones IS the count still
-          available; a dim stone is one that exists but is not yours to spend
-          right now. */}
-      {gems && (
-        <div
-          style={{
-            position: "absolute",
-            left: `${SLOTS.statusIcon.left}%`,
-            top: "84.2%",
-            height: "12%",
             display: "flex",
             alignItems: "center",
-            gap: Math.max(3, Math.round(width * 0.018)),
+            gap: W * 0.020,
+            marginTop: W * 0.016,
+            padding: `${W * 0.010}px ${W * 0.020}px`,
+            borderRadius: 2,
+            ...goldEdge(0.4),
+            background: "linear-gradient(180deg, rgba(16,15,19,0.95), rgba(6,6,8,0.98))",
+            minHeight: Math.max(13, W * 0.070),
           }}
         >
-          <EconomyGem hue="green" state={gems.action} size={Math.round(width * 0.07)} />
-          <EconomyGem hue="red" state={gems.bonus} size={Math.round(width * 0.07)} />
+          <span
+            style={{
+              fontFamily: "Georgia, serif",
+              fontSize: Math.max(5, W * 0.026),
+              letterSpacing: "0.10em",
+              color: GOLD,
+              textTransform: "uppercase",
+              flexShrink: 0,
+              textShadow: "0 1px 1px #000",
+            }}
+          >
+            Cond
+          </span>
+          <span
+            style={{
+              display: "flex",
+              gap: W * 0.026,
+              overflow: "hidden",
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {conditions.length === 0 ? (
+              <span style={{ fontFamily: "Georgia, serif", fontSize: Math.max(6, W * 0.030), color: "#5d574a", fontStyle: "italic" }}>
+                none
+              </span>
+            ) : (
+              conditions.slice(0, 4).map((cond) => {
+                const t = conditionTone(cond)
+                return (
+                  <span
+                    key={cond}
+                    title={cond}
+                    style={{
+                      fontFamily: "Georgia, serif",
+                      // Sam: conditions must stay VERY readable when the card
+                      // is scaled down. This one gets a hard floor rather than
+                      // being allowed to shrink with the card.
+                      fontSize: Math.max(8, W * 0.036),
+                      fontWeight: 600,
+                      letterSpacing: "0.03em",
+                      color: t.fg,
+                      textShadow: `0 0 6px ${t.glow}, 0 1px 2px #000`,
+                      whiteSpace: "nowrap",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {cond}
+                  </span>
+                )
+              })
+            )}
+          </span>
         </div>
+      </button>
+
+      {/* ---------- THE EXPAND BAR ----------
+          Sam: "a small bar for expanding character information somewhere
+          convenient." A slim strip welded to the foot of the card, so the
+          fuller sheet is one click from the plate it belongs to rather than
+          from a button that appears elsewhere when a card happens to be
+          focused. Outside the card's own <button> — nesting one button in
+          another is invalid HTML and the inner one stops receiving clicks. */}
+      {onExpand && (
+        <button
+          onClick={onExpand}
+          style={{
+            width: W,
+            marginTop: -1,
+            padding: `${Math.max(2, W * 0.011)}px 0`,
+            borderRadius: "0 0 3px 3px",
+            border: `1px solid ${GOLD_DIM}`,
+            borderTop: "none",
+            background: "linear-gradient(180deg, rgba(28,22,12,0.95), rgba(8,7,5,0.95))",
+            color: GOLD,
+            fontFamily: "Georgia, serif",
+            fontSize: Math.max(5.5, W * 0.028),
+            letterSpacing: "0.22em",
+            textTransform: "uppercase",
+            textShadow: "0 1px 1px #000",
+            cursor: "pointer",
+            transition: "color 160ms, border-color 160ms",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = GOLD_HI
+            e.currentTarget.style.borderColor = GOLD
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = GOLD
+            e.currentTarget.style.borderColor = GOLD_DIM
+          }}
+        >
+          ◈ Sheet ◈
+        </button>
       )}
 
-      {/* The wide field at the foot: conditions, or the class when clear. */}
+      {/* The active sphere rides the card's upper-left corner, exactly as the
+          reference has it. Anchored to the WRAPPER rather than the card so it
+          is never clipped by the card's own overflow:hidden — the corner it
+          sits on is the corner that clips. */}
       <div
         style={{
-          ...box(SLOTS.statusText),
-          ...fitted,
-          justifyContent: "flex-start",
-          fontSize: "clamp(6px, 0.8vw, 10px)",
-          color: c.conditions?.length ? "#e0956a" : "#8a7952",
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          overflow: "hidden",
+          position: "absolute",
+          left: W * 0.030,
+          top: W * 0.030,
+          pointerEvents: "none",
+          zIndex: 2,
         }}
       >
-        {c.conditions?.length ? c.conditions.slice(0, 2).join(" · ") : (c.class ?? "")}
+        <ActiveSphere on={isTurn} size={Math.max(9, W * 0.052)} />
       </div>
-    </button>
+    </div>
   )
 }
