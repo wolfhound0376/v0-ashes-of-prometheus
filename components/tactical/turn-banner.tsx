@@ -38,6 +38,24 @@ const PHASES = [
   { key: "reaction" as const, label: "Reaction", hint: "Opportunity attack, shield, counterspell" },
 ]
 
+/**
+ * The colour of each resource, as the card frames paint it. Sam (9/2): the
+ * tray's outlines should match the stones on the character card, so the eye
+ * reads the same resource in the same colour wherever it looks.
+ *
+ * Sampled from the gem centres of every class frame in public/ui-frames -
+ * the stones are identical across classes: a crimson action, a violet bonus
+ * action, a green movement stone, an orange reaction. `line` is the outline,
+ * `glow` the faint halo behind it. Not the Tailwind palette, and not the
+ * gold the tray used to wear for everything.
+ */
+const GEM: Record<"action" | "bonus" | "reaction" | "movement", { line: string; glow: string }> = {
+  action:   { line: "#c8221a", glow: "#a3090488" },
+  bonus:    { line: "#a63cd6", glow: "#9400c688" },
+  reaction: { line: "#e08a1e", glow: "#cf780b88" },
+  movement: { line: "#3fa84c", glow: "#0c651e88" },
+}
+
 /** The plate itself, shared by the blocking and transient forms. */
 function TurnPlate({ title, name, entering }: { title: string; name: string; entering: boolean }) {
   return (
@@ -256,9 +274,17 @@ export function TurnBanner({
                           ? "border-[#7cc0ff] shadow-[0_0_12px_#4fa8ff88] "
                           : "border-[#ff8a76] shadow-[0_0_12px_#ff5a4488] ") +
                         "bg-gradient-to-b from-[#2a1f10] to-[#140e07] text-[#fff3cf]"
-                      : "border-[#8b6427] bg-gradient-to-b from-[#2a1f10] to-[#140e07] text-[#f0cd7a]" +
-                        (canTouch ? " hover:border-[#f4e0a8]" : " opacity-80")) +
+                      : "bg-gradient-to-b from-[#2a1f10] to-[#140e07] text-[#f0cd7a]" +
+                        (canTouch ? " hover:brightness-125" : " opacity-80")) +
                   (canTouch ? "" : " cursor-default")
+                }
+                // READY wears the stone's colour: the outline is the gem on
+                // the card, with a breath of the same light behind it. Spent
+                // goes dark, the way the card's stone does.
+                style={
+                  spent || armedThis
+                    ? undefined
+                    : { borderColor: GEM[p.key].line, boxShadow: `0 0 10px ${GEM[p.key].glow}` }
                 }
               >
                 <div className="font-serif text-[10px] uppercase tracking-[0.18em]">{p.label}</div>
@@ -269,9 +295,21 @@ export function TurnBanner({
             )
           })}
 
-          {/* Movement is not a toggle — it is a budget, so it reads as one. */}
-          <div className="min-w-[104px] rounded-sm border border-[#4a3a1e] bg-black/40 px-3 py-1.5 text-center">
-            <div className="font-serif text-[10px] uppercase tracking-[0.18em] text-[#c9bca0]">Movement</div>
+          {/* Movement is not a toggle — it is a budget, so it reads as one.
+              Green while there are feet left, like the card's stone; dark
+              once they are gone, like the card's stone. */}
+          <div
+            className={
+              "min-w-[104px] rounded-sm border bg-black/40 px-3 py-1.5 text-center transition-colors" +
+              (speedFt - moved <= 0 ? " border-[#2a2216] bg-black/50" : "")
+            }
+            style={
+              speedFt - moved <= 0
+                ? undefined
+                : { borderColor: GEM.movement.line, boxShadow: `0 0 10px ${GEM.movement.glow}` }
+            }
+          >
+            <div className={"font-serif text-[10px] uppercase tracking-[0.18em] " + (speedFt - moved <= 0 ? "text-[#5f5540]" : "text-[#c9bca0]")}>Movement</div>
             <div className="text-[9px] text-[#8a7952]">
               <span className="text-[#e0d2ae]">{Math.max(0, speedFt - moved)}</span> / {speedFt} ft
             </div>
