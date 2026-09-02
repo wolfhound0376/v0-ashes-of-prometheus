@@ -48,6 +48,8 @@ import {
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { damageNumberVfx } from "./damage-numbers"
+// A zero is an outcome, not an absence — see outcome-word.ts.
+import { outcomeWordVfx } from "./outcome-word"
 import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 // The same geometry the SERVER resolves the blast with. One function, so the
 // outline a player is looking at and the creatures that actually take damage
@@ -401,7 +403,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * has a history of invented mechanics reaching the table that way.
    */
   const casterRef = useRef<Map<string, { atk: number | null; dc: number | null }>>(new Map())
-  const castVerbRef = useRef<(caster: string, target: string, ability: string, crossSide?: boolean) => Promise<void>>(async () => {})
+  // Returns whether the server RESOLVED it, because the animation now waits
+  // on that answer instead of running ahead of it.
+  const castVerbRef = useRef<
+    (caster: string, target: string, ability: string, crossSide?: boolean) => Promise<{ ok: boolean }>
+  >(async () => ({ ok: false }))
+  /**
+   * Put the server's verdict on the body at once: hit points if they moved,
+   * and the word SAVED or MISS when they did not.
+   *
+   * A zero is an outcome. Leaving it silent is what made a correct save
+   * indistinguishable from a broken spell.
+   */
+  const applyCastOutcomeRef = useRef<
+    (tokenId: string, r: { amount: number; hit: boolean; heals: boolean }) => void
+  >(() => {})
 
   useEffect(() => {
     setDm(Boolean(getDmKey()))
@@ -1425,17 +1441,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         stopCharge()
         clearTargets()
         setSelected(victim.row)
-        // Cast from the token we locked, AT the creature that was clicked.
-        // Both are passed explicitly: setSelected above has not reached the ref
-        // this function would otherwise read from.
-        performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, victim.row)
         setArmedSpell(null)
-        // And let the server say what it did. The animation is already playing;
-        // the dice are rolled where they cannot be argued with, and the result
-        // arrives in the same combat log everyone at the table is reading.
-        // `crossSide` is the record of the player's consent — the server
-        // keeps its fence up unless it arrives.
-        void castVerbRef.current(shooter.row.id, victim.row.id, armed.name, crossSide)
+
+        // ASK FIRST. ANIMATE SECOND.
+        //
+        // This used to animate immediately and tell the server afterwards, on
+        // the reasoning that the dice are rolled where they cannot be argued
+        // with. The dice were — but the PICTURE was a lie whenever the server
+        // said no.
+        //
+        // Reported as "Samson was able to continue casting cantrips despite
+        // only having a bonus action... I could spam this." He could not: the
+        // handler refused every one of them, and the log proves it — two casts
+        // resolved in six hours while the board played a spell animation on
+        // every click. The refusal was a small toast against a full cast
+        // effect, so the eye believed the effect.
+        //
+        // Now nothing moves until the server has answered. A refused cast is
+        // silent and still, which is what a thing that did not happen should
+        // look like.
+        void (async () => {
+          const res = await castVerbRef.current(shooter.row.id, victim.row.id, armed.name, crossSide)
+          if (!res?.ok) return   // castVerb has already said why
+          performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, victim.row)
+        })()
       }
       // CROSSING SIDES IS A DECISION, NOT AN ACCIDENT — and not a refusal.
       // A heal on a hostile, a harm on your own: the board asks, and CANCEL
@@ -1523,6 +1552,47 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       void castPointVerbRef.current(shooter.row.id, gx, gy, armed.name)
     }
     releaseAtPointRef.current = releaseAtPoint
+
+    /**
+     * The server has spoken: show it on the body, this frame.
+     *
+     * Real damage or healing is applied to the token LOCALLY and pushed
+     * through glideToken, which is the one path that already knows how to
+     * diff hit points and raise a coloured number. When the realtime row
+     * arrives a moment later carrying the same value, that same diff sees no
+     * change and draws nothing — so the number appears once, immediately,
+     * rather than once, late.
+     *
+     * A zero raises a WORD instead. It is still an outcome.
+     */
+    applyCastOutcomeRef.current = (tokenId, r) => {
+      const t = tokensRef.current.get(tokenId)
+      if (!t) return
+
+      if (r.amount > 0) {
+        const cur = t.row.hp_current
+        const max = t.row.hp_max
+        // Untracked hit points stay untracked: a null is "not tracked", never
+        // zero, and inventing a number here would start tracking a creature
+        // the DM deliberately left alone.
+        if (cur == null || max == null) return
+        const next = r.heals
+          ? Math.min(max, cur + r.amount)
+          : Math.max(0, cur - r.amount)
+        if (next !== cur) glideToken({ ...t.row, hp_current: next })
+        return
+      }
+
+      // Nothing moved. Say which kind of nothing.
+      vfx.push(
+        outcomeWordVfx({
+          parent: scene,
+          position: new THREE.Vector3(t.obj.position.x, 0, t.obj.position.z),
+          outcome: r.hit ? "saved" : "miss",
+          scale: radiusFor(t.row.token_size) / 0.75,
+        }),
+      )
+    }
 
     const spawnToken = (row: TokenRow) => {
       const existing = tokensRef.current.get(row.id)
@@ -3715,7 +3785,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const data = await res.json().catch(() => null)
         if (!res.ok) {
           say(data?.error ?? "The strike would not resolve.")
-        } else if (data?.resolved) {
+          return { ok: false }
+        }
+        if (data?.resolved) {
           say(data.line as string)
           // The server is the only witness to the d20. Park its verdict so the
           // number that rises off the body a moment later can wear it.
@@ -3726,9 +3798,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (data.weapon) {
             playSfx(data.hit ? meleeHit(Boolean(data.crit)) : "combat/melee_miss", { volume: 0.9 })
           }
+          // THE OUTCOME, ON THE BODY, NOW.
+          //
+          // Two reasons this cannot wait for the realtime echo:
+          //
+          // 1. Hit points must move the moment the server says they moved.
+          //    Waiting for Postgres to broadcast leaves the plate reading a
+          //    number the log has already contradicted.
+          // 2. A zero is an OUTCOME, not an absence. "No damage was dealt"
+          //    was reported as a bug when the truth was a save — Scott rolled
+          //    20 against DC 13 and took nothing, correctly. Nothing on screen
+          //    said so, and a correct save looked identical to a broken spell.
+          //
+          // A save or a miss now floats the word over the target, and real
+          // damage lands on the token immediately. When the realtime row
+          // arrives carrying the same hit points, glideToken sees no change
+          // and draws no second number.
+          applyCastOutcomeRef.current(target_token, {
+            amount: Number(data.amount ?? 0),
+            hit: data.hit !== false,
+            heals: Boolean(data.heals),
+          })
         }
+        return { ok: true }
       } catch {
-        say("The spell landed, but the tally did not reach the server.")
+        say("The spell did not reach the server — nothing was spent.")
+        return { ok: false }
       }
     }
 
