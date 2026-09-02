@@ -498,8 +498,14 @@ export function CombatHud(props: Props) {
         />
       )}
 
+      {/* Sam: "ONLY show the active player's character card on the left when
+          it is his turn. If you show all the cards it's very cluttered." So
+          one card: whoever's turn it is, or - between turns, or before
+          initiative is rolled - whoever is in focus. The other three are not
+          dimmed, they are gone; the turn strip on the right already says who
+          is queued. */}
       <div className="pointer-events-none absolute left-2 top-2 z-20 flex flex-col gap-[3px]">
-        {characters.map((c) => (
+        {characters.filter((c) => c.id === (activeCharacterId ?? focus?.id)).map((c) => (
           <div key={c.id} className="pointer-events-auto">
             <CharacterCard
               character={{
@@ -542,13 +548,12 @@ export function CombatHud(props: Props) {
               // all four. Four bars cost ~80px of a column that has ~700, and
               // three of them open a sheet nobody asked for. This is also how
               // the plate behaved before the redesign.
-              onExpand={focus?.id === c.id ? () => setSheetFor(c.id) : undefined}
-              // 210, not 236. The card carries more rows than the plate it
-              // replaces — a whole resource row and a conditions strip — so at
-              // the old width four of them ran off the bottom of the column.
-              // Narrowing scales the card as a unit and puts the stack back
-              // inside the footprint the board actually has for it.
-              width={210}
+              onExpand={() => setSheetFor(c.id)}
+              // 320, not 210. The 210 was chosen so FOUR cards fit the column;
+              // with one card the column has room to spare, and Sam asked for
+              // "a little more legible and larger". Every glyph on the card is
+              // sized off W, so this scales the whole thing as one object.
+              width={320}
             />
           </div>
         ))}
