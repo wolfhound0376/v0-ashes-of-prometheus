@@ -558,8 +558,25 @@ export function CombatHud(props: Props) {
                   : a.kind === "weapon" ? `${a.toHit ?? ""} ${a.damage ?? ""}`.trim() || "weapon"
                   : a.kind === "cantrip" ? "cantrip, always available"
                   : a.usable ? `level ${a.entry.level} spell` : (a.why ?? "no slots left")
+                // Named on the tooltip too, so the grey has a reason attached
+                // rather than leaving the player to guess which resource ran out.
+                const goneLabel = phase === "bonus" ? "bonus action already used" : "action already used"
                 const selected = ability === a.name
                 const isHovered = hovered === a.name
+                // THE HALF OF THE TURN IT COSTS IS ALREADY GONE.
+                //
+                // The server has always refused these — the log proves it,
+                // two casts resolved across an evening of clicking. But the
+                // rack went on offering them at full brightness, so the
+                // refusal read as a bug rather than as a rule. A resource you
+                // cannot spend should not look spendable.
+                //
+                // Only ever applied to the character whose turn it actually
+                // is: `econ.live` gates that, so another player's plate is
+                // never greyed by someone else's spent action.
+                const phaseGone =
+                  Boolean(econ?.live) && Boolean(econ && econ[phase]) && a.kind !== "action"
+                const spendable = a.usable && !phaseGone
 
                 return (
                   <button
@@ -568,9 +585,9 @@ export function CombatHud(props: Props) {
                     onMouseLeave={() => setHovered((h) => (h === a.name ? null : h))}
                     onFocus={() => setHovered(a.name)}
                     onBlur={() => setHovered((h) => (h === a.name ? null : h))}
-                    disabled={!a.usable}
+                    disabled={!spendable}
                     onClick={() => {
-                      if (!a.usable) return
+                      if (!spendable) return
                       const selecting = !selected
                       setAbility(selecting ? a.name : null)
                       if (selecting) {
@@ -603,7 +620,8 @@ export function CombatHud(props: Props) {
                         }
                       }
                     }}
-                    aria-label={`${a.name} — ${kindLabel}`}
+                    aria-label={`${a.name} — ${phaseGone ? goneLabel : kindLabel}`}
+                    title={phaseGone ? `${a.name} — ${goneLabel}` : undefined}
                     className={
                       // Sam: balloon it about 30% on hover. Scaling from the
                       // BOTTOM keeps the row's baseline still — a rack that
@@ -615,8 +633,9 @@ export function CombatHud(props: Props) {
                       (isHovered ? " scale-[1.3] z-40" : " hover:-translate-y-[2px] z-0") +
                       (armedMute ? " opacity-35 saturate-50" : "") +
                       // Spent, not gone: grey and unclickable so the player
-                      // can see what they no longer have.
-                      (!a.usable ? " opacity-30 grayscale cursor-not-allowed" : "")
+                      // can see what they no longer have — whether the reason
+                      // is an empty slot or a spent half of the turn.
+                      (!spendable ? " opacity-30 grayscale cursor-not-allowed" : "")
                     }
                     style={{
                       boxShadow: selected
