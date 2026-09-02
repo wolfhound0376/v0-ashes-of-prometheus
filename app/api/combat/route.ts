@@ -115,7 +115,7 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
 
   const { data: tokens } = await db
     .from("vtt_tokens")
-    .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,hp_max,combat_disposition,is_visible")
+    .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,hp_max,combat_disposition,allegiance,is_visible")
     .eq("map_id", mapId)
     .eq("is_visible", true)
 
@@ -129,7 +129,13 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
   const charAc = new Map((chars.data ?? []).map((c: { id: string; ac: number | null }) => [c.id, c.ac]))
   const beast = new Map((beasts.data ?? []).map((b: Record<string, unknown>) => [b.id as string, b]))
 
-  const combatants: (Combatant & { bestiary_id: string | null; character_id: string | null; disposition: string })[] = (tokens ?? []).map((t) => ({
+  const combatants: (Combatant & {
+    bestiary_id: string | null
+    character_id: string | null
+    disposition: string
+    /** 'party' | 'ally' | 'hostile' | 'neutral' | null — whose side the AI fights for. */
+    allegiance: string | null
+  })[] = (tokens ?? []).map((t) => ({
     token_id: t.id,
     label: t.label ?? "Something",
     kind: t.character_id ? "pc" : "npc",
@@ -144,6 +150,7 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
     // Carried so damage can reach the sheet as well as the token.
     character_id: t.character_id,
     disposition: t.combat_disposition ?? "fights",
+    allegiance: (t as { allegiance?: string | null }).allegiance ?? null,
   }))
   return { width, height, walkable, combatants, beast }
 }
@@ -399,6 +406,16 @@ export async function POST(req: NextRequest) {
       await narrate(db, self.label, `${self.label} lies still.`)
       return NextResponse.json({ ok: true, decision: { kind: "none" }, note: "down" })
     }
+    // A token with no stat block has nothing to fight with, and the AI used
+    // to say so as if it were a trait — "has no attack it knows how to make"
+    // — every round, as if the orc had forgotten. It is a wiring fault, not
+    // a character trait, so the line names the fault and the fix, for the DM.
+    // Same speaker as every other board note, so the chat route does not
+    // mistake it for one of Malachar's own lines.
+    if (!self.bestiary_id) {
+      await narrate(db, self.label, `${self.label} stands its ground — no stat block is linked to this token. Link one in the bestiary and it will fight.`)
+      return NextResponse.json({ ok: true, decision: { kind: "none" }, note: "no-stat-block" })
+    }
 
     const stat = (board.beast.get(self.bestiary_id ?? "") ?? {}) as Record<string, unknown>
     const stats = {
@@ -408,10 +425,26 @@ export async function POST(req: NextRequest) {
       actions: stat.actions,
     }
 
-    // Hostility is simply the other side of the PC line. A campaign with
-    // NPC-vs-NPC fights would need factions; this one does not yet, and
-    // inventing them now would be a schema nobody asked for.
-    const hostiles = board.combatants.filter((c) => c.kind === "pc" && (c.hp_current ?? 1) > 0)
+    // WHOSE SIDE. Hostility used to be "the other side of the PC line": every
+    // NPC turn went looking for player characters. That was fine while the
+    // only NPCs who fought were drow and a hook horror. Ront, Eldeth,
+    // Derendil and Sarith are ALLIES that fight, and the moment they have an
+    // attack to make, that rule sends it at the party — the only thing that
+    // stopped them until now was having no stat block linked at all.
+    //
+    // So the AI draws the same line the cast fence and the client's
+    // targetStatus draw: 'party' and 'ally' are one side, 'hostile' the other,
+    // and a null allegiance reads as hostile. 'neutral' stands aside — nobody's
+    // AI goes after a bystander, and a neutral's own turn finds no one to fight.
+    const side = (a: string | null | undefined) => a === "party" || a === "ally"
+    const mine = side(self.allegiance)
+    const hostiles = board.combatants.filter((c) =>
+      c.token_id !== self.token_id &&
+      (c.hp_current ?? 1) > 0 &&
+      self.allegiance !== "neutral" &&
+      c.allegiance !== "neutral" &&
+      side(c.allegiance) !== mine,
+    )
     const blocked = new Set(
       board.combatants.filter((c) => c.token_id !== self.token_id).map((c) => cellKey(c.x, c.y)),
     )
