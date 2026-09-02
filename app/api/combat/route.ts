@@ -526,21 +526,40 @@ export async function POST(req: NextRequest) {
     // An AREA does not choose sides. It covers ground, and whoever is standing
     // on that ground is in it — which is exactly what makes aiming one a
     // decision. So this fence guards the single-creature path only.
+    //
+    // CROSSING SIDES IS ALLOWED — WITH CONSENT. Sam: "Sometimes you want to
+    // heal an enemy; that's ok. We just need confirmation." The client asks,
+    // and the answer travels as `allow_cross_side: true`. That flag is the
+    // record of consent and nothing else stands in for it: it is never
+    // defaulted, never inferred from the target, and must be the boolean
+    // true — so a stray or replayed POST without it meets the same 409 it
+    // always did. `cross_side: true` on those bodies lets the client tell a
+    // side refusal from a range or resource one.
     if (entry && victim) {
       const side = (a: string | null | undefined) => a === "party" || a === "ally"
       const isSelf = victim.id === caster.id
       const friendlyTarget = isSelf || side((victim as { allegiance?: string | null }).allegiance)
-      if (entry.helpful && !friendlyTarget) {
+      // A harmful spell on YOURSELF is the one cross-side act consent does not
+      // unlock — there is no tactical reading of it, so no flag opens it.
+      if (!entry.helpful && isSelf) {
         return NextResponse.json(
-          { error: `${ability} only helps your own — ${victim.label} is not one of yours.` },
+          { error: `${ability} is not for turning on yourself.` },
           { status: 409 },
         )
       }
-      if (!entry.helpful && friendlyTarget) {
-        return NextResponse.json(
-          { error: `${victim.label} is on your side. ${ability} is not for them.` },
-          { status: 409 },
-        )
+      if (body?.allow_cross_side !== true) {
+        if (entry.helpful && !friendlyTarget) {
+          return NextResponse.json(
+            { error: `${ability} only helps your own — ${victim.label} is not one of yours.`, cross_side: true },
+            { status: 409 },
+          )
+        }
+        if (!entry.helpful && friendlyTarget) {
+          return NextResponse.json(
+            { error: `${victim.label} is on your side. ${ability} is not for them.`, cross_side: true },
+            { status: 409 },
+          )
+        }
       }
     }
 
