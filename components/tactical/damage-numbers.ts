@@ -164,7 +164,14 @@ export function damageNumberVfx(args: DamageNumberArgs): VfxHandle {
   // A square is 1.0 world unit, so this is "about as tall as a creature's
   // head is wide" — big enough to read across the table on a shared screen,
   // small enough not to hide the miniature it belongs to.
-  const base = (crit ? 2.0 : 1.55) * scale
+  //
+  // Sam, at the board: a little bigger. 1.55 was sized against a single
+  // miniature in a test scene; in a real fight the number appears over a
+  // crowd, at a camera pitch that foreshortens it, and it was getting lost.
+  // Up about a fifth. The crit keeps its 1.29x lead over the ordinary hit,
+  // because that ratio is what makes a crit read as a crit rather than just
+  // as a big number.
+  const base = (crit ? 2.4 : 1.86) * scale
   const aspect = CANVAS_W / CANVAS_H
   sprite.scale.set(base * aspect, base, 1)
 

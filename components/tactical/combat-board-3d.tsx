@@ -67,7 +67,7 @@ import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 // cannot offer a weapon the server will refuse.
 import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig, unequipSlot } from "@/lib/equipment"
-import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, type PlayHandle, type SfxName } from "@/lib/sfx"
+import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 // An NPC's swing, carried from the DM's seat to the rest of the table.
@@ -212,7 +212,13 @@ type CastAnswer = {
   ok: boolean
   hurt?: boolean
   verdict?: { outcome: AttackOutcome; margin: number } | null
-  weapon?: { hit: boolean; crit: boolean } | null
+  /**
+   * `targetAc` is the number the attack was measured against, which for a
+   * weapon IS the target's armour class. The server has always sent it as
+   * `dc`; nothing read it. It is what lets the impact sound know whether the
+   * blow landed on plate, on mail, or on a robe.
+   */
+  weapon?: { hit: boolean; crit: boolean; targetAc?: number | null } | null
   /**
    * An AREA cast: everyone the server found standing in the shape, each with
    * their own verdict. Null or absent for a cast with one target.
@@ -1551,8 +1557,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // that cannot swing — a disc pawn, a corpse, a model with no clip — and
       // the blow still happened, so the sound plays now rather than never.
       const w = outcome?.weapon ?? null
+      // WHAT IT SOUNDS LIKE DEPENDS ON WHAT IT HIT.
+      //
+      // This was one clip for every landed blow and one for every miss, so a
+      // whole evening of fighting had two sounds in it. `meleeHit` now picks
+      // from the five that were already in the bucket and never played, and
+      // it needs three facts to do it: whether the weapon is ranged, what
+      // damage it deals, and what the target is wearing.
+      //
+      // The armour is read off the target's AC, because nothing in the schema
+      // records armour. It is a proxy and it is stated as one in sfx.ts.
+      const ranged = /bow|sling|dart|javelin/.test(ability.toLowerCase())
+      const targetAc = w?.targetAc ?? null
+      const dmgWord = lastHitWithRef.current.get(explicitTarget?.id ?? "") ?? null
       const swingSound = w
-        ? () => playSfx(w.hit ? meleeHit(w.crit) : "combat/melee_miss", { volume: 0.9 })
+        ? () => playSfx(
+            w.hit || ranged
+              ? meleeHit(w.crit, { ranged, damageType: dmgWord, targetAc, hit: w.hit })
+              : "combat/melee_miss",
+            // A touch of detune on every blow, so six attacks in a round are
+            // six sounds rather than one sound six times.
+            { volume: 0.9, rate: variedRate() },
+          )
         : null
       let found = explicitToken
       if (!found) {
@@ -1678,23 +1704,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // SOUND. The school gives the spell its voice; the damage type decides
       // what the target hears when it lands. Both come off the spellbook, so
       // a new spell is one row of data rather than a code change.
+      // Every one of these carries a detune. The same six clips play all
+      // evening, and a sample repeated at exactly the same pitch is the thing
+      // the ear picks out as "a game noise" rather than as a fight.
       if (kind === "weapon") {
         // The swing itself. Whether it CONNECTS is the server's word, and the
         // hit or the miss lands when that answer comes back.
-        playSfx(weaponSounds(ability).release, { volume: 0.9 })
+        playSfx(weaponSounds(ability).release, { volume: 0.9, rate: variedRate() })
         return
       }
       const sEntry = spellEntry(ability)
-      playSfx(releaseFor(sEntry.school), { volume: 0.85 })
-      window.setTimeout(() => playSfx(tailFor(sEntry.school), { volume: 0.5 }), 260)
+      playSfx(releaseFor(sEntry.school), { volume: 0.85, rate: variedRate(0.04) })
+      window.setTimeout(() => playSfx(tailFor(sEntry.school), { volume: 0.5, rate: variedRate(0.04) }), 260)
       if (sEntry.damage && target) {
         // The bang belongs on the flash, not ahead of it — and the flash is
         // no longer a mote at a fixed 26 units/sec. Each effect has its own
         // charge and flight time, so the sound is handed to the effect and
         // played on the frame it actually lands, alongside the target's
         // flinch. Estimating the delay here is what let bang and flash drift.
+        //
+        // Magic gets a NARROWER spread than steel. A mistuned sword still
+        // sounds like a sword; a mistuned chord sounds wrong, and these clips
+        // are tonal.
         const dmg = sEntry.damage
-        cast.onLand = () => playSfx(impactFor(dmg), { volume: 0.9 })
+        cast.onLand = () => playSfx(impactFor(dmg), { volume: 0.9, rate: variedRate(0.04) })
       }
     }
     castRef.current = performCast
@@ -1717,7 +1750,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         ok: true,
         hurt: s.amount > 0,
         verdict: isAttackOutcome(s.outcome) ? { outcome: s.outcome, margin: s.margin } : null,
-        weapon: { hit: s.hit, crit: s.crit },
+        // The NPC's swing was measured against the player's AC. SwingEvent
+        // has carried `dc` since it was written; this is the first thing to
+        // ask it what that number was for.
+        weapon: { hit: s.hit, crit: s.crit, targetAc: s.dc || null },
       }
       const strike = () =>
         performCast(caster.row.id, s.weapon, "weapon", caster, victim?.row ?? null, null, answer)
@@ -4690,7 +4726,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             ok: true,
             hurt,
             verdict,
-            weapon: data.weapon ? { hit: data.hit !== false, crit: Boolean(data.crit) } : null,
+            weapon: data.weapon
+              ? {
+                  hit: data.hit !== false,
+                  crit: Boolean(data.crit),
+                  // For a weapon attack the server's `dc` is the target's AC.
+                  targetAc: typeof data.dc === "number" && data.dc > 0 ? data.dc : null,
+                }
+              : null,
           }
         }
         return { ok: true, hurt: false }

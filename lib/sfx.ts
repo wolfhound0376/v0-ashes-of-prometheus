@@ -196,9 +196,55 @@ export const releaseFor = (s: School) => `magic/${s}_release` as SfxName
 export const tailFor = (s: School) => `magic/${s}_tail` as SfxName
 export const impactFor = (d: DamageType) => `magic/impact_${d}` as SfxName
 
-/** A weapon swing that connected, chosen by what it hit. */
-export function meleeHit(crit: boolean): SfxName {
-  return crit ? "combat/crit_hit" : "combat/melee_hit_flesh"
+/**
+ * What a blow SOUNDS like when it lands, chosen by what it landed on.
+ *
+ * This returned one of two clips — crit, or `melee_hit_flesh` for absolutely
+ * everything else. Meanwhile the bucket has held `melee_hit_bludgeon`,
+ * `melee_hit_chainmail`, `melee_hit_plate`, `arrow_hit_flesh` and
+ * `arrow_hit_stone` since the day the sound pack was recorded, and not one of
+ * them was ever played. Five clips, paid for, silent.
+ *
+ * So the choice is made from the fiction rather than at random:
+ *
+ *   an ARROW sounds like an arrow, and a MISSED arrow hits the wall behind
+ *   a MACE thuds whatever it hits
+ *   a BLADE rings off armour and does not ring off a robe
+ *
+ * Reading the target's AC for its armour is a proxy, and an honest one: in
+ * this campaign a 17+ is plate or scale, 14-16 is mail or a shield, and
+ * anything under is cloth and skin. It is also the only armour signal the
+ * board actually has — nothing stores what a creature is wearing.
+ */
+export function meleeHit(
+  crit: boolean,
+  opts: { ranged?: boolean; damageType?: string | null; targetAc?: number | null; hit?: boolean } = {},
+): SfxName {
+  // A miss by an arrow is the shaft hitting stone somewhere past the target.
+  if (opts.ranged && opts.hit === false) return "combat/arrow_hit_stone"
+  if (opts.ranged) return "combat/arrow_hit_flesh"
+  // The crit is its own sound and outranks the surface it landed on.
+  if (crit) return "combat/crit_hit"
+  if ((opts.damageType ?? "").toLowerCase() === "bludgeoning") return "combat/melee_hit_bludgeon"
+  const ac = opts.targetAc ?? 0
+  if (ac >= 17) return "combat/melee_hit_plate"
+  if (ac >= 14) return "combat/melee_hit_chainmail"
+  return "combat/melee_hit_flesh"
+}
+
+/**
+ * A small, random detune, so the same clip is not the same SOUND twice.
+ *
+ * Sam asked for a variety of melee sounds. Half of that is the clip, above.
+ * The other half is that even four clips repeat inside one round, and the ear
+ * catches an identical waveform far faster than it catches a repeated sample.
+ * A few percent of pitch is what stops a rack of six attacks sounding like a
+ * loop, and it costs no recording.
+ *
+ * Deliberately narrow. Past about 8% a weapon starts changing size.
+ */
+export function variedRate(spread = 0.06): number {
+  return 1 + (Math.random() * 2 - 1) * spread
 }
 
 /**
@@ -220,8 +266,22 @@ export function weaponSounds(name: string): { windup: SfxName | null; release: S
   if (/mace|hammer|maul|club|staff|greatsword|axe|halberd/.test(n)) {
     return { windup: null, release: "combat/melee_swing_heavy" }
   }
-  if (/unarmed|fist|punch/.test(n)) {
+  // Checked BEFORE the light-swing fallback, and it has to be: an unarmed
+  // strike has no blade to whistle, so the fallback was giving a punch the
+  // sound of a sword being swung.
+  if (/unarmed|fist|punch|claw|bite|slam|kick/.test(n)) {
     return { windup: null, release: "combat/unarmed_hit" }
   }
   return { windup: null, release: "combat/melee_swing_light" }
 }
+
+/**
+ * The rogue's one moment. `combat/sneak_attack` has existed in the bucket
+ * since the sound pack was recorded and nothing has ever played it.
+ *
+ * Not wired to a caller yet — the board does not know a sneak attack from an
+ * ordinary one, because nothing on the wire says advantage-from-hiding. Named
+ * here so the clip is findable, and so the next person to add that flag has
+ * one obvious thing to call.
+ */
+export const SNEAK_ATTACK: SfxName = "combat/sneak_attack"
