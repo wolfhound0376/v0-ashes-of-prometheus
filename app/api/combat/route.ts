@@ -21,6 +21,9 @@ import { normaliseSaves, vitalityOf, conditionsFor, takeDamage, heal, rollDeathS
 // Blood on the tiles: laid by steel in melee, kept on the map row. Purely a
 // mark - the SRD has no bleeding rule and none is invented here.
 import { bleeds, poolSize, makeMark, appendMark, normaliseMarks } from "@/lib/blood-marks"
+// Hiding, as the SRD writes it: Stealth against passive Perception, and
+// refused outright against anyone with a clear view.
+import { resolveHide, stealthProficiency, lineIsClear, type Onlooker } from "@/lib/hiding"
 // The rogue's feature, as its own testable rule rather than four conditions
 // buried in the damage roll.
 import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
@@ -778,6 +781,23 @@ export async function POST(req: NextRequest) {
     //
     // Same shape as the move fence, deliberately: right combatant, PC
     // token, and only then the 5E resource questions.
+    // ATTACKING GIVES YOU AWAY — hit OR miss.
+    //
+    // SRD 5.1, Combat: Unseen Attackers and Targets — "If you are hidden,
+    // both unseen and unheard, when you make an attack, you give away your
+    // location when the attack hits or misses."
+    //
+    // BOTH. Players consistently expect a miss to leave them hidden, and it
+    // is the single most-forgotten clause in the hiding rules. Cleared here,
+    // before the roll rather than after it, so it happens whatever the dice
+    // say and however this handler returns.
+    if (caster) {
+      void db.from("vtt_tokens")
+        .update({ is_hidden: false, updated_by: "reveal-on-attack", updated_at: new Date().toISOString() })
+        .eq("id", caster_token)
+        .eq("is_hidden", true)
+    }
+
     const order = combat.turn_order as { token_id: string; kind: string }[]
     const turn = order?.[combat.active_index]
     if (!turn || turn.token_id !== caster_token) {
@@ -1401,6 +1421,117 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  if (action === "hide") {
+    // THE HIDE ACTION, SRD 5.1.
+    //
+    // Dexterity (Stealth), contested by the PASSIVE Perception of anyone who
+    // might notice - and refused outright against anyone who can see you
+    // clearly. See lib/hiding.ts for the rule text and for the one place a
+    // single boolean forces a simplification.
+    const token_id = String(body?.token_id ?? "")
+    const order = combat.turn_order as { token_id: string; kind: string }[]
+    const entry = order[combat.active_index]
+    if (!entry || entry.token_id !== token_id) {
+      return NextResponse.json({ error: "not this combatant's turn" }, { status: 409 })
+    }
+    const board = await loadBoard(db, map.id)
+
+    const { data: tok } = await db
+      .from("vtt_tokens").select("id,label,character_id,grid_x,grid_y,allegiance")
+      .eq("id", token_id).maybeSingle()
+    if (!tok?.character_id) {
+      return NextResponse.json({ error: "only a player character hides here" }, { status: 403 })
+    }
+    const { data: sheet } = await db
+      .from("characters")
+      .select("dex_modifier,proficiency_bonus,sheet_skill_proficiencies")
+      .eq("id", tok.character_id).maybeSingle()
+
+    // WHO MIGHT NOTICE. The other side, still standing, still on the board.
+    // Allies are not onlookers: you are not hiding from your own party, and
+    // rolling against Samson's passive Perception would make a rogue's own
+    // cleric the reason she is seen.
+    const { data: others } = await db
+      .from("vtt_tokens")
+      .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,is_visible,allegiance")
+      .eq("map_id", map.id)
+      .neq("id", token_id)
+    const foes = (others ?? []).filter(
+      (o) => o.is_visible && (o.hp_current ?? 1) > 0 && o.allegiance !== tok.allegiance,
+    )
+
+    // Passive Perception: from the sheet for a character, from the stat
+    // block's own senses line for a monster. Parsed rather than derived -
+    // "passive Perception 14" is what the book prints, and recomputing it
+    // from WIS would quietly disagree with the page.
+    const charIds = foes.map((f) => f.character_id).filter(Boolean) as string[]
+    const beastIds = foes.map((f) => f.bestiary_id).filter(Boolean) as string[]
+    const [{ data: chars }, { data: beasts }] = await Promise.all([
+      charIds.length ? db.from("characters").select("id,passive_perception").in("id", charIds) : Promise.resolve({ data: [] as { id: string; passive_perception: number | null }[] }),
+      beastIds.length ? db.from("bestiary").select("id,senses").in("id", beastIds) : Promise.resolve({ data: [] as { id: string; senses: string | null }[] }),
+    ])
+    const ppOfChar = new Map((chars ?? []).map((c) => [c.id, c.passive_perception ?? 10]))
+    const ppOfBeast = new Map(
+      (beasts ?? []).map((b) => {
+        const m = /passive Perception\s+(\d+)/i.exec(String(b.senses ?? ""))
+        return [b.id, m ? Number(m[1]) : 10]
+      }),
+    )
+
+    const onlookers: Onlooker[] = foes.map((f) => ({
+      id: f.id,
+      label: f.label ?? "something",
+      passivePerception:
+        (f.character_id ? ppOfChar.get(f.character_id) : undefined) ??
+        (f.bestiary_id ? ppOfBeast.get(f.bestiary_id) : undefined) ??
+        10,
+      seesClearly: lineIsClear(
+        { x: tok.grid_x ?? 0, y: tok.grid_y ?? 0 },
+        { x: f.grid_x ?? 0, y: f.grid_y ?? 0 },
+        board.walkable,
+      ),
+    }))
+
+    const roll = 1 + Math.floor(Math.random() * 20)
+    const outcome = resolveHide(
+      {
+        dexModifier: sheet?.dex_modifier ?? 0,
+        proficiencyBonus: sheet?.proficiency_bonus ?? 2,
+        stealth: stealthProficiency(sheet?.sheet_skill_proficiencies as Record<string, unknown> | null),
+      },
+      onlookers,
+      roll,
+    )
+
+    if (outcome.kind === "seen") {
+      await narrate(db, tok.label ?? "Someone",
+        `${tok.label} looks for somewhere to hide, and finds none — ${outcome.by.join(", ")} ${outcome.by.length > 1 ? "have" : "has"} a clear view.`)
+      return NextResponse.json({ ok: true, hidden: false, reason: "seen", seenBy: outcome.by })
+    }
+
+    const hidden = outcome.kind === "unopposed" ? true : outcome.hidden
+    await db.from("vtt_tokens")
+      .update({ is_hidden: hidden, updated_by: "player-hide", updated_at: new Date().toISOString() })
+      .eq("id", token_id)
+
+    const line = outcome.kind === "unopposed"
+      ? `${tok.label} slips out of sight — there is no one to see it. (Stealth ${outcome.total})`
+      : `${tok.label} rolls Stealth ${outcome.roll} for ${outcome.total} against ${outcome.keenest}'s passive ${outcome.dc} — ${hidden ? "and is gone" : "and is spotted"}.`
+    await narrate(db, tok.label ?? "Someone", line)
+
+    return NextResponse.json({
+      ok: true,
+      hidden,
+      roll: outcome.kind === "unopposed" ? outcome.roll : outcome.roll,
+      total: outcome.total,
+      dc: outcome.kind === "resolved" ? outcome.dc : null,
+      line,
+      // Only the vanish is worth a sound. A failed hide is a rogue standing
+      // in the open looking foolish, and the log already says so.
+      ...(hidden ? { sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/hide_vanish" }] } : {}),
+    })
+  }
+
   if (action === "next") {
     const count = (combat.turn_order as unknown[]).length
     const nextIndex = (combat.active_index + 1) % count
@@ -1486,6 +1617,12 @@ export async function POST(req: NextRequest) {
   }
 
   // end
+  // Nobody stays hidden after the fight. A flag left set means a rogue who is
+  // translucent in the next scene for reasons no one remembers - the same
+  // shape of bug as the combat_state row that survived every restart.
+  await db.from("vtt_tokens")
+    .update({ is_hidden: false, updated_by: "combat-ended", updated_at: new Date().toISOString() })
+    .eq("is_hidden", true)
   const { error } = await db
     .from("combat_state")
     .update({ status: "ended", updated_at: new Date().toISOString() })
