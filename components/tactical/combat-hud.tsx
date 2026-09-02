@@ -420,6 +420,39 @@ export function CombatHud(props: Props) {
   // slots actually remaining. A spell with no slots left is DIMMED, not
   // removed: a player needs to see that Guiding Bolt exists and is spent,
   // rather than wonder where it went.
+  /**
+   * ATTACK IS NOT A THING THE SERVER CAN RESOLVE. It is a sentence about a
+   * weapon, so it has to become one before it leaves this component.
+   *
+   * `Attack` arrives from lib/action-icons as kind "action" — the same bucket
+   * as Dodge, Dash and Disengage. That bucket means "nobody to point at", and
+   * everything downstream believes it: the board fires it the instant it is
+   * pressed instead of arming a target, and the line below charges the action
+   * on the press rather than on the throw. Pressing a NAMED weapon has always
+   * worked, which is why this survived so long — whether you got to choose a
+   * target depended on which button you happened to use.
+   *
+   * The fix is not to special-case "action" everywhere it is tested. It is to
+   * stop sending a word the rest of the system cannot look up. Resolved here
+   * to the weapon it means, every existing weapon path then applies unchanged:
+   * arming, the weapon's own reach, the server's sheetAttacks lookup, and the
+   * swing clip.
+   *
+   * A character with two weapons gets the first real one. That is a guess, and
+   * a deliberately visible one — the board announces the weapon by name when
+   * it arms ("Mace — choose a target within 5 ft"), so a player who meant the
+   * other one can see it and press that weapon directly instead.
+   */
+  const resolvePress = (a: RackItem, rack: RackItem[]): RackItem => {
+    if (a.kind !== "action" || a.name.trim().toLowerCase() !== "attack") return a
+    const weapons = rack.filter((i) => i.kind === "weapon")
+    if (!weapons.length) return a   // no inventory yet: behave as before
+    // attacksFromInventory always appends an unarmed strike, so it is the
+    // fallback rather than the answer — a cleric holding a mace should not
+    // punch because the punch sorts first.
+    return weapons.find((w) => w.name.trim().toLowerCase() !== "unarmed strike") ?? weapons[0]
+  }
+
   const abilities = useMemo<RackItem[]>(() => {
     if (!focus) return []
     return rackFor({
@@ -705,9 +738,13 @@ export function CombatHud(props: Props) {
                     onClick={() => {
                       if (!spendable) return
                       const selecting = !selected
+                      // The button keeps ITS name lit; only what we send is
+                      // resolved. Lighting the weapon instead would leave the
+                      // player looking at a highlight they did not press.
+                      const press = resolvePress(a, abilities)
                       setAbility(selecting ? a.name : null)
                       if (selecting) {
-                        if (focus) onCast?.(focus.id, a.name, a.kind)
+                        if (focus) onCast?.(focus.id, press.name, press.kind)
                         // Tell the banner what this cast cost; the phase is
                         // spent there, where the spend callback lives.
                         // Spend it HERE only for things that fire the moment they are pressed.
@@ -716,7 +753,12 @@ export function CombatHud(props: Props) {
                         // spell and pressing Escape cost you your whole action.
                         // Caught in a live rehearsal: the tray read ACTION · USED
                         // before a target had been chosen.
-                        const armsFirst = a.kind !== "action" && a.entry.target !== "self" && a.entry.target !== "none"
+                        // Read from the RESOLVED press, not the button. Left
+                        // reading `a`, Attack tested as kind "action" and was
+                        // paid for on the press — the tray read ACTION · USED
+                        // before a target existed, which is the same failure
+                        // this line was already written to prevent for spells.
+                        const armsFirst = press.kind !== "action" && press.entry.target !== "self" && press.entry.target !== "none"
                         // DASH IS BOUGHT BY THE MOVE, NOT BY THIS PRESS.
                         //
                         // The server spends the action in the same write that
