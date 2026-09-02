@@ -70,7 +70,7 @@ import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 // cannot offer a weapon the server will refuse.
 import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig, unequipSlot } from "@/lib/equipment"
-import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
+import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, creatureVoice, isVoiceless, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { packSoundFor, packKey } from "@/lib/spell-sfx-pack"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
@@ -232,6 +232,19 @@ type CastAnswer = {
    * blow landed on plate, on mail, or on a robe.
    */
   weapon?: { hit: boolean; crit: boolean; targetAc?: number | null } | null
+  /**
+   * WHAT THE SINGLE TARGET TAKES, and when.
+   *
+   * This used to be applied the instant the server answered, in the response
+   * handler, before the miniature had so much as raised its arm. So a Fireball
+   * that killed a drow put the drow on the floor and THEN threw the fireball:
+   * the body collapsed while the bolt was still in the caster's hand.
+   *
+   * The AREA path never had this bug - it has always carried its victims to
+   * the impact frame and applied them there - so this is the single-target
+   * path being brought into line with the one that was already right.
+   */
+  damage?: { amount: number; heals: boolean; word: "saved" | "miss" | null } | null
   /**
    * An AREA cast: everyone the server found standing in the shape, each with
    * their own verdict. Null or absent for a cast with one target.
@@ -1528,6 +1541,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        * because the impact handler only ever knew about one victim.
        */
       victims?: { id: string; reaction: TokenState | null; amount: number; heals: boolean; word: "saved" | "miss" | null }[]
+      /** The single target's hit points, applied when the effect lands. */
+      damage?: { amount: number; heals: boolean; word: "saved" | "miss" | null } | null
       /** Played on the frame the effect arrives — the impact sound. */
       onLand?: () => void
       /**
@@ -1702,26 +1717,54 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             { volume: 0.9, rate: variedRate() },
           )
         : null
+
+      // THE BLOW STILL HAPPENED.
+      //
+      // Every early return below is a miniature that cannot animate - a disc
+      // pawn, a corpse, a model with no clip for this - and the swing sound
+      // already plays on each of them for exactly that reason. Now the DAMAGE
+      // does too. Deferring it to the impact frame is only safe if every path
+      // that never reaches an impact frame still applies it, or a Fireball
+      // thrown by a pawn would take nobody's hit points until Postgres said
+      // so, and a corpse-cast heal would never land at all.
+      // Reads `explicitTarget`, the parameter, and NOT `victimRow` - which is
+      // resolved further down and would be in its temporal dead zone at every
+      // early return this exists to serve. The fallback lookup victimRow does
+      // is a convenience for the animated path; a caller that reached one of
+      // those returns has already named its target or has none.
+      const landNow = () => {
+        swingSound?.()
+        const d = outcome?.damage
+        if (explicitTarget && d) {
+          applyCastOutcomeRef.current(explicitTarget.id, {
+            amount: d.amount, hit: d.amount > 0, heals: d.heals, word: d.word,
+          })
+        }
+        for (const v of areaVictims(outcome) ?? []) {
+          applyCastOutcomeRef.current(v.id, { amount: v.amount, hit: v.amount > 0, heals: v.heals, word: v.word })
+        }
+      }
+
       let found = explicitToken
       if (!found) {
         for (const e of Array.from(tokensRef.current.values())) {
           if (e.row.character_id === characterId) { found = e; break }
         }
       }
-      if (!found) { swingSound?.(); return }
+      if (!found) { landNow(); return }
       // Say out loud which figure is about to move. When the wrong one does,
       // this line names it instead of leaving us to guess.
       console.log(`[cast] ${ability} → token "${found.row.label}" (character ${characterId.slice(0, 8)}…, model ${String(found.row.model_url ?? "none").split("/").pop()})`)
       const anim = found.anim
-      if (!anim) { swingSound?.(); return } // a disc pawn has nothing to animate
-      if (isDowned(found.row)) { swingSound?.(); return } // a corpse casts nothing
+      if (!anim) { landNow(); return } // a disc pawn has nothing to animate
+      if (isDowned(found.row)) { landNow(); return } // a corpse casts nothing
 
       // The spell's name picks its motion, so two cantrips off the same
       // caster no longer play the identical clip — and the same spell always
       // plays the same one, which is what makes it recognisable.
       const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
       const clip = playState(anim, plan.state, true, explicit)
-      if (!clip) { swingSound?.(); return }
+      if (!clip) { landNow(); return }
       if (plan.state === "hurt") return // Dodge is a flinch, not a spell
 
       // Only magic throws light. "Attack" resolves to a cast clip for a
@@ -1813,6 +1856,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         reaction: reactionFor(outcome, victimRow),
         victims: areaVictims(outcome),
         victimId: victimRow?.id ?? null,
+        // The single target's hit points, carried to the impact frame rather
+        // than applied when the fetch returned.
+        damage: outcome?.damage ?? null,
         cells: shape?.cells,
         centre: shape?.centre,
         casterTokenId: shape?.casterTokenId,
@@ -2207,6 +2253,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           ? Math.min(max, cur + r.amount)
           : Math.max(0, cur - r.amount)
         if (next !== cur) glideToken({ ...t.row, hp_current: next })
+
+        // AND IT SAYS SOMETHING ABOUT IT.
+        //
+        // Nothing on this board has ever made a sound at being hurt. A blade
+        // landed, a number rose, a body fell, and the creature it happened to
+        // was silent from beginning to end - the only voices in the game came
+        // from the chat route's narrative path, which the board never touches.
+        //
+        // AFTER the blow, not with it. The strike is already playing on this
+        // exact frame, and a grunt on top of it is one muddy noise rather than
+        // two events; the delay is what makes it read as a reaction to being
+        // hit rather than as part of the hit. Longer for going down, so the
+        // groan lands into the fall rather than racing it.
+        if (!r.heals && next < cur && !isVoiceless(t.row.label)) {
+          const downed = next <= 0
+          const voice = creatureVoice(t.row.label, {
+            isPlayer: Boolean(t.row.character_id),
+            downed,
+          })
+          window.setTimeout(
+            () => playSfx(voice, { volume: downed ? 0.85 : 0.6, rate: variedRate(0.07) }),
+            downed ? 190 : 110,
+          )
+        }
         return
       }
 
@@ -4529,6 +4599,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
         const flinch = () => {
           p.onLand?.()          // the bang, on the same frame as the flash
+          // THE SINGLE TARGET TAKES IT HERE, not when the fetch returned.
+          //
+          // This is the whole fix for "characters get downed before the spell
+          // hits them": the hit points, the number, the flinch and the death
+          // all now happen on the frame the effect arrives. The area path has
+          // always done this (the loop below); the single-target path applied
+          // its damage in the response handler, so the body fell first and the
+          // spell was thrown at a corpse.
+          if (p.victimId && p.damage) {
+            applyCastOutcomeRef.current(p.victimId, {
+              amount: p.damage.amount,
+              hit: p.damage.amount > 0,
+              heals: p.damage.heals,
+              word: p.damage.word,
+            })
+          }
           if (p.victimId) answerFor(p.victimId, p.reaction)
           // EVERYONE IN THE SHAPE. An area effect lands on a square and the
           // impact handler used to stop there; the bodies standing on it were
@@ -4956,28 +5042,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           //
           // Two reasons this cannot wait for the realtime echo:
           //
-          // 1. Hit points must move the moment the server says they moved.
-          //    Waiting for Postgres to broadcast leaves the plate reading a
-          //    number the log has already contradicted.
+          // 1. Hit points must not wait for POSTGRES. They wait for the
+          //    effect to land, which is a local clock a few hundred
+          //    milliseconds away, not a round trip that may never arrive.
           // 2. A zero is an OUTCOME, not an absence. "No damage was dealt"
           //    was reported as a bug when the truth was a save — Scott rolled
           //    20 against DC 13 and took nothing, correctly. Nothing on screen
           //    said so, and a correct save looked identical to a broken spell.
           //
-          // A save or a miss now floats the word over the target, and real
-          // damage lands on the token immediately. When the realtime row
-          // arrives carrying the same hit points, glideToken sees no change
-          // and draws no second number.
-          applyCastOutcomeRef.current(target_token, {
+          // A save or a miss floats the word over the target, and real damage
+          // lands on the token — both on the frame the effect ARRIVES, not the
+          // frame the fetch returned. When the realtime row comes carrying the
+          // same hit points, glideToken sees no change and draws no second
+          // number.
+          // NOT APPLIED HERE. It travels with the cast and lands on the frame
+          // the effect arrives - see CastAnswer.damage. Applying it here is
+          // what put a body on the floor before the spell that killed it had
+          // left the caster's hand.
+          const damage = {
             amount: Number(data.amount ?? 0),
-            hit: data.hit !== false,
             heals: Boolean(data.heals),
             // The verdict's own word. The server reports hit = amount > 0 on
             // a save, so without this a clean save read as MISS.
-            word: data.outcome === "saved" ? "saved"
+            word: (data.outcome === "saved" ? "saved"
               : data.outcome === "miss" || data.outcome === "fumble" ? "miss"
-              : null,
-          })
+              : null) as "saved" | "miss" | null,
+          }
           // Real damage means the body answers for it. A save, a miss, or a
           // pure utility spell leaves the target standing — or, with the rest
           // of the verdict below, gets out of the way.
@@ -5000,6 +5090,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
                   targetAc: typeof data.dc === "number" && data.dc > 0 ? data.dc : null,
                 }
               : null,
+            damage,
           }
         }
         return { ok: true, hurt: false }

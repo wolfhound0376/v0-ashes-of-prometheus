@@ -291,6 +291,49 @@ export function weaponSounds(name: string): { windup: SfxName | null; release: S
 /** The rogue's one moment, played when the server says the feature fired. */
 export const SNEAK_ATTACK: SfxName = "combat/sneak_attack"
 
+/**
+ * THE NOISE A CREATURE MAKES ABOUT IT.
+ *
+ * The board has never played one. A blade landed, a number rose, a body fell,
+ * and the thing it happened to was silent throughout - the only voices in the
+ * game came from the chat route's narrative path, which the tactical board
+ * does not go through.
+ *
+ * Keyed off the creature's LABEL, the same way the DM path picks its death
+ * sounds, because that is the only description of a monster the token carries.
+ * A player character is its own case: `player_hurt` and `player_downed` were
+ * recorded for them and are the right voice whoever the character is.
+ *
+ * `downed` picks the last sound the creature makes rather than another grunt.
+ * Falling silent at the one moment worth hearing is the wrong way round.
+ */
+export function creatureVoice(
+  label: string | null | undefined,
+  opts: { isPlayer?: boolean; downed?: boolean; female?: boolean } = {},
+): SfxName {
+  const n = (label ?? "").toLowerCase()
+  if (opts.isPlayer) {
+    return opts.downed ? "creature/player_downed" : "creature/player_hurt"
+  }
+  const kind =
+    /spider/.test(n) ? "spider"
+    : /quaggoth/.test(n) ? "quaggoth"
+    : /hook.?horror/.test(n) ? "hook_horror"
+    : /ooze|slime|jelly|pudding/.test(n) ? null   // an ooze has no voice
+    : /wolf|bear|bat|rat|beast|boar|lizard/.test(n) ? "beast"
+    : opts.female ? "humanoid_female" : "humanoid_male"
+  if (!kind) return opts.downed ? "creature/death_beast" : "creature/hurt_beast"
+  return (opts.downed ? `creature/death_${kind}` : `creature/hurt_${kind}`) as SfxName
+}
+
+/**
+ * True when this creature makes no sound at all. An ooze that has just been
+ * cut in half should not grunt like a man.
+ */
+export function isVoiceless(label: string | null | undefined): boolean {
+  return /ooze|slime|jelly|pudding|skeleton|construct|golem/.test((label ?? "").toLowerCase())
+}
+
 // ------------------------------------------------------------- variants ----
 //
 // A SECOND TAKE OF A CLIP PLAYS THE MOMENT IT EXISTS, WITH NO CODE CHANGE.
