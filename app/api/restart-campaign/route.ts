@@ -24,11 +24,19 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   - cinematic_clips and the films themselves. The LIBRARY survives; only the
 //     record of who has watched what is cleared (see step 1b).
 //   - cinematic_requests, the diagnostic log of cues asked for and missed.
-//   - vtt_tokens. The opening tableau (party at the back of the pen, prisoner
-//     NPCs between them and the gates) is canon and hand-placed, so the board
-//     is re-pointed at the starting node's map (step 5c) and the party returns
-//     to those squares rather than having them swept and rebuilt.
+//   - vtt_tokens ROWS. The opening tableau (party at the back of the pen,
+//     prisoner NPCs between them and the gates) is canon and hand-placed, so
+//     the board is re-pointed at the starting node's map (step 5c) rather than
+//     having the tokens swept and rebuilt. Their HP is healed (step 5e); their
+//     SQUARES are not — see the known gap below.
 //   - Character rows, stats, XP and levels.
+//
+// KNOWN GAP, stated rather than implied
+//   Nothing returns the party's tokens to their opening squares. This comment
+//   used to say "the party simply returns to it", which was never true — no
+//   code wrote grid_x/grid_y, so after a restart the party stands wherever the
+//   last fight left them, on the starting map. Putting that right means
+//   knowing the canonical tableau, which lives in nobody's table yet.
 //
 // AUTHORIZATION mirrors /api/asset-media and /api/forge/import: x-dm-key must
 // carry DM_ACCESS_CODE. FAIL CLOSED: with the env var unset the route refuses
@@ -45,6 +53,40 @@ const STARTING_LOCATION = "Scene_1_Velkynvelve (slave pen)"
 const STARTING_NODE_KEY = "velkynvelve"
 const STARTING_SUBNODAL_MAP = "velkynvelve-nodes"
 const STARTING_SUBNODAL_NODE = 11
+
+/**
+ * The shape the cast handler writes into `characters.sheet_spellcasting`.
+ * Deliberately loose: the object also carries ability, DC, attack bonus and
+ * known spells, and this route must hand every one of those back untouched.
+ */
+type SheetSpellcasting = {
+  slots?: Record<string, { max?: number; used?: number } | null> | null
+  [key: string]: unknown
+}
+
+/**
+ * Every slot back. Returns the rebuilt `slots` map and how many were handed
+ * back, so the restart's report can say it rather than the DM having to open
+ * a sheet and count.
+ *
+ * Zeroes `used` rather than rebuilding from `max`, because `max` is the
+ * character's own progression and this route has no business deciding what a
+ * level-3 wizard's third-level allowance ought to be.
+ */
+function refillSlots(sc: SheetSpellcasting | null): {
+  slots: Record<string, { max?: number; used?: number }>
+  restored: number
+} {
+  const src = sc?.slots ?? {}
+  const slots: Record<string, { max?: number; used?: number }> = {}
+  let restored = 0
+  for (const [level, entry] of Object.entries(src)) {
+    if (!entry) continue
+    restored += entry.used ?? 0
+    slots[level] = { ...entry, used: 0 }
+  }
+  return { slots, restored }
+}
 
 /** What every character wears out of the gate. Everything else is confiscated. */
 const STARTING_GARMENT = {
@@ -235,32 +277,59 @@ export async function POST(req: Request) {
   // player and is therefore untouched here.
   const { data: players, error: playersErr } = await admin
     .from("characters")
-    .select("id, name, hp_max")
+    .select("id, name, hp_max, sheet_spellcasting")
     .eq("is_player", true)
   note("characters read", playersErr)
 
   const playerIds = (players || []).map((p) => p.id)
 
-  // --- 4a. player wounds ---------------------------------------------------
+  // --- 4a. player wounds AND everything else they spent --------------------
   // RESET, NOT DELETE — the same mercy the NPCs get in step 3. A restart is a
   // fresh start: hp_current returns to hp_max and lingering conditions clear.
   // (Added 2026-08-20: this section didn't exist, so Scott carried 0/9 HP
   // through every restart since the day he first went down.)
+  //
+  // 2026-09-02: hit points were the ONLY thing this healed, and hit points are
+  // the one resource a party can also get back by resting. Everything a
+  // caster had actually spent survived the restart:
+  //
+  //   - sheet_spellcasting.slots[*].used is only ever INCREMENTED, by the cast
+  //     handler. Nothing in the codebase decremented it, so a sorcerer who
+  //     emptied himself in the pen woke up after a restart at full health with
+  //     no spells, permanently, for the life of the row.
+  //   - sheet_hp_temp is a shield somebody put on him three fights ago.
+  //   - sheet_heroic_inspiration is a gift the DM gave in a session that no
+  //     longer happened.
+  //
+  // A restart is the campaign not having happened yet. Anything the campaign
+  // consumed has to come back with it.
   {
     let healed = 0
+    let slotsRestored = 0
     for (const p of players || []) {
+      const sc = (p.sheet_spellcasting ?? null) as SheetSpellcasting | null
+      const { slots, restored } = refillSlots(sc)
+      slotsRestored += restored
+
       const { error } = await admin
         .from("characters")
         .update({
           hp_current: p.hp_max,
           conditions: [],
+          // The whole object back, with only `used` zeroed. Writing just
+          // `{slots}` would drop the caster's ability, DC, known spells and
+          // everything else the sheet keeps in there.
+          ...(sc ? { sheet_spellcasting: { ...sc, slots } } : {}),
+          sheet_hp_temp: 0,
+          sheet_heroic_inspiration: false,
           updated_at: new Date().toISOString(),
         })
         .eq("id", p.id)
-      if (error) note(`player hp ${p.id}`, error)
+      if (error) note(`player reset ${p.id}`, error)
       else healed += 1
     }
     report.playersHealed = healed
+    report.spellSlotsRestored = slotsRestored
   }
 
   if (playerIds.length) {
@@ -384,8 +453,9 @@ export async function POST(req: Request) {
   // the flag the board falls back on, so point it at the starting node's map.
   //
   // Tokens are NOT deleted. The opening tableau — party at the back of the pen,
-  // the prisoner NPCs between them and the gates — is canon and hand-placed, so
-  // the party simply returns to it.
+  // the prisoner NPCs between them and the gates — is canon and hand-placed,
+  // so it is left standing. Their squares are NOT restored; see the known gap
+  // at the top of this file.
   {
     const { data: startNode } = await admin
       .from("travel_nodes")
@@ -423,6 +493,59 @@ export async function POST(req: Request) {
       // prose for months. Recorded, never treated as a failure.
       report.tacticalTokensWaiting = null
     }
+  }
+
+  // --- 5d. the fight that is still going on --------------------------------
+  // `combat_state` survived every restart. Its status stayed 'active', so the
+  // board came back into a campaign that had not happened yet and announced
+  // round 6, with a turn order of tokens from a dead map and an initiative
+  // roll nobody at the table had made. Only `action:"end"` ever wrote that
+  // column, and a restart is not an end-of-combat.
+  //
+  // Ended, not deleted: the row is the record of a fight, and the same
+  // instinct that keeps npc_encounters keeps this.
+  {
+    const { count, error } = await admin
+      .from("combat_state")
+      .update({ status: "ended", updated_at: new Date().toISOString() }, { count: "exact" })
+      // `.neq` alone would skip a null status, and null is not ended.
+      .or("status.is.null,status.neq.ended")
+    note("stand down combat", error)
+    report.combatsEnded = count ?? 0
+  }
+
+  // --- 5e. the corpses on the board ----------------------------------------
+  // vtt_tokens.hp_current is a SECOND copy of the same fact the sheet holds,
+  // and step 4a only healed the sheet. So the board showed a body face-down on
+  // the flagstones whose card, two inches to the left, read 9/9 — and the
+  // combat route, which reads the TOKEN, went on refusing to let it act.
+  //
+  // This is the desync scripts/sql/reset-token-hp-from-sheets.sql was written
+  // to repair by hand. A restart should not need a DBA.
+  //
+  // Party tokens are healed from their sheet, which is authoritative for a
+  // player. Everything else goes to its own hp_max, which is what step 3 gave
+  // the NPC rows.
+  {
+    const { data: tokens, error: readErr } = await admin
+      .from("vtt_tokens")
+      .select("id, character_id, hp_current, hp_max")
+      .not("hp_current", "is", null)
+    note("tokens read", readErr)
+
+    const sheetHp = new Map((players || []).map((p) => [p.id, p.hp_max as number | null]))
+    let revived = 0
+    for (const t of tokens || []) {
+      const full = (t.character_id ? sheetHp.get(t.character_id) : null) ?? t.hp_max
+      if (full == null || t.hp_current === full) continue
+      const { error } = await admin
+        .from("vtt_tokens")
+        .update({ hp_current: full, updated_by: "restart", updated_at: new Date().toISOString() })
+        .eq("id", t.id)
+      if (error) note(`token hp ${t.id}`, error)
+      else revived += 1
+    }
+    report.tokensRevived = revived
   }
 
   console.log("[restart] complete:", JSON.stringify(report))
