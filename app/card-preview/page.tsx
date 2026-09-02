@@ -19,10 +19,13 @@ const KENTA = {
   portrait_image_url: "/characters/kenta/kenta-hero-hd.webp", face_image_url: null,
   xpFraction: 0.53, xp: 3200, xp_to_next: 6000, inspiration: 0,
   conditions: ["Poisoned", "Darkvision", "Blessed"],
+  // Backgrounds are the party's real sheet_background values, Scott's null
+  // included - the empty plate line is a case worth seeing, not one to hide.
+  background: "Merchant",
 }
-const SAMSON = { ...KENTA, id: "s", name: "Samson", class: "Cleric", hp_current: 9, hp_max: 9, dex_modifier: 2, portrait_image_url: "/characters/samson/samson-hero-4k.webp", conditions: ["Blessed"] }
-const FIFI = { ...KENTA, id: "f", name: "Fifi of Copperas Cove", class: "Rogue", hp_current: 2, hp_max: 8, dex_modifier: 3, portrait_image_url: "/characters/fifi/fifi-hero-4k.webp", conditions: ["Frightened"] }
-const SCOTT = { ...KENTA, id: "c", name: "Scott", class: "Bard", hp_current: 9, hp_max: 9, dex_modifier: 2, portrait_image_url: "/characters/scott/scott-bard-hero-4k.webp", conditions: [] }
+const SAMSON = { ...KENTA, id: "s", name: "Samson", class: "Cleric", background: "Acolyte", hp_current: 9, hp_max: 9, dex_modifier: 2, portrait_image_url: "/characters/samson/samson-hero-4k.webp", conditions: ["Blessed"] }
+const FIFI = { ...KENTA, id: "f", name: "Fifi of Copperas Cove", class: "Rogue", background: "Criminal / Spy", hp_current: 2, hp_max: 8, dex_modifier: 3, portrait_image_url: "/characters/fifi/fifi-hero-4k.webp", conditions: ["Frightened"] }
+const SCOTT = { ...KENTA, id: "c", name: "Scott", class: "Bard", background: null, hp_current: 9, hp_max: 9, dex_modifier: 2, portrait_image_url: "/characters/scott/scott-bard-hero-4k.webp", conditions: [] }
 
 const DORMANT = { action: "dormant", bonus: "dormant", reaction: "dormant" } as const
 const FULL = { remainingFt: 30, speedFt: 30 }
@@ -73,10 +76,13 @@ export default function CardPreview() {
           instead of being found at the table six weeks later. */}
       <Case title="All thirteen class frames">
         <div style={{ display: "grid", gridTemplateColumns: `repeat(3, ${W}px)`, gap: 8 }}>
+          {/* The NAME is the class here on purpose - it is the label for the
+              swatch - and the plate's second line stays empty, because it is
+              the background and a swatch does not have one. */}
           {CLASSES.map((cls) => (
             <CharacterCard key={cls} width={W} isTurn={false} gems={DORMANT} movement={FULL}
               slots={{ total: 4, used: 1 }}
-              character={{ ...KENTA, id: cls, name: cls, class: cls, conditions: [] }} />
+              character={{ ...KENTA, id: cls, name: cls, class: cls, background: null, conditions: [] }} />
           ))}
         </div>
       </Case>
