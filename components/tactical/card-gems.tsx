@@ -11,6 +11,7 @@
 //
 //   ACTION        one ruby        — nothing drawn inside it
 //   BONUS ACTION  one amethyst    — nothing drawn inside it
+//   MOVEMENT      one emerald     — feet remain as text beneath it
 //   REACTION      one amber       — nothing drawn inside it
 //   SPELL SLOTS   several tall cobalt crystals, vertical
 //
@@ -37,15 +38,16 @@ interface Facets {
 
 const RUBY: Facets     = { table: "#ff9d8a", body: "#d32c1e", shade: "#5e0a06", edge: "#ff8f78", glow: "#ff3a22" }
 const AMETHYST: Facets = { table: "#e4b8ff", body: "#9a3fd6", shade: "#3d0d63", edge: "#d79bff", glow: "#b44dff" }
+const EMERALD: Facets   = { table: "#c9ffd2", body: "#20bf48", shade: "#064f1b", edge: "#76ff91", glow: "#28e95a" }
 const AMBER: Facets    = { table: "#ffe9a8", body: "#e8a91c", shade: "#6d4703", edge: "#ffd76b", glow: "#ffb524" }
 const COBALT: Facets   = { table: "#bfe4ff", body: "#2b7fe0", shade: "#08234f", edge: "#7fc4ff", glow: "#3d9bff" }
 
 /** Spent: the stone is still mounted, the fire has gone out of it. */
 const DEAD: Facets = { table: "#4a4a48", body: "#2a2a29", shade: "#141413", edge: "#5c5c59", glow: "#000000" }
 
-export type GemHue = "ruby" | "amethyst" | "amber"
+export type GemHue = "ruby" | "amethyst" | "emerald" | "amber"
 export type ResourceGemState = "lit" | "spent" | "dormant"
-const HUES: Record<GemHue, Facets> = { ruby: RUBY, amethyst: AMETHYST, amber: AMBER }
+const HUES: Record<GemHue, Facets> = { ruby: RUBY, amethyst: AMETHYST, emerald: EMERALD, amber: AMBER }
 
 /**
  * One large cut stone: action, bonus action, or reaction.

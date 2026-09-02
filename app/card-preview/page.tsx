@@ -16,7 +16,7 @@ const KENTA = {
   id: "k", name: "Kenta", class: "Sorcerer", level: 1, ac: 10,
   hp_current: 8, hp_max: 8, dex_modifier: 0,
   portrait_image_url: "/characters/kenta/kenta-hero-hd.webp", face_image_url: null,
-  xpFraction: 0.53, inspiration: 0,
+  xpFraction: 0.53, xp: 3200, xp_to_next: 6000, inspiration: 0,
   conditions: ["Poisoned", "Darkvision", "Blessed"],
 }
 const SAMSON = { ...KENTA, id: "s", name: "Samson", class: "Cleric", hp_current: 9, hp_max: 9, dex_modifier: 2, portrait_image_url: "/characters/samson/samson-hero-4k.webp", conditions: ["Blessed"] }
