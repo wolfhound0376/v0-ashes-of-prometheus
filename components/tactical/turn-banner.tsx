@@ -119,13 +119,24 @@ export function TurnBanner({
     const publish = () =>
       window.dispatchEvent(
         new CustomEvent("aop:economy", {
-          detail: { action: Boolean(economy.action), bonus: Boolean(economy.bonus), armed, live: active },
+          detail: {
+            action: Boolean(economy.action),
+            bonus: Boolean(economy.bonus),
+            // The card's resource row shows the WHOLE economy, not half of it.
+            // Reaction and movement were already in turn_state and already on
+            // this banner; they simply never crossed the wire, so the card had
+            // no way to draw the amber diamond or the feet remaining.
+            reaction: Boolean(economy.reaction),
+            movedFt: Number(economy.moved_ft ?? 0),
+            armed,
+            live: active,
+          },
         }),
       )
     publish()
     window.addEventListener("aop:economy-request", publish)
     return () => window.removeEventListener("aop:economy-request", publish)
-  }, [economy.action, economy.bonus, armed, active])
+  }, [economy.action, economy.bonus, economy.reaction, economy.moved_ft, armed, active])
 
   // A new turn, or the armed phase getting spent elsewhere, disarms.
   useEffect(() => {
