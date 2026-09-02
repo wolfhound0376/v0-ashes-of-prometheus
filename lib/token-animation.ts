@@ -8,7 +8,19 @@
 // only "Walking" still idles — it just idles by standing in its walk pose,
 // which is infinitely better than a T-pose.
 
-export type TokenState = "idle" | "walk" | "attack" | "cast" | "hurt" | "dead"
+export type TokenState =
+  | "idle" | "walk" | "attack" | "cast" | "hurt" | "dead"
+  // ── DEFENCE ───────────────────────────────────────────────────────────
+  // A miss is not a small hit. Until now the board had no way to say so:
+  // the only reaction state was "hurt", so a sword that went nowhere near
+  // a rogue still made her flinch as though it had opened her arm. Two
+  // separate playtests read that as "the dodge is broken" — correctly,
+  // because what they were watching was a hit animation on a miss.
+  //
+  // Three states rather than one, because they are not the same motion and
+  // the models already carry all three: you get out of the way (dodge), you
+  // turn the blade (parry), or you take it on the shield (block).
+  | "dodge" | "parry" | "block"
 
 /** Candidate clip names per state, best first. Matched case-insensitively
  *  as substrings, so "Armature|Combat_Stance|baselayer" still hits. */
@@ -29,6 +41,25 @@ const CANDIDATES: Record<TokenState, string[]> = {
   // looks like, and the dead clip already covers that.
   hurt: ["hit", "hurt", "stagger", "impact", "damage", "back_jump", "fall1", "fall"],
   dead: ["dead", "death", "fall1", "fall"],
+
+  // The 20-clip Meshy hero set already has the motions; nothing had ever
+  // asked for them. `back_jump` IS a dodge — it is a standing leap backwards
+  // out of reach, and it has been sitting at the bottom of the `hurt` chain
+  // as a last resort, which is the only place it could ever play. It leads
+  // here instead.
+  //
+  // `backflip` is here because without it the HERO model — the one the
+  // players actually watch — resolved dodge to null and stood still. It has
+  // no Back_Jump; what it has is Backflip_and_Hooks. An acrobatic evade is a
+  // slightly showier dodge than a step back, which for a rogue is arguably
+  // the point.
+  dodge: ["dodge", "evade", "back_jump", "backflip", "roll", "sidestep", "dive"],
+  // `counterstrike` is a parry with a riposte on the end of it — a blade
+  // turned aside and answered. That reads as a parry far better than
+  // anything else in the set, and it is the clip a fighter should get when
+  // an attack misses them by one or two.
+  parry: ["parry", "deflect", "counterstrike", "block", "guard"],
+  block: ["block", "shield", "guard", "brace", "parry", "counterstrike"],
 }
 
 /**
@@ -39,6 +70,20 @@ const CANDIDATES: Record<TokenState, string[]> = {
  * still.
  */
 const LAST_RESORT: TokenState[] = ["idle", "walk"]
+
+// Note that dodge/parry/block are deliberately absent from LAST_RESORT, and
+// their chains deliberately do not end in "hurt".
+//
+// A model with no defensive clip returns null and plays NOTHING. That looks
+// wrong, and it is still the right answer: the alternative is falling back to
+// the flinch, which is precisely the bug these states exist to remove. A
+// miniature that stands still on a miss is unfinished. A miniature that
+// recoils in pain on a miss is lying about what happened, and the table
+// believes it.
+//
+// The sound still fires either way — combat/parry_blade, combat/block_shield
+// and combat/melee_miss are all in the bank — so an unrigged token is not
+// silent, just not animated.
 
 /** Find a clip whose name matches `want` — exact segment first, then substring. */
 function match(available: string[], want: string): string | null {
@@ -65,7 +110,7 @@ export function clipFor(state: TokenState, available: string[]): string | null {
 }
 
 /** States that play once and return to idle, rather than looping. */
-export const ONE_SHOT: TokenState[] = ["attack", "cast", "hurt"]
+export const ONE_SHOT: TokenState[] = ["attack", "cast", "hurt", "dodge", "parry", "block"]
 
 /**
  * States that play once and then HOLD their last frame. Death is not a loop
@@ -154,6 +199,71 @@ export function castClipFor(
   }
   if (!spellName || pool.length === 1) return pool[0]
   return pool[hashOf(spellName.toLowerCase()) % pool.length]
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// DEFENCE
+//
+// How the server's verdict becomes a motion on the target's miniature.
+//
+// /api/combat's "cast" verb reports facts — outcome, margin, whether a shield
+// was involved — and never names a clip, because it has no idea which clips
+// this particular model was rigged with. This function is the other half of
+// that contract and it lives client-side for the same reason.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** The verdict strings /api/combat returns as `outcome`. */
+export type AttackOutcome =
+  | "hit" | "crit" | "miss" | "fumble"
+  | "saved" | "saved-half" | "failed-save" | "heal"
+
+/**
+ * What the TARGET does about it.
+ *
+ * `margin` is the server's `total - dc`, so it is negative on a miss and the
+ * magnitude is how badly the attack fell short.
+ *
+ * The threshold is the whole idea. A miss by 1 or 2 was very nearly a hit and
+ * has to be actively turned aside — steel, or a shield if they carry one. A
+ * miss by more than that was never going to land, and a fighter who "parries"
+ * a sword that passed a foot wide looks ridiculous; they simply were not
+ * there. Three is where that flips in play: it is one step of a d20, roughly
+ * the difference between a good roll and a bad one, and it keeps parries
+ * uncommon enough to still register as an event.
+ *
+ * A natural 1 gets nothing at all. The attacker fumbled it themselves; the
+ * target did not have to do a single thing, and giving them a heroic dodge
+ * for it steals the joke.
+ */
+export function defenceFor(
+  outcome: AttackOutcome,
+  margin: number,
+  opts: { hasShield?: boolean } = {},
+): TokenState | null {
+  switch (outcome) {
+    case "fumble":
+      return null
+    case "miss":
+      // Near miss → turn it. Wide miss → step out of it.
+      if (margin >= -3) return opts.hasShield ? "block" : "parry"
+      return "dodge"
+    case "saved":
+      // Got entirely out of the way of a spell. Never a parry: you do not
+      // parry a fireball, and a shield does not help you here either.
+      return "dodge"
+    case "saved-half":
+      // Took some of it anyway. Bracing behind a shield reads better than a
+      // clean evade, since they visibly did not fully escape it.
+      return opts.hasShield ? "block" : "dodge"
+    case "hit":
+    case "crit":
+    case "failed-save":
+      return "hurt"
+    case "heal":
+      return null
+    default:
+      return null
+  }
 }
 
 export type CastHand = "LeftHand" | "RightHand"
