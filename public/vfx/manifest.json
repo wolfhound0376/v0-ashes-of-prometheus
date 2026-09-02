@@ -48,11 +48,11 @@
     "rows": 4
   },
   "frostImpact": {
-    "bytes": 275926,
-    "cols": 6,
+    "bytes": 555066,
+    "cols": 5,
     "file": "frostImpact.webp",
     "fps": 24,
-    "frames": 24,
+    "frames": 20,
     "rows": 4
   },
   "healingShimmer": {
