@@ -8,6 +8,8 @@ import { blurbFor } from "@/lib/ability-blurbs"
 import { rackFor, phaseCost, type RackItem } from "@/lib/spellbook"
 import { Globe } from "./essence-globe"
 import { CharacterCard } from "./character-card"
+import { SummonCard } from "./summon-card"
+import { MAGE_HAND, roundsLeft, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { ClassMedallion } from "./class-medallion"
 import { CharacterSheetOverlay } from "./character-sheet-overlay"
 
@@ -111,6 +113,11 @@ interface Props {
   /** Set while a spell waits for a target, so the rack can say so. */
   armedSpell?: { name: string; rangeFt: number; mode?: "creature" | "point" } | null
   onCancelArm?: () => void
+  /** Spell effects on the board - Mage Hand - each a chip on its caster and a card under theirs. */
+  summons?: SummonOnBoard[]
+  /** Which summon is waiting for a square, if MOVE was pressed. */
+  summonMove?: string | null
+  onSummon?: (op: "move" | "use" | "dismiss", tokenId: string, what?: HandUse) => void
 }
 
 // What a rack entry COSTS is `phaseCost` in lib/spellbook, and nowhere else.
@@ -243,12 +250,15 @@ function InitiativeToken({
   portrait,
   conditions,
   active,
+  summon,
 }: {
   entry: HudTurn
   character?: HudCharacter
   portrait: string | null
   conditions: string[]
   active: boolean
+  /** A hand this combatant is holding up, with the rounds it has left. No seat of its own - the SRD gives it none. */
+  summon?: { roundsLeft: number } | null
 }) {
   const hostile = entry.kind === "npc"
   const ring = active ? "#f2cb63" : hostile ? "#8b2621" : "#536a86"
@@ -337,6 +347,15 @@ function InitiativeToken({
           Active
         </div>
       )}
+      {summon && (
+        <div
+          title={`${MAGE_HAND.name} — ${summon.roundsLeft} rounds left. Moves on this character's action.`}
+          className="pointer-events-none absolute -right-1 top-[38px] flex h-[18px] items-center gap-[2px] rounded-full border border-[#7fc4ff]/70 bg-[#0a1628]/90 px-[4px] shadow-[0_0_8px_rgba(90,170,255,.55)]"
+        >
+          <img src={MAGE_HAND.icon} alt="" draggable={false} className="h-[12px] w-[12px] rounded-full object-cover opacity-90" />
+          <span className="font-serif text-[8px] text-[#bfe0ff]">{summon.roundsLeft}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -359,6 +378,9 @@ export function CombatHud(props: Props) {
     showLog = false,
     armedSpell,
     onCancelArm,
+    summons = [],
+    summonMove = null,
+    onSummon,
   } = props
 
   const [ability, setAbility] = useState<string | null>(null)
@@ -557,6 +579,28 @@ export function CombatHud(props: Props) {
               // sized off W, so this scales the whole thing as one object.
               width={320}
             />
+            {summons
+              .filter((s) => s.info.character_id === c.id)
+              .map((s) => {
+                const casterEntry = turnOrder.find((t) => t.token_id === s.info.caster_token)
+                const casterTokenId = casterEntry?.token_id ?? s.info.caster_token
+                const isCastersTurn = activeIndex >= 0 && turnOrder[activeIndex]?.token_id === casterTokenId
+                return (
+                  <SummonCard
+                    key={s.token_id}
+                    summon={s}
+                    casterName={c.name}
+                    round={round}
+                    distanceFt={null}
+                    canAct={Boolean(isCastersTurn && econ && econ.live && !econ.action)}
+                    arming={summonMove === s.token_id}
+                    onMove={() => onSummon?.("move", s.token_id)}
+                    onUse={(what) => onSummon?.("use", s.token_id, what)}
+                    onDismiss={() => onSummon?.("dismiss", s.token_id)}
+                    width={320}
+                  />
+                )
+              })}
           </div>
         ))}
       </div>
@@ -578,6 +622,10 @@ export function CombatHud(props: Props) {
                     portrait={art}
                     conditions={conds}
                     active={i === activeIndex}
+                    summon={(() => {
+                      const s = summons.find((x) => x.info.caster_token === entry.token_id)
+                      return s ? { roundsLeft: roundsLeft(s.info, round) } : null
+                    })()}
                   />
                 )
               })}

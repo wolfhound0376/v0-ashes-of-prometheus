@@ -13,6 +13,10 @@ import { areaCells, aimInRange } from "@/lib/aoe"
 // confiscated one is refused by both.
 import { attacksFromInventory, type DerivedAttack } from "@/lib/weapons"
 import { announcementFor, justBecameDying } from "@/lib/announcer"
+// Mage Hand and whatever is summoned after it: the spell's own rules, pure.
+import {
+  MAGE_HAND, summonMageHand, normaliseSummon, expired, withinLeash, withinCastRange, canReach, handUse,
+} from "@/lib/summons"
 import { normalizeConditions } from "@/lib/conditions"
 // Dropping to 0 hit points, as the SRD writes it. The rule lives in
 // lib/death-saves so it can be read whole and tested on every die face;
@@ -363,9 +367,9 @@ export async function POST(req: NextRequest) {
   // used, acknowledge their own turn, and walk their own character, without
   // the DM clicking for them. "move" is still fenced hard server-side: only
   // the ACTIVE turn's own PC token may walk, only within its speed budget.
-  const PLAYER_VERBS = ["spend", "ack", "move", "cast"]
+  const PLAYER_VERBS = ["spend", "ack", "move", "cast", "summon"]
   if (!["start", "next", "end", "npc-turn", ...PLAYER_VERBS].includes(action)) {
-    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'npc-turn'|'spend'|'ack'|'move'|'cast' }" }, { status: 400 })
+    return NextResponse.json({ error: "expected { action: 'start'|'next'|'end'|'npc-turn'|'spend'|'ack'|'move'|'cast'|'summon' }" }, { status: 400 })
   }
   const db = createAdminClient()
   const sandbox = body?.sandbox === true
@@ -380,7 +384,7 @@ export async function POST(req: NextRequest) {
 
     const { data: allTokens } = await db
       .from("vtt_tokens")
-      .select("id,label,character_id,bestiary_id,is_visible,combat_disposition")
+      .select("id,label,character_id,bestiary_id,is_visible,combat_disposition,summon")
       .eq("map_id", map.id)
       .eq("is_visible", true)
     if (!allTokens?.length) return NextResponse.json({ error: "no tokens on the board" }, { status: 409 })
@@ -390,7 +394,9 @@ export async function POST(req: NextRequest) {
     // they don't roll initiative." So they are excluded here and moved by the
     // end-of-round world step instead — present on the board, absent from the
     // order, which is exactly how a panicking bystander behaves.
-    const tokens = allTokens.filter((t) => t.combat_disposition !== "flees")
+    // A summoned effect - a Mage Hand - is a token but not a creature: the
+    // SRD gives it no turn. Its caster's action is its turn.
+    const tokens = allTokens.filter((t) => t.combat_disposition !== "flees" && !(t as { summon?: unknown }).summon)
     if (!tokens.length) return NextResponse.json({ error: "nobody on this board is willing to fight" }, { status: 409 })
 
     // Both DEX sources in two queries, not 2N.
@@ -526,6 +532,15 @@ export async function POST(req: NextRequest) {
       .update({ grid_x: gx, grid_y: gy, updated_by: "player-move", updated_at: new Date().toISOString() })
       .eq("id", token_id)
     if (moveErr) return NextResponse.json({ error: moveErr.message }, { status: 500 })
+    // SRD, Mage Hand: "The hand vanishes if it is ever more than 30 feet
+    // away from you." The caster walking away is the usual way that happens.
+    const { data: hands } = await db
+      .from("vtt_tokens").select("id,label,grid_x,grid_y").eq("summon->>caster_token", token_id)
+    for (const h of hands ?? []) {
+      if (withinLeash({ x: h.grid_x ?? 0, y: h.grid_y ?? 0 }, { x: gx, y: gy })) continue
+      await db.from("vtt_tokens").delete().eq("id", h.id)
+      await narrate(db, h.label ?? MAGE_HAND.name, `${h.label ?? MAGE_HAND.name} is left more than ${MAGE_HAND.leashFt} ft behind, and fades.`)
+    }
     const next = { ...state, moved_ft: usedFt + feet }
     // Spending the action in the same write as the move: no window exists in
     // which the player has the extra movement but has not yet paid for it.
@@ -725,6 +740,67 @@ export async function POST(req: NextRequest) {
       decision,
       swing,
     })
+  }
+
+  if (action === "summon") {
+    // THE HAND ANSWERS TO ITS CASTER'S ACTION. SRD: "You can use your action
+    // to control the hand ... move the hand up to 30 feet each time you use
+    // it ... dismiss it as an action." Three ops - move, use, dismiss - and
+    // every one of them spends the caster's action, on the caster's turn.
+    const op = String(body?.op ?? "")
+    const token_id = String(body?.token_id ?? "")
+    const { data: hand } = await db
+      .from("vtt_tokens").select("id,map_id,label,grid_x,grid_y,summon").eq("id", token_id).maybeSingle()
+    const info = hand ? normaliseSummon(hand.summon) : null
+    if (!hand || !info) return NextResponse.json({ error: "that is not a summoned effect" }, { status: 409 })
+    const order = combat.turn_order as { token_id: string }[]
+    const entry = order[combat.active_index]
+    if (!entry || entry.token_id !== info.caster_token) {
+      return NextResponse.json({ error: "the hand moves on its caster's turn" }, { status: 409 })
+    }
+    const state = (combat.turn_state ?? {}) as { action?: boolean; bonus?: boolean; reaction?: boolean; moved_ft?: number; acknowledged?: boolean }
+    if (state.action) return NextResponse.json({ error: "the action is already spent this turn" }, { status: 409 })
+    const { data: casterTok } = await db
+      .from("vtt_tokens").select("id,label,grid_x,grid_y").eq("id", info.caster_token).maybeSingle()
+    const casterName = casterTok?.label ?? "The caster"
+    const stamp = new Date().toISOString()
+
+    if (op === "move") {
+      const gx = Number(body?.gx)
+      const gy = Number(body?.gy)
+      const { data: dims } = await db.from("vtt_maps").select("grid_width,grid_height").eq("id", hand.map_id).maybeSingle()
+      if (!Number.isInteger(gx) || !Number.isInteger(gy) || gx < 0 || gy < 0 || !dims || gx >= dims.grid_width || gy >= dims.grid_height) {
+        return NextResponse.json({ error: "destination off the board" }, { status: 400 })
+      }
+      const from = { x: hand.grid_x ?? 0, y: hand.grid_y ?? 0 }
+      if (!canReach(from, { x: gx, y: gy })) {
+        return NextResponse.json({ error: `the hand moves up to ${MAGE_HAND.moveFt} ft at a time` }, { status: 409 })
+      }
+      const casterAt = { x: casterTok?.grid_x ?? 0, y: casterTok?.grid_y ?? 0 }
+      if (!withinLeash({ x: gx, y: gy }, casterAt)) {
+        // Sent past the leash: the SRD says it vanishes, so it vanishes.
+        await db.from("vtt_tokens").delete().eq("id", hand.id)
+        await narrate(db, casterName, `${casterName} sends the hand past ${MAGE_HAND.leashFt} ft — it fades.`)
+      } else {
+        await db.from("vtt_tokens")
+          .update({ grid_x: gx, grid_y: gy, updated_by: "summon-move", updated_at: stamp })
+          .eq("id", hand.id)
+        await narrate(db, casterName, `${casterName}'s spectral hand drifts ${Math.max(Math.abs(gx - from.x), Math.abs(gy - from.y)) * 5} ft.`)
+      }
+    } else if (op === "use") {
+      const use = handUse(String(body?.what ?? ""))
+      if (!use) return NextResponse.json({ error: "the hand can manipulate, open, stow or pour — nothing else" }, { status: 400 })
+      await narrate(db, casterName, use.line(casterName))
+    } else if (op === "dismiss") {
+      await db.from("vtt_tokens").delete().eq("id", hand.id)
+      await narrate(db, casterName, `${casterName} dismisses the spectral hand.`)
+    } else {
+      return NextResponse.json({ error: "summon needs op: 'move'|'use'|'dismiss'" }, { status: 400 })
+    }
+
+    const spent = { ...state, action: true }
+    await db.from("combat_state").update({ turn_state: spent, updated_at: stamp }).eq("id", combat.id)
+    return NextResponse.json({ ok: true, turn_state: spent })
   }
 
   if (action === "cast") {
@@ -972,9 +1048,44 @@ export async function POST(req: NextRequest) {
     // failure this codebase has already shipped twice by other means.
     if (aim) {
       if (!entry.area) {
+        // MAGE HAND puts a token on the square. SRD: "A spectral, floating
+        // hand appears at a point you choose within range ... The hand
+        // vanishes if ... you cast this spell again." So: range checked,
+        // the previous hand (if any) gone, a new one placed, no dice.
+        if (ability.toLowerCase() === MAGE_HAND.key) {
+          const origin = { x: caster.grid_x ?? 0, y: caster.grid_y ?? 0 }
+          if (!withinCastRange(aim, origin)) {
+            return NextResponse.json(
+              { error: `${MAGE_HAND.name} reaches ${MAGE_HAND.leashFt} ft — that square is further than that.` },
+              { status: 409 },
+            )
+          }
+          await db.from("vtt_tokens").delete().eq("map_id", caster.map_id).eq("summon->>caster_token", caster.id)
+          const { error: handErr } = await db.from("vtt_tokens").insert({
+            map_id: caster.map_id,
+            label: MAGE_HAND.name,
+            model_url: MAGE_HAND.sprite,
+            model_scale: 1,
+            grid_x: aim.x,
+            grid_y: aim.y,
+            token_size: "small",
+            tint_color: "#4fa8ff",
+            allegiance: caster.allegiance ?? "party",
+            is_visible: true,
+            hp_current: null,
+            hp_max: null,
+            combat_disposition: "fights",
+            updated_by: "player-cast",
+            summon: summonMageHand({ casterToken: caster.id, characterId: caster.character_id ?? null, round: combat.round }),
+          })
+          if (handErr) return NextResponse.json({ error: handErr.message }, { status: 500 })
+          await payFor()
+          await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${MAGE_HAND.name} — a spectral hand appears ${Math.max(Math.abs(aim.x - origin.x), Math.abs(aim.y - origin.y)) * 5} ft away.`)
+          return NextResponse.json({ ok: true, resolved: false, note: "summoned", summoned: true })
+        }
         // A point spell with no shape lands on its square and does nothing to
-        // anybody — Mage Hand, Misty Step, Minor Illusion. Real spells with
-        // nothing to roll.
+        // anybody — Misty Step, Minor Illusion. Real spells with nothing to
+        // roll.
         await payFor()
         await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability}.`)
         return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this ability" })
@@ -1535,6 +1646,21 @@ export async function POST(req: NextRequest) {
   if (action === "next") {
     const count = (combat.turn_order as unknown[]).length
     const nextIndex = (combat.active_index + 1) % count
+
+    // A minute is ten rounds. When the round turns, anything summoned for a
+    // duration that has run out fades - SRD, "The hand lasts for the
+    // duration". Checked against the round we are about to enter.
+    if (nextIndex === 0) {
+      const entering = combat.round + 1
+      const { data: summoned } = await db
+        .from("vtt_tokens").select("id,label,summon").eq("map_id", map.id).not("summon", "is", null)
+      for (const t of summoned ?? []) {
+        const info = normaliseSummon(t.summon)
+        if (!info || !expired(info, entering)) continue
+        await db.from("vtt_tokens").delete().eq("id", t.id)
+        await narrate(db, t.label ?? MAGE_HAND.name, `${t.label ?? MAGE_HAND.name} fades — the spell has run its minute.`)
+      }
+    }
 
     // END OF ROUND — the world step. Sam's ruling: the non-combatants move at
     // the end of each round, automatically, toward the edge of the map. They

@@ -50,6 +50,7 @@ import {
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
+import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
 import { defenceMotion } from "./defence-motion"
 import { areaVisualFor } from "@/lib/aoe-visual"
@@ -131,6 +132,8 @@ interface TokenRow {
   is_hidden: boolean | null
   hp_current: number | null
   hp_max: number | null
+  /** Set when this token is a spell effect (Mage Hand), see lib/summons. */
+  summon?: unknown
 }
 
 interface CellsJson {
@@ -307,6 +310,41 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [myCharacterId, setMyCharacterId] = useState<string | null>(null)
   const [combatBusy, setCombatBusy] = useState(false)
   const [sheets, setSheets] = useState<HudCharacter[]>([])
+  /** Spell effects standing on the board - Mage Hand - for the HUD's chips and cards. */
+  const [summons, setSummons] = useState<SummonOnBoard[]>([])
+  /** MOVE pressed on a summon card: the next floor click is where it goes. */
+  const [summonMove, setSummonMove] = useState<string | null>(null)
+  const summonMoveRef = useRef<string | null>(null)
+  useEffect(() => { summonMoveRef.current = summonMove }, [summonMove])
+  /** The hover hum, while any hand is on the board. */
+  const summonHumRef = useRef<ReturnType<typeof playSfx> | null>(null)
+  const summonVerbRef = useRef<(body: Record<string, unknown>) => Promise<void>>(async () => {})
+  // The hum. While a hand is on the board the arcane windup loops low under
+  // it - the "flying sound" - and stops the moment the last one is gone.
+  useEffect(() => {
+    if (summons.length > 0 && !summonHumRef.current) {
+      summonHumRef.current = playSfx("magic/arcane_windup", { loop: true, volume: 0.14, fadeIn: 0.8 })
+    } else if (summons.length === 0 && summonHumRef.current) {
+      summonHumRef.current.stop(0.6)
+      summonHumRef.current = null
+    }
+  }, [summons.length])
+  useEffect(() => () => { summonHumRef.current?.stop(0.2); summonHumRef.current = null }, [])
+  // Escape puts the MOVE away, the way it puts a spell away.
+  useEffect(() => {
+    if (!summonMove) return
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setSummonMove(null) }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [summonMove])
+  const syncSummons = () => {
+    const list: SummonOnBoard[] = []
+    tokensRef.current.forEach((e) => {
+      const info = normaliseSummon(e.row.summon)
+      if (info) list.push({ token_id: e.row.id, label: e.row.label, x: e.row.grid_x, y: e.row.grid_y, info })
+    })
+    setSummons(list)
+  }
   // Each character's weapons, by character id. Read when a model finishes
   // loading so the figure can be given the thing it fights with.
   const sheetAttacksRef = useRef<Record<string, { name?: string; rarity?: string }[]>>({})
@@ -1040,6 +1078,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // armed. Targeting and walking are different intentions and the same
       // click cannot mean both — so an armed caster clicking open floor is
       // told to pick a target or press Escape, and stays put.
+      // MOVE on a summon card: this click is where the hand goes. The server
+      // holds the rule (30 ft a time, 30 ft from its caster); the board
+      // only names the square.
+      if (summonMoveRef.current) {
+        if (!floorPlane) return
+        const aimHit = raycaster.intersectObject(floorPlane, false)[0]
+        if (!aimHit) return
+        const id = summonMoveRef.current
+        setSummonMove(null)
+        summonMoveRef.current = null
+        void summonVerbRef.current({ op: "move", token_id: id, gx: Math.floor(aimHit.point.x / SQ), gy: Math.floor(aimHit.point.z / SQ) })
+        return
+      }
       if (armedRef.current) {
         // ...unless the spell was aimed at the GROUND in the first place.
         // Mage Hand, Fog Cloud, Fireball: the floor is not a consolation
@@ -2240,7 +2291,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         g.add(body)
       }
 
-      if (row.model_url) {
+      // A SPECTRAL SPRITE, NOT A MODEL. A model_url that ends in .png or
+      // .webp is a cutout - the Mage Hand - drawn as a billboard that always
+      // faces the camera, semi-transparent, floating above its square and
+      // bobbing in the animation loop (userData.float). It has no bones and
+      // no clips, so nothing below that asks for a rig ever sees it.
+      const spriteUrl = row.model_url && /\.(png|webp)(\?|$)/i.test(row.model_url) ? row.model_url : null
+      if (spriteUrl) {
+        const mat = new THREE.SpriteMaterial({ map: tex(spriteUrl), transparent: true, opacity: 0.78, depthWrite: false })
+        const sp = new THREE.Sprite(mat)
+        const w = r * 2.4
+        sp.scale.set(w, w * 0.664, 1)
+        sp.position.y = 0.62
+        g.add(sp)
+        g.userData.float = { phase: Math.random() * Math.PI * 2 }
+      } else if (row.model_url) {
         // The creature's own model. Measured after load, scaled to size,
         // feet on the floor — Meshy exports arrive in arbitrary units.
         gltfLoader.load(row.model_url, (gltf) => {
@@ -3922,7 +3987,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // The combatants.
       const { data: tokenRows } = await supabase
         .from("vtt_tokens")
-        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,is_hidden,hp_current,hp_max,allegiance")
+        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,is_hidden,hp_current,hp_max,allegiance,summon")
         .eq("map_id", map.id)
 
       // A model belongs to the SPECIES. A token that names a bestiary entry
@@ -3963,6 +4028,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // Monsters can have their AC already: it came back with the art.
         const beastAc = row.bestiary_id ? acByBeast.get(row.bestiary_id) : undefined
         if (typeof beastAc === "number") acRef.current.set(row.id, beastAc)
+        syncSummons()
       }
 
       // ---- the rest of the hover read-out ----------------------------
@@ -4292,9 +4358,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               tokenGroup.remove(gone.obj)
               tokensRef.current.delete((payload.old as { id: string }).id)
             }
+            syncSummons()
             return
           }
           glideToken(payload.new as TokenRow)
+          syncSummons()
           // Bodies moved: the reachable world changed shape for whoever's
           // turn it is — and the mover's own board repaints its new budget.
           refreshReachRef.current()
@@ -4555,6 +4623,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
 
       tokensRef.current.forEach((entry) => {
+        // A floating thing floats: a slow bob and a lazy turn, from its own
+        // phase so two hands do not move in lockstep.
+        const fl = entry.obj.userData.float as { phase: number } | undefined
+        if (fl) {
+          const tt = clock.elapsedTime
+          entry.obj.position.y = 0.05 + 0.07 * Math.sin(tt * 2.1 + fl.phase)
+          entry.obj.rotation.y = 0.18 * Math.sin(tt * 0.9 + fl.phase)
+        }
         const gl = entry.obj.userData.glide as { pts: THREE.Vector3[]; seg: number[]; total: number; s: number } | undefined
         // The dead stay dead: a body dragged across the board must not
         // stand up to walk, and must not be handed back to its stance.
@@ -4981,6 +5057,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
   }, [sandbox])
 
+  /**
+   * A summon's verb - move, use, dismiss - on its caster's action. Answers
+   * are read, because a refusal ("the hand moves on its caster's turn") is
+   * worth saying out loud where a silent no is a broken button.
+   */
+  const summonVerb = async (body: Record<string, unknown>) => {
+    try {
+      const res = await fetch("/api/combat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "summon", ...body, sandbox }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) say(data?.error ?? "The hand did not answer.")
+    } catch {
+      say("That did not reach the table — check the connection.")
+    }
+  }
+  summonVerbRef.current = summonVerb
+
   const playerVerb = async (body: Record<string, unknown>) => {
     try {
       await fetch("/api/combat", {
@@ -5361,6 +5457,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       {/* The full HUD: plates, initiative rail, log, globes, ability rack. */}
       <CombatHud
         characters={sheets}
+        summons={summons}
+        summonMove={summonMove}
+        onSummon={(op: "move" | "use" | "dismiss", tokenId: string, what?: HandUse) => {
+          if (op === "move") {
+            setSummonMove(tokenId)
+            say("Click a square within 30 ft of the hand — Escape to cancel.")
+            return
+          }
+          void summonVerb(op === "use" ? { op, token_id: tokenId, what } : { op, token_id: tokenId })
+        }}
         tokenToCharacter={tokenToCharacter}
         tokenPortrait={tokenPortrait}
         tokenConditions={tokenConditions}
