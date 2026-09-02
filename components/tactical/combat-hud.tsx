@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
 import { blurbFor } from "@/lib/ability-blurbs"
@@ -340,6 +340,22 @@ export function CombatHud(props: Props) {
     return () => window.removeEventListener("aop:economy", h)
   }, [])
   const [sheetFor, setSheetFor] = useState<string | null>(null)
+  /**
+   * The log scroller, held so a new line can pin it to the bottom.
+   *
+   * Without this a scrollable log is worse than an unscrollable one: it fills
+   * up, stops following, and the newest roll — the one you are waiting for —
+   * lands out of sight below the fold.
+   */
+  const logScrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = logScrollRef.current
+    if (!el) return
+    // Only follow if the reader was already at the bottom. Someone scrolled
+    // back to re-read a save should not be yanked forward by the next line.
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    if (nearBottom) el.scrollTop = el.scrollHeight
+  }, [log, showLog])
 
   const activeCharacterId = useMemo(() => {
     const entry = turnOrder[activeIndex]
@@ -462,7 +478,18 @@ export function CombatHud(props: Props) {
           <div className="border-b border-[#4b3820] bg-gradient-to-b from-[#261a0d] to-[#110b06] px-3 py-1.5 text-center font-serif text-[9px] uppercase tracking-[0.23em] text-[#c6a25a]">
             Combat Log
           </div>
-          <div className="max-h-[226px] overflow-y-auto px-2.5 py-2">
+          {/* pointer-events-auto, and that is the whole bug.
+              The column this sits in is pointer-events-none so the board can
+              be dragged THROUGH the HUD's empty space. The log inherited it,
+              so `overflow-y-auto` had nothing to listen to — the wheel went
+              straight past the panel to the camera behind it, and the log
+              could not be scrolled at all.
+              overscroll-contain stops a scroll that reaches the end of the log
+              from continuing into the page behind it. */}
+          <div
+            ref={logScrollRef}
+            className="pointer-events-auto max-h-[300px] overflow-y-auto overscroll-contain px-2.5 py-2"
+          >
             {log.length === 0 ? (
               <div className="py-3 text-center font-serif text-[9px] italic text-[#675d49]">The dark is quiet.</div>
             ) : (

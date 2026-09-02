@@ -406,7 +406,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // Returns whether the server RESOLVED it, because the animation now waits
   // on that answer instead of running ahead of it.
   const castVerbRef = useRef<
-    (caster: string, target: string, ability: string, crossSide?: boolean) => Promise<{ ok: boolean }>
+    (caster: string, target: string, ability: string, crossSide?: boolean) => Promise<{ ok: boolean; hurt?: boolean }>
   >(async () => ({ ok: false }))
   /**
    * Put the server's verdict on the body at once: hit points if they moved,
@@ -1224,6 +1224,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       target: THREE.Vector3 | null
       /** Who it was thrown at, so the effect can make them flinch when it lands. */
       victimId: string | null
+      /**
+       * Did it actually HURT them?
+       *
+       * The flinch used to play whenever the effect arrived, win or lose. So
+       * a target who made their save doubled over exactly as if they had not
+       * — reported as "she acted like she was hit as opposed to resisting
+       * it." The body was contradicting the dice.
+       *
+       * Now the server's verdict travels with the cast, and a save or a miss
+       * leaves the target standing.
+       */
+      hurt: boolean
       /** Played on the frame the effect arrives — the impact sound. */
       onLand?: () => void
     }
@@ -1249,6 +1261,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        * token was passed is worse than one that does not animate at all.
        */
       explicitPoint?: { x: number; z: number } | null,
+      /**
+       * The server's verdict, when there is one. `hurt: false` means the
+       * target saved, was missed, or took nothing — the effect still flies
+       * and still lands, but the body does not double over.
+       */
+      outcome?: { hurt: boolean } | null,
     ) => {
       const plan = castPlanFor(ability, kind)
       if (!plan) return // Dash and friends animate nothing
@@ -1328,6 +1346,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         hand,
         spell: ability,
         target,
+        // Absent verdict means "no server ruling reached this path" — an NPC
+        // turn, a DM flourish — and those keep the old behaviour of flinching
+        // on arrival. Only a cast the server actually resolved can say no.
+        hurt: outcome ? outcome.hurt : true,
         victimId: victimRow?.id ?? null,
       }
       pending.push(cast)
@@ -1463,7 +1485,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         void (async () => {
           const res = await castVerbRef.current(shooter.row.id, victim.row.id, armed.name, crossSide)
           if (!res?.ok) return   // castVerb has already said why
-          performCast(shooter.row.character_id as string, armed.name, armed.kind, shooter, victim.row)
+          // The verdict travels with the animation, so a target who saved
+          // does not double over as though they had not.
+          performCast(
+            shooter.row.character_id as string, armed.name, armed.kind,
+            shooter, victim.row, null, { hurt: Boolean(res.hurt) },
+          )
         })()
       }
       // CROSSING SIDES IS A DECISION, NOT AN ACCIDENT — and not a refusal.
@@ -3306,8 +3333,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           .select("id,speaker,text")
           .eq("channel", "dm")
           .order("created_at", { ascending: false })
-          .limit(12)
-        setLog(((data ?? []) as HudLogLine[]).reverse().map((l) => ({ ...l, text: l.text.length > 90 ? l.text.slice(0, 90) + "…" : l.text })))
+          // 12 was a panel's worth. The log is now a scrollable window and the
+          // rolls live in it — who saved against what DC, what a hit was for —
+          // so it needs enough history to be worth scrolling back through.
+          .limit(80)
+        // NO TRUNCATION. The 90-character cut fell in the middle of exactly
+        // the lines that matter: "Samson casts Toll the Dead — Scott rolls
+        // 19+1 = 20 vs DC 13: saves." is the whole point of the entry, and
+        // clipping it left the reader with the spell and none of the result.
+        // The panel wraps; let it wrap.
+        setLog(((data ?? []) as HudLogLine[]).reverse())
       }
       void loadLog()
       const logChannel = supabase
@@ -3511,6 +3546,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           )
           const victim = tokensRef.current.get(p.victimId)
           if (!victim?.anim || isDowned(victim.row)) return
+          // A save is not a wound. The effect still arrives and still makes
+          // its noise; the body simply does not answer for it.
+          if (!p.hurt) return
           playState(victim.anim, "hurt", true)
         }
         vfx.push(
@@ -3819,8 +3857,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             hit: data.hit !== false,
             heals: Boolean(data.heals),
           })
+          // Real damage means the body answers for it. A save, a miss, or a
+          // pure utility spell leaves the target standing.
+          return { ok: true, hurt: Number(data.amount ?? 0) > 0 && !data.heals }
         }
-        return { ok: true }
+        return { ok: true, hurt: false }
       } catch {
         say("The spell did not reach the server — nothing was spent.")
         return { ok: false }
