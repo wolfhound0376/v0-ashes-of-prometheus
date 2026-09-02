@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { walkableFrom, key as cellKey } from "@/lib/npc-ai"
 import {
-  spawnPayload, freeSquare, squaresFor, type SpawnSource, type Allegiance,
+  spawnPayload, freeSquare, squaresFor, sideForRole, type SpawnSource, type Allegiance,
 } from "@/lib/sandbox-spawn"
 
 // ============================================================================
@@ -69,10 +69,10 @@ export async function GET() {
   // and it is read on every open, so it is one round trip, not four.
   const [creatures, npcs, chars, envs, tokens] = await Promise.all([
     db.from("bestiary")
-      .select("id,name,slug,size,cr,hp,ac,model_url,model_scale")
+      .select("id,name,slug,size,cr,hp,ac,role,model_url,model_scale")
       .order("name"),
     db.from("npc_encounters")
-      .select("id,character_id,name,hp_max,ac,challenge_rating,monster_type,portrait_url,disposition")
+      .select("id,character_id,name,hp_max,ac,challenge_rating,monster_type,portrait_url,disposition,bestiary_id")
       .order("name"),
     db.from("characters")
       .select("id,name,class,level,size,hp_max,ac,character_type,avatar_image_url")
@@ -177,9 +177,14 @@ export async function POST(req: NextRequest) {
 
   if (kind === "bestiary") {
     const { data } = await db.from("bestiary")
-      .select("id,name,size,hp,model_scale").eq("id", sourceId).maybeSingle()
+      .select("id,name,size,hp,role,model_scale").eq("id", sourceId).maybeSingle()
     if (data) {
-      src = { kind: "bestiary", id: data.id, label: data.name, size: data.size, hpMax: data.hp }
+      src = {
+        kind: "bestiary", id: data.id, label: data.name, size: data.size, hpMax: data.hp,
+        // 18 of the 43 rows here are "ally/prisoner" — this bestiary holds
+        // the whole Velkynvelve cast, not just its monsters.
+        allegiance: sideForRole(data.role),
+      }
       catalogueScale = data.model_scale
     }
   } else if (kind === "character") {
@@ -207,18 +212,48 @@ export async function POST(req: NextRequest) {
         id: data.character_id ?? data.bestiary_id ?? "",
         label: data.name,
         hpMax: data.hp_max,
+        // Every npc_encounters row has a null disposition today, so this
+        // almost always falls through to the species role below. Reading the
+        // column anyway costs nothing and means the day somebody fills it in,
+        // it is believed.
         allegiance: dispositionSide(data.disposition),
       }
       if (!src.id) src = null   // an NPC bound to neither is not placeable
     }
   }
-  if (!src) return NextResponse.json({ error: "no such creature" }, { status: 404 })
+  if (!src) {
+    // The one NPC this reaches is Malachar, who is bound to neither a
+    // character nor a species. He is the Dungeon Master; he does not stand
+    // on a square. Say which of the two it is rather than "no such creature",
+    // because the row is plainly there in the list you just clicked.
+    return NextResponse.json(
+      { error: "that one has no character or species to stand in for it" },
+      { status: 404 },
+    )
+  }
+
+  // An explicit side always wins. "What if the drow were on our side" is the
+  // sort of question a rehearsal room exists to answer, so the drawer can set
+  // one - but only to a word the board understands.
+  const asked = String(body?.allegiance ?? "")
+  if (asked) {
+    if (!["party", "ally", "hostile"].includes(asked)) {
+      return NextResponse.json({ error: "allegiance must be party, ally or hostile" }, { status: 400 })
+    }
+    src.allegiance = asked as Allegiance
+  }
 
   // Size for an NPC comes from its species, since npc_encounters has no size
   // column of its own.
-  if (speciesId && !src.size) {
-    const { data } = await db.from("bestiary").select("size,model_scale").eq("id", speciesId).maybeSingle()
-    if (data) { src.size = data.size; catalogueScale = data.model_scale }
+  if (speciesId) {
+    const { data } = await db.from("bestiary").select("size,role,model_scale").eq("id", speciesId).maybeSingle()
+    if (data) {
+      // npc_encounters has no size column of its own, and no usable
+      // disposition, so the species row answers both.
+      if (!src.size) src.size = data.size
+      if (!src.allegiance) src.allegiance = sideForRole(data.role)
+      catalogueScale = data.model_scale
+    }
   }
 
   const width = map.grid_width ?? 12
@@ -271,12 +306,22 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, token_id: made?.id, grid_x: at.x, grid_y: at.y })
 }
 
-/** An NPC's story disposition, in the board's three words. */
-function dispositionSide(d: string | null | undefined): Allegiance {
+/**
+ * An NPC's story disposition, in the board's three words, or null.
+ *
+ * NULL IS THE IMPORTANT RETURN. Every npc_encounters row has a null
+ * disposition, and the first cut mapped that to "ally" - which put Ilvara
+ * Mizzrym and the hook horror on the party's side. An unset column is not a
+ * statement that something is friendly; it is the absence of a statement, and
+ * it has to fall through to the species role rather than answer.
+ */
+function dispositionSide(d: string | null | undefined): Allegiance | null {
   const s = (d ?? "").trim().toLowerCase()
-  if (s === "hostile" || s === "enemy") return "hostile"
+  if (!s) return null
+  if (s === "hostile" || s === "enemy" || s === "foe") return "hostile"
   if (s === "party") return "party"
-  return "ally"
+  if (s === "ally" || s === "friendly" || s === "prisoner") return "ally"
+  return null
 }
 
 function clamp(n: number, lo: number, hi: number): number {

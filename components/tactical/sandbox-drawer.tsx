@@ -34,8 +34,8 @@ type Tab = "bestiary" | "npcs" | "characters" | "scene"
 
 interface Roster {
   map: { id: string; name: string; grid_width: number; grid_height: number; environment_id: string | null }
-  bestiary: Array<{ id: string; name: string; size: string | null; cr: string | null; hp: number | null; ac: number | null; model_url: string | null }>
-  npcs: Array<{ id: string; name: string; hp_max: number | null; challenge_rating: string | null; monster_type: string | null; disposition: string | null }>
+  bestiary: Array<{ id: string; name: string; size: string | null; cr: string | null; hp: number | null; ac: number | null; role: string | null; model_url: string | null }>
+  npcs: Array<{ id: string; name: string; hp_max: number | null; challenge_rating: string | null; monster_type: string | null; disposition: string | null; bestiary_id: string | null; character_id: string | null }>
   characters: Array<{ id: string; name: string; class: string | null; level: number | null; hp_max: number | null; character_type: string | null }>
   environments: Array<{ id: string; name: string; scene_key: string | null; time_of_day: string | null }>
   tokens: Array<{ id: string; label: string; grid_x: number; grid_y: number; token_size: string | null; allegiance: string | null; hp_current: number | null; hp_max: number | null; updated_by: string | null }>
@@ -45,6 +45,18 @@ const GOLD = "#f0cd7a"
 const SIDE_TINT: Record<string, string> = {
   party: "#5fd3a0", ally: "#7fb2ff", hostile: "#e0654f",
 }
+const SIDES = ["party", "ally", "hostile"] as const
+type Side = typeof SIDES[number]
+
+/**
+ * Which side a creature is on, from its bestiary role — the same rule the
+ * server applies, so the dot you see before you click is the side you get.
+ *
+ * Only "ally/prisoner" is an ally. 18 of the 43 bestiary rows are, because
+ * this bestiary holds the whole Velkynvelve cast and not just its monsters.
+ */
+const sideForRole = (role: string | null | undefined): Side =>
+  (role ?? "").trim().toLowerCase() === "ally/prisoner" ? "ally" : "hostile"
 
 export default function SandboxDrawer() {
   const [open, setOpen] = useState(false)
@@ -57,6 +69,9 @@ export default function SandboxDrawer() {
   // and searches outward from whatever it is given, so this is a hint rather
   // than a demand.
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  // Null means "whatever the catalogue says". Setting it is how you find out
+  // what a drow fighting FOR you looks like.
+  const [side, setSide] = useState<Side | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -88,7 +103,7 @@ export default function SandboxDrawer() {
   }, [load])
 
   const spawn = (kind: "bestiary" | "npc" | "character", id: string, label: string) =>
-    void post({ action: "spawn", kind, source_id: id, grid_x: at?.x, grid_y: at?.y })
+    void post({ action: "spawn", kind, source_id: id, grid_x: at?.x, grid_y: at?.y, allegiance: side ?? undefined })
       .then((r) => { if (r) setNote(`${label} → ${r.grid_x},${r.grid_y}`) })
 
   const w = roster?.map.grid_width ?? 12
@@ -170,6 +185,26 @@ export default function SandboxDrawer() {
         </div>
       )}
 
+      {/* which side */}
+      {tab !== "scene" && (
+        <div className="flex items-center gap-1 border-b border-[#3a2c16] px-3 py-1.5">
+          <span className="mr-1 font-serif text-[8px] uppercase tracking-[0.2em] text-[#7d6c48]">Side</span>
+          <button
+            onClick={() => setSide(null)}
+            className={`border px-1.5 py-0.5 font-serif text-[9px] ${side === null ? "border-[#f0cd7a] text-[#f0cd7a]" : "border-[#3a2c16] text-[#6a5a3c]"}`}
+            title="Use whatever the catalogue says"
+          >auto</button>
+          {SIDES.map((sd) => (
+            <button
+              key={sd}
+              onClick={() => setSide(sd)}
+              className={`border px-1.5 py-0.5 font-serif text-[9px] capitalize ${side === sd ? "" : "border-[#3a2c16] text-[#6a5a3c]"}`}
+              style={side === sd ? { borderColor: SIDE_TINT[sd], color: SIDE_TINT[sd] } : undefined}
+            >{sd}</button>
+          ))}
+        </div>
+      )}
+
       {/* search */}
       {tab !== "scene" && (
         <input
@@ -193,6 +228,11 @@ export default function SandboxDrawer() {
             // creatures have no model and will stand there as a pawn. Better
             // said on the button than discovered on the board.
             flag={b.model_url ? null : "pawn"}
+            // The dot is the side it will actually land on, worked out by the
+            // same rule the server uses. Discovering that a hook horror came
+            // in as an ally three turns into a rehearsal is the whole reason
+            // this is on the button.
+            side={side ?? sideForRole(b.role)}
             disabled={busy}
             onClick={() => spawn("bestiary", b.id, b.name)}
           />
@@ -202,8 +242,12 @@ export default function SandboxDrawer() {
           <Row
             key={n.id}
             title={n.name}
-            sub={[n.monster_type, n.challenge_rating ? `CR ${n.challenge_rating}` : null, n.hp_max ? `${n.hp_max} hp` : null, n.disposition].filter(Boolean).join(" · ")}
-            disabled={busy}
+            sub={[n.monster_type, n.challenge_rating ? `CR ${n.challenge_rating}` : null, n.hp_max ? `${n.hp_max} hp` : null].filter(Boolean).join(" · ")}
+            // An NPC with neither a character nor a species cannot stand on a
+            // square - Malachar is the only one, and he is the DM.
+            flag={n.bestiary_id || n.character_id ? null : "no body"}
+            side={side ?? undefined}
+            disabled={busy || (!n.bestiary_id && !n.character_id)}
             onClick={() => spawn("npc", n.id, n.name)}
           />
         ))}
@@ -213,6 +257,7 @@ export default function SandboxDrawer() {
             key={c.id}
             title={c.name}
             sub={[c.class, c.level ? `lvl ${c.level}` : null, c.hp_max ? `${c.hp_max} hp` : null, c.character_type !== "player" ? c.character_type : null].filter(Boolean).join(" · ")}
+            side={side ?? (c.character_type === "player" ? "party" : undefined)}
             disabled={busy}
             onClick={() => spawn("character", c.id, c.name)}
           />
@@ -280,8 +325,9 @@ export default function SandboxDrawer() {
   )
 }
 
-function Row({ title, sub, onClick, disabled, active, flag }: {
-  title: string; sub?: string; onClick: () => void; disabled?: boolean; active?: boolean; flag?: string | null
+function Row({ title, sub, onClick, disabled, active, flag, side }: {
+  title: string; sub?: string; onClick: () => void; disabled?: boolean; active?: boolean
+  flag?: string | null; side?: Side
 }) {
   return (
     <button
@@ -289,6 +335,13 @@ function Row({ title, sub, onClick, disabled, active, flag }: {
       disabled={disabled}
       className={`flex w-full items-baseline gap-2 border-b border-[#241b12] px-3 py-1.5 text-left disabled:opacity-40 ${active ? "bg-[#2a1f10]" : "hover:bg-[#1c1610]"}`}
     >
+      {side && (
+        <span
+          className="h-2 w-2 shrink-0 self-center rounded-full"
+          style={{ background: SIDE_TINT[side] }}
+          title={`spawns ${side}`}
+        />
+      )}
       <span className="min-w-0 flex-1 truncate font-serif text-[12px] text-[#e6d6ac]">{title}</span>
       {flag && <span className="shrink-0 font-serif text-[8px] uppercase tracking-[0.15em] text-[#6a5a3c]">{flag}</span>}
       {sub && <span className="shrink-0 font-serif text-[9px] text-[#7d6c48]">{sub}</span>}
