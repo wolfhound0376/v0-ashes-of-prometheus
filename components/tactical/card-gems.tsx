@@ -19,6 +19,8 @@
 // the action, shields in the reaction. The single stone IS the readout.
 // ============================================================================
 
+import { useId } from "react"
+
 /** The four colours a cut stone needs, plus the light it throws. */
 interface Facets {
   /** The table — the bright flat top facet. */
@@ -42,6 +44,7 @@ const COBALT: Facets   = { table: "#bfe4ff", body: "#2b7fe0", shade: "#08234f", 
 const DEAD: Facets = { table: "#4a4a48", body: "#2a2a29", shade: "#141413", edge: "#5c5c59", glow: "#000000" }
 
 export type GemHue = "ruby" | "amethyst" | "amber"
+export type ResourceGemState = "lit" | "spent" | "dormant"
 const HUES: Record<GemHue, Facets> = { ruby: RUBY, amethyst: AMETHYST, amber: AMBER }
 
 /**
@@ -52,21 +55,28 @@ const HUES: Record<GemHue, Facets> = { ruby: RUBY, amethyst: AMETHYST, amber: AM
  * one shape per resource and reads its state by colour alone.
  */
 export function ResourceGem({
-  hue, spent = false, size = 26,
-}: { hue: GemHue; spent?: boolean; size?: number }) {
+  hue, state = "lit", size = 26,
+}: { hue: GemHue; state?: ResourceGemState; size?: number }) {
+  const uniqueId = useId()
+  const spent = state === "spent"
   const F = spent ? DEAD : HUES[hue]
-  const id = `${hue}${spent ? "-s" : ""}`
+  const id = `${hue}-${uniqueId.replace(/:/g, "")}${spent ? "-s" : ""}`
   return (
     <svg
       width={size}
-      height={size * 1.18}
-      viewBox="0 0 40 47"
+      height={size}
+      viewBox="0 0 40 40"
+      role="img"
+      aria-label={`${hue} ${state === "lit" ? "available" : state} resource`}
       style={{
         display: "block",
         filter: spent
           ? "saturate(0.15) brightness(0.75)"
-          : `drop-shadow(0 0 3px ${F.glow}bb) drop-shadow(0 0 9px ${F.glow}55)`,
-        transition: "filter 260ms ease",
+          : state === "dormant"
+            ? "saturate(0.38) brightness(0.58)"
+            : `drop-shadow(0 0 3px ${F.glow}bb) drop-shadow(0 0 9px ${F.glow}55)`,
+        opacity: state === "dormant" ? 0.72 : 1,
+        transition: "filter 260ms ease, opacity 260ms ease",
       }}
     >
       <defs>
@@ -83,27 +93,27 @@ export function ResourceGem({
         </linearGradient>
       </defs>
 
-      {/* Silhouette: a kite brilliant. Wide across the girdle, long to the
-          point, which is the shape on the reference sheet. */}
-      <polygon points="20,1 38.5,16 20,46 1.5,16" fill={`url(#b-${id})`} stroke={F.edge} strokeWidth="1.1" />
+      {/* A true diamond silhouette. The bevels and split lower facets give it
+          depth without adding a symbol or a second resource marker. */}
+      <polygon points="20,1 39,20 20,39 1,20" fill={`url(#b-${id})`} stroke={F.edge} strokeWidth="1.1" />
 
       {/* Crown facets — the bright top. */}
-      <polygon points="20,1 29,16 20,22 11,16" fill={`url(#t-${id})`} />
-      <polygon points="20,1 38.5,16 29,16" fill={F.table} opacity={spent ? 0.35 : 0.62} />
-      <polygon points="20,1 1.5,16 11,16" fill={F.shade} opacity="0.55" />
+      <polygon points="20,1 30,20 20,25 10,20" fill={`url(#t-${id})`} />
+      <polygon points="20,1 39,20 30,20" fill={F.table} opacity={spent ? 0.35 : 0.62} />
+      <polygon points="20,1 1,20 10,20" fill={F.shade} opacity="0.55" />
 
       {/* Pavilion — the darker lower half, split so the point reads as an
           edge between two planes rather than a flat wedge. */}
-      <polygon points="1.5,16 11,16 20,22 20,46" fill={F.shade} />
-      <polygon points="38.5,16 29,16 20,22 20,46" fill={F.body} opacity="0.72" />
+      <polygon points="1,20 10,20 20,25 20,39" fill={F.shade} />
+      <polygon points="39,20 30,20 20,25 20,39" fill={F.body} opacity="0.72" />
 
       {/* The girdle: a thin bright line across the widest point. */}
-      <path d="M1.5,16 L38.5,16" stroke={F.edge} strokeWidth="0.7" opacity={spent ? 0.3 : 0.75} />
+      <path d="M1,20 L39,20" stroke={F.edge} strokeWidth="0.7" opacity={spent ? 0.3 : 0.75} />
 
       {/* Internal highlight — one small hot spot on the table. Not a sparkle
           burst; the reference stones are lit, not twinkling. */}
       {!spent && (
-        <polygon points="20,4 24,14 20,17.5 16,14" fill="#ffffff" opacity="0.5" />
+        <polygon points="20,4 25,16 20,20 15,16" fill="#ffffff" opacity="0.5" />
       )}
     </svg>
   )
@@ -119,13 +129,16 @@ export function ResourceGem({
 export function SlotCrystal({
   spent = false, height = 26,
 }: { spent?: boolean; height?: number }) {
+  const uniqueId = useId()
   const F = COBALT
-  const id = spent ? "sl-s" : "sl"
+  const id = `sl-${uniqueId.replace(/:/g, "")}${spent ? "-s" : ""}`
   return (
     <svg
       width={height * 0.34}
       height={height}
       viewBox="0 0 14 40"
+      role="img"
+      aria-label={spent ? "spent spell slot" : "available spell slot"}
       style={{
         display: "block",
         filter: spent ? "none" : `drop-shadow(0 0 3px ${F.glow}aa) drop-shadow(0 0 7px ${F.glow}44)`,

@@ -83,27 +83,26 @@ const panel: CSSProperties = {
 /**
  * THE ACTIVE SPHERE — upper-left of the frame, and functional.
  *
- * Green is the character whose turn it is; red is everyone else. That is its
- * only meaning: it does not track selection, because a light that moves when
- * you merely LOOK at something is a light nobody at the table can trust.
+ * Green is the character whose turn it is. Inactive cards render no sphere at
+ * all, so this one marker has one meaning and cannot be confused with decor.
+ * It does not track selection, because a light that moves when you merely
+ * LOOK at something is a light nobody at the table can trust.
  *
  * It is the only sphere on the card. The blue stone the old commissioned
  * frame carried in its lower-left socket is gone with the frame.
  */
-function ActiveSphere({ on, size }: { on: boolean; size: number }) {
-  const C = on
-    ? { hi: "#e6ffe0", mid: "#35d94a", lo: "#0b4d16", glow: "rgba(53,217,74,0.9)" }
-    : { hi: "#ffd6d2", mid: "#c92f2f", lo: "#4a0b0b", glow: "rgba(201,47,47,0.55)" }
+function ActiveSphere({ size }: { size: number }) {
+  const C = { hi: "#efffeb", mid: "#39e653", lo: "#075c19", glow: "rgba(57,230,83,0.94)" }
   return (
     <span
-      aria-label={on ? "active" : "waiting"}
+      aria-label="active character"
       style={{
         width: size,
         height: size,
         borderRadius: "50%",
         display: "block",
         background: `radial-gradient(circle at 34% 28%, ${C.hi} 0%, ${C.mid} 52%, ${C.lo} 100%)`,
-        boxShadow: `0 0 ${on ? 9 : 4}px ${on ? 2 : 1}px ${C.glow}, inset 0 0 3px rgba(255,255,255,0.55), 0 1px 2px #000`,
+        boxShadow: `0 0 9px 2px ${C.glow}, inset 0 0 3px rgba(255,255,255,0.62), 0 1px 2px #000`,
         border: `1px solid rgba(201,162,74,0.75)`,
         transition: "background 180ms, box-shadow 180ms",
       }}
@@ -159,8 +158,8 @@ function StatBox({ label, value, w }: { label: string; value: ReactNode; w: numb
 
 /** One cell of the combat-resource row. */
 function ResourceBox({
-  label, tint, w, children,
-}: { label: string; tint: string; w: number; children: ReactNode }) {
+  label, tint, w, children, labelColor = GOLD,
+}: { label: string; tint: string; w: number; children: ReactNode; labelColor?: string }) {
   return (
     <div
       style={{
@@ -185,7 +184,7 @@ function ResourceBox({
           fontSize: Math.max(5, w * 0.0255),
           letterSpacing: "0.05em",
           textTransform: "uppercase",
-          color: GOLD,
+          color: labelColor,
           lineHeight: 1.05,
           textAlign: "center",
           textShadow: "0 1px 1px #000",
@@ -216,11 +215,11 @@ const SENSES = new Set([
   "darkvision", "truesight", "blindsight", "tremorsense", "detect magic",
   "faerie fire", "marked", "hunter's mark",
 ])
-function conditionTone(name: string): { fg: string; glow: string } {
+function conditionTone(name: string): { fg: string; glow: string; bg: string; border: string } {
   const n = name.toLowerCase().replace(/\s*\d+.*$/, "").trim()
-  if (BUFFS.has(n)) return { fg: "#7bea86", glow: "rgba(53,217,74,0.5)" }
-  if (SENSES.has(n)) return { fg: "#c79bff", glow: "rgba(160,90,255,0.5)" }
-  return { fg: "#ff6b5e", glow: "rgba(230,60,45,0.5)" }
+  if (BUFFS.has(n)) return { fg: "#91f29a", glow: "rgba(53,217,74,0.5)", bg: "rgba(22,92,35,0.42)", border: "rgba(91,224,108,0.6)" }
+  if (SENSES.has(n)) return { fg: "#d8b5ff", glow: "rgba(160,90,255,0.5)", bg: "rgba(83,39,124,0.42)", border: "rgba(188,122,255,0.6)" }
+  return { fg: "#ff8a7f", glow: "rgba(230,60,45,0.5)", bg: "rgba(111,27,22,0.48)", border: "rgba(255,104,91,0.62)" }
 }
 
 export function CharacterCard({
@@ -263,7 +262,7 @@ export function CharacterCard({
   // it a touch taller in proportion at compact size, where they need real
   // pixels to stay legible.
   const W = width
-  const height = Math.round(W * 0.795)
+  const height = Math.round(W * 0.81)
   const g = gems ?? { action: "dormant" as GemState, bonus: "dormant" as GemState, reaction: "dormant" as GemState }
   // The stones carry the row, so they get the pixels. Everything around them
   // was tightened rather than the card being allowed to grow — the brief is
@@ -299,10 +298,10 @@ export function CharacterCard({
           padding: W * 0.018,
           borderRadius: 3,
           overflow: "hidden",
-          // The card's own body: charcoal, with the faintest violet lift at
-          // the top so it does not read as a flat web panel.
+          // The card's own body: charcoal, lifted at the top by the class's
+          // database-resolved accent so different classes never share one skin.
           background:
-            "radial-gradient(120% 80% at 20% 0%, rgba(60,30,90,0.20) 0%, rgba(0,0,0,0) 60%)," +
+            `radial-gradient(120% 80% at 20% 0%, color-mix(in srgb, ${cls.accent} 24%, transparent) 0%, rgba(0,0,0,0) 60%),` +
             "linear-gradient(180deg, #131218 0%, #0a0a0d 60%, #060608 100%)",
           border: `1px solid ${GOLD}`,
           boxShadow:
@@ -312,13 +311,13 @@ export function CharacterCard({
         }}
       >
         {/* ---------- UPPER: portrait left, vitals right ---------- */}
-        <div style={{ display: "flex", gap: W * 0.020, height: height * 0.575 }}>
+        <div style={{ display: "flex", gap: W * 0.022, height: height * 0.59 }}>
 
-          {/* PORTRAIT COLUMN. Kenta's own art, untouched — only the frame
-              around it is new: gold trim over a violet arcane bed.
+          {/* PORTRAIT COLUMN. Character art remains untouched; the class data
+              chooses both the ornate medallion and the surrounding accent.
               The portrait is the dominant element per the brief, so it takes
               the largest single share of the card. */}
-          <div style={{ width: W * 0.375, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <div style={{ width: W * 0.425, display: "flex", flexDirection: "column", minWidth: 0 }}>
             <div
               style={{
                 position: "relative",
@@ -327,9 +326,9 @@ export function CharacterCard({
                 overflow: "hidden",
                 border: `1px solid ${GOLD}`,
                 background:
-                  "radial-gradient(80% 70% at 50% 40%, rgba(120,50,200,0.42) 0%, rgba(30,10,55,0.9) 60%, #07060b 100%)",
+                  `radial-gradient(80% 70% at 50% 40%, color-mix(in srgb, ${cls.accent} 48%, transparent) 0%, color-mix(in srgb, ${cls.accent} 18%, #08070b) 60%, #07060b 100%)`,
                 boxShadow:
-                  "inset 0 0 10px rgba(150,70,240,0.35), inset 0 0 0 1px rgba(240,215,154,0.18), 0 2px 6px #000",
+                  `inset 0 0 12px color-mix(in srgb, ${cls.accent} 52%, transparent), inset 0 0 0 1px rgba(240,215,154,0.18), 0 2px 6px #000`,
               }}
             >
               <ClassMedallion
@@ -348,7 +347,7 @@ export function CharacterCard({
                 marginTop: W * 0.012,
                 textAlign: "center",
                 fontFamily: "Georgia, serif",
-                fontSize: Math.max(8.5, W * 0.055),
+                fontSize: Math.max(10, W * 0.061),
                 fontWeight: 700,
                 letterSpacing: "0.03em",
                 color: CREAM,
@@ -359,7 +358,7 @@ export function CharacterCard({
                 textOverflow: "ellipsis",
               }}
             >
-              {c.name.split(" ")[0].toUpperCase()}
+              {c.name.toUpperCase()}
             </div>
             <div
               style={{
@@ -378,7 +377,7 @@ export function CharacterCard({
           </div>
 
           {/* VITALS COLUMN. */}
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: W * 0.014 }}>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: W * 0.014 }}>
 
             {/* HP + INSPIRATION share the top line: the bar takes the room,
                 inspiration takes a small bright socket at the corner. */}
@@ -389,7 +388,7 @@ export function CharacterCard({
                   <div
                     style={{
                       flex: 1,
-                      height: Math.max(7, W * 0.042),
+                      height: Math.max(8, W * 0.048),
                       borderRadius: 999,
                       overflow: "hidden",
                       ...goldEdge(0.6),
@@ -414,7 +413,7 @@ export function CharacterCard({
                   <span
                     style={{
                       fontFamily: "Georgia, serif",
-                      fontSize: Math.max(8, W * 0.050),
+                      fontSize: Math.max(9, W * 0.054),
                       fontWeight: 700,
                       color: CREAM,
                       textShadow: "0 1px 2px #000",
@@ -455,10 +454,10 @@ export function CharacterCard({
               <div
                 style={{
                   width: W * 0.115,
-                  ...panel,
+                  background: "linear-gradient(145deg,#fff0a8 0%,#e0b43c 40%,#a06d10 78%,#5c3905 100%)",
                   border: `1px solid ${GOLD_HI}`,
                   borderRadius: 2,
-                  boxShadow: "0 0 7px rgba(255,208,90,0.30), inset 0 1px 0 rgba(255,235,180,0.3)",
+                  boxShadow: "0 0 10px rgba(255,208,90,0.48), inset 0 1px 0 rgba(255,255,220,0.72), inset 0 -2px 3px rgba(72,39,0,0.55)",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
@@ -466,10 +465,10 @@ export function CharacterCard({
                   padding: `${W * 0.006}px 0`,
                 }}
               >
-                <div style={{ fontFamily: "Georgia, serif", fontSize: Math.max(4.5, W * 0.021), color: "#ffdd8a", letterSpacing: "0.04em", lineHeight: 1, textShadow: "0 0 5px rgba(255,200,80,0.55)" }}>
+                <div style={{ fontFamily: "Georgia, serif", fontSize: Math.max(4.5, W * 0.021), fontWeight: 700, color: "#3a2102", letterSpacing: "0.04em", lineHeight: 1, textShadow: "0 1px 0 rgba(255,245,190,0.45)" }}>
                   INSP
                 </div>
-                <div style={{ fontFamily: "Georgia, serif", fontSize: Math.max(9, W * 0.055), fontWeight: 700, color: "#ffe9a8", lineHeight: 1.1, textShadow: "0 0 8px rgba(255,190,60,0.7), 0 1px 2px #000" }}>
+                <div style={{ fontFamily: "Georgia, serif", fontSize: Math.max(10, W * 0.059), fontWeight: 700, color: "#fff8d7", lineHeight: 1.1, textShadow: "0 1px 2px #4a2700, 0 0 5px rgba(255,255,220,0.65)" }}>
                   {insp}
                 </div>
               </div>
@@ -490,52 +489,6 @@ export function CharacterCard({
               <StatBox label="Level" value={c.level ?? "—"} w={W} />
             </div>
 
-            {/* THE CLASS BAR. Sigil left, class in violet, arcane bed. */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: W * 0.020,
-                padding: `${W * 0.012}px ${W * 0.020}px`,
-                borderRadius: 2,
-                ...goldEdge(0.55),
-                background:
-                  "linear-gradient(90deg, rgba(58,22,92,0.85) 0%, rgba(24,10,40,0.9) 45%, rgba(8,7,12,0.95) 100%)",
-              }}
-            >
-              <span
-                style={{
-                  width: Math.max(11, W * 0.058),
-                  height: Math.max(11, W * 0.058),
-                  borderRadius: "50%",
-                  display: "grid",
-                  placeItems: "center",
-                  flexShrink: 0,
-                  background: "radial-gradient(circle at 35% 30%, rgba(220,170,255,0.55), rgba(80,20,140,0.9) 60%, #1a0630 100%)",
-                  border: `1px solid ${GOLD}`,
-                  boxShadow: `0 0 6px ${cls.accent}66, inset 0 0 4px rgba(255,255,255,0.25)`,
-                  fontSize: Math.max(7, W * 0.038),
-                  color: "#f2dcff",
-                  lineHeight: 1,
-                }}
-              >
-                {cls.sigil}
-              </span>
-              <span
-                style={{
-                  fontFamily: "Georgia, serif",
-                  fontSize: Math.max(7.5, W * 0.046),
-                  letterSpacing: "0.10em",
-                  color: cls.accent,
-                  textShadow: `0 0 8px ${cls.accent}66, 0 1px 2px #000`,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {(c.class ?? "Adventurer").toUpperCase()}
-              </span>
-            </div>
           </div>
         </div>
 
@@ -545,31 +498,31 @@ export function CharacterCard({
             as crystals, which are the one resource where a count belongs. */}
         <div style={{ display: "flex", gap: W * 0.014, marginTop: W * 0.020 }}>
           <ResourceBox label="Action" tint="rgba(90,14,10,0.55)" w={W}>
-            <ResourceGem hue="ruby" spent={g.action === "spent"} size={gemPx} />
+            <ResourceGem hue="ruby" state={g.action} size={gemPx} />
           </ResourceBox>
 
           <ResourceBox label={"Bonus"} tint="rgba(58,14,92,0.55)" w={W}>
-            <ResourceGem hue="amethyst" spent={g.bonus === "spent"} size={gemPx} />
+            <ResourceGem hue="amethyst" state={g.bonus} size={gemPx} />
           </ResourceBox>
 
-          <ResourceBox label="Movement" tint="rgba(12,58,24,0.5)" w={W}>
+          <ResourceBox label="Reaction" tint="rgba(92,64,6,0.5)" w={W}>
+            <ResourceGem hue="amber" state={g.reaction} size={gemPx} />
+          </ResourceBox>
+
+          <ResourceBox label="Movement" tint="rgba(7,78,28,0.62)" labelColor="#67f184" w={W}>
             <span
               style={{
                 fontFamily: "Georgia, serif",
-                fontSize: Math.max(8.5, W * 0.052),
+                fontSize: Math.max(9, W * 0.055),
                 fontWeight: 700,
-                color: movement && movement.remainingFt <= 0 ? "#6f6f6c" : "#b8f2c0",
+                color: movement && movement.remainingFt <= 0 ? "#6f6f6c" : "#3ff06c",
                 lineHeight: 1.35,
                 whiteSpace: "nowrap",
-                textShadow: "0 1px 2px #000, 0 0 8px rgba(60,220,110,0.35)",
+                textShadow: "0 1px 2px #000, 0 0 9px rgba(42,235,100,0.72)",
               }}
             >
               {movement ? `${Math.max(0, Math.round(movement.remainingFt))} FT.` : "—"}
             </span>
-          </ResourceBox>
-
-          <ResourceBox label="Reaction" tint="rgba(92,64,6,0.5)" w={W}>
-            <ResourceGem hue="amber" spent={g.reaction === "spent"} size={gemPx} />
           </ResourceBox>
 
           {/* SPELL SLOTS — the widest box, and the only stack of stones. */}
@@ -619,7 +572,7 @@ export function CharacterCard({
           <span
             style={{
               display: "flex",
-              gap: W * 0.026,
+              gap: W * 0.018,
               overflow: "hidden",
               flex: 1,
               minWidth: 0,
@@ -630,7 +583,7 @@ export function CharacterCard({
                 none
               </span>
             ) : (
-              conditions.slice(0, 4).map((cond) => {
+              conditions.slice(0, 3).map((cond) => {
                 const t = conditionTone(cond)
                 return (
                   <span
@@ -641,11 +594,15 @@ export function CharacterCard({
                       // Sam: conditions must stay VERY readable when the card
                       // is scaled down. This one gets a hard floor rather than
                       // being allowed to shrink with the card.
-                      fontSize: Math.max(8, W * 0.036),
-                      fontWeight: 600,
+                      fontSize: Math.max(8.5, W * 0.037),
+                      fontWeight: 700,
                       letterSpacing: "0.03em",
                       color: t.fg,
                       textShadow: `0 0 6px ${t.glow}, 0 1px 2px #000`,
+                      background: t.bg,
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 2,
+                      padding: `${Math.max(1, W * 0.004)}px ${Math.max(3, W * 0.012)}px`,
                       whiteSpace: "nowrap",
                       textTransform: "uppercase",
                     }}
@@ -703,17 +660,19 @@ export function CharacterCard({
           reference has it. Anchored to the WRAPPER rather than the card so it
           is never clipped by the card's own overflow:hidden — the corner it
           sits on is the corner that clips. */}
-      <div
-        style={{
-          position: "absolute",
-          left: W * 0.030,
-          top: W * 0.030,
-          pointerEvents: "none",
-          zIndex: 2,
-        }}
-      >
-        <ActiveSphere on={isTurn} size={Math.max(9, W * 0.052)} />
-      </div>
+      {isTurn ? (
+        <div
+          style={{
+            position: "absolute",
+            left: W * 0.030,
+            top: W * 0.030,
+            pointerEvents: "none",
+            zIndex: 2,
+          }}
+        >
+          <ActiveSphere size={Math.max(10, W * 0.055)} />
+        </div>
+      ) : null}
     </div>
   )
 }
