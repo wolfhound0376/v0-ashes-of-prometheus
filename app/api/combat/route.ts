@@ -18,6 +18,9 @@ import { normalizeConditions } from "@/lib/conditions"
 // lib/death-saves so it can be read whole and tested on every die face;
 // this file only owns the rows.
 import { normaliseSaves, vitalityOf, conditionsFor, takeDamage, heal, rollDeathSave } from "@/lib/death-saves"
+// Blood on the tiles: laid by steel in melee, kept on the map row. Purely a
+// mark - the SRD has no bleeding rule and none is invented here.
+import { bleeds, poolSize, makeMark, appendMark, normaliseMarks } from "@/lib/blood-marks"
 // The rogue's feature, as its own testable rule rather than four conditions
 // buried in the damage roll.
 import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
@@ -201,14 +204,15 @@ async function settleHitPoints(
     crit?: boolean
     by: string
   },
-): Promise<{ hp: number; note: string | null }> {
+): Promise<{ hp: number; note: string | null; fell: boolean }> {
   const stamp = new Date().toISOString()
   if (!a.characterId) {
     // No sheet, no death saves. SRD: "Most DMs have a monster die the
     // instant it drops to 0 hit points."
     const hp = a.heals ? Math.min(a.max, a.cur + a.amount) : Math.max(0, a.cur - a.amount)
     await db.from("vtt_tokens").update({ hp_current: hp, updated_by: a.by, updated_at: stamp }).eq("id", a.tokenId)
-    return { hp, note: !a.heals && hp === 0 && a.cur > 0 ? `${a.label} goes down.` : null }
+    const fell = !a.heals && hp === 0 && a.cur > 0
+    return { hp, note: fell ? `${a.label} goes down.` : null, fell }
   }
   const { data: ch } = await db
     .from("characters").select("conditions").eq("id", a.characterId).maybeSingle()
@@ -228,7 +232,46 @@ async function settleHitPoints(
     .update({ hp_current: out.hp, conditions: conditionsFor(conditions, out.vitality), updated_at: stamp })
     .eq("id", a.characterId)
   await db.from("characters").update({ death_saves: out.saves }).eq("id", a.characterId)
-  return { hp: out.hp, note: out.note }
+  return { hp: out.hp, note: out.note, fell: !a.heals && a.cur > 0 && out.hp === 0 }
+}
+
+/**
+ * Is this creature tagged Bleeding? A word the DM puts in the conditions by
+ * hand - on the sheet for a player, on the encounter row for a monster. It
+ * is not an SRD condition and it does nothing to hit points; it only means
+ * the next blade that lands leaves blood on the floor.
+ */
+async function isBleeding(
+  db: ReturnType<typeof createAdminClient>,
+  characterId: string | null,
+  label: string,
+): Promise<boolean> {
+  const raw = characterId
+    ? (await db.from("characters").select("conditions").eq("id", characterId).maybeSingle()).data?.conditions
+    : (await db.from("npc_encounters").select("conditions").eq("name", label).limit(1).maybeSingle()).data?.conditions
+  return normalizeConditions(raw).some((c) => c.toLowerCase() === "bleeding")
+}
+
+/**
+ * Lay a pool of blood on a square. Appended to vtt_maps.meta.marks, which
+ * every board reads at load and Realtime carries live, so the whole table
+ * sees the same stain and a reload does not clean the floor.
+ */
+async function layBlood(
+  db: ReturnType<typeof createAdminClient>,
+  mapId: string,
+  x: number,
+  y: number,
+  size: number,
+  salt: string,
+): Promise<void> {
+  const { data: row } = await db.from("vtt_maps").select("meta").eq("id", mapId).maybeSingle()
+  const meta = ((row?.meta as Record<string, unknown> | null) ?? {})
+  const marks = appendMark(
+    normaliseMarks(meta.marks),
+    makeMark({ x, y, size, at: new Date().toISOString(), salt }),
+  )
+  await db.from("vtt_maps").update({ meta: { ...meta, marks } }).eq("id", mapId)
 }
 
 /**
@@ -605,6 +648,14 @@ export async function POST(req: NextRequest) {
           by: "npc-ai",
         })
         if (settled.note) decision.narration += ` ${settled.note}`
+        // Steel in melee leaves its mark on the floor: the blow that drops
+        // someone, or any blow on someone the DM has tagged Bleeding.
+        if (!decision.attack.ranged) {
+          const bleeding = await isBleeding(db, (target as { character_id?: string | null }).character_id ?? null, target.label)
+          if (bleeds({ melee: true, amount: decision.damage, fell: settled.fell, bleeding })) {
+            await layBlood(db, map.id, target.x, target.y, poolSize({ amount: decision.damage, fell: settled.fell }), target.token_id)
+          }
+        }
       }
     }
     await narrate(db, self.label, decision.narration)
@@ -1279,6 +1330,15 @@ export async function POST(req: NextRequest) {
         if (warn) dyingCues.push({ type: "raw" as const, scope: "party" as const, key: warn })
       }
       if (settled.note) line += ` ${settled.note}`
+      // Steel in melee leaves its mark on the floor: the blow that drops
+      // someone, or any blow on someone the DM has tagged Bleeding. A spell
+      // that drops someone does not - there is no blade in it.
+      if (weapon && !weapon.ranged && !entry.heals) {
+        const bleeding = await isBleeding(db, victim.character_id ?? null, victim.label ?? "")
+        if (bleeds({ melee: true, amount, fell: settled.fell, bleeding })) {
+          await layBlood(db, map.id, victim.grid_x ?? 0, victim.grid_y ?? 0, poolSize({ amount, fell: settled.fell }), victim.id)
+        }
+      }
     }
     await narrate(db, caster.label ?? "Someone", line)
 
