@@ -419,6 +419,16 @@ export function CombatHud(props: Props) {
     setAbility(null)
   }, [focusId])
 
+  /**
+   * Is the plate we are showing the plate whose TURN it is?
+   *
+   * The rack follows focus; the economy follows initiative. They are the same
+   * character most of the time and quietly different whenever somebody clicks
+   * another plate to read it — which is exactly when offering that character's
+   * abilities is a lie.
+   */
+  const isFocusActive = Boolean(focus && activeCharacterId && focus.id === activeCharacterId)
+
   const tally = focus ? slotTally(focus) : null
 
   return (
@@ -633,7 +643,9 @@ export function CombatHud(props: Props) {
                   : a.usable ? `level ${a.entry.level} spell` : (a.why ?? "no slots left")
                 // Named on the tooltip too, so the grey has a reason attached
                 // rather than leaving the player to guess which resource ran out.
-                const goneLabel = phase === "bonus" ? "bonus action already used" : "action already used"
+                const goneLabel = !isFocusActive
+                  ? "not their turn"
+                  : phase === "bonus" ? "bonus action already used" : "action already used"
                 const selected = ability === a.name
                 const isHovered = hovered === a.name
                 // THE HALF OF THE TURN IT COSTS IS ALREADY GONE.
@@ -648,8 +660,22 @@ export function CombatHud(props: Props) {
                 // is: `econ.live` gates that, so another player's plate is
                 // never greyed by someone else's spent action.
                 const phaseGone =
-                  Boolean(econ?.live) && Boolean(econ && econ[phase]) && a.kind !== "action"
-                const spendable = a.usable && !phaseGone
+                  isFocusActive && Boolean(econ?.live) && Boolean(econ && econ[phase]) && a.kind !== "action"
+                // AND NOTHING IS SPENDABLE ON SOMEBODY ELSE'S TURN.
+                //
+                // The economy broadcast describes the ACTIVE combatant. The
+                // rack shows the FOCUSED one — usually the same character,
+                // but not while you are reading another plate. So the greying
+                // was being computed from one person's spent action and
+                // painted onto another person's abilities, which is wrong in
+                // both directions: it could grey a rack that was fine, and
+                // leave a rack lit that could not be used at all.
+                //
+                // Whose turn it is settles it first. A character who is not
+                // up has no action, no bonus and no reaction to spend, and
+                // the server refuses every one of them — so the rack says so
+                // rather than letting the player find out by clicking.
+                const spendable = a.usable && !phaseGone && isFocusActive
 
                 return (
                   <button
@@ -693,8 +719,8 @@ export function CombatHud(props: Props) {
                         }
                       }
                     }}
-                    aria-label={`${a.name} — ${phaseGone ? goneLabel : kindLabel}`}
-                    title={phaseGone ? `${a.name} — ${goneLabel}` : undefined}
+                    aria-label={`${a.name} — ${spendable ? kindLabel : goneLabel}`}
+                    title={spendable ? undefined : `${a.name} — ${goneLabel}`}
                     className={
                       // Sam: balloon it about 30% on hover. Scaling from the
                       // BOTTOM keeps the row's baseline still — a rack that
