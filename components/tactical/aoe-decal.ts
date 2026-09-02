@@ -108,6 +108,47 @@ interface Bucket {
  * texture to one sheet frame animates all of them together — which is what
  * makes a bucket one draw call instead of a dozen.
  */
+/**
+ * Which of the four right-angle turns this square's texture is laid at.
+ *
+ * WITHOUT THIS THE MARK IS A GRID OF IDENTICAL STAMPS.
+ *
+ * Every quad in a bucket shares one material, which is what makes the bucket
+ * one draw call — and it means every quad also shows the same pixels. Twenty
+ * squares of the same scorch, edge to edge, does not read as one burnt floor;
+ * it reads as wallpaper, and the eye finds the repeat immediately.
+ *
+ * Rotating each square's UV square by a quarter turn costs nothing at all —
+ * it is baked into the geometry once, at build time — and four orientations
+ * is enough to break the tiling, because the repeat the eye catches is the
+ * one along a straight edge and no two neighbours now share one.
+ *
+ * Derived from the cell's own coordinates rather than Math.random, so the
+ * same square looks the same every time it is drawn. A mark that reshuffles
+ * itself when a lingering Web re-renders would be worse than the tiling.
+ */
+function turnFor(c: Cell): number {
+  // A cheap integer hash. The multiplications are odd primes so x and y
+  // contribute independently and neighbours land in different buckets.
+  const h = (c.x * 73856093) ^ (c.y * 19349663)
+  return (h >>> 0) % 4
+}
+
+/** The 0..1 UV corners of a quad, turned a quarter at a time. */
+const UV_TURNS: [number, number][][] = [
+  [[0, 0], [1, 0], [1, 1], [0, 1]],
+  [[0, 1], [0, 0], [1, 0], [1, 1]],
+  [[1, 1], [0, 1], [0, 0], [1, 0]],
+  [[1, 0], [1, 1], [0, 1], [0, 0]],
+]
+
+/**
+ * One flat quad per cell, merged into a single geometry.
+ *
+ * Every quad carries a full 0..1 UV square — turned, per turnFor above — so
+ * windowing the material's texture to one sheet frame animates all of them
+ * together, which is what makes a bucket one draw call instead of a dozen.
+ */
 function mergedQuads(
   cells: Cell[],
   cellToWorld: (x: number, y: number) => { x: number; z: number },
@@ -118,24 +159,25 @@ function mergedQuads(
   const uv = new Float32Array(cells.length * 12)  // 6 verts * 2
   cells.forEach((c, i) => {
     const { x, z } = cellToWorld(c.x, c.y)
-    // Two triangles, wound counter-clockwise when viewed from above so the
-    // quad faces up without needing DoubleSide.
-    const corners: [number, number, number, number][] = [
-      [x - h, z - h, 0, 0],
-      [x + h, z - h, 1, 0],
-      [x + h, z + h, 1, 1],
-      [x - h, z - h, 0, 0],
-      [x + h, z + h, 1, 1],
-      [x - h, z + h, 0, 1],
+    const t = UV_TURNS[turnFor(c)]
+    // Two triangles over the square's four corners, wound counter-clockwise
+    // seen from above. Corner order is fixed; only which UV each corner gets
+    // changes with the turn.
+    const xy: [number, number][] = [
+      [x - h, z - h],
+      [x + h, z - h],
+      [x + h, z + h],
+      [x - h, z + h],
     ]
-    corners.forEach(([px, pz, u, v], k) => {
+    const tri = [0, 1, 2, 0, 2, 3]
+    tri.forEach((corner, k) => {
       const p = i * 18 + k * 3
-      pos[p] = px
+      pos[p] = xy[corner][0]
       pos[p + 1] = 0
-      pos[p + 2] = pz
+      pos[p + 2] = xy[corner][1]
       const q = i * 12 + k * 2
-      uv[q] = u
-      uv[q + 1] = v
+      uv[q] = t[corner][0]
+      uv[q + 1] = t[corner][1]
     })
   })
   const geo = new THREE.BufferGeometry()
