@@ -80,9 +80,16 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   force:    { rune: "runeForce",    route: "ball",        travel: "missileDart",   impact: "forceHit",       charge: 0.65, speed: 20, tint: 0xffffff },
   psychic:  { rune: "runePsychic",  route: "ball",        travel: "psychicHalo",   impact: "psychicImpact",  charge: 0.70, speed: 14, tint: 0xffffff },
   thunder:  { rune: "runeStorm",    route: "radiate",     travel: "thunderGust",   impact: "thunderImpact",  charge: 0.60, tint: 0xffffff },
-  // Same storm art as thunder, thrown down a line and tinted cold rather than
-  // white — Lightning Bolt is a 100 ft line, Thunderwave is a cube around you.
-  lightning:{ rune: "runeStorm",    route: "beam",        travel: "thunderGust",   impact: "thunderImpact",  charge: 0.55, tint: 0xbcd8ff },
+  // Lightning got its own art in the end.
+  //
+  // The first pass reused thunder's sheets tinted cold, on the argument that
+  // thunderImpact is already a painted bolt and the two types differ only in
+  // 5e's damage table. That was true of the ART and false of the EVENT: a
+  // thunderclap is a concussion that pushes outward from where it lands, and
+  // a lightning strike comes DOWN and then runs away across the floor. The
+  // borrowed sheet had no descent and no ground crawl, so every Lightning
+  // Bolt read as a small thunderclap. Same sheet, wrong verb.
+  lightning:{ rune: "runeStorm",    route: "beam",        travel: "thunderGust",   impact: "lightningStrike", impactScale: 1.5, charge: 0.45, tint: 0xffffff },
   radiant:  { rune: "runeRadiant",  route: "sky",         impact: "radiantColumn",  impactScale: 1.0, charge: 0.85, tint: 0xffffff },
   healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff },
   acid:     { rune: "runeAcid",     route: "impact-only", impact: "acidImpact",     charge: 0.60, tint: 0xffffff },
