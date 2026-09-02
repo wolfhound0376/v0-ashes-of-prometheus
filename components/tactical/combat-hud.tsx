@@ -86,7 +86,17 @@ interface Props {
    *  with its own `focusId` while this component displayed `focus`, and those
    *  two disagree the moment focusId fails to resolve — at which point the
    *  rack shows one character's spells and a different miniature moves. */
-  onCast?: (characterId: string, ability: string, kind: string) => void
+  /**
+   * `entry` is the rack's own, and the board must prefer it.
+   *
+   * The board used to re-derive it with spellEntry(ability), which works for
+   * spells and is wrong for every weapon: a weapon is not in the spellbook,
+   * so it fell to DEFAULT_ENTRY and its 60 ft. An unarmed strike armed with
+   * sixty feet of reach and lit up allies across the room as legal targets.
+   * The rack already parsed the real reach out of the weapon; it just had no
+   * way to say so.
+   */
+  onCast?: (characterId: string, ability: string, kind: string, entry?: RackItem["entry"]) => void
   /**
    * The combat log is now a WINDOW, opened from the board's control bar.
    *
@@ -744,7 +754,7 @@ export function CombatHud(props: Props) {
                       const press = resolvePress(a, abilities)
                       setAbility(selecting ? a.name : null)
                       if (selecting) {
-                        if (focus) onCast?.(focus.id, press.name, press.kind)
+                        if (focus) onCast?.(focus.id, press.name, press.kind, press.entry)
                         // Tell the banner what this cast cost; the phase is
                         // spent there, where the spend callback lives.
                         // Spend it HERE only for things that fire the moment they are pressed.
