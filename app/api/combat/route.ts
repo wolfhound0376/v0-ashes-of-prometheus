@@ -797,16 +797,49 @@ export async function POST(req: NextRequest) {
     let amount = 0
     let line = ""
 
+    // ---- WHAT THE BOARD IS TOLD ---------------------------------------
+    //
+    // Everything below this point was already computed and then thrown away.
+    // The response said { hit, crit, amount } and nothing else, so the board
+    // knew an attack had missed but not whether it missed by one or by nine —
+    // and a miss that is never explained can only be drawn one way, which is
+    // why a dodge has been borrowing the flinch clip since the board was
+    // built.
+    //
+    // These are FACTS, not instructions. The server does not name an
+    // animation: it cannot know which clips a given model carries, and the
+    // one time it guessed it would be wrong on every token that had been
+    // rigged differently. It reports the dice and the margin; the board
+    // decides what that looks like on the miniature actually standing there.
+    // Same division of labour lib/sfx-cues.ts already argues for at length.
+    let roll = 0
+    let total = 0
+    let dc = 0
+    let saved: boolean | null = null
+    let fumble = false
+    // Weapons carry their type in the damage string ("1d6+1 Piercing");
+    // spells carry it on the registry entry. Either way the board gets one
+    // lowercase word and does not have to parse a sheet to find it.
+    let damageType: string | null = entry.damage ?? null
+
     if (weapon) {
       // "1d6+1 Piercing" → dice and a type. The type is only used to colour
       // the log; weapons make their noise from their own name.
       const dmgSpec = String(weapon.damage ?? "")
+      // "1d6+1 Piercing" → "piercing". Anything unrecognised stays null rather
+      // than guessing: a wrong damage type would pick a wrong impact sound,
+      // and silence is the better failure.
+      damageType = dmgSpec.match(
+        /\b(bludgeoning|piercing|slashing|acid|cold|fire|force|lightning|necrotic|poison|psychic|radiant|thunder)\b/i,
+      )?.[1]?.toLowerCase() ?? null
       const dicePart = dmgSpec.match(/\d+d\d+\s*(?:[+-]\s*\d+)?/)?.[0] ?? ""
       const flat = dicePart ? 0 : Number.parseInt(dmgSpec.replace(/[^0-9]/g, ""), 10) || 1
       const toHit = Number.parseInt(String(weapon.hit ?? "+0").replace(/[^0-9-]/g, ""), 10) || 0
-      const roll = d20()
+      roll = d20()
       crit = roll === 20
-      const total = roll + toHit
+      fumble = roll === 1
+      total = roll + toHit
+      dc = ac
       hit = crit || (roll !== 1 && total >= ac)
       if (hit) {
         amount = dicePart ? rollDice(dicePart) : flat
@@ -816,9 +849,11 @@ export async function POST(req: NextRequest) {
       }
       line = `${caster.label} strikes at ${victim.label} with ${weapon.name} — ${roll}${toHit >= 0 ? "+" : ""}${toHit} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.`
     } else if (entry.resolve === "attack") {
-      const roll = d20()
+      roll = d20()
       crit = roll === 20
-      const total = roll + attackBonus
+      fumble = roll === 1
+      total = roll + attackBonus
+      dc = ac
       hit = crit || (roll !== 1 && total >= ac)
       if (hit) {
         amount = rollDice(entry.dice)
@@ -826,9 +861,15 @@ export async function POST(req: NextRequest) {
       }
       line = `${caster.label} casts ${ability} at ${victim.label} — ${roll}+${attackBonus} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.`
     } else if (entry.resolve === "save") {
-      const roll = d20()
-      const total = roll + saveMod
-      const saved = total >= saveDc
+      // NOTE: on a save it is the TARGET rolling, not the caster. `margin`
+      // below is therefore the target's margin of success, and the board must
+      // read it as "how well did they get out of the way", not "how badly did
+      // the caster miss". The outcome field disambiguates so nothing has to
+      // infer this from the sign.
+      roll = d20()
+      total = roll + saveMod
+      dc = saveDc
+      saved = total >= saveDc
       const full = rollDice(entry.dice)
       amount = saved ? (entry.halfOnSave ? Math.floor(full / 2) : 0) : full
       hit = amount > 0
@@ -864,11 +905,65 @@ export async function POST(req: NextRequest) {
     // drift apart.
     await payFor()
 
+    /**
+     * One word for what happened, so nothing downstream has to reconstruct it
+     * from a boolean pair.
+     *
+     * `hit === false` covers four genuinely different events — a clean miss, a
+     * fumble, a save that shrugged the whole spell off, and a save that took
+     * half — and every one of them should look and sound different on the
+     * board. Collapsing them into !hit is what made every failure render as
+     * the same nothing.
+     */
+    const outcome: string = entry.heals && !weapon
+      ? "heal"
+      : crit
+        ? "crit"
+        : fumble
+          ? "fumble"
+          : saved === true
+            ? (amount > 0 ? "saved-half" : "saved")
+            : saved === false
+              ? "failed-save"
+              : hit
+                ? "hit"
+                : "miss"
+
     return NextResponse.json({
       ok: true, resolved: true, hit, crit, amount,
       heals: Boolean(!weapon && entry.heals),
       weapon: Boolean(weapon),
       line,
+
+      // ---- ADDED: the facts behind the verdict -------------------------
+      // Every field here was already computed above. None of it is new
+      // rolling; it is the same dice, no longer discarded on the way out.
+      outcome,
+      /** The d20 face. On a save this is the TARGET's die, not the caster's. */
+      roll,
+      /** Roll plus the relevant modifier. */
+      total,
+      /** What `total` was measured against — AC for attacks, save DC for saves. */
+      dc,
+      /**
+       * How far the roll cleared or fell short of `dc`. Negative is a failure.
+       *
+       * This is the field that lets a miss mean something. A martial who is
+       * missed by 2 was very nearly hit and should turn the blade aside; one
+       * missed by 9 was never in danger and should simply not be where the
+       * sword went. Same event, same `hit: false`, two different pictures —
+       * and the board can only tell them apart if it is given the number.
+       */
+      margin: total - dc,
+      /** True only on a natural 1. A fumble is not merely a large miss. */
+      fumble,
+      /** null when the ability was not resolved by a saving throw. */
+      saved,
+      /** Lowercase 5E damage type, or null when the ability deals none. */
+      damageType,
+      /** Echoed so a late response cannot be applied to the wrong miniature. */
+      target_token: victim.id,
+      caster_token: caster.id,
     })
   }
 
