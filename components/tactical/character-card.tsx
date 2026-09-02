@@ -226,9 +226,11 @@ export function CharacterCard({
   // The artwork's own ratio. Anything else stretches the filigree.
   const H = Math.round(W * (1094 / 1437))
 
-  /** Platinum periphery - the same platinum the board's active ring uses. */
+  /** GOLD periphery on the active turn - Sam's word, and the same #f2cb63 the
+      turn strip already uses for whoever is up. Platinum read as "selected",
+      not "yours to play". */
   const rim = isTurn
-    ? "brightness-[1.08] drop-shadow-[0_0_3px_#ffffff] drop-shadow-[0_0_12px_#fff2d0dd] drop-shadow-[0_0_28px_#fff2d066]"
+    ? "brightness-[1.08] drop-shadow-[0_0_3px_#f2cb63] drop-shadow-[0_0_14px_#f2cb63dd] drop-shadow-[0_0_32px_#d9a83a88]"
     : active
       ? "brightness-105 drop-shadow-[0_0_12px_#c9a22755]"
       : "brightness-[0.88] hover:brightness-100"
