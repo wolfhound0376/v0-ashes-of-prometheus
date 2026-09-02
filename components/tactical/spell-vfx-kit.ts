@@ -146,8 +146,8 @@ export function kitVfxTypeFor(spellName: string): DamageType | null {
 // Lazy and cached. The manifest is fetched once; each sheet at most once, no
 // matter how many casts ask for it.
 
-interface SheetMeta { file: string; cols: number; rows: number; frames: number; fps: number }
-interface Sheet extends SheetMeta { tex: THREE.Texture }
+export interface SheetMeta { file: string; cols: number; rows: number; frames: number; fps: number }
+export interface Sheet extends SheetMeta { tex: THREE.Texture }
 
 const VFX_BASE = "/vfx"
 let manifestPromise: Promise<Record<string, SheetMeta>> | null = null
@@ -164,7 +164,15 @@ function getManifest(): Promise<Record<string, SheetMeta>> {
   return manifestPromise
 }
 
-function loadSheet(key: string): Promise<Sheet> {
+/**
+ * Fetch a sheet by manifest key, at most once per key per page.
+ *
+ * Exported for the ground-decal renderer (aoe-decal.ts), which needs the same
+ * cache: a Fireball's blast mark and its impact bloom are two effects reading
+ * the same manifest, and giving the decal its own loader would download and
+ * decode every sheet a second time.
+ */
+export function loadSheet(key: string): Promise<Sheet> {
   let p = sheets.get(key)
   if (p) return p
   p = getManifest().then(async (man) => {
