@@ -13,6 +13,11 @@ import { areaCells, aimInRange } from "@/lib/aoe"
 // confiscated one is refused by both.
 import { attacksFromInventory, type DerivedAttack } from "@/lib/weapons"
 import { announcementFor, justBecameDying } from "@/lib/announcer"
+import { normalizeConditions } from "@/lib/conditions"
+// Dropping to 0 hit points, as the SRD writes it. The rule lives in
+// lib/death-saves so it can be read whole and tested on every die face;
+// this file only owns the rows.
+import { normaliseSaves, vitalityOf, conditionsFor, takeDamage, heal, rollDeathSave } from "@/lib/death-saves"
 // The rogue's feature, as its own testable rule rather than four conditions
 // buried in the damage roll.
 import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
@@ -162,6 +167,124 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
 /** The board's log is the dialogue feed; the HUD is already subscribed to it. */
 async function narrate(db: ReturnType<typeof createAdminClient>, speaker: string, text: string) {
   await db.from("dialogue").insert({ speaker, text, channel: "dm" })
+}
+
+/**
+ * HIT POINTS, SETTLED IN ONE PLACE.
+ *
+ * Three paths used to write hit points — the player's cast, the area cast,
+ * and the NPC turn — and each clamped at 0 and stopped. "A token at 0 is
+ * down, not negative; the dying rules are the DM's." The DM has now ruled
+ * that the board runs them: SRD 5.1, "Dropping to 0 Hit Points".
+ *
+ * So this is the only function that changes a hit-point number. For a
+ * creature without a sheet it is the old arithmetic. For a player character
+ * it also runs the rule: a drop to 0 is Unconscious (or dead outright, when
+ * the damage left over equals the maximum); damage at 0 is a failed death
+ * save, two on a critical; healing from 0 wakes them and clears the tally.
+ * Token and sheet are written together, because the day they were not is
+ * the day Kenta's card read 8/8 while his token lay at 0.
+ *
+ * Returns the sentence the log should add, if the state changed in a way
+ * worth a sentence.
+ */
+async function settleHitPoints(
+  db: ReturnType<typeof createAdminClient>,
+  a: {
+    characterId: string | null
+    tokenId: string
+    label: string
+    cur: number
+    max: number
+    amount: number
+    heals: boolean
+    crit?: boolean
+    by: string
+  },
+): Promise<{ hp: number; note: string | null }> {
+  const stamp = new Date().toISOString()
+  if (!a.characterId) {
+    // No sheet, no death saves. SRD: "Most DMs have a monster die the
+    // instant it drops to 0 hit points."
+    const hp = a.heals ? Math.min(a.max, a.cur + a.amount) : Math.max(0, a.cur - a.amount)
+    await db.from("vtt_tokens").update({ hp_current: hp, updated_by: a.by, updated_at: stamp }).eq("id", a.tokenId)
+    return { hp, note: !a.heals && hp === 0 && a.cur > 0 ? `${a.label} goes down.` : null }
+  }
+  const { data: ch } = await db
+    .from("characters").select("conditions").eq("id", a.characterId).maybeSingle()
+  // The tally column arrives by migration. Asked for on its own so that a
+  // deploy that beats the migration still writes hit points; it merely
+  // cannot remember the count until the column exists.
+  const { data: tally } = await db
+    .from("characters").select("death_saves").eq("id", a.characterId).maybeSingle()
+  const conditions = normalizeConditions(ch?.conditions)
+  const saves = normaliseSaves((tally as { death_saves?: unknown } | null)?.death_saves)
+  const vitality = vitalityOf(a.cur, conditions)
+  const out = a.heals
+    ? heal({ hp: a.cur, max: a.max, amount: a.amount, vitality, saves })
+    : takeDamage({ label: a.label, hp: a.cur, max: a.max, amount: a.amount, crit: a.crit, saves, vitality })
+  await db.from("vtt_tokens").update({ hp_current: out.hp, updated_by: a.by, updated_at: stamp }).eq("id", a.tokenId)
+  await db.from("characters")
+    .update({ hp_current: out.hp, conditions: conditionsFor(conditions, out.vitality), updated_at: stamp })
+    .eq("id", a.characterId)
+  await db.from("characters").update({ death_saves: out.saves }).eq("id", a.characterId)
+  return { hp: out.hp, note: out.note }
+}
+
+/**
+ * THE START OF A DOWNED CHARACTER'S TURN.
+ *
+ * SRD: "Whenever you start your turn with 0 hit points, you must make a
+ * special saving throw, called a death saving throw." The die is rolled
+ * here, where it cannot be argued with, the moment the turn passes to them.
+ * Nothing else is theirs to do that turn: an unconscious character cannot
+ * move or act, so the economy is written as spent and the DM ends the turn.
+ *
+ * Returns true when the turn belonged to someone at 0, so the caller knows
+ * the economy has been written.
+ */
+async function deathSaveOnTurnStart(
+  db: ReturnType<typeof createAdminClient>,
+  combatId: string,
+  tokenId: string,
+  characterId: string,
+): Promise<boolean> {
+  const { data: ch } = await db
+    .from("characters").select("name,hp_current,hp_max,conditions").eq("id", characterId).maybeSingle()
+  if (!ch) return false
+  const conditions = normalizeConditions(ch.conditions)
+  const vitality = vitalityOf(ch.hp_current, conditions)
+  if (vitality === "up") return false
+  const label = (ch.name as string | null) ?? "Someone"
+  const stamp = new Date().toISOString()
+  if (vitality === "dead") {
+    await narrate(db, label, `${label} lies dead.`)
+  } else if (vitality === "stable") {
+    await narrate(db, label, `${label} is stable, and still unconscious.`)
+  } else {
+    const { data: tally } = await db
+      .from("characters").select("death_saves").eq("id", characterId).maybeSingle()
+    const saves = normaliseSaves((tally as { death_saves?: unknown } | null)?.death_saves)
+    const out = rollDeathSave({ label, roll: d20(), saves })
+    await db.from("characters")
+      .update({ hp_current: out.hp, conditions: conditionsFor(conditions, out.vitality), updated_at: stamp })
+      .eq("id", characterId)
+    await db.from("characters").update({ death_saves: out.saves }).eq("id", characterId)
+    if (out.hp > 0) {
+      // A 20: back on their feet with 1 hit point, on the token too.
+      await db.from("vtt_tokens").update({ hp_current: out.hp, updated_by: "death-save", updated_at: stamp }).eq("id", tokenId)
+    }
+    await narrate(db, label, out.note ?? "")
+    if (out.vitality === "up") return false
+  }
+  // Down for the turn: nothing to spend. The DM passes it on.
+  await db.from("combat_state")
+    .update({
+      turn_state: { action: true, bonus: true, reaction: true, moved_ft: 0, acknowledged: true },
+      updated_at: stamp,
+    })
+    .eq("id", combatId)
+  return true
 }
 
 export async function GET(req: NextRequest) {
@@ -467,22 +590,21 @@ export async function POST(req: NextRequest) {
     if ((decision.kind === "attack" || decision.kind === "move-attack") && decision.hit && decision.damage > 0) {
       const target = board.combatants.find((c) => c.token_id === decision.target.token_id)
       if (target) {
-        const left = Math.max(0, (target.hp_current ?? target.hp_max ?? 0) - decision.damage)
-        const stamp = new Date().toISOString()
-        await db.from("vtt_tokens")
-          .update({ hp_current: left, updated_by: "npc-ai", updated_at: stamp })
-          .eq("id", target.token_id)
-        // The token and the sheet are one creature — and THIS is the path that
-        // hurts players. Found in a live rehearsal: a drow crit Kenta for 11,
-        // his token went to 0, and his card went on reading 8/8 because the
-        // plates, the globes and the sheet overlay all read `characters`. The
-        // player could not see that he was unconscious.
-        const victimCharId = (target as { character_id?: string | null }).character_id
-        if (victimCharId) {
-          await db.from("characters")
-            .update({ hp_current: left, updated_at: stamp })
-            .eq("id", victimCharId)
-        }
+        // Token and sheet together, and the dying rules with them — see
+        // settleHitPoints. THIS is the path that hurts players: a drow crit
+        // Kenta for 11 once and his card went on reading 8/8.
+        const settled = await settleHitPoints(db, {
+          characterId: (target as { character_id?: string | null }).character_id ?? null,
+          tokenId: target.token_id,
+          label: target.label,
+          cur: target.hp_current ?? target.hp_max ?? 0,
+          max: target.hp_max ?? 0,
+          amount: decision.damage,
+          heals: false,
+          crit: decision.crit,
+          by: "npc-ai",
+        })
+        if (settled.note) decision.narration += ` ${settled.note}`
       }
     }
     await narrate(db, self.label, decision.narration)
@@ -893,17 +1015,15 @@ export async function POST(req: NextRequest) {
         if (amount > 0) {
           const cur = t.hp_current ?? t.hp_max ?? 0
           const max = t.hp_max ?? cur
-          const next = entry.heals ? Math.min(max, cur + amount) : Math.max(0, cur - amount)
-          await db.from("vtt_tokens")
-            .update({ hp_current: next, updated_by: "player-cast", updated_at: new Date().toISOString() })
-            .eq("id", t.id)
-          // The token and the sheet are one creature — the same rule the
-          // single-target path learned the hard way.
-          if (t.character_id) {
-            await db.from("characters")
-              .update({ hp_current: next, updated_at: new Date().toISOString() })
-              .eq("id", t.character_id)
-          }
+          // Token and sheet together, dying rules included — the same
+          // function the single-target path and the NPC turn use, so a
+          // Fireball drops a character exactly the way a sword does.
+          const settled = await settleHitPoints(db, {
+            characterId: t.character_id ?? null, tokenId: t.id, label: t.label ?? "Someone",
+            cur, max, amount, heals: Boolean(entry.heals), by: "player-cast",
+          })
+          const next = settled.hp
+          if (settled.note) parts.push(settled.note.replace(/\.$/, ""))
           // Same rule as the single-target path, through the same function.
           // A Fireball that leaves three people on the brink says so about
           // each of them.
@@ -1136,19 +1256,15 @@ export async function POST(req: NextRequest) {
       const max = victim.hp_max ?? cur
       // Healing cannot exceed the maximum; damage cannot go below zero. A
       // token at 0 is down, not negative — the dying rules are the DM's.
-      const next = entry.heals ? Math.min(max, cur + amount) : Math.max(0, cur - amount)
-      await db.from("vtt_tokens")
-        .update({ hp_current: next, updated_by: "player-cast", updated_at: new Date().toISOString() })
-        .eq("id", victim.id)
-      // The token and the sheet are one creature. Writing only the token is
-      // how the board came to believe Kenta was at 0 while his sheet still
-      // read 8/8 — the plates, the globes and the character sheet overlay all
-      // read `characters`, and none of them had heard about the fight.
-      if (victim.character_id) {
-        await db.from("characters")
-          .update({ hp_current: next, updated_at: new Date().toISOString() })
-          .eq("id", victim.character_id)
-      }
+      // Token and sheet together — writing only the token is how the board
+      // once believed Kenta was at 0 while his sheet read 8/8 — and the dying
+      // rules run on the way: a drop to 0 is Unconscious, damage at 0 is a
+      // failed death save (two on a critical), healing from 0 wakes them.
+      const settled = await settleHitPoints(db, {
+        characterId: victim.character_id ?? null, tokenId: victim.id, label: victim.label ?? "Someone",
+        cur, max, amount, heals: Boolean(entry.heals), crit, by: "player-cast",
+      })
+      const next = settled.hp
       // THE CABINET WARNS BEFORE IT MOURNS.
       //
       // Announced on the hit that CROSSES the line, not while they sit below
@@ -1162,7 +1278,7 @@ export async function POST(req: NextRequest) {
         const warn = announcementFor("dying", ch?.class as string | null)
         if (warn) dyingCues.push({ type: "raw" as const, scope: "party" as const, key: warn })
       }
-      if (!entry.heals && next === 0) line += ` ${victim.label} goes down.`
+      if (settled.note) line += ` ${settled.note}`
     }
     await narrate(db, caster.label ?? "Someone", line)
 
@@ -1298,6 +1414,9 @@ export async function POST(req: NextRequest) {
           .eq("id", tok.character_id)
           .maybeSingle()
         cue = announcementFor("turn", ch?.class as string | null) ?? cue
+        // A character at 0 starts their turn with a death saving throw, and
+        // with nothing else. Rolled here, the moment the turn is theirs.
+        await deathSaveOnTurnStart(db, combat.id, nextEntry.token_id, tok.character_id)
       }
     }
     return NextResponse.json({
