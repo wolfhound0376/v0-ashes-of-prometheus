@@ -39,7 +39,25 @@ const CANDIDATES: Record<TokenState, string[]> = {
   // collapse: the creature dropped, stood back up, and did it again next
   // round. A stagger is what taking damage looks like; falling is what dying
   // looks like, and the dead clip already covers that.
-  hurt: ["hit", "hurt", "stagger", "impact", "damage", "back_jump", "fall1", "fall"],
+  // NEITHER `back_jump` NOR `fall1` BELONGS HERE, and both were.
+  //
+  // Read against the models we actually ship, this chain was playing the
+  // wrong motion on two of six:
+  //
+  //   Kenta (hero-warlock) has no hit clip, so `back_jump` caught him and he
+  //   LEAPT BACKWARDS OUT OF REACH every time something connected. A dodge
+  //   played on a hit is the same lie as a flinch played on a miss, running
+  //   the other way.
+  //
+  //   Ront has no hit clip either, so `fall1` caught him: he collapsed on
+  //   every scratch and stood back up, once a round, at 1 point of damage.
+  //
+  // The comment this chain used to carry said "a flinch, THEN a fall" and
+  // ended in fall1 for exactly that reason - but a fall is what DYING looks
+  // like, `dead` already covers it, and reaching for it on a graze reads as a
+  // creature that cannot take a hit. A model with no flinch now plays nothing
+  // here and the procedural stagger answers instead (see hurtFallback).
+  hurt: ["hit", "hurt", "stagger", "impact", "damage"],
   dead: ["dead", "death", "fall1", "fall"],
 
   // The 20-clip Meshy hero set already has the motions; nothing had ever
