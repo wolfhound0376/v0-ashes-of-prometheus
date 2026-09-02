@@ -122,6 +122,13 @@ interface TokenRow {
    */
   allegiance: "party" | "ally" | "hostile" | "neutral" | null
   is_visible: boolean
+  /**
+   * Took the Hide action and beat every onlooker. Drawn as a translucent
+   * body rather than a removed one: the table still needs to know where she
+   * IS — this is a VTT, not a fog-of-war shooter, and a rogue who vanishes
+   * from her own player's screen cannot be moved.
+   */
+  is_hidden: boolean | null
   hp_current: number | null
   hp_max: number | null
 }
@@ -2288,10 +2295,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (row.rotation_y) obj.rotation.y = (row.rotation_y * Math.PI) / 180
           // Pre-lit tile leaves models unlit black columns; they carry
           // their own glow, same trick as the local viewer.
+          // HIDDEN READS AS TRANSLUCENT, NOT ABSENT.
+          //
+          // The tempting move is to stop drawing her. It is wrong twice: her
+          // own player could not then move her, and this is a shared board
+          // where the DM needs to see the piece he is adjudicating. A
+          // half-there body says "the drow cannot see this" while the table
+          // still can, which is what a miniature pushed slightly off the
+          // felt has always meant.
+          //
+          // Applied per-mesh below rather than as a group opacity, because
+          // Three.js has no group opacity — a fact that costs an hour to
+          // rediscover every time.
+          const ghost = row.is_hidden === true
           obj.traverse((o) => {
             const mesh = o as THREE.Mesh
             if (mesh.isMesh && mesh.material) {
-              mesh.castShadow = mesh.receiveShadow = true
+              mesh.castShadow = mesh.receiveShadow = !ghost
               const m = mesh.material as THREE.MeshStandardMaterial
               if (m.map) {
                 // COLOUR SPACE FIRST. A base-colour texture read as linear
@@ -2300,6 +2320,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
                 // costs nothing to assert rather than assume the loader
                 // guessed right.
                 m.map.colorSpace = THREE.SRGBColorSpace
+                if (ghost) {
+                  // Cast the material first: it is shared across every token
+                  // that uses this GLB, so tinting it in place turns every
+                  // drow in the room translucent. Same lesson death-vfx
+                  // learned about cloned materials.
+                  const solo = m.clone()
+                  solo.transparent = true
+                  solo.opacity = 0.28
+                  solo.depthWrite = false
+                  mesh.material = solo
+                }
 
                 // The emissive copy of the base texture is GONE. It was a
                 // crutch from when the board had no real lights, and it does
@@ -2606,7 +2637,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         lastHitBy.delete(row.id)
         lastHitWith.delete(row.id)
       }
-      if (before.hp_current !== row.hp_current || before.hp_max !== row.hp_max || before.is_visible !== row.is_visible || before.tint_color !== row.tint_color) {
+      if (before.hp_current !== row.hp_current || before.hp_max !== row.hp_max || before.is_visible !== row.is_visible || before.is_hidden !== row.is_hidden || before.tint_color !== row.tint_color) {
         spawnToken(row)
         return
       }
@@ -3891,7 +3922,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // The combatants.
       const { data: tokenRows } = await supabase
         .from("vtt_tokens")
-        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,hp_current,hp_max,allegiance")
+        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,is_hidden,hp_current,hp_max,allegiance")
         .eq("map_id", map.id)
 
       // A model belongs to the SPECIES. A token that names a bestiary entry
@@ -5357,6 +5388,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // at once — making a player click themselves to Dodge would be
         // theatre without meaning.
         onCast={(characterId, ability, kind, rackEntry) => {
+          // HIDE IS A VERB, NOT A SPELL. It resolves entirely on the server —
+          // a Stealth roll against every onlooker's passive Perception — and
+          // has nothing to arm and nothing to throw, so it leaves before any
+          // of the targeting machinery below sees it.
+          if (kind === "action" && ability.trim().toLowerCase() === "hide") {
+            const mine = Array.from(tokensRef.current.values()).find((t) => t.row.character_id === characterId)
+            if (!mine) { say("That character has no miniature on this board."); return }
+            void (async () => {
+              const res = await fetch("/api/combat", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ action: "hide", token_id: mine.row.id, sandbox }),
+              })
+              const data = await res.json().catch(() => null)
+              if (!res.ok) { say(data?.error ?? "The hide did not take."); return }
+              // The server already wrote the line into the log; this is the
+              // toast, which is the half the player is looking at.
+              say(data?.line ?? (data?.hidden ? "Gone." : "Seen."))
+              playCues(data?.sfxCues)
+            })()
+            return
+          }
           // THE RACK'S ENTRY WINS.
           //
           // spellEntry() is the right answer for a spell and the wrong one for
