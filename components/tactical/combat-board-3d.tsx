@@ -2350,6 +2350,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const releaseAt = (tokenId: string) => {
       const armed = armedRef.current
       if (!armed) return
+      // A POINT SPELL AIMED AT SOMEBODY MEANS THEIR SQUARE.
+      //
+      // releaseAtPoint refuses a creature-mode spell — `if (armed.mode !==
+      // "point") return` — but this, its opposite number, guarded nothing. So
+      // a point spell released on a BODY was posted as a targeted cast with a
+      // victim and no aim, and the server, which reads Mage Hand out of the
+      // aim branch, never saw it: the cast fell through to the single-target
+      // path and came back "Mage Hand needs a ruling from Malachar."
+      //
+      // Refusing the click would be honest and useless. "Mage Hand on the
+      // drow" means the drow's square — that is how it is said at a table —
+      // so the click is forwarded there. Range, and everything else, is then
+      // judged by the point path exactly as if the floor had been clicked.
+      if (armed.mode === "point") {
+        const at = tokensRef.current.get(tokenId)
+        if (at) releaseAtPoint(at.row.grid_x, at.row.grid_y)
+        return
+      }
       // The token was resolved when the spell was ARMED. Looking it up again
       // here by character_id is what let the wrong miniature answer: two
       // lookups of the same question can disagree, and this one is asked
