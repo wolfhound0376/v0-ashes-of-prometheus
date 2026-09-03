@@ -1,9 +1,9 @@
 {
   "acidImpact": {
-    "bytes": 92886,
+    "bytes": 223746,
     "cols": 5,
     "file": "acidImpact.webp",
-    "fps": 22,
+    "fps": 24,
     "frames": 20,
     "rows": 4
   },
@@ -55,6 +55,14 @@
     "bytes": 441470,
     "cols": 5,
     "file": "eldImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "fireImpact": {
+    "bytes": 251182,
+    "cols": 5,
+    "file": "fireImpact.webp",
     "fps": 24,
     "frames": 20,
     "rows": 4
@@ -236,7 +244,7 @@
     "rows": 4
   },
   "psychicImpact": {
-    "bytes": 103998,
+    "bytes": 420892,
     "cols": 5,
     "file": "psychicImpact.webp",
     "fps": 24,
@@ -340,10 +348,10 @@
     "rows": 4
   },
   "thunderImpact": {
-    "bytes": 265500,
+    "bytes": 240512,
     "cols": 5,
     "file": "thunderImpact.webp",
-    "fps": 26,
+    "fps": 24,
     "frames": 20,
     "rows": 4
   },
