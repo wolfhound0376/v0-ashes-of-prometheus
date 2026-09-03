@@ -8,6 +8,9 @@
 //                                inventory
 //   POST {action:"drop"}       → one inventory row (or part of it) onto the
 //                                square the character is standing on
+//   POST {action:"place"}      → DM only: a catalogue item onto any square
+//   POST {action:"remove"}     → DM only: a pile off the floor, into nobody's
+//                                hands (stamped, never deleted)
 //
 // Player verbs, like /api/combat's "move": not DM-gated, fenced hard. The
 // character must have a token on the active map; the pile must be within
@@ -22,6 +25,7 @@
 // the pack. That is the invariant the AI is held to, applied to the players.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { withinReach, interactionCost, describePile, type InteractionEconomy } from "@/lib/ground-items"
 
 type Db = ReturnType<typeof createAdminClient>
@@ -33,8 +37,15 @@ async function narrate(db: Db, speaker: string, text: string) {
 
 async function activeMap(db: Db, sandbox: boolean) {
   const { data } = await db
-    .from("vtt_maps").select("id").eq(sandbox ? "is_sandbox" : "is_active", true).limit(1).maybeSingle()
+    .from("vtt_maps").select("id,grid_width,grid_height").eq(sandbox ? "is_sandbox" : "is_active", true).limit(1).maybeSingle()
   return data
+}
+
+/** The same gate /api/combat keeps: the DM's key, or an open table with none set. */
+function authorized(req: NextRequest): boolean {
+  const required = process.env.DM_ACCESS_CODE
+  if (!required) return true
+  return safeEquals(normalizeCode(req.headers.get("x-dm-key") ?? ""), normalizeCode(required))
 }
 
 export async function GET(req: NextRequest) {
@@ -84,9 +95,63 @@ async function turnFence(db: Db, mapId: string, tokenId: string, what: string) {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action as string | undefined
-  if (action !== "pickup" && action !== "drop") {
-    return NextResponse.json({ error: "expected { action: 'pickup'|'drop' }" }, { status: 400 })
+  if (action !== "pickup" && action !== "drop" && action !== "place" && action !== "remove") {
+    return NextResponse.json({ error: "expected { action: 'pickup'|'drop'|'place'|'remove' }" }, { status: 400 })
   }
+
+  if (action === "place" || action === "remove") {
+    // THE DM'S HANDS. Sam: "we need a way to pick up objects on the
+    // battlefield" — and until now the only object on any battlefield was
+    // the one shard the migration seeded. This is how the rest get there:
+    // the DM picks a catalogue item and a square. Nothing invented lies on
+    // the board, so the item must exist in `items`; the DM key is the fence,
+    // the same one that starts a fight. No turn economy — the world does not
+    // spend actions.
+    if (!authorized(req)) return NextResponse.json({ error: "DM only" }, { status: 403 })
+    const db = createAdminClient()
+    const map = await activeMap(db, body?.sandbox === true)
+    if (!map) return NextResponse.json({ error: "no active battle map" }, { status: 409 })
+
+    if (action === "remove") {
+      const groundId = String(body?.ground_item_id ?? "")
+      if (!groundId) return NextResponse.json({ error: "ground_item_id required" }, { status: 400 })
+      // Rows are never deleted by play: the pile is stamped as gone with
+      // nobody's name on it, the way a pickup stamps it with someone's.
+      const { data: gone } = await db
+        .from("vtt_ground_items")
+        .update({ picked_up_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("id", groundId).eq("map_id", map.id).is("picked_up_at", null)
+        .select("name,quantity").maybeSingle()
+      if (!gone) return NextResponse.json({ error: "That is not on this floor." }, { status: 404 })
+      return NextResponse.json({ ok: true, line: `${describePile(gone.name, gone.quantity ?? 1)} is gone from the floor.` })
+    }
+
+    const itemId = String(body?.item_id ?? "")
+    const gx = Number(body?.gx)
+    const gy = Number(body?.gy)
+    const quantity = Math.max(1, Math.floor(Number(body?.quantity ?? 1)) || 1)
+    if (!itemId) return NextResponse.json({ error: "item_id required" }, { status: 400 })
+    if (!Number.isInteger(gx) || !Number.isInteger(gy) || gx < 0 || gy < 0 || gx >= (map.grid_width ?? 0) || gy >= (map.grid_height ?? 0)) {
+      return NextResponse.json({ error: "that square is off the board" }, { status: 400 })
+    }
+    const { data: item } = await db.from("items").select("id,name").eq("id", itemId).maybeSingle()
+    if (!item) return NextResponse.json({ error: "The catalogue has no such item." }, { status: 404 })
+    const { error: putDown } = await db.from("vtt_ground_items").insert({
+      map_id: map.id,
+      item_id: item.id,
+      name: item.name,
+      quantity,
+      grid_x: gx,
+      grid_y: gy,
+      // Null dropped_by: the world put it there.
+      dropped_by: null,
+    })
+    if (putDown) return NextResponse.json({ error: `Could not set it down: ${putDown.message}` }, { status: 500 })
+    const line = `${describePile(item.name, quantity)} lies on the floor.`
+    await narrate(db, "DM", line)
+    return NextResponse.json({ ok: true, line, item: item.name, quantity })
+  }
+
   const characterId = String(body?.character_id ?? "")
   if (!characterId) return NextResponse.json({ error: "character_id required" }, { status: 400 })
 
