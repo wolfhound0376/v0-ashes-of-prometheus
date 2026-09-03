@@ -69,6 +69,8 @@ import { preloadTombstone, tombstoneVfx } from "./tombstone"
 // error rather than a merge conflict, so it does not announce itself in a diff.
 // Reused for the grave's lean: same id, same stone, every reload.
 import { seedFrom } from "@/lib/blood-marks"
+// Exhaustion takes its cut of movement: halved at 2, nothing at all at 5.
+import { speedAfterExhaustion, normaliseExhaustion } from "@/lib/exhaustion"
 // The arcade card that drops when something is cast. Every fact it prints
 // was already on the wire and going only to a log nobody opens mid-fight.
 import SpellBanner, { type BannerCast } from "./spell-banner"
@@ -4609,7 +4611,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // from the inventory below, so there is one answer.
         const SHEET_COLUMNS = "id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,sheet_heroic_inspiration,hero_image_url"
         /** Columns added by migration. Add new ones HERE, never to the list above. */
-        const LATE_COLUMNS = ",death_saves"
+        const LATE_COLUMNS = ",death_saves,exhaustion"
         const fetchSheets = (cols: string) =>
           supabase
             .from("characters")
@@ -6009,7 +6011,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   }, [combat?.active_index, combat?.round])
   const activeSheet = sheets.find((c) => c.id === activeCharacterId)
   // "30 ft. (Walking)" -> 30. A sheet with prose speed still yields a budget.
-  const speedFt = Number.parseInt(String(activeSheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
+  //
+  // Then exhaustion takes its cut: halved at level 2, nothing at all at 5.
+  // Applied HERE rather than in the reach overlay because this is the single
+  // place the board turns a sheet into a movement budget, and the overlay, the
+  // dash ceiling and the server's own check all read down from it.
+  const speedFt = speedAfterExhaustion(
+    Number.parseInt(String(activeSheet?.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30,
+    normaliseExhaustion((activeSheet as { exhaustion?: unknown } | undefined)?.exhaustion),
+  )
   // The scene's reach overlay reads speed through a ref; repaint when the
   // active character (and so their speed) changes.
   useEffect(() => {
