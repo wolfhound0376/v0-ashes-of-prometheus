@@ -6,6 +6,7 @@ import { BookOpen, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
 import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
+import { shouldRedirectToBoard, shouldForgetDeliberateExit, type PriorCombat } from "@/lib/board-exit"
 // (fantasy-icons no longer used here — equipment slots render Sam's uploaded PNG icons)
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
@@ -451,20 +452,33 @@ export function V4Dashboard(props: V4DashboardProps) {
   // A fight breaking out sends this browser to the board — once per fight,
   // and only the DM's browser: yanking every player off their sheet
   // mid-sentence would be worse than the fight starting quietly.
-  const wasInCombat = useRef(false)
+  //
+  // `null`, not `false`: we have not looked yet. Seeding this `false` was the
+  // bug that locked Sam on the board — it made ARRIVING on the dashboard
+  // indistinguishable from a fight starting while he sat there, so ← SCENE
+  // pushed him to `/` and this effect threw him straight back. The rule now
+  // lives in lib/board-exit.ts with tests on it.
+  const wasInCombat = useRef<PriorCombat>(null)
+  // Has the roster actually loaded? It starts as an empty array, and an empty
+  // array reads as "no fight" — which is the condition that used to delete the
+  // deliberate-exit mark, milliseconds before the data landed and the redirect
+  // fired. Nothing may be concluded from peace we have not confirmed.
+  const rosterObserved = props.npcEncounters.length > 0 || wasInCombat.current !== null
   useEffect(() => {
-    // "aop-left-battle" is set when the DM deliberately walks off the board
-    // via ← SCENE. Without it this redirect fires on every mount while a
-    // fight is live — so leaving /battle bounced the DM straight back, and
-    // there was effectively no way off the board until the fight ended. The
-    // flag is per-tab (sessionStorage) and cleared the moment the fight is
-    // over, so the NEXT fight redirects normally.
+    // "aop-left-battle" is set by ← SCENE when the DM walks off the board on
+    // purpose. It is per-tab (sessionStorage) and dropped once the fight it
+    // guarded against is genuinely over, so the NEXT fight redirects normally.
     let leftDeliberately = false
     try { leftDeliberately = sessionStorage.getItem("aop-left-battle") === "1" } catch {}
-    if (!inCombat) { try { sessionStorage.removeItem("aop-left-battle") } catch {} }
-    if (inCombat && !wasInCombat.current && hasDmKey() && !leftDeliberately) window.location.assign("/battle")
-    wasInCombat.current = inCombat
-  }, [inCombat])
+    if (shouldForgetDeliberateExit(inCombat, rosterObserved)) {
+      try { sessionStorage.removeItem("aop-left-battle") } catch {}
+    }
+    if (shouldRedirectToBoard({ inCombat, previous: wasInCombat.current, isDm: hasDmKey(), leftDeliberately })) {
+      window.location.assign("/battle")
+    }
+    if (rosterObserved) wasInCombat.current = inCombat
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inCombat, rosterObserved])
   const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? ["Poisoned", "Exhaustion 1"])
   const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
   const isMagicUser = ["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"].includes((selected?.class ?? "").toLowerCase())
