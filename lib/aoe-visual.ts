@@ -48,7 +48,8 @@ export type DecalKind =
   | "acid"     // acid, grease — pooled on the floor, faintly bubbling
   | "miasma"   // poison — a cloud of gas STANDING in the squares
   | "web"      // web, entangle, spike growth — clinging growth
-  | "gloom"    // darkness, fog, silence — a soft dimming, also airborne
+  | "gloom"    // darkness, silence, necrotic — a soft violet dimming
+  | "fog"      // fog cloud, and any conjured bank of vapour — pale, not purple
   | "hallowed" // radiant, holy — a lit ring
   | "arcane"   // everything else, and the honest default
 
@@ -106,7 +107,7 @@ const BY_SPELL: Record<string, DecalKind> = {
   entangle: "web",
   "spike growth": "web",
   grease: "acid",   // a slick on the floor, not a vapour
-  "fog cloud": "gloom",
+  "fog cloud": "fog",
   // No damage type of its own, so the name is the only thing that can say
   // this is gas rather than a smudge on the floor. Cloudkill needs no entry:
   // it deals poison, and poison already means miasma.
@@ -147,6 +148,13 @@ const TINTS: Record<DecalKind, number> = {
   miasma:   0xbaff5c,
   web:      0xd8d2c2,
   gloom:    0x8d7ad0,
+  // Sam: "cloud should definitely not look purple." Fog shared `gloom` with
+  // darkness and necrotic, whose violet is right for THEM — a pall of decay
+  // should not read as weather. Water vapour is very slightly cool and
+  // otherwise almost colourless, so this is a pale grey with the faintest
+  // blue in it. The VFX kit already drew this spell white (spell-vfx-kit,
+  // `fog`); the two systems simply disagreed, and the decal was winning.
+  fog:      0xd9e2ea,
   hallowed: 0xffe6a8,
   arcane:   0x9fd8ff,
 }
@@ -163,6 +171,7 @@ const BLOOMS: Record<DecalKind, number> = {
   miasma:   1.10,   // gas fills a room slowly; that slowness is the menace
   web:      0.90,
   gloom:    0.80,
+  fog:      1.20,   // a bank of fog ROLLS in; it does not snap into being
   hallowed: 0.55,
   arcane:   0.50,
 }
@@ -184,6 +193,10 @@ const REST: Record<DecalKind, number> = {
   miasma:   0.62,
   web:      0.46, // the one you most need to keep reading — it costs movement
   gloom:    0.40,
+  // Dense on purpose. Fog Cloud's entire mechanical point is that you cannot
+  // see through it — a cloud the table can read straight through would say
+  // the opposite of what the spell now does to the creatures inside it.
+  fog:      0.66,
   hallowed: 0.32,
   arcane:   0.26,
 }
@@ -191,14 +204,14 @@ const REST: Record<DecalKind, number> = {
 /**
  * Which kinds hang in the air.
  *
- * Gloom joins poison here because its users are Fog Cloud, Silence and Sleep —
+ * Gloom joins poison here because its users are Silence and Sleep —
  * all things that fill a space rather than mark a floor. Necrotic falls here
  * too, which is a fair reading: a necrotic area is a pall, not a stain.
  */
 const FORMS: Record<DecalKind, DecalForm> = {
   scorch: "floor", frost: "floor", shock: "floor", acid: "floor",
   web: "floor", hallowed: "floor", arcane: "floor",
-  miasma: "cloud", gloom: "cloud",
+  miasma: "cloud", gloom: "cloud", fog: "cloud",
 }
 
 function kindFor(name: string, entry: SpellEntry | undefined): DecalKind {
