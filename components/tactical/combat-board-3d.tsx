@@ -5476,8 +5476,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const combatAction = async (action: "start" | "next" | "end" | "npc-turn") => {
-    if (combatBusy) return
+  // "busy" is not "it worked". This used to return `undefined` when the board
+  // was mid-request, and both callers read that as success: the auto-turn
+  // driver chained on `ok !== false`, and End Combat did `if (await ...)`,
+  // which is falsy — so a busy board silently swallowed the click. Three
+  // outcomes, named, so neither caller can guess wrong again.
+  const combatAction = async (action: "start" | "next" | "end" | "npc-turn"): Promise<"ok" | "failed" | "busy"> => {
+    // The busy gate stops a double-tap submitting the same turn twice. ENDING
+    // IS NOT A TURN — it is the terminal command, and it must reach the server
+    // even mid-order, or the fight cannot be stopped while the monsters are
+    // still swinging. That is the state Sam was stuck in.
+    if (combatBusy && action !== "end") return "busy"
     setCombatBusy(true)
     try {
       const res = await fetch("/api/combat", {
@@ -5505,10 +5514,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           }
         }
       }
-      return res.ok
+      return res.ok ? "ok" : "failed"
     } catch {
       say("The order would not hold — the network blinked.")
-      return false
+      return "failed"
     } finally {
       setCombatBusy(false)
     }
@@ -5540,8 +5549,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     if (npcTurnRef.current === stamp) return
     npcTurnRef.current = stamp
     const timer = window.setTimeout(async () => {
-      const ok = await combatAction("npc-turn")
-      if (ok !== false) await combatAction("next")
+      // Only a resolved swing passes the turn on. A refusal must not advance
+      // the order, and neither must a call that never left the building.
+      if ((await combatAction("npc-turn")) === "ok") await combatAction("next")
     }, 900)
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6427,13 +6437,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       {combat && dm && (
         <div className="absolute bottom-3 right-3 z-30">
           <button
-            disabled={combatBusy}
             onClick={async () => {
-              // Ending the fight is also leaving it: once the end sticks, the
-              // table's next scene is the dashboard, so take the DM there.
-              // (The fight being over means the live-fight redirect stays
-              // quiet — no bounce back.)
-              if (await combatAction("end")) onBack?.()
+              // Ending the fight is also leaving it. LEAVING IS UNCONDITIONAL.
+              // This used to read `if (await combatAction("end")) onBack?.()`,
+              // so the exit hung on a server call — and `combatAction` answers
+              // nothing at all while the board is busy, which the auto-turn
+              // driver keeps it for most of a monster's round. The button was
+              // `disabled={combatBusy}` on top of that. Between the two, Sam
+              // could press End Combat and have precisely nothing happen.
+              // Say so if the end did not stick; walk off the board either way.
+              await combatAction("end")
+              onBack?.()
             }}
             className="rounded-sm border border-[#4a3a2a] bg-black/70 px-3 py-1 text-[9px] uppercase tracking-wider text-[#a89468] hover:border-[#8b6427] disabled:opacity-40"
           >
