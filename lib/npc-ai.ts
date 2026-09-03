@@ -17,6 +17,9 @@
 // functions are the part you can actually test.
 // ============================================================================
 
+// Conditions and the attack roll against them - pure, shared with the route.
+import { attackAgainst, rollD20, showDice } from "./helpless"
+
 export interface Cell { x: number; y: number }
 
 export interface Combatant {
@@ -28,6 +31,11 @@ export interface Combatant {
   hp_current: number | null
   hp_max: number | null
   ac: number | null
+  /**
+   * The words on the creature right now - Unconscious, Prone, Stunned - so
+   * an attack against it can roll the way the SRD says (lib/helpless).
+   */
+  conditions?: string[]
   /**
    * Under Sanctuary — attacking this creature costs a Wisdom save the
    * attacker will probably fail, and a lost attack is a lost turn.
@@ -265,12 +273,18 @@ export type Decision =
 export const usesAlgorithm = (s: StatBlock) => (s.int ?? 10) <= 12 && (s.wis ?? 10) <= 12
 
 function resolveAttack(self: Combatant, target: Combatant, attack: Attack, rng: () => number) {
-  const roll = d(20, rng)
+  // WHAT THE TARGET'S CONDITION DOES TO THIS ROLL - lib/helpless. A drow
+  // standing over an unconscious Kenta rolls with advantage and any hit is a
+  // critical, which costs him two death saves. Until this line it rolled as
+  // if he were on his feet.
+  const against = attackAgainst(target.conditions ?? [], chebyshev(self, target) * 5)
+  const thrown = rollD20(against, () => d(20, rng))
+  const roll = thrown.roll
   const total = roll + attack.toHit
-  const crit = roll === 20
   // Natural 1 always misses, natural 20 always hits — SRD, and the only two
   // rules a table will notice you got wrong.
-  const hit = crit || (roll !== 1 && total >= (target.ac ?? 10))
+  const hit = roll === 20 || (roll !== 1 && total >= (target.ac ?? 10))
+  const crit = roll === 20 || (hit && against.autoCrit)
   let damage = 0
   if (hit) {
     damage = rollDamage(attack, rng)
@@ -278,9 +292,10 @@ function resolveAttack(self: Combatant, target: Combatant, attack: Attack, rng: 
     if (crit) damage += rollDamage({ ...attack, dice: { ...attack.dice, bonus: 0 } }, rng)
   }
   const verb = crit ? "critically hits" : hit ? "hits" : "misses"
+  const why = against.note ? ` [${against.note}]` : ""
   return {
     roll, total, hit, crit, damage,
-    narration: `${self.label} ${verb} ${target.label} with ${attack.name} (${roll}${attack.toHit >= 0 ? "+" : ""}${attack.toHit} = ${total} vs AC ${target.ac ?? "—"})${hit ? ` for ${damage} damage` : ""}.`,
+    narration: `${self.label} ${verb} ${target.label} with ${attack.name} (${showDice(thrown)}${attack.toHit >= 0 ? "+" : ""}${attack.toHit} = ${total} vs AC ${target.ac ?? "—"})${hit ? ` for ${damage} damage` : ""}.${why}`,
   }
 }
 
