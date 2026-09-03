@@ -77,6 +77,8 @@ interface Props {
   characters: HudCharacter[]
   tokenToCharacter: Record<string, string>
   tokenPortrait?: Record<string, string>
+  /** token_id -> allegiance, so the rail can colour by SIDE rather than by kind. */
+  tokenSide?: Record<string, string>
   /** token_id -> hit points, so the rail can show monsters as well as players. */
   tokenHp?: Record<string, { cur: number | null; max: number | null }>
   tokenConditions?: Record<string, unknown>
@@ -260,6 +262,7 @@ function InitiativeToken({
   active,
   hp,
   summon,
+  allegiance,
 }: {
   entry: HudTurn
   character?: HudCharacter
@@ -270,14 +273,40 @@ function InitiativeToken({
   hp?: { cur: number | null; max: number | null } | null
   /** A hand this combatant is holding up, with the rounds it has left. No seat of its own - the SRD gives it none. */
   summon?: { roundsLeft: number } | null
+  /** Whose side, straight off the token. Null reads as hostile. */
+  allegiance?: string | null
 }) {
-  const hostile = entry.kind === "npc"
-  const ring = active ? "#f2cb63" : hostile ? "#8b2621" : "#536a86"
+  // WHOSE SIDE, NOT WHAT KIND.
+  //
+  // This read `entry.kind === "npc"` and painted every non-PC red — so
+  // Buppido, Eldeth, Prince Derendil and Shuushar, who are PRISONERS
+  // travelling with the party, sat in the rail looking like drow. Sam:
+  // "(RED) boxes should only be used for hostiles. Blue boxes represent
+  // allies. (Yellow) boxes represent neutral."
+  //
+  // vtt_tokens.allegiance is the field that has always known this, and the
+  // board's own comment on it says so: "character_id marks only the 4 PCs,
+  // so Eldeth and Derendil looked like enemies". The rail was making exactly
+  // that mistake.
+  //
+  // A null allegiance reads as hostile, matching the cast handler's own
+  // fence — a wrongly-hostile token merely cannot be healed, while a
+  // wrongly-friendly one cannot be attacked.
+  const side: "party" | "ally" | "hostile" | "neutral" =
+    allegiance === "party" || allegiance === "ally" || allegiance === "neutral" ? allegiance : "hostile"
+  const SIDE_RING: Record<typeof side, string> = {
+    party: "#536a86", ally: "#4f86c6", neutral: "#c9a227", hostile: "#8b2621",
+  }
+  const SIDE_GLOW: Record<typeof side, string> = {
+    party: "0 0 10px rgba(55,83,116,.36),0 3px 10px rgba(0,0,0,.85)",
+    ally: "0 0 10px rgba(79,134,198,.40),0 3px 10px rgba(0,0,0,.85)",
+    neutral: "0 0 10px rgba(201,162,39,.34),0 3px 10px rgba(0,0,0,.85)",
+    hostile: "0 0 10px rgba(125,28,24,.42),0 3px 10px rgba(0,0,0,.85)",
+  }
+  const ring = active ? "#f2cb63" : SIDE_RING[side]
   const glow = active
     ? "0 0 18px rgba(226,177,65,.8),0 4px 14px rgba(0,0,0,.9)"
-    : hostile
-      ? "0 0 10px rgba(125,28,24,.42),0 3px 10px rgba(0,0,0,.85)"
-      : "0 0 10px rgba(55,83,116,.36),0 3px 10px rgba(0,0,0,.85)"
+    : SIDE_GLOW[side]
 
   return (
     <div
@@ -305,7 +334,7 @@ function InitiativeToken({
             characterClass={character?.class}
             className="scale-[1.12]"
             fallback={
-              <span className={`font-serif text-[18px] ${hostile ? "text-[#c46a5e]" : "text-[#91a8c8]"}`}>
+              <span className="font-serif text-[18px]" style={{ color: SIDE_RING[side] }}>
                 {entry.label.slice(0, 1)}
               </span>
             }
@@ -410,6 +439,7 @@ export function CombatHud(props: Props) {
     characters,
     tokenToCharacter,
     tokenPortrait = {},
+    tokenSide = {},
     tokenConditions = {},
     tokenHp = {},
     turnOrder,
@@ -678,6 +708,7 @@ export function CombatHud(props: Props) {
                     // covers monsters as well as players — and the copy the
                     // combat route enforces.
                     hp={tokenHp[entry.token_id] ?? null}
+                    allegiance={tokenSide[entry.token_id] ?? null}
                     summon={(() => {
                       const s = summons.find((x) => x.info.caster_token === entry.token_id)
                       return s ? { roundsLeft: roundsLeft(s.info, round) } : null
@@ -722,6 +753,9 @@ export function CombatHud(props: Props) {
                     // Lit whenever its master is, since it moves on their turn.
                     active={i === activeIndex}
                     hp={tokenHp[hand.token_id] ?? null}
+                    // Always its master's side: the hand is not a creature and
+                    // has no allegiance of its own to read.
+                    allegiance={tokenSide[entry.token_id] ?? "party"}
                     summon={{ roundsLeft: roundsLeft(hand.info, round) }}
                   />,
                 ]
