@@ -27,8 +27,12 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   - vtt_tokens ROWS. The opening tableau (party at the back of the pen,
 //     prisoner NPCs between them and the gates) is canon and hand-placed, so
 //     the board is re-pointed at the starting node's map (step 5c) rather than
-//     having the tokens swept and rebuilt. Their HP is healed (step 5e); their
-//     SQUARES are not — see the known gap below.
+//     having the tokens swept and rebuilt. Their HP is healed (step 5e), they
+//     are made visible again (5f); their SQUARES are not — see the gap below.
+//     SUMMONED tokens are the one exception and ARE deleted (5f): a conjured
+//     creature is not canon, it is a leftover of a spell that no longer
+//     happened.
+//   - Ground items nobody dropped. Placed loot is canon; see 5f.
 //   - Character rows, stats, XP and levels.
 //
 // KNOWN GAP, stated rather than implied
@@ -37,6 +41,13 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   code wrote grid_x/grid_y, so after a restart the party stands wherever the
 //   last fight left them, on the starting map. Putting that right means
 //   knowing the canonical tableau, which lives in nobody's table yet.
+//
+//   NOT a gap, though it was reported as one: the SUBNODAL FOG. Step 5b calls
+//   subnodal_reset_to_start and it works — verified live on 2026-09-02, which
+//   left exactly three rows (the pen explored, its two neighbours sighted).
+//   The tactical board's DARKNESS is a client-side toggle with no row behind
+//   it and nothing to reset. If "fog" is still visible after a restart it is
+//   one of those two, and neither is campaign state.
 //
 // AUTHORIZATION mirrors /api/asset-media and /api/forge/import: x-dm-key must
 // carry DM_ACCESS_CODE. FAIL CLOSED: with the env var unset the route refuses
@@ -546,6 +557,152 @@ export async function POST(req: Request) {
       else revived += 1
     }
     report.tokensRevived = revived
+  }
+
+  // --- 5f. the state of the room itself ------------------------------------
+  // Sam, 2026-09-02: "Reset also needs to reset board state, right now there
+  // is still blood and fog."
+  //
+  // Steps 4a/5e healed the PEOPLE. Nothing had ever touched the ROOM. A
+  // restarted campaign opened on a floor that still had six pools of blood on
+  // it, a Mage Hand from a spell nobody had cast standing in the middle of the
+  // pen, and a Hook Horror the DM had hidden three days earlier still hidden.
+  //
+  // What is deliberately NOT washed:
+  //   - tint_color. The only tinted token today is the summon, which is
+  //     deleted outright below. A tint on a real token is a DM's own labelling
+  //     and this route has no business guessing which.
+  //   - Ground items that nobody dropped. Both live rows are seeded canon
+  //     (identical created_at, null dropped_by) — placed loot, not litter. Only
+  //     what a character dropped is swept; the rest is merely un-picked-up.
+  {
+    // Wash the blood. lib/blood-marks keeps it in vtt_maps.meta.marks.
+    //
+    // The key is REMOVED rather than set to [], and meta is spread rather than
+    // replaced, because that same jsonb also carries node, art_url, cells_url
+    // and px_per_square. Writing `{ marks: [] }` over it would take the map's
+    // artwork off the board — the mirror of layBlood()'s `{ ...meta, marks }`.
+    const { data: maps, error: mapsErr } = await admin.from("vtt_maps").select("id, meta")
+    note("maps read", mapsErr)
+
+    let washed = 0
+    let marksRemoved = 0
+    for (const m of maps || []) {
+      const meta = (m.meta as Record<string, unknown> | null) ?? {}
+      if (!("marks" in meta)) continue
+      marksRemoved += Array.isArray(meta.marks) ? meta.marks.length : 0
+      const { marks: _dropped, ...rest } = meta
+      const { error } = await admin.from("vtt_maps").update({ meta: rest }).eq("id", m.id)
+      if (error) note(`wash map ${m.id}`, error)
+      else washed += 1
+    }
+    report.mapsWashed = washed
+    report.bloodMarksRemoved = marksRemoved
+  }
+
+  {
+    // Conjurations. A summoned creature is not canon — it was created at
+    // runtime by a spell in a campaign that no longer happened, and unlike
+    // every other token on the board there is no hand-placed tableau to
+    // preserve. So this is the one place the board is DELETED from.
+    //
+    // Today's row is a Mage Hand carrying expires_round: 11 from a fight that
+    // ended long ago: the token outlived not just its duration but its combat.
+    const { count, error } = await admin
+      .from("vtt_tokens")
+      .delete({ count: "exact" })
+      .not("summon", "is", null)
+    note("dismiss summons", error)
+    report.summonsDismissed = count ?? 0
+  }
+
+  {
+    // Everything the board can hide a token behind. is_visible is the DM's
+    // curtain and is_hidden is the rogue's; ward is a spell effect riding on
+    // the token. All three are things the campaign did, so all three go.
+    //
+    // Read first and pick the rows here rather than sending a three-column
+    // .or() with a not.is.null in it. A filter that is subtly wrong does not
+    // error — it matches nothing and reports success, which is the exact
+    // failure mode described at the top of this file for the RLS deletes.
+    // Steps 3 and 5e already work this way; so does this.
+    const { data: dressed, error: readErr } = await admin
+      .from("vtt_tokens")
+      .select("id, is_visible, is_hidden, ward")
+    note("tokens read for reveal", readErr)
+
+    let revealed = 0
+    for (const t of dressed || []) {
+      if (t.is_visible !== false && t.is_hidden !== true && t.ward == null) continue
+      const { error } = await admin
+        .from("vtt_tokens")
+        .update({
+          is_visible: true,
+          is_hidden: false,
+          ward: null,
+          updated_by: "restart",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", t.id)
+      if (error) note(`reveal token ${t.id}`, error)
+      else revealed += 1
+    }
+    report.tokensRevealed = revealed
+  }
+
+  {
+    // Loot on the flagstones. What a character dropped during the campaign is
+    // swept; what was placed there as canon is merely made un-picked-up again,
+    // so a restarted party can find it exactly as the first one did.
+    const { count: sweptCount, error: sweepErr } = await admin
+      .from("vtt_ground_items")
+      .delete({ count: "exact" })
+      .not("dropped_by", "is", null)
+    note("sweep dropped loot", sweepErr)
+    report.groundItemsSwept = sweptCount ?? 0
+
+    const { count: restoredCount, error: restoreErr } = await admin
+      .from("vtt_ground_items")
+      .update({ picked_up_by: null, picked_up_at: null, updated_at: new Date().toISOString() }, { count: "exact" })
+      .not("picked_up_at", "is", null)
+    note("restore placed loot", restoreErr)
+    report.groundItemsRestored = restoredCount ?? 0
+  }
+
+  {
+    // The NPCs' conditions. Step 3 clears these on `npc_encounters`, and step
+    // 4a clears them on players — but a monster or ally that lives in
+    // `characters` with is_player=false was covered by neither, so Ront has
+    // been lying Prone across every restart since somebody knocked him down.
+    //
+    // This clears Stool's "Rapport" too. If that spore-link is meant to be
+    // true from the first minute rather than something the party earns, it is
+    // one UPDATE to put back — flagged rather than assumed.
+    // Read-then-write for the same reason as the block above: `.neq` against a
+    // jsonb literal is a filter that fails quietly, and a null `conditions`
+    // would be excluded by it anyway.
+    const { data: npcRows, error: readErr } = await admin
+      .from("characters")
+      .select("id, name, conditions")
+      .eq("is_player", false)
+    note("npc characters read", readErr)
+
+    const dirty = (npcRows || []).filter(
+      (c) => Array.isArray(c.conditions) && (c.conditions as unknown[]).length > 0,
+    )
+    let cleared = 0
+    for (const c of dirty) {
+      const { error } = await admin
+        .from("characters")
+        .update({ conditions: [], updated_at: new Date().toISOString() })
+        .eq("id", c.id)
+      if (error) note(`npc conditions ${c.id}`, error)
+      else cleared += 1
+    }
+    report.npcConditionsCleared = cleared
+    // Named, not just counted: this is the one step that can quietly undo a
+    // condition the DM meant to be permanent, so the report says whose.
+    report.npcConditionsClearedFrom = dirty.map((c) => c.name)
   }
 
   console.log("[restart] complete:", JSON.stringify(report))
