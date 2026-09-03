@@ -133,7 +133,19 @@ function BattleBoardPage() {
           // Mark this exit as deliberate. The dashboard's live-fight redirect
           // checks this flag; without it, leaving the board during combat
           // bounced the DM straight back to /battle on arrival.
-          try { sessionStorage.setItem("aop-left-battle", "1") } catch {}
+          try {
+            sessionStorage.setItem("aop-left-battle", "1")
+            // ...AND THE CEREMONY IS ALREADY OVER.
+            //
+            // `/` sends anyone without this flag to /intro — right for a fresh
+            // visitor, wrong for a DM walking off the board. The board is
+            // usually reached by a redirect (window.location.assign("/battle"))
+            // that never passes through `/`, so the flag was often never set,
+            // and leaving combat restarted the whole intro instead of landing
+            // on the dashboard. Someone coming BACK from a fight has plainly
+            // arrived already.
+            sessionStorage.setItem("aop_intro_seen", "1")
+          } catch {}
           router.push("/")
         }}
       />
