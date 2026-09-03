@@ -19,12 +19,30 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 export const dynamic = "force-dynamic"
 
 const SCOPES = ["solo", "party"] as const
-const KINDS = ["environment", "action", "filler"] as const
+const KINDS = ["environment", "action", "filler", "opening"] as const
 const TRIGGERS = ["campaign_open", "player_initiated", "event_driven", "dm_override"] as const
 
 // The five values the cinematic_requests.resolution column is constrained to
 // at the database level. Anything outside this set throws on insert.
-type Resolution = "exact" | "location_fallback" | "generic_fallback" | "miss" | "rejected"
+// WHY THERE ARE SEVEN OF THESE (2 Sep 2026).
+//
+// `resolution` is the only record of why a cinematic did not play, and three
+// unrelated outcomes used to write the same word, "miss":
+//
+//   the catalogue has nothing for this cue   → a real gap, worth filming
+//   the row exists but has no film yet       → already on the shot list
+//   this character has already watched it    → the feature working as designed
+//
+// Sharing a label made cinematic_gaps unreadable: on 28 Aug 2026 the identical
+// lockpick-success request logged `exact` at 23:01 and `miss` at 23:03, with
+// nothing changed in the catalogue between them. The second was
+// repeat-suppression filed as a catalogue hole.
+//
+// So "miss" now means exactly one thing — the catalogue has nothing — and the
+// gaps report ranks on it alone.
+type Resolution =
+  | "exact" | "location_fallback" | "generic_fallback"
+  | "miss" | "rejected" | "seen" | "unrendered"
 
 function authorized(request: NextRequest): boolean {
   const dmCode = process.env.DM_ACCESS_CODE
@@ -81,7 +99,7 @@ async function logCinematicRequest(
 // ONCE PER CHARACTER (Sam's ruling, 18 Aug 2026). A clip a character has
 // already watched will not resolve for them again: cinematic_views is checked
 // before the clip is handed over, and a repeat is reported as
-// { clip: null, resolution: "miss", seen: true }. Two deliberate exceptions:
+// { clip: null, resolution: "seen", seen: true }. Two deliberate exceptions:
 //   - trigger_type=dm_override ignores the seen-check entirely. DM mode is the
 //     only way to replay something.
 //   - probe=1 asks "is anything unseen available here?" WITHOUT recording a
@@ -199,14 +217,17 @@ export async function GET(request: NextRequest) {
       .eq("id", cinematicId)
       .maybeSingle()
 
-    // id does not exist → rejected. id exists but not yet rendered → miss.
+    // id does not exist → rejected. id exists but not yet rendered → unrendered.
     if (!clip) {
       await logCinematicRequest(admin, { ...reqMeta, resolution: "rejected", resolved_clip_id: null })
       return NextResponse.json({ clip: null, resolution: "rejected" })
     }
     if (!clip.video_url) {
-      await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
-      return NextResponse.json({ clip: null, resolution: "miss" })
+      // The clip is catalogued and correctly tagged; only the film is missing.
+      // That is a shot-list item, not a catalogue hole, and the player UI reads
+      // this to say "not cut yet" rather than "we have nothing".
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "unrendered", resolved_clip_id: null })
+      return NextResponse.json({ clip: null, resolution: "unrendered" })
     }
 
     // dm_override is the only caller allowed on this path, and DM override is
@@ -292,10 +313,13 @@ export async function GET(request: NextRequest) {
 
   // === ONCE PER CHARACTER ===
   if (clip && triggerType !== "dm_override" && (await alreadySeen(admin, characterId, clip.id))) {
+    // Suppression is the rule doing its job, not a failure to find film. The
+    // response already carried `seen: true`; the resolution now agrees with it,
+    // so the log and the body tell the same story.
     if (!probe) {
-      await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
+      await logCinematicRequest(admin, { ...reqMeta, resolution: "seen", resolved_clip_id: null })
     }
-    return NextResponse.json({ clip: null, resolution: "miss", seen: true })
+    return NextResponse.json({ clip: null, resolution: "seen", seen: true })
   }
 
   // A probe stops here: nothing logged, nothing recorded, nothing consumed.
