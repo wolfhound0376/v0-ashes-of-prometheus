@@ -72,10 +72,22 @@ export async function GET() {
 
   // Four catalogues in parallel. The roster is the whole point of the drawer
   // and it is read on every open, so it is one round trip, not four.
-  const [creatures, npcs, chars, envs, tokens] = await Promise.all([
+  const [creatures, players, npcs, chars, envs, tokens] = await Promise.all([
     db.from("bestiary")
       .select("id,name,slug,size,cr,hp,ac,role,model_url,model_scale")
       .order("name"),
+    // THE PARTY IS NOT A MONSTER.
+    //
+    // The bestiary carries rows for Kenta and Fifi — they are prisoners in
+    // Velkynvelve and the NPC turn needs stat blocks for them — so the Stage
+    // Door was offering the party in its Monsters list. Sam spawned two extra
+    // Fifis, and then asked why Fifi was standing up while her card said
+    // unconscious: because two of the three Fifis on the board were bestiary
+    // copies at full health, and the real one was face down.
+    //
+    // Matched by NAME against the live player characters, because that is the
+    // only link there is: these bestiary rows carry no character_id.
+    db.from("characters").select("name").eq("character_type", "player").is("archived_at", null),
     db.from("npc_encounters")
       .select("id,character_id,name,hp_max,ac,challenge_rating,monster_type,portrait_url,disposition,bestiary_id")
       .order("name"),
@@ -92,13 +104,21 @@ export async function GET() {
       .order("label"),
   ])
 
+  const partyNames = new Set(
+    (players.data ?? []).map((p) => String(p.name ?? "").trim().toLowerCase()),
+  )
+
   return NextResponse.json({
     map: {
       id: map.id, name: map.name,
       grid_width: map.grid_width, grid_height: map.grid_height,
       environment_id: map.environment_id,
     },
-    bestiary: creatures.data ?? [],
+    // Filtered here rather than in the drawer: a client-only fence is not a
+    // fence, and the spawn verb below reads the same list.
+    bestiary: (creatures.data ?? []).filter(
+      (b) => !partyNames.has(String(b.name ?? "").trim().toLowerCase()),
+    ),
     npcs: npcs.data ?? [],
     characters: chars.data ?? [],
     environments: envs.data ?? [],
@@ -147,7 +167,7 @@ export async function POST(req: NextRequest) {
 
     const { data: standing } = await db
       .from("vtt_tokens")
-      .select("id,label,character_id,hp_max")
+      .select("id,label,character_id,bestiary_id,hp_max")
       .eq("map_id", map.id)
     const tokens = standing ?? []
 
@@ -157,7 +177,40 @@ export async function POST(req: NextRequest) {
     // Collected, not swallowed. See the note at the sheet update below.
     const failures: string[] = []
     let healed = 0
+    // WHAT THE CATALOGUE SAYS THEY ARE, not what somebody typed months ago.
+    //
+    // Sam: "is the battle HUD really playing by DND rules, it seems like the
+    // Drow don't have very many HPs." They did not. The Drow Elite Warrior
+    // (CR 5, 71 hp, 11d8+22) and the Priestess of Lolth (CR 8, 71 hp,
+    // 13d8+13) were hand-seeded onto this board at THIRTEEN — a plain drow's
+    // hit points — and the engine reads the token, so two of the deadliest
+    // things in Velkynvelve were being fought as CR 1/4 mooks.
+    //
+    // The reset deliberately never wrote hp_max ("this restores what the
+    // fight spent; it does not decide how tough anything is"), which was the
+    // right rule and meant a bad seed could never correct itself. So the
+    // rule is narrowed rather than dropped: hp_max is restored FROM THE
+    // BESTIARY when they disagree, and left alone otherwise. The catalogue
+    // decides how tough something is; the reset still does not.
+    const speciesHp = new Map<string, number>()
+    {
+      const ids = tokens.map((t) => (t as { bestiary_id?: string | null }).bestiary_id).filter(Boolean) as string[]
+      if (ids.length) {
+        const { data: bs } = await db.from("bestiary").select("id,hp").in("id", ids)
+        for (const b of bs ?? []) if (typeof b.hp === "number") speciesHp.set(b.id, b.hp)
+      }
+    }
+    let corrected = 0
+
     for (const t of tokens) {
+      const species = speciesHp.get((t as { bestiary_id?: string | null }).bestiary_id ?? "")
+      if (species != null && t.hp_max !== species) {
+        await db.from("vtt_tokens")
+          .update({ hp_max: species, updated_by: "sandbox-reset", updated_at: now })
+          .eq("id", t.id).eq("map_id", map.id)
+        t.hp_max = species
+        corrected += 1
+      }
       if (t.hp_max == null) continue   // null HP is UNTRACKED, never dead
       const { error } = await db
         .from("vtt_tokens")
@@ -249,7 +302,7 @@ export async function POST(req: NextRequest) {
       // NOT ok when something was refused. The caller has to be able to tell
       // a reset that worked from one that only looked like it did.
       ok: failures.length === 0,
-      healed, sheets, slotsRestored, combatEnded: Boolean(fight),
+      healed, sheets, slotsRestored, corrected, combatEnded: Boolean(fight),
       ...(failures.length ? { failures } : {}),
     })
   }
