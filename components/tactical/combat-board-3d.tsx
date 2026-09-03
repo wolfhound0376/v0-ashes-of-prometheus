@@ -1558,6 +1558,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * Returns the clip that actually played, so the caller can look up when
      * the spell leaves the hand.
      */
+    /**
+     * NINE BODIES BREATHING AS ONE OBJECT.
+     *
+     * Every looping clip started at frame 0 at rate 1, so a room of drow rose
+     * and fell in perfect unison — which the eye reads instantly, and reads as
+     * machinery rather than as people. It is the single reason a board full of
+     * idling models looks dead: not that they are still, but that they are
+     * still TOGETHER.
+     *
+     * Each body gets its own entry point into the loop and its own tempo,
+     * stable for as long as it stands there so it never twitches or resets.
+     * The spread is deliberately small — ±8% — because a stance played 30%
+     * fast stops looking like breathing and starts looking broken.
+     */
+    const idleLife = new WeakMap<object, { phase: number; rate: number }>()
+    const lifeOf = (anim: TokenAnim) => {
+      let life = idleLife.get(anim as unknown as object)
+      if (!life) {
+        life = { phase: Math.random(), rate: 0.92 + Math.random() * 0.16 }
+        idleLife.set(anim as unknown as object, life)
+      }
+      return life
+    }
+
     const playState = (
       anim: TokenAnim,
       state: TokenState,
@@ -1576,6 +1600,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       next.reset()
       next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity)
       next.clampWhenFinished = once
+      if (!once) {
+        // A one-shot must land on the beat it was asked for — only the loops
+        // are scattered. reset() has just put the clock at zero, so this has
+        // to come after it.
+        const life = lifeOf(anim)
+        next.time = clip.duration * life.phase
+        next.timeScale = life.rate
+      } else {
+        next.timeScale = 1
+      }
       next.fadeIn(0.18).play()
       if (anim.current && anim.current !== next) anim.current.fadeOut(0.18)
       anim.current = next
@@ -5688,11 +5722,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const stamp = `${combat.id}:${combat.round}:${combat.active_index}`
     if (npcTurnRef.current === stamp) return
     npcTurnRef.current = stamp
+    // THE BEAT BEFORE A MONSTER MOVES — SHORTER THAN IT WAS.
+    //
+    // Sam: "The game play is a little to slow." Measured on his own fight: an
+    // NPC turn costs about two seconds of server work, and this used to add
+    // 900 ms of waiting IN FRONT of every one of them. With five NPCs in the
+    // order that is four and a half seconds per round spent watching nothing
+    // happen, on top of the fifteen the turns themselves take.
+    //
+    // The beat is not decoration — resolving a swing on the same frame the
+    // banner announces it reads as a glitch — but a third of a second is
+    // enough to separate the two events, and Baldur's Gate 3's own answer to
+    // this complaint was the same one: compress the ENEMY turns and leave the
+    // player's alone. Nothing here touches a player's turn.
     const timer = window.setTimeout(async () => {
       // Only a resolved swing passes the turn on. A refusal must not advance
       // the order, and neither must a call that never left the building.
       if ((await combatAction("npc-turn")) === "ok") await combatAction("next")
-    }, 900)
+    }, 320)
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [combat?.id, combat?.round, combat?.active_index, combatBusy])

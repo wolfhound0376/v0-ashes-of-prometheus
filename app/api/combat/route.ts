@@ -28,6 +28,8 @@ import { normaliseExhaustion } from "@/lib/exhaustion"
 import {
   MAGE_HAND, summonMageHand, normaliseSummon, expired, withinLeash, withinCastRange, canReach, handUse,
 } from "@/lib/summons"
+// Short canned lines, spaced and never repeated back to back. See lib/barks.
+import { barkFor } from "@/lib/barks"
 import { normalizeConditions } from "@/lib/conditions"
 // Sanctuary and Shield of Faith: the protections that ride on a token until
 // their duration runs out or their bearer swings first.
@@ -804,6 +806,18 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+    // WHAT IT SAYS WHILE IT DOES IT.
+    //
+    // Sam: "the drow, derendil, jimjar need to ... speak every so often." The
+    // bark goes in FIRST, so the room hears the drow sneer and then watches
+    // the crossbow come up, rather than reading the damage and being told
+    // afterwards how it felt about it.
+    //
+    // lib/barks decides whether this creature has anything to say this round.
+    // It is deterministic over (name, round), so every browser at the table
+    // gets the same line with nothing stored and nothing synchronised.
+    const bark = barkFor(self.label, combat.round)
+    if (bark) await narrate(db, self.label ?? "Someone", bark)
     await narrate(db, self.label, decision.narration)
 
     // The creature's whole turn is spent in one call, so the economy reads
