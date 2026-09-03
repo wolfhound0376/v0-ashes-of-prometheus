@@ -1183,6 +1183,16 @@ export async function POST(req: NextRequest) {
       const victims: {
         id: string; label: string; amount: number; saved: boolean
         outcome: string; margin: number; roll: number; total: number; dc: number; heals: boolean
+        /**
+         * Did THIS blast put them on the floor?
+         *
+         * settleHitPoints has always known - it is what decides whether blood
+         * is laid and how big the pool is - and the answer was thrown away at
+         * the edge of the handler. The banner needs it to say "burns" rather
+         * than guessing from a hit-point number it would have to fetch again
+         * and could race with the next write.
+         */
+        fell: boolean
       }[] = []
       const parts: string[] = []
 
@@ -1222,6 +1232,10 @@ export async function POST(req: NextRequest) {
           parts.push(`${t.label} takes ${amount}`)
         }
 
+        // Hoisted out of the block below, where settleHitPoints lives: a
+        // creature that took nothing cannot have fallen, so `false` is the
+        // right answer for every branch that never gets there.
+        let fell = false
         if (amount > 0) {
           const cur = t.hp_current ?? t.hp_max ?? 0
           const max = t.hp_max ?? cur
@@ -1233,6 +1247,7 @@ export async function POST(req: NextRequest) {
             cur, max, amount, heals: Boolean(entry.heals), by: "player-cast",
           })
           const next = settled.hp
+          fell = settled.fell
           if (settled.note) parts.push(settled.note.replace(/\.$/, ""))
           // Same rule as the single-target path, through the same function.
           // A Fireball that leaves three people on the brink says so about
@@ -1245,7 +1260,7 @@ export async function POST(req: NextRequest) {
           }
         }
         victims.push({
-          id: t.id, label: t.label ?? "", amount, saved,
+          id: t.id, label: t.label ?? "", amount, saved, fell,
           // The TARGET rolled, so a positive margin is how well they got out
           // of the way — the same reading the single-target save path asks
           // for. A spell with no save has no margin to speak of.
@@ -1461,6 +1476,10 @@ export async function POST(req: NextRequest) {
       line = `${caster.label} casts ${ability} on ${victim.label} for ${amount}.`
     }
 
+    // Hoisted for the same reason as the area path: settleHitPoints lives
+    // inside the block below, and a blow that dealt nothing cannot have
+    // felled anybody.
+    let fellHere = false
     if (amount > 0) {
       const cur = victim.hp_current ?? victim.hp_max ?? 0
       const max = victim.hp_max ?? cur
@@ -1474,6 +1493,7 @@ export async function POST(req: NextRequest) {
         characterId: victim.character_id ?? null, tokenId: victim.id, label: victim.label ?? "Someone",
         cur, max, amount, heals: Boolean(entry.heals), crit, by: "player-cast",
       })
+      fellHere = settled.fell
       const next = settled.hp
       // THE CABINET WARNS BEFORE IT MOURNS.
       //
@@ -1512,6 +1532,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true, resolved: true, hit, crit, amount,
+      /**
+       * Did this blow put them on the floor? Known all along by
+       * settleHitPoints, and discarded here until the banner needed to say
+       * HOW something died rather than merely that it took damage.
+       */
+      fell: fellHere,
       heals: Boolean(!weapon && entry.heals),
       weapon: Boolean(weapon),
       line,
