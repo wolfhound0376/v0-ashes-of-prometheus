@@ -77,6 +77,8 @@ interface Props {
   characters: HudCharacter[]
   tokenToCharacter: Record<string, string>
   tokenPortrait?: Record<string, string>
+  /** token_id -> hit points, so the rail can show monsters as well as players. */
+  tokenHp?: Record<string, { cur: number | null; max: number | null }>
   tokenConditions?: Record<string, unknown>
   turnOrder: HudTurn[]
   activeIndex: number
@@ -256,6 +258,7 @@ function InitiativeToken({
   portrait,
   conditions,
   active,
+  hp,
   summon,
 }: {
   entry: HudTurn
@@ -263,6 +266,8 @@ function InitiativeToken({
   portrait: string | null
   conditions: string[]
   active: boolean
+  /** Current and maximum hit points, or null where the token tracks none. */
+  hp?: { cur: number | null; max: number | null } | null
   /** A hand this combatant is holding up, with the rounds it has left. No seat of its own - the SRD gives it none. */
   summon?: { roundsLeft: number } | null
 }) {
@@ -336,6 +341,40 @@ function InitiativeToken({
         )}
       </div>
 
+      {/*
+        HIT POINTS, under the picture.
+
+        Sam: "Initiative cards should have present HP/total HP below picture."
+
+        Sits between the portrait and the initiative plaque, so the rail reads
+        top to bottom as WHO / HOW HURT / WHEN THEY GO.
+
+        Rendered only when the token actually tracks hit points. A null
+        hp_current means "not tracked" — the Velkynvelve Equipment Stash and
+        the Mage Hand are both in this rail's data and neither has health —
+        and printing "0/0" under them would invent a corpse. Nothing is
+        better than a wrong number.
+
+        Coloured by fraction, not by an absolute: at 4 hit points a drow guard
+        is nearly dead and a boss is barely scratched. Amber under a half and
+        red under a quarter is the same reading the character card's HP fill
+        already gives, so the two never disagree.
+      */}
+      {hp && hp.cur != null && hp.max != null && hp.max > 0 && (() => {
+        const frac = Math.max(0, Math.min(1, hp.cur / hp.max))
+        const dead = hp.cur <= 0
+        const ink = dead ? "#8a6a6a" : frac <= 0.25 ? "#ff8d7a" : frac <= 0.5 ? "#f0b45c" : "#a8d69a"
+        return (
+          <div
+            title={`${hp.cur} of ${hp.max} hit points`}
+            className="mx-auto mt-[3px] w-[48px] rounded-[3px] border border-[#3f3020]/90 bg-black/60 px-[2px] text-center font-serif text-[9px] leading-[12px] tabular-nums"
+            style={{ color: ink, textShadow: "0 1px 2px rgba(0,0,0,.95)" }}
+          >
+            {hp.cur}<span className="opacity-50">/</span>{hp.max}
+          </div>
+        )
+      })()}
+
       <div
         className="mx-auto mt-[3px] flex h-[20px] w-[42px] items-center justify-center border-x border-b bg-gradient-to-b from-[#171109] to-[#080604] font-serif text-[12px] font-semibold"
         style={{
@@ -372,6 +411,7 @@ export function CombatHud(props: Props) {
     tokenToCharacter,
     tokenPortrait = {},
     tokenConditions = {},
+    tokenHp = {},
     turnOrder,
     activeIndex,
     round,
@@ -634,6 +674,10 @@ export function CombatHud(props: Props) {
                     portrait={art}
                     conditions={conds}
                     active={i === activeIndex}
+                    // The token's own hit points, which is the only source that
+                    // covers monsters as well as players — and the copy the
+                    // combat route enforces.
+                    hp={tokenHp[entry.token_id] ?? null}
                     summon={(() => {
                       const s = summons.find((x) => x.info.caster_token === entry.token_id)
                       return s ? { roundsLeft: roundsLeft(s.info, round) } : null
