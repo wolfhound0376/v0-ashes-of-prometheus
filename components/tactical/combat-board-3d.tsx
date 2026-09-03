@@ -335,6 +335,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * owns the deadlines that stop a hold outliving its spell.
    */
   const impactHold = useRef(new ImpactHold())
+  /**
+   * Per-token row counter, so a deferred write can tell whether it has been
+   * overtaken. Without it, a reconcile scheduled for a held blow could land
+   * after a newer row and quietly restore the older hit points.
+   */
+  const rowSeq = useRef(new Map<string, number>())
   /** Live sight cones, while Sneak is armed. Null the rest of the time. */
   const conesRef = useRef<ConeHandle | null>(null)
   /**
@@ -2683,6 +2689,35 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     window.addEventListener("keydown", onMoveKey)
 
     /**
+     * THE RAIL NEVER LIES.
+     *
+     * `tokenHp` is a second copy of the hit points, kept because the rail must
+     * re-render and `tokensRef` is a ref. A second copy is only ever as good
+     * as the number of places that remember to update it, and it was updated
+     * in exactly ONE place — inside glideToken, behind an `hpWas !== hpNow`
+     * guard, after an early return. Three ways to miss it:
+     *
+     *  - glideToken returns early for a token it does not know yet, so that
+     *    row's hit points never reach the rail at all;
+     *  - the impact hold deliberately hands glideToken the OLD hit points so
+     *    the body does not fall before the spell lands, which makes hpWas and
+     *    hpNow equal and skips the write;
+     *  - and a creature killed by that held blow is never written again, so
+     *    no later row comes along to carry the truth.
+     *
+     * That last one is what Sam saw: Samson listed at 1/9 and standing, while
+     * his own card read 0/9 UNCONSCIOUS. Calling this from every path that
+     * handles a row costs nothing and removes the whole class.
+     */
+    const noteHp = (row: TokenRow) => {
+      setTokenHp((m) => {
+        const was = m[row.id]
+        if (was && was.cur === row.hp_current && was.max === row.hp_max) return m
+        return { ...m, [row.id]: { cur: row.hp_current, max: row.hp_max } }
+      })
+    }
+
+    /**
      * SPECIES ART, REMEMBERED.
      *
      * A token with no model of its own wears its species' art. That rule was
@@ -2735,6 +2770,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             })
         }
       }
+      noteHp(row)
       const existing = tokensRef.current.get(row.id)
       if (existing) tokenGroup.remove(existing.obj)
       if (!row.is_visible) { tokensRef.current.delete(row.id); return }
@@ -3067,6 +3103,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
 
     const glideToken = (row: TokenRow) => {
+      noteHp(row)
       const entry = tokensRef.current.get(row.id)
       if (!entry) { spawnToken(row); return }
       // HP or identity changed → rebuild; position change → glide.
@@ -3093,9 +3130,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // HP write rather than only inside the diff below, because that branch
       // deliberately ignores null->number (a token joining the fight), and the
       // rail still needs to show the newcomer's health.
-      if (hpWas !== hpNow || before.hp_max !== row.hp_max) {
-        setTokenHp((m) => ({ ...m, [row.id]: { cur: row.hp_current, max: row.hp_max } }))
-      }
+      // (The rail was written at the top of this function, before the early
+      // return above could skip it. It used to happen here, behind the same
+      // diff that ignores a held blow — see noteHp.)
       if (hpWas != null && hpNow != null && hpWas !== hpNow) {
         const delta = hpNow - hpWas
         const healed = delta > 0
@@ -5065,6 +5102,33 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const incoming = payload.new as TokenRow
           const held = impactHold.current.held(incoming.id, Date.now())
           const local = held ? tokensRef.current.get(incoming.id)?.row : undefined
+          if (held) {
+            // TRUTH DEFERRED IS NOT TRUTH DISCARDED.
+            //
+            // The hold is what keeps a body upright until the spell reaches
+            // it. The comment below used to promise that "the next row through
+            // here carries the truth" — and for a creature that goes on
+            // fighting, it does. A creature KILLED by the held blow is never
+            // written again, so no next row ever comes, and the rail kept the
+            // hit points from before the blow for the rest of the session.
+            //
+            // So the truth is booked for the moment the hold lapses. If the
+            // impact lands first it releases the hold and applies the damage
+            // itself, and this finds nothing left to do.
+            const seq = (rowSeq.current.get(incoming.id) ?? 0) + 1
+            rowSeq.current.set(incoming.id, seq)
+            const wait = impactHold.current.remaining(incoming.id, Date.now())
+            window.setTimeout(() => {
+              if (disposed) return
+              // A newer row for this token has already spoken. Applying a
+              // stale one now would undo it.
+              if (rowSeq.current.get(incoming.id) !== seq) return
+              if (impactHold.current.held(incoming.id, Date.now())) return
+              const now = tokensRef.current.get(incoming.id)?.row
+              if (now && now.hp_current === incoming.hp_current) return
+              glideToken(incoming)
+            }, wait + 80)
+          }
           glideToken(local
             ? { ...incoming, hp_current: local.hp_current, hp_max: local.hp_max }
             : incoming)
