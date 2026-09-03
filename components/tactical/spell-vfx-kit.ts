@@ -83,8 +83,16 @@ interface TypeSpec {
 //
 // PHYSICAL is the one that genuinely had nothing, and the only entry here
 // that is not a spell. It gets an impact and no charge disc.
+//
+// FIRE no longer lands as its own projectile. The travelling ball doubled as
+// the impact, so a Fireball arrived as the same orange sphere that flew in,
+// held still and scaled up. fireImpact is cut from footage like the frost:
+// a white flash, the burst, and the smoke it leaves. Its scale is larger
+// than the ball's was because the burst fills about 40% of its letterboxed
+// cell where the ball filled 72% — 4.6 keeps the visible footprint where
+// 2.6 had it.
 const TYPES: Partial<Record<DamageType, TypeSpec>> = {
-  fire:     { rune: "runeFire",     route: "ball",        travel: "fireball",      impact: "fireball",       impactScale: 2.6, charge: 0.80, speed: 15, tint: 0xffffff, decal: "aoeFire" },
+  fire:     { rune: "runeFire",     route: "ball",        travel: "fireball",      impact: "fireImpact",     impactScale: 4.6, charge: 0.80, speed: 15, tint: 0xffffff, decal: "aoeFire" },
   cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff, decal: "aoeFrost" },
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff },
