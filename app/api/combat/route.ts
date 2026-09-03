@@ -24,6 +24,9 @@ import {
   wardSpellFor, wardRounds, normaliseWard, wardExpired, wardCondition,
   wardAcBonus, needsSanctuarySave, resolveSanctuary, breaksSanctuary,
 } from "@/lib/wards"
+// What a spell DOES, as data rather than as a branch — and the fallback that
+// means no spell is ever silent again.
+import { effectsFor, needsRuling, spendHpPool, type SpellEffect } from "@/lib/spell-effects"
 // Dropping to 0 hit points, as the SRD writes it. The rule lives in
 // lib/death-saves so it can be read whole and tested on every die face;
 // this file only owns the rows.
@@ -1098,6 +1101,58 @@ export async function POST(req: NextRequest) {
       await narrate(db, caster.label ?? "Someone", `${caster.label} strikes out, and the sanctuary around them fails.`)
     }
 
+    /**
+     * Lay a spell's declared effects on some creatures, and stamp the
+     * conditions where the sheets already show them.
+     *
+     * One writer for every spell, which is the whole point: adding Hold Person
+     * is a row in SPELL_EFFECTS, not a branch in this file.
+     *
+     * `dm` effects are not applied here — they are carried back to the caller
+     * for Malachar, because a ruling is a conversation and this function only
+     * writes rows.
+     */
+    const layEffects = async (
+      effects: SpellEffect[],
+      targets: { id: string; label: string | null; character_id: string | null }[],
+    ): Promise<number> => {
+      const timed = effects.filter((e) => e.kind === "condition" || e.kind === "buff")
+      if (!timed.length || !targets.length) return 0
+      const stamp = new Date().toISOString()
+      let laid = 0
+      for (const t of targets) {
+        const { data: row } = await db.from("vtt_tokens").select("effects").eq("id", t.id).maybeSingle()
+        const existing = Array.isArray(row?.effects) ? (row!.effects as unknown[]) : []
+        const added = timed.map((e) => ({
+          condition: e.kind === "condition" ? e.condition : `${ability} (${e.dice} ${e.applies})`,
+          spell: ability,
+          caster_token: caster.id,
+          cast_round: combat.round,
+          expires_round: combat.round + (e.kind === "condition" ? e.rounds : e.rounds),
+          ends_on_damage: e.kind === "condition" ? Boolean(e.endsOnDamage) : false,
+          save: e.kind === "condition" ? (e.save ?? null) : null,
+          save_ends: e.kind === "condition" ? Boolean(e.saveEnds) : false,
+        }))
+        const { error } = await db.from("vtt_tokens")
+          .update({ effects: [...existing, ...added], updated_by: "player-cast", updated_at: stamp })
+          .eq("id", t.id)
+        // Never swallowed: an effect that failed to write is a spell the
+        // player paid for and did not get.
+        if (error) continue
+        laid += 1
+        // And the word, where the sheet already knows how to show it.
+        if (t.character_id) {
+          const { data: ch } = await db.from("characters").select("conditions").eq("id", t.character_id).maybeSingle()
+          const conds = normalizeConditions(ch?.conditions)
+          const want = added.map((a) => a.condition).filter((w) => !conds.some((c) => c.toLowerCase() === w.toLowerCase()))
+          if (want.length) {
+            await db.from("characters").update({ conditions: [...conds, ...want], updated_at: stamp }).eq("id", t.character_id)
+          }
+        }
+      }
+      return laid
+    }
+
     const payFor = async () => {
       await breakOwnSanctuary()
       await db.from("combat_state")
@@ -1218,13 +1273,89 @@ export async function POST(req: NextRequest) {
       }
 
       // Utility areas — Fog Cloud, Web, Silence — cover the ground and roll
-      // nothing. They are real spells that have already cost a slot.
+      // nothing. They are real spells that have already cost a slot, and
+      // until now that is ALL they did.
       if (!entry.dice || !entry.resolve || entry.resolve === "none") {
-        await narrate(
-          db, caster.label ?? "Someone",
-          `${caster.label} casts ${ability} — it covers ${caught.map((t) => t.label).join(", ")}.`,
-        )
-        return NextResponse.json({ ok: true, resolved: false, area: true, note: "no dice to roll for this ability" })
+        const areaEffects = effectsFor(ability)
+        let handled = false
+        const parts: string[] = []
+
+        // A POOL OF HIT POINTS, SPENT ON THE WEAKEST FIRST — Sleep.
+        //
+        // It could never be expressed as damage or as a plain condition: it
+        // takes a NUMBER OF CREATURES decided by their hit points rather than
+        // by a saving throw, which is why it sat here doing nothing.
+        const pool = areaEffects.find((e) => e.kind === "hpPool")
+        if (pool && pool.kind === "hpPool") {
+          const total = rollDice(pool.dice)
+          // The species word, for the undead exclusion.
+          const typeById = new Map<string, string | null>()
+          const beastIds = caught.map((t) => t.bestiary_id).filter(Boolean) as string[]
+          if (beastIds.length) {
+            const { data: bs } = await db.from("bestiary").select("id,creature_type").in("id", beastIds)
+            for (const b of bs ?? []) typeById.set(b.id, b.creature_type as string | null)
+          }
+          const { affected } = spendHpPool({
+            pool: total,
+            candidates: caught.map((t) => ({
+              id: t.id, label: t.label ?? "Something", hp: t.hp_current ?? t.hp_max ?? null,
+              creatureType: t.bestiary_id ? typeById.get(t.bestiary_id) ?? null : null,
+            })),
+            immuneTypes: pool.immuneTypes,
+          })
+          if (affected.length) {
+            const stamp = new Date().toISOString()
+            for (const a of affected) {
+              const t = caught.find((c) => c.id === a.id)
+              const { data: row } = await db.from("vtt_tokens").select("effects").eq("id", a.id).maybeSingle()
+              const existing = Array.isArray(row?.effects) ? (row!.effects as unknown[]) : []
+              await db.from("vtt_tokens").update({
+                effects: [...existing, {
+                  condition: pool.condition, spell: ability, caster_token: caster.id,
+                  cast_round: combat.round, expires_round: combat.round + 10,
+                  ends_on_damage: pool.endsOnDamage, save: null, save_ends: false,
+                }],
+                updated_by: "player-cast", updated_at: stamp,
+              }).eq("id", a.id)
+              if (t?.character_id) {
+                const { data: ch } = await db.from("characters").select("conditions").eq("id", t.character_id).maybeSingle()
+                const conds = normalizeConditions(ch?.conditions)
+                if (!conds.some((c) => c.toLowerCase() === pool.condition.toLowerCase())) {
+                  await db.from("characters").update({ conditions: [...conds, pool.condition], updated_at: stamp }).eq("id", t.character_id)
+                }
+              }
+            }
+            parts.push(`${total} hit points of sleep: ${affected.map((a) => a.label).join(", ")} ${affected.length === 1 ? "falls" : "fall"} unconscious`)
+          } else {
+            parts.push(`${total} hit points of sleep, and nobody weak enough to take it`)
+          }
+          handled = true
+        }
+
+        // Everything else declared — Faerie Fire's outline, and any condition
+        // added to the table later.
+        const laid = await layEffects(areaEffects, caught.map((t) => ({ id: t.id, label: t.label, character_id: t.character_id })))
+        if (laid) { handled = true; parts.push(`${caught.map((t) => t.label).join(", ")} are affected`) }
+
+        const line = parts.length
+          ? `${caster.label} casts ${ability} — ${parts.join("; ")}.`
+          : `${caster.label} casts ${ability} — it covers ${caught.map((t) => t.label).join(", ")}.`
+        await narrate(db, caster.label ?? "Someone", line)
+
+        // AND IF NOTHING MECHANISED IT, THE DM RULES IT. See lib/spell-effects:
+        // silence is a bug, a ruling is not.
+        const ruling = needsRuling({ effects: areaEffects, handled })
+          ? { spell: ability, text: areaEffects.find((e) => e.kind === "dm")?.text ?? null }
+          : null
+        if (ruling) {
+          await narrate(db, "Board", `${ability} needs a ruling from Malachar.${ruling.text ? ` (${ruling.text})` : ""}`)
+        }
+        return NextResponse.json({
+          ok: true, resolved: Boolean(handled), area: true, line,
+          victims: caught.map((t) => ({ id: t.id, label: t.label ?? "", amount: 0, outcome: "hit", fell: false, heals: false })),
+          ...(ruling ? { ruling } : {}),
+          note: handled ? "effects" : "ruling",
+        })
       }
 
       const scNumsArea = casterSc as { save_dc?: number } | null
@@ -1402,8 +1533,26 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability}.`)
-      return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this ability" })
+      // The same two steps as the area path: lay whatever is declared, and
+      // hand anything unmechanised to the DM rather than going quiet.
+      const single = effectsFor(ability)
+      const laid = await layEffects(single, [{ id: victim.id, label: victim.label, character_id: victim.character_id }])
+      const line = laid
+        ? `${caster.label} casts ${ability} on ${victim.id === caster.id ? "themself" : victim.label}.`
+        : `${caster.label} casts ${ability}.`
+      await narrate(db, caster.label ?? "Someone", line)
+      const ruling = needsRuling({ effects: single, handled: laid > 0 })
+        ? { spell: ability, text: single.find((e) => e.kind === "dm")?.text ?? null }
+        : null
+      if (ruling) {
+        await narrate(db, "Board", `${ability} needs a ruling from Malachar.${ruling.text ? ` (${ruling.text})` : ""}`)
+      }
+      return NextResponse.json({
+        ok: true, resolved: laid > 0, line,
+        target_token: victim.id, caster_token: caster.id,
+        ...(ruling ? { ruling } : {}),
+        note: laid > 0 ? "effects" : "ruling",
+      })
     }
 
     // AC and saves come from whichever sheet the target actually has.
@@ -1954,6 +2103,30 @@ export async function POST(req: NextRequest) {
           await narrate(db, t.label ?? "Someone", info.spell === "sanctuary"
             ? `The sanctuary around ${t.label} fades.`
             : `The shimmering field around ${t.label} winks out.`)
+        }
+      }
+
+      // AND THE TIMED EFFECTS, in the same loop and by the same arithmetic —
+      // Faerie Fire's outline, Sleep's Unconscious, a disguise. Three columns
+      // (summon, ward, effects) and ONE notion of when a round has turned.
+      const { data: affected } = await db
+        .from("vtt_tokens").select("id,label,character_id,effects").eq("map_id", map.id)
+        .neq("effects", "[]")
+      for (const t of affected ?? []) {
+        const list = Array.isArray(t.effects) ? (t.effects as { condition?: string; expires_round?: number }[]) : []
+        const live = list.filter((e) => Number(e?.expires_round ?? 0) > entering)
+        if (live.length === list.length) continue
+        const gone = list.filter((e) => !live.includes(e))
+        const stamp = new Date().toISOString()
+        await db.from("vtt_tokens").update({ effects: live, updated_by: "effect-expired", updated_at: stamp }).eq("id", t.id)
+        if (t.character_id) {
+          const { data: ch } = await db.from("characters").select("conditions").eq("id", t.character_id).maybeSingle()
+          const drop = gone.map((e) => String(e?.condition ?? "").toLowerCase())
+          const conds = normalizeConditions(ch?.conditions).filter((c) => !drop.includes(c.toLowerCase()))
+          await db.from("characters").update({ conditions: conds, updated_at: stamp }).eq("id", t.character_id)
+        }
+        for (const e of gone) {
+          await narrate(db, t.label ?? "Someone", `${e?.condition} fades from ${t.label}.`)
         }
       }
     }
