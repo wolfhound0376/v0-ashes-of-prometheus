@@ -101,6 +101,7 @@ import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig, unequipSlot, archetypeFor } from "@/lib/equipment"
 import { weaponFromActions } from "@/lib/stat-block-weapon"
 import { barkAudioFor } from "@/lib/barks"
+import { idleOffset } from "@/lib/idle-motion"
 import { playSfx, pickVariant, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, creatureVoice, isVoiceless, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { packSoundFor, packKey } from "@/lib/spell-sfx-pack"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -3045,6 +3046,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           }
           obj.position.set(-(box2.min.x + box2.max.x) / 2, -box2.min.y + (row.model_y_offset ?? 0), -(box2.min.z + box2.max.z) / 2)
           if (row.rotation_y) obj.rotation.y = (row.rotation_y * Math.PI) / 180
+          // WHERE IT RESTS, so the idle can be an OFFSET and never a drift.
+          // Read once, here, after the measuring and the facing have both had
+          // their say — anything that moves this model later moves the rest
+          // pose with it, which is what keeps a breathing figure on its square.
+          obj.userData.rest = {
+            x: obj.position.x, y: obj.position.y, z: obj.position.z, yaw: obj.rotation.y,
+            height: size.y * s,
+          }
           // Pre-lit tile leaves models unlit black columns; they carry
           // their own glow, same trick as the local viewer.
           // HIDDEN READS AS TRANSLUCENT, NOT ABSENT.
@@ -3100,8 +3109,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               // but not so hard that leather and steel stop reading
               // differently: 0.35 keeps some sheen, and the roughness floor
               // is 0.35 rather than 0.45 so highlights survive.
-              if (typeof m.metalness === "number") m.metalness = Math.min(m.metalness, 0.35)
-              if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.35)
+              // THE CLAMPS, LOOSENED — because their reason expired.
+              //
+              // These were written when this board had no environment map:
+              // "Meshy sometimes ships metalness 1 with no environment map,
+              // which under ACES renders as a mirror of nothing." True then.
+              // There IS an environment now (envMap below, at 0.55), so metal
+              // has something to reflect and does not need holding at 0.35.
+              //
+              // The roughness FLOOR was the expensive half. At 0.35 no surface
+              // on the board could ever produce a tight specular highlight —
+              // and a tight highlight is most of what reads as detail on
+              // armour, on a blade, in an eye. Sam, comparing this board with
+              // the hex viewer (which clamps nothing): "why does the
+              // resolution on my characters look better here". The camera was
+              // the larger half of that (#422); this is the rest of it.
+              //
+              // Still floored, not freed: a true 0 roughness under ACES blows
+              // to white on the highlight and loses the shape underneath.
+              if (typeof m.metalness === "number") m.metalness = Math.min(m.metalness, 0.6)
+              if (typeof m.roughness === "number") m.roughness = Math.max(m.roughness, 0.22)
               // Sharp at grazing angles: the D2 camera looks across the
               // board, not down at it, and without anisotropic filtering
               // every texture mips into soup a few squares out.
@@ -5437,6 +5464,40 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Token glides.
       // Advance every skinned model's clock.
       tokensRef.current.forEach((entry) => entry.anim?.mixer.update(dt))
+
+      // AND EVERY BODY BREATHES, clip or no clip.
+      //
+      // Sam: "all the tokens on the map have more idle movement ... it still
+      // doesn't have a dynamic feel." Desyncing the stance clips could only
+      // help models that HAVE one, and four of the rigs in this project — the
+      // drow elite, the quaggoth, the hook horror, the giant spider — ship
+      // with zero clips and can never move at all. Between them that is most
+      // of what the party fights.
+      //
+      // So it is generated: three slow sines at incommensurate periods,
+      // seeded per token, added to the rest pose captured at load. It layers
+      // UNDER a stance clip rather than fighting it, because the clip drives
+      // the skeleton and this moves the whole model a few millimetres.
+      //
+      // Skipped while the figure is doing something it was told to do — a
+      // glide, a charge — so the breath never argues with a real animation.
+      tokensRef.current.forEach((entry) => {
+        const model = entry.obj.children.find((c) => c.userData?.rest) as THREE.Object3D | undefined
+        const rest = model?.userData.rest as
+          | { x: number; y: number; z: number; yaw: number; height: number }
+          | undefined
+        if (!model || !rest) return
+        if (entry.obj.userData.glide || entry.obj.userData.charging) return
+        const hp = entry.row.hp_current
+        const o = idleOffset({
+          id: entry.row.id,
+          time: clock.elapsedTime,
+          alive: !(typeof hp === "number" && hp <= 0),
+          height: rest.height,
+        })
+        model.position.set(rest.x + o.sway, rest.y + o.bob, rest.z)
+        model.rotation.y = rest.yaw + o.yaw
+      })
 
       // A cast in its windup: when the hand reaches the release frame, the
       // spell leaves it. The bone is looked up now rather than at press time
