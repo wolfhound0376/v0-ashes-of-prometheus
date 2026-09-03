@@ -28,6 +28,17 @@ export interface Combatant {
   hp_current: number | null
   hp_max: number | null
   ac: number | null
+  /**
+   * Under Sanctuary — attacking this creature costs a Wisdom save the
+   * attacker will probably fail, and a lost attack is a lost turn.
+   *
+   * Sam: "create a condition that the NPCs and monsters respect until
+   * violated." This is the respecting. The AI does not get to IGNORE the
+   * ward — the save still happens on the server whatever it picks — but a
+   * creature that walks past an easier target to swing at a warded one is
+   * not respecting anything, it is just unlucky.
+   */
+  warded?: boolean
 }
 
 export interface StatBlock {
@@ -305,10 +316,20 @@ export function decideTurn(args: {
 
   // Nearest by true path length, ties to the most wounded — a wolf's logic,
   // not a tactician's, which is exactly the tier this is.
+  //
+  // A WARDED CREATURE IS THE LAST CHOICE, NOT AN IMPOSSIBLE ONE. Sanctuary
+  // does not hide anybody: it makes attacking them cost a save the attacker
+  // will probably fail. So a warded target sorts behind every unwarded one,
+  // whatever the distance — and is still picked when it is the only thing
+  // left, because refusing to attack at all would turn a first-level spell
+  // into a fight that cannot end.
   const field = reach(self, walkable, blocked)
   const scored = living
     .map((h) => ({ h, dist: field.get(key(h.x, h.y)) ?? chebyshev(self, h) }))
-    .sort((a, b) => a.dist - b.dist || (a.h.hp_current ?? 99) - (b.h.hp_current ?? 99))
+    .sort((a, b) =>
+      Number(Boolean(a.h.warded)) - Number(Boolean(b.h.warded)) ||
+      a.dist - b.dist ||
+      (a.h.hp_current ?? 99) - (b.h.hp_current ?? 99))
   const target = scored[0].h
 
   const attacks = parseAttacks(stats.actions)
