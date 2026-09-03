@@ -418,3 +418,51 @@ export function attackStateFor(weapon: string | null | undefined): TokenState {
   if (/unarmed|fist|punch/.test(n)) return "lightAttack"
   return "attack"
 }
+
+
+/**
+ * EVERY CLIP THAT ANSWERS THIS STATE, not merely the first one.
+ *
+ * Sam: "I want more dodge and attack rigs that fire at random under the
+ * appropriate umbrella of responses in combat to make it look good."
+ *
+ * `clipFor` walks the candidate list and returns the FIRST hit, so a creature
+ * carrying Attack, Attack_2 and Attack_3 played Attack every single time and
+ * the other two were dead weight in the file.
+ *
+ * The candidate ORDER still decides which family wins - a martial must not
+ * suddenly play a spell cast because "cast" also appears in the attack list.
+ * So this finds the first candidate term that matches anything, then returns
+ * EVERY clip matching that same term. Attack, Attack_2 and Attack_3 pool
+ * together; Attack and Charged_Spell_Cast never do.
+ */
+export function clipPoolFor(state: TokenState, available: string[]): string[] {
+  if (!available.length) return []
+  for (const want of CANDIDATES[state]) {
+    const pool = available.filter((n) => {
+      const key = n.toLowerCase()
+      return key.split("|").some((part) => part === want) || key.includes(want)
+    })
+    if (pool.length) return pool
+  }
+  const last = clipFor(state, available)
+  return last ? [last] : []
+}
+
+/**
+ * One of them, chosen fresh every time it is asked for.
+ *
+ * ONLY for the states that fire once. An idle or a walk must never re-roll:
+ * a stance that changes every few seconds reads as a glitch, and the loops
+ * are already desynced per token elsewhere (lib/idle-motion).
+ */
+export function pickClip(
+  state: TokenState,
+  available: string[],
+  rand: () => number = Math.random,
+): string | null {
+  if (!ONE_SHOT.includes(state)) return clipFor(state, available)
+  const pool = clipPoolFor(state, available)
+  if (pool.length <= 1) return pool[0] ?? clipFor(state, available)
+  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))]
+}

@@ -24,7 +24,11 @@ export interface StatBlockAction {
 }
 
 /** An instruction about attacks, not an attack. */
-const NOT_A_WEAPON = /^(multiattack|multi-attack)$/i
+// Anchored on the WORD, not the whole string: a stat block writes
+// "Multiattack (Humanoid/Hybrid)" for a wererat, and the old ^...$ let that
+// through — Topsy and Turvy were both logged holding a weapon called
+// "Multiattack (Humanoid/Hybrid)".
+const NOT_A_WEAPON = /\bmulti-?attack\b/i
 
 /**
  * Attacks made with the body. `archetypeFor` also refuses most of these, but
