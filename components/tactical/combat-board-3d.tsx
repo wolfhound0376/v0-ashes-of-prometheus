@@ -405,7 +405,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const list: SummonOnBoard[] = []
     tokensRef.current.forEach((e) => {
       const info = normaliseSummon(e.row.summon)
-      if (info) list.push({ token_id: e.row.id, label: e.row.label, x: e.row.grid_x, y: e.row.grid_y, info })
+      if (!info) return
+      const c = tokensRef.current.get(info.caster_token)
+      list.push({
+        token_id: e.row.id, label: e.row.label, x: e.row.grid_x, y: e.row.grid_y, info,
+        caster: c ? { x: c.row.grid_x, y: c.row.grid_y } : null,
+      })
     })
     setSummons(list)
   }

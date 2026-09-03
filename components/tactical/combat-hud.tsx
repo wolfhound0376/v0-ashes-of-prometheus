@@ -9,7 +9,7 @@ import { rackFor, phaseCost, type RackItem } from "@/lib/spellbook"
 import { Globe } from "./essence-globe"
 import { CharacterCard } from "./character-card"
 import { SummonCard } from "./summon-card"
-import { MAGE_HAND, roundsLeft, type SummonOnBoard, type HandUse } from "@/lib/summons"
+import { MAGE_HAND, roundsLeft, chebyshevFt, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { ClassMedallion } from "./class-medallion"
 import { CharacterSheetOverlay } from "./character-sheet-overlay"
 
@@ -673,7 +673,7 @@ export function CombatHud(props: Props) {
                     summon={s}
                     casterName={c.name}
                     round={round}
-                    distanceFt={null}
+                    distanceFt={s.caster ? chebyshevFt(s, s.caster) : null}
                     canAct={Boolean(isCastersTurn && econ && econ.live && !econ.action)}
                     arming={summonMove === s.token_id}
                     onMove={() => onSummon?.("move", s.token_id)}
