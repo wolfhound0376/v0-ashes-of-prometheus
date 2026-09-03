@@ -356,6 +356,30 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * one line that matters arrives as a toast anyway.
    */
   const [showLog, setShowLog] = useState(false)
+  // THE DM'S SHELF. ITEM opens the catalogue; choosing a thing arms a
+  // placement, and the next floor click is where it lands. Escape puts the
+  // thing back on the shelf. DM only — the world's hands, not a player's.
+  const [placePicker, setPlacePicker] = useState(false)
+  const [placing, setPlacing] = useState<{ id: string; name: string } | null>(null)
+  const placingRef = useRef<{ id: string; name: string } | null>(null)
+  useEffect(() => { placingRef.current = placing }, [placing])
+  const [catalogue, setCatalogue] = useState<{ id: string; name: string; item_type: string | null }[]>([])
+  const [placeQuery, setPlaceQuery] = useState("")
+  useEffect(() => {
+    if (!placePicker || catalogue.length > 0) return
+    const sb = createClient()
+    void sb.from("items").select("id,name,item_type").order("name").limit(600)
+      // Typed by hand: the select string is past what the generated types
+      // follow, and an untyped callback here is a tsc error, not a warning.
+      .then((res: { data: unknown }) => setCatalogue(((res.data ?? []) as { id: string; name: string; item_type: string | null }[])))
+  }, [placePicker, catalogue.length])
+  useEffect(() => {
+    if (!placing) return
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setPlacing(null) }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [placing])
+  const placeVerbRef = useRef<(item: { id: string; name: string }, gx: number, gy: number) => Promise<void>>(async () => {})
   // "15 ft" floating under the cursor while a walk is being lined up.
   const [moveHint, setMoveHint] = useState<string | null>(null)
   const [combat, setCombat] = useState<{
@@ -1238,6 +1262,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // armed. Targeting and walking are different intentions and the same
       // click cannot mean both — so an armed caster clicking open floor is
       // told to pick a target or press Escape, and stays put.
+      // THE DM SETS A THING DOWN: ITEM chose it, this click is the square.
+      if (placingRef.current) {
+        if (!floorPlane) return
+        const aimHit = raycaster.intersectObject(floorPlane, false)[0]
+        if (!aimHit) return
+        const it = placingRef.current
+        placingRef.current = null
+        setPlacing(null)
+        void placeVerbRef.current(it, Math.floor(aimHit.point.x / SQ), Math.floor(aimHit.point.z / SQ))
+        return
+      }
       // MOVE on a summon card: this click is where the hand goes. The server
       // holds the rule (30 ft a time, 30 ft from its caster); the board
       // only names the square.
@@ -1346,6 +1381,39 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return
       }
       if (!armed) {
+        // A PILE UNDER THE CURSOR says what it is and whether it is yours to
+        // take — before the click, the way a creature prices a spell. The
+        // shard on the pen floor was invisible as a thing you could DO
+        // anything with until you happened to click it.
+        if (groundItems) {
+          const rect = renderer.domElement.getBoundingClientRect()
+          pointer.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1)
+          raycaster.setFromCamera(pointer, activeCam())
+          const propHit = raycaster.intersectObjects(groundItems.objects(), true)[0]
+          const pile = groundItems.rowFor(propHit?.object)
+          if (pile) {
+            const me = myCharRef.current
+            const mine = me ? Array.from(tokensRef.current.values()).find((t) => t.row.character_id === me) : null
+            const near = mine
+              ? withinReach({ x: mine.row.grid_x ?? 0, y: mine.row.grid_y ?? 0 }, { x: pile.grid_x, y: pile.grid_y })
+              : false
+            const line = !me
+              ? "claim a character to pick it up"
+              : !mine
+                ? "your character is not on this board"
+                : near
+                  ? "click to pick up"
+                  : "out of reach — move next to it"
+            setHoverRead({
+              x: ev.clientX - rect.left,
+              y: ev.clientY - rect.top,
+              label: pile.quantity > 1 ? `${pile.name} ×${pile.quantity}` : pile.name,
+              line,
+              ok: Boolean(mine && near),
+            })
+            return
+          }
+        }
         setHoverRead((cur) => (cur ? null : cur))
         return
       }
@@ -5691,6 +5759,20 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
   // Ask the server to resolve a spell that has just been thrown.
   useEffect(() => {
+    placeVerbRef.current = async (item, gx, gy) => {
+      try {
+        const res = await fetch("/api/ground-items", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...dmHeaders() },
+          body: JSON.stringify({ action: "place", item_id: item.id, gx, gy, sandbox }),
+        })
+        const data = await res.json().catch(() => null)
+        say(res.ok ? (data?.line ?? `${item.name} is on the floor.`) : (data?.error ?? "It would not set down."))
+      } catch {
+        say("The board could not reach the server.")
+      }
+    }
+
     castVerbRef.current = async (caster_token, target_token, ability, crossSide) => {
       try {
         // First aid is not a cast. Same aim, different verb: the server rolls
@@ -6188,11 +6270,70 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               MOVE
             </BoardBtn>
           )}
+          {dm && (
+            <BoardBtn
+              on={placePicker || Boolean(placing)}
+              onClick={() => {
+                if (placing) { setPlacing(null); return }
+                setPlacePicker((v) => !v)
+              }}
+              title={placing ? `Placing ${placing.name} — click a square, Escape to cancel` : "DM: put a catalogue item on the floor"}
+            >
+              ITEM
+            </BoardBtn>
+          )}
           {onBack && (
             <BoardBtn onClick={onBack} title="Back to the scene">← SCENE</BoardBtn>
           )}
         </div>
       </div>
+
+      {/* THE DM'S SHELF. A search over the catalogue; choosing a thing
+          closes the shelf and arms a placement. Only what the catalogue
+          knows can be chosen — the invariant the AI is held to, applied to
+          the DM's own hands. */}
+      {placePicker && dm && (
+        <div className="pointer-events-auto absolute right-3 top-14 z-40 w-[264px] border border-[#6b5123] bg-[#0b0d12]/95 p-3 font-mono shadow-[0_0_24px_#000000aa]">
+          <div className="text-[10px] tracking-[0.2em] text-[#cdb276]">PUT ON THE FLOOR</div>
+          <input
+            autoFocus
+            value={placeQuery}
+            onChange={(e) => setPlaceQuery(e.target.value)}
+            placeholder="search the catalogue"
+            className="mt-2 w-full border border-[#4a4034] bg-black/60 px-2 py-1 text-[11px] text-[#e8dcc0] outline-none focus:border-[#c99a49]"
+          />
+          <div className="mt-2 max-h-[240px] overflow-y-auto">
+            {catalogue.length === 0 && (
+              <div className="py-1 text-[10px] italic text-[#6d6552]">reading the catalogue…</div>
+            )}
+            {catalogue
+              .filter((it) => !placeQuery.trim() || it.name.toLowerCase().includes(placeQuery.trim().toLowerCase()))
+              .slice(0, 48)
+              .map((it) => (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => {
+                    setPlacing({ id: it.id, name: it.name })
+                    setPlacePicker(false)
+                    say(`${it.name} — click a square to set it down. Escape to cancel.`)
+                  }}
+                  className="block w-full border-b border-[#2a2216] px-1 py-1 text-left text-[11px] text-[#d8c9a3] hover:bg-[#1a1408] hover:text-[#f3c94b]"
+                >
+                  {it.name}
+                  {it.item_type && <span className="ml-1 text-[9px] text-[#7a6a4a]">{it.item_type}</span>}
+                </button>
+              ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPlacePicker(false)}
+            className="mt-2 w-full border border-[#4a4034] bg-black/60 px-2 py-1 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+          >
+            CLOSE
+          </button>
+        </div>
+      )}
 
       {/* THE DASH CONFIRM.
           An azure square is reachable only by spending your action, and that
