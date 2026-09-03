@@ -9,7 +9,7 @@
 // which is infinitely better than a T-pose.
 
 export type TokenState =
-  | "idle" | "walk" | "attack" | "cast" | "hurt" | "dead"
+  | "idle" | "walk" | "attack" | "lightAttack" | "cast" | "hurt" | "dead"
   // ── DEFENCE ───────────────────────────────────────────────────────────
   // A miss is not a small hit. Until now the board had no way to say so:
   // the only reaction state was "hurt", so a sword that went nowhere near
@@ -34,6 +34,17 @@ const CANDIDATES: Record<TokenState, string[]> = {
     "attack", "charged_slash", "counterstrike", "double_blade_spin", "high_kick",
     "charged_ground_slam", "spell_cast_3", "spell_cast", "soell_cast", "cast",
   ],
+  // A KNIFE IS NOT A GREATSWORD.
+  //
+  // Sam: "Fifi is still acting like she's using a long sword when stabbing,
+  // slashing, etc should be what we see." She had exactly one Attack clip and
+  // it is a two-handed overhead swing, so that is what a dagger looked like.
+  //
+  // She now carries a Left_Slash too - a quick one-handed cut. This list finds
+  // it. The light names come FIRST so a model holding both prefers the light
+  // one, and "attack" is last so a model with only the heavy swing still
+  // swings rather than standing still.
+  lightAttack: ["left_slash", "slash", "stab", "knife", "dagger", "attack"],
   cast: ["charged_spell_cast", "spell_cast", "soell_cast", "cast", "attack"],
   // A flinch, THEN a fall. Leading with fall1 meant every hit read as a
   // collapse: the creature dropped, stood back up, and did it again next
@@ -128,7 +139,7 @@ export function clipFor(state: TokenState, available: string[]): string | null {
 }
 
 /** States that play once and return to idle, rather than looping. */
-export const ONE_SHOT: TokenState[] = ["attack", "cast", "hurt", "dodge", "parry", "block"]
+export const ONE_SHOT: TokenState[] = ["attack", "lightAttack", "cast", "hurt", "dodge", "parry", "block"]
 
 /**
  * States that play once and then HOLD their last frame. Death is not a loop
@@ -309,6 +320,23 @@ const CAST_EVENTS: { match: string; release: number; hand: CastHand }[] = [
   { match: "soell_cast_3", release: 1.1, hand: "RightHand" },
   { match: "spell_cast_3", release: 0.6, hand: "RightHand" },
   { match: "soell_cast_4", release: 0.6, hand: "RightHand" },
+  // WEAPONS, WHICH THIS TABLE HAD NEVER HEARD OF.
+  //
+  // Sam, three times: "the timing is still off." Every entry above is a
+  // SPELL. There was no row for `Attack` - the clip every creature in the
+  // game swings with - so every weapon blow in the project fell through to
+  // the default at the bottom of castEventFor: `duration * 0.45`. The comment
+  // there calls that "never embarrassingly wrong", which is true, and it is
+  // never right either. That one guessed number drives the impact sound, the
+  // arrow leaving the bow, the hit reaction, the damage number and the body
+  // dropping - so all five are early or late together on every hit.
+  //
+  // These are read off the clips themselves rather than guessed. The Meshy
+  // library `Attack` is one shared 2.80s animation used by Fifi, Samson,
+  // Scott, the quaggoth and the hook horror; Kenta's is 2.83s from the same
+  // family. Left_Slash is the quick one-handed cut.
+  { match: "left_slash", release: 0.62, hand: "RightHand" },
+  { match: "attack", release: 1.10, hand: "RightHand" },
 ]
 
 /**
@@ -371,4 +399,22 @@ export function castPlanFor(ability: string, kind: string): CastPlan | null {
   if (kind === "cantrip") return { state: "cast", weight: "quick" }
   const heavy = HEAVY_SPELLS.some((h) => name.includes(h))
   return { state: "cast", weight: heavy ? "heavy" : "ranged" }
+}
+
+
+/**
+ * Which swing suits what is in the hand.
+ *
+ * A dagger, a rapier, a shortsword or a bare fist is a LIGHT attack: quick,
+ * one-handed, close. Everything else keeps the heavy swing. The name comes
+ * from the same string that chose the PROP (lib/equipment's archetypeFor), so
+ * the animation and the object in the fist can never disagree about what is
+ * being held.
+ */
+export function attackStateFor(weapon: string | null | undefined): TokenState {
+  const n = String(weapon ?? "").toLowerCase()
+  if (!n) return "attack"
+  if (/dagger|knife|dirk|shiv|shard|flake|rapier|shortsword|short sword|scimitar|sickle/.test(n)) return "lightAttack"
+  if (/unarmed|fist|punch/.test(n)) return "lightAttack"
+  return "attack"
 }
