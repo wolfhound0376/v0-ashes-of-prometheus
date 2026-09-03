@@ -152,9 +152,34 @@ export const SPELL_EFFECTS: Record<string, SpellEffect[]> = {
     kind: "dm",
     text: "The caster's appearance, including clothing and equipment, changes for 1 hour. Height may change by up to a foot and build may change, but body shape stays. A creature that uses its action to inspect makes an INT (Investigation) check against the caster's spell save DC.",
   }],
+  // HEAVY OBSCUREMENT IS BLINDNESS, AND THE BOOK SAYS SO IN THOSE WORDS.
+  //
+  // Sam: "cloud ... should cause some time of partial blindness." It already
+  // should have: SRD 5.1, Vision and Light — "A heavily obscured area ...
+  // blocks vision entirely ... A creature in a heavily obscured area
+  // effectively suffers from the BLINDED condition." Fog Cloud was declared
+  // here as `dm` text only, so it drew a cloud, asked Malachar for a ruling,
+  // and did nothing to anyone standing in it.
+  //
+  // Blinded is not decoration in this codebase any more — lib/helpless (#407)
+  // reads it on both sides of an attack, so a creature in the fog is easier
+  // to hit and swings at disadvantage. That IS the partial blindness, and it
+  // lands on friend and foe alike, which is what makes the spell a decision
+  // rather than a free win.
+  //
+  // 100 rounds because the spell runs on concentration, not on a clock; ending
+  // concentration is what ends it, long before ten minutes are up.
+  //
+  // What is still the DM's: the cloud PERSISTS. A creature that walks in after
+  // the cast is obscured too, and a wind disperses the whole thing — neither
+  // of which a condition laid at cast time can express. The text stays for
+  // that, and keeping it costs no ruling: needsRuling only fires when EVERY
+  // effect is `dm`.
   "fog cloud": [{
+    kind: "condition", condition: "Blinded", rounds: 100,
+  }, {
     kind: "dm",
-    text: "A 20-foot-radius sphere of fog spreads round corners and lasts for the duration (concentration, up to 1 hour). Its area is HEAVILY OBSCURED: a creature in it is effectively blinded for the purpose of seeing anything within or through it. A wind of moderate speed or greater disperses it.",
+    text: "The 20-foot-radius sphere remains, spreading round corners: anyone who ENTERS it afterwards is blinded too, and a wind of moderate speed or greater disperses it.",
   }],
 }
 
