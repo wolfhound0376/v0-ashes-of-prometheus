@@ -311,6 +311,21 @@ export default function SandboxDrawer() {
       {/* footer */}
       <div className="flex items-center justify-between gap-2 border-t border-[#3a2c16] px-3 py-2">
         <span className="min-w-0 flex-1 truncate font-serif text-[9px] text-[#7d6c48]">{note ?? "nothing here is canon"}</span>
+        {/*
+          BACK ON YOUR FEET. Sam, after the first trial: "Should be able to
+          restart stats to full on all creatures" — and the board proved the
+          point, with all four players sitting at 0 and two of them holding
+          death-save tallies. A rehearsal room you can only use once is not a
+          rehearsal room.
+        */}
+        <button
+          disabled={busy}
+          onClick={() => void post({ action: "reset" }).then((r) => {
+            if (r) setNote(`healed ${r.healed}${r.slotsRestored ? `, ${r.slotsRestored} slots` : ""}${r.combatEnded ? ", fight ended" : ""}`)
+          })}
+          className="shrink-0 border border-[#5a4526] px-2 py-1 font-serif text-[9px] uppercase tracking-[0.2em] text-[#a08a5c] hover:border-[#5fd3a0] hover:text-[#5fd3a0]"
+          title="Every creature here back to full hit points, slots and conditions — and any fight ended"
+        >Reset</button>
         <button
           disabled={busy}
           onClick={() => void post({ action: "clear" }).then((r) => { if (r) setNote(`swept ${r.removed}`) })}
