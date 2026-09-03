@@ -60,6 +60,14 @@ import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
 // Twelve deaths, one per way of being killed - see death-vfx.ts.
 import { deathSceneVfx } from "./death-vfx"
+// The headstone. Raised on TRUE death only - see tombstone.ts on why being
+// downed must not get one.
+import { preloadTombstone, tombstoneVfx } from "./tombstone"
+// `vitalityOf` is already imported above — main gained its own use of it while
+// this branch was in flight, and a second import of the same name is a compile
+// error rather than a merge conflict, so it does not announce itself in a diff.
+// Reused for the grave's lean: same id, same stone, every reload.
+import { seedFrom } from "@/lib/blood-marks"
 // The arcade card that drops when something is cast. Every fact it prints
 // was already on the wire and going only to a log nobody opens mid-fight.
 import SpellBanner, { type BannerCast } from "./spell-banner"
@@ -411,6 +419,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
   const [classicCam, setClassicCam] = useState(DEFAULT_CLASSIC_CAM)
   const classicRef = useRef<((on: boolean) => void) | null>(null)
+  /**
+   * Plant a headstone on a character's square. Bridged out of the scene effect
+   * the same way darknessRef is, because the thing that KNOWS somebody died is
+   * a React state diff over `sheets` and the thing that can put a rock on the
+   * floor lives inside the imperative three.js closure.
+   */
+  const plantGraveRef = useRef<((characterId: string) => void) | null>(null)
+  /**
+   * Bumped once the scene has built and plantGraveRef is callable.
+   *
+   * Without this the graves are a race the board loses on every reload: the
+   * sheets arrive, the effect below runs, plantGraveRef is still null, it
+   * returns — and because `sheets` does not change again, a character who died
+   * in a previous session never gets a stone. Depending on this as well means
+   * the check runs a second time the moment the scene is ready.
+   */
+  const [graveReady, setGraveReady] = useState(0)
 
   // Refs bridging React and the imperative three scene.
   const tokensRef = useRef<
@@ -699,6 +724,38 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     refreshReachRef.current()
   }, [combat])
   useEffect(() => { darknessRef.current?.(darknessOn) }, [darknessOn])
+
+  // ── DEATH, AS OPPOSED TO BEING DOWN ───────────────────────────────────────
+  // Sam: "When a character dies, not downed, a funny looking tombstone ...
+  // shows up where the character was reading RIP."
+  //
+  // This deliberately does NOT ride on the HP change that the collapse rides
+  // on. Hitting 0 is unconsciousness, and most characters get back up from it;
+  // dying is a SEPARATE, LATER event — the third failed death save, or damage
+  // big enough to kill outright — and the gap between the two can be six
+  // rounds. Marking the fall with a headstone would bury people who are about
+  // to roll a 20 and stand up.
+  //
+  // vitalityOf is the same function the combat route writes the state with, so
+  // the board cannot drift from the rule: `dead` is the Dead condition, and
+  // nothing else is.
+  //
+  // Monsters get no grave, and that is not an oversight. lib/death-saves does
+  // not touch creatures without a sheet ("Most DMs have a monster die the
+  // instant it drops to 0"), so nothing ever writes Dead on them — and a pen
+  // filled with twenty headstones after one fight would flatten the joke and
+  // the battlefield with it. The twelve deaths already tell a monster's story.
+  useEffect(() => {
+    const plant = plantGraveRef.current
+    if (!plant) return
+    for (const c of sheets) {
+      const conditions = Array.isArray(c.conditions)
+        ? (c.conditions as unknown[]).map((x) => String(x))
+        : []
+      if (vitalityOf(c.hp_current, conditions) !== "dead") continue
+      plant(c.id)
+    }
+  }, [sheets, graveReady])
   useEffect(() => { classicRef.current?.(classicCam) }, [classicCam])
 
   const say = useCallback((msg: string) => {
@@ -1554,6 +1611,46 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // Live effects, advanced by the same clock as everything else. A cast
     // that is still in the air when the board unmounts is disposed with it.
     const vfx: VfxHandle[] = []
+
+    // ── THE GRAVE ──────────────────────────────────────────────────────────
+    // Fetched and parsed NOW, while nothing is happening, so that the moment
+    // it is actually needed costs nothing. See tombstone.ts for why a ~2 MB
+    // load on the frame somebody's character dies is the wrong trade.
+    void preloadTombstone()
+
+    /** Characters already buried. A grave is dug once, however many times the
+     *  sheets resubscribe or the row is rewritten. */
+    const graved = new Set<string>()
+
+    plantGraveRef.current = (characterId: string) => {
+      if (graved.has(characterId)) return
+      // The body is the anchor: a grave belongs on the square they fell on,
+      // not on the square their sheet thinks they occupy.
+      let entry: { row: TokenRow; obj: THREE.Object3D } | null = null
+      for (const e of tokensRef.current.values()) {
+        if (e.row.character_id === characterId) { entry = e; break }
+      }
+      if (!entry) return
+      const stone = tombstoneVfx({
+        parent: scene,
+        position: new THREE.Vector3(entry.obj.position.x, 0, entry.obj.position.z),
+        scale: radiusFor(entry.row.token_size) / 0.75,
+        // The token id, so the same character always gets the same lean and
+        // the same quarter-turn — a grave that reshuffles itself on reload is
+        // a bug the eye catches immediately.
+        seed: seedFrom(entry.row.id),
+      })
+      // null means the model never loaded. Mark it buried anyway: retrying on
+      // every sheet update would hammer a 404 for the rest of the session.
+      graved.add(characterId)
+      if (stone) {
+        vfx.push(stone)
+        console.log(`[board] grave raised for ${entry.row.label}`)
+      }
+    }
+    // Tell the watcher above that graves can now be dug. Anyone already dead
+    // when the board loaded gets their stone on this pass.
+    setGraveReady((n) => n + 1)
     /** Casts waiting for their release frame — the spell has not left the
      *  hand yet, because the hand has not got there yet. */
     interface PendingCast {
