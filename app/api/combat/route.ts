@@ -420,6 +420,30 @@ export async function POST(req: NextRequest) {
     )
   }
   const db = createAdminClient()
+
+  /**
+   * The cabinet, naming whoever is up.
+   *
+   * Pulled out of `next` so `start` can use it too — which is the bug. Rolling
+   * initiative announced ui/initiative_start and then went quiet, so THE FIRST
+   * COMBATANT WAS NEVER NAMED. Every later turn was announced, which is why it
+   * read as the announcer skipping somebody rather than as a missing call: the
+   * fanfare covered the gap.
+   *
+   * Also rolls the death save when the turn belongs to somebody at 0, because
+   * that is the same moment.
+   */
+  const turnCueFor = async (tokenId: string | undefined, combatId: string): Promise<string> => {
+    if (!tokenId) return "ui/turn_foe"
+    const { data: tok } = await db
+      .from("vtt_tokens").select("character_id").eq("id", tokenId).maybeSingle()
+    if (!tok?.character_id) return "ui/turn_foe"
+    const { data: ch } = await db
+      .from("characters").select("class").eq("id", tok.character_id).maybeSingle()
+    await deathSaveOnTurnStart(db, combatId, tokenId, tok.character_id)
+    return announcementFor("turn", ch?.class as string | null) ?? "ui/turn_foe"
+  }
+
   const sandbox = body?.sandbox === true
   const { data: map } = await db
     .from("vtt_maps").select("id").eq(sandbox ? "is_sandbox" : "is_active", true).limit(1).maybeSingle()
@@ -489,7 +513,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       combat: row,
-      sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/initiative_start" }],
+      // THE FANFARE **AND** WHOSE TURN IT IS. Rolling initiative used to
+      // announce only itself, so the creature at the top of the order was
+      // never named — Sam: "Atari voice doesn't announce the first character".
+      sfxCues: [
+        { type: "raw" as const, scope: "party" as const, key: "ui/initiative_start" },
+        { type: "raw" as const, scope: "party" as const, key: await turnCueFor(order[0]?.token_id, row.id) },
+      ],
     })
   }
 
@@ -2331,26 +2361,7 @@ export async function POST(req: NextRequest) {
     // opposite thing: the players' figure rises through a major triad, this
     // one falls through a minor third into a tritone, an octave lower and
     // half as long. No voice, because nobody is being addressed.
-    let cue = "ui/turn_foe"
-    const nextEntry = (combat.turn_order as { token_id: string }[])[nextIndex]
-    if (nextEntry?.token_id) {
-      const { data: tok } = await db
-        .from("vtt_tokens")
-        .select("character_id")
-        .eq("id", nextEntry.token_id)
-        .maybeSingle()
-      if (tok?.character_id) {
-        const { data: ch } = await db
-          .from("characters")
-          .select("class")
-          .eq("id", tok.character_id)
-          .maybeSingle()
-        cue = announcementFor("turn", ch?.class as string | null) ?? cue
-        // A character at 0 starts their turn with a death saving throw, and
-        // with nothing else. Rolled here, the moment the turn is theirs.
-        await deathSaveOnTurnStart(db, combat.id, nextEntry.token_id, tok.character_id)
-      }
-    }
+    const cue = await turnCueFor((combat.turn_order as { token_id: string }[])[nextIndex]?.token_id, combat.id)
     return NextResponse.json({
       ok: true,
       sfxCues: [{ type: "raw" as const, scope: "party" as const, key: cue }],

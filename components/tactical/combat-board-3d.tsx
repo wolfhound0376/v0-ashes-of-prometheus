@@ -75,6 +75,9 @@ import SpellBanner, { type BannerCast } from "./spell-banner"
 import { ImpactHold, holdMsFor } from "@/lib/impact-hold"
 // A bolt you can see leave the bow, and a miss that goes past you.
 import { loose } from "./projectile"
+// A ward landing: gold, from the feet up.
+import { wardVfx } from "./ward-vfx"
+import { wardSpellFor } from "@/lib/wards"
 // The cones that appear when Sneak is armed, painted by the SAME function
 // the server judges the roll with.
 import { showSightCones, type ConeHandle } from "./sight-cones"
@@ -712,6 +715,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * A zero is an outcome. Leaving it silent is what made a correct save
    * indistinguishable from a broken spell.
    */
+  /**
+   * Lay a ward's glow on a token. Bridged out of the scene effect the same way
+   * applyCastOutcomeRef is: the thing that KNOWS a ward landed is a fetch
+   * response out here, and the thing that can put light on a body is in there.
+   */
+  const wardVfxRef = useRef<(tokenId: string, spell: "sanctuary" | "shield of faith") => void>(() => {})
   const applyCastOutcomeRef = useRef<
     (tokenId: string, r: { amount: number; hit: boolean; heals: boolean; word?: "saved" | "miss" | null }) => void
   >(() => {})
@@ -2551,6 +2560,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      *
      * A zero raises a WORD instead. It is still an outcome.
      */
+    wardVfxRef.current = (tokenId, spell) => {
+      const t = tokensRef.current.get(tokenId)
+      if (!t) return
+      // MEASURED off the model the board actually loaded, never assumed: a
+      // myconid sprout and a hook horror are both "one token", and a band
+      // sized for one climbs past the other's head or stops at its knee.
+      const box = new THREE.Box3().setFromObject(t.obj)
+      const h = Math.max(0.8, box.max.y - box.min.y)
+      vfx.push(wardVfx({
+        parent: scene, spell, height: h,
+        radius: radiusFor(t.row.token_size) * 0.9,
+        resolve: () => tokensRef.current.get(tokenId)?.obj ?? null,
+      }))
+    }
+
     applyCastOutcomeRef.current = (tokenId, r) => {
       const t = tokensRef.current.get(tokenId)
       if (!t) return
@@ -4921,6 +4945,38 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (payload.eventType === "DELETE") {
             const gone = tokensRef.current.get((payload.old as { id: string }).id)
             if (gone) {
+              // A SUMMON COMES APART; IT DOES NOT BLINK OUT.
+              //
+              // Sam: "Mage hand when struck just disappears it doesn't have a
+              // fallen state." Its row is deleted — that is what dismissing a
+              // spell IS — and the board simply removed the mesh on the same
+              // frame. On a board that dresses every other death by whatever
+              // killed it, an object vanishing between frames reads as a
+              // rendering fault rather than as an event.
+              //
+              // So the mesh is DETACHED from the token map and handed to a
+              // dissolve: the row is gone, nothing will address it again, and
+              // the picture gets the beat it needs.
+              if (gone.row.summon) {
+                playSfx("magic/mage_hand_dissolve", { volume: 0.6, rate: variedRate(0.05) })
+                vfx.push(deathSceneVfx({
+                  parent: scene,
+                  position: gone.obj.position.clone().setY(0.05),
+                  // "ashes" is the treatment for something burned away to
+                  // nothing — the closest the existing vocabulary has to a
+                  // conjuration losing cohesion, and reusing it keeps one
+                  // death vocabulary rather than growing a second.
+                  kind: "ashes",
+                  scale: 0.8,
+                  posed: false,
+                  resolve: () => gone.obj,
+                }))
+                // Let the dissolve finish before the mesh goes.
+                window.setTimeout(() => { tokenGroup.remove(gone.obj) }, 900)
+                tokensRef.current.delete((payload.old as { id: string }).id)
+                syncSummons()
+                return
+              }
               tokenGroup.remove(gone.obj)
               tokensRef.current.delete((payload.old as { id: string }).id)
             }
@@ -5634,6 +5690,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           say(data?.error ?? "The strike would not resolve.")
           return { ok: false }
         }
+        // A WARD LANDS ON SOMEBODY AND STAYS.
+        //
+        // Sanctuary and Shield of Faith resolve with `resolved: false` — they
+        // roll nothing — so they never reached the block below and looked like
+        // absolutely nothing happening. Sam: "we just have seen it land on
+        // Fifi by causing her to glow in gold from the feet moving up to her
+        // head slowly and then her AC is adjusted."
+        const warded = wardSpellFor(typeof data?.warded === "string" ? data.warded : ability)
+        if (warded && data?.ok) {
+          wardVfxRef.current(target_token, warded)
+          if (data.line) say(data.line as string)
+        }
+
         if (data?.resolved) {
           say(data.line as string)
           // The same sentence say() just filed in the log, put where the eye
