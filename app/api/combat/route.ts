@@ -22,6 +22,9 @@ import { normalizeConditions } from "@/lib/conditions"
 // lib/death-saves so it can be read whole and tested on every die face;
 // this file only owns the rows.
 import { normaliseSaves, vitalityOf, conditionsFor, takeDamage, heal, rollDeathSave } from "@/lib/death-saves"
+// Whose turn is next when some of them are dead. Pure, so the round
+// arithmetic can be tested on a board of corpses without one existing.
+import { advanceTurn } from "@/lib/turn-order"
 // Blood on the tiles: laid by steel in melee, kept on the map row. Purely a
 // mark - the SRD has no bleeding rule and none is invented here.
 import { bleeds, poolSize, makeMark, appendMark, normaliseMarks } from "@/lib/blood-marks"
@@ -1669,13 +1672,66 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "next") {
-    const count = (combat.turn_order as unknown[]).length
-    const nextIndex = (combat.active_index + 1) % count
+    const order = combat.turn_order as { token_id: string; kind?: string }[]
+    const count = order.length
+
+    // WHO IS STILL PARTICIPATING.
+    //
+    // From the log of Sam's first sandbox trial: the Drow Elite Warrior died
+    // in round one and was still being dealt a turn six rounds later, saying
+    // "lies still" each time. Fifi, killed outright, said "lies dead." once a
+    // round forever. Nothing was wrong with either line — the mistake was
+    // asking a body anything at all.
+    //
+    // THE DYING ARE NOT THE DEAD, and this is the whole subtlety. A character
+    // at 0 who is dying rolls a death save every turn; that roll IS their
+    // turn and it is how they come back. Samson rolled three across three
+    // rounds in that same log and stabilised. So `vitalityOf` decides, not
+    // hp <= 0: only "dead" is skipped, while "dying" and "stable" keep their
+    // turns.
+    //
+    // A monster has no death saves — SRD: "most GMs have a monster die the
+    // instant it drops to 0" — so 0 hit points is dead for anything without a
+    // character sheet. Null hit points are UNTRACKED, never dead.
+    const dead = new Set<number>()
+    {
+      const ids = order.map((e) => e.token_id)
+      const { data: rows } = await db
+        .from("vtt_tokens").select("id,character_id,hp_current").in("id", ids)
+      const byId = new Map((rows ?? []).map((r) => [r.id, r]))
+      const charIds = (rows ?? []).map((r) => r.character_id).filter(Boolean) as string[]
+      const sheets = new Map<string, { hp_current: number | null; conditions: unknown }>()
+      if (charIds.length) {
+        const { data: chars } = await db
+          .from("characters").select("id,hp_current,conditions").in("id", charIds)
+        for (const c of chars ?? []) sheets.set(c.id, { hp_current: c.hp_current, conditions: c.conditions })
+      }
+      order.forEach((entry, i) => {
+        const tok = byId.get(entry.token_id)
+        // A token that has left the board entirely is not a participant.
+        if (!tok) { dead.add(i); return }
+        if (tok.character_id) {
+          const sheet = sheets.get(tok.character_id)
+          if (!sheet) return
+          if (vitalityOf(sheet.hp_current, normalizeConditions(sheet.conditions)) === "dead") dead.add(i)
+          return
+        }
+        if (tok.hp_current != null && tok.hp_current <= 0) dead.add(i)
+      })
+    }
+
+    const step = advanceTurn({ from: combat.active_index, count, isDead: (i) => dead.has(i) })
+    const nextIndex = step.index
+    // Crossing the top is what turns the round — NOT landing on index 0. If
+    // the first combatant in the order is a corpse the turn lands on 1, and a
+    // new round has still begun; keying on the landing would silently skip
+    // the round increment, the summon expiry and the world step below.
+    const roundTurned = step.roundsCrossed > 0
 
     // A minute is ten rounds. When the round turns, anything summoned for a
     // duration that has run out fades - SRD, "The hand lasts for the
     // duration". Checked against the round we are about to enter.
-    if (nextIndex === 0) {
+    if (roundTurned) {
       const entering = combat.round + 1
       const { data: summoned } = await db
         .from("vtt_tokens").select("id,label,summon").eq("map_id", map.id).not("summon", "is", null)
@@ -1690,7 +1746,7 @@ export async function POST(req: NextRequest) {
     // END OF ROUND — the world step. Sam's ruling: the non-combatants move at
     // the end of each round, automatically, toward the edge of the map. They
     // never took a turn in the order; this is the fight happening AROUND them.
-    if (nextIndex === 0) {
+    if (roundTurned) {
       const board = await loadBoard(db, map.id)
       const fleeing = board.combatants.filter((c) => c.disposition === "flees" && (c.hp_current ?? 1) > 0)
       for (const runner of fleeing) {
@@ -1720,7 +1776,7 @@ export async function POST(req: NextRequest) {
         active_index: nextIndex,
         // Wrapping past the last combatant is a new round — SRD: "a round
         // ends when every participant has taken a turn."
-        round: nextIndex === 0 ? combat.round + 1 : combat.round,
+        round: roundTurned ? combat.round + 1 : combat.round,
         updated_at: new Date().toISOString(),
       })
       .eq("id", combat.id)

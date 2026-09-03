@@ -5019,7 +5019,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // damage string; the board simply never read the field. Without it
           // every arrow and every mace produced the same corpse, because the
           // sprite kit calls all of them "physical".
-          if (typeof data.damageType === "string") {
+          //
+          // ONLY WHEN SOMETHING ACTUALLY LANDED. `damageType` describes the
+          // ABILITY, not the outcome — the server sends "necrotic" for a Toll
+          // the Dead whether the target saved or not — so parking it
+          // unconditionally tattooed a damage type onto creatures that had
+          // taken nothing.
+          //
+          // From Sam's first sandbox trial: Samson cast Toll the Dead at the
+          // Drow Elite Warrior, which SAVED and took 0. "necrotic" was parked
+          // anyway, and necrotic is the death that strips a body to a
+          // skeleton. Sam: "I'm not sure why downed NPC/monsters are
+          // vaporized or turned into skeletons."
+          //
+          // The NPC relay path has guarded on `amount > 0` all along (see the
+          // swing handler). This is the player path being brought into line
+          // with it — the asymmetry is what made it a bug rather than a
+          // decision.
+          // The same test this handler already applies fifty lines below as
+          // `hurt` — a heal has a positive amount and is not a wound.
+          if (typeof data.damageType === "string" && Number(data.amount ?? 0) > 0 && !data.heals) {
             lastHitWithRef.current.set(target_token, data.damageType)
           }
           // THE ROGUE'S MOMENT. `combat/sneak_attack` was recorded with the
@@ -5127,9 +5146,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // A single-target spell parks one word; an area spell parks one word
         // per victim. Same map, same spend, and glideToken clears each entry
         // as it draws that creature's death.
+        //
+        // And only the ones it actually hurt, for the same reason as the
+        // single-target path above: a creature that made its save against a
+        // Fireball has not been burned, and must not later die as though it
+        // had been. Each victim carries its own damage, because half of them
+        // saved and half did not.
         if (typeof data?.damageType === "string" && Array.isArray(data.victims)) {
-          for (const v of data.victims as Array<{ id?: string }>) {
-            if (v?.id) lastHitWithRef.current.set(v.id, data.damageType)
+          for (const v of data.victims as Array<{ id?: string; amount?: number; heals?: boolean }>) {
+            // `heals` too: a Cure Wounds victim has a positive amount and is
+            // being mended, not marked for the manner of its death.
+            if (v?.id && !v.heals && Number(v.amount ?? 0) > 0) lastHitWithRef.current.set(v.id, data.damageType)
           }
         }
         if (data?.line) {
