@@ -36,6 +36,7 @@ import { createClient } from "@/lib/supabase/client"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
 import { TurnBanner, type TurnEconomy } from "./turn-banner"
 import {
+  attackStateFor,
   castClipFor,
   castEventFor,
   castPlanFor,
@@ -2182,7 +2183,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // caster no longer play the identical clip — and the same spell always
       // plays the same one, which is what makes it recognisable.
       const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
-      const clip = playState(anim, plan.state, true, explicit)
+      // A KNIFE IS NOT A GREATSWORD.
+      //
+      // Sam: "Fifi is still acting like she's using a long sword." She had one
+      // Attack clip and it is a two-handed overhead swing, so a dagger looked
+      // like a claymore. She now carries a Left_Slash as well, and this is
+      // what reaches for it: the weapon's own name decides which swing plays,
+      // read off the SAME string that chose the prop in her hand, so the
+      // animation and the object can never disagree about what is held.
+      //
+      // A model with only the heavy swing is unaffected — lightAttack's
+      // candidate list ends in "attack", so it falls through to what exists.
+      const swing = plan.state === "attack" ? attackStateFor(ability) : plan.state
+      const clip = playState(anim, swing, true, explicit)
       if (!clip) { landNow(); return }
       if (plan.state === "hurt") return // Dodge is a flinch, not a spell
 
