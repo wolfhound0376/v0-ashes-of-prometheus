@@ -42,7 +42,11 @@ import { advanceTurn } from "@/lib/turn-order"
 import { bleeds, poolSize, makeMark, appendMark, normaliseMarks } from "@/lib/blood-marks"
 // Hiding, as the SRD writes it: Stealth against passive Perception, and
 // refused outright against anyone with a clear view.
-import { resolveHide, stealthProficiency, lineIsClear, type Onlooker } from "@/lib/hiding"
+import { stealthProficiency, stealthBonus as stealthBonusFor } from "@/lib/hiding"
+// SNEAKING, with facing: who can actually see you, and from which way they
+// are looking. The board draws these cones and the server judges by them —
+// one function, two callers, so the picture cannot lie about the ruling.
+import { surveySneak, facingTowards, type Vantage } from "@/lib/sneak"
 // The rogue's feature, as its own testable rule rather than four conditions
 // buried in the damage roll.
 import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
@@ -571,9 +575,28 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // YOU FACE WHERE YOU WALKED.
+    //
+    // rotation_y existed as a column and was written NOWHERE — it was 0 on
+    // every token in the database, so every creature nominally faced north.
+    // Nothing read it either, so nothing was wrong; the moment a sneaking
+    // rogue asks who is looking at her, a room full of north-facing statues
+    // becomes the difference between a ruling and a coin flip.
+    //
+    // The board already turns a model toward its target when it swings. This
+    // is the same idea, persisted: the direction of travel, in the board's own
+    // convention (0 faces +Z, angle is atan2(dx, dz)).
+    const walkedFacing = facingTowards(
+      { x: token.grid_x ?? gx, y: token.grid_y ?? gy },
+      { x: gx, y: gy },
+    )
     const { error: moveErr } = await db
       .from("vtt_tokens")
-      .update({ grid_x: gx, grid_y: gy, updated_by: "player-move", updated_at: new Date().toISOString() })
+      .update({
+        grid_x: gx, grid_y: gy,
+        ...(walkedFacing == null ? {} : { rotation_y: walkedFacing }),
+        updated_by: "player-move", updated_at: new Date().toISOString(),
+      })
       .eq("id", token_id)
     if (moveErr) return NextResponse.json({ error: moveErr.message }, { status: 500 })
     // SRD, Mage Hand: "The hand vanishes if it is ever more than 30 feet
@@ -1171,8 +1194,30 @@ export async function POST(req: NextRequest) {
       return laid
     }
 
+    /**
+     * YOU FACE WHAT YOU ATTACK.
+     *
+     * The board already turns the model toward its target when it swings —
+     * locally, in the browser, and then throws the angle away. Persisting it
+     * is what makes a fight leave the room facing sensible directions, which
+     * is what a rogue is reading when she looks for a back to creep up on.
+     *
+     * Best-effort: a facing that fails to write costs a nuance in the next
+     * sneak, never the attack itself, so it is not checked.
+     */
+    const faceTheTarget = async () => {
+      if (!victim || victim.id === caster.id) return
+      const a = facingTowards(
+        { x: caster.grid_x ?? 0, y: caster.grid_y ?? 0 },
+        { x: victim.grid_x ?? 0, y: victim.grid_y ?? 0 },
+      )
+      if (a == null) return
+      await db.from("vtt_tokens").update({ rotation_y: a }).eq("id", caster.id)
+    }
+
     const payFor = async () => {
       await breakOwnSanctuary()
+      await faceTheTarget()
       await db.from("combat_state")
         .update({
           // `sneak_used` is the ONCE PER TURN latch. It rides in turn_state
@@ -1933,7 +1978,7 @@ export async function POST(req: NextRequest) {
     const board = await loadBoard(db, map.id)
 
     const { data: tok } = await db
-      .from("vtt_tokens").select("id,label,character_id,grid_x,grid_y,allegiance")
+      .from("vtt_tokens").select("id,label,character_id,grid_x,grid_y,allegiance,token_size")
       .eq("id", token_id).maybeSingle()
     if (!tok?.character_id) {
       return NextResponse.json({ error: "only a player character hides here" }, { status: 403 })
@@ -1949,7 +1994,9 @@ export async function POST(req: NextRequest) {
     // cleric the reason she is seen.
     const { data: others } = await db
       .from("vtt_tokens")
-      .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,is_visible,allegiance")
+      // rotation_y and token_size are what the facing and the height rules
+      // read; they were never selected because nothing used to look.
+      .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,is_visible,allegiance,rotation_y,token_size")
       .eq("map_id", map.id)
       .neq("id", token_id)
     const foes = (others ?? []).filter(
@@ -1964,7 +2011,7 @@ export async function POST(req: NextRequest) {
     const beastIds = foes.map((f) => f.bestiary_id).filter(Boolean) as string[]
     const [{ data: chars }, { data: beasts }] = await Promise.all([
       charIds.length ? db.from("characters").select("id,passive_perception").in("id", charIds) : Promise.resolve({ data: [] as { id: string; passive_perception: number | null }[] }),
-      beastIds.length ? db.from("bestiary").select("id,senses").in("id", beastIds) : Promise.resolve({ data: [] as { id: string; senses: string | null }[] }),
+      beastIds.length ? db.from("bestiary").select("id,senses,size,creature_type").in("id", beastIds) : Promise.resolve({ data: [] as { id: string; senses: string | null; size: string | null; creature_type: string | null }[] }),
     ])
     const ppOfChar = new Map((chars ?? []).map((c) => [c.id, c.passive_perception ?? 10]))
     const ppOfBeast = new Map(
@@ -1974,55 +2021,102 @@ export async function POST(req: NextRequest) {
       }),
     )
 
-    const onlookers: Onlooker[] = foes.map((f) => ({
-      id: f.id,
-      label: f.label ?? "something",
-      passivePerception:
-        (f.character_id ? ppOfChar.get(f.character_id) : undefined) ??
-        (f.bestiary_id ? ppOfBeast.get(f.bestiary_id) : undefined) ??
-        10,
-      seesClearly: lineIsClear(
-        { x: tok.grid_x ?? 0, y: tok.grid_y ?? 0 },
-        { x: f.grid_x ?? 0, y: f.grid_y ?? 0 },
-        board.walkable,
-      ),
+    // WHERE EACH OF THEM IS LOOKING, and what stands between.
+    //
+    // This is the half the old rule could not express. It flattened the room
+    // to "can anyone see you", answered by a straight line over the floor —
+    // so a drow with its back turned was as good a sentry as one staring
+    // straight at you, and standing behind a hook horror bought nothing.
+    //
+    // Sam: "If they are not facing the character they shouldn't be able to see
+    // in 200-360 degrees... If they are an animal they may be able to smell if
+    // you are within one foot... remember height rules; haflings, gnomes, and
+    // small people can often benefit from being short and walking behind tall
+    // people."
+    //
+    // All of that is lib/sneak, pure and tested, and the BOARD DRAWS ITS CONES
+    // WITH THE SAME FUNCTION — so the picture a player is looking at when they
+    // choose a square is the ruling they get when they press the button.
+    const speciesOf = new Map((beasts ?? []).map((b) => [b.id, b]))
+    const vantages: Vantage[] = foes.map((f) => {
+      const b = f.bestiary_id ? speciesOf.get(f.bestiary_id) : null
+      const senses = String((b as { senses?: string } | null)?.senses ?? "")
+      const blind = /blindsight\s+(\d+)/i.exec(senses) ?? /tremorsense\s+(\d+)/i.exec(senses)
+      return {
+        id: f.id,
+        label: f.label ?? "something",
+        x: f.grid_x ?? 0,
+        y: f.grid_y ?? 0,
+        // NULL IS "WE DO NOT KNOW", AND IT SEES ALL ROUND. Every token in the
+        // database had rotation_y = 0 before this change, and treating unset
+        // as "facing north" would have made three quarters of the room
+        // accidentally blind on the first fight after deploy.
+        facing: typeof f.rotation_y === "number" ? f.rotation_y : null,
+        passivePerception:
+          (f.character_id ? ppOfChar.get(f.character_id) : undefined) ??
+          (f.bestiary_id ? ppOfBeast.get(f.bestiary_id) : undefined) ??
+          10,
+        size: (b as { size?: string } | null)?.size ?? f.token_size ?? "medium",
+        isBeast: /beast|monstrosity/i.test(String((b as { creature_type?: string } | null)?.creature_type ?? "")),
+        blindsight: blind ? Math.max(1, Math.round(Number(blind[1]) / 5)) : undefined,
+      }
+    })
+
+    // Everyone on the board is a potential SCREEN, including the sneaker's own
+    // allies — ducking behind your cleric is the whole point of the height
+    // rule, and it would be a strange game where only enemies blocked sight.
+    const bodies = (others ?? []).map((o) => ({
+      id: o.id, x: o.grid_x ?? 0, y: o.grid_y ?? 0,
+      size: o.token_size ?? "medium",
     }))
 
-    const roll = 1 + Math.floor(Math.random() * 20)
-    const outcome = resolveHide(
-      {
-        dexModifier: sheet?.dex_modifier ?? 0,
-        proficiencyBonus: sheet?.proficiency_bonus ?? 2,
-        stealth: stealthProficiency(sheet?.sheet_skill_proficiencies as Record<string, unknown> | null),
-      },
-      onlookers,
-      roll,
-    )
+    const survey = surveySneak({
+      sneaker: { x: tok.grid_x ?? 0, y: tok.grid_y ?? 0, size: tok.token_size ?? "medium" },
+      vantages,
+      bodies,
+      walkable: board.walkable,
+    })
 
-    if (outcome.kind === "seen") {
-      await narrate(db, tok.label ?? "Someone",
-        `${tok.label} looks for somewhere to hide, and finds none — ${outcome.by.join(", ")} ${outcome.by.length > 1 ? "have" : "has"} a clear view.`)
-      return NextResponse.json({ ok: true, hidden: false, reason: "seen", seenBy: outcome.by })
+    const roll = 1 + Math.floor(Math.random() * 20)
+    const bonus = stealthBonusFor({
+      dexModifier: sheet?.dex_modifier ?? 0,
+      proficiencyBonus: sheet?.proficiency_bonus ?? 2,
+      stealth: stealthProficiency(sheet?.sheet_skill_proficiencies as Record<string, unknown> | null),
+    })
+    const total = roll + bonus
+
+    // NOBODY CAN SEE YOU: HIDDEN, NO ROLL.
+    //
+    // Sam's rule, and the reason the whole feature is worth building — a rogue
+    // who worked the angles has already succeeded, and asking for a d20 after
+    // that tells the player their positioning did not matter.
+    if (survey.unopposed) {
+      await db.from("vtt_tokens")
+        .update({ is_hidden: true, updated_by: "player-hide", updated_at: new Date().toISOString() })
+        .eq("id", token_id)
+      const line = `${tok.label} steps out of every line of sight — no roll needed.`
+      await narrate(db, tok.label ?? "Someone", line)
+      return NextResponse.json({
+        ok: true, hidden: true, unopposed: true, line, seenBy: [],
+        sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/hide_vanish" }],
+      })
     }
 
-    const hidden = outcome.kind === "unopposed" ? true : outcome.hidden
+    const hidden = total > (survey.dc ?? 10)
     await db.from("vtt_tokens")
       .update({ is_hidden: hidden, updated_by: "player-hide", updated_at: new Date().toISOString() })
       .eq("id", token_id)
 
-    const line = outcome.kind === "unopposed"
-      ? `${tok.label} slips out of sight — there is no one to see it. (Stealth ${outcome.total})`
-      : `${tok.label} rolls Stealth ${outcome.roll} for ${outcome.total} against ${outcome.keenest}'s passive ${outcome.dc} — ${hidden ? "and is gone" : "and is spotted"}.`
+    // Say WHO can see them and HOW, so a failed sneak teaches the player where
+    // to stand next time instead of just costing them a turn.
+    const watchers = survey.seenBy.map((w) => (w.how === "smell" ? `${w.label} (scent)` : w.how === "blindsight" ? `${w.label} (blindsight)` : w.label))
+    const line = `${tok.label} rolls Stealth ${roll}${bonus >= 0 ? "+" : ""}${bonus} = ${total} against ${survey.keenest}'s passive ${survey.dc} — ${hidden ? "and is gone" : "and is spotted"}. Watching: ${watchers.join(", ")}.`
     await narrate(db, tok.label ?? "Someone", line)
 
     return NextResponse.json({
-      ok: true,
-      hidden,
-      roll: outcome.kind === "unopposed" ? outcome.roll : outcome.roll,
-      total: outcome.total,
-      dc: outcome.kind === "resolved" ? outcome.dc : null,
-      line,
-      // Only the vanish is worth a sound. A failed hide is a rogue standing
+      ok: true, hidden, line, roll, total, dc: survey.dc,
+      seenBy: survey.seenBy,
+      // Only the vanish is worth a sound. A failed sneak is a rogue standing
       // in the open looking foolish, and the log already says so.
       ...(hidden ? { sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/hide_vanish" }] } : {}),
     })

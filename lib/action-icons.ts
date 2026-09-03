@@ -109,7 +109,7 @@ export const CORE_ACTIONS: { name: string; slug: ActionSlug; kind: "action" | "b
   { name: "Dash", slug: "dash", kind: "action" },
   { name: "Disengage", slug: "disengage", kind: "action" },
   { name: "Dodge", slug: "dodge", kind: "action" },
-  { name: "Hide", slug: "hide", kind: "action" },
+  { name: "Sneak", slug: "hide", kind: "action" },
   { name: "Search", slug: "search", kind: "action" },
   { name: "Help", slug: "help", kind: "action" },
   { name: "Ready", slug: "ready", kind: "action" },
