@@ -321,7 +321,16 @@ export default function SandboxDrawer() {
         <button
           disabled={busy}
           onClick={() => void post({ action: "reset" }).then((r) => {
-            if (r) setNote(`healed ${r.healed}${r.slotsRestored ? `, ${r.slotsRestored} slots` : ""}${r.combatEnded ? ", fight ended" : ""}`)
+            if (!r) return
+            // SAY IT WHEN IT ONLY HALF WORKED. The first version printed
+            // "healed 6" whether or not the character sheets had been
+            // written, so a reset that left everyone unconscious with their
+            // actions spent looked exactly like one that worked.
+            if (Array.isArray(r.failures) && r.failures.length) {
+              setNote(`healed ${r.healed}, but ${r.failures.length} refused — ${String(r.failures[0])}`)
+              return
+            }
+            setNote(`healed ${r.healed}, ${r.sheets} sheets${r.slotsRestored ? `, ${r.slotsRestored} slots` : ""}${r.combatEnded ? ", fight ended" : ""}`)
           })}
           className="shrink-0 border border-[#5a4526] px-2 py-1 font-serif text-[9px] uppercase tracking-[0.2em] text-[#a08a5c] hover:border-[#5fd3a0] hover:text-[#5fd3a0]"
           title="Every creature here back to full hit points, slots and conditions — and any fight ended"

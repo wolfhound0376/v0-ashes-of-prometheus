@@ -4,6 +4,10 @@ import { walkableFrom, key as cellKey } from "@/lib/npc-ai"
 import {
   spawnPayload, freeSquare, squaresFor, sideForRole, type SpawnSource, type Allegiance,
 } from "@/lib/sandbox-spawn"
+// The zeroed tally, from the module that owns the shape. death_saves is NOT
+// NULL in the schema, and writing null to it is what silently broke the
+// first version of the reset below.
+import { NO_SAVES } from "@/lib/death-saves"
 
 // ============================================================================
 // /api/sandbox — the rehearsal room's stage door.
@@ -150,6 +154,8 @@ export async function POST(req: NextRequest) {
     // Tokens first. hp_max is the creature's own ceiling and is left alone -
     // this route restores what the fight spent, it does not decide how tough
     // anything is.
+    // Collected, not swallowed. See the note at the sheet update below.
+    const failures: string[] = []
     let healed = 0
     for (const t of tokens) {
       if (t.hp_max == null) continue   // null HP is UNTRACKED, never dead
@@ -158,7 +164,8 @@ export async function POST(req: NextRequest) {
         .update({ hp_current: t.hp_max, is_hidden: false, updated_by: "sandbox-reset", updated_at: now })
         .eq("id", t.id)
         .eq("map_id", map.id)          // the fence, again, on the write
-      if (!error) healed += 1
+      if (error) failures.push(`${t.label ?? t.id.slice(0, 8)}: ${error.message}`)
+      else healed += 1
     }
 
     // Then the character sheets behind them. vtt_tokens.hp_current is the
@@ -185,21 +192,36 @@ export async function POST(req: NextRequest) {
           slotsRestored += entry.used ?? 0
           slots[lvl] = { ...entry, used: 0 }
         }
-        const { error } = await db
+        const { error: sheetErr } = await db
           .from("characters")
           .update({
             ...(c.hp_max != null ? { hp_current: c.hp_max } : {}),
             conditions: [],
-            // Three successes is a story in progress, not a stat. It goes.
-            // (The campaign restart does NOT clear this today - noted, not
-            // fixed here, because that route is not this route's business.)
-            death_saves: null,
+            // Three successes is a story in progress, not a stat. It goes -
+            // ZEROED, not nulled.
+            //
+            // THE BUG: this said `null`, and death_saves is NOT NULL in the
+            // schema with a default of {successes: 0, failures: 0}. Postgres
+            // rejected the whole UPDATE, so hit points, conditions, spell
+            // slots and temp HP all failed together on one bad field, and the
+            // route reported success anyway. Sam pressed Reset, watched every
+            // token heal, and found his characters still unconscious with
+            // their actions spent.
+            death_saves: NO_SAVES,
             ...(sc ? { sheet_spellcasting: { ...sc, slots } } : {}),
             sheet_hp_temp: 0,
             updated_at: now,
           })
           .eq("id", c.id)
-        if (!error) sheets += 1
+        // SAY SO WHEN IT FAILS.
+        //
+        // This was `if (!error) sheets += 1` and nothing else, so a rejected
+        // update moved a counter nobody read while the response still said
+        // ok: true. A reset that half-works in silence is worse than one that
+        // fails loudly - the board looked healed, the sheets were not, and
+        // the only way to find out was to lose a second rehearsal.
+        if (sheetErr) failures.push(`${c.id.slice(0, 8)}: ${sheetErr.message}`)
+        else sheets += 1
       }
     }
 
@@ -209,12 +231,26 @@ export async function POST(req: NextRequest) {
       .from("combat_state").select("id").eq("map_id", map.id).eq("status", "active").maybeSingle()
     if (fight) {
       await db.from("combat_state")
-        .update({ status: "ended", updated_at: now })
+        .update({
+          status: "ended",
+          // Sam: "Reset doesn't reset actions or spells." The action economy
+          // lives HERE, not on the sheet - a spent action is a field on
+          // combat_state, not on the character - so healing the sheet alone
+          // would leave the tray reading ACTION USED on a character at full
+          // health. Cleared as well as ended, so a fight that somehow
+          // outlives this call still starts everyone with a clean turn.
+          turn_state: { action: false, bonus: false, reaction: false, moved_ft: 0, acknowledged: false },
+          updated_at: now,
+        })
         .eq("id", fight.id).eq("map_id", map.id)
     }
 
     return NextResponse.json({
-      ok: true, healed, sheets, slotsRestored, combatEnded: Boolean(fight),
+      // NOT ok when something was refused. The caller has to be able to tell
+      // a reset that worked from one that only looked like it did.
+      ok: failures.length === 0,
+      healed, sheets, slotsRestored, combatEnded: Boolean(fight),
+      ...(failures.length ? { failures } : {}),
     })
   }
 
