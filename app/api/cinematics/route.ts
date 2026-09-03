@@ -22,9 +22,10 @@ const SCOPES = ["solo", "party"] as const
 const KINDS = ["environment", "action", "filler", "opening"] as const
 const TRIGGERS = ["campaign_open", "player_initiated", "event_driven", "dm_override"] as const
 
-// The five values the cinematic_requests.resolution column is constrained to
+// The seven values the cinematic_requests.resolution column is constrained to
 // at the database level. Anything outside this set throws on insert.
-// WHY THERE ARE SEVEN OF THESE (2 Sep 2026).
+//
+// WHY SEVEN AND NOT FIVE (2 Sep 2026).
 //
 // `resolution` is the only record of why a cinematic did not play, and three
 // unrelated outcomes used to write the same word, "miss":
@@ -38,8 +39,18 @@ const TRIGGERS = ["campaign_open", "player_initiated", "event_driven", "dm_overr
 // nothing changed in the catalogue between them. The second was
 // repeat-suppression filed as a catalogue hole.
 //
-// So "miss" now means exactly one thing — the catalogue has nothing — and the
-// gaps report ranks on it alone.
+// So `unrendered` and `seen` were split out, and "miss" is now reserved for a
+// cue the catalogue genuinely could not answer — which is what the gaps report
+// ranks on.
+//
+// ONE EXCEPTION, DELIBERATELY LEFT (2 Sep 2026). When the resolve_cinematic
+// RPC itself errors, the handler below still logs "miss". An outage is not a
+// catalogue fact and does not belong in a shot list, but the honest fix is its
+// own value — `error` — and the check constraint does not accept one yet.
+// Writing it before the constraint exists would throw on insert and turn a
+// failed cinematic into a failed request. So it waits for the migration, and
+// until then "miss" means "the catalogue had nothing" everywhere EXCEPT that
+// one branch. Do not describe the invariant as absolute while that is true.
 type Resolution =
   | "exact" | "location_fallback" | "generic_fallback"
   | "miss" | "rejected" | "seen" | "unrendered"
@@ -285,6 +296,11 @@ export async function GET(request: NextRequest) {
   })
 
   if (error) {
+    // KNOWN MISLABEL, waiting on a constraint. This is an outage, not a
+    // catalogue gap, and logging it as "miss" puts an infrastructure failure
+    // into a creative to-do list. It wants its own value — `error` — which the
+    // check constraint does not accept yet; writing one now would throw on
+    // insert. See the Resolution type above.
     console.error("[cinematics] resolve_cinematic rpc failed:", error.message)
     await logCinematicRequest(admin, { ...reqMeta, resolution: "miss", resolved_clip_id: null })
     return NextResponse.json({ clip: null, resolution: "miss" })
