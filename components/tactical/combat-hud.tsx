@@ -662,11 +662,11 @@ export function CombatHud(props: Props) {
           <div className="relative rounded-[10px] border border-[#3f3020]/80 bg-[linear-gradient(180deg,rgba(15,11,7,.88),rgba(5,4,3,.68))] px-3 pb-2 pt-3 shadow-[0_8px_26px_#000b,inset_0_1px_0_#b98c3d33] backdrop-blur-[2px]">
             <div className="pointer-events-none absolute left-4 right-4 top-[5px] h-px bg-gradient-to-r from-transparent via-[#9c7635]/65 to-transparent" />
             <div className="flex items-end gap-1.5">
-              {turnOrder.map((entry, i) => {
+              {turnOrder.flatMap((entry, i) => {
                 const c = characters.find((x) => x.id === tokenToCharacter[entry.token_id])
                 const art = c?.portrait_image_url ?? tokenPortrait[entry.token_id] ?? null
                 const conds = normalizeConditions(c ? c.conditions : tokenConditions[entry.token_id])
-                return (
+                const mine = (
                   <InitiativeToken
                     key={entry.token_id}
                     entry={entry}
@@ -684,6 +684,47 @@ export function CombatHud(props: Props) {
                     })()}
                   />
                 )
+
+                // THE HAND GETS ITS OWN CARD, PINNED TO ITS MASTER.
+                //
+                // Sam: "Give it a initiative card with it's picture just like
+                // any other character."
+                //
+                // Beside the caster rather than in the order, because the SRD
+                // gives the hand no turn — "you can use your ACTION to control
+                // the hand", so its master's turn IS its turn. Putting it in
+                // turn_order would hand it one and quietly change the rules;
+                // this gives Sam the card he asked for and keeps the ruling.
+                //
+                // Dimmed while unseen: the hand is Invisible until it acts,
+                // and its card should say so at a glance.
+                const hand = summons.find((x) => x.info.caster_token === entry.token_id)
+                if (!hand) return [mine]
+                return [
+                  mine,
+                  <InitiativeToken
+                    key={`${entry.token_id}-hand`}
+                    entry={{
+                      token_id: hand.token_id,
+                      label: hand.label,
+                      // Its master's number, because it acts on their turn —
+                      // and its master's DICE too, since it never rolled any.
+                      // Showing a fabricated d20 beside a real one is how a
+                      // reader stops trusting either.
+                      total: entry.total,
+                      dex_mod: entry.dex_mod,
+                      roll: entry.roll,
+                      kind: "npc",
+                    }}
+                    character={undefined}
+                    portrait={tokenPortrait[hand.token_id] ?? null}
+                    conditions={tokenConditions[hand.token_id] ? normalizeConditions(tokenConditions[hand.token_id]) : []}
+                    // Lit whenever its master is, since it moves on their turn.
+                    active={i === activeIndex}
+                    hp={tokenHp[hand.token_id] ?? null}
+                    summon={{ roundsLeft: roundsLeft(hand.info, round) }}
+                  />,
+                ]
               })}
             </div>
             <div className="mt-1 text-center font-serif text-[8px] uppercase tracking-[0.34em] text-[#a98c55]">

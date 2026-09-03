@@ -96,11 +96,27 @@ export const canReach = (from: Cell, to: Cell) => chebyshevFt(from, to) <= MAGE_
 export type HandUse = "manipulate" | "open" | "stow" | "pour"
 
 /** The four things the SRD lets the hand do, with the line the log gets. */
-export const HAND_USES: { key: HandUse; label: string; line: (caster: string) => string }[] = [
-  { key: "manipulate", label: "Manipulate", line: (c) => `${c}'s spectral hand works at an object.` },
-  { key: "open", label: "Open", line: (c) => `${c}'s spectral hand opens an unlocked door or container.` },
-  { key: "stow", label: "Stow / Retrieve", line: (c) => `${c}'s spectral hand stows or retrieves an item from an open container.` },
-  { key: "pour", label: "Pour", line: (c) => `${c}'s spectral hand pours out the contents of a vial.` },
+export const HAND_USES: {
+  key: HandUse
+  label: string
+  line: (caster: string) => string
+  /**
+   * A glyph, so the hand's abilities read at a glance like everybody else's.
+   *
+   * Sam: "Give it icons just like anyone else based on what it can do."
+   *
+   * DRAWN, NOT FETCHED. Every other action icon is a 256px webp in the bucket
+   * and there are no files for these four — commissioning them is an art job,
+   * and four text buttons in the meantime is exactly the "no icon" Sam
+   * objected to. A glyph is legible today and is replaced for free the day
+   * real art exists, because the card would read `iconFor` instead.
+   */
+  glyph: string
+}[] = [
+  { key: "manipulate", label: "Manipulate", glyph: "✥", line: (c) => `${c}'s spectral hand works at an object.` },
+  { key: "open", label: "Open", glyph: "🗝", line: (c) => `${c}'s spectral hand opens an unlocked door or container.` },
+  { key: "stow", label: "Stow / Retrieve", glyph: "🎒", line: (c) => `${c}'s spectral hand stows or retrieves an item from an open container.` },
+  { key: "pour", label: "Pour", glyph: "🝆", line: (c) => `${c}'s spectral hand pours out the contents of a vial.` },
 ]
 
 export const handUse = (key: string): (typeof HAND_USES)[number] | null =>
