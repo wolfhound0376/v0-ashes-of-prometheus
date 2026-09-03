@@ -21,6 +21,12 @@ import {
   type NpcStatBlock,
 } from "@/lib/world-ai/campaigns"
 import { canonicalizeCondition } from "@/lib/conditions"
+// A long rest, as the SRD writes it. The rule is pure and lives in its own
+// file; this route only owns the rows it touches.
+import { longRest, absoluteMinutes, type SheetSpellcasting } from "@/lib/long-rest"
+// Which of the SRD's four states a character is in, so the rest can refuse to
+// sleep off being downed.
+import { vitalityOf } from "@/lib/death-saves"
 import {
   readGameClock,
   logTimeEvent,
@@ -2895,13 +2901,103 @@ Rules:
   let playerTimeOfDay: string | null = null
   if (timeAdmin && activeSessionId) {
     await logTimeEvent(timeAdmin, activeSessionId, { eventType: "dialogue_exchange" })
-    for (const event of parseTimeEvents(rawText)) {
+    const timeEvents = parseTimeEvents(rawText)
+    const restingTonight = timeEvents.some((e) => e.eventType === "long_rest")
+
+    // The PREVIOUS long rest, read BEFORE this one is written. Every time_log
+    // row is stamped with the clock it produced (game_day_after /
+    // minutes_of_day_after, filled by the apply_time_log trigger), so the
+    // 24-hour rule is an exact comparison rather than an estimate.
+    let previousRestAt: number | null = null
+    if (restingTonight) {
+      const { data: last } = await timeAdmin
+        .from("time_log")
+        .select("game_day_after, minutes_of_day_after")
+        .eq("session_id", activeSessionId)
+        .eq("event_type", "long_rest")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (last && typeof last.game_day_after === "number") {
+        previousRestAt = absoluteMinutes(last.game_day_after, last.minutes_of_day_after ?? 0)
+      }
+    }
+
+    for (const event of timeEvents) {
       await logTimeEvent(timeAdmin, activeSessionId, event)
     }
     // Re-read so the vague descriptor reflects any jump (a long rest or a
     // cinematic cut can move the party into a new part of the day).
     const clockAfter = await readGameClock(timeAdmin, activeSessionId)
     if (clockAfter) playerTimeOfDay = describeTimeOfDay(clockAfter.minutesOfDay)
+
+    // === THE LONG REST ===
+    //
+    // [TIME:long_rest] has always moved the clock eight hours and done nothing
+    // else, so the party woke as tired as they lay down: no hit points, no
+    // spell slots, no Hit Dice. The tag is the moment the WORLD says a long
+    // rest happened, which makes it the only honest place to apply one — a
+    // separate button would be a second source of truth about the same night.
+    //
+    // The rule itself is lib/long-rest.ts, pure and tested. This only owns the
+    // rows.
+    if (restingTonight && clockAfter) {
+      const now = absoluteMinutes(clockAfter.day, clockAfter.minutesOfDay)
+      const since = previousRestAt == null ? null : Math.max(0, now - previousRestAt)
+
+      const { data: party } = await timeAdmin
+        .from("characters")
+        .select("id,name,level,hp_current,hp_max,hit_dice_remaining,sheet_spellcasting,conditions,death_saves")
+        .eq("is_player", true)
+
+      const notes: string[] = []
+      for (const p of party ?? []) {
+        const conditions = Array.isArray(p.conditions) ? (p.conditions as unknown[]).map(String) : []
+        const outcome = longRest(
+          {
+            name: p.name as string,
+            level: p.level as number | null,
+            hp: p.hp_current as number | null,
+            hpMax: p.hp_max as number | null,
+            hitDiceRemaining: p.hit_dice_remaining as number | null,
+            spellcasting: (p.sheet_spellcasting ?? null) as SheetSpellcasting | null,
+            vitality: vitalityOf(p.hp_current as number | null, conditions),
+          },
+          since,
+        )
+        notes.push(outcome.note)
+
+        // Nothing is written for a character who gained nothing — EXCEPT the
+        // stable one who comes round at 1 hit point, which is a real change
+        // and the reason `hp` is read rather than `benefited`.
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        let touched = false
+        if (outcome.hp !== (p.hp_current ?? 0)) { patch.hp_current = outcome.hp; touched = true }
+        if (outcome.benefited) {
+          if (outcome.slots) {
+            const sc = (p.sheet_spellcasting ?? null) as SheetSpellcasting | null
+            // The whole object back with only `used` zeroed — writing just
+            // `{slots}` would drop the caster's ability, DC and known spells.
+            patch.sheet_spellcasting = sc ? { ...sc, slots: outcome.slots } : { slots: outcome.slots }
+          }
+          if (outcome.hitDiceRemaining != null) patch.hit_dice_remaining = outcome.hitDiceRemaining
+          patch.sheet_hp_temp = 0
+          patch.death_saves = { successes: 0, failures: 0 }
+          // Unconscious and Stable are facts about being at 0. Someone who
+          // just healed to full is neither, and leaving the words on them
+          // would keep the card showing a body.
+          patch.conditions = conditions.filter(
+            (c) => !["unconscious", "stable"].includes(c.trim().toLowerCase()),
+          )
+          touched = true
+        }
+        if (touched) {
+          const { error } = await timeAdmin.from("characters").update(patch).eq("id", p.id)
+          if (error) console.error(`[rest] ${p.name}:`, error.message)
+        }
+      }
+      console.log("[rest] long rest applied:\n  " + notes.join("\n  "))
+    }
   }
 
   // === CINEMATIC CUE ===
