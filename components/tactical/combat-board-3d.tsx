@@ -48,7 +48,8 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
-import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type CastHandle, type DamageType } from "./spell-vfx-kit"
+import { castSpellKitVfx, kitVfxTypeFor, prewarmKit, type CastHandle, type DamageType } from "./spell-vfx-kit"
+import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
@@ -1488,6 +1489,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * two separate moments, so the type has to be carried between them.
      */
     const lastHitBy = new Map<string, DamageType>()
+    /**
+     * WHERE it was hit from — the attacker's position when the effect landed.
+     *
+     * A death reads it for the things that have a direction: the shaft left
+     * in a pierced body points back at the archer, the blood goes the way the
+     * blow went. Kept beside lastHitBy for the same reason it exists: the hit
+     * and the death are two moments, and this is carried between them.
+     */
+    const lastHitFrom = new Map<string, THREE.Vector3>()
 
     /**
      * The SAME question, in the server's vocabulary rather than the sprite
@@ -2882,17 +2892,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const scale = radiusFor(row.token_size) / 0.75
         const at = new THREE.Vector3(entry.obj.position.x, 0.05, entry.obj.position.z)
 
-        // A PLAYER always collapses, whatever hit them. They are unconscious
+        // A PLAYER at 0 collapses, whatever hit them. They are unconscious
         // and rolling death saves, and the whole point of the collapse
         // treatment is that it keeps their colour: a downed friend must not
-        // be dressed as a corpse. A MONSTER dies the way it was killed.
-        const kind: DeathKind = row.character_id
+        // be dressed as a corpse.
+        //
+        // ...unless the blow killed them OUTRIGHT. The server writes the Dead
+        // condition on the same row when the damage was massive (SRD: excess
+        // damage past your max), and then there are no saves to roll — that
+        // is a death, and it looks like what did it. A MONSTER always does.
+        const conditions = normaliseConditions(row)
+        const kind: DeathKind = row.character_id && vitalityOf(row.hp_current, conditions) !== "dead"
           ? "collapse"
-          : deathKindFor(lastHitWith.get(row.id) ?? null, normaliseConditions(row))
+          : deathKindFor(lastHitWith.get(row.id) ?? null, conditions)
 
-        // The BODY. Asks tokensRef for the mesh every frame rather than
-        // holding this one, because spawnToken three lines below is about to
-        // throw it away and reload the GLB.
+        // The BODY, the AIR and the SHEET, all in death-vfx now. Asks
+        // tokensRef for the mesh every frame rather than holding this one,
+        // because spawnToken three lines below is about to throw it away and
+        // reload the GLB.
         //
         // `posed` is the deference. A creature whose GLB carries its own
         // "dead" clip already falls the way an animator drew it, and the board
@@ -2900,6 +2917,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // with a rotation is a body that falls twice. So for those, only the
         // colour, the dissolve and the particles run — which is the half the
         // clip cannot do, and the half that says what killed it.
+        //
+        // `from` is where the killing blow came from, when this browser saw
+        // it land: it points the shaft and throws the blood. A death whose
+        // hit was only ever a realtime row has no source and falls straight.
         const posed = Boolean(entry.anim?.names.includes("dead"))
         vfx.push(deathSceneVfx({
           parent: scene,
@@ -2907,21 +2928,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           kind,
           scale,
           posed,
+          camera,
+          from: lastHitFrom.get(row.id) ?? null,
           resolve: () => tokensRef.current.get(row.id)?.obj ?? null,
         }))
-
-        // The AIR. The older sheet-based effect still plays over the top for
-        // monsters, because a sprite of the thing that killed it is a better
-        // impact than any number of particles - but it is no longer the whole
-        // death, and it no longer decides whether there IS one.
-        if (!row.character_id) {
-          const type = lastHitBy.get(row.id)
-          if (type) {
-            vfx.push(deathVfx({ parent: scene, position: at, type, camera, scale }))
-          }
-        }
         lastHitBy.delete(row.id)
         lastHitWith.delete(row.id)
+        lastHitFrom.delete(row.id)
       }
       if (before.hp_current !== row.hp_current || before.hp_max !== row.hp_max || before.is_visible !== row.is_visible || before.is_hidden !== row.is_hidden || before.tint_color !== row.tint_color) {
         spawnToken(row)
@@ -4775,6 +4788,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             victimId,
             kitType ?? ((spellEntry(p.spell).damage as DamageType | undefined) ?? "physical"),
           )
+          lastHitFrom.set(victimId, p.obj.position.clone())
           const victim = tokensRef.current.get(victimId)
           if (!victim?.anim || isDowned(victim.row)) return
           // WHAT THE TARGET DOES ABOUT IT.
