@@ -99,6 +99,7 @@ import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 // cannot offer a weapon the server will refuse.
 import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig, unequipSlot } from "@/lib/equipment"
+import { weaponFromActions } from "@/lib/stat-block-weapon"
 import { playSfx, pickVariant, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, creatureVoice, isVoiceless, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { packSoundFor, packKey } from "@/lib/spell-sfx-pack"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -462,6 +463,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * and so never block; they parry, which is wrong but not absurd.
    */
   const shieldRef = useRef<Map<string, { name: string; rarity: string; itemType: string | null }>>(new Map())
+  /**
+   * WHAT IS ACTUALLY IN THE HAND, kept where BOTH equip passes can reach it.
+   *
+   * The load-time pass used to read `sheet_attacks[0]`, and every character on
+   * this board has exactly one sheet attack: "Unarmed Strike". archetypeFor
+   * answers "empty" to that — correctly, a fist is not a prop — so the
+   * load-time main-hand equip could never succeed for anyone, ever. Fifi has
+   * had a Dagger equipped the whole time and has been holding nothing.
+   *
+   * That left the sheets pass as the only one that could arm a hand, and it
+   * bails when the GLB has not finished loading. So the promise in the comment
+   * below — "whichever wins the race the arm ends up carrying it" — was true
+   * of the shield and false of the weapon. Now both passes read this.
+   */
+  const heldWeaponRef = useRef<Map<string, { name: string; rarity: string }>>(new Map())
+  /** The same question for a monster, answered by its own stat block. */
+  const beastWeaponRef = useRef<Map<string, string>>(new Map())
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
   /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
   const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
@@ -3071,18 +3089,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // bone name is identical on all of them and this needs no per
           // character special-casing.
           //
-          // The weapon comes from the same sheet_attacks the ability rack
-          // reads, so the miniature agrees with the buttons: if Samson's rack
-          // offers a Mace, Samson is holding a mace.
-          const primary = (row.character_id && sheetAttacksRef.current[row.character_id]?.[0]) || null
-          if (primary?.name) {
+          // A PLAYER holds what the inventory says they carry. A MONSTER holds
+          // what its own stat block names — a drow's shortsword, Buppido's
+          // hooked shortspear — because a creature has no inventory to read
+          // and an empty-handed drow whose log line says "hits with
+          // Shortsword" is the board disagreeing with itself.
+          const carriedName = row.character_id ? heldWeaponRef.current.get(row.character_id) : null
+          const beastName = !row.character_id && row.bestiary_id
+            ? beastWeaponRef.current.get(row.bestiary_id)
+            : null
+          const inHand = carriedName ?? (beastName ? { name: beastName, rarity: "common" } : null)
+          if (inHand?.name) {
             const held = equipOnRig(obj, {
-              name: primary.name,
+              name: inHand.name,
               itemType: "weapon",
-              rarity: primary.rarity ?? "common",
+              rarity: inHand.rarity,
               slot: "main_hand",
             })
-            if (held) console.log(`[equip] ${row.label} holds ${primary.name}`)
+            if (held) console.log(`[equip] ${row.label} holds ${inHand.name}`)
           }
           // The other hand, from the same inventory pass. A model that loads
           // before the sheets do is handed its shield by the equip pass in
@@ -4731,11 +4755,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (speciesIds.length) {
         const { data: species } = await supabase
           .from("bestiary")
-          .select("id,ac,model_url,model_scale,model_y_offset")
+          .select("id,ac,model_url,model_scale,model_y_offset,actions")
           .in("id", speciesIds)
-        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null }>) {
+        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null; actions?: unknown }>) {
           speciesModel.set(b.id, { url: b.model_url, scale: b.model_scale, y: b.model_y_offset })
           if (typeof b.ac === "number") acByBeast.set(b.id, b.ac)
+          // Its own stat block says what it fights with. lib/stat-block-weapon
+          // throws out Multiattack, natural attacks and spells, so a quaggoth
+          // keeps its claws and a hook horror is not issued a sword.
+          const w = weaponFromActions(b.actions)
+          if (w) beastWeaponRef.current.set(b.id, w)
         }
       }
 
@@ -4907,6 +4936,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (!w?.name) continue
           heldWeapon.set(cid, { name: w.name, rarity: w.items?.rarity ?? "common" })
         }
+        // Published so the LOAD-TIME pass can reach it too. Without this the
+        // only pass that could arm a hand was this one, and this one gives up
+        // when the GLB has not finished loading.
+        heldWeaponRef.current = heldWeapon
         // WHAT THEY HOLD IN THE OTHER HAND.
         //
         // Detected by name against what the inventory says they carry — the
@@ -4939,7 +4972,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // a disarmed prisoner that is their fist — which is not a prop and
           // has no model. A hand holding an "Unarmed Strike" is the failure
           // this map exists to avoid.
-          const held = t.row.character_id ? heldWeapon.get(t.row.character_id) : null
+          const beast = !t.row.character_id && t.row.bestiary_id
+            ? beastWeaponRef.current.get(t.row.bestiary_id)
+            : null
+          const held = t.row.character_id
+            ? heldWeapon.get(t.row.character_id)
+            : (beast ? { name: beast, rarity: "common" } : null)
           const shield = t.row.character_id ? shieldHeld.get(t.row.character_id) : null
           const model = t.obj.children.find((c) => c.getObjectByName("RightHand"))
           if (!model) return
