@@ -989,11 +989,34 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
       applyCamera()
     }
+    // HOW CLOSE THE CAMERA MAY COME, AND WHY IT MATTERS MORE THAN IT LOOKS.
+    //
+    // Sam: "why does the resolution on my characters look better here than in
+    // the battle HUD" — comparing the hex viewer, whose camera comes in to
+    // 0.18 units, against this one, which stopped at SIX.
+    //
+    // Nothing about the rendering was worse. Both canvases run the same pixel
+    // ratio and the same antialiasing, and this board additionally puts
+    // maximum anisotropy on every model texture and lights them with an
+    // environment map. The difference was screen area, and the arithmetic
+    // settles it. At 45 degrees the frame is 2*dist*tan(22.5) = 0.828 units
+    // tall per unit of distance, and one unit is a five-foot square. In a
+    // 900-pixel viewport a six-foot figure therefore stands:
+    //
+    //   dist 22 (the default) — 91 ft in frame —  59 px tall
+    //   dist  6 (as close as it went) — 25 ft —  217 px tall
+    //   dist  2.5 (now) — 10 ft in frame —       521 px tall
+    //
+    // Fifty-nine pixels is not a resolution problem, it is a thumbnail. The
+    // floor comes down to 2.5, which finally shows the models Meshy actually
+    // delivered. Still above the floor at the shallowest elevation the
+    // drag allows (2.5*sin(0.3) = 0.74 units up), so it cannot dip under the
+    // board, and the near plane is 0.1 so nothing clips.
     const onWheel = (e: WheelEvent) => {
       if (classic) {
-        orthoZoom = Math.min(3.2, Math.max(0.45, orthoZoom * (e.deltaY > 0 ? 0.92 : 1.09)))
+        orthoZoom = Math.min(7, Math.max(0.45, orthoZoom * (e.deltaY > 0 ? 0.92 : 1.09)))
       } else {
-        dist = Math.min(80, Math.max(6, dist * (e.deltaY > 0 ? 1.1 : 0.9)))
+        dist = Math.min(80, Math.max(2.5, dist * (e.deltaY > 0 ? 1.1 : 0.9)))
       }
       applyCamera()
     }
