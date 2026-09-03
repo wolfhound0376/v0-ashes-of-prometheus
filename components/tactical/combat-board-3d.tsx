@@ -426,6 +426,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
   const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
   const [tokenConditions, setTokenConditions] = useState<Record<string, unknown>>({})
+  /**
+   * token_id -> hit points, for the initiative rail.
+   *
+   * Read off vtt_tokens rather than off the sheets because the rail shows
+   * MONSTERS too, and a drow has no character row to read. It is also the copy
+   * the combat route actually enforces: when the two disagree the token is
+   * what decides whether something can still act, so the rail showing it is
+   * the rail telling the truth about the fight.
+   */
+  const [tokenHp, setTokenHp] = useState<Record<string, { cur: number | null; max: number | null }>>({})
   const [log, setLog] = useState<HudLogLine[]>([])
   const [focusId, setFocusId] = useState<string | null>(null)
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
@@ -736,6 +746,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     refreshReachRef.current()
   }, [combat])
   useEffect(() => { darknessRef.current?.(darknessOn) }, [darknessOn])
+
+  // The heal chime, fetched once at mount.
+  //
+  // preloadSfx otherwise only runs when a spell is ARMED, and this cue does not
+  // belong to a spell — it answers a hit-point diff, so it can be triggered by
+  // a potion, a Second Wind, a natural 20 on a death save, or Malachar healing
+  // by hand, none of which arm anything. Without this the first heal of the
+  // session pays a fetch mid-cue and lands late, which reads as broken rather
+  // than as slow. It is 18 KB.
+  useEffect(() => { preloadSfx(["combat/heal"]) }, [])
 
   // ── DEATH, AS OPPOSED TO BEING DOWN ───────────────────────────────────────
   // Sam: "When a character dies, not downed, a funny looking tombstone ...
@@ -2984,6 +3004,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // lie told in bright green.
       const hpWas = before.hp_current
       const hpNow = row.hp_current
+      // Keep the initiative rail's numbers current. Set unconditionally on any
+      // HP write rather than only inside the diff below, because that branch
+      // deliberately ignores null->number (a token joining the fight), and the
+      // rail still needs to show the newcomer's health.
+      if (hpWas !== hpNow || before.hp_max !== row.hp_max) {
+        setTokenHp((m) => ({ ...m, [row.id]: { cur: row.hp_current, max: row.hp_max } }))
+      }
       if (hpWas != null && hpNow != null && hpWas !== hpNow) {
         const delta = hpNow - hpWas
         const healed = delta > 0
@@ -3001,6 +3028,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           crit: wasCrit && !healed,
           scale: radiusFor(row.token_size) / 0.75,
         }))
+
+        // Sam: "Whenever someone regains hit points use this audio clip."
+        //
+        // Hung off the SAME diff as the number above, and for the same reason
+        // the comment there gives: this is every way a creature can get hit
+        // points back — a cure spell, a potion, a Second Wind, the natural 20
+        // on a death save that brings someone round with 1, and Malachar
+        // healing by hand — rather than only the paths this client animates.
+        //
+        // The null guard above is what keeps it honest: a token going from
+        // untracked to 40/40 has not been healed, and must not chime.
+        //
+        // Mastered to 0.24 through the pack's own chain: under an impact at
+        // 0.29, because relief should not hit as hard as a mace, and above the
+        // hurt grunts at 0.20, because it is the good news in the fight.
+        if (healed) {
+          playSfx("combat/heal", { volume: 0.95, rate: variedRate(0.03) })
+        }
       }
 
       // THE KILLING BLOW.
@@ -4489,6 +4534,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const partyTokens = ((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id && r.is_visible)
       setTokenToCharacter(Object.fromEntries(
         ((tokenRows ?? []) as TokenRow[]).filter((r) => r.character_id).map((r) => [r.id, r.character_id as string]),
+      ))
+      // First paint of the rail's hit points. applyRow keeps them current from
+      // here on; without this the rail reads blank until something takes a hit.
+      setTokenHp(Object.fromEntries(
+        ((tokenRows ?? []) as TokenRow[]).map((r) => [r.id, { cur: r.hp_current, max: r.hp_max }]),
       ))
 
       // The plates read the SHEETS, not the tokens: AC, level, speed and
@@ -6138,6 +6188,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         tokenToCharacter={tokenToCharacter}
         tokenPortrait={tokenPortrait}
         tokenConditions={tokenConditions}
+        tokenHp={tokenHp}
         turnOrder={shownTurnOrder}
         activeIndex={shownActiveIndex}
         round={combat?.round ?? 1}
