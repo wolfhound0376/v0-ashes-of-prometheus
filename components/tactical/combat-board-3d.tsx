@@ -59,6 +59,10 @@ import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
 // Twelve deaths, one per way of being killed - see death-vfx.ts.
 import { deathSceneVfx } from "./death-vfx"
+// The arcade card that drops when something is cast. Every fact it prints
+// was already on the wire and going only to a log nobody opens mid-fight.
+import SpellBanner, { type BannerCast } from "./spell-banner"
+import { bannerFor, type BannerVictim } from "@/lib/spell-banner"
 import { deathKindFor, type DeathKind } from "@/lib/damage-type"
 // A zero is an outcome, not an absence — see outcome-word.ts.
 import { outcomeWordVfx } from "./outcome-word"
@@ -295,6 +299,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [dm, setDm] = useState(false)
   const [selected, setSelected] = useState<TokenRow | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  // The cast currently on the card. The counter is what makes a second
+  // Fireball restart the animation rather than sit there looking identical.
+  const [banner, setBanner] = useState<BannerCast | null>(null)
+  const bannerSeq = useRef(0)
   // The darkness is the players' truth, not the DM's. Malachar can lift it
   // to place tokens and read the room, the way the local viewer hid its
   // DM markers at eye level.
@@ -325,6 +333,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [myCharacterId, setMyCharacterId] = useState<string | null>(null)
   const [combatBusy, setCombatBusy] = useState(false)
   const [sheets, setSheets] = useState<HudCharacter[]>([])
+  // Mirrored into a ref so the banner can look a caster's class up from
+  // inside a callback that must not be rebuilt on every sheet update — the
+  // same arrangement tokensRef and combatRef already use on this board.
+  const sheetsRef = useRef<HudCharacter[]>([])
+  useEffect(() => { sheetsRef.current = sheets }, [sheets])
   /** Spell effects standing on the board - Mage Hand - for the HUD's chips and cards. */
   const [summons, setSummons] = useState<SummonOnBoard[]>([])
   /** MOVE pressed on a summon card: the next floor click is where it goes. */
@@ -1998,6 +2011,31 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // knocked over — which is the difference between "piercing" and the
       // "physical" every NPC attack used to collapse into.
       if (s.damageType && s.amount > 0) lastHitWithRef.current.set(s.target_token, s.damageType)
+      // AND THE CARD, for the monsters too. A drow's crossbow bolt deserves
+      // the same announcement a player's Fireball gets, or the banner reads
+      // as a player-only privilege and the fight goes quiet on half its turns.
+      //
+      // `fell` is DERIVED here rather than read off the wire: SwingEvent has
+      // never carried it, and the victim's row still holds the hit points
+      // from BEFORE this blow, because the HP update arrives separately over
+      // realtime. Widening the relay would mean older seats broadcasting a
+      // field newer boards depend on.
+      {
+        const before = victim?.row.hp_current
+        showBanner({
+          casterTokenId: s.caster_token,
+          ability: s.weapon,
+          weapon: true,
+          damageType: s.damageType ?? null,
+          victims: [{
+            label: victim?.row.label ?? "",
+            amount: s.amount,
+            outcome: s.outcome,
+            fell: typeof before === "number" && before > 0 && before - s.amount <= 0,
+            isPlayer: Boolean(victim?.row.character_id),
+          }],
+        })
+      }
       const answer: CastAnswer = {
         ok: true,
         hurt: s.amount > 0,
@@ -5029,6 +5067,42 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [combat?.id, combat?.round, combat?.active_index, combatBusy])
 
+  /**
+   * Put a cast on the card.
+   *
+   * Takes the caster's TOKEN and looks the class up from the sheets, because
+   * Sam asked for "Bard Casts Fireball" — the class, the same voice the
+   * Gauntlet announcer uses for whose turn it is. An NPC has no sheet and
+   * falls back to its label, which is what a drow priestess should be called
+   * anyway.
+   *
+   * Deliberately fire-and-forget: nothing waits on it, nothing reads it back,
+   * and a banner that fails to build must never be able to stop a cast
+   * resolving. All of its inputs are already-settled server facts.
+   */
+  const showBanner = useCallback((opts: {
+    casterTokenId: string
+    ability: string
+    weapon?: boolean
+    damageType?: string | null
+    victims: BannerVictim[]
+  }) => {
+    const tok = tokensRef.current.get(opts.casterTokenId)?.row
+    const sheet = tok?.character_id ? sheetsRef.current.find((c) => c.id === tok.character_id) : null
+    bannerSeq.current += 1
+    setBanner({
+      id: bannerSeq.current,
+      ...bannerFor({
+        casterClass: sheet?.class ?? null,
+        casterLabel: tok?.label ?? null,
+        ability: opts.ability,
+        weapon: opts.weapon,
+        damageType: opts.damageType,
+        victims: opts.victims,
+      }),
+    })
+  }, [])
+
   // While a spell is armed the school's windup loops. It stops the instant the
   // spell is thrown, cancelled, or the component unmounts — a windup still
   // humming after the fight ended is the kind of bug people remember longer
@@ -5123,6 +5197,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
         if (data?.resolved) {
           say(data.line as string)
+          // The same sentence say() just filed in the log, put where the eye
+          // already is. One target, so one line.
+          showBanner({
+            casterTokenId: caster_token,
+            ability,
+            weapon: Boolean(data.weapon),
+            damageType: typeof data.damageType === "string" ? data.damageType : null,
+            victims: [{
+              label: tokensRef.current.get(target_token)?.row.label ?? "",
+              amount: Number(data.amount ?? 0),
+              outcome: String(data.outcome ?? (data.hit ? "hit" : "miss")),
+              fell: Boolean(data.fell),
+              heals: Boolean(data.heals),
+              isPlayer: Boolean(tokensRef.current.get(target_token)?.row.character_id),
+            }],
+          })
           // The server is the only witness to the d20. Park its verdict so the
           // number that rises off the body a moment later can wear it.
           if (data.crit) critRef.current.add(target_token)
@@ -5273,6 +5363,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
         if (data?.line) {
           say(data.line as string)
+          // Every creature the blast caught, in the order the server resolved
+          // them — which is also the order they are read out on the card.
+          showBanner({
+            casterTokenId: caster_token,
+            ability,
+            damageType: typeof data.damageType === "string" ? data.damageType : null,
+            victims: (Array.isArray(data.victims) ? data.victims : []).map(
+              (v: { id?: string; label?: string; amount?: number; outcome?: string; fell?: boolean; heals?: boolean }) => ({
+                label: v.label ?? "",
+                amount: Number(v.amount ?? 0),
+                outcome: String(v.outcome ?? "hit"),
+                fell: Boolean(v.fell),
+                heals: Boolean(v.heals),
+                isPlayer: Boolean(v.id && tokensRef.current.get(v.id)?.row.character_id),
+              }),
+            ),
+          })
         } else if (data?.area && Array.isArray(data.victims) && data.victims.length === 0) {
           say(`${ability} catches no one.`)
         }
