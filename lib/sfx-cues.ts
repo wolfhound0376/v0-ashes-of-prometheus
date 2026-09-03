@@ -28,7 +28,7 @@
 // never take the dashboard down. Every entry point here is total.
 // ============================================================================
 
-import { playSfx, impactFor, meleeHit, variedRate, type SfxName } from "@/lib/sfx"
+import { playSfx, pickVariant, impactFor, meleeHit, variedRate, type SfxName } from "@/lib/sfx"
 import type { DamageType } from "@/lib/spellbook"
 import { createClient } from "@/lib/supabase/client"
 
@@ -148,7 +148,18 @@ function playCue(cue: unknown): void {
         // An unknown slug is not an error. Cues are deliberately allowed to be
         // wired ahead of the audio existing, so the extractor can name a sound
         // that has not been recorded yet and simply stay quiet until it is.
-        if (typeof c.key === "string" && c.key) playSfx(c.key as SfxName)
+        //
+        // THROUGH pickVariant, which is the one place the pack's own
+        // convention was not being honoured. Every other repeated sound —
+        // every sword blow, every punch — already asks the bucket whether a
+        // `_2` exists and uses it. The announcer did not, so a second take of
+        // a line could be uploaded and would never play.
+        //
+        // Sam, asked which victory take to use: "victory.ogg and alt". Both.
+        // With this, that is a naming decision rather than a code change:
+        // ui/victory and ui/victory_2 are now a pool, and a third take is
+        // another upload with no edit here at all.
+        if (typeof c.key === "string" && c.key) playSfx(pickVariant(c.key as SfxName))
         return
       case "spell":
         if (c.damage) playSfx(impactFor(c.damage as DamageType), { volume: 0.9, rate: variedRate(0.04) })
