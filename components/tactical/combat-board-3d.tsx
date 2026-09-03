@@ -4560,20 +4560,42 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const charIds = partyTokens.map((r) => r.character_id as string)
       const loadSheets = async () => {
         if (!charIds.length) return
-        const { data: rows } = await supabase
-          .from("characters")
-          // sheet_attacks is DELIBERATELY not selected any more. It was a
-          // second, hand-kept copy of what a character carries, and it had
-          // already drifted from the first: the drow confiscated the party's
-          // gear, the inventories emptied correctly, and the sheets went on
-          // listing a spear locked in a store room down the hall. The rack is
-          // now derived from the inventory below, so there is one answer.
-          .select("id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,sheet_heroic_inspiration,hero_image_url,death_saves")
-          .in("id", charIds)
-          // Without this the order is whatever Postgres feels like, which
-          // makes the default focus — and the fallback above — a coin flip
-          // that changes between reloads.
-          .order("name")
+        // THE SHEET QUERY MUST SURVIVE A MISSING COLUMN.
+        //
+        // Every card, every rack portrait and the party's own miniatures hang
+        // off this one select. On 2026-09-02 a PR added `death_saves` to it
+        // and merged before its migration ran; Postgres refused the whole
+        // query, `rows` came back undefined, and the table lost its cards and
+        // its party while the drow kept theirs. A column that arrives by
+        // migration is asked for SECOND: if the full select is refused, the
+        // same query runs again without the late columns, the board comes up
+        // whole, and the only thing missing is the thing that column draws.
+        //
+        // sheet_attacks is DELIBERATELY not selected. It was a second,
+        // hand-kept copy of what a character carries, and it had already
+        // drifted from the first: the drow confiscated the party's gear, the
+        // inventories emptied correctly, and the sheets went on listing a
+        // spear locked in a store room down the hall. The rack is derived
+        // from the inventory below, so there is one answer.
+        const SHEET_COLUMNS = "id,name,class,level,ac,hp_current,hp_max,speed,proficiency_bonus,portrait_image_url,face_image_url,dex_modifier,sheet_spellcasting,sheet_features,conditions,str_score,dex_score,con_score,int_score,wis_score,cha_score,avatar_image_url,initiative,xp,xp_to_next,sheet_species,sheet_background,sheet_save_proficiencies,sheet_skill_proficiencies,sheet_heroic_inspiration,hero_image_url"
+        /** Columns added by migration. Add new ones HERE, never to the list above. */
+        const LATE_COLUMNS = ",death_saves"
+        const fetchSheets = (cols: string) =>
+          supabase
+            .from("characters")
+            .select(cols)
+            .in("id", charIds)
+            // Without this the order is whatever Postgres feels like, which
+            // makes the default focus — and the fallback above — a coin flip
+            // that changes between reloads.
+            .order("name")
+        let res = await fetchSheets(SHEET_COLUMNS + LATE_COLUMNS)
+        if (res.error) {
+          console.error("[board] sheets: full select refused, retrying without late columns —", res.error.message)
+          res = await fetchSheets(SHEET_COLUMNS)
+          if (res.error) say("The sheets did not load: " + res.error.message)
+        }
+        const rows = res.data
 
         // WHAT THEY ACTUALLY CARRY.
         //
