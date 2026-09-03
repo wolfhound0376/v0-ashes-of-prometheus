@@ -371,11 +371,14 @@ const DECAL_FADE_IN = 0.35
  * Seconds a concentration mark may stay if nobody calls end().
  *
  * The honest duration of a concentration spell is "until concentration
- * drops", and nothing on either side of the wire tracks concentration yet,
- * so the kit cannot be told. end() is the hook for when it can be. Until then
- * this cap — ten minutes, the SRD's middle duration for lingering areas — is a
- * leak guard rather than a rule: it keeps a Fog Cloud from surviving a whole
- * session in a browser that never heard the caster drop it.
+ * drops", and nothing on either side of the wire tracks concentration as
+ * such. What the board does know — the caster arming another area spell, or
+ * going down — it passes on through end(), the same way it ends the
+ * aftermath mark in aoe-decal.ts. This cap — ten minutes, the SRD's middle
+ * duration for lingering areas — covers the breaks the board cannot see
+ * (a Web dispelled, a caster who simply stopped): a leak guard rather than
+ * a rule, so a Fog Cloud cannot survive a whole session in a browser that
+ * never heard the caster drop it.
  */
 const DECAL_CONCENTRATION_CAP = 600
 

@@ -48,7 +48,7 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
-import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType } from "./spell-vfx-kit"
+import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type CastHandle, type DamageType } from "./spell-vfx-kit"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
@@ -1608,8 +1608,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * stops. Keyed by caster because that is the thing that ends it — and
      * because one caster can hold only one concentration, so arming a second
      * area spell is itself the signal to drop the first.
+     *
+     * A LIST per caster, not one handle. One concentration can hold TWO
+     * marks on the floor: the cell-accurate aftermath from aoe-decal.ts and
+     * the looping live mark the spell kit lays from inside the cast (a Fog
+     * Cloud's fog, Spirit Guardians' ring). Until this held only the first,
+     * the second ran to the kit's ten-minute leak cap after the caster was
+     * knocked flat — a fog bank hanging over an unconscious wizard, while
+     * the web beside it had already gone.
      */
-    const areaDecals = new Map<string, AreaDecalHandle>()
+    const areaDecals = new Map<string, AreaDecalHandle[]>()
+    /** End every mark a caster's concentration was holding. Safe on nobody. */
+    const endHeldMarks = (casterId: string) => {
+      for (const h of areaDecals.get(casterId) ?? []) h.end()
+      areaDecals.delete(casterId)
+    }
     // Blood on the tiles. Laid by the route into vtt_maps.meta.marks; this
     // only paints what the row says, at load and again on every change.
     let blood: BloodDecalHandle | null = null
@@ -4804,6 +4817,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             if (m) vfx.push(m)
           }
         }
+        // The kit's cast, once it exists — assigned below, read at impact.
+        // It is the handle that lays the looping live mark, so it is the
+        // handle that has to be told when the concentration behind it ends.
+        let cast: CastHandle | null = null
         const flinch = () => {
           p.onLand?.()          // the bang, on the same frame as the flash
           // THE WIRE IS BELIEVED AGAIN FROM HERE. Released before the damage
@@ -4849,8 +4866,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // This is the frame the effect arrives and everyone in it answers,
           // so it is the frame the ground changes too.
           const visual = p.cells?.length ? areaVisualFor(p.spell) : null
+          let mark: AreaDecalHandle | null = null
           if (visual && p.cells && p.centre) {
-            const mark = layAreaDecal({
+            mark = layAreaDecal({
               parent: scene,
               cells: p.cells,
               centre: p.centre,
@@ -4858,36 +4876,44 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               cellToWorld: (x, y) => sqCentre(x, y),
               squareSize: SQ,
             })
-            if (visual.lingers && p.casterTokenId) {
-              // One concentration, one mark. Starting a new one ends the old,
-              // which is the rule 5E already enforces on the caster.
-              areaDecals.get(p.casterTokenId)?.end()
-              areaDecals.set(p.casterTokenId, mark)
-            }
             vfx.push(mark)
+          }
+          // ONE CONCENTRATION, HOWEVER MANY MARKS. Starting a new one ends
+          // the old, which is the rule 5E already enforces on the caster.
+          //
+          // Read off the spellbook rather than off `visual`, because the kit
+          // lays its live mark whether or not this cast carried a cell list —
+          // a DM-driven cast arrives with no shape and still leaves fog — and
+          // a lingering mark nobody is holding is exactly the leak this fixes.
+          // `cast` is a no-op to end when the spell laid nothing.
+          if (p.casterTokenId && areaVisualFor(p.spell)?.lingers) {
+            endHeldMarks(p.casterTokenId)
+            const held = [mark, cast].filter((h): h is AreaDecalHandle => h !== null)
+            if (held.length) areaDecals.set(p.casterTokenId, held)
           }
         }
         // A swing spawns no effect: the contact frame IS the impact.
         if (p.swing) { flinch(); continue }
-        vfx.push(
-          kitType
-            ? castSpellKitVfx({
-                parent: scene,
-                anchor: bone,
-                type: kitType,
-                target: p.target,
-                camera,
-                spell: p.spell,   // an attack-roll spell flies, whatever its type
-                onImpact: flinch,
-              })
-            : castSpellVfx({
-                parent: scene,
-                anchor: bone,
-                palette: paletteForSpell(p.spell),
-                target: p.target,
-                onImpact: flinch,   // lightning and weapons land too
-              }),
-        )
+        if (kitType) {
+          cast = castSpellKitVfx({
+            parent: scene,
+            anchor: bone,
+            type: kitType,
+            target: p.target,
+            camera,
+            spell: p.spell,   // an attack-roll spell flies, whatever its type
+            onImpact: flinch,
+          })
+          vfx.push(cast)
+        } else {
+          vfx.push(castSpellVfx({
+            parent: scene,
+            anchor: bone,
+            palette: paletteForSpell(p.spell),
+            target: p.target,
+            onImpact: flinch,   // lightning and weapons land too
+          }))
+        }
       }
       // A LINGERING MARK OUTLIVES ITS CASTER'S CONCENTRATION, NOT THEIR BODY.
       //
@@ -4900,11 +4926,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Checked here rather than on the realtime row so it also covers a
       // token being removed outright. The map is empty on almost every frame.
       if (areaDecals.size) {
-        for (const [casterId, mark] of areaDecals) {
+        for (const casterId of [...areaDecals.keys()]) {
           const caster = tokensRef.current.get(casterId)
           if (caster && !isDowned(caster.row)) continue
-          mark.end()
-          areaDecals.delete(casterId)
+          endHeldMarks(casterId)
         }
       }
       for (let i = vfx.length - 1; i >= 0; i--) {
