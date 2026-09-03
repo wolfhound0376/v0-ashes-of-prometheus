@@ -339,7 +339,9 @@ const HEAVY_SPELLS = [
 
 /** Actions that are not a swing or a spell get no animation at all — a Dash
  *  is footwork the board already shows by moving the token. */
-const MUTE_ACTIONS = ["dash", "disengage", "hide", "search", "help", "ready", "use an object"]
+// "sneak" alongside "hide": the action was renamed and the verb was not, so
+// both names reach here depending on which half deployed first.
+const MUTE_ACTIONS = ["dash", "disengage", "hide", "sneak", "search", "help", "ready", "use an object"]
 
 export interface CastPlan {
   state: TokenState

@@ -75,6 +75,10 @@ import SpellBanner, { type BannerCast } from "./spell-banner"
 import { ImpactHold, holdMsFor } from "@/lib/impact-hold"
 // A bolt you can see leave the bow, and a miss that goes past you.
 import { loose } from "./projectile"
+// The cones that appear when Sneak is armed, painted by the SAME function
+// the server judges the roll with.
+import { showSightCones, type ConeHandle } from "./sight-cones"
+import type { Vantage } from "@/lib/sneak"
 import { bannerFor, type BannerVictim } from "@/lib/spell-banner"
 import { deathKindFor, type DeathKind } from "@/lib/damage-type"
 // A zero is an outcome, not an absence — see outcome-word.ts.
@@ -325,6 +329,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    * owns the deadlines that stop a hold outliving its spell.
    */
   const impactHold = useRef(new ImpactHold())
+  /** Live sight cones, while Sneak is armed. Null the rest of the time. */
+  const conesRef = useRef<ConeHandle | null>(null)
+  /**
+   * Built inside the scene effect, where the grid, the walkable set and the
+   * cellToWorld projection live — none of which exist out here. The arming
+   * effect above only asks for cones; it does not know how to draw them.
+   */
+  const coneApiRef = useRef<((sneakerTokenId: string) => ConeHandle) | null>(null)
   // The darkness is the players' truth, not the DM's. Malachar can lift it
   // to place tokens and read the room, the way the local viewer hid its
   // DM markers at eye level.
@@ -3201,6 +3213,56 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * come first. Only the creature path ever sets it: an area does not
      * choose sides, so nobody in a blast is "across the line".
      */
+    /**
+     * Everything the cones need, closed over the scene's own geometry.
+     *
+     * The vantages are read FRESH on every refresh rather than captured, so a
+     * drow that turns while the player is deciding repaints the floor.
+     */
+    coneApiRef.current = (sneakerTokenId: string) => {
+      const rowsOf = () => Array.from(tokensRef.current.values()).map((t) => t.row)
+      const me = () => tokensRef.current.get(sneakerTokenId)?.row ?? null
+      const dims = mapRef.current
+      return showSightCones({
+        parent: scene,
+        width: dims?.grid_width ?? 12,
+        height: dims?.grid_height ?? 12,
+        cellToWorld: (x, y) => sqCentre(x, y),
+        squareSize: SQ,
+        walkable: walkableRef.current,
+        sneaker: () => {
+          const r = me()
+          return { x: r?.grid_x ?? 0, y: r?.grid_y ?? 0, size: r?.token_size ?? "medium" }
+        },
+        bodies: () => rowsOf().map((r) => ({ id: r.id, x: r.grid_x, y: r.grid_y, size: r.token_size })),
+        vantages: (): Vantage[] => {
+          const mine = me()
+          return rowsOf()
+            // NOT THE SNEAKER'S OWN, as Sam asked - it is not information they
+            // need and it would cover the squares they are trying to read.
+            .filter((r) => r.id !== sneakerTokenId)
+            .filter((r) => r.is_visible && (r.hp_current ?? 1) > 0)
+            // Only the other side watches. Rolling against your own cleric is
+            // how a rogue's own party becomes the reason she is seen.
+            .filter((r) => r.allegiance !== (mine?.allegiance ?? "party"))
+            .map((r) => ({
+              id: r.id,
+              label: r.label,
+              x: r.grid_x,
+              y: r.grid_y,
+              // Null is "unknown", and it sees all round - the safe direction,
+              // and the common one until everything has moved once.
+              facing: typeof r.rotation_y === "number" ? r.rotation_y : null,
+              // The board does not hold passive Perception; it does not need
+              // to, because the cones answer WHO CAN SEE, not WHO WINS. The
+              // number is the server's business.
+              passivePerception: 10,
+              size: r.token_size,
+            }))
+        },
+      })
+    }
+
     const showAffected = (ids: string[], helpful: boolean, cross = false) => {
       clearAffected()
       const mat = cross ? affectCrossMat : helpful ? affectHelpMat : affectHarmMat
@@ -5356,6 +5418,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // spell is thrown, cancelled, or the component unmounts — a windup still
   // humming after the fight ended is the kind of bug people remember longer
   // than the feature.
+  // WHO CAN SEE WHERE, while Sneak is armed.
+  //
+  // Sam: "When hide is selected reveal everyone's line of site (except the
+  // player selecting hide)." Mounted here rather than inside the scene build,
+  // so it appears and disappears with the arming and cannot outlive it.
+  useEffect(() => {
+    const armed = armedSpell
+    const wantCones = Boolean(armed && armed.kind === "action"
+      && ["hide", "sneak"].includes(armed.name.trim().toLowerCase()))
+    if (!wantCones) {
+      conesRef.current?.dispose()
+      conesRef.current = null
+      return
+    }
+    const api = coneApiRef.current
+    if (!api) return
+    conesRef.current = api(armed!.tokenId)
+    return () => { conesRef.current?.dispose(); conesRef.current = null }
+  }, [armedSpell])
+
   useEffect(() => {
     if (!armedSpell) return
     // Steel has no windup to hum. A weapon arms silently and simply waits for
@@ -6084,7 +6166,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // a Stealth roll against every onlooker's passive Perception — and
           // has nothing to arm and nothing to throw, so it leaves before any
           // of the targeting machinery below sees it.
-          if (kind === "action" && ability.trim().toLowerCase() === "hide") {
+          // The action was RENAMED to Sneak (Sam's word) and the verb on the
+          // wire is still "hide", so a deployed board and a deployed server
+          // never have to agree about a rename. Both names are accepted here
+          // for the same reason: whichever half deploys first still works.
+          if (kind === "action" && ["hide", "sneak"].includes(ability.trim().toLowerCase())) {
             const mine = Array.from(tokensRef.current.values()).find((t) => t.row.character_id === characterId)
             if (!mine) { say("That character has no miniature on this board."); return }
             void (async () => {
