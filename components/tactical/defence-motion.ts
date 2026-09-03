@@ -42,16 +42,38 @@ import type { TokenState } from "@/lib/token-animation"
 const SHAPES: Partial<Record<TokenState, { lean: number; shift: number; drop: number; life: number }>> = {
   // Out of the way and back. The biggest travel of the four, because a dodge
   // is the one defence that is ABOUT not being where you were.
-  dodge: { lean: 0.30, shift: 0.34, drop: 0.05, life: 0.42 },
+  dodge: { lean: 0.55, shift: 0.62, drop: 0.16, life: 0.46 },
   // A turn of the blade: the body rotates, it does not travel.
-  parry: { lean: 0.22, shift: 0.06, drop: 0.02, life: 0.34 },
+  parry: { lean: 0.46, shift: 0.14, drop: 0.05, life: 0.36 },
   // Braced. Almost no lean, a real crouch — weight going down into the shield
   // rather than away from the blow.
-  block: { lean: 0.08, shift: 0.04, drop: 0.13, life: 0.36 },
+  block: { lean: 0.14, shift: 0.10, drop: 0.28, life: 0.38 },
   // Taking it. Leans INTO the hit and sags, which is the opposite shape from
   // the dodge above and is what stops the two reading as the same motion.
-  hurt: { lean: -0.26, shift: -0.14, drop: 0.10, life: 0.38 },
+  hurt: { lean: -0.42, shift: -0.26, drop: 0.20, life: 0.40 },
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WHY THESE NUMBERS GOT BIGGER, roughly doubled, on 2026-09-03.
+//
+// Sam: "opponents that win after an attack (melee) role is made should show an
+// appropriate dodge."
+//
+// The rule was already right and already running. defenceFor has returned
+// parry on a near miss, dodge on a wide one and block behind a shield since it
+// was written, and this file has been supplying the motion for it. The problem
+// was purely that NOBODY COULD SEE IT.
+//
+// The first pass chose deliberately small numbers, reasoning that "a full
+// square of travel reads as the token having MOVED". That reasoning is sound
+// and the conclusion was wrong: at the distance this board is actually viewed
+// from — a tabletop camera looking down at a 12x12 room — a third of a square
+// over four tenths of a second is invisible. It was tuned by reading the code
+// rather than by watching it.
+//
+// Still well under a square, so the grid never lies about where anybody is
+// standing. It simply now happens far enough, and low enough, to be seen.
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Move a body through a defence it has no clip for.

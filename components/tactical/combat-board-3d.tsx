@@ -65,6 +65,8 @@ import { deathSceneVfx } from "./death-vfx"
 import SpellBanner, { type BannerCast } from "./spell-banner"
 // The hold that stops a corpse arriving before the spell that made it.
 import { ImpactHold, holdMsFor } from "@/lib/impact-hold"
+// A bolt you can see leave the bow, and a miss that goes past you.
+import { loose } from "./projectile"
 import { bannerFor, type BannerVictim } from "@/lib/spell-banner"
 import { deathKindFor, type DeathKind } from "@/lib/damage-type"
 // A zero is an outcome, not an absence — see outcome-word.ts.
@@ -1583,6 +1585,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        */
       swing?: boolean
       /**
+       * A RANGED swing, and what the shot needs to fly.
+       *
+       * A sword's contact frame IS its impact, so it spawns nothing. A
+       * crossbow does not touch anybody: the bolt has to cross the room, and
+       * on a miss it has to cross it and keep going.
+       */
+      shot?: { hit: boolean; margin: number } | null
+      /**
        * An area cast's bodies, resolved to what each one does when the shape
        * lands. The effect flies to a SQUARE, not a creature, so `victimId`
        * is null for these and this list is how the impact reaches the people
@@ -1910,12 +1920,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const swingWait = castEventFor(clip.name, clip.duration).release
           if (swingVictim) impactHold.current.hold(swingVictim.row.id, Date.now(), holdMsFor(swingWait + 0.6))
         }
+        // RANGED IS READ FROM THE REACH, not from the weapon's name.
+        //
+        // The sound picker next to this uses /bow|sling|dart|javelin/, which
+        // is a guess that happens to catch "crossbow" because it contains
+        // "bow" — and misses a thrown dagger entirely. The rack already knows
+        // the real number: anything that reaches past its own square is a
+        // shot rather than a swing.
+        const reachFt = armedRef.current?.entry.rangeFt ?? 5
+        const isShot = reachFt > 5
         pending.push({
           wait: castEventFor(clip.name, clip.duration).release,
           obj: found.obj,
           hand: "RightHand",
           spell: ability,
-          target: null,
+          target: swingVictim ? swingVictim.obj.position.clone() : null,
+          shot: isShot && swingVictim && w
+            ? { hit: Boolean(w.hit), margin: outcome?.verdict?.margin ?? -5 }
+            : null,
           victimId: swingVictim?.row.id ?? null,
           reaction: reactionFor(outcome, explicitTarget ?? null),
           swing: true,
@@ -4906,8 +4928,31 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             if (held.length) areaDecals.set(p.casterTokenId, held)
           }
         }
-        // A swing spawns no effect: the contact frame IS the impact.
-        if (p.swing) { flinch(); continue }
+        // A MELEE swing spawns no effect: the contact frame IS the impact.
+        //
+        // A RANGED one does. The bolt leaves the hand on this frame and the
+        // impact waits until it arrives — which is what makes a crossbow read
+        // as a crossbow instead of as damage appearing from nowhere, and what
+        // finally lets a miss be SEEN to miss.
+        if (p.swing) {
+          if (p.shot && p.target) {
+            vfx.push(loose({
+              parent: scene,
+              from: bone ? bone.getWorldPosition(new THREE.Vector3()) : p.obj.position.clone().setY(0.9),
+              to: p.target.clone(),
+              hit: p.shot.hit,
+              margin: p.shot.margin,
+              // The victim's id gives a stable side per target, so two shots
+              // at the same drow do not both swing wide the same way while a
+              // replay on another seat picks differently.
+              seed: (p.victimId ?? "").charCodeAt(0) || 0,
+              onImpact: flinch,
+            }))
+            continue
+          }
+          flinch()
+          continue
+        }
         if (kitType) {
           cast = castSpellKitVfx({
             parent: scene,
