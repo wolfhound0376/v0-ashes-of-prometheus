@@ -26,7 +26,10 @@ interface Clip {
   location: string
   state: string | null
   scope: "solo" | "party"
-  kind: "environment" | "action" | "filler"
+  // Mirrors KINDS in app/api/cinematics/route.ts, which the server
+  // re-validates against. Unlike the upload console this list is written out
+  // twice — here and in the <option> block below — so both move together.
+  kind: "environment" | "action" | "filler" | "opening"
   video_url: string | null
 }
 
@@ -228,6 +231,7 @@ export function CinematicsTab() {
             <option value="environment">Environment</option>
             <option value="action">Action</option>
             <option value="filler">Filler</option>
+            <option value="opening">Opening</option>
           </select>
           <button
             onClick={() => void createClip()}

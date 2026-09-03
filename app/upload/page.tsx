@@ -28,7 +28,9 @@ import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, ensureDmKey, clearDmKey } from "@/lib/dm-key"
 
 const SCOPES = ["party", "solo"] as const
-const KINDS = ["environment", "action", "filler"] as const
+// Mirrors KINDS in app/api/cinematics/route.ts, which the server re-validates
+// against. `opening` is here so an episode opener can be catalogued.
+const KINDS = ["environment", "action", "filler", "opening"] as const
 const MAX_BYTES = 50 * 1024 * 1024 // hard server limit per the pipeline doc
 const OK_TYPES = ["video/mp4", "video/webm"]
 
