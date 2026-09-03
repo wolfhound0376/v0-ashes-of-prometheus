@@ -232,6 +232,12 @@ export const AREA_SPELLS: { name: string; area: AreaSpec; entry: SpellEntry }[] 
     .map(([name, entry]) => ({ name, area: entry.area as AreaSpec, entry }))
 
 const norm = (n: string) => n.toLowerCase().replace(/['’]/g, "").trim()
+/**
+ * The registry's own key for a name. Exported so a spell lent in the
+ * rehearsal room (lib/sandbox-grant.ts) and the cast that later names it
+ * agree on what "Fire Bolt" is.
+ */
+export const normSpell = norm
 
 /** Unknown spells still work — ranged, arcane, no impact sound. */
 export const DEFAULT_ENTRY: SpellEntry = { level: 0, school: "arcane", rangeFt: 60, target: "creature" }

@@ -8,6 +8,8 @@ import {
 // NULL in the schema, and writing null to it is what silently broke the
 // first version of the reset below.
 import { NO_SAVES } from "@/lib/death-saves"
+import { SPELLBOOK, spellEntry, normSpell } from "@/lib/spellbook"
+import { grantSpell, revokeSpell, revokeAll, type LoanableSheet } from "@/lib/sandbox-grant"
 
 // ============================================================================
 // /api/sandbox — the rehearsal room's stage door.
@@ -20,6 +22,8 @@ import { NO_SAVES } from "@/lib/death-saves"
 //                    "clear"  sweep everything this route ever put there
 //                    "scene"  change which environment the board is dressed as
 //                    "reset"  put every creature back on its feet, full
+//                    "grant"  lend a character a spell to rehearse with, or
+//                             take a lent one back
 //
 // THE FENCE, WHICH IS THE WHOLE POINT
 //
@@ -92,7 +96,7 @@ export async function GET() {
       .select("id,character_id,name,hp_max,ac,challenge_rating,monster_type,portrait_url,disposition,bestiary_id")
       .order("name"),
     db.from("characters")
-      .select("id,name,class,level,size,hp_max,ac,character_type,avatar_image_url")
+      .select("id,name,class,level,size,hp_max,ac,character_type,avatar_image_url,sheet_spellcasting")
       .is("archived_at", null)
       .order("name"),
     db.from("environments")
@@ -129,7 +133,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
-  const VERBS = ["spawn", "remove", "clear", "scene", "reset"]
+  const VERBS = ["spawn", "remove", "clear", "scene", "reset", "grant"]
   if (!VERBS.includes(action)) {
     return NextResponse.json(
       { error: `unknown action ${String(action)} — expected one of ${VERBS.join(", ")}` },
@@ -317,6 +321,70 @@ export async function POST(req: NextRequest) {
       ok: failures.length === 0,
       healed, sheets, slotsRestored, corrected, dispelled: dispelled ?? 0, combatEnded: Boolean(fight),
       ...(failures.length ? { failures } : {}),
+    })
+  }
+
+  // ---- grant ---------------------------------------------------------------
+  //
+  // Sam: "make sure I have the ability on the sandbox to give spells to
+  // characters to test them out."
+  //
+  // The cast handler refuses anything the sheet does not carry, which is the
+  // right rule for the table and makes the room useless for the thing it is
+  // for: nobody can watch a Fireball land if nobody here can cast one. So a
+  // spell is LENT - written onto the sheet like any prepared spell, and into
+  // a ledger on the same sheet so it can be taken back exactly, slot level
+  // and all (lib/sandbox-grant.ts).
+  //
+  // THE FENCE, for a sheet. Only a character STANDING ON THE SANDBOX MAP can
+  // be lent to. There is one Kenta, and his row is the live board's row too,
+  // so this is the same line the reset draws: the room may touch the sheets
+  // of whoever is rehearsing in it, and nobody else's.
+  if (action === "grant") {
+    const characterId = String(body?.character_id ?? "")
+    const spell = String(body?.spell ?? "").trim()
+    const all = body?.all === true
+    const revoke = body?.revoke === true || all
+    if (!characterId || (!spell && !all)) {
+      return NextResponse.json({ error: "character_id and spell required" }, { status: 400 })
+    }
+    const { data: here } = await db
+      .from("vtt_tokens").select("id")
+      .eq("map_id", map.id).eq("character_id", characterId)
+      .limit(1).maybeSingle()
+    if (!here) {
+      return NextResponse.json({ error: "that character is not on the rehearsal board" }, { status: 404 })
+    }
+    // Only what the book knows. An unregistered name would still cast (the
+    // DEFAULT_ENTRY fallback is deliberate), but it has no level, so the loan
+    // could not know which slots to open or close.
+    if (!all && !(normSpell(spell) in SPELLBOOK)) {
+      return NextResponse.json({ error: `${spell} is not in the spellbook` }, { status: 404 })
+    }
+    const { data: ch } = await db
+      .from("characters").select("id,name,sheet_spellcasting")
+      .eq("id", characterId).maybeSingle()
+    if (!ch) return NextResponse.json({ error: "no such character" }, { status: 404 })
+    const sc = (ch.sheet_spellcasting ?? null) as LoanableSheet | null
+    const levelOf = (n: string) => spellEntry(n).level
+
+    const r = all ? revokeAll(sc, levelOf)
+      : revoke ? revokeSpell(sc, spell, levelOf)
+      : grantSpell(sc, spell, levelOf(spell))
+    if (r.changed) {
+      // The board is subscribed to characters UPDATE and reloads the sheets
+      // itself, so the tray shows the spell without this route saying a word
+      // to it - the same arrangement spawn relies on for tokens.
+      const { error } = await db
+        .from("characters")
+        .update({ sheet_spellcasting: r.sheet, updated_at: new Date().toISOString() })
+        .eq("id", characterId)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({
+      ok: true, changed: r.changed, ...(r.reason ? { reason: r.reason } : {}),
+      character: ch.name, spell: all ? null : spell, level: all ? null : levelOf(spell),
+      sheet_spellcasting: r.sheet,
     })
   }
 
