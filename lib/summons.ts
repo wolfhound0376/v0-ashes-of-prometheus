@@ -129,4 +129,6 @@ export interface SummonOnBoard {
   x: number
   y: number
   info: SummonInfo
+  /** Where its caster stands, if the caster is on the board - for the leash readout. */
+  caster: Cell | null
 }
