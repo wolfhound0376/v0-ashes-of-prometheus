@@ -18,6 +18,12 @@ import {
   MAGE_HAND, summonMageHand, normaliseSummon, expired, withinLeash, withinCastRange, canReach, handUse,
 } from "@/lib/summons"
 import { normalizeConditions } from "@/lib/conditions"
+// Sanctuary and Shield of Faith: the protections that ride on a token until
+// their duration runs out or their bearer swings first.
+import {
+  wardSpellFor, wardRounds, normaliseWard, wardExpired, wardCondition,
+  wardAcBonus, needsSanctuarySave, resolveSanctuary, breaksSanctuary,
+} from "@/lib/wards"
 // Dropping to 0 hit points, as the SRD writes it. The rule lives in
 // lib/death-saves so it can be read whole and tested on every die face;
 // this file only owns the rows.
@@ -137,7 +143,7 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
 
   const { data: tokens } = await db
     .from("vtt_tokens")
-    .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,hp_max,combat_disposition,allegiance,is_visible")
+    .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,hp_max,combat_disposition,allegiance,is_visible,ward")
     .eq("map_id", mapId)
     .eq("is_visible", true)
 
@@ -165,9 +171,13 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
     y: t.grid_y ?? 0,
     hp_current: t.hp_current,
     hp_max: t.hp_max,
-    ac: t.character_id
+    ac: (t.character_id
       ? charAc.get(t.character_id) ?? 10
-      : ((beast.get(t.bestiary_id ?? "")?.ac as number | undefined) ?? 10),
+      : ((beast.get(t.bestiary_id ?? "")?.ac as number | undefined) ?? 10))
+      // Shield of Faith reaches the AI's own reading of the number too, or an
+      // NPC would swing at a creature whose armour it does not believe in.
+      + wardAcBonus(normaliseWard((t as { ward?: unknown }).ward)),
+    warded: normaliseWard((t as { ward?: unknown }).ward)?.spell === "sanctuary",
     bestiary_id: t.bestiary_id,
     // Carried so damage can reach the sheet as well as the token.
     character_id: t.character_id,
@@ -867,7 +877,7 @@ export async function POST(req: NextRequest) {
     }
     const { data: rows } = await db
       .from("vtt_tokens")
-      .select("id,map_id,label,character_id,bestiary_id,hp_current,hp_max,allegiance,grid_x,grid_y,is_visible")
+      .select("id,map_id,label,character_id,bestiary_id,hp_current,hp_max,allegiance,grid_x,grid_y,is_visible,ward")
       .in("id", [caster_token, target_token].filter(Boolean))
     const caster = rows?.find((r) => r.id === caster_token)
     // An aimed square wins over a token id if both somehow arrive: a point
@@ -1061,7 +1071,35 @@ export async function POST(req: NextRequest) {
     // roll — and every Mage Hand — has crashed on payment.
     let sneak: SneakAttackVerdict = { applies: false, dice: "", reason: "" }
 
+    /**
+     * The caster's OWN Sanctuary, if the thing they just did was aggressive.
+     *
+     * SRD: "If the warded creature makes an attack, casts a spell that affects
+     * an enemy, or deals damage to another creature, this spell ends."
+     *
+     * Aggression, not activity — and that distinction is the spell. Ending it
+     * on any cast would forbid a warded cleric from healing their friends,
+     * which is the only thing they are still good for; never ending it would
+     * make one first-level slot into permanent immunity while you shoot
+     * people. `helpful` is the spellbook's own flag, so a Cure Wounds passes
+     * through and a Guiding Bolt does not.
+     */
+    const breakOwnSanctuary = async () => {
+      const mine = normaliseWard((caster as { ward?: unknown }).ward)
+      if (mine?.spell !== "sanctuary") return
+      if (!breaksSanctuary({ weapon: Boolean(weapon), harmful: Boolean(entry && !entry.helpful) })) return
+      const stamp = new Date().toISOString()
+      await db.from("vtt_tokens").update({ ward: null, updated_by: "sanctuary-broken", updated_at: stamp }).eq("id", caster.id)
+      if (caster.character_id) {
+        const { data: ch } = await db.from("characters").select("conditions").eq("id", caster.character_id).maybeSingle()
+        const conds = normalizeConditions(ch?.conditions).filter((c) => c.toLowerCase() !== "sanctuary")
+        await db.from("characters").update({ conditions: conds, updated_at: stamp }).eq("id", caster.character_id)
+      }
+      await narrate(db, caster.label ?? "Someone", `${caster.label} strikes out, and the sanctuary around them fails.`)
+    }
+
     const payFor = async () => {
+      await breakOwnSanctuary()
       await db.from("combat_state")
         .update({
           // `sneak_used` is the ONCE PER TURN latch. It rides in turn_state
@@ -1319,6 +1357,51 @@ export async function POST(req: NextRequest) {
       // Utility spells are real spells; they simply have nothing to roll.
       // They still cost a slot and half a turn.
       await payFor()
+
+      // A WARD IS A UTILITY SPELL THAT DOES SOMETHING.
+      //
+      // Sam: "This spell should ... create a condition that the NPCs and
+      // monsters respect until violated." Sanctuary and Shield of Faith go on
+      // the TOKEN, beside Mage Hand's summon and swept by the same round
+      // turn, so the NPC AI and the attack roll can both see them.
+      const ward = wardSpellFor(ability)
+      if (ward) {
+        const stamp = new Date().toISOString()
+        const info = {
+          spell: ward,
+          caster_token: caster.id,
+          cast_round: combat.round,
+          expires_round: combat.round + wardRounds(ward),
+        }
+        const { error: wardErr } = await db.from("vtt_tokens")
+          .update({ ward: info, updated_by: "player-cast", updated_at: stamp })
+          .eq("id", victim.id)
+        // Never swallowed: a ward that failed to write is a spell the player
+        // paid for and did not get, and they must be told rather than left to
+        // discover it when a drow walks through it.
+        if (wardErr) {
+          return NextResponse.json({ error: `${ability} could not take hold: ${wardErr.message}` }, { status: 500 })
+        }
+        // The word the sheet and the board already know how to show.
+        if (victim.character_id) {
+          const { data: ch } = await db.from("characters").select("conditions").eq("id", victim.character_id).maybeSingle()
+          const conds = normalizeConditions(ch?.conditions)
+          const word = wardCondition(ward)
+          if (!conds.some((c) => c.toLowerCase() === word.toLowerCase())) {
+            await db.from("characters").update({ conditions: [...conds, word], updated_at: stamp }).eq("id", victim.character_id)
+          }
+        }
+        const line = ward === "sanctuary"
+          ? `${caster.label} wards ${victim.id === caster.id ? "themself" : victim.label} with Sanctuary — attackers must make a Wisdom save to strike them.`
+          : `${caster.label} raises a shimmering field around ${victim.id === caster.id ? "themself" : victim.label} — +2 AC.`
+        await narrate(db, caster.label ?? "Someone", line)
+        return NextResponse.json({
+          ok: true, resolved: false, warded: ward, line,
+          target_token: victim.id, caster_token: caster.id,
+          note: "ward",
+        })
+      }
+
       await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability}.`)
       return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this ability" })
     }
@@ -1344,6 +1427,65 @@ export async function POST(req: NextRequest) {
         STR: b?.str, DEX: b?.dex, CON: b?.con, INT: b?.int, WIS: b?.wis, CHA: b?.cha,
       }
       saveMod = Math.floor(((scores[entry.save ?? "WIS"] ?? 10) - 10) / 2)
+    }
+
+    // ---- THE TARGET'S WARDS -------------------------------------------
+    //
+    // Read from the token, because that is where a ward lives and where the
+    // round turn sweeps it.
+    const victimWard = normaliseWard((victim as { ward?: unknown }).ward)
+
+    // SHIELD OF FAITH reaches the number the attack is compared against, or
+    // it is decoration. +2, exactly as the SRD writes it.
+    ac += wardAcBonus(victimWard)
+
+    // SANCTUARY makes the attacker roll BEFORE anything else happens: before
+    // the attack roll, before the slot is spent by the paths below, because a
+    // lost attack is lost, not merely missed.
+    //
+    // Not for an area spell - the SRD's own exception, and the counterplay
+    // that makes a first-level spell fair - and not for a helpful one, since
+    // healing somebody is not an attack on them.
+    if (needsSanctuarySave(victimWard, { helpful: Boolean(entry.helpful) })) {
+      // The ATTACKER's Wisdom, against the warded creature's caster DC. The
+      // caster's own save_dc is the right number: it is their spell.
+      let attackerWis = 0
+      if (caster.character_id) {
+        const { data: cw } = await db.from("characters").select("wis_score").eq("id", caster.character_id).maybeSingle()
+        attackerWis = Math.floor((((cw?.wis_score as number | null) ?? 10) - 10) / 2)
+      } else if (caster.bestiary_id) {
+        const { data: bw } = await db.from("bestiary").select("wis").eq("id", caster.bestiary_id).maybeSingle()
+        attackerWis = Math.floor((((bw?.wis as number | null) ?? 10) - 10) / 2)
+      }
+      // THE DC BELONGS TO WHOEVER CAST THE SANCTUARY, not to the attacker.
+      //
+      // tsc caught the first version of this using `saveDc` — the ATTACKER's
+      // own spell save DC — which would have made a drow's Sanctuary save
+      // harder the better a caster the drow was. The number is the warding
+      // cleric's, off their sheet, because it is their spell.
+      let wardDc = 13
+      const wardCasterTok = victimWard?.caster_token
+      if (wardCasterTok) {
+        const { data: wc } = await db.from("vtt_tokens").select("character_id").eq("id", wardCasterTok).maybeSingle()
+        if (wc?.character_id) {
+          const { data: wsheet } = await db.from("characters").select("sheet_spellcasting").eq("id", wc.character_id).maybeSingle()
+          const sc = (wsheet?.sheet_spellcasting ?? null) as { save_dc?: number } | null
+          if (typeof sc?.save_dc === "number") wardDc = sc.save_dc
+        }
+      }
+      const check = resolveSanctuary({ roll: d20(), wisModifier: attackerWis, dc: wardDc })
+      if (!check.passed) {
+        // The attack is LOST. It still costs the action - that is what makes
+        // Sanctuary worth a slot - so payFor runs before the refusal.
+        await payFor()
+        const line = `${caster.label} turns on ${victim.label} and falters — Wisdom ${check.total} vs DC ${check.dc}: the sanctuary holds, and the attack is lost.`
+        await narrate(db, caster.label ?? "Someone", line)
+        return NextResponse.json({
+          ok: true, resolved: false, sanctuary: true, line,
+          roll: check.total, dc: check.dc,
+          target_token: victim.id, caster_token: caster.id,
+        })
+      }
     }
 
     // The caster's own numbers, off the sheet read above — never invented here.
@@ -1788,6 +1930,31 @@ export async function POST(req: NextRequest) {
         if (!info || !expired(info, entering)) continue
         await db.from("vtt_tokens").delete().eq("id", t.id)
         await narrate(db, t.label ?? MAGE_HAND.name, `${t.label ?? MAGE_HAND.name} fades — the spell has run its minute.`)
+      }
+
+      // AND THE WARDS, swept by the same round turn and for the same reason:
+      // one expiry mechanism, one piece of arithmetic. A Sanctuary that
+      // outlived its minute would be a first-level spell that never ends.
+      const { data: warded } = await db
+        .from("vtt_tokens").select("id,label,character_id,ward").eq("map_id", map.id).not("ward", "is", null)
+      for (const t of warded ?? []) {
+        const info = normaliseWard(t.ward)
+        // A ward that cannot be read is a ward nobody can rely on: clear it
+        // rather than leaving a creature protected by a malformed blob.
+        if (info && !wardExpired(info, entering)) continue
+        const stamp = new Date().toISOString()
+        await db.from("vtt_tokens").update({ ward: null, updated_by: "ward-expired", updated_at: stamp }).eq("id", t.id)
+        if (t.character_id && info) {
+          const { data: ch } = await db.from("characters").select("conditions").eq("id", t.character_id).maybeSingle()
+          const word = wardCondition(info.spell).toLowerCase()
+          const conds = normalizeConditions(ch?.conditions).filter((c) => c.toLowerCase() !== word)
+          await db.from("characters").update({ conditions: conds, updated_at: stamp }).eq("id", t.character_id)
+        }
+        if (info) {
+          await narrate(db, t.label ?? "Someone", info.spell === "sanctuary"
+            ? `The sanctuary around ${t.label} fades.`
+            : `The shimmering field around ${t.label} winks out.`)
+        }
       }
     }
 
