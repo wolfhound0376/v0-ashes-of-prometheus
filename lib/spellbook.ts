@@ -240,6 +240,14 @@ export const spellEntry = (name: string): SpellEntry => SPELLBOOK[norm(name)] ??
 
 /** Everything the rack and the board need about one pressable thing. */
 export interface RackItem {
+  /**
+   * Kept out of the tray, but still in the list.
+   *
+   * Weapons are hidden: Attack resolves to the equipped one (resolvePress),
+   * which has to be able to FIND it. Filtering them out of rackFor entirely
+   * would break that, so the rack carries them invisibly.
+   */
+  hidden?: boolean
   name: string
   /** action = universal, weapon = from THIS character's inventory, else magic. */
   kind: "action" | "weapon" | "cantrip" | "prepared"
@@ -301,8 +309,17 @@ export function slotsLeft(sc: Spellcasting | null | undefined, level: number): n
  * only available spells based on DND 5E, inventory for that character."
  *
  * So the rack is composed, in order:
- *   1. their real weapons, off sheet_attacks — the inventory gate. A cleric
- *      with a mace gets Mace, not a generic "Attack" button.
+ *   1. NOTHING. Weapons no longer get their own slots.
+ *
+ *      They used to: "a cleric with a mace gets Mace, not a generic Attack
+ *      button", which was right when the rack was the only place a weapon
+ *      could be seen. It became wrong the moment Fifi picked up a dagger and
+ *      got a button reading "DAGGER · PREPARED SPELL" beside an Attack button
+ *      that already used it.
+ *
+ *      Sam, reversing it: "This should just trigger as a standard attack as
+ *      long as it is equipped." So Attack IS the weapon button, and which
+ *      weapon it swings is decided at the doll — see lib/equipped.
  *   2. their cantrips, always available
  *   3. their prepared spells, DIMMED rather than hidden when the slots are
  *      gone: a player needs to see that Guiding Bolt exists and is spent, not
@@ -317,9 +334,14 @@ export function rackFor(args: {
   const { spellcasting: sc, attacks, coreActions } = args
   const out: RackItem[] = []
 
+  // Weapons are still passed in, and still carried on the rack items so the
+  // HUD can resolve Attack to the one in hand — they simply no longer get a
+  // slot of their own. `hidden` keeps them out of the tray without hiding
+  // them from resolvePress, which needs to find them.
   for (const a of attacks ?? []) {
     if (!a?.name) continue
     out.push({
+      hidden: true,
       name: a.name,
       kind: "weapon",
       entry: { level: 0, school: "arcane", rangeFt: parseInt(String(a.range ?? "5").replace(/[^0-9]/g, ""), 10) || 5, target: "creature" },
