@@ -92,6 +92,24 @@ export class ImpactHold {
     this.holds.delete(id)
   }
 
+  /**
+   * Milliseconds left on a hold, or 0 if it is not held.
+   *
+   * A caller that puts truth aside for the length of a hold needs to know when
+   * to come back for it. Without this, a row whose impact never arrived was
+   * simply forgotten: the initiative rail kept the hit points from before the
+   * blow, and since a dead creature is never written again, no later row ever
+   * corrected it. Sam saw Samson listed at 1/9, on his feet, while his own
+   * card read 0/9 UNCONSCIOUS.
+   */
+  remaining(id: string, now: number): number {
+    const h = this.holds.get(id)
+    if (!h) return 0
+    const left = h.until - now
+    if (left <= 0) { this.holds.delete(id); return 0 }
+    return left
+  }
+
   /** Drop every lapsed hold. Cheap enough to call each frame. */
   sweep(now: number): void {
     for (const [id, h] of this.holds) if (h.until <= now) this.holds.delete(id)
