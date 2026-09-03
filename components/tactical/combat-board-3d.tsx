@@ -62,6 +62,8 @@ import { deathSceneVfx } from "./death-vfx"
 // The arcade card that drops when something is cast. Every fact it prints
 // was already on the wire and going only to a log nobody opens mid-fight.
 import SpellBanner, { type BannerCast } from "./spell-banner"
+// The hold that stops a corpse arriving before the spell that made it.
+import { ImpactHold, holdMsFor } from "@/lib/impact-hold"
 import { bannerFor, type BannerVictim } from "@/lib/spell-banner"
 import { deathKindFor, type DeathKind } from "@/lib/damage-type"
 // A zero is an outcome, not an absence — see outcome-word.ts.
@@ -303,6 +305,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // Fireball restart the animation rather than sit there looking identical.
   const [banner, setBanner] = useState<BannerCast | null>(null)
   const bannerSeq = useRef(0)
+  /**
+   * Tokens whose hit points are waiting for an impact.
+   *
+   * The server writes hp_current BEFORE it responds, so the realtime row can
+   * reach this board while the caster is still winding up. Held tokens ignore
+   * the wire's hit points until the effect lands — see lib/impact-hold, which
+   * owns the deadlines that stop a hold outliving its spell.
+   */
+  const impactHold = useRef(new ImpactHold())
   // The darkness is the players' truth, not the DM's. Malachar can lift it
   // to place tokens and read the room, the way the local viewer hid its
   // DM markers at eye level.
@@ -1867,6 +1878,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const dz = swingVictim.obj.position.z - found.obj.position.z
           if (dx * dx + dz * dz > 1e-4) found.obj.rotation.y = Math.atan2(dx, dz)
         }
+        // A SWING RACES THE WIRE TOO. It spawns no projectile, but it still
+        // waits for its contact frame — the 45% mark where the arm is
+        // furthest forward — and the server has already written the hit
+        // points by then. Without this hold a drow's crossbow bolt drops Fifi
+        // before the drow has finished raising it.
+        {
+          const swingWait = castEventFor(clip.name, clip.duration).release
+          if (swingVictim) impactHold.current.hold(swingVictim.row.id, Date.now(), holdMsFor(swingWait + 0.6))
+        }
         pending.push({
           wait: castEventFor(clip.name, clip.duration).release,
           obj: found.obj,
@@ -1940,6 +1960,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         casterTokenId: shape?.casterTokenId,
       }
       pending.push(cast)
+      // HOLD EVERY BODY THIS IS ABOUT TO REACH.
+      //
+      // From here until the impact frame, these creatures' hit points stop
+      // tracking the wire. Without it the server's write — which happened
+      // before it even answered — races the bolt, and Sam watches a drow fall
+      // over while it is still in Kenta's hand.
+      //
+      // `release` is how long the windup runs before the effect is thrown, so
+      // the deadline covers the windup AND the flight, with margin. Nothing
+      // depends on the estimate being right: it is only what lapses the hold
+      // if the impact never comes at all.
+      {
+        const now = Date.now()
+        const ms = holdMsFor(release + 1.2)
+        if (cast.victimId) impactHold.current.hold(cast.victimId, now, ms)
+        for (const v of cast.victims ?? []) impactHold.current.hold(v.id, now, ms)
+      }
       // Pull this type's sheets during the windup, so the first cast of a
       // spell looks like every later one rather than arriving half-loaded.
       const warm = kitVfxTypeFor(ability)
@@ -4575,7 +4612,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             syncSummons()
             return
           }
-          glideToken(payload.new as TokenRow)
+          // HELD BODIES KEEP THEIR HIT POINTS UNTIL THE SPELL ARRIVES.
+          //
+          // The server writes hp_current before it responds, so this row can
+          // reach the board while the caster is still winding up. Applying it
+          // here is what dropped a drow mid-flight — the bug behind "target
+          // drops but windup is still happening".
+          //
+          // ONLY the hit points wait. Everything else on the row — where it is
+          // standing, whether it is hidden, what it is called — is applied at
+          // once, because none of that is waiting on an impact and delaying a
+          // walk would be a second bug traded for the first.
+          //
+          // The impact frame releases the hold and applies the damage itself,
+          // so the number, the flinch and the fall all happen together. If the
+          // impact never comes, the hold lapses on its own (lib/impact-hold)
+          // and the next row through here carries the truth.
+          const incoming = payload.new as TokenRow
+          const held = impactHold.current.held(incoming.id, Date.now())
+          const local = held ? tokensRef.current.get(incoming.id)?.row : undefined
+          glideToken(local
+            ? { ...incoming, hp_current: local.hp_current, hp_max: local.hp_max }
+            : incoming)
           syncSummons()
           // Bodies moved: the reachable world changed shape for whoever's
           // turn it is — and the mover's own board repaints its new budget.
@@ -4748,6 +4806,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
         const flinch = () => {
           p.onLand?.()          // the bang, on the same frame as the flash
+          // THE WIRE IS BELIEVED AGAIN FROM HERE. Released before the damage
+          // is applied below, so the glideToken those calls make is the one
+          // that draws the number and drops the body — this frame, on the
+          // impact, which is the whole point.
+          if (p.victimId) impactHold.current.release(p.victimId)
+          for (const v of p.victims ?? []) impactHold.current.release(v.id)
           // THE SINGLE TARGET TAKES IT HERE, not when the fetch returned.
           //
           // This is the whole fix for "characters get downed before the spell
@@ -4945,6 +5009,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       cancelAnimationFrame(raf)
       ro.disconnect()
       cleanupRealtime?.()
+      // Let go of every held body. The scene is going away, so no impact
+      // frame is ever going to arrive to release them, and a rebuilt board
+      // must start believing the wire immediately.
+      impactHold.current.clear()
       renderer.domElement.removeEventListener("mousedown", onDown)
       window.removeEventListener("mouseup", onUp)
       window.removeEventListener("mousemove", onMove)
