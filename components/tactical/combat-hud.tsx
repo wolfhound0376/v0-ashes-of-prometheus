@@ -142,7 +142,13 @@ interface Props {
 function AbilityTip({ name, kind }: { name: string; kind: string }) {
   const b = blurbFor(name)
   const kindLabel =
-    kind === "action" ? "Action" : kind === "cantrip" ? "Cantrip · at will" : "Prepared spell"
+    kind === "action" ? "Action"
+      : kind === "cantrip" ? "Cantrip · at will"
+      // A WEAPON IS NOT A PREPARED SPELL. This fell through to the else and
+      // labelled Fifi's dagger "PREPARED SPELL", under a blurb inviting her to
+      // ask Malachar what it does.
+      : kind === "weapon" ? "Weapon · in hand"
+      : "Prepared spell"
   const facts: [string, string][] = []
   if (b?.range) facts.push(["Range", b.range])
   if (b?.duration) facts.push(["Duration", b.duration])
@@ -486,6 +492,12 @@ export function CombatHud(props: Props) {
     return weapons.find((w) => w.name.trim().toLowerCase() !== "unarmed strike") ?? weapons[0]
   }
 
+  /**
+   * The full rack, hidden weapons included.
+   *
+   * resolvePress needs the weapons to resolve Attack against, so they stay in
+   * this list and are filtered out only where the tray is drawn.
+   */
   const abilities = useMemo<RackItem[]>(() => {
     if (!focus) return []
     return rackFor({
@@ -745,7 +757,7 @@ export function CombatHud(props: Props) {
               <span className="pointer-events-none absolute -left-[5px] top-1/2 h-[10px] w-[10px] -translate-y-1/2 rotate-45 border border-[#755726] bg-[#100b06]" />
               <span className="pointer-events-none absolute -right-[5px] top-1/2 h-[10px] w-[10px] -translate-y-1/2 rotate-45 border border-[#755726] bg-[#100b06]" />
 
-              {abilities.map((a, i) => {
+              {abilities.filter((a) => !a.hidden).map((a, i) => {
                 const art = iconFor(a.name)
                 const phase = phaseCost(a.entry, a.kind === "weapon")
                 const armedNow = econ?.armed ?? null

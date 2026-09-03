@@ -12,6 +12,9 @@ import { areaCells, aimInRange } from "@/lib/aoe"
 // uses, so a weapon the board offers is a weapon this handler accepts — and a
 // confiscated one is refused by both.
 import { attacksFromInventory, type DerivedAttack } from "@/lib/weapons"
+// The gate between the pack and the rack: a dagger you are carrying is
+// luggage, a dagger in your hand is what Attack means.
+import { equippedWeapons } from "@/lib/equipped"
 import { announcementFor, justBecameDying } from "@/lib/announcer"
 // Mage Hand and whatever is summoned after it: the spell's own rules, pure.
 import {
@@ -952,9 +955,24 @@ export async function POST(req: NextRequest) {
       casterClass = (cs?.class as string | null) ?? null
       casterLevel = Number(cs?.level ?? 1) || 1
       const { data: inv } = await db.from("inventory_items")
-        .select("name,item_type,items(item_type,properties)")
+        .select("name,item_key,item_type,equippable_slot,items(item_type,properties,equippable_slot)")
         .eq("character_id", caster.character_id)
-      sheetAttacks = attacksFromInventory(inv as Parameters<typeof attacksFromInventory>[0], {
+      // WHAT IS IN THEIR HANDS, not what is in their pack. Sam: "This should
+      // just trigger as a standard attack as long as it is equipped."
+      //
+      // The anti-drift rule lib/weapons was built on is unchanged — the rack
+      // is still a FUNCTION of state, never a hand-kept list. This only
+      // narrows which state, from "carried" to "carried AND equipped", so a
+      // browser naming a sheathed weapon is refused by the same function the
+      // board built its rack with.
+      const { data: doll } = await db.from("equipment_items")
+        .select("slot,item_key,name,equipped")
+        .eq("character_id", caster.character_id)
+      const inHand = equippedWeapons(
+        inv as Parameters<typeof equippedWeapons>[0],
+        doll as Parameters<typeof equippedWeapons>[1],
+      )
+      sheetAttacks = attacksFromInventory(inHand as Parameters<typeof attacksFromInventory>[0], {
         strScore: cs?.str_score,
         dexScore: cs?.dex_score,
         proficiencyBonus: cs?.proficiency_bonus,
