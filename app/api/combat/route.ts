@@ -16,6 +16,8 @@ import { attacksFromInventory, type DerivedAttack } from "@/lib/weapons"
 // luggage, a dagger in your hand is what Attack means.
 import { equippedWeapons } from "@/lib/equipped"
 import { announcementFor, justBecameDying } from "@/lib/announcer"
+// Stabilizing a creature: DC 10 Wisdom (Medicine), an action, within reach.
+import { STABILIZE, STABILIZE_DC, STABILIZE_REACH_FT, medicineProficiency, medicineBonus, stabilizeCheck } from "@/lib/stabilize"
 // Mage Hand and whatever is summoned after it: the spell's own rules, pure.
 import {
   MAGE_HAND, summonMageHand, normaliseSummon, expired, withinLeash, withinCastRange, canReach, handUse,
@@ -404,7 +406,7 @@ export async function POST(req: NextRequest) {
   // Ungated means the player may ASK, not that the answer is yes. Every
   // handler still fences server-side: only the ACTIVE turn's own PC token
   // moves, and only within its speed budget.
-  const PLAYER_VERBS = ["spend", "ack", "move", "cast", "hide", "summon"]
+  const PLAYER_VERBS = ["spend", "ack", "move", "cast", "hide", "summon", STABILIZE]
   const DM_VERBS = ["start", "next", "end", "npc-turn"]
   if (!PLAYER_VERBS.includes(action) && !authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 403 })
@@ -2024,6 +2026,63 @@ export async function POST(req: NextRequest) {
       target_token: victim.id,
       caster_token: caster.id,
     })
+  }
+
+  if (action === "stabilize") {
+    // STABILIZING A CREATURE, SRD 5.1: "You can use your action to
+    // administer first aid to an unconscious creature and attempt to
+    // stabilize it, which requires a successful DC 10 Wisdom (Medicine)
+    // check." Hands-on, so within 5 ft; on the healer's turn; the action.
+    const token_id = String(body?.token_id ?? "")
+    const target_token = String(body?.target_token ?? "")
+    const order = combat.turn_order as { token_id: string }[]
+    const entry = order[combat.active_index]
+    if (!entry || entry.token_id !== token_id) {
+      return NextResponse.json({ error: "not this combatant's turn" }, { status: 409 })
+    }
+    const state = (combat.turn_state ?? {}) as { action?: boolean; bonus?: boolean; reaction?: boolean; moved_ft?: number; acknowledged?: boolean }
+    if (state.action) return NextResponse.json({ error: "the action is already spent this turn" }, { status: 409 })
+    const { data: pair } = await db
+      .from("vtt_tokens").select("id,label,character_id,grid_x,grid_y")
+      .in("id", [token_id, target_token].filter(Boolean))
+    const me = pair?.find((t) => t.id === token_id)
+    const them = pair?.find((t) => t.id === target_token)
+    if (!me?.character_id) return NextResponse.json({ error: "only a player character gives first aid here" }, { status: 403 })
+    if (!them) return NextResponse.json({ error: "no one there to help" }, { status: 409 })
+    if (!them.character_id) {
+      // SRD: most DMs have a monster die at 0. There is nothing to stabilize.
+      return NextResponse.json({ error: `${them.label} is past first aid` }, { status: 409 })
+    }
+    const apart = Math.max(Math.abs((me.grid_x ?? 0) - (them.grid_x ?? 0)), Math.abs((me.grid_y ?? 0) - (them.grid_y ?? 0))) * 5
+    if (apart > STABILIZE_REACH_FT) {
+      return NextResponse.json({ error: `first aid is hands-on — get within ${STABILIZE_REACH_FT} ft` }, { status: 409 })
+    }
+    const { data: patient } = await db
+      .from("characters").select("name,hp_current,conditions").eq("id", them.character_id).maybeSingle()
+    const conds = normalizeConditions(patient?.conditions)
+    const vitality = vitalityOf(patient?.hp_current, conds)
+    if (vitality === "up") return NextResponse.json({ error: `${them.label} is on their feet` }, { status: 409 })
+    if (vitality === "dead") return NextResponse.json({ error: `${them.label} is beyond first aid` }, { status: 409 })
+    if (vitality === "stable") return NextResponse.json({ error: `${them.label} is already stable` }, { status: 409 })
+
+    const { data: sheet } = await db
+      .from("characters").select("wis_modifier,proficiency_bonus,sheet_skill_proficiencies")
+      .eq("id", me.character_id).maybeSingle()
+    const prof = medicineProficiency(sheet?.sheet_skill_proficiencies as Record<string, unknown> | null)
+    const bonus = medicineBonus({ wisMod: sheet?.wis_modifier, proficiencyBonus: sheet?.proficiency_bonus, proficiency: prof })
+    const roll = d20()
+    const check = stabilizeCheck({ roll, bonus })
+    const stamp = new Date().toISOString()
+    if (check.success) {
+      await db.from("characters")
+        .update({ conditions: conditionsFor(conds, "stable"), updated_at: stamp })
+        .eq("id", them.character_id)
+    }
+    const line = `${me.label} tends to ${them.label} — Medicine ${roll}${bonus >= 0 ? "+" : ""}${bonus} = ${check.total} vs DC ${STABILIZE_DC}: ${check.success ? `${them.label} is stable.` : "no change."}`
+    await narrate(db, me.label ?? "Someone", line)
+    const spent = { ...state, action: true }
+    await db.from("combat_state").update({ turn_state: spent, updated_at: stamp }).eq("id", combat.id)
+    return NextResponse.json({ ok: true, line, stable: check.success, roll, total: check.total, turn_state: spent })
   }
 
   if (action === "hide") {

@@ -51,6 +51,7 @@ import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, kitVfxTypeFor, prewarmKit, type CastHandle, type DamageType } from "./spell-vfx-kit"
 import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
+import { STABILIZE, STABILIZE_ENTRY } from "@/lib/stabilize"
 import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
 import { layGroundItems, type GroundItemHandle } from "./ground-item-props"
@@ -5692,6 +5693,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   useEffect(() => {
     castVerbRef.current = async (caster_token, target_token, ability, crossSide) => {
       try {
+        // First aid is not a cast. Same aim, different verb: the server rolls
+        // Medicine against DC 10 and writes Stable on the sheet.
+        if (ability.trim().toLowerCase() === STABILIZE) {
+          const res = await fetch("/api/combat", {
+            method: "POST",
+            headers: { "content-type": "application/json", ...dmHeaders() },
+            body: JSON.stringify({ action: "stabilize", token_id: caster_token, target_token, sandbox }),
+          })
+          const data = await res.json().catch(() => null)
+          if (!res.ok) { say(data?.error ?? "The first aid did not take."); return { ok: false } }
+          say(data?.line ?? (data?.stable ? "Stable." : "No change."))
+          return { ok: true }
+        }
         // `allow_cross_side` is the record of the player's consent. It is sent
         // as a strict boolean and only ever true off the confirm dialog, so a
         // stray or replayed POST without it still meets the server's fence.
@@ -6391,6 +6405,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // the room as a legal target, and it would have done the same for a
           // mace. The rack parsed the weapon's real reach when it built the
           // button; this just stops throwing that away.
+          // STABILIZE is the one core action that wants a body: a dying ally
+          // within 5 ft. It arms like a helpful touch so the downed ring, the
+          // range check and the cross-side question all apply as they would
+          // to Cure Wounds; the release then posts the Medicine check.
+          if (kind === "action" && ability.trim().toLowerCase() === STABILIZE) {
+            const mine = Array.from(tokensRef.current.values()).find((t) => t.row.character_id === characterId)
+            if (!mine) { say("That character has no miniature on this board."); return }
+            setArmedSpell({ characterId, tokenId: mine.row.id, name: "Stabilize", kind, entry: STABILIZE_ENTRY, mode: "creature" })
+            say("Stabilize — choose a dying ally within 5 ft.")
+            return
+          }
           const e = rackEntry ?? spellEntry(ability)
           if (kind === "action" || e.target === "self" || e.target === "none") {
             castRef.current(characterId, ability, kind)

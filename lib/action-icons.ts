@@ -58,6 +58,7 @@ export const actionIconUrl = (slug: ActionSlug) => `${BASE}/${slug}.webp`
 /** Spell / action name → icon slug. Case and punctuation insensitive. */
 const BY_NAME: Record<string, ActionSlug> = {
   attack: "attack",
+  stabilize: "help",
   // Every character carries one: attacksFromInventory appends an unarmed
   // strike to the rack whatever else they are holding, so this is the icon
   // most often on screen — and until now it was the only weapon with none.
@@ -112,6 +113,9 @@ export const CORE_ACTIONS: { name: string; slug: ActionSlug; kind: "action" | "b
   { name: "Sneak", slug: "hide", kind: "action" },
   { name: "Search", slug: "search", kind: "action" },
   { name: "Help", slug: "help", kind: "action" },
+  // SRD "Stabilizing a Creature": an action, DC 10 Wisdom (Medicine), on an
+  // unconscious creature within reach. Wears the Help icon: it is help.
+  { name: "Stabilize", slug: "help", kind: "action" },
   { name: "Ready", slug: "ready", kind: "action" },
   { name: "Use an Object", slug: "use-item", kind: "action" },
 ]
