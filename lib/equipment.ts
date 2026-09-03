@@ -89,7 +89,8 @@ export function archetypeFor(name: string, itemType?: string | null): Archetype 
   if (/spear|pike|lance|halberd|glaive|trident/.test(n)) return "spear"
   if (/axe|hatchet/.test(n)) return "axe"
   if (/mace|hammer|maul|club|flail|scourge|iron bar/.test(n)) return "mace"
-  if (/dagger|knife|dirk|shiv|flake/.test(n)) return "dagger"
+  // "shard": the obsidian shard on the pen floor is a dagger in the hand.
+  if (/dagger|knife|dirk|shiv|flake|shard/.test(n)) return "dagger"
   if (/sword|blade|rapier|scimitar|falchion|katana|sabre|saber/.test(n)) return "blade"
   if (itemType === "armor") return "shield"
   return "blade"

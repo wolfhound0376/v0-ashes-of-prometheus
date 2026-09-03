@@ -52,6 +52,8 @@ import { castSpellKitVfx, deathVfx, kitVfxTypeFor, prewarmKit, type DamageType }
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
+import { layGroundItems, type GroundItemHandle } from "./ground-item-props"
+import { withinReach, type GroundItemRow } from "@/lib/ground-items"
 import { defenceMotion } from "./defence-motion"
 import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
@@ -1065,7 +1067,20 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
       }
 
-      // 2. A door?
+      // 2. Something on the floor? Below the creatures (a body in front of
+      //    a pile is still a body) and above the doors and the walk, so a
+      //    click on the shard is a reach for it, not a step onto its square.
+      //    Not while a spell is armed: aiming is aiming.
+      if (groundItems && !armedRef.current) {
+        const propHit = raycaster.intersectObjects(groundItems.objects(), true)[0]
+        const pile = groundItems.rowFor(propHit?.object)
+        if (pile) {
+          void pickUp(pile)
+          return
+        }
+      }
+
+      // 3. A door?
       const doorHit = raycaster.intersectObjects(doorLeaves, false)[0]
       if (doorHit) {
         const rec = doorHit.object.userData.door as DoorRec
@@ -1574,6 +1589,54 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // Blood on the tiles. Laid by the route into vtt_maps.meta.marks; this
     // only paints what the row says, at load and again on every change.
     let blood: BloodDecalHandle | null = null
+    // Things lying on the floor (vtt_ground_items). Same arrangement as the
+    // blood: the route owns the rows, Realtime carries them, this only draws
+    // — and, unlike the blood, they can be clicked.
+    let groundItems: GroundItemHandle | null = null
+
+    /**
+     * PICKING SOMETHING UP. Sam: "a way to be able to pick up items (to put
+     * in inventory, throw, interact with) on our player UI."
+     *
+     * A click on a pile is a reach for it by the character this browser
+     * drives. The cheap refusals are answered here without a round trip —
+     * no claimed character, too far away — and everything that costs
+     * something (whose turn it is, the free interaction, the action) is
+     * decided by /api/ground-items, which is the only thing that writes.
+     * The pile vanishes from every board through Realtime, and the pack
+     * updates the rack through the inventory channel below.
+     */
+    const pickUp = async (row: GroundItemRow) => {
+      const me = myCharRef.current
+      if (!me) {
+        say(dmRef.current ? "Claim a character to pick that up — the DM has no hands on the board." : "Claim a character to pick that up.")
+        return
+      }
+      const mine = Array.from(tokensRef.current.values()).find((t) => t.row.character_id === me)
+      if (!mine) {
+        say("Your character is not on this board.")
+        return
+      }
+      if (!withinReach({ x: mine.row.grid_x ?? 0, y: mine.row.grid_y ?? 0 }, { x: row.grid_x, y: row.grid_y })) {
+        say(`The ${row.name} is out of reach — move next to it first.`)
+        return
+      }
+      try {
+        const res = await fetch("/api/ground-items", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...dmHeaders() },
+          body: JSON.stringify({ action: "pickup", character_id: me, ground_item_id: row.id, sandbox }),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok) {
+          say(data?.error ?? "It slips out of your hand.")
+          return
+        }
+        if (data?.line) say(data.line as string)
+      } catch {
+        say("The board could not reach the server.")
+      }
+    }
 
     /**
      * What the target does about a cast, given what the server said.
@@ -3816,6 +3879,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // reload does not mop the floor.
       blood = layBloodDecals({ parent: boardGroup, cellToWorld: (x, y) => sqCentre(x, y), squareSize: SQ })
       blood.sync(meta.marks)
+      // What is lying about. Read once here; kept live by the channel below.
+      groundItems = layGroundItems({ parent: boardGroup, cellToWorld: (x, y) => sqCentre(x, y), squareSize: SQ })
+      void supabase
+        .from("vtt_ground_items")
+        .select("id,map_id,item_id,name,quantity,grid_x,grid_y,dropped_by,picked_up_at")
+        .eq("map_id", map.id)
+        .is("picked_up_at", null)
+        .then(({ data }: { data: unknown }) => { if (!disposed) groundItems?.sync(data) })
       if (meta.art_url) {
         void sobelNormalMap(meta.art_url).then((nm) => {
           if (nm && !disposed) {
@@ -4418,6 +4489,41 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         })
         .subscribe()
 
+      // A pile picked up on one browser leaves every board; a drop lands on
+      // every board. The table is small, so each change is answered with one
+      // re-read rather than patching the list by hand.
+      const groundRows = new Map<string, GroundItemRow>()
+      const groundChannel = supabase
+        .channel("vtt-ground-board")
+        .on("postgres_changes", { event: "*", schema: "public", table: "vtt_ground_items", filter: `map_id=eq.${map.id}` }, (payload: { eventType: string; new?: unknown; old?: unknown }) => {
+          const id = ((payload.new ?? payload.old) as { id?: string })?.id
+          if (!id) return
+          if (payload.eventType === "DELETE") groundRows.delete(id)
+          else groundRows.set(id, payload.new as GroundItemRow)
+          groundItems?.sync(Array.from(groundRows.values()))
+        })
+        .subscribe()
+      // Seed the live map from the same read the props were drawn from, so
+      // the first change does not wipe what was already on the floor.
+      void supabase
+        .from("vtt_ground_items")
+        .select("id,map_id,item_id,name,quantity,grid_x,grid_y,dropped_by,picked_up_at")
+        .eq("map_id", map.id)
+        .is("picked_up_at", null)
+        .then(({ data }: { data: unknown }) => { for (const r of ((data ?? []) as GroundItemRow[])) groundRows.set(r.id, r) })
+
+      // The pack changed hands — a pickup, a drop, an award from Malachar —
+      // so the rack is re-derived. The sheets channel above answers the
+      // character row; this answers the inventory row, which the rack is
+      // actually built from.
+      const inventoryChannel = supabase
+        .channel("vtt-inventory-board")
+        .on("postgres_changes", { event: "*", schema: "public", table: "inventory_items" }, (payload: { new?: unknown; old?: unknown }) => {
+          const cid = ((payload.new ?? payload.old) as { character_id?: string })?.character_id
+          if (cid && charIdSet.has(cid)) void loadSheets()
+        })
+        .subscribe()
+
       // Live: any token change, from any hand, lands on every board.
       const channel = supabase
         .channel("vtt-tokens-board")
@@ -4446,6 +4552,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         void supabase.removeChannel(sheetsChannel)
         void supabase.removeChannel(npcChannel)
         void supabase.removeChannel(marksChannel)
+        void supabase.removeChannel(groundChannel)
+        void supabase.removeChannel(inventoryChannel)
       }
     }
 
@@ -4458,6 +4566,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const tick = () => {
       raf = requestAnimationFrame(tick)
       const dt = Math.min(clock.getDelta(), 0.1)
+      // The rings under the floor items breathe, so a dark shard on dark
+      // stone can be found by eye.
+      groundItems?.tick(clock.elapsedTime)
       // Keyboard pan first, so everything below renders from this frame's view.
       panFromKeys(dt)
       // The active combatant's base breathes. Following per-frame keeps the
@@ -4821,6 +4932,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       PLATE.dispose()
       activeGlow.geometry.dispose()
       blood?.dispose()
+      groundItems?.dispose()
       pmrem.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
@@ -5019,7 +5131,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // damage string; the board simply never read the field. Without it
           // every arrow and every mace produced the same corpse, because the
           // sprite kit calls all of them "physical".
-          if (typeof data.damageType === "string") {
+          //
+          // ONLY WHEN SOMETHING ACTUALLY LANDED. `damageType` describes the
+          // ABILITY, not the outcome — the server sends "necrotic" for a Toll
+          // the Dead whether the target saved or not — so parking it
+          // unconditionally tattooed a damage type onto creatures that had
+          // taken nothing.
+          //
+          // From Sam's first sandbox trial: Samson cast Toll the Dead at the
+          // Drow Elite Warrior, which SAVED and took 0. "necrotic" was parked
+          // anyway, and necrotic is the death that strips a body to a
+          // skeleton. Sam: "I'm not sure why downed NPC/monsters are
+          // vaporized or turned into skeletons."
+          //
+          // The NPC relay path has guarded on `amount > 0` all along (see the
+          // swing handler). This is the player path being brought into line
+          // with it — the asymmetry is what made it a bug rather than a
+          // decision.
+          // The same test this handler already applies fifty lines below as
+          // `hurt` — a heal has a positive amount and is not a wound.
+          if (typeof data.damageType === "string" && Number(data.amount ?? 0) > 0 && !data.heals) {
             lastHitWithRef.current.set(target_token, data.damageType)
           }
           // THE ROGUE'S MOMENT. `combat/sneak_attack` was recorded with the
@@ -5127,9 +5258,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // A single-target spell parks one word; an area spell parks one word
         // per victim. Same map, same spend, and glideToken clears each entry
         // as it draws that creature's death.
+        //
+        // And only the ones it actually hurt, for the same reason as the
+        // single-target path above: a creature that made its save against a
+        // Fireball has not been burned, and must not later die as though it
+        // had been. Each victim carries its own damage, because half of them
+        // saved and half did not.
         if (typeof data?.damageType === "string" && Array.isArray(data.victims)) {
-          for (const v of data.victims as Array<{ id?: string }>) {
-            if (v?.id) lastHitWithRef.current.set(v.id, data.damageType)
+          for (const v of data.victims as Array<{ id?: string; amount?: number; heals?: boolean }>) {
+            // `heals` too: a Cure Wounds victim has a positive amount and is
+            // being mended, not marked for the manner of its death.
+            if (v?.id && !v.heals && Number(v.amount ?? 0) > 0) lastHitWithRef.current.set(v.id, data.damageType)
           }
         }
         if (data?.line) {

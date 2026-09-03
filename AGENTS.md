@@ -111,6 +111,7 @@ Crimson Text (`--font-sans`), mounts `SupabaseStatus` + Vercel Analytics.
 | `forge/import/route.ts` | Validates `aop-character-v1` against column whitelists, inserts `characters` + `inventory_items`, issues a three-word `claim_code` into `character_secrets`, returns claim URL + `claimCode`, 409-warns on duplicates. | Supabase | yes |
 | `verify-claim/route.ts` | Verifies `(characterId, claim_token)`; never echoes the token. | Supabase | yes |
 | `inventory/transfer/route.ts` | Moves `environment_inventory` → a character's `inventory_items`. | Supabase | no |
+| `ground-items/route.ts` | Items on the floor of the battle map (`vtt_ground_items`). GET lists the piles on the active board; POST `pickup` moves one into a character's `inventory_items` (must be within one square; on their turn if a fight is on, first pickup free, second costs the action per SRD "Interacting with Objects"); POST `drop` sets an inventory row down on the character's square. Everything on the floor resolves against `items` — nothing invented. | Supabase | yes |
 | `lich-personality/route.ts` | GET/PUT the single personality-dial row. | Supabase | no |
 | `tts/route.ts` | Malachar/player TTS. Voice IDs hardcoded, `eleven_multilingual_v2`. | ElevenLabs | no |
 | `npc-tts/route.ts` | Per-NPC TTS; resolves voice via `lib/tts.ts`, persists the resolved id back. | ElevenLabs | yes |

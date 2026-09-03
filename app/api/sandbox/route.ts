@@ -15,6 +15,7 @@ import {
 //                    "remove" take one off
 //                    "clear"  sweep everything this route ever put there
 //                    "scene"  change which environment the board is dressed as
+//                    "reset"  put every creature back on its feet, full
 //
 // THE FENCE, WHICH IS THE WHOLE POINT
 //
@@ -104,7 +105,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
-  const VERBS = ["spawn", "remove", "clear", "scene"]
+  const VERBS = ["spawn", "remove", "clear", "scene", "reset"]
   if (!VERBS.includes(action)) {
     return NextResponse.json(
       { error: `unknown action ${String(action)} — expected one of ${VERBS.join(", ")}` },
@@ -115,6 +116,107 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient()
   const map = await sandboxMap(db)
   if (!map) return NextResponse.json({ error: "no sandbox map" }, { status: 409 })
+
+  // ---- reset ---------------------------------------------------------------
+  //
+  // Sam, after the first trial: "Should be able to restart stats to full on
+  // all creatures."
+  //
+  // He was right to ask, and the state of the board says why: after one
+  // rehearsal every player character sat at 0 hit points, two of them holding
+  // death-save tallies. A rehearsal room you can only use once is not a
+  // rehearsal room. This is the button that makes it reusable.
+  //
+  // FULL means full, and "full" is a bigger word than hit points. A sorcerer
+  // with no slots left cannot rehearse a spell, so the slots come back too;
+  // a character with three death-save successes is mid-story, so the tally
+  // clears; and a fight left running would keep the initiative order from the
+  // last rehearsal, so it ends.
+  //
+  // WHAT IT DOES NOT TOUCH is the point. Only the tokens on the SANDBOX map,
+  // and only the character rows those tokens point at. The live board's
+  // tokens, its combat, and any character not standing in the rehearsal room
+  // are not read and not written. Resetting the rehearsal must never be a way
+  // to heal the party mid-session.
+  if (action === "reset") {
+    const now = new Date().toISOString()
+
+    const { data: standing } = await db
+      .from("vtt_tokens")
+      .select("id,label,character_id,hp_max")
+      .eq("map_id", map.id)
+    const tokens = standing ?? []
+
+    // Tokens first. hp_max is the creature's own ceiling and is left alone -
+    // this route restores what the fight spent, it does not decide how tough
+    // anything is.
+    let healed = 0
+    for (const t of tokens) {
+      if (t.hp_max == null) continue   // null HP is UNTRACKED, never dead
+      const { error } = await db
+        .from("vtt_tokens")
+        .update({ hp_current: t.hp_max, is_hidden: false, updated_by: "sandbox-reset", updated_at: now })
+        .eq("id", t.id)
+        .eq("map_id", map.id)          // the fence, again, on the write
+      if (!error) healed += 1
+    }
+
+    // Then the character sheets behind them. vtt_tokens.hp_current is the
+    // board's copy; characters.hp_current is what every player-facing surface
+    // reads, and a reset that healed only one of the two would leave the card
+    // and the miniature disagreeing.
+    const charIds = [...new Set(tokens.map((t) => t.character_id).filter(Boolean))] as string[]
+    let sheets = 0
+    let slotsRestored = 0
+    if (charIds.length) {
+      const { data: chars } = await db
+        .from("characters")
+        .select("id,hp_max,sheet_spellcasting")
+        .in("id", charIds)
+      for (const c of chars ?? []) {
+        const sc = (c.sheet_spellcasting ?? null) as { slots?: Record<string, { max?: number; used?: number } | null> | null } | null
+        // Zero `used` rather than rebuilding from `max`: max is the
+        // character's own progression and this route has no business
+        // deciding what a level-3 sorcerer is allowed. Same rule the campaign
+        // restart follows.
+        const slots: Record<string, { max?: number; used?: number }> = {}
+        for (const [lvl, entry] of Object.entries(sc?.slots ?? {})) {
+          if (!entry) continue
+          slotsRestored += entry.used ?? 0
+          slots[lvl] = { ...entry, used: 0 }
+        }
+        const { error } = await db
+          .from("characters")
+          .update({
+            ...(c.hp_max != null ? { hp_current: c.hp_max } : {}),
+            conditions: [],
+            // Three successes is a story in progress, not a stat. It goes.
+            // (The campaign restart does NOT clear this today - noted, not
+            // fixed here, because that route is not this route's business.)
+            death_saves: null,
+            ...(sc ? { sheet_spellcasting: { ...sc, slots } } : {}),
+            sheet_hp_temp: 0,
+            updated_at: now,
+          })
+          .eq("id", c.id)
+        if (!error) sheets += 1
+      }
+    }
+
+    // And end any fight still running here, so the next rehearsal rolls its
+    // own initiative instead of resuming a turn order full of corpses.
+    const { data: fight } = await db
+      .from("combat_state").select("id").eq("map_id", map.id).eq("status", "active").maybeSingle()
+    if (fight) {
+      await db.from("combat_state")
+        .update({ status: "ended", updated_at: now })
+        .eq("id", fight.id).eq("map_id", map.id)
+    }
+
+    return NextResponse.json({
+      ok: true, healed, sheets, slotsRestored, combatEnded: Boolean(fight),
+    })
+  }
 
   // ---- clear ---------------------------------------------------------------
   if (action === "clear") {
