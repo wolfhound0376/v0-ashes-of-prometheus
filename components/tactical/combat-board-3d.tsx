@@ -2680,7 +2680,59 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     }
     window.addEventListener("keydown", onMoveKey)
 
-    const spawnToken = (row: TokenRow) => {
+    /**
+     * SPECIES ART, REMEMBERED.
+     *
+     * A token with no model of its own wears its species' art. That rule was
+     * applied at exactly ONE call site — the initial board load — so a
+     * creature that arrived over realtime never got it. Every sandbox spawn
+     * arrives that way and deliberately writes no `model_url`, so Prince
+     * Derendil and Jimjar stood on the rehearsal board as bare pawn cylinders
+     * while the very same GLBs rendered perfectly on the live board, where
+     * the tokens carry their own URL. Reloading fixed it, which is exactly
+     * what made it look like missing art rather than a missing lookup.
+     *
+     * Resolved inside spawnToken now, so no caller can forget it again.
+     */
+    const speciesArt = new Map<string, { url: string | null; scale: number | null; y: number | null }>()
+    const speciesPending = new Set<string>()
+
+    const spawnToken = (incoming: TokenRow) => {
+      let row = incoming
+      if (!row.model_url && row.bestiary_id) {
+        const art = speciesArt.get(row.bestiary_id)
+        if (art?.url) {
+          row = {
+            ...row,
+            model_url: art.url,
+            model_scale: row.model_scale ?? art.scale,
+            model_y_offset: row.model_y_offset ?? art.y,
+          }
+        } else if (!speciesArt.has(row.bestiary_id) && !speciesPending.has(row.bestiary_id)) {
+          // First sight of this species on this board: ask what it looks like,
+          // remember the answer, and draw the creature again once we know. The
+          // pawn stands in for the one round trip, and a species with no art
+          // is cached as null so we never ask twice.
+          const id = row.bestiary_id
+          speciesPending.add(id)
+          void supabase
+            .from("bestiary")
+            .select("model_url,model_scale,model_y_offset")
+            .eq("id", id)
+            .maybeSingle()
+            .then(({ data }: { data: { model_url: string | null; model_scale: number | null; model_y_offset: number | null } | null }) => {
+              speciesPending.delete(id)
+              speciesArt.set(id, {
+                url: data?.model_url ?? null,
+                scale: data?.model_scale ?? null,
+                y: data?.model_y_offset ?? null,
+              })
+              if (disposed || !data?.model_url) return
+              const latest = tokensRef.current.get(incoming.id)?.row
+              if (latest) spawnToken(latest)
+            })
+        }
+      }
       const existing = tokensRef.current.get(row.id)
       if (existing) tokenGroup.remove(existing.obj)
       if (!row.is_visible) { tokensRef.current.delete(row.id); return }
@@ -4528,6 +4580,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }
       }
 
+      // Hand the batch straight to the shared cache: spawnToken applies it,
+      // and one query for the whole board still beats a round trip per token.
+      for (const [id, art] of speciesModel) speciesArt.set(id, art)
       for (const row of (tokenRows ?? []) as TokenRow[]) {
         const fallback = row.bestiary_id ? speciesModel.get(row.bestiary_id) : undefined
         spawnToken(fallback?.url && !row.model_url
