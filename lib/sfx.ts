@@ -29,6 +29,10 @@ export type SfxName =
   | `magic/${"arcane" | "cold" | "eldritch" | "fire" | "holy" | "nature" | "necrotic" | "psychic"}_${"windup" | "release" | "tail"}`
   | `magic/impact_${"acid" | "cold" | "fire" | "force" | "lightning" | "necrotic" | "poison" | "psychic" | "radiant" | "thunder"}`
   | "magic/counterspell" | "magic/spell_fizzle" | "magic/concentration_broken" | "magic/heal_tail"
+  // Recorded creature lines, cut one file per line — see lib/barks. Open
+  // rather than enumerated because the repertoire is data and grows by
+  // uploading a file, not by editing this union.
+  | `barks/${string}`
   /**
    * The hand, MOVING. Not a loop.
    *

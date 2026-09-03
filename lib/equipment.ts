@@ -92,7 +92,9 @@ export function archetypeFor(name: string, itemType?: string | null): Archetype 
   if (/bow|sling/.test(n)) return "bow"
   if (/wand|rod|scepter|sceptre/.test(n)) return "wand"
   if (/staff|quarterstaff|stave/.test(n)) return "staff"
-  if (/spear|pike|lance|halberd|glaive|trident/.test(n)) return "spear"
+  // Javelin and dart belong here, not in the blade default at the bottom.
+  // Ront's stat block throws javelins, and he was throwing a sword.
+  if (/spear|pike|lance|halberd|glaive|trident|javelin|dart/.test(n)) return "spear"
   if (/axe|hatchet/.test(n)) return "axe"
   if (/mace|hammer|maul|club|flail|scourge|iron bar/.test(n)) return "mace"
   // "shard": the obsidian shard on the pen floor is a dagger in the hand.
