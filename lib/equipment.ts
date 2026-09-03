@@ -80,7 +80,13 @@ export function archetypeFor(name: string, itemType?: string | null): Archetype 
   const n = name.toLowerCase()
   // Caught in testing: without this, "Unarmed Strike" fell through to the
   // blade default and put a sword in the fist of a man throwing a punch.
-  if (/unarmed|fist|punch|claw|bite|slam|tentacle$|natural/.test(n)) return "empty"
+  // A body is not a prop. This began as unarmed/fist/claw and let a HOOK
+  // through, so a hook horror — whose only action is "Hook" — would have been
+  // handed a sword by the blade default at the bottom of this function. Every
+  // natural attack in the Act-1 bestiary is named here.
+  // Word boundaries on the short ones, or "Thorn Whip" reads as a horn and
+  // "Claymore" is one letter away from being a gore.
+  if (/unarmed|fist|punch|kick|claw|bite|slam|beak|talon|pincer|tentacle|spore|natural|\b(gore|sting|horn|tail|hooks?)\b/.test(n)) return "empty"
   if (/shield|buckler/.test(n)) return "shield"
   if (/crossbow/.test(n)) return "crossbow"
   if (/bow|sling/.test(n)) return "bow"
