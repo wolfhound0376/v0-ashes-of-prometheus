@@ -41,26 +41,110 @@ const HELPLESS = ["paralyzed", "unconscious"]
 
 const norm = (c: string) => c.trim().toLowerCase()
 
-export function attackAgainst(targetConditions: string[], distanceFt: number): AttackContext {
+/**
+ * Every source of advantage or disadvantage on this roll, NAMED and NOT yet
+ * cancelled.
+ *
+ * Gathering before cancelling is the whole point, and it is the bug that
+ * appears the moment a second source is bolted on afterwards. SRD: "If
+ * circumstances cause a roll to have both advantage and disadvantage, you are
+ * considered to have neither of them" — that is one judgement over ALL
+ * sources, not a running total.
+ *
+ * Concretely: a Restrained target (advantage) that is also Prone and out of
+ * reach (disadvantage) already cancels to neither. If an exhausted attacker
+ * then had disadvantage ADDED to that result, the roll would come out at
+ * disadvantage — when by the rule it is still neither, because an advantage
+ * source was present all along. Cancelling once, at the end, is the only
+ * arrangement that survives a third source being added later.
+ */
+export interface RollSources {
+  advantage: string[]
+  disadvantage: string[]
+  autoCrit: boolean
+}
+
+/** The target's conditions, as sources rather than as a verdict. */
+export function attackSources(targetConditions: string[], distanceFt: number): RollSources {
   const has = (word: string) => targetConditions.some((c) => norm(c) === word)
   const close = distanceFt <= 5
-  const advFrom = ADVANTAGE.filter(has)
-  let advantage = advFrom.length > 0
-  let disadvantage = has("invisible")
-  const why: string[] = advFrom.slice()
+  const advantage = ADVANTAGE.filter(has)
+  const disadvantage: string[] = []
+  if (has("invisible")) disadvantage.push("invisible")
   if (has("prone")) {
-    if (close) { advantage = true; why.push("prone") }
-    else disadvantage = true
+    if (close) advantage.push("prone")
+    else disadvantage.push("prone, out of reach")
   }
-  const autoCrit = close && HELPLESS.some(has)
-  // Both cancel to neither.
-  if (advantage && disadvantage) { advantage = false; disadvantage = false }
+  return { advantage, disadvantage, autoCrit: close && HELPLESS.some(has) }
+}
+
+/** Apply the cancel rule ONCE, over everything gathered, and word it. */
+export function resolveSources(s: RollSources): AttackContext {
+  const hasAdv = s.advantage.length > 0
+  const hasDis = s.disadvantage.length > 0
+  const both = hasAdv && hasDis
+  const advantage = hasAdv && !both
+  const disadvantage = hasDis && !both
   const parts: string[] = []
-  if (advantage) parts.push(`advantage — ${why.join(", ")}`)
-  else if (disadvantage) parts.push(has("invisible") ? "disadvantage — invisible" : "disadvantage — prone, out of reach")
-  else if (why.length > 0 || has("invisible")) parts.push("advantage and disadvantage cancel")
-  if (autoCrit) parts.push(`critical — ${HELPLESS.filter(has).join(", ")} within 5 ft`)
-  return { advantage, disadvantage, autoCrit, note: parts.length ? parts.join("; ") : null }
+  if (advantage) parts.push(`advantage — ${s.advantage.join(", ")}`)
+  else if (disadvantage) parts.push(`disadvantage — ${s.disadvantage.join(", ")}`)
+  else if (both) parts.push(`advantage and disadvantage cancel (${s.advantage.join(", ")} vs ${s.disadvantage.join(", ")})`)
+  if (s.autoCrit) parts.push("critical — helpless within 5 ft")
+  return { advantage, disadvantage, autoCrit: s.autoCrit, note: parts.length ? parts.join("; ") : null }
+}
+
+/**
+ * The full picture for one attack: what the TARGET's condition does to it, and
+ * what the ATTACKER's own state does.
+ *
+ * The attacker half is new. Until now this file only ever asked about the
+ * creature being hit, so a character at exhaustion 3 — "disadvantage on attack
+ * rolls and saving throws" — swung exactly as well as a rested one.
+ */
+export function attackContext(a: {
+  targetConditions: string[]
+  distanceFt: number
+  /** SRD exhaustion level of the ATTACKER. 3+ is disadvantage on attacks. */
+  attackerExhaustion?: number
+  /** Anything the caller already knows, e.g. a rogue's own advantage. */
+  extraAdvantage?: string[]
+  extraDisadvantage?: string[]
+}): AttackContext {
+  const s = attackSources(a.targetConditions, a.distanceFt)
+  if ((a.attackerExhaustion ?? 0) >= 3) s.disadvantage.push("exhausted")
+  if (a.extraAdvantage?.length) s.advantage.push(...a.extraAdvantage)
+  if (a.extraDisadvantage?.length) s.disadvantage.push(...a.extraDisadvantage)
+  return resolveSources(s)
+}
+
+/**
+ * A saving throw or an ability check made BY a character.
+ *
+ * SRD exhaustion: level 1 is disadvantage on ability CHECKS, level 3 is
+ * disadvantage on attack rolls and SAVING THROWS. Two different thresholds,
+ * which is why `kind` is not optional — defaulting it would silently give a
+ * level-1 character disadvantage on their saves, which the SRD does not.
+ */
+export function rollerContext(a: {
+  kind: "check" | "save"
+  exhaustion?: number
+  extraAdvantage?: string[]
+  extraDisadvantage?: string[]
+}): AttackContext {
+  const level = a.exhaustion ?? 0
+  const s: RollSources = { advantage: a.extraAdvantage?.slice() ?? [], disadvantage: a.extraDisadvantage?.slice() ?? [], autoCrit: false }
+  const threshold = a.kind === "check" ? 1 : 3
+  if (level >= threshold) s.disadvantage.push("exhausted")
+  return resolveSources(s)
+}
+
+/**
+ * Kept at its original signature because the NPC AI and the route both call
+ * it. Now expressed through the gather-then-cancel pair above, so there is one
+ * implementation of the rule rather than two that can drift.
+ */
+export function attackAgainst(targetConditions: string[], distanceFt: number): AttackContext {
+  return resolveSources(attackSources(targetConditions, distanceFt))
 }
 
 /**
