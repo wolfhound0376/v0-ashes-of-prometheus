@@ -96,7 +96,7 @@ import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 // cannot offer a weapon the server will refuse.
 import { attacksFromInventory } from "@/lib/weapons"
 import { equipOnRig, unequipSlot } from "@/lib/equipment"
-import { playSfx, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, creatureVoice, isVoiceless, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
+import { playSfx, pickVariant, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, creatureVoice, isVoiceless, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { packSoundFor, packKey } from "@/lib/spell-sfx-pack"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
@@ -4963,7 +4963,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               // dissolve: the row is gone, nothing will address it again, and
               // the picture gets the beat it needs.
               if (gone.row.summon) {
-                playSfx("magic/mage_hand_dissolve", { volume: 0.6, rate: variedRate(0.05) })
+                playSfx(pickVariant("magic/mage_hand_dissolve"), { volume: 0.6, rate: variedRate(0.05) })
                 vfx.push(deathSceneVfx({
                   parent: scene,
                   position: gone.obj.position.clone().setY(0.05),
