@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { CORE_ACTIONS, iconFor } from "@/lib/action-icons"
 import { conditionColor, normalizeConditions } from "@/lib/conditions"
 import { normaliseSaves } from "@/lib/death-saves"
+import { speedAfterExhaustion, normaliseExhaustion } from "@/lib/exhaustion"
 import { blurbFor } from "@/lib/ability-blurbs"
 import { rackFor, phaseCost, type RackItem } from "@/lib/spellbook"
 import { Globe } from "./essence-globe"
@@ -49,6 +50,8 @@ export interface HudCharacter {
   conditions?: unknown
   /** `characters.death_saves` — the tally while at 0 hit points. */
   death_saves?: unknown
+  /** `characters.exhaustion` — SRD level 0-6. Halves speed at 2, zeroes it at 5. */
+  exhaustion?: number | null
   sheet_spellcasting: {
     slots?: Record<string, { max?: number; used?: number }>
     cantrips?: string[]
@@ -217,9 +220,16 @@ function AbilityTip({ name, kind }: { name: string; kind: string }) {
   )
 }
 
-/** "30 ft. (Walking)" → 30. Prose speed still yields a number. */
+/**
+ * "30 ft. (Walking)" → 30, less whatever exhaustion has taken.
+ *
+ * SRD: speed halved at exhaustion 2, reduced to 0 at 5. The card must agree
+ * with the board's own budget or a player reads 30 ft on their plate and is
+ * stopped at 15 on the floor — so both derive it from lib/exhaustion.
+ */
 function speedFtOf(c: HudCharacter): number {
-  return Number.parseInt(String(c.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
+  const base = Number.parseInt(String(c.speed ?? "30").replace(/[^0-9]/g, ""), 10) || 30
+  return speedAfterExhaustion(base, normaliseExhaustion(c.exhaustion))
 }
 
 /** Preserve spell level as well as totals so the crystal groups are honest. */

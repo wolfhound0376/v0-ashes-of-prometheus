@@ -27,6 +27,11 @@ import { longRest, absoluteMinutes, type SheetSpellcasting } from "@/lib/long-re
 // Which of the SRD's four states a character is in, so the rest can refuse to
 // sleep off being downed.
 import { vitalityOf } from "@/lib/death-saves"
+// Exhaustion and the hunger that causes it. Starvation's only consequence in
+// the SRD is exhaustion, so food could not be real until this existed.
+import {
+  resolveHunger, suppliesForParty, normaliseExhaustion, isDeadOfExhaustion,
+} from "@/lib/exhaustion"
 import {
   readGameClock,
   logTimeEvent,
@@ -2947,12 +2952,57 @@ Rules:
 
       const { data: party } = await timeAdmin
         .from("characters")
-        .select("id,name,level,hp_current,hp_max,hit_dice_remaining,sheet_spellcasting,conditions,death_saves")
+        .select("id,name,level,hp_current,hp_max,hit_dice_remaining,sheet_spellcasting,conditions,death_saves,con_score,exhaustion,unfed_rest_streak")
         .eq("is_player", true)
 
+      // === DID THEY EAT? ===
+      //
+      // Decided ONCE for the whole party, because that is how party_supplies
+      // and rest_events were built: one pool, one meal, one row. A rest costs
+      // one supply per mouth and it is all-or-nothing — half a camp eating
+      // while the other half watches is a scene the DM narrates, not a number
+      // this can represent.
+      //
+      // This MUST be settled before any exhaustion is relieved below. SRD:
+      // "Exhaustion caused by lack of food or water can't be removed until the
+      // character eats and drinks the full required amount." A starving party
+      // that could rest its exhaustion away would make hunger an inconvenience
+      // instead of a threat.
+      const { data: pool } = await timeAdmin
+        .from("party_supplies").select("id,supplies").limit(1).maybeSingle()
+      const partySize = (party ?? []).length
+      const cost = suppliesForParty(partySize)
+      const before = Math.max(0, Number(pool?.supplies ?? 0))
+      const fed = before >= cost && cost > 0
+      const after = fed ? before - cost : before
+      if (fed && pool?.id) {
+        await timeAdmin.from("party_supplies")
+          .update({ supplies: after, updated_at: new Date().toISOString() }).eq("id", pool.id)
+      }
+
       const notes: string[] = []
+      notes.push(
+        fed
+          ? `The party eats: ${cost} supplies spent, ${after} left.`
+          : `NOBODY EATS — ${before} supplies for ${partySize} mouths.`,
+      )
+
       for (const p of party ?? []) {
         const conditions = Array.isArray(p.conditions) ? (p.conditions as unknown[]).map(String) : []
+
+        // Hunger resolves BEFORE the rest, at the end of the day it belongs
+        // to. It can only ever add exhaustion; the relief below can only ever
+        // remove it, and only when fed — so the two can never fight.
+        const hunger = resolveHunger(
+          {
+            name: p.name as string,
+            conScore: p.con_score as number | null,
+            unfedStreak: p.unfed_rest_streak as number | null,
+            exhaustion: p.exhaustion as number | null,
+          },
+          fed,
+        )
+        if (hunger.note) notes.push(hunger.note)
         const outcome = longRest(
           {
             name: p.name as string,
@@ -2972,6 +3022,38 @@ Rules:
         // and the reason `hp` is read rather than `benefited`.
         const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
         let touched = false
+
+        // === EXHAUSTION ===
+        //
+        // Hunger has already had its say. A long rest takes one level off —
+        // but ONLY for someone who ate, per the SRD clause quoted above. Note
+        // this is deliberately NOT gated on `outcome.benefited`: a stable
+        // character who came round at 1 hit point still spent eight hours
+        // asleep with a full stomach, and the SRD ties this reduction to
+        // finishing a long rest, not to being conscious when it began.
+        let exhaustion = hunger.exhaustion
+        if (fed && exhaustion > 0) exhaustion = Math.max(0, exhaustion - 1)
+        if (exhaustion !== normaliseExhaustion(p.exhaustion)) {
+          patch.exhaustion = exhaustion
+          touched = true
+        }
+        if (hunger.unfedStreak !== (p.unfed_rest_streak ?? 0)) {
+          patch.unfed_rest_streak = hunger.unfedStreak
+          touched = true
+        }
+
+        // Level 6 is death, and starvation is a real way to reach it. Written
+        // as the Dead condition so every reader already in the codebase agrees
+        // — vitalityOf, the card, the rail, and the headstone on the board.
+        if (isDeadOfExhaustion(exhaustion) && !conditions.some((c) => c.trim().toLowerCase() === "dead")) {
+          patch.conditions = [...conditions, "Dead"]
+          patch.hp_current = 0
+          notes.push(`${p.name} dies of exhaustion.`)
+          const { error } = await timeAdmin.from("characters").update(patch).eq("id", p.id)
+          if (error) console.error(`[rest] ${p.name}:`, error.message)
+          continue
+        }
+
         if (outcome.hp !== (p.hp_current ?? 0)) { patch.hp_current = outcome.hp; touched = true }
         if (outcome.benefited) {
           if (outcome.slots) {
@@ -2996,6 +3078,27 @@ Rules:
           if (error) console.error(`[rest] ${p.name}:`, error.message)
         }
       }
+      // The record of the night. rest_events was created by the
+      // rest_supplies_starving migration on 2026-08-20 and has been empty
+      // since — the schema for this was designed months before anything
+      // wrote to it. `detail` carries the per-character lines so a DM can see
+      // WHY somebody woke up worse than they went to sleep.
+      //
+      // bard_character_id / bard_spent_die are left null on purpose: Song of
+      // Rest is a SHORT rest feature and short rests are not implemented yet.
+      // The columns are the previous design anticipating them, not a gap here.
+      const { error: restErr } = await timeAdmin.from("rest_events").insert({
+        session_id: activeSessionId,
+        rest_type: "long",
+        fed,
+        supplies_before: before,
+        supplies_cost: fed ? cost : 0,
+        supplies_after: after,
+        party_size: partySize,
+        detail: { notes },
+      })
+      if (restErr) console.error("[rest] rest_events:", restErr.message)
+
       console.log("[rest] long rest applied:\n  " + notes.join("\n  "))
     }
   }
