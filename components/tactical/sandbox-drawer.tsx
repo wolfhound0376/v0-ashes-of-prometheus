@@ -1,6 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { SPELLBOOK, normSpell as norm } from "@/lib/spellbook"
+import { loanedSpells, type LoanableSheet } from "@/lib/sandbox-grant"
 
 // ============================================================================
 // THE STAGE DOOR — putting things on the rehearsal board.
@@ -30,15 +32,15 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 // Mounted from app/battle/page.tsx, only when ?sandbox=1.
 // ============================================================================
 
-type Tab = "bestiary" | "npcs" | "characters" | "scene"
+type Tab = "bestiary" | "npcs" | "characters" | "spells" | "scene"
 
 interface Roster {
   map: { id: string; name: string; grid_width: number; grid_height: number; environment_id: string | null }
   bestiary: Array<{ id: string; name: string; size: string | null; cr: string | null; hp: number | null; ac: number | null; role: string | null; model_url: string | null }>
   npcs: Array<{ id: string; name: string; hp_max: number | null; challenge_rating: string | null; monster_type: string | null; disposition: string | null; bestiary_id: string | null; character_id: string | null }>
-  characters: Array<{ id: string; name: string; class: string | null; level: number | null; hp_max: number | null; character_type: string | null }>
+  characters: Array<{ id: string; name: string; class: string | null; level: number | null; hp_max: number | null; character_type: string | null; sheet_spellcasting: LoanableSheet | null }>
   environments: Array<{ id: string; name: string; scene_key: string | null; time_of_day: string | null }>
-  tokens: Array<{ id: string; label: string; grid_x: number; grid_y: number; token_size: string | null; allegiance: string | null; hp_current: number | null; hp_max: number | null; updated_by: string | null }>
+  tokens: Array<{ id: string; label: string; grid_x: number; grid_y: number; token_size: string | null; allegiance: string | null; hp_current: number | null; hp_max: number | null; updated_by: string | null; character_id: string | null }>
 }
 
 const GOLD = "#f0cd7a"
@@ -72,6 +74,8 @@ export default function SandboxDrawer() {
   // Null means "whatever the catalogue says". Setting it is how you find out
   // what a drow fighting FOR you looks like.
   const [side, setSide] = useState<Side | null>(null)
+  // Who the Spells tab is lending to. Null means the first one standing.
+  const [lendTo, setLendTo] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -115,6 +119,9 @@ export default function SandboxDrawer() {
   }, [roster])
 
   const match = (s: string) => s.toLowerCase().includes(q.trim().toLowerCase())
+  // The three tabs that put something on a square. Spells lends to someone
+  // already standing there, so it has no drop point and no side.
+  const spawning = tab === "bestiary" || tab === "npcs" || tab === "characters"
 
   if (!open) {
     return (
@@ -140,7 +147,7 @@ export default function SandboxDrawer() {
 
       {/* tabs */}
       <div className="flex border-b border-[#3a2c16]">
-        {([["bestiary", "Monsters"], ["npcs", "NPCs"], ["characters", "Cast"], ["scene", "Scene"]] as [Tab, string][]).map(([k, label]) => (
+        {([["bestiary", "Monsters"], ["npcs", "NPCs"], ["characters", "Cast"], ["spells", "Spells"], ["scene", "Scene"]] as [Tab, string][]).map(([k, label]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -150,7 +157,7 @@ export default function SandboxDrawer() {
       </div>
 
       {/* where it lands */}
-      {tab !== "scene" && (
+      {spawning && (
         <div className="border-b border-[#3a2c16] px-3 py-2">
           <div className="mb-1 flex items-baseline justify-between font-serif text-[8px] uppercase tracking-[0.2em] text-[#7d6c48]">
             <span>Drop it here</span>
@@ -186,7 +193,7 @@ export default function SandboxDrawer() {
       )}
 
       {/* which side */}
-      {tab !== "scene" && (
+      {spawning && (
         <div className="flex items-center gap-1 border-b border-[#3a2c16] px-3 py-1.5">
           <span className="mr-1 font-serif text-[8px] uppercase tracking-[0.2em] text-[#7d6c48]">Side</span>
           <button
@@ -262,6 +269,18 @@ export default function SandboxDrawer() {
             onClick={() => spawn("character", c.id, c.name)}
           />
         ))}
+
+        {roster && tab === "spells" && (
+          <SpellLoans
+            roster={roster}
+            lendTo={lendTo}
+            setLendTo={setLendTo}
+            match={match}
+            busy={busy}
+            post={post}
+            setNote={setNote}
+          />
+        )}
 
         {roster && tab === "scene" && (
           <>
@@ -346,6 +365,137 @@ export default function SandboxDrawer() {
         >Sweep</button>
       </div>
     </div>
+  )
+}
+
+/**
+ * SPELLS ON LOAN. Sam: "make sure I have the ability on the sandbox to give
+ * spells to characters to test them out."
+ *
+ * Pick whoever is standing on the board, then click a spell from the book to
+ * hand it over. It lands on their sheet as a prepared spell - the tray, the
+ * rack and the cast handler all see it the ordinary way, and the board's own
+ * characters subscription redraws the HUD the moment the row changes. A loan
+ * is marked as one, and comes back with the x beside it or all at once. The
+ * server will not lend to anyone who is not in the room.
+ */
+function SpellLoans({ roster, lendTo, setLendTo, match, busy, post, setNote }: {
+  roster: Roster
+  lendTo: string | null
+  setLendTo: (id: string | null) => void
+  match: (s: string) => boolean
+  busy: boolean
+  post: (body: Record<string, unknown>) => Promise<Record<string, unknown> | null>
+  setNote: (s: string | null) => void
+}) {
+  // Whoever is standing here with a sheet behind them, once each: two tokens
+  // of one character share one sheet, so they are one chip.
+  const standing = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const t of roster.tokens) if (t.character_id && !seen.has(t.character_id)) seen.set(t.character_id, t.label)
+    return [...seen].map(([id, label]) => ({
+      id, label,
+      sheet: roster.characters.find((c) => c.id === id)?.sheet_spellcasting ?? null,
+    }))
+  }, [roster])
+  const who = standing.find((s) => s.id === lendTo) ?? standing[0] ?? null
+  const sheet = who?.sheet ?? null
+  const holds = [...(sheet?.cantrips ?? []), ...(sheet?.always_prepared ?? []), ...(sheet?.prepared ?? [])]
+  const known = new Set(holds.map(norm))
+  const loans = new Set(loanedSpells(sheet).map(norm))
+
+  // The whole registry, cantrips first. This is the list of what the board
+  // can draw, which is exactly the list worth rehearsing.
+  const book = useMemo(() =>
+    Object.entries(SPELLBOOK)
+      .map(([name, e]) => ({ name, level: e.level, school: e.school, target: e.target, area: Boolean(e.area) }))
+      .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)),
+  [])
+
+  if (!standing.length) {
+    return (
+      <div className="p-3 font-serif text-[10px] text-[#7d6c48]">
+        Nobody with a sheet is on the board. Put someone here from Cast first.
+      </div>
+    )
+  }
+  return (
+    <>
+      {/* who */}
+      <div className="flex flex-wrap gap-1 border-b border-[#3a2c16] px-3 py-2">
+        {standing.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setLendTo(s.id)}
+            className={`border px-1.5 py-0.5 font-serif text-[9px] ${who?.id === s.id ? "border-[#f0cd7a] text-[#f0cd7a]" : "border-[#3a2c16] text-[#6a5a3c] hover:text-[#bda468]"}`}
+          >{s.label}</button>
+        ))}
+      </div>
+
+      {/* what they hold */}
+      {who && (
+        <div className="border-b border-[#3a2c16] px-3 py-2">
+          <div className="mb-1 flex items-baseline justify-between font-serif text-[8px] uppercase tracking-[0.2em] text-[#7d6c48]">
+            <span>{who.label} holds {holds.length}</span>
+            {loans.size > 0 && (
+              <button
+                disabled={busy}
+                onClick={() => void post({ action: "grant", character_id: who.id, all: true })
+                  .then((r) => { if (r) setNote(`${who.label} gave back ${loans.size}`) })}
+                className="font-serif text-[8px] uppercase tracking-[0.15em] text-[#a08a5c] hover:text-[#e0654f]"
+                title="Return every spell lent from here, and close the slot levels it opened"
+              >return all</button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {holds.length === 0 && <span className="font-serif text-[9px] italic text-[#5c4f36]">nothing prepared</span>}
+            {holds.map((n) => {
+              const loan = loans.has(norm(n))
+              return (
+                <span
+                  key={n}
+                  className={`flex items-center gap-1 border px-1.5 py-0.5 font-serif text-[9px] ${loan ? "border-[#5fd3a0]/60 text-[#5fd3a0]" : "border-[#3a2c16] text-[#a89a74]"}`}
+                  title={loan ? "on loan from the stage door" : "their own"}
+                >
+                  {n}
+                  {loan && (
+                    <button
+                      disabled={busy}
+                      onClick={() => void post({ action: "grant", character_id: who.id, spell: n, revoke: true })
+                        .then((r) => { if (r) setNote(`${n} returned`) })}
+                      className="text-[#6a5a3c] hover:text-[#e0654f]"
+                      title="give it back"
+                    >x</button>
+                  )}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* the book */}
+      {who && book.filter((s) => match(s.name)).map((s) => {
+        const k = norm(s.name)
+        const has = known.has(k)
+        return (
+          <Row
+            key={s.name}
+            title={s.name}
+            sub={[s.level ? `level ${s.level}` : "cantrip", s.school, s.area ? "area" : s.target].join(" · ")}
+            flag={has ? (loans.has(k) ? "on loan" : "theirs") : null}
+            active={has}
+            disabled={busy || has}
+            onClick={() => void post({ action: "grant", character_id: who.id, spell: s.name }).then((r) => {
+              if (!r) return
+              setNote(r.changed
+                ? `${who.label} can now cast ${s.name}${s.level ? ` - level ${s.level} slots opened if they had none` : ""}`
+                : String(r.reason ?? "no change"))
+            })}
+          />
+        )
+      })}
+    </>
   )
 }
 
