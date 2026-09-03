@@ -101,7 +101,13 @@ export function SummonCard({
             {arming ? "Click a square · Esc" : `Move ${MAGE_HAND.moveFt} ft`}
           </button>
           {HAND_USES.map((u) => (
-            <button key={u.key} type="button" disabled={!canAct} onClick={() => onUse(u.key)} style={btn(canAct)}>
+            <button
+              key={u.key} type="button" disabled={!canAct}
+              onClick={() => onUse(u.key)}
+              style={btn(canAct)}
+              title={u.label}
+            >
+              <span style={{ marginRight: 4, opacity: 0.95 }}>{u.glyph}</span>
               {u.label}
             </button>
           ))}

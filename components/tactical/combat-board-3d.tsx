@@ -378,20 +378,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [summonMove, setSummonMove] = useState<string | null>(null)
   const summonMoveRef = useRef<string | null>(null)
   useEffect(() => { summonMoveRef.current = summonMove }, [summonMove])
-  /** The hover hum, while any hand is on the board. */
-  const summonHumRef = useRef<ReturnType<typeof playSfx> | null>(null)
   const summonVerbRef = useRef<(body: Record<string, unknown>) => Promise<void>>(async () => {})
-  // The hum. While a hand is on the board the arcane windup loops low under
-  // it - the "flying sound" - and stops the moment the last one is gone.
-  useEffect(() => {
-    if (summons.length > 0 && !summonHumRef.current) {
-      summonHumRef.current = playSfx("magic/arcane_windup", { loop: true, volume: 0.14, fadeIn: 0.8 })
-    } else if (summons.length === 0 && summonHumRef.current) {
-      summonHumRef.current.stop(0.6)
-      summonHumRef.current = null
-    }
-  }, [summons.length])
-  useEffect(() => () => { summonHumRef.current?.stop(0.2); summonHumRef.current = null }, [])
+  // THE HAND IS QUIET UNTIL IT MOVES.
+  //
+  // This used to loop `magic/arcane_windup` at 0.14 for as long as any hand
+  // was on the board. Sam heard it as static electricity and asked for it
+  // gone: "It doesn't need a continuous loop when it is not moving or just
+  // present on the board."
+  //
+  // He is right, and the reason is worth keeping. A sound that plays when
+  // something HAPPENS is information. A sound that never stops is furniture —
+  // it stops carrying meaning within about ten seconds and then just wears
+  // the listener down. The hand now speaks only when it acts, with Sam's own
+  // clip, played from the square it moved to.
   // Escape puts the MOVE away, the way it puts a spell away.
   useEffect(() => {
     if (!summonMove) return
@@ -3117,6 +3116,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return
       }
       const c = sqCentre(row.grid_x, row.grid_y)
+
+      // THE HAND, MOVING — and only then.
+      //
+      // Played HERE rather than in summonVerb because this is the realtime
+      // path: every seat at the table hears the hand move, not just whoever
+      // pressed the button. Gated on the position actually changing, so a
+      // row that arrives for some other reason (an HP write, a dismissal)
+      // makes no noise.
+      if (row.summon && (before.grid_x !== row.grid_x || before.grid_y !== row.grid_y)) {
+        playSfx("magic/mage_hand_move", { volume: 0.55, rate: variedRate(0.05) })
+      }
+
       // Walk the broadcast route when one arrived for this move; otherwise a
       // straight line. Either way the model WALKS it at ground level, at a
       // constant pace — distance decides duration, not a fixed timer.

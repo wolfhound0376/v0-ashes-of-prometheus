@@ -850,13 +850,20 @@ export async function POST(req: NextRequest) {
         await narrate(db, casterName, `${casterName} sends the hand past ${MAGE_HAND.leashFt} ft — it fades.`)
       } else {
         await db.from("vtt_tokens")
-          .update({ grid_x: gx, grid_y: gy, updated_by: "summon-move", updated_at: stamp })
+          // MOVING IS DOING SOMETHING. A spectral hand drifting across the
+          // room is exactly the moment somebody notices it, so the move
+          // reveals it along with the four uses below.
+          .update({ grid_x: gx, grid_y: gy, is_hidden: false, updated_by: "summon-move", updated_at: stamp })
           .eq("id", hand.id)
         await narrate(db, casterName, `${casterName}'s spectral hand drifts ${Math.max(Math.abs(gx - from.x), Math.abs(gy - from.y)) * 5} ft.`)
       }
     } else if (op === "use") {
       const use = handUse(String(body?.what ?? ""))
       if (!use) return NextResponse.json({ error: "the hand can manipulate, open, stow or pour — nothing else" }, { status: 400 })
+      // IT ACTED, SO IT IS SEEN. Sam: "It should have the state of Invisible
+      // until it actually does something." Opening a door is that something.
+      await db.from("vtt_tokens")
+        .update({ is_hidden: false, updated_by: "summon-use", updated_at: stamp }).eq("id", hand.id)
       await narrate(db, casterName, use.line(casterName))
     } else if (op === "dismiss") {
       await db.from("vtt_tokens").delete().eq("id", hand.id)
@@ -1268,6 +1275,13 @@ export async function POST(req: NextRequest) {
             )
           }
           await db.from("vtt_tokens").delete().eq("map_id", caster.map_id).eq("summon->>caster_token", caster.id)
+          // The catalogue row, so the hand's card, hit points and portrait
+          // come from the same place every other creature's do. Null is
+          // survivable - the hand simply has no species - so this is not
+          // checked.
+          const { data: handRow } = await db
+            .from("bestiary").select("id").eq("slug", "mage-hand").maybeSingle()
+          const handSpecies = handRow?.id ?? null
           const { error: handErr } = await db.from("vtt_tokens").insert({
             map_id: caster.map_id,
             label: MAGE_HAND.name,
@@ -1279,8 +1293,28 @@ export async function POST(req: NextRequest) {
             tint_color: "#4fa8ff",
             allegiance: caster.allegiance ?? "party",
             is_visible: true,
-            hp_current: null,
-            hp_max: null,
+            // UNSEEN UNTIL IT ACTS. Sam: "It should have the state of Invisible
+            // until it actually does something." The board already draws
+            // is_hidden as a translucent body rather than a removed one, which
+            // is exactly right here — the table needs to know where the hand
+            // is, and the drow do not.
+            //
+            // It also matches the chassis: Unseen Servant, the SRD's other
+            // commandable conjured helper, is invisible by its own text.
+            is_hidden: true,
+            // ONE HIT POINT, AC 10 — and neither number is Mage Hand's, because
+            // SRD 5.1 gives the cantrip no AC, no hit points and no initiative:
+            // it is a spell effect, not a creature. The bestiary had no row for
+            // it either.
+            //
+            // These come from UNSEEN SERVANT, the nearest printed precedent:
+            // "It has AC 10, 1 hit point, and a Strength of 2, and it can't
+            // attack. If it drops to 0 hit points, the spell ends." Recorded as
+            // homebrew on a cited chassis in the bestiary row's own `source`,
+            // so nobody later mistakes it for canon. Sam's ruling, 3 Sep 2026.
+            bestiary_id: handSpecies,
+            hp_current: 1,
+            hp_max: 1,
             combat_disposition: "fights",
             updated_by: "player-cast",
             summon: summonMageHand({ casterToken: caster.id, characterId: caster.character_id ?? null, round: combat.round }),

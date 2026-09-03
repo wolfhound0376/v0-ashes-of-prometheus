@@ -29,6 +29,17 @@ export type SfxName =
   | `magic/${"arcane" | "cold" | "eldritch" | "fire" | "holy" | "nature" | "necrotic" | "psychic"}_${"windup" | "release" | "tail"}`
   | `magic/impact_${"acid" | "cold" | "fire" | "force" | "lightning" | "necrotic" | "poison" | "psychic" | "radiant" | "thunder"}`
   | "magic/counterspell" | "magic/spell_fizzle" | "magic/concentration_broken" | "magic/heal_tail"
+  /**
+   * The hand, MOVING. Not a loop.
+   *
+   * Sam: "Take away the arcane-windup static electricity sound... It doesn't
+   * need a continuous loop when it is not moving or just present on the
+   * board." The hand used to hum `magic/arcane_windup` at 0.14 for its whole
+   * minute — audible, unexplained, and going on long after anybody had
+   * stopped thinking about it. A sound that plays when something happens is
+   * information; a sound that never stops is furniture.
+   */
+  | "magic/mage_hand_move"
   // combat
   | `combat/${string}`
   | `creature/${string}`
