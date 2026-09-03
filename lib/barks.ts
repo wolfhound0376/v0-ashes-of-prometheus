@@ -141,3 +141,39 @@ export function barkFor(label: string | null | undefined, round: number): string
   const step = Math.floor((round + (seed % BARK_EVERY)) / BARK_EVERY)
   return lines[(step + (seed % lines.length)) % lines.length]
 }
+
+/**
+ * THE ONES THAT HAVE ACTUALLY BEEN RECORDED.
+ *
+ * Sam asked for the barks spoken rather than printed, and said to use the
+ * premade voices first — which was right: every creature here already had an
+ * ElevenLabs voice chosen for it in `npc_encounters`, with a hand-written
+ * description to match. Nothing needed inventing. The drow speak in the voice
+ * assigned to the Drow Guard, Derendil in the one built for him, Jimjar in
+ * his own.
+ *
+ * A key is in this set ONLY when every one of its lines exists in the bucket.
+ * A half-recorded creature would speak aloud on one round and silently on the
+ * next, which is worse than staying quiet — so the rest print their line and
+ * wait their turn to be cut.
+ */
+export const RECORDED = new Set(["drow", "prince derendil", "jimjar"])
+
+/**
+ * The sound file for a line that has just been spoken, or null.
+ *
+ * Matched on the TEXT rather than carried on the row, so nothing had to be
+ * added to the dialogue table and an older seat inserting a bark still makes
+ * a newer board play it. The index is the line's position in the repertoire,
+ * which is exactly how the files were cut and named.
+ */
+export function barkAudioFor(
+  speaker: string | null | undefined,
+  text: string | null | undefined,
+): string | null {
+  const key = barkKeyFor(speaker)
+  if (!key || !RECORDED.has(key)) return null
+  const i = BARKS[key].indexOf(String(text ?? "").trim())
+  if (i < 0) return null
+  return `barks/${key.replace(/\s+/g, "-")}_${i}`
+}

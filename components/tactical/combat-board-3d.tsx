@@ -98,8 +98,9 @@ import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
 // a hand-kept list on the sheet. Shared with the cast handler so the board
 // cannot offer a weapon the server will refuse.
 import { attacksFromInventory } from "@/lib/weapons"
-import { equipOnRig, unequipSlot } from "@/lib/equipment"
+import { equipOnRig, unequipSlot, archetypeFor } from "@/lib/equipment"
 import { weaponFromActions } from "@/lib/stat-block-weapon"
+import { barkAudioFor } from "@/lib/barks"
 import { playSfx, pickVariant, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, creatureVoice, isVoiceless, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { packSoundFor, packKey } from "@/lib/spell-sfx-pack"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -2357,6 +2358,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (s.sandbox !== sandbox) return
       const caster = tokensRef.current.get(s.caster_token)
       if (!caster) return
+      // WHAT IT RAISES BEFORE IT SHOOTS.
+      //
+      // Sam: "I want drow holding crossbows to be SEEN holding a crossbow,
+      // aiming, and firing it." A drow's stat block leads with Shortsword, so
+      // that is what it stands in the room holding — and the moment it makes a
+      // RANGED attack the log reads "Hand Crossbow" while the model swings a
+      // sword at somebody thirty feet away.
+      //
+      // The swing has carried `weapon` and `ranged` since the relay was
+      // written. Nothing had ever looked. The hand now becomes whatever this
+      // attack is actually made with, and stays that way until the creature
+      // uses something else — so a drow that closes to melee draws its sword
+      // back out on its next swing without a second mechanism.
+      //
+      // ONLY A REAL PROP SWAPS THE HAND. A natural attack maps to "empty",
+      // and equipOnRig clears the slot BEFORE it decides that — so acting on
+      // a bite would permanently disarm a creature that bit somebody while
+      // holding a scimitar.
+      if (archetypeFor(s.weapon, "weapon") !== "empty") {
+        const rig = caster.obj.children.find((c) => c.getObjectByName("RightHand"))
+        if (rig) equipOnRig(rig, { name: s.weapon, itemType: "weapon", rarity: "common", slot: "main_hand" })
+      }
       const victim = tokensRef.current.get(s.target_token)
       // Gild the number that will rise off the target when the HP row lands,
       // the same way a player's crit is parked for glideToken to spend.
@@ -5089,7 +5112,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       void loadLog()
       const logChannel = supabase
         .channel("combat-log-board")
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "dialogue" }, () => void loadLog())
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "dialogue" }, (payload: { new: { speaker?: string | null; text?: string | null } }) => {
+          void loadLog()
+          // AND IF THAT LINE WAS A BARK, IT IS HEARD.
+          //
+          // Every seat runs this, which is the point: a drow sneering is for
+          // the table, not for whoever happens to hold the DM key. Anything
+          // without a recording returns null and stays a printed line.
+          const cue = barkAudioFor(payload.new?.speaker, payload.new?.text)
+          if (cue) playSfx(cue as SfxName, { volume: 0.9 })
+        })
         .subscribe()
       setStatus("")
 
