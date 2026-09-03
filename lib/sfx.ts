@@ -40,6 +40,16 @@ export type SfxName =
    * information; a sound that never stops is furniture.
    */
   | "magic/mage_hand_move"
+  /**
+   * The hand coming apart. Sam: "Mage hand when struck just disappears it
+   * doesn't have a fallen state."
+   *
+   * It has one hit point (Unseen Servant's, see lib/wards' sibling reasoning
+   * in the bestiary row), so it goes in a single blow — and until now the
+   * token was simply deleted, which on a board that dresses every other death
+   * by what killed it read as a rendering fault rather than as an event.
+   */
+  | "magic/mage_hand_dissolve"
   // combat
   | `combat/${string}`
   | `creature/${string}`

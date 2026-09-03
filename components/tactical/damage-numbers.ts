@@ -171,7 +171,17 @@ export function damageNumberVfx(args: DamageNumberArgs): VfxHandle {
   // Up about a fifth. The crit keeps its 1.29x lead over the ordinary hit,
   // because that ratio is what makes a crit read as a crit rather than just
   // as a big number.
-  const base = (crit ? 2.4 : 1.86) * scale
+  // DOUBLED, 3 Sep 2026. Sam: "Damage over the heads of characters and
+  // monsters is too small, make 100% bigger."
+  //
+  // The previous note said "up about a fifth" — which was the right direction
+  // and nowhere near far enough. A number that rises for a second over a
+  // crowded 12x12 room, at a camera pitch that foreshortens it, has to be
+  // read in that second or it may as well not be drawn.
+  //
+  // The crit keeps its 1.29x lead over an ordinary hit, because that ratio is
+  // what makes a crit read as a crit rather than merely as a big number.
+  const base = (crit ? 4.8 : 3.72) * scale
   const aspect = CANVAS_W / CANVAS_H
   sprite.scale.set(base * aspect, base, 1)
 
