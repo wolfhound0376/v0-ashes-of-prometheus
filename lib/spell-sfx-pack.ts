@@ -33,6 +33,19 @@ const SOUNDS: Record<string, PackSound> = {
   "ambience-arcane-shimmer": { id: "ambience-arcane-shimmer", volume: 0.7, seconds: 3.239 },
   "cantrip-soft-sparkle": { id: "cantrip-soft-sparkle", volume: 0.75, seconds: 2.638 },
   "cast-wind-gust": { id: "cast-wind-gust", volume: 0.9, seconds: 3.109 },
+  // Sam: "sleep should have a sleep time sound from elevenlabs not an
+  // electrical one." Sleep was in no index at all, so it fell through to the
+  // ARCANE school release — the same bright sparkle every wizard cantrip
+  // makes. A spell whose whole effect is people going quietly limp should not
+  // sound like a spark gap.
+  //
+  // Generated with eleven_text_to_sound_v2, then warmed rather than shipped
+  // raw: the take came back with 52% of its energy above 4 kHz, which is
+  // exactly the sparkle it was asked not to have. Rolled off above 4.2 kHz
+  // with a shelf cut at 6 k, a little weight added at 420 Hz, faded to
+  // silence. Measured after: centroid 3626 -> 2125 Hz, HF 52% -> 21%.
+  // Bells falling into a hush, and then nothing.
+  "control-slumber-fall": { id: "control-slumber-fall", volume: 0.8, seconds: 3.0 },
   "control-time-stop": { id: "control-time-stop", volume: 0.85, seconds: 3.03 },
   "divine-celestial-voice": { id: "divine-celestial-voice", volume: 0.8, seconds: 11.546 },
   "divine-transformation": { id: "divine-transformation", volume: 0.85, seconds: 8.229 },
@@ -103,6 +116,7 @@ const INDEX: Record<string, string> = {
   "revivify": "divine-transformation",
   "see-invisibility": "ambience-arcane-shimmer",
   "shadow-blade": "melee-dagger-stab",
+  "sleep": "control-slumber-fall",
   "slow": "control-time-stop",
   "sneak-attack": "melee-dagger-stab",
   "spare-the-dying": "cantrip-soft-sparkle",
