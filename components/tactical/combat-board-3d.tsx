@@ -63,9 +63,9 @@ import { deathSceneVfx } from "./death-vfx"
 // The headstone. Raised on TRUE death only - see tombstone.ts on why being
 // downed must not get one.
 import { preloadTombstone, tombstoneVfx } from "./tombstone"
-// The SRD's four states. `dead` here means the Dead condition, which is
-// written by massive damage or a third failed save - not by hitting 0.
-import { vitalityOf } from "@/lib/death-saves"
+// `vitalityOf` is already imported above — main gained its own use of it while
+// this branch was in flight, and a second import of the same name is a compile
+// error rather than a merge conflict, so it does not announce itself in a diff.
 // Reused for the grave's lean: same id, same stone, every reload.
 import { seedFrom } from "@/lib/blood-marks"
 // The arcade card that drops when something is cast. Every fact it prints
