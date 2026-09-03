@@ -281,7 +281,12 @@ export function prewarmKit(type: DamageType): void {
 
 // ── one animated quad ───────────────────────────────────────────────────────
 
-class Flip {
+/**
+ * Exported for death-vfx.ts, which plays the killing type's sheet over the
+ * body — burning, frost, sparks — through the same loader and cache as a
+ * cast, so a death never downloads a sheet the cast already has.
+ */
+export class Flip {
   readonly mesh: THREE.Mesh
   private readonly mat: THREE.MeshBasicMaterial
   private readonly geo: THREE.PlaneGeometry
