@@ -20,7 +20,10 @@ import { announcementFor, justBecameDying } from "@/lib/announcer"
 import { STABILIZE, STABILIZE_DC, STABILIZE_REACH_FT, medicineProficiency, medicineBonus, stabilizeCheck } from "@/lib/stabilize"
 // What the target's condition does to an attack roll: advantage, and the
 // 5 ft auto-critical against the unconscious and the paralyzed.
-import { attackAgainst, rollD20, showDice } from "@/lib/helpless"
+import { attackAgainst, attackContext, rollerContext, rollD20, showDice } from "@/lib/helpless"
+// Exhaustion 1 is disadvantage on ability checks; 3 is disadvantage on attack
+// rolls and saving throws. Until now neither reached a die.
+import { normaliseExhaustion } from "@/lib/exhaustion"
 // Mage Hand and whatever is summoned after it: the spell's own rules, pure.
 import {
   MAGE_HAND, summonMageHand, normaliseSummon, expired, withinLeash, withinCastRange, canReach, handUse,
@@ -1035,13 +1038,17 @@ export async function POST(req: NextRequest) {
     // stays that way; only the two fields the rule asks for travel.
     let casterClass: string | null = null
     let casterLevel = 1
+    // Hoisted for the same reason: exhaustion 3 is "disadvantage on attack
+    // rolls and saving throws", and both of those happen further down.
+    let casterExhaustion = 0
     if (caster.character_id) {
       const { data: cs } = await db.from("characters")
-        .select("sheet_spellcasting,str_score,dex_score,proficiency_bonus,class,level")
+        .select("sheet_spellcasting,str_score,dex_score,proficiency_bonus,class,level,exhaustion")
         .eq("id", caster.character_id).maybeSingle()
       casterSc = (cs?.sheet_spellcasting ?? null) as Spellcasting | null
       casterClass = (cs?.class as string | null) ?? null
       casterLevel = Number(cs?.level ?? 1) || 1
+      casterExhaustion = normaliseExhaustion(cs?.exhaustion)
       const { data: inv } = await db.from("inventory_items")
         .select("name,item_key,item_type,equippable_slot,items(item_type,properties,equippable_slot)")
         .eq("character_id", caster.character_id)
@@ -1831,10 +1838,18 @@ export async function POST(req: NextRequest) {
 
     // WHAT THE VICTIM'S CONDITION DOES TO THIS ROLL - lib/helpless. Read
     // once here for both the weapon and the spell-attack branches below.
-    const against = attackAgainst(
-      await conditionsOf(db, victim.character_id ?? null, victim.label ?? ""),
-      Math.max(Math.abs((caster.grid_x ?? 0) - (victim.grid_x ?? 0)), Math.abs((caster.grid_y ?? 0) - (victim.grid_y ?? 0))) * 5,
-    )
+    // Both halves of the roll, gathered and cancelled ONCE — see
+    // lib/helpless's RollSources on why the attacker's disadvantage cannot
+    // simply be added to the target's verdict afterwards.
+    //
+    // The attacker half is new. A character at exhaustion 3 has swung exactly
+    // as well as a rested one since the day exhaustion existed.
+    const against = attackContext({
+      targetConditions: await conditionsOf(db, victim.character_id ?? null, victim.label ?? ""),
+      distanceFt:
+        Math.max(Math.abs((caster.grid_x ?? 0) - (victim.grid_x ?? 0)), Math.abs((caster.grid_y ?? 0) - (victim.grid_y ?? 0))) * 5,
+      attackerExhaustion: casterExhaustion,
+    })
     let thrown = { roll: 0, dice: [] as number[] }
     const againstNote = against.note ? ` [${against.note}]` : ""
 
@@ -1905,9 +1920,18 @@ export async function POST(req: NextRequest) {
             weaponFinesse: Boolean(weapon?.finesse),
             weaponRanged: Boolean(weapon?.ranged),
             alreadyUsedThisTurn: st.sneak_used === true,
-            // Advantage is not modelled anywhere in this route — five roll
-            // sites, one d20 each. Passed explicitly so the gap is visible.
-            hasAdvantage: false,
+            // THE GAP THIS USED TO NAME IS CLOSED.
+            //
+            // It read `hasAdvantage: false` with a comment saying advantage
+            // was modelled nowhere in this route. It is now: `against` is the
+            // resolved verdict for this exact swing, target conditions and
+            // attacker exhaustion together, already through the cancel rule.
+            //
+            // So a rogue attacking a Restrained or Unconscious target sneaks
+            // on the FIRST clause of her own feature — advantage on the roll —
+            // rather than needing an ally stood beside them. That is the
+            // clause that has been dead since the feature was written.
+            hasAdvantage: against.advantage,
             target: { x: victim.grid_x as number, y: victim.grid_y as number },
             allies,
           })
@@ -2107,11 +2131,18 @@ export async function POST(req: NextRequest) {
     if (vitality === "stable") return NextResponse.json({ error: `${them.label} is already stable` }, { status: 409 })
 
     const { data: sheet } = await db
-      .from("characters").select("wis_modifier,proficiency_bonus,sheet_skill_proficiencies")
+      .from("characters").select("wis_modifier,proficiency_bonus,sheet_skill_proficiencies,exhaustion")
       .eq("id", me.character_id).maybeSingle()
     const prof = medicineProficiency(sheet?.sheet_skill_proficiencies as Record<string, unknown> | null)
     const bonus = medicineBonus({ wisMod: sheet?.wis_modifier, proficiencyBonus: sheet?.proficiency_bonus, proficiency: prof })
-    const roll = d20()
+    // A Medicine check is an ABILITY CHECK, so the threshold is exhaustion 1 —
+    // not the 3 that governs attacks and saves. Getting those two thresholds
+    // the same way round is the whole reason rollerContext takes `kind` and
+    // refuses to default it: a level-1 character has shaky hands, and still
+    // saves against poison as well as anybody.
+    const medic = rollerContext({ kind: "check", exhaustion: normaliseExhaustion(sheet?.exhaustion) })
+    const thrownMed = rollD20(medic, d20)
+    const roll = thrownMed.roll
     const check = stabilizeCheck({ roll, bonus })
     const stamp = new Date().toISOString()
     if (check.success) {
@@ -2119,7 +2150,10 @@ export async function POST(req: NextRequest) {
         .update({ conditions: conditionsFor(conds, "stable"), updated_at: stamp })
         .eq("id", them.character_id)
     }
-    const line = `${me.label} tends to ${them.label} — Medicine ${roll}${bonus >= 0 ? "+" : ""}${bonus} = ${check.total} vs DC ${STABILIZE_DC}: ${check.success ? `${them.label} is stable.` : "no change."}`
+    // showDice prints "8 (17, 8)" when two were thrown, so the table can see
+    // the die exhaustion took away rather than being told the result.
+    const medNote = medic.note ? ` [${medic.note}]` : ""
+    const line = `${me.label} tends to ${them.label} — Medicine ${showDice(thrownMed)}${bonus >= 0 ? "+" : ""}${bonus} = ${check.total} vs DC ${STABILIZE_DC}${medNote}: ${check.success ? `${them.label} is stable.` : "no change."}`
     await narrate(db, me.label ?? "Someone", line)
     const spent = { ...state, action: true }
     await db.from("combat_state").update({ turn_state: spent, updated_at: stamp }).eq("id", combat.id)
