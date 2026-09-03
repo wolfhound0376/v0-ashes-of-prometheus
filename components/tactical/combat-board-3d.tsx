@@ -102,6 +102,7 @@ import { equipOnRig, unequipSlot, archetypeFor } from "@/lib/equipment"
 import { weaponFromActions } from "@/lib/stat-block-weapon"
 import { barkAudioFor } from "@/lib/barks"
 import { idleOffset } from "@/lib/idle-motion"
+import { collapseAt, headingFor } from "@/lib/collapse"
 import { playSfx, pickVariant, windupFor, releaseFor, tailFor, impactFor, preloadSfx, weaponSounds, meleeHit, variedRate, creatureVoice, isVoiceless, SNEAK_ATTACK, type PlayHandle, type SfxName } from "@/lib/sfx"
 import { packSoundFor, packKey } from "@/lib/spell-sfx-pack"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -3224,6 +3225,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             // did not die just now. It was already dead when we arrived, and a
             // corpse must not re-explode every time the board reloads.
             if (isDowned(row) && !laid) {
+              // Nothing to play, so the fall is generated — see lib/collapse.
+              // Started at zero rather than skipped to the end because a body
+              // that is down when the board LOADS was already dead before we
+              // arrived; the .update(999) below settles the effect, and the
+              // collapse settles itself within SETTLE_END either way.
+              entry?.obj && (entry.obj.userData.fall = {
+                at: clock.elapsedTime,
+                // No attacker passed, deliberately. lastHitFrom holds a WORLD
+                // Vector3 whose .y is the vertical axis, not the grid row —
+                // handing it to a function that wants grid coordinates would
+                // read the height of the blow as its direction. And the block
+                // below already says why it is unknowable here anyway: on a
+                // fresh board this body died before we arrived. A stable
+                // per-body angle instead, so the corpse lies the same way on
+                // every screen and after every reload.
+                heading: headingFor(row.id),
+              })
               deathSceneVfx({
                 parent: scene,
                 position: new THREE.Vector3(entry?.obj.position.x ?? 0, 0.05, entry?.obj.position.z ?? 0),
@@ -5481,7 +5499,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       //
       // Skipped while the figure is doing something it was told to do — a
       // glide, a charge — so the breath never argues with a real animation.
+      // A BODY THAT IS FALLING IS DOING SO ON ITS OWN CLOCK.
+      //
+      // Only for creatures with no death clip to play. Fifi, Samson, Scott,
+      // Derendil and the hook horror all have one and it is better than
+      // anything generated — a rigged death moves limbs and this moves a whole
+      // body. But Kenta's rig has NINE clips and not one of them is a death,
+      // and the drow elite and the giant spider have no clips at all. Those
+      // three used to be laid flat by a rigid rotation about one axis, which
+      // is precisely a chess piece tipping over.
       tokensRef.current.forEach((entry) => {
+        const fall = entry.obj.userData.fall as { at: number; heading: number } | undefined
+        if (!fall) return
+        const model = entry.obj.children.find((c) => c.userData?.rest) as THREE.Object3D | undefined
+        const rest = model?.userData.rest as { x: number; y: number; z: number; yaw: number } | undefined
+        if (!model || !rest) return
+        const pose = collapseAt(clock.elapsedTime - fall.at, entry.row.id, fall.heading)
+        model.position.set(rest.x, rest.y + pose.drop, rest.z)
+        model.rotation.set(0, rest.yaw + pose.heading, 0)
+        model.rotateX(pose.pitch)
+      })
+
+      tokensRef.current.forEach((entry) => {
+        if (entry.obj.userData.fall) return
         const model = entry.obj.children.find((c) => c.userData?.rest) as THREE.Object3D | undefined
         const rest = model?.userData.rest as
           | { x: number; y: number; z: number; yaw: number; height: number }
