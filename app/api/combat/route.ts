@@ -1038,6 +1038,29 @@ export async function POST(req: NextRequest) {
      * Shield of Faith have no dice to roll and used to return early having
      * cost the caster nothing at all — they were free, all day, forever.
      */
+    // DECLARED ABOVE payFor, WHICH CLOSES OVER IT — and that ordering is the
+    // whole bug.
+    //
+    // This `let` used to sit 300 lines further down, next to the attack roll
+    // that assigns it. payFor references `sneak.applies`, and payFor is called
+    // from FOUR places: the attack path (after that declaration — fine), and
+    // the Mage Hand summon, the no-dice area path and the no-dice utility
+    // path (all BEFORE it). A `let` read before its line runs is a temporal
+    // dead zone, and the runtime says so:
+    //
+    //   ReferenceError: Cannot access 'eu' before initialization
+    //
+    // Five of those in Vercel's logs on 2026-09-03 between 02:16:58 and
+    // 02:20:00, every one a POST /api/combat 500, every one Sam pressing
+    // Sanctuary or Shield of Faith and watching nothing happen. Guiding Bolt
+    // at 02:16:39 on the same deployment returned 200, because an attack
+    // reaches the declaration first. tsc cannot see this: a closure over a
+    // later `let` is legal TypeScript.
+    //
+    // Since the rogue's sneak-attack PR landed, every spell with no dice to
+    // roll — and every Mage Hand — has crashed on payment.
+    let sneak: SneakAttackVerdict = { applies: false, dice: "", reason: "" }
+
     const payFor = async () => {
       await db.from("combat_state")
         .update({
@@ -1359,7 +1382,6 @@ export async function POST(req: NextRequest) {
     let damageType: string | null = entry.damage ?? null
     // The rogue's verdict, so the log line and the response can both read it.
     // Declared not-applying, because most attacks are not sneak attacks.
-    let sneak: SneakAttackVerdict = { applies: false, dice: "", reason: "" }
 
     if (weapon) {
       // "1d6+1 Piercing" → dice and a type. The type is only used to colour
