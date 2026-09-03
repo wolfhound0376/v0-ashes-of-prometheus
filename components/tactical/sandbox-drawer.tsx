@@ -330,7 +330,7 @@ export default function SandboxDrawer() {
               setNote(`healed ${r.healed}, but ${r.failures.length} refused — ${String(r.failures[0])}`)
               return
             }
-            setNote(`healed ${r.healed}, ${r.sheets} sheets${r.slotsRestored ? `, ${r.slotsRestored} slots` : ""}${r.corrected ? `, ${r.corrected} hp maximums fixed` : ""}${r.combatEnded ? ", fight ended" : ""}`)
+            setNote(`healed ${r.healed}, ${r.sheets} sheets${r.slotsRestored ? `, ${r.slotsRestored} slots` : ""}${r.corrected ? `, ${r.corrected} hp maximums fixed` : ""}${r.dispelled ? `, ${r.dispelled} dispelled` : ""}${r.combatEnded ? ", fight ended" : ""}`)
           })}
           className="shrink-0 border border-[#5a4526] px-2 py-1 font-serif text-[9px] uppercase tracking-[0.2em] text-[#a08a5c] hover:border-[#5fd3a0] hover:text-[#5fd3a0]"
           title="Every creature here back to full hit points, slots and conditions — and any fight ended"

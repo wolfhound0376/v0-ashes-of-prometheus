@@ -278,6 +278,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // AND THE SUMMONS GO. Sam: "Reset, should also reset the mage hand."
+    //
+    // A Mage Hand is not a creature to be healed — it is a spell that is
+    // still running, and a reset that leaves last rehearsal's hand hanging in
+    // the air has not reset the board. It also holds its caster's
+    // concentration, so leaving it would quietly forbid the next Mage Hand.
+    //
+    // Deleted rather than restored, because that is what dismissing a spell
+    // IS. The caster gets their slot back from the sheet refill above.
+    const { count: dispelled } = await db
+      .from("vtt_tokens").delete({ count: "exact" })
+      .eq("map_id", map.id).not("summon", "is", null)
+
     // And end any fight still running here, so the next rehearsal rolls its
     // own initiative instead of resuming a turn order full of corpses.
     const { data: fight } = await db
@@ -302,7 +315,7 @@ export async function POST(req: NextRequest) {
       // NOT ok when something was refused. The caller has to be able to tell
       // a reset that worked from one that only looked like it did.
       ok: failures.length === 0,
-      healed, sheets, slotsRestored, corrected, combatEnded: Boolean(fight),
+      healed, sheets, slotsRestored, corrected, dispelled: dispelled ?? 0, combatEnded: Boolean(fight),
       ...(failures.length ? { failures } : {}),
     })
   }

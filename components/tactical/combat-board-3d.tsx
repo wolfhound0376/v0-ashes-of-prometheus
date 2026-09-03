@@ -424,6 +424,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
   /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
   const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
+  /** token_id -> allegiance, so the rail colours by side and not by pc/npc. */
+  const [tokenSide, setTokenSide] = useState<Record<string, string>>({})
   const [tokenConditions, setTokenConditions] = useState<Record<string, unknown>>({})
   /**
    * token_id -> hit points, for the initiative rail.
@@ -4715,26 +4717,49 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .filter((t) => !t.character_id && t.is_visible)
         .map((t) => t.label)
       const loadNpcs = async () => {
-        if (!npcLabels.length) return
-        const { data: npcs } = await supabase
+        const { data: npcs } = npcLabels.length ? await supabase
           .from("npc_encounters")
           .select("name,portrait_url,face_url,conditions")
-          .in("name", npcLabels)
+          .in("name", npcLabels) : { data: [] }
         type NpcRow = { name: string; portrait_url: string | null; face_url: string | null; conditions: unknown }
         const byName = new Map<string, NpcRow>(
           ((npcs ?? []) as NpcRow[]).map((n) => [n.name, n] as [string, NpcRow]),
         )
+        // AND THE SPECIES, when no named NPC matches.
+        //
+        // The rail used to look ONLY here, matched on the token's label — so
+        // "Drow", "Drow Elite Warrior" and "Drow Priestess of Lolth" drew as
+        // blank boxes with a letter in them, while art for two of them sat in
+        // character-stills under slightly different names. bestiary.portrait_url
+        // is now the fallback, so a token gets a face through its species the
+        // same way it already gets its hit points and its model.
+        //
+        // A NAMED NPC STILL WINS: Ilvara Mizzrym's own face beats the generic
+        // priestess, which is the whole reason npc_encounters is asked first.
+        const speciesIds = ((tokenRows ?? []) as TokenRow[])
+          .map((t) => t.bestiary_id).filter(Boolean) as string[]
+        const speciesArt = new Map<string, string>()
+        if (speciesIds.length) {
+          const { data: bs } = await supabase
+            .from("bestiary").select("id,portrait_url").in("id", speciesIds)
+          for (const b of (bs ?? []) as { id: string; portrait_url: string | null }[]) {
+            if (b.portrait_url) speciesArt.set(b.id, b.portrait_url)
+          }
+        }
+
         const map: Record<string, string> = {}
         const conds: Record<string, unknown> = {}
+        const sides: Record<string, string> = {}
         for (const t of (tokenRows ?? []) as TokenRow[]) {
+          if (t.allegiance) sides[t.id] = t.allegiance
           const npc = byName.get(t.label)
-          if (!npc) continue
-          const url = npc.face_url ?? npc.portrait_url
+          const url = npc?.face_url ?? npc?.portrait_url ?? speciesArt.get(t.bestiary_id ?? "") ?? null
           if (url) map[t.id] = url
-          if (npc.conditions) conds[t.id] = npc.conditions
+          if (npc?.conditions) conds[t.id] = npc.conditions
         }
         setTokenPortrait(map)
         setTokenConditions(conds)
+        setTokenSide(sides)
       }
       await loadNpcs()
 
@@ -6198,6 +6223,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         }}
         tokenToCharacter={tokenToCharacter}
         tokenPortrait={tokenPortrait}
+        tokenSide={tokenSide}
         tokenConditions={tokenConditions}
         tokenHp={tokenHp}
         turnOrder={shownTurnOrder}
