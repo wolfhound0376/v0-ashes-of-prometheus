@@ -18,6 +18,9 @@ import { equippedWeapons } from "@/lib/equipped"
 import { announcementFor, justBecameDying } from "@/lib/announcer"
 // Stabilizing a creature: DC 10 Wisdom (Medicine), an action, within reach.
 import { STABILIZE, STABILIZE_DC, STABILIZE_REACH_FT, medicineProficiency, medicineBonus, stabilizeCheck } from "@/lib/stabilize"
+// What the target's condition does to an attack roll: advantage, and the
+// 5 ft auto-critical against the unconscious and the paralyzed.
+import { attackAgainst, rollD20, showDice } from "@/lib/helpless"
 // Mage Hand and whatever is summoned after it: the spell's own rules, pure.
 import {
   MAGE_HAND, summonMageHand, normaliseSummon, expired, withinLeash, withinCastRange, canReach, handUse,
@@ -163,10 +166,19 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
   const charIds = (tokens ?? []).map((t) => t.character_id).filter(Boolean) as string[]
   const beastIds = (tokens ?? []).map((t) => t.bestiary_id).filter(Boolean) as string[]
   const [chars, beasts] = await Promise.all([
-    charIds.length ? db.from("characters").select("id,ac").in("id", charIds) : Promise.resolve({ data: [] }),
+    charIds.length ? db.from("characters").select("id,ac,conditions").in("id", charIds) : Promise.resolve({ data: [] }),
     beastIds.length ? db.from("bestiary").select("id,ac,int,wis,speed,actions").in("id", beastIds) : Promise.resolve({ data: [] }),
   ])
   const charAc = new Map((chars.data ?? []).map((c: { id: string; ac: number | null }) => [c.id, c.ac]))
+  const charConds = new Map(
+    (chars.data ?? []).map((c: { id: string; conditions?: unknown }) => [c.id, normalizeConditions(c.conditions)]),
+  )
+  // Monsters keep their words on the encounter row, by name.
+  const labels = (tokens ?? []).filter((t) => !t.character_id).map((t) => t.label).filter(Boolean) as string[]
+  const { data: npcRows } = labels.length
+    ? await db.from("npc_encounters").select("name,conditions").in("name", labels)
+    : { data: [] as { name: string; conditions?: unknown }[] }
+  const npcConds = new Map((npcRows ?? []).map((n: { name: string; conditions?: unknown }) => [n.name, normalizeConditions(n.conditions)]))
   const beast = new Map((beasts.data ?? []).map((b: Record<string, unknown>) => [b.id as string, b]))
 
   const combatants: (Combatant & {
@@ -190,6 +202,7 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
       // NPC would swing at a creature whose armour it does not believe in.
       + wardAcBonus(normaliseWard((t as { ward?: unknown }).ward)),
     warded: normaliseWard((t as { ward?: unknown }).ward)?.spell === "sanctuary",
+    conditions: t.character_id ? charConds.get(t.character_id) ?? [] : npcConds.get(t.label ?? "") ?? [],
     bestiary_id: t.bestiary_id,
     // Carried so damage can reach the sheet as well as the token.
     character_id: t.character_id,
@@ -278,10 +291,23 @@ async function isBleeding(
   characterId: string | null,
   label: string,
 ): Promise<boolean> {
+  return (await conditionsOf(db, characterId, label)).some((c) => c.toLowerCase() === "bleeding")
+}
+
+/**
+ * The words on a creature right now. A player's live on the sheet; a
+ * monster's on its encounter row, by name. One place, so every rule that
+ * reads a condition reads the same list.
+ */
+async function conditionsOf(
+  db: ReturnType<typeof createAdminClient>,
+  characterId: string | null,
+  label: string,
+): Promise<string[]> {
   const raw = characterId
     ? (await db.from("characters").select("conditions").eq("id", characterId).maybeSingle()).data?.conditions
     : (await db.from("npc_encounters").select("conditions").eq("name", label).limit(1).maybeSingle()).data?.conditions
-  return normalizeConditions(raw).some((c) => c.toLowerCase() === "bleeding")
+  return normalizeConditions(raw)
 }
 
 /**
@@ -1803,6 +1829,15 @@ export async function POST(req: NextRequest) {
     // The rogue's verdict, so the log line and the response can both read it.
     // Declared not-applying, because most attacks are not sneak attacks.
 
+    // WHAT THE VICTIM'S CONDITION DOES TO THIS ROLL - lib/helpless. Read
+    // once here for both the weapon and the spell-attack branches below.
+    const against = attackAgainst(
+      await conditionsOf(db, victim.character_id ?? null, victim.label ?? ""),
+      Math.max(Math.abs((caster.grid_x ?? 0) - (victim.grid_x ?? 0)), Math.abs((caster.grid_y ?? 0) - (victim.grid_y ?? 0))) * 5,
+    )
+    let thrown = { roll: 0, dice: [] as number[] }
+    const againstNote = against.note ? ` [${against.note}]` : ""
+
     if (weapon) {
       // "1d6+1 Piercing" → dice and a type. The type is only used to colour
       // the log; weapons make their noise from their own name.
@@ -1816,12 +1851,15 @@ export async function POST(req: NextRequest) {
       const dicePart = dmgSpec.match(/\d+d\d+\s*(?:[+-]\s*\d+)?/)?.[0] ?? ""
       const flat = dicePart ? 0 : Number.parseInt(dmgSpec.replace(/[^0-9]/g, ""), 10) || 1
       const toHit = Number.parseInt(String(weapon.hit ?? "+0").replace(/[^0-9-]/g, ""), 10) || 0
-      roll = d20()
+      thrown = rollD20(against, d20)
+      roll = thrown.roll
       crit = roll === 20
       fumble = roll === 1
       total = roll + toHit
       dc = ac
       hit = crit || (roll !== 1 && total >= ac)
+      // Helpless within 5 ft: any hit is a critical.
+      if (hit && against.autoCrit) crit = true
       if (hit) {
         amount = dicePart ? rollDice(dicePart) : flat
         // A critical rolls the dice again, never the modifier.
@@ -1886,19 +1924,22 @@ export async function POST(req: NextRequest) {
       // no explanation reads as a bug; "Sneak Attack (2d6) - an ally has them
       // occupied" reads as the rule it is.
       const sneakNote = sneak.applies ? ` Sneak Attack (${sneak.dice}) — ${sneak.reason}.` : ""
-      line = `${caster.label} strikes at ${victim.label} with ${weapon.name} — ${roll}${toHit >= 0 ? "+" : ""}${toHit} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.${sneakNote}`
+      line = `${caster.label} strikes at ${victim.label} with ${weapon.name} — ${showDice(thrown)}${toHit >= 0 ? "+" : ""}${toHit} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.${sneakNote}${againstNote}`
     } else if (entry.resolve === "attack") {
-      roll = d20()
+      thrown = rollD20(against, d20)
+      roll = thrown.roll
       crit = roll === 20
       fumble = roll === 1
       total = roll + attackBonus
       dc = ac
       hit = crit || (roll !== 1 && total >= ac)
+      // Helpless within 5 ft: any hit is a critical.
+      if (hit && against.autoCrit) crit = true
       if (hit) {
         amount = rollDice(entry.dice)
         if (crit) amount += rollDice(entry.dice)
       }
-      line = `${caster.label} casts ${ability} at ${victim.label} — ${roll}+${attackBonus} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.`
+      line = `${caster.label} casts ${ability} at ${victim.label} — ${showDice(thrown)}+${attackBonus} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.${againstNote}`
     } else if (entry.resolve === "save") {
       // NOTE: on a save it is the TARGET rolling, not the caster. `margin`
       // below is therefore the target's margin of success, and the board must
