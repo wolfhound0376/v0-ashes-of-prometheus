@@ -1,4 +1,5 @@
 import { generateText, type ModelMessage } from "ai"
+import { addressedNpc, type RosterNpc } from "@/lib/addressed-npc"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -2596,6 +2597,39 @@ Rules:
           // null so /api/npc-tts can description-match this NPC at speak time.
           voice_id: npcRow?.voice_id || null,
         })
+      }
+      // AND IF IT NAMED NOBODY, ANSWER THE ONE WHO WAS ASKED.
+      //
+      // Sam typed "what do you think eldeth". Malachar replied in her voice —
+      // "Three minutes. Maybe four if Gorvan stops to scratch himself" — and
+      // the segmenter filed it as NARRATOR with no npc_id and no voice_id, so
+      // a dwarf's answer came out of the Lich's mouth.
+      //
+      // The prompt above already asks for exactly this ("Prefer that NPC over
+      // NARRATOR"). It did not comply, and the likely reason is the shape of
+      // the ask: the roster holds "Eldeth Feldrun" and the player typed a bare
+      // lowercase "eldeth". This is not a thing to ask a model twice. Whoever
+      // the player named is knowable by string match before the model is ever
+      // called, and lib/addressed-npc does it: full names, surnames, aliases,
+      // whole words only, and NULL when two NPCs are named equally well,
+      // because a question to the room must not be put in one mouth.
+      //
+      // Applied ONLY when the segmenter attributed nothing to anybody. If it
+      // found a speaker — even one — its judgement stands, because it can see
+      // the narration and this cannot.
+      if (resolvedSegments.length && !resolvedSegments.some((seg) => seg.npc_id)) {
+        const asked = addressedNpc(String(message ?? ""), (speechNpcRows || []) as RosterNpc[])
+        if (asked) {
+          const row = (speechNpcRows || []).find((r: any) => r.name === asked)
+          if (row) {
+            console.log(`[speech] segmenter said NARRATOR; the player addressed ${asked} — attributing`)
+            for (const seg of resolvedSegments) {
+              seg.speaker = asked
+              seg.npc_id = row.id
+              seg.voice_id = row.voice_id || null
+            }
+          }
+        }
       }
       speechSegments = resolvedSegments
     } catch (error) {
