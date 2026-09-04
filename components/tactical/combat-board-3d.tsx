@@ -38,6 +38,7 @@ import { TurnBanner, type TurnEconomy } from "./turn-banner"
 import {
   attackStateFor,
   castClipFor,
+  pickClip,
   castEventFor,
   castPlanFor,
   clipFor,
@@ -2195,7 +2196,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // A model with only the heavy swing is unaffected — lightAttack's
       // candidate list ends in "attack", so it falls through to what exists.
       const swing = plan.state === "attack" ? attackStateFor(ability) : plan.state
-      const clip = playState(anim, swing, true, explicit)
+      // A DIFFERENT SWING EACH TIME, when the model has more than one.
+      // pickClip pools only the clips matching the SAME candidate term, so a
+      // martial never wanders into a spell cast, and a model with a single
+      // clip behaves exactly as before.
+      const varied = explicit ?? pickClip(swing, anim.names)
+      const clip = playState(anim, swing, true, varied)
       if (!clip) { landNow(); return }
       if (plan.state === "hurt") return // Dodge is a flinch, not a spell
 
@@ -2933,6 +2939,41 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const speciesArt = new Map<string, { url: string | null; scale: number | null; y: number | null }>()
     const speciesPending = new Set<string>()
 
+    /**
+     * PUT THE WEAPON IN THE HAND. ONE FUNCTION, BOTH PASSES, ALWAYS AUDIBLE.
+     *
+     * Sam: "No dagger here." Fifi has carried a Dagger the whole time and the
+     * board never gave it to her, while every monster on the same screen was
+     * correctly armed - Ront with a greataxe, Buppido with his shortspear.
+     *
+     * The console said why. A monster's weapon comes from `beastWeaponRef`,
+     * filled by the SAME pass that spawns the tokens, so it is always ready
+     * when a model finishes loading. A player's comes from `heldWeaponRef`,
+     * filled by the sheets loader - a different async path that had NOT run
+     * when the models arrived. So the load-time equip read an empty map.
+     *
+     * The sheets pass exists to catch exactly that, and may well have failed
+     * too - but it equipped SILENTLY, so there was no way to tell which of
+     * the two had gone wrong. This file has been bitten by a silent failure
+     * before; the model loader's own comment says a failure "does not get to
+     * be silent again". Neither does this one.
+     */
+    const armToken = (row: TokenRow, model: THREE.Object3D) => {
+      const carried = row.character_id ? heldWeaponRef.current.get(row.character_id) : null
+      const beast = !row.character_id && row.bestiary_id
+        ? beastWeaponRef.current.get(row.bestiary_id)
+        : null
+      const inHand = carried ?? (beast ? { name: beast, rarity: "common" } : null)
+      if (!inHand?.name) return false
+      const held = equipOnRig(model, {
+        name: inHand.name, itemType: "weapon", rarity: inHand.rarity, slot: "main_hand",
+      })
+      console.log(held
+        ? `[equip] ${row.label} holds ${inHand.name}`
+        : `[equip] ${row.label}: "${inHand.name}" produced no prop (natural weapon, or no RightHand bone)`)
+      return Boolean(held)
+    }
+
     const spawnToken = (incoming: TokenRow) => {
       let row = incoming
       if (!row.model_url && row.bestiary_id) {
@@ -3181,20 +3222,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // hooked shortspear — because a creature has no inventory to read
           // and an empty-handed drow whose log line says "hits with
           // Shortsword" is the board disagreeing with itself.
-          const carriedName = row.character_id ? heldWeaponRef.current.get(row.character_id) : null
-          const beastName = !row.character_id && row.bestiary_id
-            ? beastWeaponRef.current.get(row.bestiary_id)
-            : null
-          const inHand = carriedName ?? (beastName ? { name: beastName, rarity: "common" } : null)
-          if (inHand?.name) {
-            const held = equipOnRig(obj, {
-              name: inHand.name,
-              itemType: "weapon",
-              rarity: inHand.rarity,
-              slot: "main_hand",
-            })
-            if (held) console.log(`[equip] ${row.label} holds ${inHand.name}`)
-          }
+          armToken(row, obj)
           // The other hand, from the same inventory pass. A model that loads
           // before the sheets do is handed its shield by the equip pass in
           // the sheets loader instead, so whichever wins the race the arm
@@ -5066,6 +5094,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // schedule, so whichever wins the race, this pass makes sure everyone
         // ends up armed. equipOnRig removes what is in the hand first, so
         // running it twice is a no-op rather than a second sword.
+        // Anyone whose model was still downloading when this ran. Booked,
+        // not abandoned — see below.
+        const unarmed: string[] = []
         tokensRef.current.forEach((t) => {
           // A ternary rather than `&&`: character_id is nullable, and `&&`
           // would widen this to `"" | undefined` — falsy at runtime, but a
@@ -5076,15 +5107,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // a disarmed prisoner that is their fist — which is not a prop and
           // has no model. A hand holding an "Unarmed Strike" is the failure
           // this map exists to avoid.
-          const beast = !t.row.character_id && t.row.bestiary_id
-            ? beastWeaponRef.current.get(t.row.bestiary_id)
-            : null
-          const held = t.row.character_id
-            ? heldWeapon.get(t.row.character_id)
-            : (beast ? { name: beast, rarity: "common" } : null)
           const shield = t.row.character_id ? shieldHeld.get(t.row.character_id) : null
           const model = t.obj.children.find((c) => c.getObjectByName("RightHand"))
-          if (!model) return
+          if (!model) {
+            // ITS MODEL HAS NOT ARRIVED, WHICH IS NOT A REASON TO GIVE UP.
+            // This pass ran ONCE and returned here for anyone still
+            // downloading, and nothing ever came back — so a character whose
+            // GLB was slower than the sheets query stayed empty-handed for the
+            // rest of the session. That is Fifi and her dagger.
+            unarmed.push(t.row.id)
+            return
+          }
           // The off hand: a shield if the inventory says so, and EMPTY if it
           // no longer does. The drow confiscated the party's gear once
           // already; a shield that lingers on the arm after the row is gone
@@ -5094,17 +5127,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           } else {
             unequipSlot(model, "off_hand")
           }
-          if (!held?.name) return
-          // Rarity travels with the re-equip. equipOnRig clears the hand
-          // first, so omitting it here would let this pass quietly strip the
-          // tint that the load-time equip had already applied.
-          if (model) equipOnRig(model, {
-            name: held.name,
-            itemType: "weapon",
-            rarity: held.rarity ?? "common",
-            slot: "main_hand",
-          })
+          armToken(t.row, model)
         })
+        // The second look. One frame is not enough for a megabyte of GLB, so
+        // this waits long enough to matter and short enough that nobody sees
+        // an empty hand. Anything still unloaded by then had a real problem,
+        // and armToken says so out loud.
+        if (unarmed.length) {
+          window.setTimeout(() => {
+            for (const id of unarmed) {
+              const t = tokensRef.current.get(id)
+              const model = t?.obj.children.find((c) => c.getObjectByName("RightHand"))
+              if (t && model) armToken(t.row, model)
+            }
+          }, 1200)
+        }
         setSheets(list)
         // Focus THIS browser's own character by default, not merely the first
         // plate. Otherwise a player opens the board driving someone else, and
