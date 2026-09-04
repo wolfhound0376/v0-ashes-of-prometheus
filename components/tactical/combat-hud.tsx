@@ -684,7 +684,12 @@ export function CombatHud(props: Props) {
                     casterName={c.name}
                     round={round}
                     distanceFt={s.caster ? chebyshevFt(s, s.caster) : null}
-                    canAct={Boolean(isCastersTurn && econ && econ.live && !econ.action)}
+                    // The DM is never locked out of the hand: the server takes
+                    // a DM move out of turn (see /api/combat, the summon
+                    // branch), so greying the button here would be the HUD
+                    // refusing something the board would have allowed.
+                    canAct={Boolean(dm || (isCastersTurn && econ && econ.live && !econ.action))}
+                    dmOutOfTurn={Boolean(dm && !isCastersTurn)}
                     arming={summonMove === s.token_id}
                     onMove={() => onSummon?.("move", s.token_id)}
                     onUse={(what) => onSummon?.("use", s.token_id, what)}
