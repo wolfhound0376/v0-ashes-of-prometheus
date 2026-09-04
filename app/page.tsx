@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import { freshScene, nextNudge, nudgePrompt, onNudged, onPlayerMessage, type PacingState } from "@/lib/pacing"
 import Link from "next/link"
 import { Settings, Sparkles, X, Save, RotateCcw, Flame, Hammer, Download, ChevronUp, RefreshCw, UserMinus, Circle, BookOpen, ScrollText, Map, Users, Landmark } from "lucide-react"
 import { LeftColumn } from "@/components/dashboard/left-column"
@@ -22,7 +23,7 @@ import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
 import { isCombatant } from "@/lib/challenge-rating"
-import { dmHeaders, ensureDmKey } from "@/lib/dm-key"
+import { dmHeaders, ensureDmKey, hasDmKey } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
@@ -1030,10 +1031,50 @@ if (error) {
    * second producer would have guaranteed the two drifted; the cinematic cue
    * or the XP refetch would have been wired into one and not the other.
    */
+  // ─── THE SCENE KEEPS MOVING ───────────────────────────────────────────
+  //
+  // Sam: "there needs to be a timer of sorts that helps move the game along in
+  // the dialogue portion to prevent it from getting too slow."
+  //
+  // Combat drives itself; the roleplay had no clock at all, so a quiet room
+  // stayed quiet until somebody typed — and on a session being recorded for a
+  // weekly video, dead air is what ruins the take.
+  //
+  // Two clocks and a ladder, all in lib/pacing: silence brings a bark from an
+  // NPC, then Malachar leaning in, then something happening TO them. A player
+  // speaking resets it, because the point is to restart a scene rather than
+  // nag a room that is already going.
+  //
+  // ONLY THE DM'S BROWSER RUNS IT. Four seats watching the same quiet room
+  // would each fire, and the party would get four prods and four bills for a
+  // single silence. Same rule the board already uses to decide who resolves a
+  // monster's turn.
+  const pacing = useRef<PacingState>(freshScene(Date.now()))
+  const nudging = useRef(false)
+  useEffect(() => {
+    if (!hasDmKey()) return
+    const id = window.setInterval(() => {
+      if (nudging.current) return
+      const kind = nextNudge(pacing.current, Date.now(), inCombat)
+      if (!kind) return
+      nudging.current = true
+      pacing.current = onNudged(pacing.current, Date.now())
+      console.log(`[pacing] the room went quiet — ${kind}`)
+      void sendToLich(nudgePrompt(kind), selectedCharacterId, claimToken)
+        .catch((e) => console.error("[pacing] nudge failed", e))
+        .finally(() => { nudging.current = false })
+    }, 4000)
+    return () => window.clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inCombat, selectedCharacterId, claimToken])
+
   const submitToLich = useCallback(async (message: string) => {
           // Optimistically add player message to dialogue immediately (pending
           // → reconciled by id when the realtime echo of the row arrives).
           const playerName = selectedCharacter?.name || "Player"
+          // Somebody spoke: the ladder starts again from the bottom, and the
+          // scene gains a beat toward "this has gone on long enough".
+          pacing.current = onPlayerMessage(pacing.current, Date.now())
           setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
 
           // Send to Lich, carrying THIS browser's character + claim token.
