@@ -458,6 +458,13 @@ export function V4Dashboard(props: V4DashboardProps) {
   // indistinguishable from a fight starting while he sat there, so ← SCENE
   // pushed him to `/` and this effect threw him straight back. The rule now
   // lives in lib/board-exit.ts with tests on it.
+  /**
+   * Whether a fight starting should DRAG this browser to the battle board.
+   *
+   * Off, at Sam's word. See the effect below for what it used to do and why
+   * it was wrong more often than it was right.
+   */
+  const AUTO_OPEN_BOARD_ON_COMBAT = false
   const wasInCombat = useRef<PriorCombat>(null)
   // Has the roster actually loaded? It starts as an empty array, and an empty
   // array reads as "no fight" — which is the condition that used to delete the
@@ -473,7 +480,34 @@ export function V4Dashboard(props: V4DashboardProps) {
     if (shouldForgetDeliberateExit(inCombat, rosterObserved)) {
       try { sessionStorage.removeItem("aop-left-battle") } catch {}
     }
-    if (shouldRedirectToBoard({ inCombat, previous: wasInCombat.current, isDm: hasDmKey(), leftDeliberately })) {
+    // COMBAT WHEN SAM SAYS SO, AND NOT BEFORE.
+    //
+    // Sam: "it keeps going to combat. Stop that for right now. Only combat
+    // when I select it."
+    //
+    // This browser used to navigate to /battle on its own the moment a fight
+    // appeared to start. The trouble is what "appeared to start" means:
+    // `inCombat` is not a fight at all, it is
+    //
+    //     npcEncounters.some(n => n.is_active && isCombatant(n.challenge_rating))
+    //
+    // — an NPC being FLAGGED ACTIVE with a challenge rating above zero. The
+    // Lich activates NPCs while narrating, so a drow being mentioned in a
+    // conversation was enough to throw the DM out of the scene and onto the
+    // battle board mid-sentence. It never needed a combat_state row to exist,
+    // and none of #406, #410 or #423 touched that, because each of those was
+    // fixing where the redirect SENT him rather than whether it should fire.
+    //
+    // So it no longer fires. The board is one click away — the "Open Battle
+    // Board" link at the bottom of the stage, which still lights up "· Live"
+    // when a fight is genuinely running, so nothing is hidden; it simply waits
+    // to be asked.
+    //
+    // The rule and its tests are kept, not deleted. Turning this back on is
+    // this constant, and lib/board-exit still guards the case it was written
+    // for — that ARRIVING somewhere is not an event happening there.
+    if (AUTO_OPEN_BOARD_ON_COMBAT
+        && shouldRedirectToBoard({ inCombat, previous: wasInCombat.current, isDm: hasDmKey(), leftDeliberately })) {
       window.location.assign("/battle")
     }
     if (rosterObserved) wasInCombat.current = inCombat
