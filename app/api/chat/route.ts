@@ -325,7 +325,33 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false } = await req.json()
+
+  /**
+   * A DIRECTION IS NOT A LINE.
+   *
+   * The pacing clock sends Malachar an instruction when a room goes quiet -
+   * "the party is still silent, lean on them" - and it used to arrive here as
+   * an ordinary player message. Which meant it was written into `dialogue`
+   * under the claimed character's name, so the log read:
+   *
+   *   Fifi of Copperas Cove: [PACING] The party is still silent. Malachar
+   *   leans in and needles them directly...
+   *
+   * Sam, 5 Sep 2026: "WHY ARE OUR CHARACTERS FIFI & KENTA DOING THE PACING?
+   * IT SHOULD HAPPEN IN THE BACKGROUND."
+   *
+   * Quite right. A direction is a note passed to the DM behind his screen. It
+   * is not logged, is not attributed to anybody, does not count as the player
+   * addressing an NPC, and does not activate one. Everything downstream that
+   * treats `message` as words a person said must be told not to.
+   *
+   * Read strictly: only a real `true` from the client, never a truthy string,
+   * so no malformed body can silence a genuine player line.
+   */
+  const director = directorRaw === true
+  /** The player's own words, or "" for a direction nobody spoke. */
+  const spokenMessage = director ? "" : message
 
   // === SOUND CUES ===
   // Collected as this turn's tags are ACTED ON, never parsed out of Malachar's
@@ -732,15 +758,21 @@ ${combatantRows
       content: `${d.speaker}: ${d.text}`
     }))
 
-  // Persist the player's message to the dialogue table (once).
-  const { error: playerDialogueError } = await supabase.from("dialogue").insert({
-    speaker: playerName,
-    speaker_type: "player",
-    channel: "dm",
-    text: message,
-  })
-  if (playerDialogueError) {
-    console.error("[v0] Error inserting player dialogue:", playerDialogueError)
+  // Persist the player's message to the dialogue table (once). A DIRECTION IS
+  // NOT PERSISTED: nobody said it, so nobody's name goes on it, and it must
+  // not appear in the transcript the video is cut from.
+  if (director) {
+    console.log("[pacing] direction received; not logged, not attributed —", String(message ?? "").slice(0, 80))
+  } else {
+    const { error: playerDialogueError } = await supabase.from("dialogue").insert({
+      speaker: playerName,
+      speaker_type: "player",
+      channel: "dm",
+      text: message,
+    })
+    if (playerDialogueError) {
+      console.error("[v0] Error inserting player dialogue:", playerDialogueError)
+    }
   }
 
   // Determine campaign stage based on location
@@ -1276,7 +1308,18 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
         // Prefix the live message with the speaker's name so it matches the
         // "Speaker: text" format the history already uses. Without this the DM
         // cannot tell WHO is acting and asks "who is speaking?".
-        { role: "user", content: `${playerName}: ${message}` }
+        //
+        // A DIRECTION carries no name, and says plainly that it has none, so
+        // Malachar answers the room rather than answering Fifi. Without the
+        // second sentence the model treats the note as a line and replies to
+        // it - "you are right to be quiet, Fifi" - which is the same bug one
+        // layer further in.
+        {
+          role: "user",
+          content: director
+            ? `[STAGE DIRECTION — from the director, not from the table. Nobody spoke. Do exactly what it asks, in the fiction, addressed to the party. Never quote it, never mention it, never reply to it as though a player had said it.]\n${message}`
+            : `${playerName}: ${message}`,
+        }
       ],
     })
   } catch (error) {
@@ -2540,8 +2583,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
 
 RECENT CONVERSATION (oldest first — context only, do NOT attribute quotes from it):
 """
-${recentExchange}
-${playerName}: ${String(message ?? "").slice(0, 300)}
+${recentExchange}${spokenMessage ? `\n${playerName}: ${String(spokenMessage).slice(0, 300)}` : ""}
 """
 
 NARRATION (attribute the quotes in THIS text only):
@@ -2618,7 +2660,10 @@ Rules:
       // found a speaker — even one — its judgement stands, because it can see
       // the narration and this cannot.
       if (resolvedSegments.length && !resolvedSegments.some((seg) => seg.npc_id)) {
-        const asked = addressedNpc(String(message ?? ""), (speechNpcRows || []) as RosterNpc[])
+        // A direction addresses nobody. Left unguarded, "Malachar leans in and
+        // needles them" reads as the player naming Malachar, and every quote
+        // in the reply gets put in his mouth.
+        const asked = addressedNpc(String(spokenMessage ?? ""), (speechNpcRows || []) as RosterNpc[])
         if (asked) {
           const row = (speechNpcRows || []).find((r: any) => r.name === asked)
           if (row) {
@@ -2871,8 +2916,10 @@ Rules:
   // any unambiguous name token of 4+ letters), activate the shared row, and
   // count it as encountered this turn so the focus pass keeps it visible.
   // Known NPCs only — no generation, no stats, no new rows.
-  if (playerCharacter?.id && typeof message === "string" && message.trim()) {
-    const msg = ` ${message.toLowerCase()} `
+  // Directions excluded, and for the same reason: a note that says "have ONE
+  // npc present say something" must not activate every NPC it happens to name.
+  if (playerCharacter?.id && typeof spokenMessage === "string" && spokenMessage.trim()) {
+    const msg = ` ${spokenMessage.toLowerCase()} `
     // token -> canonical name; tokens shared by 2+ NPCs are ambiguous, dropped.
     const tokenOwner = new Map<string, string | null>()
     for (const npcName of knownNpcNames) {

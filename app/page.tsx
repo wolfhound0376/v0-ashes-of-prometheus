@@ -1060,7 +1060,11 @@ if (error) {
       nudging.current = true
       pacing.current = onNudged(pacing.current, Date.now())
       console.log(`[pacing] the room went quiet — ${kind}`)
-      void sendToLich(nudgePrompt(kind), selectedCharacterId, claimToken)
+      // A NOTE PASSED BEHIND THE SCREEN, not a line at the table. `director`
+      // keeps it out of the dialogue log and off the claimed character's name.
+      // Sam: "WHY ARE OUR CHARACTERS FIFI & KENTA DOING THE PACING? IT SHOULD
+      // HAPPEN IN THE BACKGROUND."
+      void sendToLich(nudgePrompt(kind), selectedCharacterId, claimToken, { director: true })
         .catch((e) => console.error("[pacing] nudge failed", e))
         .finally(() => { nudging.current = false })
     }, 4000)

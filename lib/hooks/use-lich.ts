@@ -35,10 +35,25 @@ interface LichResponse {
 export function useLich(campaignId: string = "abyss") {
   const [isLoading, setIsLoading] = useState(false)
 
+  /**
+   * `director` marks a message that NOBODY AT THE TABLE SAID.
+   *
+   * The pacing clock (lib/pacing) prods a quiet room by sending Malachar an
+   * instruction - "the party is still silent, lean on them". That instruction
+   * used to travel down this same pipe as an ordinary player line, so
+   * /api/chat wrote it into `dialogue` under whichever character the browser
+   * had claimed, and the log showed Fifi and Kenta solemnly reading the stage
+   * directions aloud. Sam, 5 Sep 2026: "WHY ARE OUR CHARACTERS FIFI & KENTA
+   * DOING THE PACING? IT SHOULD HAPPEN IN THE BACKGROUND".
+   *
+   * A direction is for the DM's ears. It is never logged, never attributed to
+   * a character, and never read as something a player did.
+   */
   const sendMessage = useCallback(async (
     message: string,
     characterId?: string | null,
     claimToken?: string | null,
+    opts?: { director?: boolean },
   ): Promise<LichResponse> => {
     setIsLoading(true)
 
@@ -62,7 +77,7 @@ export function useLich(campaignId: string = "abyss") {
           response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, campaignId, characterId, claimToken }),
+            body: JSON.stringify({ message, campaignId, characterId, claimToken, director: opts?.director === true }),
           })
           // The server answered — success or failure, that is the answer.
           break
