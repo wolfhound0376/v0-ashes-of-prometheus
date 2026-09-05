@@ -394,6 +394,46 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     return () => window.removeEventListener("keydown", onKey)
   }, [placing])
   const placeVerbRef = useRef<(item: { id: string; name: string }, gx: number, gy: number) => Promise<void>>(async () => {})
+
+  /**
+   * THE PLAYER'S OWN HANDS. Sam: "we should be able to pick up items both as
+   * an option in an icon, throw item, and by double clicking it and a 'would
+   * you like to pick up X item'."
+   *
+   * Three ways in, because each answers a different moment. TAKE is for when
+   * you know there is something at your feet and do not want to hunt for a
+   * two-inch dagger with the mouse. Clicking the pile is for when you can see
+   * it. And both now ASK first: a pickup used to fire on the down-click, so
+   * the only way to find out whether you had hit the shard was that it was
+   * gone. THROW is the other half — a dagger you can only carry is a line on
+   * a sheet; a dagger you can put across the room is a decision.
+   *
+   * The prices are the table's, not the book's. Sam: "picking up doesn't cost
+   * anything. equipping or throwing does." The server holds that rule; this
+   * only says it out loud on the confirm so nobody is surprised.
+   */
+  const [pendingPickup, setPendingPickup] = useState<GroundItemRow | null>(null)
+  const [reachPiles, setReachPiles] = useState<GroundItemRow[] | null>(null)
+  const pickUpRef = useRef<(row: GroundItemRow) => Promise<void>>(async () => {})
+  /** Every pile within arm's reach of the character this browser drives. */
+  const nearbyRef = useRef<() => GroundItemRow[]>(() => [])
+
+  type PackRow = { id: string; name: string; quantity: number; weight: number | null }
+  const [packPicker, setPackPicker] = useState(false)
+  const [pack, setPack] = useState<PackRow[] | null>(null)
+  const [throwing, setThrowing] = useState<PackRow | null>(null)
+  const throwingRef = useRef<PackRow | null>(null)
+  useEffect(() => { throwingRef.current = throwing }, [throwing])
+  const throwVerbRef = useRef<(row: PackRow, gx: number, gy: number) => Promise<void>>(async () => {})
+
+  // Escape puts the thing back in the pack. Arming a throw must never be a
+  // trap you can only leave by throwing.
+  useEffect(() => {
+    if (!throwing) return
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") setThrowing(null) }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [throwing])
   // "15 ft" floating under the cursor while a walk is being lined up.
   const [moveHint, setMoveHint] = useState<string | null>(null)
   const [combat, setCombat] = useState<{
@@ -810,6 +850,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   useEffect(() => { selectedRef.current = selected }, [selected])
   useEffect(() => { dmMoveRef.current = dmMove }, [dmMove])
   useEffect(() => { myCharRef.current = myCharacterId }, [myCharacterId])
+
+  // The pack is read when the shelf opens, not held open: an inventory that
+  // changed while the shelf was shut would otherwise offer a dagger that is
+  // already on the floor.
+  useEffect(() => {
+    if (!packPicker || !myCharacterId) return
+    setPack(null)
+    const sb = createClient()
+    void sb.from("inventory_items").select("id,name,quantity,weight").eq("character_id", myCharacterId).order("name")
+      .then((res: { data: unknown }) => setPack(((res.data ?? []) as PackRow[])))
+  }, [packPicker, myCharacterId])
+
   // Combat state feeds the reach overlay: turn passes, movement spent,
   // fight ends — each repaints (or clears) the yellow squares.
   useEffect(() => {
@@ -1285,7 +1337,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const propHit = raycaster.intersectObjects(groundItems.objects(), true)[0]
         const pile = groundItems.rowFor(propHit?.object)
         if (pile) {
-          void pickUp(pile)
+          // ASK, don't take. Sam wanted "a 'would you like to pick up X item'"
+          // and he is right: this used to fire on the down-click, so the only
+          // way to learn you had hit the pile was that it had gone. A
+          // double-click gets here on its first click and the card is already
+          // up by the second.
+          setPendingPickup(pile)
           return
         }
       }
@@ -1316,6 +1373,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // armed. Targeting and walking are different intentions and the same
       // click cannot mean both — so an armed caster clicking open floor is
       // told to pick a target or press Escape, and stays put.
+      // A THROW IS ARMED: THROW chose the thing, this click is where it lands.
+      // Before the DM's placement so a DM who is also playing a character can
+      // still throw, and before the walk so the square is a target, not a step.
+      if (throwingRef.current) {
+        if (!floorPlane) return
+        const aimHit = raycaster.intersectObject(floorPlane, false)[0]
+        if (!aimHit) return
+        const it = throwingRef.current
+        throwingRef.current = null
+        setThrowing(null)
+        void throwVerbRef.current(it, Math.floor(aimHit.point.x / SQ), Math.floor(aimHit.point.z / SQ))
+        return
+      }
       // THE DM SETS A THING DOWN: ITEM chose it, this click is the square.
       if (placingRef.current) {
         if (!floorPlane) return
@@ -1456,7 +1526,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               : !mine
                 ? "your character is not on this board"
                 : near
-                  ? "click to pick up"
+                  ? "click to take it"
                   : "out of reach — move next to it"
             setHoverRead({
               x: ev.clientX - rect.left,
@@ -1994,6 +2064,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       } catch {
         say("The board could not reach the server.")
       }
+    }
+    // The confirm card and the TAKE button both live in JSX, outside this
+    // effect; they reach the hand through here.
+    pickUpRef.current = pickUp
+    nearbyRef.current = () => {
+      const me = myCharRef.current
+      if (!me || !groundItems) return []
+      const mine = Array.from(tokensRef.current.values()).find((t) => t.row.character_id === me)
+      if (!mine) return []
+      const at = { x: mine.row.grid_x ?? 0, y: mine.row.grid_y ?? 0 }
+      return groundItems.rows().filter((r) => withinReach(at, { x: r.grid_x, y: r.grid_y }))
     }
 
     /**
@@ -6189,6 +6270,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
   // Ask the server to resolve a spell that has just been thrown.
   useEffect(() => {
+    // HEAVING A THING ACROSS THE ROOM. The range check lives in lib/throwing
+    // and runs again on the server; this sends the square and reports the
+    // sentence. It costs an action in a fight, which is why the shelf says so
+    // before you pick anything.
+    throwVerbRef.current = async (row, gx, gy) => {
+      const me = myCharRef.current
+      if (!me) { say("Claim a character before throwing anything."); return }
+      try {
+        const res = await fetch("/api/ground-items", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...dmHeaders() },
+          body: JSON.stringify({
+            action: "throw", character_id: me, inventory_item_id: row.id, quantity: 1, gx, gy, sandbox,
+          }),
+        })
+        const data = await res.json().catch(() => null)
+        say(res.ok ? (data?.line ?? `${row.name} clatters to the floor.`) : (data?.error ?? "It would not leave your hand."))
+      } catch {
+        say("The board could not reach the server.")
+      }
+    }
+
     placeVerbRef.current = async (item, gx, gy) => {
       try {
         const res = await fetch("/api/ground-items", {
@@ -6708,6 +6811,33 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               MOVE
             </BoardBtn>
           )}
+          {/* THE PLAYER'S HANDS. Shown to anyone driving a character — the DM
+              has no hands on the board and already has ITEM. */}
+          {myCharacterId && (
+            <BoardBtn
+              onClick={() => {
+                const near = nearbyRef.current()
+                if (near.length === 0) { say("Nothing within reach to pick up."); return }
+                if (near.length === 1) { setPendingPickup(near[0]); return }
+                setReachPiles(near)
+              }}
+              title="Pick up what is at your feet — costs nothing"
+            >
+              TAKE
+            </BoardBtn>
+          )}
+          {myCharacterId && (
+            <BoardBtn
+              on={packPicker || Boolean(throwing)}
+              onClick={() => {
+                if (throwing) { setThrowing(null); return }
+                setPackPicker((v) => !v)
+              }}
+              title={throwing ? `Throwing ${throwing.name} — click a square, Escape to cancel` : "Throw something out of your pack — costs your action"}
+            >
+              THROW
+            </BoardBtn>
+          )}
           {dm && (
             <BoardBtn
               on={placePicker || Boolean(placing)}
@@ -6766,6 +6896,115 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           <button
             type="button"
             onClick={() => setPlacePicker(false)}
+            className="mt-2 w-full border border-[#4a4034] bg-black/60 px-2 py-1 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+          >
+            CLOSE
+          </button>
+        </div>
+      )}
+
+      {/* WOULD YOU LIKE TO PICK UP X.
+          Sam asked for this in so many words. It costs nothing, so the card
+          says so plainly rather than pretending to weigh a decision — the
+          point is confirming you hit the thing you meant to hit. */}
+      {pendingPickup && (
+        <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-black/55 backdrop-blur-[2px]">
+          <div className="w-[300px] border border-[#c99a49] bg-[#0b0d12]/95 p-4 font-mono shadow-[0_0_28px_#c99a4955]">
+            <div className="text-[10px] tracking-[0.2em] text-[#cdb276]">ON THE FLOOR</div>
+            <p className="mt-2 text-[12px] leading-relaxed text-[#e8dcc0]">
+              Would you like to pick up{" "}
+              <span className="text-[#f3c94b]">
+                {pendingPickup.quantity > 1 ? `${pendingPickup.quantity} ${pendingPickup.name}` : pendingPickup.name}
+              </span>
+              ?
+            </p>
+            <p className="mt-1 text-[10px] text-[#8b8069]">Picking something up costs you nothing.</p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => {
+                  const row = pendingPickup
+                  setPendingPickup(null)
+                  setReachPiles(null)
+                  void pickUpRef.current(row)
+                }}
+                className="flex-1 border border-[#c99a49] bg-[#3a2c10] px-3 py-1.5 text-[10px] tracking-wider text-[#f7e9c6] hover:bg-[#54400f]"
+              >
+                TAKE IT
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingPickup(null)}
+                className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+              >
+                LEAVE IT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MORE THAN ONE THING AT YOUR FEET. TAKE with a single pile goes
+          straight to the card above; a heap asks which. */}
+      {reachPiles && reachPiles.length > 1 && (
+        <div className="pointer-events-auto absolute inset-0 z-40 grid place-items-center bg-black/55 backdrop-blur-[2px]">
+          <div className="w-[280px] border border-[#c99a49] bg-[#0b0d12]/95 p-3 font-mono shadow-[0_0_28px_#c99a4955]">
+            <div className="text-[10px] tracking-[0.2em] text-[#cdb276]">WITHIN REACH</div>
+            <div className="mt-2 max-h-[220px] overflow-y-auto">
+              {reachPiles.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => { setReachPiles(null); setPendingPickup(r) }}
+                  className="block w-full border-b border-[#2a2216] px-1 py-1 text-left text-[11px] text-[#d8c9a3] hover:bg-[#1a1408] hover:text-[#f3c94b]"
+                >
+                  {r.quantity > 1 ? `${r.name} ×${r.quantity}` : r.name}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setReachPiles(null)}
+              className="mt-2 w-full border border-[#4a4034] bg-black/60 px-2 py-1 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+            >
+              CLOSE
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* THE PACK, OPENED TO THROW SOMETHING OUT OF IT. Chooses the thing;
+          the next floor click is the square. Priced up front, because a throw
+          spends the action and a surprise there is a lost turn. */}
+      {packPicker && myCharacterId && (
+        <div className="pointer-events-auto absolute right-3 top-14 z-40 w-[264px] border border-[#e07038] bg-[#0b0d12]/95 p-3 font-mono shadow-[0_0_24px_#000000aa]">
+          <div className="text-[10px] tracking-[0.2em] text-[#ffb27a]">THROW SOMETHING</div>
+          <p className="mt-1 text-[9px] leading-relaxed text-[#8b8069]">
+            Costs your action. Pick a thing, then click the square it lands on.
+          </p>
+          <div className="mt-2 max-h-[240px] overflow-y-auto">
+            {pack === null && <div className="py-1 text-[10px] italic text-[#6d6552]">opening the pack…</div>}
+            {pack?.length === 0 && <div className="py-1 text-[10px] italic text-[#6d6552]">nothing to throw</div>}
+            {(pack ?? []).map((it) => (
+              <button
+                key={it.id}
+                type="button"
+                onClick={() => {
+                  setThrowing(it)
+                  setPackPicker(false)
+                  say(`${it.name} — click a square to throw it. Escape to cancel.`)
+                }}
+                className="block w-full border-b border-[#2a2216] px-1 py-1 text-left text-[11px] text-[#d8c9a3] hover:bg-[#1a1408] hover:text-[#ffb27a]"
+              >
+                {it.name}
+                {it.quantity > 1 && <span className="ml-1 text-[9px] text-[#7a6a4a]">×{it.quantity}</span>}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPackPicker(false)}
             className="mt-2 w-full border border-[#4a4034] bg-black/60 px-2 py-1 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
           >
             CLOSE

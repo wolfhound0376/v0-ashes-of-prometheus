@@ -69,6 +69,34 @@ export type InteractionVerdict =
   | { ok: false; reason: string }
 
 /**
+ * WHAT EACH HANDLING OF A THING COSTS.
+ *
+ * Sam's ruling, and it is his table: "picking up doesn't cost anything.
+ * equipping or throwing does."
+ *
+ * The SRD is stricter — one free object interaction per turn, a second one
+ * costs the Use an Object action — and this used to enforce that. In play it
+ * spent a rogue's whole action on bending down, which made the floor
+ * something to avoid rather than something to use. A ruling that gets the
+ * table reaching for scenery is worth more than the letter here.
+ *
+ * DRAWING a weapon is still the free interaction the book says it is, and
+ * throwing is a genuine action, so the economy still means something.
+ */
+export type Handling = "pickup" | "equip" | "throw" | "drop"
+
+export function handlingCost(what: Handling): "none" | "free" | "action" {
+  switch (what) {
+    // Free, and not even the free interaction. Bending down is not a turn.
+    case "pickup": return "none"
+    case "drop":   return "none"
+    // "These do take an action though" - Sam, on the paper doll.
+    case "equip":  return "free"
+    case "throw":  return "action"
+  }
+}
+
+/**
  * What picking something up costs, SRD 5.1 "Interacting with Objects Around
  * You": one free object interaction on your turn, as part of your move or
  * your action; a second one is the Use an Object action. So the first pickup

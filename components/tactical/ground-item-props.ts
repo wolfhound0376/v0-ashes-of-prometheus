@@ -21,6 +21,8 @@ export interface GroundItemHandle {
   sync: (raw: unknown) => void
   /** Everything clickable, for the raycaster. */
   objects: () => THREE.Object3D[]
+  /** Every pile currently drawn. The board asks so TAKE knows what is in reach. */
+  rows: () => GroundItemRow[]
   /** The row behind a hit object, or null. */
   rowFor: (hit: THREE.Object3D | null | undefined) => GroundItemRow | null
   /** Called from the render loop so the ring can breathe. */
@@ -125,6 +127,9 @@ export function layGroundItems(opts: {
     },
     objects() {
       return Array.from(drawn.values(), (d) => d.root)
+    },
+    rows() {
+      return Array.from(drawn.values(), (d) => d.row)
     },
     rowFor(hit) {
       let o: THREE.Object3D | null | undefined = hit
