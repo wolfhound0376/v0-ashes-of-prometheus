@@ -20,6 +20,7 @@ export function SummonCard({
   round,
   distanceFt,
   canAct,
+  dmOutOfTurn = false,
   arming,
   onMove,
   onUse,
@@ -33,6 +34,8 @@ export function SummonCard({
   distanceFt: number | null
   /** The caster's turn, action unspent. */
   canAct: boolean
+  /** DM acting outside the caster's turn: allowed, but say so. */
+  dmOutOfTurn?: boolean
   /** MOVE has been pressed and the board is waiting for a square. */
   arming: boolean
   onMove: () => void
@@ -118,6 +121,14 @@ export function SummonCard({
         {!canAct && (
           <div style={{ fontSize: Math.max(6, W * 0.022), color: dim, fontStyle: "italic", marginTop: 3 }}>
             controlled with {casterName}&rsquo;s action, on their turn
+          </div>
+        )}
+        {/* The DM may move it whenever, and should be told that is what is
+            happening — otherwise the first out-of-turn nudge looks like the
+            action economy quietly breaking. */}
+        {canAct && dmOutOfTurn && (
+          <div style={{ fontSize: Math.max(6, W * 0.022), color: dim, fontStyle: "italic", marginTop: 3 }}>
+            DM: moving out of {casterName}&rsquo;s turn — costs no action
           </div>
         )}
       </div>

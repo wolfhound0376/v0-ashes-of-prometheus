@@ -897,11 +897,34 @@ export async function POST(req: NextRequest) {
     if (!hand || !info) return NextResponse.json({ error: "that is not a summoned effect" }, { status: 409 })
     const order = combat.turn_order as { token_id: string }[]
     const entry = order[combat.active_index]
-    if (!entry || entry.token_id !== info.caster_token) {
-      return NextResponse.json({ error: "the hand moves on its caster's turn" }, { status: 409 })
-    }
     const state = (combat.turn_state ?? {}) as { action?: boolean; bonus?: boolean; reaction?: boolean; moved_ft?: number; acknowledged?: boolean }
-    if (state.action) return NextResponse.json({ error: "the action is already spent this turn" }, { status: 409 })
+    // THE DM MAY MOVE THE HAND, WHOSEVER TURN IT IS.
+    //
+    // Sam: "still cant move mage hand fix." Not a fault in the hand — the hand
+    // was fine. Scott had cast it, it was FIFI'S TURN, and both gates below
+    // refused exactly as written. The card said so too, greyed out with
+    // "controlled with Scott's action, on their turn".
+    //
+    // But Sam is the DM, and the DM already repositions any token on the board
+    // at will through DM MOVE. A spectral hand being the one object on the
+    // table he cannot touch — while rehearsing alone, or while the player who
+    // owns it is not in the room — is the rule outliving its reason. The rule
+    // exists to stop a PLAYER moving somebody else's hand, or moving their own
+    // twice in a turn.
+    //
+    // So the two gates apply to players and not to the DM. Everything that is
+    // a SPELL rule still applies to everybody: the 30 ft leash below is not
+    // relaxed, and a hand sent past it still fades. And a DM move spends no
+    // action, because outside the caster's turn there is no action to spend —
+    // writing `action: true` onto whoever is currently up would take a turn
+    // away from an innocent character.
+    const byDm = authorized(req)
+    if (!byDm) {
+      if (!entry || entry.token_id !== info.caster_token) {
+        return NextResponse.json({ error: "the hand moves on its caster's turn" }, { status: 409 })
+      }
+      if (state.action) return NextResponse.json({ error: "the action is already spent this turn" }, { status: 409 })
+    }
     const { data: casterTok } = await db
       .from("vtt_tokens").select("id,label,grid_x,grid_y").eq("id", info.caster_token).maybeSingle()
     const casterName = casterTok?.label ?? "The caster"
@@ -947,6 +970,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "summon needs op: 'move'|'use'|'dismiss'" }, { status: 400 })
     }
 
+    // A DM nudging the hand out of turn costs nobody anything. See above.
+    if (byDm && (!entry || entry.token_id !== info.caster_token)) {
+      return NextResponse.json({ ok: true, turn_state: state, byDm: true })
+    }
     const spent = { ...state, action: true }
     await db.from("combat_state").update({ turn_state: spent, updated_at: stamp }).eq("id", combat.id)
     return NextResponse.json({ ok: true, turn_state: spent })
