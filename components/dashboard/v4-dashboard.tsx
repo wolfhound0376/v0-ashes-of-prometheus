@@ -19,6 +19,7 @@ import type { Suggestion } from "@/lib/suggestions"
 import { CinematicOverlay } from "./cinematic-overlay"
 import { createClient } from "@/lib/supabase/client"
 import { onCinematicCue } from "@/lib/cinematic-cue"
+import { triggerFor, shouldPlay, readPlayed, rememberPlayed } from "@/lib/cinematic-replay"
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
 import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
@@ -560,7 +561,11 @@ export function V4Dashboard(props: V4DashboardProps) {
   //  1. A clip plays ONCE per character. The server owns that memory
   //     (cinematic_views); this component never decides what is unseen.
   //  2. DM Mode — the bottom toggle — is the only override. It sends
-  //     dm_override, which bypasses the seen-check server-side.
+  //     dm_override, which bypasses the seen-check server-side. It escalates a
+  //     DELIBERATE PRESS ONLY. A cue Malachar emitted stays event_driven even
+  //     with the toggle on: see lib/cinematic-replay, and Sam's report of
+  //     7 Sep 2026 ("cinematics triggering all the time"), which was twenty
+  //     automatic cues taking the DM's manual-replay door.
   //  3. The trigger is the look-around CHIP, nothing else. Every generated set
   //     carries exactly one observe chip (see lib/suggestions.ts); picking it
   //     sends the action to Malachar as normal AND rolls for an unseen clip.
@@ -592,7 +597,10 @@ export function V4Dashboard(props: V4DashboardProps) {
         location: locationName,
         kind: cue ? "action" : "environment",
         scope: cue ? "solo" : "party",
-        trigger_type: asDm ? "dm_override" : cue ? "event_driven" : "player_initiated",
+        // A CUE IS NEVER AN OVERRIDE. This used to read `asDm ? "dm_override"
+        // : cue ? ...`, so DM Mode swallowed the cue case entirely and every
+        // automatic cue arrived as a deliberate replay.
+        trigger_type: triggerFor({ dmMode: asDm, fromCue: Boolean(cue) }),
       })
       if (cue) params.set("state", cue.state)
       if (seatId) params.set("character_id", seatId)
@@ -642,8 +650,21 @@ export function V4Dashboard(props: V4DashboardProps) {
         return
       }
       const body = await res.json()
-      const clip = body?.clip as { video_url?: string; scope?: string } | null
+      const clip = body?.clip as { id?: string; video_url?: string; scope?: string } | null
       if (!clip?.video_url) return // seen already, or nothing filmed here
+
+      // THE UNSEATED WINDOW REMEMBERS FOR ITSELF.
+      //
+      // The server's once-per-character memory needs a character to hang on;
+      // with no claimed seat it honestly answers "unseen" every time, which is
+      // the DM's own window replaying the same clip all evening. Ids only, in
+      // this browser, never authoritative — a seated request is decided by the
+      // server as before, and a deliberate override still replays.
+      const clipId = clip.id ?? clip.video_url
+      const trigger = triggerFor({ dmMode: asDm, fromCue: Boolean(cue) })
+      if (!shouldPlay({ clipId, characterId: seatId, trigger, playedHere: readPlayed() })) return
+      if (!seatId) rememberPlayed(clipId)
+
       setCinematicSrc(clip.video_url)
       if (clip.scope === "party") {
         // A group moment: everyone at the table sees it, not just this seat.

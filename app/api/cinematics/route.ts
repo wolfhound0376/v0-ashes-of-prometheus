@@ -110,7 +110,17 @@ async function logCinematicRequest(
 // before the clip is handed over, and a repeat is reported as
 // { clip: null, resolution: "seen", seen: true }. Two deliberate exceptions:
 //   - trigger_type=dm_override ignores the seen-check entirely. DM mode is the
-//     only way to replay something.
+//     only way to replay something. NOTE THE CLIENT SIDE OF THIS BARGAIN: the
+//     dashboard must send dm_override only for a DELIBERATE PRESS, never for a
+//     cue Malachar emitted on his own. It did not, from the day cues shipped
+//     until 7 Sep 2026, and the request log showed twenty automatic cues
+//     replaying four clips with nothing ever suppressed — Sam: "cinematics
+//     triggering all the time". The rule now lives in lib/cinematic-replay.
+//   - a browser with no claimed character cannot be remembered here at all
+//     (alreadySeen returns false, recordView declines to write a row it could
+//     never match). That is honest, not a bug, but it means an unseated window
+//     would replay everything; the dashboard keeps its own local list for that
+//     case. The server stays the authority whenever there IS a character.
 //   - probe=1 asks "is anything unseen available here?" WITHOUT recording a
 //     view or logging a request, so the dashboard can decide whether to offer
 //     the button. Nothing is consumed until the player asks to watch.
