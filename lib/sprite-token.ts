@@ -141,6 +141,8 @@ export class SpriteRig {
   private t = 0
   private readonly phase: number
   private pending: { state: SpriteState; opts: PlayOptions; skipToEnd: boolean } | null = null
+  /** Down with no drawn death: the card lies flat on the floor instead. */
+  private fallen = false
   private onHit: (() => void) | null = null
   private hitAt = Infinity
   private disposed = false
@@ -174,7 +176,7 @@ export class SpriteRig {
 
   /** The state being shown now. */
   get current(): SpriteState {
-    return this.state
+    return this.fallen ? "dead" : this.state
   }
 
   /**
@@ -193,8 +195,15 @@ export class SpriteRig {
     const resolved = this.resolve(state)
     if (!resolved) {
       opts.onHit?.()
+      if (state === "dead") {
+        // Never drawn dying. A figure standing at 0 HP reads as alive, so it
+        // is laid on its back instead - still, on its standing frame.
+        this.fallen = true
+        return true
+      }
       return false
     }
+    this.fallen = false
     const anim = this.manifest.animations[resolved]!
     if (anim.loop && resolved === this.state && !opts.onHit) return true
     // A blow that was pending on the previous one-shot lands now rather than
@@ -242,9 +251,9 @@ export class SpriteRig {
     // ---- time
     this.t += dt
     if (this.t >= this.hitAt) this.fireHit()
-    let anim = m.animations[this.state]
+    let anim = this.fallen ? m.animations.idle : m.animations[this.state]
     if (!anim) return
-    if (!anim.loop && this.t >= anim.frames / anim.fps && this.state !== "dead") {
+    if (!this.fallen && !anim.loop && this.t >= anim.frames / anim.fps && this.state !== "dead") {
       // A swing or a flinch is over: the blow has landed (if it never found
       // its mark frame, now), and the figure goes back to standing. Dead
       // alone holds its last frame.
@@ -254,7 +263,9 @@ export class SpriteRig {
       if (!anim) return
     }
     const dur = anim.frames / anim.fps
-    const frame = anim.loop
+    const frame = this.fallen
+      ? 0
+      : anim.loop
       ? Math.floor(((this.t + this.phase * dur) * anim.fps) % anim.frames)
       : Math.min(anim.frames - 1, Math.floor(this.t * anim.fps))
 
@@ -270,7 +281,9 @@ export class SpriteRig {
     const dir = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8
 
     // ---- stand the card up facing the camera, whatever the body is doing
-    mesh.rotation.set(-pitch * LEAN, camYaw + Math.PI - bodyYaw, 0, "YXZ")
+    mesh.rotation.set(this.fallen ? -Math.PI / 2 : -pitch * LEAN, camYaw + Math.PI - bodyYaw, 0, "YXZ")
+    // Lying down, a hair above the floor, or the two fight over every pixel.
+    mesh.position.y = this.fallen ? 0.03 : 0
 
     // ---- point the sheet at the cell
     const tex = this.liveMaterial()?.map

@@ -3739,12 +3739,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // `from` is where the killing blow came from, when this browser saw
         // it land: it points the shaft and throws the blood. A death whose
         // hit was only ever a realtime row has no source and falls straight.
-        // A sprite with a drawn death is posed too - and is told this is a
-        // death happening now, so the rebuild below plays it rather than
-        // laying the body straight onto its last frame.
+        // A sprite is told this is a death happening now, so the rebuild
+        // below plays its drawn fall rather than landing on the last frame.
         const deathRig = entry.obj.userData.spriteRig as SpriteRig | undefined
         if (deathRig) freshSpriteDeaths.add(row.id)
-        const posed = Boolean(entry.anim?.names.includes("dead") || deathRig?.has("dead"))
+        // Every sprite counts as posed: one with no drawn death lies itself
+        // down (SpriteRig), and tipping the whole group as well would be a
+        // body that falls twice.
+        const posed = Boolean(entry.anim?.names.includes("dead") || deathRig)
         vfx.push(deathSceneVfx({
           parent: scene,
           position: at,
