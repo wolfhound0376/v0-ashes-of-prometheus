@@ -286,7 +286,13 @@ export class SpriteRig {
     mesh.position.y = this.fallen ? 0.03 : 0
 
     // ---- point the sheet at the cell
-    const tex = this.liveMaterial()?.map
+    const worn = this.liveMaterial()
+    // A death that fades the body (death-vfx) lowers opacity, and alpha x
+    // opacity under the 0.5 cut-out would drop the whole figure at once,
+    // half-way through its fade. Pixel art is fully solid or fully clear, so
+    // while it fades the cut-out can sit near zero and the fade stays a fade.
+    if (worn) worn.alphaTest = worn.opacity < 0.999 ? 0.01 : 0.5
+    const tex = worn?.map
     if (tex) {
       tex.offset.set(frame / anim.frames, 1 - (dir + 1) / SPRITE_DIRECTIONS.length)
     }
