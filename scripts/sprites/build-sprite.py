@@ -48,7 +48,7 @@ STATE_PATTERNS = [
 PLAYBACK = {
     "idle": {"fps": 5, "loop": True},
     "walk": {"fps": 10, "loop": True},
-    "attack": {"fps": 12, "loop": False, "hit": 0.55},
+    "attack": {"fps": 12, "loop": False, "hit": 0.75},
     "cast": {"fps": 10, "loop": False, "hit": 0.6},
     "hurt": {"fps": 10, "loop": False},
     "dead": {"fps": 8, "loop": False},

@@ -11,6 +11,13 @@
   ],
   "ppu": 100,
   "animations": {
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 6,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.75
+    },
     "hurt": {
       "sheet": "hurt.png",
       "frames": 6,
