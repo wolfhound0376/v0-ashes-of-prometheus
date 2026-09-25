@@ -32,7 +32,21 @@ import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
+// The HD-2D grade. `postprocessing` is the pmndrs engine that
+// @react-three/postprocessing wraps; this board is imperative three.js, not
+// react-three-fiber, so it takes the engine directly — same effects, no R3F.
+import {
+  BloomEffect,
+  DepthOfFieldEffect,
+  EffectComposer,
+  EffectPass,
+  RenderPass,
+  ToneMappingEffect,
+  ToneMappingMode,
+  VignetteEffect,
+} from "postprocessing"
 import { createClient } from "@/lib/supabase/client"
+import { SpriteRig, isSpriteManifestUrl } from "@/lib/sprite-token"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
 import { TurnBanner, type TurnEconomy } from "./turn-banner"
 import {
@@ -207,12 +221,47 @@ function radiusFor(size: string | null): number {
   return 0.38
 }
 
-// ── Sam's combat baseline (8/29): the board opens in FREE camera with the
-// darkness lifted and DM move off — "This should be the baseline for combat
-// for now." Flip these two constants to change the opening state; the
+// ── Sam's combat baseline (8/29): the board opens in FREE camera (since
+// HD-2D phase 1, the locked 45-deg view) with the darkness lifted and DM
+// move off — "This should be the baseline for combat for now." Flip these two constants to change the opening state; the
 // buttons still toggle everything live.
 const DEFAULT_CLASSIC_CAM = false // false = FREE camera
 const DEFAULT_DARKNESS_ON = false // false = darkness lifted
+
+// ── HD-2D, phase 1 (the Octopath look): a fixed oblique camera that turns in
+// quarter steps, a tilt-shift focus on whoever is acting, bloom on the fire,
+// haze in the distance, and pixels drawn at 1:1 instead of smoothed.
+// Every number that decides how it LOOKS lives here, so tuning is one place.
+const HD2D = {
+  /** Camera pitch above the floor. 45 deg is the HD-2D diorama angle. */
+  pitch: Math.PI / 4,
+  /** Where the first of the four quarter-turns faces (the board's old default). */
+  yaw0: Math.PI * 0.75,
+  /** How fast a quarter-turn settles; higher is snappier. */
+  turnRate: 10,
+  /** Render resolution cap. 1 = one rendered pixel per CSS pixel, upscaled
+   *  crisp (nearest-neighbour) on high-DPI screens: the pixel-snap look.
+   *  Raise to 2 to get the old smooth, full-resolution board back. */
+  maxDpr: 1,
+  /** Depth of field: world units either side of the focal plane before the
+   *  blur is total, as a fraction of camera distance; and the bokeh size. */
+  // Tuned on a test scene: 0.8 / 2 was too faint to notice, 0.27 / 4 blurred
+  // the pieces right beside the focus. This is a readable tilt-shift.
+  focusRangePerDist: 0.4,
+  bokehScale: 3,
+  /** Chest height on a Medium figure — where the focus sits on the active combatant. */
+  focusHeight: 0.8,
+  /** How fast the focus follows when the turn passes. */
+  focusRate: 4,
+  /** Bloom picks out only what is genuinely bright: fire, embers, spells. */
+  bloomThreshold: 0.85,
+  bloomIntensity: 0.9,
+  /** The dark frame toward the screen corners. */
+  vignetteOffset: 0.3,
+  vignetteDarkness: 0.75,
+  /** Distance haze. Near/far scale with camera distance so zooming keeps it. */
+  fogColor: 0x06060c,
+} as const
 
 /**
  * One button in the board's control bar.
@@ -546,6 +595,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const darknessRef = useRef<((on: boolean) => void) | null>(null)
   const [classicCam, setClassicCam] = useState(DEFAULT_CLASSIC_CAM)
   const classicRef = useRef<((on: boolean) => void) | null>(null)
+  // The camera's quarter-turn, for the control-bar buttons (Q / E do it too).
+  const rotateRef = useRef<((dir: 1 | -1) => void) | null>(null)
   /**
    * Plant a headstone on a character's square. Bridged out of the scene effect
    * the same way darknessRef is, because the thing that KNOWS somebody died is
@@ -926,19 +977,21 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
     // ---- renderer / scene / camera: the viewer's setup, current API ----
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x020204)
-    scene.fog = new THREE.Fog(0x020204, 30, 90)
+    // Background and haze share a colour, so the far board melts into the
+    // void instead of meeting it at an edge. Near/far are set by applyCamera.
+    scene.background = new THREE.Color(HD2D.fogColor)
+    scene.fog = new THREE.Fog(HD2D.fogColor, 30, 90)
 
     // TWO CAMERAS. Diablo II's look is not a perspective camera at a clever
     // angle - the original is a 2:1 axonometric projection, and matching it
     // needs an ORTHOGRAPHIC camera at the fixed dimetric elevation (~30 deg,
     // where the vertical axis forecloses by half). CLASSIC is that: locked
     // angle, drag pans, wheel zooms, no orbit - the projection IS the look.
-    // FREE keeps the perspective orbit for the DM working the board.
+    // The other is the perspective camera, which since HD-2D phase 1 no longer
+    // orbits either: 45 deg pitch, four quarter-turn headings (see HD2D).
     const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 500)
     const orthoCam = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 500)
     const CLASSIC_EL = Math.PI / 6          // 30 deg: the 2:1 foreshortening
-    const CLASSIC_AZ = Math.PI * 0.75
     let classic = DEFAULT_CLASSIC_CAM
     let orthoZoom = 1
     const activeCam = () => (classic ? orthoCam : camera)
@@ -951,15 +1004,52 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       orthoCam.bottom = -half
       orthoCam.updateProjectionMatrix()
     }
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    // No MSAA: the frame is drawn into the composer's buffers, where the
+    // canvas's own antialiasing never applies, and hard edges are the look.
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" })
     renderer.setSize(mount.clientWidth, mount.clientHeight)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, HD2D.maxDpr))
+    // With the pixel ratio capped, a high-DPI screen upscales the canvas; make
+    // that upscale nearest-neighbour so pixels stay square instead of smeared.
+    renderer.domElement.style.imageRendering = "pixelated"
     renderer.outputColorSpace = THREE.SRGBColorSpace
-    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    // Tone mapping moved into the effect chain (ToneMappingEffect below), so
+    // bloom sees the real HDR brightness first. three only tone-maps output
+    // to the screen, and the scene now renders to a buffer, so leaving ACES
+    // on here would do nothing. The exposure is still read from here — the
+    // ACES shader chunk the effect uses takes the renderer's uniform.
+    renderer.toneMapping = THREE.NoToneMapping
     renderer.toneMappingExposure = 1.35
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
+
+    // ---- the HD-2D grade: render -> focus -> bloom -> tone -> vignette ----
+    // Half-float buffers so bloom can tell a torch (brighter than white) from
+    // a pale wall (merely white). One EffectPass merges the four effects into
+    // a single fullscreen shader.
+    const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 0 })
+    const renderPass = new RenderPass(scene, activeCam())
+    composer.addPass(renderPass)
+    const dof = new DepthOfFieldEffect(activeCam(), {
+      focusDistance: 20,
+      focusRange: 16,
+      bokehScale: HD2D.bokehScale,
+    })
+    // Where the lens looks. The effect re-measures the camera's distance to
+    // this point every frame; the render loop walks it to the active combatant.
+    const focusPoint = new THREE.Vector3()
+    dof.target = focusPoint
+    const bloom = new BloomEffect({
+      mipmapBlur: true,
+      luminanceThreshold: HD2D.bloomThreshold,
+      luminanceSmoothing: 0.1,
+      intensity: HD2D.bloomIntensity,
+    })
+    const toneMap = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })
+    const vignette = new VignetteEffect({ offset: HD2D.vignetteOffset, darkness: HD2D.vignetteDarkness })
+    composer.addPass(new EffectPass(activeCam(), dof, bloom, toneMap, vignette))
+    composer.setSize(mount.clientWidth, mount.clientHeight)
 
     // Image-based fill for the FIGURES ONLY, never the pre-lit artwork.
     // A PBR material with no environment has nothing to shape its surface
@@ -999,13 +1089,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const torch2 = new THREE.PointLight(0xff7722, 18, 50, 1.8)
     scene.add(torch2)
 
-    // ---- orbit camera, as the viewer had it -------------------------
+    // ---- the locked camera --------------------------------------------
     const target = new THREE.Vector3()
-    // Diablo II's camera: low, close, committed. Orbit still works, but the
-    // default is the dimetric stare and the elevation clamp keeps you from
-    // floating up into map-editor territory where the dread evaporates.
-    let az = Math.PI * 0.75
-    let el = 0.55
+    // HD-2D: the camera no longer orbits. It holds one oblique pitch (45 deg)
+    // and turns only in quarter steps — Q / E, or the arrow buttons in the
+    // control bar — gliding to the next of four fixed headings. Drag and the
+    // arrow keys pan; the wheel zooms. A fixed angle is what lets the board
+    // read as a diorama, and four headings are enough to see behind a pillar.
+    const el = HD2D.pitch
+    let azStep = 0                         // which quarter-turn we are heading to
+    let az = HD2D.yaw0                     // where the camera is now, mid-glide
+    const azGoal = () => HD2D.yaw0 + azStep * (Math.PI / 2)
     let dist = 22
     const applyCamera = () => {
       camera.position.set(
@@ -1014,15 +1108,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         target.z + dist * Math.cos(el) * Math.sin(az),
       )
       camera.lookAt(target)
-      // The ortho camera holds the classic angle whatever the orbit does.
+      // The ortho camera keeps its classic elevation but turns with the
+      // quarter steps, so rotating works in either mode.
       orthoCam.position.set(
-        target.x + 60 * Math.cos(CLASSIC_EL) * Math.cos(CLASSIC_AZ),
+        target.x + 60 * Math.cos(CLASSIC_EL) * Math.cos(az),
         target.y + 60 * Math.sin(CLASSIC_EL),
-        target.z + 60 * Math.cos(CLASSIC_EL) * Math.sin(CLASSIC_AZ),
+        target.z + 60 * Math.cos(CLASSIC_EL) * Math.sin(az),
       )
       orthoCam.lookAt(target)
       sizeOrtho()
+      // The haze follows the zoom: the ground under the camera's gaze stays
+      // clear and the far side of the board fades, at any distance. Measured
+      // from whichever camera is drawing, so the ortho view (parked 60 units
+      // out) is not swallowed by a fog tuned for the perspective one.
+      const camD = classic ? 60 : dist
+      if (scene.fog instanceof THREE.Fog) {
+        scene.fog.near = camD * 1.05 + 2
+        scene.fog.far = camD * 3 + 12
+      }
+      // The in-focus band widens as you pull back, so a zoomed-out board is
+      // not one sharp line through a blur.
+      dof.cocMaterial.focusRange = Math.max(3, camD * HD2D.focusRangePerDist)
     }
+    // A quarter-turn: +1 is clockwise seen from above. The glide happens in
+    // the render loop; this only moves the goal.
+    const rotateCamera = (dir: 1 | -1) => { azStep += dir }
+    rotateRef.current = rotateCamera
 
     let drag: { x: number; y: number; btn: number; shift: boolean; moved: boolean } | null = null
     const onDown = (e: MouseEvent) => { drag = { x: e.clientX, y: e.clientY, btn: e.button, shift: e.shiftKey, moved: false } }
@@ -1034,15 +1145,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       drag.x = e.clientX
       drag.y = e.clientY
       if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true
-      if (classic || drag.btn === 2 || drag.shift) {
-        const right = new THREE.Vector3().subVectors(camera.position, target).cross(camera.up).normalize()
-        const fwd = new THREE.Vector3().crossVectors(camera.up, right)
-        target.addScaledVector(right, dx * dist * 0.0015)
-        target.addScaledVector(fwd, dy * dist * 0.0015)
-      } else {
-        az += dx * 0.005
-        el = Math.min(1.05, Math.max(0.3, el + dy * 0.005))
-      }
+      // Every drag pans now — the camera's angle is locked, so there is no
+      // orbit left for a drag to mean.
+      const right = new THREE.Vector3().subVectors(camera.position, target).cross(camera.up).normalize()
+      const fwd = new THREE.Vector3().crossVectors(camera.up, right)
+      target.addScaledVector(right, dx * dist * 0.0015)
+      target.addScaledVector(fwd, dy * dist * 0.0015)
       applyCamera()
     }
     // HOW CLOSE THE CAMERA MAY COME, AND WHY IT MATTERS MORE THAN IT LOOKS.
@@ -1067,7 +1175,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // floor comes down to 2.5, which finally shows the models Meshy actually
     // delivered. Still above the floor at the shallowest elevation the
     // drag allows (2.5*sin(0.3) = 0.74 units up), so it cannot dip under the
-    // board, and the near plane is 0.1 so nothing clips.
+    // board, and the near plane is 0.1 so nothing clips. (The pitch is now
+    // locked at 45 deg, which puts the closest camera 1.77 units up.)
     const onWheel = (e: WheelEvent) => {
       if (classic) {
         orthoZoom = Math.min(7, Math.max(0.45, orthoZoom * (e.deltaY > 0 ? 0.92 : 1.09)))
@@ -1102,6 +1211,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       heldPanKeys.add(k)
     }
     const onPanKeyUp = (e: KeyboardEvent) => { heldPanKeys.delete(e.key.toLowerCase()) }
+    // Q / E turn the camera a quarter. Same typing guard as the pan keys.
+    const onRotateKey = (e: KeyboardEvent) => {
+      if (e.repeat || typingNow() || e.metaKey || e.ctrlKey || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k === "q") rotateCamera(-1)
+      else if (k === "e") rotateCamera(1)
+    }
+    window.addEventListener("keydown", onRotateKey)
     const onPanBlur = () => heldPanKeys.clear() // alt-tab with a key held must not leave the camera drifting
     window.addEventListener("keydown", onPanKeyDown)
     window.addEventListener("keyup", onPanKeyUp)
@@ -1831,6 +1948,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * and the death are two moments, and this is carried between them.
      */
     const lastHitFrom = new Map<string, THREE.Vector3>()
+    /**
+     * Sprites that dropped on THIS screen, just now. A pixel-art figure keeps
+     * its own death animation, and it must play it when the killing blow
+     * lands - but a body that was already down when the board loaded lies
+     * still on its last frame instead of dying again on every reload. The
+     * rebuild after the HP change reads and clears this.
+     */
+    const freshSpriteDeaths = new Set<string>()
 
     /**
      * The SAME question, in the server's vocabulary rather than the sprite
@@ -2258,13 +2383,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // this line names it instead of leaving us to guess.
       console.log(`[cast] ${ability} → token "${found.row.label}" (character ${characterId.slice(0, 8)}…, model ${String(found.row.model_url ?? "none").split("/").pop()})`)
       const anim = found.anim
-      if (!anim) { landNow(); return } // a disc pawn has nothing to animate
+      // A PIXEL FIGURE has no mixer but does have drawn swings and casts; it
+      // goes down the same road as a model from here, with its own frames
+      // standing in for the clip (see SpriteRig.playFor).
+      const rig = anim ? undefined : (found.obj.userData.spriteRig as SpriteRig | undefined)
+      if (!anim && !rig) { landNow(); return } // a disc pawn has nothing to animate
       if (isDowned(found.row)) { landNow(); return } // a corpse casts nothing
 
       // The spell's name picks its motion, so two cantrips off the same
       // caster no longer play the identical clip — and the same spell always
       // plays the same one, which is what makes it recognisable.
-      const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
+      const explicit = anim && plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
       // A KNIFE IS NOT A GREATSWORD.
       //
       // Sam: "Fifi is still acting like she's using a long sword." She had one
@@ -2281,9 +2410,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // pickClip pools only the clips matching the SAME candidate term, so a
       // martial never wanders into a spell cast, and a model with a single
       // clip behaves exactly as before.
-      const varied = explicit ?? pickClip(swing, anim.names)
-      const clip = playState(anim, swing, true, varied)
+      const clip: { name: string; duration: number; release?: number } | null = anim
+        ? playState(anim, swing, true, explicit ?? pickClip(swing, anim.names))
+        : rig!.playFor(swing)
       if (!clip) { landNow(); return }
+      // When the blow lands, in seconds: a sprite knows its own drawn hit
+      // frame; a model's clip is looked up by name.
+      const releaseAt = clip.release ?? castEventFor(clip.name, clip.duration).release
       if (plan.state === "hurt") return // Dodge is a flinch, not a spell
 
       // Only magic throws light. "Attack" resolves to a cast clip for a
@@ -2316,7 +2449,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // points by then. Without this hold a drow's crossbow bolt drops Fifi
         // before the drow has finished raising it.
         {
-          const swingWait = castEventFor(clip.name, clip.duration).release
+          const swingWait = releaseAt
           if (swingVictim) impactHold.current.hold(swingVictim.row.id, Date.now(), holdMsFor(swingWait + 0.6))
         }
         // RANGED IS READ FROM THE REACH, not from the weapon's name.
@@ -2329,7 +2462,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const reachFt = armedRef.current?.entry.rangeFt ?? 5
         const isShot = reachFt > 5
         pending.push({
-          wait: castEventFor(clip.name, clip.duration).release,
+          wait: releaseAt,
           obj: found.obj,
           hand: "RightHand",
           spell: ability,
@@ -2386,7 +2519,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (dx * dx + dz * dz > 1e-4) found.obj.rotation.y = Math.atan2(dx, dz)
       }
 
-      const { release, hand } = castEventFor(clip.name, clip.duration)
+      const { hand } = castEventFor(clip.name, clip.duration)
+      const release = releaseAt
       const cast: PendingCast = {
         wait: release,
         obj: found.obj,
@@ -3094,6 +3228,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       noteHp(row)
       const existing = tokensRef.current.get(row.id)
       if (existing) tokenGroup.remove(existing.obj)
+      // A SPRITE OUTLIVES THE REBUILD. Every HP change rebuilds the token, and
+      // a pixel figure rebuilt from scratch would cut its own flinch off on the
+      // frame it started. The same figure is carried across into the new
+      // group instead - unless the art itself changed.
+      const oldRig = existing?.obj.userData.spriteRig as SpriteRig | undefined
+      const keptRig = oldRig && row.is_visible && oldRig.url === row.model_url ? oldRig : undefined
+      if (oldRig && !keptRig) oldRig.dispose()
       if (!row.is_visible) { tokensRef.current.delete(row.id); return }
 
       const g = buildBase(row)
@@ -3121,7 +3262,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // bobbing in the animation loop (userData.float). It has no bones and
       // no clips, so nothing below that asks for a rig ever sees it.
       const spriteUrl = row.model_url && /\.(png|webp)(\?|$)/i.test(row.model_url) ? row.model_url : null
-      if (spriteUrl) {
+      if (isSpriteManifestUrl(row.model_url)) {
+        // A PIXEL-ART FIGURE. A model_url ending in .json is a sprite
+        // manifest (public/sprites/<slug>/sprite.json): eight drawn facings,
+        // animated frame by frame, lit and shadowed like the room - see
+        // lib/sprite-token. It has no rig and no clips (entry.anim stays
+        // unset), so every path below that asks for bones passes it by; the
+        // few moments a sprite must act on - walk, swing, flinch, fall - each
+        // ask for `userData.spriteRig` by name.
+        const rig = keptRig ?? new SpriteRig(row.model_url, row.id, () => {
+          // No manifest: fall back to the disc rather than an empty square.
+          if (!disposed && tokensRef.current.get(row.id)?.obj === g) buildPawn()
+        })
+        g.add(rig.object)
+        g.userData.spriteRig = rig
+        const fresh = freshSpriteDeaths.delete(row.id)
+        if (isDowned(row)) {
+          if (rig.current !== "dead") rig.play("dead", {}, !fresh)
+        } else if (rig.current === "dead") {
+          // Healed back onto their feet.
+          rig.play("idle")
+        }
+        if (existing) g.rotation.y = existing.obj.rotation.y
+      } else if (spriteUrl) {
         const mat = new THREE.SpriteMaterial({ map: tex(spriteUrl), transparent: true, opacity: 0.78, depthWrite: false })
         const sp = new THREE.Sprite(mat)
         const w = r * 2.4
@@ -3576,7 +3739,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // `from` is where the killing blow came from, when this browser saw
         // it land: it points the shaft and throws the blood. A death whose
         // hit was only ever a realtime row has no source and falls straight.
-        const posed = Boolean(entry.anim?.names.includes("dead"))
+        // A sprite is told this is a death happening now, so the rebuild
+        // below plays its drawn fall rather than landing on the last frame.
+        const deathRig = entry.obj.userData.spriteRig as SpriteRig | undefined
+        if (deathRig) freshSpriteDeaths.add(row.id)
+        // Every sprite counts as posed: one with no drawn death lies itself
+        // down (SpriteRig), and tipping the whole group as well would be a
+        // body that falls twice.
+        const posed = Boolean(entry.anim?.names.includes("dead") || deathRig)
         vfx.push(deathSceneVfx({
           parent: scene,
           position: at,
@@ -4900,7 +5070,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       lightTexture.offset.set(-(over - 1) / 2, -(over - 1) / 2)
       boardGroup.add(darknessPlane)
       darknessRef.current = (on) => { if (darknessPlane) darknessPlane.visible = on }
-      classicRef.current = (on) => { classic = on; applyCamera() }
+      classicRef.current = (on) => {
+        classic = on
+        // The grade must see through whichever camera is drawing — depth of
+        // field reads that camera's depth buffer.
+        composer.setMainCamera(activeCam())
+        applyCamera()
+      }
 
       // Embers drifting through the torchlight.
       for (let i = 0; i < EMBERS; i++) {
@@ -4916,10 +5092,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Frame the whole tile.
       target.set((W * SQ) / 2, 0, (H * SQ) / 2)
       dist = Math.max(W, H) * SQ * 1.5 + 4
-      if (scene.fog instanceof THREE.Fog) {
-        scene.fog.near = dist * 0.9
-        scene.fog.far = dist * 2.6
-      }
+      // (The fog is set from the distance in applyCamera, below.)
       torch.position.set(target.x, 9, target.z)
       torch2.position.set(target.x + 5, 7, target.z - 4)
       applyCamera()
@@ -5554,6 +5727,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       groundItems?.tick(clock.elapsedTime)
       // Keyboard pan first, so everything below renders from this frame's view.
       panFromKeys(dt)
+      // A quarter-turn in progress glides to its heading, then lands exactly.
+      const goal = azGoal()
+      if (az !== goal) {
+        const gap = goal - az
+        az = Math.abs(gap) < 1e-3 ? goal : az + gap * Math.min(1, dt * HD2D.turnRate)
+        applyCamera()
+      }
       // The active combatant's base breathes. Following per-frame keeps the
       // glow under the token through glides without touching the glide code.
       const combatNow = combatRef.current
@@ -5707,7 +5887,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           )
           lastHitFrom.set(victimId, p.obj.position.clone())
           const victim = tokensRef.current.get(victimId)
-          if (!victim?.anim || isDowned(victim.row)) return
+          const victimRig = victim?.obj.userData.spriteRig as SpriteRig | undefined
+          if (!victim || (!victim.anim && !victimRig) || isDowned(victim.row)) return
           // WHAT THE TARGET DOES ABOUT IT.
           //
           // This used to be an unconditional flinch. The verdict now arrives
@@ -5736,7 +5917,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // uses on a model with no death clip. It is replaced for free the
           // day a real clip exists, because this only runs when there is not
           // one.
-          const played = playState(victim.anim, reaction, true)
+          // A sprite has drawn flinches only; a dodge, parry or block on one
+          // is the scripted body motion below, same as a model without the clip.
+          const played = victim.anim
+            ? playState(victim.anim, reaction, true)
+            : reaction === "hurt" && victimRig?.has("hurt") ? victimRig.playFor("hurt") : null
           if (!played) {
             const m = defenceMotion({
               body: victim.obj,
@@ -5913,12 +6098,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // The dead stay dead: a body dragged across the board must not
         // stand up to walk, and must not be handed back to its stance.
         const down = isDowned(entry.row)
+        // A pixel figure is ticked here with the body's facing as it stands;
+        // the glide below may turn it a little more, which shows next frame.
+        // One frame of lag on a turn is invisible.
+        const rig = entry.obj.userData.spriteRig as SpriteRig | undefined
+        if (rig) rig.update(dt, activeCam(), entry.obj.rotation.y)
         if (!gl) {
           // Standing still: stance, unless mid-swing.
           if (!down && entry.anim && entry.anim.state === "walk") playState(entry.anim, "idle")
+          if (!down && rig?.current === "walk") rig.play("idle")
           return
         }
         if (entry.anim && !down) playState(entry.anim, "walk")
+        if (rig && !down && (rig.current === "idle" || rig.current === "walk")) rig.play("walk")
         // Constant pace along the whole route: a long walk takes longer,
         // which is what makes it a walk. ~2.2 squares/s ≈ a brisk 11 ft/s.
         gl.s = Math.min(gl.total, gl.s + dt * 2.2)
@@ -5931,7 +6123,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         entry.obj.position.lerpVectors(a, b, f)
         // Models WALK, feet on the floor. Only the plain pawn discs keep a
         // little hop, so their slide still reads as motion.
-        entry.obj.position.y = entry.anim ? 0 : Math.sin(f * Math.PI) * 0.18
+        entry.obj.position.y = entry.anim || rig ? 0 : Math.sin(f * Math.PI) * 0.18
         // Face the way they are travelling — smoothly, leg by leg.
         const dir = new THREE.Vector3().subVectors(b, a)
         if (dir.lengthSq() > 1e-4) {
@@ -5946,6 +6138,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           stopFootsteps(entry.row.id)
           entry.obj.position.y = 0
           if (entry.anim && !down) playState(entry.anim, "idle")
+          if (rig && !down && rig.current === "walk") rig.play("idle")
         }
       })
       // Embers rise, wander, and are reborn at the floor.
@@ -5955,9 +6148,20 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // returns from Supabase. Every frame in that window touched
       // attributes.position.needsUpdate on an attribute that was not there —
       // a race the fast machine that wrote it never lost, and production did.
+      // THE LENS. In a fight the focus rides the active combatant at chest
+      // height; otherwise it rests where the camera is looking. It walks
+      // rather than jumps, so a passed turn racks focus like a film camera.
+      const focusTok = activeTok && activeTok.row.is_visible ? activeTok : undefined
+      const fx = focusTok ? focusTok.obj.position.x : target.x
+      const fz = focusTok ? focusTok.obj.position.z : target.z
+      const fy = focusTok ? HD2D.focusHeight : target.y
+      const k = Math.min(1, dt * HD2D.focusRate)
+      focusPoint.x += (fx - focusPoint.x) * k
+      focusPoint.y += (fy - focusPoint.y) * k
+      focusPoint.z += (fz - focusPoint.z) * k
       const t = clock.elapsedTime
       if (!emberGeo.attributes.position) {
-        renderer.render(scene, activeCam())
+        composer.render(dt)
         return
       }
       for (let i = 0; i < EMBERS; i++) {
@@ -5969,7 +6173,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       emberMat.opacity = 0.55 + Math.sin(t * 2.1) * 0.18   // firelight breathes
       torch.intensity = 38 + Math.sin(t * 7.3) * 4 + Math.sin(t * 13.1) * 2
 
-      renderer.render(scene, activeCam())
+      composer.render(dt)
     }
     tick()
 
@@ -5978,7 +6182,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       camera.aspect = mount.clientWidth / mount.clientHeight
       camera.updateProjectionMatrix()
       sizeOrtho()
-      renderer.setSize(mount.clientWidth, mount.clientHeight)
+      // The composer resizes the canvas and every buffer behind it together.
+      composer.setSize(mount.clientWidth, mount.clientHeight)
     }
     const ro = new ResizeObserver(onResize)
     ro.observe(mount)
@@ -5997,6 +6202,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       window.removeEventListener("mousemove", onMove)
       window.removeEventListener("keydown", onPanKeyDown)
       window.removeEventListener("keyup", onPanKeyUp)
+      window.removeEventListener("keydown", onRotateKey)
+      rotateRef.current = null
       window.removeEventListener("blur", onPanBlur)
       renderer.domElement.removeEventListener("mousemove", onHoverMove)
       renderer.domElement.removeEventListener("mousemove", onHover)
@@ -6019,6 +6226,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       blood?.dispose()
       groundItems?.dispose()
       pmrem.dispose()
+      // The grade's buffers and shaders; also disposes its passes and effects.
+      composer.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
       tokensRef.current.clear()
@@ -6718,11 +6927,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     <div className="absolute inset-0 z-10 overflow-hidden bg-[#020204]">
       <div ref={mountRef} className="absolute inset-0" />
 
-      {/* Diablo's frame: the screen itself darkens toward its corners. */}
-      <div
-        className="pointer-events-none absolute inset-0 z-[5]"
-        style={{ background: "radial-gradient(ellipse at center, transparent 52%, rgba(2,2,6,0.55) 82%, rgba(2,2,6,0.85) 100%)" }}
-      />
+      {/* Diablo's frame — the screen darkening toward its corners — is now
+          the VignetteEffect in the board's own render (see HD2D). A CSS
+          overlay on top of it would darken the corners twice. */}
 
       {/* HUD, in the game's own dress rather than the dev viewer's */}
       {/* Board controls. They used to sit at left-3 top-3 - the SAME corner as
@@ -6732,7 +6939,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[260px] rounded border border-[#3a3345] bg-black/70 px-2.5 py-1.5">
         {status && <div className="font-mono text-[10px] text-[#8a8678]">{status}</div>}
         <div className="text-[9px] leading-relaxed text-[#7a7568]">
-          drag or arrows · wheel zoom · click a door
+          drag or arrows · Q/E turn · wheel zoom · click a door
           {dm && dmMove && <span className="text-[#9a7fc0]"> · token then square to move</span>}
           {/* The hint has to name the FIRST step now. "Click a yellow square"
               was true only once the squares existed, and they no longer paint
@@ -6798,9 +7005,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             and four letters read correctly the first time without one. */}
         <div className="pointer-events-auto mt-1.5 flex justify-end gap-1">
           <BoardBtn on={showLog} onClick={() => setShowLog((v) => !v)} title="Combat log">LOG</BoardBtn>
-          <BoardBtn on={classicCam} onClick={() => setClassicCam((v) => !v)} title={classicCam ? "Classic camera — click for free look" : "Free camera — click for classic"}>
-            {classicCam ? "CLSC" : "FREE"}
+          <BoardBtn on={classicCam} onClick={() => setClassicCam((v) => !v)} title={classicCam ? "Classic camera — click for the HD-2D view" : "HD-2D camera — click for classic"}>
+            {classicCam ? "CLSC" : "HD2D"}
           </BoardBtn>
+          {/* The quarter-turns. The camera's angle is locked (HD-2D); these,
+              and Q / E, are the only way it turns. */}
+          <BoardBtn onClick={() => rotateRef.current?.(-1)} title="Turn the camera a quarter left (Q)">⟲</BoardBtn>
+          <BoardBtn onClick={() => rotateRef.current?.(1)} title="Turn the camera a quarter right (E)">⟳</BoardBtn>
           {dm && (
             <BoardBtn on={darknessOn} onClick={() => setDarknessOn((v) => !v)} title={darknessOn ? "Darkness on — click to lift" : "Darkness lifted — click to lower"}>
               DARK
