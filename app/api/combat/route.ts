@@ -30,7 +30,17 @@ import {
 } from "@/lib/summons"
 // Short canned lines, spaced and never repeated back to back. See lib/barks.
 import { barkFor } from "@/lib/barks"
-import { normalizeConditions } from "@/lib/conditions"
+import { normalizeConditions, canonicalizeCondition } from "@/lib/conditions"
+// Entering combat by the book: surprise, then initiative. Pure and seeded-
+// testable in lib/game-context; lib/combat-start turns this route's rows into
+// the sheets it reads.
+import {
+  rollInitiative, resolveSurprise, SURPRISED_CONDITION, type CheckResult, type SurpriseVerdict,
+} from "@/lib/game-context"
+import {
+  dexScoreOf, sideOf, sheetFromCharacter, sheetFromBestiary, surprisePairings,
+  type CharacterRow, type BestiaryRow, type StartToken,
+} from "@/lib/combat-start"
 // Sanctuary and Shield of Faith: the protections that ride on a token until
 // their duration runs out or their bearer swings first.
 import {
@@ -66,11 +76,16 @@ import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
 //   GET                → the active combat on the active map (anyone may ask)
 //   POST {action}      → DM only (x-dm-key, same gate as /api/travel):
 //     "start" → roll d20 + DEX mod for every visible token on the active map
-//               and freeze the order. PC mods come from characters.dex_modifier
-//               (the sheet's own number); NPC mods derive from bestiary.dex as
-//               floor((dex-10)/2). A token with neither rolls flat. Every roll
-//               is stored: the strip can show the arithmetic, because this
-//               campaign does not do hidden numbers after the fake-table era.
+//               and freeze the order (lib/game-context rollInitiative). PC DEX
+//               is characters.dex_score, or the stored dex_modifier when the
+//               sheet has no score; NPC DEX is bestiary.dex. A token with
+//               neither rolls flat. Every roll is stored: the strip can show
+//               the arithmetic, because this campaign does not do hidden
+//               numbers after the fake-table era.
+//               Optional `hiders: token_id[]` — the creatures the DM rules are
+//               sneaking. Their Stealth is rolled against the other side's
+//               passive Perception (lib/game-context resolveSurprise); anyone
+//               who notices nobody is surprised until their first turn ends.
 //     "next"  → pass the turn; wrapping the top of the order advances the round
 //     "end"   → close the fight
 //     "npc-turn" → the creature whose turn it is decides and acts for itself.
@@ -81,7 +96,8 @@ import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
 //               rather than stalling the table.
 //
 // SRD 5.1, "Combat: Initiative": one Dexterity check per combatant, standing
-// for the whole fight. Ties: higher DEX modifier first, then the dice again.
+// for the whole fight. Ties: higher DEX score first, then the dice again, and
+// flagged `tied` on the entry so PC/PC ties can be offered to the players.
 
 export const dynamic = "force-dynamic"
 
@@ -220,6 +236,25 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
 /** The board's log is the dialogue feed; the HUD is already subscribed to it. */
 async function narrate(db: ReturnType<typeof createAdminClient>, speaker: string, text: string) {
   await db.from("dialogue").insert({ speaker, text, channel: "dm" })
+}
+
+/**
+ * Take "Surprised" off these tokens' sheets. The word lasts until the end of
+ * the creature's first turn (SRD 5.1, Combat: Surprise); "next" and "end" both
+ * call this so there is one way it comes off.
+ */
+async function clearSurprised(db: ReturnType<typeof createAdminClient>, tokenIds: string[]) {
+  if (!tokenIds.length) return
+  const { data: toks } = await db.from("vtt_tokens").select("character_id").in("id", tokenIds)
+  for (const t of toks ?? []) {
+    if (!t.character_id) continue
+    const { data: ch } = await db.from("characters").select("conditions").eq("id", t.character_id).maybeSingle()
+    const conds = normalizeConditions(ch?.conditions)
+    const kept = conds.filter((c) => c.toLowerCase() !== SURPRISED_CONDITION.name)
+    if (kept.length !== conds.length) {
+      await db.from("characters").update({ conditions: kept, updated_at: new Date().toISOString() }).eq("id", t.character_id)
+    }
+  }
 }
 
 /**
@@ -489,7 +524,7 @@ export async function POST(req: NextRequest) {
 
     const { data: allTokens } = await db
       .from("vtt_tokens")
-      .select("id,label,character_id,bestiary_id,is_visible,combat_disposition,summon")
+      .select("id,label,character_id,bestiary_id,is_visible,combat_disposition,summon,allegiance")
       .eq("map_id", map.id)
       .eq("is_visible", true)
     if (!allTokens?.length) return NextResponse.json({ error: "no tokens on the board" }, { status: 409 })
@@ -504,35 +539,75 @@ export async function POST(req: NextRequest) {
     const tokens = allTokens.filter((t) => t.combat_disposition !== "flees" && !(t as { summon?: unknown }).summon)
     if (!tokens.length) return NextResponse.json({ error: "nobody on this board is willing to fight" }, { status: 409 })
 
-    // Both DEX sources in two queries, not 2N.
+    // WHO IS SNEAKING, if anyone. The DM names them — SRD 5.1, Combat:
+    // Surprise: "The GM determines who might be surprised. If neither side
+    // tries to be stealthy, they automatically notice each other." So no
+    // `hiders`, no roll, nobody surprised. Never assumed from the scene.
+    const hiderIds = new Set<string>(Array.isArray(body?.hiders) ? body.hiders.map(String) : [])
+    const strangers = [...hiderIds].filter((id) => !tokens.some((t) => t.id === id))
+    if (strangers.length) {
+      return NextResponse.json({ error: `hiders not in this fight: ${strangers.join(", ")}` }, { status: 400 })
+    }
+
+    // Every sheet the rolls read, in two queries, not 2N.
     const charIds = tokens.map((t) => t.character_id).filter(Boolean) as string[]
     const beastIds = tokens.map((t) => t.bestiary_id).filter(Boolean) as string[]
     const [chars, beasts] = await Promise.all([
-      charIds.length ? db.from("characters").select("id,dex_modifier").in("id", charIds) : Promise.resolve({ data: [] }),
-      beastIds.length ? db.from("bestiary").select("id,dex").in("id", beastIds) : Promise.resolve({ data: [] }),
+      charIds.length
+        ? db.from("characters")
+            .select("id,level,str_score,dex_score,con_score,int_score,wis_score,cha_score,dex_modifier,proficiency_bonus,passive_perception,sheet_skill_proficiencies,conditions")
+            .in("id", charIds)
+        : Promise.resolve({ data: [] }),
+      beastIds.length
+        ? db.from("bestiary").select("id,str,dex,con,int,wis,cha,skills,senses").in("id", beastIds)
+        : Promise.resolve({ data: [] }),
     ])
-    const charMod = new Map((chars.data ?? []).map((c: { id: string; dex_modifier: number | null }) => [c.id, c.dex_modifier ?? 0]))
-    const beastMod = new Map((beasts.data ?? []).map((b: { id: string; dex: number | null }) => [b.id, Math.floor(((b.dex ?? 10) - 10) / 2)]))
+    const charRow = new Map((chars.data ?? []).map((c: CharacterRow & { conditions?: unknown }) => [c.id, c]))
+    const beastRow = new Map((beasts.data ?? []).map((b: BestiaryRow) => [b.id, b]))
+    const startTokens = tokens as StartToken[]
+    const sheetOf = (t: StartToken) => {
+      const label = t.label ?? "Someone"
+      const ch = t.character_id ? charRow.get(t.character_id) : undefined
+      return ch ? sheetFromCharacter(ch, label) : sheetFromBestiary(t.bestiary_id ? beastRow.get(t.bestiary_id) : undefined, t.id, label)
+    }
 
-    const order = tokens
-      .map((t) => {
-        const dex_mod = t.character_id
-          ? charMod.get(t.character_id) ?? 0
-          : t.bestiary_id
-            ? beastMod.get(t.bestiary_id) ?? 0
-            : 0
-        const roll = d20()
-        return {
-          token_id: t.id,
-          label: t.label,
-          kind: t.character_id ? "pc" : "npc",
-          dex_mod,
-          roll,
-          total: roll + dex_mod,
-        }
-      })
-      // SRD tie-breaking: total, then DEX mod, then a fresh die.
-      .sort((a, b) => b.total - a.total || b.dex_mod - a.dex_mod || d20() - d20())
+    // SURPRISE, by the book, per creature: each hider's Dexterity (Stealth)
+    // against each opposing creature's passive Perception. See
+    // lib/game-context.ts resolveSurprise.
+    const surprisedIds = new Set<string>()
+    const surpriseLog: { stealth: CheckResult[]; verdicts: (SurpriseVerdict & { token_id: string })[] }[] = []
+    for (const pair of surprisePairings(startTokens, hiderIds, sheetOf)) {
+      const r = resolveSurprise(pair.hiders, pair.observers, Math.random)
+      const verdicts = r.verdicts.map((v, i) => ({ ...v, token_id: pair.observerIds[i] }))
+      for (const v of verdicts) if (v.surprised) surprisedIds.add(v.token_id)
+      surpriseLog.push({ stealth: r.stealth, verdicts })
+    }
+
+    // INITIATIVE: d20 + DEX modifier, nothing else (lib/game-context.ts
+    // rollInitiative). The DEX score is the sheet's; a PC imported with only a
+    // modifier rolls that modifier. Ties are flagged, not hidden.
+    const kindOf = new Map(tokens.map((t) => [t.id, t.character_id ? "pc" : "npc"]))
+    const order = rollInitiative(
+      startTokens.map((t) => ({
+        id: t.id,
+        name: t.label ?? "Someone",
+        side: sideOf(t.allegiance),
+        dex_score: t.character_id
+          ? dexScoreOf(charRow.get(t.character_id))
+          : (t.bestiary_id ? beastRow.get(t.bestiary_id)?.dex : null) ?? 10,
+      })),
+      Math.random,
+    ).map((e) => ({
+      token_id: e.id,
+      label: e.name,
+      kind: kindOf.get(e.id) ?? "npc",
+      dex_mod: e.dexMod,
+      roll: e.roll,
+      total: e.total,
+      tied: e.tied,
+      // Cleared by "next" when this creature's first turn ends.
+      surprised: surprisedIds.has(e.id),
+    }))
 
     const { data: row, error } = await db
       .from("combat_state")
@@ -540,12 +615,34 @@ export async function POST(req: NextRequest) {
       .select("id,round,active_index,turn_order,status")
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // THE SURPRISED, written only once the fight exists — a failed insert must
+    // not leave anybody frozen. PCs carry it on characters.conditions (the
+    // sheets and Malachar read it there); every creature carries it on its
+    // turn_order entry. Malachar is TOLD who is surprised; he never decides it.
+    const stamp = new Date().toISOString()
+    const surprisedWord = canonicalizeCondition(SURPRISED_CONDITION.name)
+    for (const t of startTokens) {
+      if (!surprisedIds.has(t.id) || !t.character_id) continue
+      const conds = normalizeConditions(charRow.get(t.character_id)?.conditions)
+      if (conds.some((c) => c.toLowerCase() === SURPRISED_CONDITION.name)) continue
+      await db.from("characters").update({ conditions: [...conds, surprisedWord], updated_at: stamp }).eq("id", t.character_id)
+    }
+    for (const { stealth, verdicts } of surpriseLog) {
+      const sneaks = stealth.map((s) => `${s.actor} ${s.arithmetic.replace(/ vs DC 0$/, "")}`).join("; ")
+      for (const v of verdicts) {
+        if (!v.surprised) continue
+        await narrate(db, v.observer, `${v.observer} is surprised — passive Perception ${v.passivePerception} noticed no one (Stealth: ${sneaks}).`)
+      }
+    }
+
     // Initiative is rolled and the order is written. Party-scoped: every seat
     // should hear the fight start, not only whoever pressed it. Derived from
     // the row this route has just committed, never from narration.
     return NextResponse.json({
       ok: true,
       combat: row,
+      surprise: surpriseLog,
       // THE FANFARE **AND** WHOSE TURN IT IS. Rolling initiative used to
       // announce only itself, so the creature at the top of the order was
       // never named — Sam: "Atari voice doesn't announce the first character".
@@ -2508,9 +2605,22 @@ export async function POST(req: NextRequest) {
           : `${runner.label} scrambles away from the fighting.`)
       }
     }
+    // SURPRISE ENDS WITH THE CREATURE'S FIRST TURN (SRD 5.1, Combat:
+    // Surprise). The turn now ending clears its own flag; and once round one
+    // is over nobody is surprised any more — including a creature whose turn
+    // was skipped because it died, which would otherwise wear the word forever.
+    const clearing = (combat.turn_order as { token_id: string; surprised?: boolean }[])
+      .map((e, i) => ({ e, i }))
+      .filter(({ e, i }) => e.surprised && (i === combat.active_index || roundTurned))
+    const turnOrder = clearing.length
+      ? (combat.turn_order as { surprised?: boolean }[]).map((e, i) =>
+          clearing.some((c) => c.i === i) ? { ...e, surprised: false } : e)
+      : undefined
+    await clearSurprised(db, clearing.map((c) => c.e.token_id))
     const { error } = await db
       .from("combat_state")
       .update({
+        ...(turnOrder ? { turn_order: turnOrder } : {}),
         turn_state: { action: false, bonus: false, reaction: false, moved_ft: 0, acknowledged: false },
         active_index: nextIndex,
         // Wrapping past the last combatant is a new round — SRD: "a round
@@ -2550,6 +2660,12 @@ export async function POST(req: NextRequest) {
   await db.from("vtt_tokens")
     .update({ is_hidden: false, updated_by: "combat-ended", updated_at: new Date().toISOString() })
     .eq("is_hidden", true)
+  // Nor surprised: a fight ended inside round one must not leave the word on
+  // a sheet with no turn left to clear it.
+  await clearSurprised(
+    db,
+    (combat.turn_order as { token_id: string; surprised?: boolean }[]).filter((e) => e.surprised).map((e) => e.token_id),
+  )
   const { error } = await db
     .from("combat_state")
     .update({ status: "ended", updated_at: new Date().toISOString() })
