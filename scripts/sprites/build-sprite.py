@@ -81,7 +81,7 @@ def main() -> None:
     ap.add_argument("source", help="PixelLab character id, or a downloaded .zip")
     ap.add_argument("slug", help="folder name under public/sprites, e.g. freia")
     ap.add_argument("--name", help="display name (defaults to the slug)")
-    ap.add_argument("--ppu", type=int, default=100, help="pixels per board square (default 100: a 128px figure is ~1.2 squares tall)")
+    ap.add_argument("--ppu", type=int, default=100, help="pixels per board square (default 100: a 128px figure is ~1.2 squares tall, about 6 ft; use 200 for a Small creature such as a halfling, about 3 ft)")
     ap.add_argument("--out", help="output folder (default public/sprites/<slug>)")
     args = ap.parse_args()
 
