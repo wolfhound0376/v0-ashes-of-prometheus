@@ -79,7 +79,7 @@ def open_zip(source: str) -> zipfile.ZipFile:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("source", help="PixelLab character id, or a downloaded .zip")
-    ap.add_argument("slug", help="folder name under public/sprites, e.g. shackled-heroine")
+    ap.add_argument("slug", help="folder name under public/sprites, e.g. freia")
     ap.add_argument("--name", help="display name (defaults to the slug)")
     ap.add_argument("--ppu", type=int, default=100, help="pixels per board square (default 100: a 128px figure is ~1.2 squares tall)")
     ap.add_argument("--out", help="output folder (default public/sprites/<slug>)")
