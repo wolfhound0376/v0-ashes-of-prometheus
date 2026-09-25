@@ -46,6 +46,7 @@ import {
   VignetteEffect,
 } from "postprocessing"
 import { createClient } from "@/lib/supabase/client"
+import { SpriteRig, isSpriteManifestUrl } from "@/lib/sprite-token"
 import { CombatHud, type HudCharacter, type HudLogLine } from "./combat-hud"
 import { TurnBanner, type TurnEconomy } from "./turn-banner"
 import {
@@ -1947,6 +1948,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      * and the death are two moments, and this is carried between them.
      */
     const lastHitFrom = new Map<string, THREE.Vector3>()
+    /**
+     * Sprites that dropped on THIS screen, just now. A pixel-art figure keeps
+     * its own death animation, and it must play it when the killing blow
+     * lands - but a body that was already down when the board loaded lies
+     * still on its last frame instead of dying again on every reload. The
+     * rebuild after the HP change reads and clears this.
+     */
+    const freshSpriteDeaths = new Set<string>()
 
     /**
      * The SAME question, in the server's vocabulary rather than the sprite
@@ -2374,13 +2383,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // this line names it instead of leaving us to guess.
       console.log(`[cast] ${ability} → token "${found.row.label}" (character ${characterId.slice(0, 8)}…, model ${String(found.row.model_url ?? "none").split("/").pop()})`)
       const anim = found.anim
-      if (!anim) { landNow(); return } // a disc pawn has nothing to animate
+      // A PIXEL FIGURE has no mixer but does have drawn swings and casts; it
+      // goes down the same road as a model from here, with its own frames
+      // standing in for the clip (see SpriteRig.playFor).
+      const rig = anim ? undefined : (found.obj.userData.spriteRig as SpriteRig | undefined)
+      if (!anim && !rig) { landNow(); return } // a disc pawn has nothing to animate
       if (isDowned(found.row)) { landNow(); return } // a corpse casts nothing
 
       // The spell's name picks its motion, so two cantrips off the same
       // caster no longer play the identical clip — and the same spell always
       // plays the same one, which is what makes it recognisable.
-      const explicit = plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
+      const explicit = anim && plan.state === "cast" ? castClipFor(plan.weight, anim.names, ability) : null
       // A KNIFE IS NOT A GREATSWORD.
       //
       // Sam: "Fifi is still acting like she's using a long sword." She had one
@@ -2397,9 +2410,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // pickClip pools only the clips matching the SAME candidate term, so a
       // martial never wanders into a spell cast, and a model with a single
       // clip behaves exactly as before.
-      const varied = explicit ?? pickClip(swing, anim.names)
-      const clip = playState(anim, swing, true, varied)
+      const clip: { name: string; duration: number; release?: number } | null = anim
+        ? playState(anim, swing, true, explicit ?? pickClip(swing, anim.names))
+        : rig!.playFor(swing)
       if (!clip) { landNow(); return }
+      // When the blow lands, in seconds: a sprite knows its own drawn hit
+      // frame; a model's clip is looked up by name.
+      const releaseAt = clip.release ?? castEventFor(clip.name, clip.duration).release
       if (plan.state === "hurt") return // Dodge is a flinch, not a spell
 
       // Only magic throws light. "Attack" resolves to a cast clip for a
@@ -2432,7 +2449,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // points by then. Without this hold a drow's crossbow bolt drops Fifi
         // before the drow has finished raising it.
         {
-          const swingWait = castEventFor(clip.name, clip.duration).release
+          const swingWait = releaseAt
           if (swingVictim) impactHold.current.hold(swingVictim.row.id, Date.now(), holdMsFor(swingWait + 0.6))
         }
         // RANGED IS READ FROM THE REACH, not from the weapon's name.
@@ -2445,7 +2462,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const reachFt = armedRef.current?.entry.rangeFt ?? 5
         const isShot = reachFt > 5
         pending.push({
-          wait: castEventFor(clip.name, clip.duration).release,
+          wait: releaseAt,
           obj: found.obj,
           hand: "RightHand",
           spell: ability,
@@ -2502,7 +2519,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (dx * dx + dz * dz > 1e-4) found.obj.rotation.y = Math.atan2(dx, dz)
       }
 
-      const { release, hand } = castEventFor(clip.name, clip.duration)
+      const { hand } = castEventFor(clip.name, clip.duration)
+      const release = releaseAt
       const cast: PendingCast = {
         wait: release,
         obj: found.obj,
@@ -3210,6 +3228,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       noteHp(row)
       const existing = tokensRef.current.get(row.id)
       if (existing) tokenGroup.remove(existing.obj)
+      // A SPRITE OUTLIVES THE REBUILD. Every HP change rebuilds the token, and
+      // a pixel figure rebuilt from scratch would cut its own flinch off on the
+      // frame it started. The same figure is carried across into the new
+      // group instead - unless the art itself changed.
+      const oldRig = existing?.obj.userData.spriteRig as SpriteRig | undefined
+      const keptRig = oldRig && row.is_visible && oldRig.url === row.model_url ? oldRig : undefined
+      if (oldRig && !keptRig) oldRig.dispose()
       if (!row.is_visible) { tokensRef.current.delete(row.id); return }
 
       const g = buildBase(row)
@@ -3237,7 +3262,29 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // bobbing in the animation loop (userData.float). It has no bones and
       // no clips, so nothing below that asks for a rig ever sees it.
       const spriteUrl = row.model_url && /\.(png|webp)(\?|$)/i.test(row.model_url) ? row.model_url : null
-      if (spriteUrl) {
+      if (isSpriteManifestUrl(row.model_url)) {
+        // A PIXEL-ART FIGURE. A model_url ending in .json is a sprite
+        // manifest (public/sprites/<slug>/sprite.json): eight drawn facings,
+        // animated frame by frame, lit and shadowed like the room - see
+        // lib/sprite-token. It has no rig and no clips (entry.anim stays
+        // unset), so every path below that asks for bones passes it by; the
+        // few moments a sprite must act on - walk, swing, flinch, fall - each
+        // ask for `userData.spriteRig` by name.
+        const rig = keptRig ?? new SpriteRig(row.model_url, row.id, () => {
+          // No manifest: fall back to the disc rather than an empty square.
+          if (!disposed && tokensRef.current.get(row.id)?.obj === g) buildPawn()
+        })
+        g.add(rig.object)
+        g.userData.spriteRig = rig
+        const fresh = freshSpriteDeaths.delete(row.id)
+        if (isDowned(row)) {
+          if (rig.current !== "dead") rig.play("dead", {}, !fresh)
+        } else if (rig.current === "dead") {
+          // Healed back onto their feet.
+          rig.play("idle")
+        }
+        if (existing) g.rotation.y = existing.obj.rotation.y
+      } else if (spriteUrl) {
         const mat = new THREE.SpriteMaterial({ map: tex(spriteUrl), transparent: true, opacity: 0.78, depthWrite: false })
         const sp = new THREE.Sprite(mat)
         const w = r * 2.4
@@ -3692,7 +3739,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // `from` is where the killing blow came from, when this browser saw
         // it land: it points the shaft and throws the blood. A death whose
         // hit was only ever a realtime row has no source and falls straight.
-        const posed = Boolean(entry.anim?.names.includes("dead"))
+        // A sprite with a drawn death is posed too - and is told this is a
+        // death happening now, so the rebuild below plays it rather than
+        // laying the body straight onto its last frame.
+        const deathRig = entry.obj.userData.spriteRig as SpriteRig | undefined
+        if (deathRig) freshSpriteDeaths.add(row.id)
+        const posed = Boolean(entry.anim?.names.includes("dead") || deathRig?.has("dead"))
         vfx.push(deathSceneVfx({
           parent: scene,
           position: at,
@@ -5833,7 +5885,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           )
           lastHitFrom.set(victimId, p.obj.position.clone())
           const victim = tokensRef.current.get(victimId)
-          if (!victim?.anim || isDowned(victim.row)) return
+          const victimRig = victim?.obj.userData.spriteRig as SpriteRig | undefined
+          if (!victim || (!victim.anim && !victimRig) || isDowned(victim.row)) return
           // WHAT THE TARGET DOES ABOUT IT.
           //
           // This used to be an unconditional flinch. The verdict now arrives
@@ -5862,7 +5915,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // uses on a model with no death clip. It is replaced for free the
           // day a real clip exists, because this only runs when there is not
           // one.
-          const played = playState(victim.anim, reaction, true)
+          // A sprite has drawn flinches only; a dodge, parry or block on one
+          // is the scripted body motion below, same as a model without the clip.
+          const played = victim.anim
+            ? playState(victim.anim, reaction, true)
+            : reaction === "hurt" && victimRig?.has("hurt") ? victimRig.playFor("hurt") : null
           if (!played) {
             const m = defenceMotion({
               body: victim.obj,
@@ -6039,12 +6096,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // The dead stay dead: a body dragged across the board must not
         // stand up to walk, and must not be handed back to its stance.
         const down = isDowned(entry.row)
+        // A pixel figure is ticked here with the body's facing as it stands;
+        // the glide below may turn it a little more, which shows next frame.
+        // One frame of lag on a turn is invisible.
+        const rig = entry.obj.userData.spriteRig as SpriteRig | undefined
+        if (rig) rig.update(dt, activeCam(), entry.obj.rotation.y)
         if (!gl) {
           // Standing still: stance, unless mid-swing.
           if (!down && entry.anim && entry.anim.state === "walk") playState(entry.anim, "idle")
+          if (!down && rig?.current === "walk") rig.play("idle")
           return
         }
         if (entry.anim && !down) playState(entry.anim, "walk")
+        if (rig && !down && (rig.current === "idle" || rig.current === "walk")) rig.play("walk")
         // Constant pace along the whole route: a long walk takes longer,
         // which is what makes it a walk. ~2.2 squares/s ≈ a brisk 11 ft/s.
         gl.s = Math.min(gl.total, gl.s + dt * 2.2)
@@ -6057,7 +6121,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         entry.obj.position.lerpVectors(a, b, f)
         // Models WALK, feet on the floor. Only the plain pawn discs keep a
         // little hop, so their slide still reads as motion.
-        entry.obj.position.y = entry.anim ? 0 : Math.sin(f * Math.PI) * 0.18
+        entry.obj.position.y = entry.anim || rig ? 0 : Math.sin(f * Math.PI) * 0.18
         // Face the way they are travelling — smoothly, leg by leg.
         const dir = new THREE.Vector3().subVectors(b, a)
         if (dir.lengthSq() > 1e-4) {
@@ -6072,6 +6136,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           stopFootsteps(entry.row.id)
           entry.obj.position.y = 0
           if (entry.anim && !down) playState(entry.anim, "idle")
+          if (rig && !down && rig.current === "walk") rig.play("idle")
         }
       })
       // Embers rise, wander, and are reborn at the floor.

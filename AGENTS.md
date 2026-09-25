@@ -185,6 +185,7 @@ proficiencies), `party-status.tsx`, `basic-inventory.tsx`, `top-nav.tsx`,
 | `lib/game-data.ts` | XP thresholds, class action/spell tables, `CANONICAL_START_LOCATION`, seed fallbacks. |
 | `lib/conditions.ts` | Condition vocabulary, canonicalization, colour map. Stored as jsonb `string[]`. |
 | `lib/character-visual-state.ts` | HP + conditions → `downed / restrained / poisoned / injured / idle` and the CSS filter. Single source for portrait effects. |
+| `lib/sprite-token.ts` | Pixel-art battle tokens (HD-2D). A `vtt_tokens.model_url` / `bestiary.model_url` ending in `.json` is a sprite manifest: 8 facings × idle/walk/attack/cast/hurt/dead, lit, shadowed, picked from facing vs camera. Assets live in `public/sprites/<slug>/`, built from a PixelLab character by `scripts/sprites/build-sprite.py`. No DB migration — it rides the existing `model_url`. |
 | `lib/bestiary-match.ts` | Fuzzy name matching + stat diff/patch for admin bestiary autopopulate. |
 | `lib/tts.ts` | `sanitizeForTTS` + `resolveVoice` against curated ElevenLabs voices. |
 | `lib/music-library.ts` | Static track catalog with moods. |
