@@ -68,6 +68,19 @@ export interface SpriteManifest {
 const LEAN = 0.5
 /** Light the figure gives itself, so a sprite in a dark corner is dim, not black. */
 const SELF_LIGHT = 0.35
+/**
+ * FEET OVER THE FLOOR LAYERS. The board floats see-through layers just above
+ * the floor - base ring 0.06, darkness 0.085, the party glow 0.10, the active
+ * glow - and they draw after anything solid, so whatever stands lower than
+ * ~0.1 is painted over. A 6 ft model loses its soles; a 3 ft halfling lost
+ * her boots (Sam, 9/25: "where are her feet?"). The bottom of every figure is
+ * drawn a second time, after those layers, in a band this tall (world units,
+ * above the feet). Only the band: redrawing the whole figure late would lay it
+ * over spell effects flying in front of it.
+ */
+const FEET_BAND = 0.14
+/** Draws after every floor layer (the highest is the active glow at 7), before damage numbers (999). */
+const FEET_ORDER = 8
 
 /** What to show when the asked-for state was never drawn. */
 const FALLBACK: Record<SpriteState, SpriteState[]> = {
@@ -134,6 +147,7 @@ export class SpriteRig {
   readonly url: string
   private manifest: SpriteManifest | null = null
   private mesh: THREE.Mesh | null = null
+  private feet: THREE.Mesh | null = null
   private material: THREE.MeshStandardMaterial | null = null
   private depthMaterial: THREE.MeshDepthMaterial | null = null
   private textures = new Map<SpriteState, THREE.Texture>()
@@ -282,8 +296,9 @@ export class SpriteRig {
 
     // ---- stand the card up facing the camera, whatever the body is doing
     mesh.rotation.set(this.fallen ? -Math.PI / 2 : -pitch * LEAN, camYaw + Math.PI - bodyYaw, 0, "YXZ")
-    // Lying down, a hair above the floor, or the two fight over every pixel.
-    mesh.position.y = this.fallen ? 0.03 : 0
+    // Lying down: above the floor layers (see FEET_BAND), which would
+    // otherwise wash out a body lying flat among them.
+    mesh.position.y = this.fallen ? 0.11 : 0
 
     // ---- point the sheet at the cell
     const worn = this.liveMaterial()
@@ -292,6 +307,17 @@ export class SpriteRig {
     // half-way through its fade. Pixel art is fully solid or fully clear, so
     // while it fades the cut-out can sit near zero and the fade stays a fade.
     if (worn) worn.alphaTest = worn.opacity < 0.999 ? 0.01 : 0.5
+    // The feet redraw wears whatever the body wears this frame - the death's
+    // tint and fade included - or the boots would stay bright on a corpse.
+    const feetMat = this.feet?.material as THREE.MeshStandardMaterial | undefined
+    if (worn && feetMat) {
+      if (feetMat.map !== worn.map) { feetMat.map = worn.map; feetMat.emissiveMap = worn.map; feetMat.needsUpdate = true }
+      feetMat.color.copy(worn.color)
+      feetMat.emissive.copy(worn.emissive)
+      feetMat.emissiveIntensity = worn.emissiveIntensity
+      feetMat.opacity = worn.opacity
+      feetMat.alphaTest = worn.alphaTest
+    }
     const tex = worn?.map
     if (tex) {
       tex.offset.set(frame / anim.frames, 1 - (dir + 1) / SPRITE_DIRECTIONS.length)
@@ -302,6 +328,8 @@ export class SpriteRig {
     this.disposed = true
     this.object.removeFromParent()
     this.mesh?.geometry.dispose()
+    this.feet?.geometry.dispose()
+    ;(this.feet?.material as THREE.Material | undefined)?.dispose()
     this.material?.dispose()
     const worn = this.liveMaterial()
     if (worn && worn !== this.material) worn.dispose()
@@ -353,6 +381,26 @@ export class SpriteRig {
     this.mesh.castShadow = true
     this.mesh.receiveShadow = false
     this.object.add(this.mesh)
+
+    // The feet, drawn again after the floor layers (FEET_BAND). Same plane,
+    // cut to the bottom band; its UVs are squeezed to the bottom of the cell,
+    // so the shared texture offset still points it at the right frame.
+    const bandPx = Math.min(ch, ch - py + FEET_BAND * m.ppu)
+    const band = bandPx / m.ppu
+    const feetGeo = new THREE.PlaneGeometry(w, band)
+    feetGeo.translate((cw / 2 - px) / m.ppu, (py - ch) / m.ppu + band / 2, 0)
+    const uv = feetGeo.attributes.uv as THREE.BufferAttribute
+    for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) * (bandPx / ch))
+    const feetMat = this.material.clone()
+    feetMat.transparent = true
+    feetMat.depthWrite = false
+    // Pulled a hair toward the camera so it wins against the body's own depth.
+    feetMat.polygonOffset = true
+    feetMat.polygonOffsetFactor = -1
+    feetMat.polygonOffsetUnits = -1
+    this.feet = new THREE.Mesh(feetGeo, feetMat)
+    this.feet.renderOrder = FEET_ORDER
+    this.mesh.add(this.feet)
     // WHERE A SPELL LEAVES FROM. The board throws bolts from the "RightHand"
     // or "LeftHand" bone and falls back to the token's origin - which on a
     // sprite is its feet. Two empty markers at chest height, named like the
