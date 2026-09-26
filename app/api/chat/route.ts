@@ -3222,7 +3222,13 @@ Rules:
     // the table's roller should own these faces one day, through the same
     // roll-request path attacks use. The faces are recorded in rest_events so
     // nothing about the roll is hidden in the meantime.
-    const shortRestArgs = timeEvents.some((e) => e.eventType === "short_rest") ? parseShortRestArgs(rawText) : null
+    //
+    // A long rest in the same turn wins: the hour is inside the night, and the
+    // long rest already restored everything a short rest could. Resolving both
+    // would spend Hit Dice the long rest then hands back — a free heal.
+    const shortRestArgs = !restingTonight && timeEvents.some((e) => e.eventType === "short_rest")
+      ? parseShortRestArgs(rawText)
+      : null
     if (shortRestArgs) {
       const { data: party } = await timeAdmin
         .from("characters")
