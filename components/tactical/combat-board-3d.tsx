@@ -37,7 +37,6 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 // react-three-fiber, so it takes the engine directly — same effects, no R3F.
 import {
   BloomEffect,
-  DepthOfFieldEffect,
   EffectComposer,
   EffectPass,
   RenderPass,
@@ -229,7 +228,7 @@ const DEFAULT_CLASSIC_CAM = false // false = FREE camera
 const DEFAULT_DARKNESS_ON = false // false = darkness lifted
 
 // ── HD-2D, phase 1 (the Octopath look): a fixed oblique camera that turns in
-// quarter steps, a tilt-shift focus on whoever is acting, bloom on the fire,
+// quarter steps, bloom on the fire,
 // haze in the distance, and pixels drawn at 1:1 instead of smoothed.
 // Every number that decides how it LOOKS lives here, so tuning is one place.
 const HD2D = {
@@ -243,16 +242,9 @@ const HD2D = {
    *  crisp (nearest-neighbour) on high-DPI screens: the pixel-snap look.
    *  Raise to 2 to get the old smooth, full-resolution board back. */
   maxDpr: 1,
-  /** Depth of field: world units either side of the focal plane before the
-   *  blur is total, as a fraction of camera distance; and the bokeh size. */
-  // Tuned on a test scene: 0.8 / 2 was too faint to notice, 0.27 / 4 blurred
-  // the pieces right beside the focus. This is a readable tilt-shift.
-  focusRangePerDist: 0.4,
-  bokehScale: 3,
-  /** Chest height on a Medium figure — where the focus sits on the active combatant. */
-  focusHeight: 0.8,
-  /** How fast the focus follows when the turn passes. */
-  focusRate: 4,
+  // NO DEPTH OF FIELD. Phase 1 blurred everything off the active
+  // combatant (a tilt-shift); Sam, 9/26: "Take out the blur in combat; it
+  // looks bad." Pixel sprites read worse softened than any model did.
   /** Bloom picks out only what is genuinely bright: fire, embers, spells. */
   bloomThreshold: 0.85,
   bloomIntensity: 0.9,
@@ -1024,22 +1016,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
 
-    // ---- the HD-2D grade: render -> focus -> bloom -> tone -> vignette ----
+    // ---- the HD-2D grade: render -> bloom -> tone -> vignette ----
     // Half-float buffers so bloom can tell a torch (brighter than white) from
-    // a pale wall (merely white). One EffectPass merges the four effects into
-    // a single fullscreen shader.
+    // a pale wall (merely white). One EffectPass merges the three effects into
+    // a single fullscreen shader. (No depth of field - see HD2D.)
     const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 0 })
     const renderPass = new RenderPass(scene, activeCam())
     composer.addPass(renderPass)
-    const dof = new DepthOfFieldEffect(activeCam(), {
-      focusDistance: 20,
-      focusRange: 16,
-      bokehScale: HD2D.bokehScale,
-    })
-    // Where the lens looks. The effect re-measures the camera's distance to
-    // this point every frame; the render loop walks it to the active combatant.
-    const focusPoint = new THREE.Vector3()
-    dof.target = focusPoint
     const bloom = new BloomEffect({
       mipmapBlur: true,
       luminanceThreshold: HD2D.bloomThreshold,
@@ -1048,7 +1031,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     })
     const toneMap = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })
     const vignette = new VignetteEffect({ offset: HD2D.vignetteOffset, darkness: HD2D.vignetteDarkness })
-    composer.addPass(new EffectPass(activeCam(), dof, bloom, toneMap, vignette))
+    composer.addPass(new EffectPass(activeCam(), bloom, toneMap, vignette))
     composer.setSize(mount.clientWidth, mount.clientHeight)
 
     // Image-based fill for the FIGURES ONLY, never the pre-lit artwork.
@@ -1126,9 +1109,6 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         scene.fog.near = camD * 1.05 + 2
         scene.fog.far = camD * 3 + 12
       }
-      // The in-focus band widens as you pull back, so a zoomed-out board is
-      // not one sharp line through a blur.
-      dof.cocMaterial.focusRange = Math.max(3, camD * HD2D.focusRangePerDist)
     }
     // A quarter-turn: +1 is clockwise seen from above. The glide happens in
     // the render loop; this only moves the goal.
@@ -6148,17 +6128,6 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // returns from Supabase. Every frame in that window touched
       // attributes.position.needsUpdate on an attribute that was not there —
       // a race the fast machine that wrote it never lost, and production did.
-      // THE LENS. In a fight the focus rides the active combatant at chest
-      // height; otherwise it rests where the camera is looking. It walks
-      // rather than jumps, so a passed turn racks focus like a film camera.
-      const focusTok = activeTok && activeTok.row.is_visible ? activeTok : undefined
-      const fx = focusTok ? focusTok.obj.position.x : target.x
-      const fz = focusTok ? focusTok.obj.position.z : target.z
-      const fy = focusTok ? HD2D.focusHeight : target.y
-      const k = Math.min(1, dt * HD2D.focusRate)
-      focusPoint.x += (fx - focusPoint.x) * k
-      focusPoint.y += (fy - focusPoint.y) * k
-      focusPoint.z += (fz - focusPoint.z) * k
       const t = clock.elapsedTime
       if (!emberGeo.attributes.position) {
         composer.render(dt)
