@@ -6,8 +6,8 @@
 // schedule. Reviewing the projectiles by playing the game means staging nine
 // casts of nine damage types, which is not review, it is luck.
 //
-// So this stands nine casters in a row, a target in front of each, and fires
-// them all at once. Every lane is the SAME code path the board runs:
+// So this stands a row of casters, a target in front of each, and fires them
+// all at once. Every lane is the SAME code path the board runs:
 // castSpellKitVfx, anchored to a hand, driven by the same VfxHandle pump —
 // so what looks right here looks right on the board.
 
@@ -25,6 +25,8 @@ const LANES: { type: DamageType; spell?: string; label: string; how: string }[] 
   { type: "lightning",                         label: "lightning", how: "beam" },
   { type: "thunder",                           label: "thunder",   how: "radiates" },
   { type: "physical",                          label: "physical",  how: "impact only — steel sparks" },
+  { type: "healing",   spell: "healing word",  label: "healing",   how: "luminescence around the target" },
+  { type: "psychic",   spell: "vicious mockery", label: "mockery", how: "ghosts laughing around the target" },
 ]
 
 const GAP = 2.3
@@ -48,7 +50,7 @@ export default function CastPreview() {
       const v = q.get(key)?.split(",").map(Number)
       return v && v.length === 3 && v.every(Number.isFinite) ? (v as [number, number, number]) : fallback
     }
-    camera.position.set(...triple("cam", [9, 7.5, 12.5]))
+    camera.position.set(...triple("cam", [10, 8.5, 14]))
     camera.lookAt(...triple("look", [0, 0.5, 0]))
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
@@ -177,7 +179,7 @@ export default function CastPreview() {
     <div style={{ minHeight: "100vh", background: "#07070a", color: "#cbbfa4", fontFamily: "Georgia, serif" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 16, padding: "14px 18px" }}>
         <div style={{ letterSpacing: "0.14em", textTransform: "uppercase", fontSize: 12 }}>
-          Nine casts
+          The casts
         </div>
         <button
           onClick={() => { fire.current?.(); setRun((r) => r + 1) }}

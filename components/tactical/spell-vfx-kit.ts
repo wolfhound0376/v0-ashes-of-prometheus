@@ -55,6 +55,18 @@ interface BurstSpec {
   power?: number
 }
 
+/**
+ * Something that hangs around the target after the impact sheet is done.
+ *
+ *   glow     — a luminescence around the whole body, motes rising: healing.
+ *              Sam: "Healing should cause a glowing luminescence around the
+ *              target."
+ *   mockery  — laughing ghosts circling the head: Vicious Mockery. Sam: "ghosts
+ *              of people laughing around the target that fails, causing them
+ *              distress."
+ */
+type Flourish = "glow" | "mockery"
+
 interface TypeSpec {
   /**
    * Sprite sheet for the charge disc, or absent for effects that have no
@@ -86,6 +98,15 @@ interface TypeSpec {
   motion?: MotionKind
   /** The flash, shockwave and sparks on arrival. Absent means the impact sheet alone. */
   burst?: BurstSpec
+  /**
+   * What a SINGLE-TARGET hit of this type leaves on the floor — rime after a
+   * frost bolt — laid flat under the target and held for `hold` seconds.
+   * An area spell lays `decal` instead; this is for the one square a bolt
+   * struck. Sam: "ice on the ground after frost".
+   */
+  aftermath?: { sheet: string; hold: number; size: number }
+  /** A lingering flourish around the target after the hit. See Flourish. */
+  flourish?: Flourish
   /** Tint applied to the (grayscale-ish) baked art. */
   tint: number
   /**
@@ -126,7 +147,7 @@ interface TypeSpec {
 // Fireball is lobbed, a Magic Missile weaves, a psychic bolt corkscrews.
 const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   fire:     { rune: "runeFire",     route: "ball",        travel: "pxFireball",    impact: "fireImpact",     impactScale: 4.6, charge: 0.80, speed: 13, motion: "lob",   tint: 0xffffff, decal: "aoeFire",  burst: { tint: 0xffa030, sparks: 28, ring: true, power: 1.4 } },
-  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true } },
+  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff, burst: { tint: 0x9c6bff, sparks: 12, ring: false } },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff, burst: { tint: 0xc678ff, sparks: 18, ring: true } },
   poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
@@ -144,7 +165,7 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   // Bolt read as a small thunderclap. Same sheet, wrong verb.
   lightning:{ rune: "runeStorm",    route: "beam",        travel: "thunderGust",   impact: "lightningStrike", impactScale: 1.5, charge: 0.45, tint: 0xffffff, burst: { tint: 0xbfe8ff, sparks: 26, ring: true, power: 1.3 } },
   radiant:  { rune: "runeRadiant",  route: "sky",         impact: "radiantColumn",  impactScale: 1.0, charge: 0.85, tint: 0xffffff, decal: "aoeHoly", burst: { tint: 0xffe9a8, sparks: 18, ring: true } },
-  healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff, decal: "aoeHoly", burst: { tint: 0xbfffd8, sparks: 10, ring: false, power: 0.6 } },
+  healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff, decal: "aoeHoly", burst: { tint: 0xbfffd8, sparks: 10, ring: false, power: 0.6 }, flourish: "glow" },
   acid:     { rune: "runeAcid",     route: "impact-only", impact: "acidImpact",     charge: 0.60, tint: 0xffffff, burst: { tint: 0xb8ff3a, sparks: 16, ring: false, power: 0.8 } },
   // No rune, and a charge short enough to read as a swing rather than a cast.
   // A weapon hit has no windup to show: the animation IS the windup. Steel
@@ -166,6 +187,20 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
  */
 const BY_SPELL: Record<string, DamageType> = {
   "fog cloud": "fog",
+}
+
+/**
+ * Flourishes that belong to one spell rather than to its damage type.
+ * Vicious Mockery is psychic, and every other psychic spell is not a joke.
+ */
+const FLOURISH_BY_SPELL: Record<string, Flourish> = {
+  "vicious mockery": "mockery",
+}
+
+/** Sheets and colours the flourishes are built from — white art, tinted here. */
+const FLOURISH_SHEETS: Record<Flourish, { sheet: string; tint: number; life: number }> = {
+  glow:    { sheet: "pxGlow",  tint: 0xbfffd8, life: 2.6 },
+  mockery: { sheet: "pxGhost", tint: 0xd9a6ff, life: 2.4 },
 }
 
 export function hasKitEffect(type: DamageType): boolean {
@@ -331,6 +366,8 @@ export function prewarmKit(type: DamageType): void {
   if (spec.burst) {
     for (const key of Object.values(BURST_SHEETS)) void loadSheet(key).catch(() => {})
   }
+  if (spec.aftermath) void loadSheet(spec.aftermath.sheet).catch(() => {})
+  if (spec.flourish) void loadSheet(FLOURISH_SHEETS[spec.flourish].sheet).catch(() => {})
 }
 
 // ── one animated quad ───────────────────────────────────────────────────────
@@ -567,6 +604,14 @@ export function castSpellKitVfx(opts: {
    * geometry stands in, which is the same on every seat for the same cast.
    */
   seed?: number
+  /**
+   * How the spell resolved, when the caller knows. A flourish is the spell
+   * TAKING — the ghosts laugh at the one who failed the save, the glow
+   * settles on the one who was healed — so on "miss" or "saved" it stays
+   * home. The impact sheet still plays: the bolt still arrived. Optional
+   * because the board does not pass it yet; absent means "assume it took".
+   */
+  outcome?: "hit" | "miss" | "saved"
 }): CastHandle {
   const { parent, anchor, type } = opts
   const spec = routeFor(type, opts.spell)
@@ -578,10 +623,21 @@ export function castSpellKitVfx(opts: {
   // spellbook: `area` is what makes a spell an area, and `concentration` is
   // what makes its mark linger rather than burn out.
   const entry = opts.spell ? spellEntry(opts.spell) : null
-  const mark =
+  // An area spell lays its type's floor loop over the whole area; a bolt
+  // that struck one square lays the type's aftermath under that square.
+  const mark: { sheet: string; area: AreaSpec | null; lingers: boolean; hold: number; size: number } | null =
     spec && spec.decal && entry?.area
-      ? { sheet: spec.decal, area: entry.area, lingers: entry.concentration === true }
-      : null
+      ? { sheet: spec.decal, area: entry.area, lingers: entry.concentration === true, hold: DECAL_HOLD, size: 0 }
+      : spec && spec.aftermath && target
+        ? { sheet: spec.aftermath.sheet, area: null, lingers: false, hold: spec.aftermath.hold, size: spec.aftermath.size }
+        : null
+  // The flourish follows the spell first, then the type — and only when the
+  // spell took.
+  const took = opts.outcome === undefined || opts.outcome === "hit"
+  const flourish: Flourish | null = took
+    ? (opts.spell ? FLOURISH_BY_SPELL[opts.spell.trim().toLowerCase()] : undefined) ?? spec?.flourish ?? null
+    : null
+  const flourishSpec = flourish ? FLOURISH_SHEETS[flourish] : null
 
   const group = new THREE.Group()
   parent.add(group)
@@ -600,6 +656,8 @@ export function castSpellKitVfx(opts: {
   let flash: Flip | null = null
   let ring: Flip | null = null
   let sparks: ImpactBurst | null = null
+  // The flourish's quads: one glow, or three laughing ghosts.
+  const flourishQuads: Flip[] = []
 
   const hand = new THREE.Vector3()
   anchor.getWorldPosition(hand)
@@ -624,7 +682,9 @@ export function castSpellKitVfx(opts: {
         : 0.0
   const impactAt = charge + flightTime
   const impactLife = 0.9
-  const lifetime = impactAt + impactLife
+  // A flourish outlives the impact sheet: the glow settles over the body
+  // after the shimmer, the ghosts keep laughing after the blow.
+  const lifetime = impactAt + Math.max(impactLife, flourishSpec?.life ?? 0)
 
   let t = 0
   let disposed = false
@@ -701,6 +761,21 @@ export function castSpellKitVfx(opts: {
       }
     }
 
+    if (flourish && flourishSpec) {
+      void loadSheet(flourishSpec.sheet).then((s) => {
+        if (disposed || castGone) return
+        const k = Math.sqrt(areaScale)
+        const count = flourish === "mockery" ? 3 : 1
+        const size = flourish === "mockery" ? 0.55 : 2.1 * k
+        for (let i = 0; i < count; i++) {
+          const q = new Flip(s, flourishSpec.tint, size, size)
+          q.opacity = 0
+          group.add(q.mesh)
+          flourishQuads.push(q)
+        }
+      }).catch(() => {})
+    }
+
     if (mark) {
       // Only the sheet is fetched here; the quad is built at impact, where
       // the landing point is known. A sheet that never arrives costs the
@@ -727,13 +802,14 @@ export function castSpellKitVfx(opts: {
   const disposeCast = () => {
     if (castGone) return
     castGone = true
-    for (const f of [disc, travel, impact, flash, ring, ...ghosts]) {
+    for (const f of [disc, travel, impact, flash, ring, ...ghosts, ...flourishQuads]) {
       if (!f) continue
       group.remove(f.mesh)
       f.dispose()
     }
     disc = travel = impact = flash = ring = null
     ghosts.length = 0
+    flourishQuads.length = 0
     if (sparks) { sparks.dispose(); sparks = null }
     if (light) { group.remove(light); light = null }
   }
@@ -967,6 +1043,45 @@ export function castSpellKitVfx(opts: {
         sparks?.update(dt, opts.camera)
       }
 
+      // ── 3b. the flourish ───────────────────────────────────────────────
+      if (t >= impactAt && flourish && flourishSpec && flourishQuads.length) {
+        const ft = t - impactAt
+        const life = flourishSpec.life
+        // In over a fifth of a second, out over the last half second.
+        const a = Math.min(1, ft / 0.2) * Math.min(1, Math.max(0, (life - ft) / 0.5))
+        if (flourish === "glow") {
+          // One halo around the body, breathing slowly, motes rising in
+          // the sheet itself. Lit from within.
+          const q = flourishQuads[0]
+          q.mesh.position.copy(dest)
+          q.mesh.position.y += 0.35
+          billboard(q.mesh)
+          q.mesh.scale.setScalar(1 + 0.06 * Math.sin(ft * 3.5))
+          q.clock(ft)
+          q.opacity = a
+          if (light) {
+            light.position.copy(dest).sub(group.position)
+            light.intensity = Math.max(light.intensity, 9 * a)
+          }
+        } else {
+          // Three ghosts circling the head, bobbing out of step, each on
+          // its own frame of the laugh so the ring never moves as one.
+          const n = flourishQuads.length
+          for (let i = 0; i < n; i++) {
+            const q = flourishQuads[i]
+            const ang = ft * 1.7 + (i / n) * Math.PI * 2 + seed
+            q.mesh.position.set(
+              dest.x + Math.cos(ang) * 0.62,
+              dest.y + 0.55 + Math.sin(ft * 4.2 + i * 2.1) * 0.08,
+              dest.z + Math.sin(ang) * 0.62,
+            )
+            billboard(q.mesh)
+            q.clock(ft + i * 0.17)
+            q.opacity = a
+          }
+        }
+      }
+
       // ── 4. the floor mark ──────────────────────────────────────────────
       // Laid on the impact frame, flat on the floor at the area's centre and
       // the area's size; fades in with the bloom, loops while it lives, then
@@ -976,14 +1091,15 @@ export function castSpellKitVfx(opts: {
       if (mark && t >= impactAt) {
         const mt = t - impactAt
         if (!decal && decalSheet) {
-          const d = decalDiameter(mark.area) * areaScale
+          const d = mark.area ? decalDiameter(mark.area) * areaScale : mark.size
           decal = new Flip(decalSheet, spec.tint, d, d)
           decal.mesh.rotation.x = -Math.PI / 2
-          decal.mesh.position.copy(decalCentre(mark.area, foot.set(hand.x, 0, hand.z), dest))
+          if (mark.area) decal.mesh.position.copy(decalCentre(mark.area, foot.set(hand.x, 0, hand.z), dest))
+          else decal.mesh.position.set(dest.x, DECAL_Y, dest.z)   // under the one square struck
           decal.opacity = 0
           group.add(decal.mesh)
         }
-        const hold = mark.lingers ? DECAL_CONCENTRATION_CAP : DECAL_HOLD
+        const hold = mark.lingers ? DECAL_CONCENTRATION_CAP : mark.hold
         const endAt = ended ? Math.min(endedAt, hold) : hold
         if (decal && decalSheet) {
           let a = Math.min(1, mt / DECAL_FADE_IN)

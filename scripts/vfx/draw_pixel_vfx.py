@@ -24,9 +24,12 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxFlash      48x48  6f        the white impact flash: star, bloom, rays, dots
   pxRing       64x64  8f        the floor shockwave, drawn flat: ring runs out
   pxSpark       8x8   1f        one spark, the texture the burst particles wear
+  pxIce        64x64  4f loop   rime left on the floor after a frost hit, drawn flat
+  pxGlow       64x64  8f loop   healing luminescence around a target, motes rising
+  pxGhost      32x32  4f loop   a laughing ghost — Vicious Mockery's flourish
 
-pxFlash, pxRing and pxSpark are drawn WHITE on purpose: the kit tints them
-with the damage type's colour, so one sheet serves every type.
+pxFlash, pxRing, pxSpark, pxGlow and pxGhost are drawn WHITE on purpose: the
+kit tints them with the damage type's colour, so one sheet serves every type.
 
 Usage: draw_pixel_vfx.py <public/vfx> [--preview <dir>]
 """
@@ -336,6 +339,112 @@ def shockring(f, n):
     return cell
 
 
+def ice(f, n):
+    """Rime left on the floor where a frost spell landed: a frozen patch with
+    shards, drawn flat. Four frames so the ice glints rather than sits."""
+    cell = Cell(64, 64)
+    cx = cy = 32
+    ICE = hexes("#1e3d5c", "#3f7fb5", "#8ecbee", "#d6f3ff", "#ffffff")
+    for y in range(64):
+        for x in range(64):
+            d = math.hypot((x - cx) / 27, (y - cy) / 21)
+            nz = fbm(x * 0.16, y * 0.16, 31) * 2 - 1
+            if d + nz * 0.28 > 1:
+                continue
+            crack = fbm(x * 0.45, y * 0.45, 32)
+            h = 0.28 + 0.4 * (1 - d) + (0.35 if crack > 0.68 else 0)
+            cell.put(x, y, tone(ICE, min(0.99, h)))
+    # Shards standing up out of the rime, each a small spike.
+    for k in range(7):
+        sx = cx + (_hash(k, 0, 40) * 2 - 1) * 22
+        sy = cy + (_hash(k, 1, 40) * 2 - 1) * 14
+        ln = 4 + int(_hash(k, 2, 40) * 6)
+        for i in range(ln):
+            cell.put(round(sx + i * 0.35), round(sy - i), ICE[3 if i < ln - 2 else 4])
+            cell.put(round(sx + i * 0.35) + 1, round(sy - i), ICE[2])
+    # The glint: one bright pixel wandering across the patch per frame.
+    for k in range(3):
+        gp = (f / n + k / 3) % 1
+        gx = int(cx - 18 + gp * 36)
+        gy = int(cy + math.sin(gp * math.pi * 2 + k) * 10)
+        if cell.get(gx, gy)[3]:
+            cell.put(gx, gy, ICE[4])
+            cell.put(gx + 1, gy, ICE[3])
+    return cell
+
+
+def glow(f, n):
+    """A healing luminescence: a soft pixel halo around the target with motes
+    rising through it. Drawn white, tinted by the kit."""
+    cell = Cell(64, 64)
+    cx, cy = 32, 36
+    ph = f / n
+    for y in range(64):
+        for x in range(64):
+            d = math.hypot((x - cx) / 22, (y - cy) / 28)
+            nz = fbm(x * 0.2 + ph * 2, y * 0.2 - ph * 3, 51) * 2 - 1
+            r = d + nz * 0.18
+            if r > 1:
+                continue
+            # Hollow: a bright rim and nothing inside, so the body shows
+            # through clean rather than behind a screen of dim pixels.
+            if r < 0.62:
+                continue
+            cell.put(x, y, WHITE[4] if r > 0.9 else WHITE[3] if r > 0.78 else WHITE[2])
+    # Motes rising: small crosses that drift up and fade through the ramp.
+    for k in range(7):
+        mp = (ph + k / 7) % 1
+        mx = int(cx + math.sin(k * 2.1 + mp * 3) * 16)
+        my = int(cy + 24 - mp * 46)
+        col = WHITE[4] if mp < 0.5 else WHITE[2]
+        cell.put(mx, my, col)
+        if mp < 0.7:
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                cell.put(mx + dx, my + dy, WHITE[1])
+    return cell
+
+
+def ghost(f, n):
+    """A laughing ghost — the Vicious Mockery flourish. A spectral face with
+    its mouth open, four frames of laugh. Drawn white, tinted by the kit."""
+    cell = Cell(32, 32)
+    W = WHITE
+    ph = f / n
+    # The sheet of it: a rounded head and a ragged hem that flutters.
+    for y in range(32):
+        for x in range(32):
+            cx, cy = 16, 13
+            if y <= cy:
+                inside = math.hypot((x - cx) / 10, (y - cy) / 9) <= 1
+            else:
+                hem = 26 + 2.5 * math.sin(x * 0.9 + ph * 2 * math.pi)
+                inside = abs(x - cx) <= 10 - max(0, (y - 22)) * 0.6 and y <= hem
+            if not inside:
+                continue
+            edge = (abs(x - cx) > 8) or y < 5
+            cell.put(x, y, W[2] if edge else W[3])
+    # Eyes: shut tight when the laugh is loudest, open otherwise.
+    loud = f % 2 == 1
+    for ex in (12, 20):
+        if loud:
+            cell.put(ex - 1, 11, W[0]); cell.put(ex, 11, W[0]); cell.put(ex + 1, 11, W[0])
+        else:
+            cell.put(ex, 10, W[0]); cell.put(ex, 11, W[0])
+    # Mouth: wide open on the loud frames, a grin on the rest.
+    if loud:
+        for y in range(15, 21):
+            w = 4 if y in (15, 20) else 5
+            for x in range(16 - w, 17 + w):
+                cell.put(x, y, W[0])
+    else:
+        for x in range(11, 22):
+            cell.put(x, 16 + (1 if x in (11, 21) else 0), W[0])
+    # Tears of laughter on the loud frames.
+    if loud:
+        cell.put(9, 13 + (f // 2) % 2, W[4]); cell.put(23, 14 - (f // 2) % 2, W[4])
+    return cell
+
+
 def spark(f, n):
     """One spark. The burst particles are this, scaled, tinted, thrown."""
     cell = Cell(8, 8)
@@ -359,6 +468,9 @@ SHEETS = [
     ("pxFlash",    flash,     6, 6, 24, False),
     ("pxRing",     shockring, 8, 4, 20, False),
     ("pxSpark",    spark,     1, 1, 1,  False),
+    ("pxIce",      ice,       4, 4, 6,  True),
+    ("pxGlow",     glow,      8, 4, 10, True),
+    ("pxGhost",    ghost,     4, 4, 6,  True),
 ]
 
 

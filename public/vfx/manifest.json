@@ -244,6 +244,33 @@
     "frames": 6,
     "rows": 1
   },
+  "pxGhost": {
+    "bytes": 204,
+    "cols": 4,
+    "file": "pxGhost.webp",
+    "fps": 6,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "pxGlow": {
+    "bytes": 2440,
+    "cols": 4,
+    "file": "pxGlow.webp",
+    "fps": 10,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxIce": {
+    "bytes": 578,
+    "cols": 4,
+    "file": "pxIce.webp",
+    "fps": 6,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
   "pxMissile": {
     "bytes": 278,
     "cols": 4,
