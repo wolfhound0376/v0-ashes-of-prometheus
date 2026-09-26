@@ -83,6 +83,12 @@ def main() -> None:
     ap.add_argument("--name", help="display name (defaults to the slug)")
     ap.add_argument("--ppu", type=int, default=100, help="pixels per board square (default 100: a 128px figure is ~1.2 squares tall, about 6 ft; use 200 for a Small creature such as a halfling, about 3 ft)")
     ap.add_argument("--out", help="output folder (default public/sprites/<slug>)")
+    ap.add_argument(
+        "--shift-facings", type=int, default=0,
+        help="relabel every direction this many steps anticlockwise. PixelLab's v3 reference "
+        "rotation files a 3/4-turned reference one step off (the front view saved as "
+        "'south-east'); --shift-facings 1 puts each picture back under the facing it shows",
+    )
     args = ap.parse_args()
 
     repo = Path(__file__).resolve().parents[2]
@@ -95,7 +101,12 @@ def main() -> None:
     frames = state_meta["frames"]
     load = lambda p: Image.open(io.BytesIO(z.read(p))).convert("RGBA")
 
-    rotations = {d: load(p) for d, p in frames.get("rotations", {}).items()}
+    def facing(d: str) -> str:
+        if not args.shift_facings or d not in DIRECTIONS:
+            return d
+        return DIRECTIONS[(DIRECTIONS.index(d) - args.shift_facings) % len(DIRECTIONS)]
+
+    rotations = {facing(d): load(p) for d, p in frames.get("rotations", {}).items()}
     cw, ch = next(iter(rotations.values())).size
 
     # Gather each state's frames per direction.
@@ -108,7 +119,7 @@ def main() -> None:
         if state in found:
             print(f"  skipping animation '{anim_name}' ('{state}' already taken)")
             continue
-        found[state] = {d: [load(p) for p in paths] for d, paths in dirs.items()}
+        found[state] = {facing(d): [load(p) for p in paths] for d, paths in dirs.items()}
     if "idle" not in found and rotations:
         # No breathing drawn: stand still on the rotation images.
         found["idle"] = {d: [im] for d, im in rotations.items()}

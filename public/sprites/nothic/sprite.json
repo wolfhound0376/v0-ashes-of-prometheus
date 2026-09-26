@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Nothic",
+  "cell": [
+    128,
+    128
+  ],
+  "pivot": [
+    64,
+    126
+  ],
+  "ppu": 121,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}

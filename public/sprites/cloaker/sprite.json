@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Cloaker",
+  "cell": [
+    160,
+    160
+  ],
+  "pivot": [
+    80,
+    158
+  ],
+  "ppu": 84,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}
