@@ -11,6 +11,12 @@
   ],
   "ppu": 76,
   "animations": {
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 9,
+      "fps": 10,
+      "loop": true
+    },
     "idle": {
       "sheet": "idle.png",
       "frames": 1,

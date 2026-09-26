@@ -24,6 +24,7 @@ import { attackAgainst, attackContext, rollerContext, rollD20, showDice } from "
 // Exhaustion 1 is disadvantage on ability checks; 3 is disadvantage on attack
 // rolls and saving throws. Until now neither reached a die.
 import { normaliseExhaustion } from "@/lib/exhaustion"
+import { logTimeEvent } from "@/lib/time-tracking"
 // Mage Hand and whatever is summoned after it: the spell's own rules, pure.
 import {
   MAGE_HAND, summonMageHand, normaliseSummon, expired, withinLeash, withinCastRange, canReach, handUse,
@@ -252,6 +253,27 @@ async function narrate(db: ReturnType<typeof createAdminClient>, text: string) {
 /** A line spoken by the creature itself (a bark) - its name, its voice. */
 async function say(db: ReturnType<typeof createAdminClient>, speaker: string, text: string) {
   await db.from("dialogue").insert({ speaker, text, channel: "dm" })
+}
+
+/**
+ * Move the campaign clock for a finished fight. The session is resolved the
+ * same way /api/chat resolves it (the active row, else the most recent), and
+ * the write goes through lib/time-tracking so the apply_time_log trigger
+ * fills in the minutes from time_advancement_rules. Nothing here computes
+ * time; the database owns that.
+ */
+async function logCombatEncounter(db: ReturnType<typeof createAdminClient>) {
+  try {
+    const { data: sess } = await db
+      .from("sessions")
+      .select("id, status, started_at")
+      .order("started_at", { ascending: false })
+    const rows = (sess ?? []) as { id: string; status: string | null }[]
+    const session = rows.find((s) => s.status === "active") ?? rows[0] ?? null
+    await logTimeEvent(db, session?.id ?? null, { eventType: "combat_encounter" })
+  } catch (e) {
+    console.error("[combat] combat_encounter time log threw:", e)
+  }
 }
 
 /**
@@ -2687,6 +2709,14 @@ export async function POST(req: NextRequest) {
     .update({ status: "ended", updated_at: new Date().toISOString() })
     .eq("id", combat.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  // The fight took time. Until now the clock only moved if Malachar remembered
+  // to write [TIME:combat_encounter] into his prose, which he did not always
+  // do — so a party could fight all night and still have "slept" less than 24
+  // hours ago by the clock. This route is the one place that knows the fight
+  // is over, so it logs the event itself; time_advancement_rules decides how
+  // many minutes that is (10, at the time of writing). Best-effort, like every
+  // other time write: a logging failure never turns a won fight into a 500.
+  await logCombatEncounter(db)
   // Ending combat is deliberately silent. The bank has no clip for it, and a
   // turn chime here would say the wrong thing - the fight is over, nobody is up.
   return NextResponse.json({ ok: true })

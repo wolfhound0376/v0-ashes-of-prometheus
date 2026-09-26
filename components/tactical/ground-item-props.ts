@@ -6,6 +6,10 @@
 // (lib/equipment), laid on its side on the square, over a faint gold ring so
 // a small dark object on a dark floor can still be found by eye.
 //
+// An item with pixel art (items.pixel_icon_url) lies there as that picture
+// instead: flat on the square, nearest-filtered so it stays crisp beside the
+// sprite miniatures. The proxy is the fallback for everything not yet drawn.
+//
 // Everything here carries userData.groundItemId, so the board's click
 // raycast can ask "was that a thing on the floor?" the way it asks "was that
 // a door?".
@@ -25,6 +29,8 @@ export interface GroundItemHandle {
   rows: () => GroundItemRow[]
   /** The row behind a hit object, or null. */
   rowFor: (hit: THREE.Object3D | null | undefined) => GroundItemRow | null
+  /** Draw every pile again, e.g. once the pixel icons have arrived. */
+  redraw: () => void
   /** Called from the render loop so the ring can breathe. */
   tick: (t: number) => void
   dispose: () => void
@@ -47,6 +53,8 @@ export function layGroundItems(opts: {
   squareSize?: number
   /** Rarity per item id, when the board knows it; commons keep their metal. */
   rarityOf?: (row: GroundItemRow) => string | null | undefined
+  /** The item's pixel icon, when it has one; the proxy is drawn otherwise. */
+  iconFor?: (row: GroundItemRow) => string | null | undefined
 }): GroundItemHandle {
   const size = opts.squareSize ?? 1
   const group = new THREE.Group()
@@ -55,6 +63,22 @@ export function layGroundItems(opts: {
 
   const drawn = new Map<string, { root: THREE.Group; ring: THREE.Mesh; row: GroundItemRow }>()
   const ringGeo = new THREE.RingGeometry(0.16 * size, 0.24 * size, 32)
+  const iconGeo = new THREE.PlaneGeometry(0.46 * size, 0.46 * size)
+  // One texture per picture, shared by every pile of that item.
+  const textures = new Map<string, THREE.Texture>()
+  const loader = new THREE.TextureLoader()
+  const textureFor = (url: string) => {
+    let tex = textures.get(url)
+    if (!tex) {
+      tex = loader.load(url)
+      tex.magFilter = THREE.NearestFilter
+      tex.minFilter = THREE.NearestFilter
+      tex.generateMipmaps = false
+      tex.colorSpace = THREE.SRGBColorSpace
+      textures.set(url, tex)
+    }
+    return tex
+  }
 
   const draw = (row: GroundItemRow) => {
     const rnd = seeded(row.id)
@@ -81,17 +105,30 @@ export function layGroundItems(opts: {
     ring.renderOrder = 3
     root.add(ring)
 
-    // The object itself: the archetype proxy, on its side. Proxies are built
-    // along +Y from the grip, so lying down is a quarter turn about X; a
-    // little lift keeps the thickest part out of the floor.
-    const archetype = archetypeFor(row.name)
-    const obj = proxyGeometry(archetype === "empty" ? "dagger" : archetype)
-    obj.rotation.x = Math.PI / 2
-    obj.rotation.z = (rnd() - 0.5) * 0.6
-    obj.position.y = 0.025 * size
-    obj.scale.setScalar(0.42 * size)
-    applyRarity(obj, opts.rarityOf?.(row) ?? "common")
-    root.add(obj)
+    const icon = opts.iconFor?.(row)
+    if (icon) {
+      // The pixel icon, lying flat inside the ring.
+      const pic = new THREE.Mesh(
+        iconGeo,
+        new THREE.MeshBasicMaterial({ map: textureFor(icon), transparent: true, alphaTest: 0.5, depthWrite: false, toneMapped: false }),
+      )
+      pic.rotation.x = -Math.PI / 2
+      pic.position.y = 0.004 * size
+      pic.renderOrder = 4
+      root.add(pic)
+    } else {
+      // The object itself: the archetype proxy, on its side. Proxies are built
+      // along +Y from the grip, so lying down is a quarter turn about X; a
+      // little lift keeps the thickest part out of the floor.
+      const archetype = archetypeFor(row.name)
+      const obj = proxyGeometry(archetype === "empty" ? "dagger" : archetype)
+      obj.rotation.x = Math.PI / 2
+      obj.rotation.z = (rnd() - 0.5) * 0.6
+      obj.position.y = 0.025 * size
+      obj.scale.setScalar(0.42 * size)
+      applyRarity(obj, opts.rarityOf?.(row) ?? "common")
+      root.add(obj)
+    }
 
     root.traverse((o) => { o.userData.groundItemId = row.id })
     group.add(root)
@@ -105,8 +142,8 @@ export function layGroundItems(opts: {
     d.root.traverse((o) => {
       const m = o as THREE.Mesh
       if (!m.isMesh) return
-      // The ring geometry is shared; everything else is the proxy's own.
-      if (m.geometry !== ringGeo) m.geometry.dispose()
+      // The ring and icon geometry are shared; everything else is the proxy's own.
+      if (m.geometry !== ringGeo && m.geometry !== iconGeo) m.geometry.dispose()
       const mats = Array.isArray(m.material) ? m.material : [m.material]
       for (const mat of mats) mat.dispose()
     })
@@ -123,6 +160,12 @@ export function layGroundItems(opts: {
         // A pile that moved square (a DM nudge) is redrawn; the rest stay put.
         if (have && (have.row.grid_x !== r.grid_x || have.row.grid_y !== r.grid_y)) remove(r.id)
         if (!drawn.has(r.id)) draw(r)
+      }
+    },
+    redraw() {
+      for (const d of Array.from(drawn.values())) {
+        remove(d.row.id)
+        draw(d.row)
       }
     },
     objects() {
@@ -147,6 +190,9 @@ export function layGroundItems(opts: {
       for (const id of Array.from(drawn.keys())) remove(id)
       opts.parent.remove(group)
       ringGeo.dispose()
+      iconGeo.dispose()
+      for (const tex of textures.values()) tex.dispose()
+      textures.clear()
     },
   }
 }

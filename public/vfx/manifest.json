@@ -227,10 +227,28 @@
     "frames": 20,
     "rows": 4
   },
+  "pxArc": {
+    "bytes": 314,
+    "cols": 6,
+    "file": "pxArc.webp",
+    "fps": 12,
+    "frames": 6,
+    "loop": true,
+    "rows": 1
+  },
   "pxFireball": {
     "bytes": 932,
     "cols": 4,
     "file": "pxFireball.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxFlame": {
+    "bytes": 968,
+    "cols": 4,
+    "file": "pxFlame.webp",
     "fps": 12,
     "frames": 8,
     "loop": true,
@@ -242,6 +260,33 @@
     "file": "pxFlash.webp",
     "fps": 24,
     "frames": 6,
+    "rows": 1
+  },
+  "pxGhost": {
+    "bytes": 1528,
+    "cols": 1,
+    "file": "pxGhost.webp",
+    "fps": 8,
+    "frames": 1,
+    "loop": true,
+    "rows": 1
+  },
+  "pxGlow": {
+    "bytes": 2712,
+    "cols": 4,
+    "file": "pxGlow.webp",
+    "fps": 10,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxIce": {
+    "bytes": 578,
+    "cols": 4,
+    "file": "pxIce.webp",
+    "fps": 6,
+    "frames": 4,
+    "loop": true,
     "rows": 1
   },
   "pxMissile": {
@@ -283,6 +328,31 @@
     "bytes": 56,
     "cols": 1,
     "file": "pxSpark.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
+  },
+  "pxSwirl": {
+    "bytes": 754,
+    "cols": 4,
+    "file": "pxSwirl.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxWebFloor": {
+    "bytes": 452,
+    "cols": 1,
+    "file": "pxWebFloor.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
+  },
+  "pxWebWrap": {
+    "bytes": 342,
+    "cols": 1,
+    "file": "pxWebWrap.webp",
     "fps": 1,
     "frames": 1,
     "rows": 1

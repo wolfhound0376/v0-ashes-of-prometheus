@@ -206,6 +206,12 @@ export class SpriteRig {
   private pending: { state: SpriteState; opts: PlayOptions; skipToEnd: boolean } | null = null
   /** Down with no drawn death: the card lies flat on the floor instead. */
   private fallen = false
+  /**
+   * Knocked prone and still alive: the card lies flat exactly as a fallen
+   * one does, but keeps its state so it stands back up the moment the
+   * condition clears. Set by the board's status visuals (status-vfx.ts).
+   */
+  prone = false
   private onHit: (() => void) | null = null
   private hitAt = Infinity
   /** Per-state card scale so every animation stands as tall as the idle (see drawnHeight). */
@@ -317,9 +323,11 @@ export class SpriteRig {
     // ---- time
     this.t += dt
     if (this.t >= this.hitAt) this.fireHit()
-    let anim = this.fallen ? m.animations.idle : m.animations[this.state]
+    // Fallen or prone: the same flat card, from the idle sheet's first frame.
+    const flat = this.fallen || this.prone
+    let anim = flat ? m.animations.idle : m.animations[this.state]
     if (!anim) return
-    if (!this.fallen && !anim.loop && this.t >= anim.frames / anim.fps && this.state !== "dead") {
+    if (!flat && !anim.loop && this.t >= anim.frames / anim.fps && this.state !== "dead") {
       // A swing or a flinch is over: the blow has landed (if it never found
       // its mark frame, now), and the figure goes back to standing. Dead
       // alone holds its last frame.
@@ -329,7 +337,7 @@ export class SpriteRig {
       if (!anim) return
     }
     const dur = anim.frames / anim.fps
-    const frame = this.fallen
+    const frame = flat
       ? 0
       : anim.loop
       ? Math.floor(((this.t + this.phase * dur) * anim.fps) % anim.frames)
@@ -347,14 +355,14 @@ export class SpriteRig {
     const dir = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8
 
     // ---- the same height whatever it is doing (feet are the origin, so they stay put)
-    const k = this.fallen ? 1 : this.scaleFor(this.state)
+    const k = flat ? 1 : this.scaleFor(this.state)
     mesh.scale.set(k, k, 1)
 
     // ---- stand the card up facing the camera, whatever the body is doing
-    mesh.rotation.set(this.fallen ? -Math.PI / 2 : -pitch * LEAN, camYaw + Math.PI - bodyYaw, 0, "YXZ")
+    mesh.rotation.set(flat ? -Math.PI / 2 : -pitch * LEAN, camYaw + Math.PI - bodyYaw, 0, "YXZ")
     // Lying down: above the floor layers (see FEET_BAND), which would
     // otherwise wash out a body lying flat among them.
-    mesh.position.y = this.fallen ? 0.11 : 0
+    mesh.position.y = flat ? 0.11 : 0
 
     // ---- point the sheet at the cell
     const worn = this.liveMaterial()
