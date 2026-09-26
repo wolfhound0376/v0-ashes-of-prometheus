@@ -1,13 +1,15 @@
 /**
  * VELKYNVELVE NODES — the data behind one top-down sprite map.
  *
- * A node is one 12x12-square piece of Velkynvelve (the tavern platform, the
+ * A node is one piece of Velkynvelve, usually 12x12 squares (the tavern platform, the
  * slave pen, ...). Everything about it lives in
  * public/velkynvelve/nodes/<slug>/node.json next to its art:
  *
- *  - `walkable`: one string per row, `o` = deck, `.` = chasm. It is derived
- *    from the composed Wang deck (a square is deck when at least three of its
- *    four tile corners are deck), so it matches what the eye sees.
+ *  - `walkable`: one string per row. `o` = deck, `b` = rope bridge,
+ *    `g` = a locked gate, `.` = chasm. Deck is derived from the composed
+ *    Wang deck (a square is deck when at least three of its four tile
+ *    corners are deck), so it matches what the eye sees. Bridges and gates
+ *    are drawn by the scene itself.
  *  - `props`: furniture. Each blocks the rectangle of squares it covers; a
  *    brazier also carries a light.
  *  - `spawns`: who stands where when the node opens. `sprite` points at the
@@ -47,6 +49,31 @@ export interface NodeProp {
   w: number
   h: number
   light?: NodeLight
+  /** Draw scale for art made larger than its footprint. Default 1. */
+  scale?: number
+  /**
+   * "under": hangs below the deck and bridges (cobwebs under a walkway) and
+   * blocks nothing. Omitted: stands on the floor and blocks its footprint.
+   */
+  layer?: "under"
+}
+
+/** A door in a `g` square — what it is, where it leads, and its lock. */
+export interface NodeDoor {
+  /** The gate squares it fills. */
+  squares: Array<[number, number]>
+  leadsTo: string
+  /** From the book (true) or the table's own addition (false). */
+  canon: boolean
+  locked: boolean
+  lockDc?: number
+  lockNote?: string
+}
+
+export interface NodeLabel {
+  x: number
+  y: number
+  text: string
 }
 
 export interface NodeSpawn {
@@ -76,6 +103,11 @@ export interface VelkynvelveNode {
    * `render.edge` on the node's generated_maps row. Omitted: an open rim.
    */
   edge?: "bars"
+  doors?: NodeDoor[]
+  /** A waterfall falling through the abyss, `width` squares wide from column `x`. */
+  waterfall?: { x: number; width: number }
+  /** Where the bridges lead, written over the abyss. */
+  labels?: NodeLabel[]
   /** Set when the layout is not yet the canon cell geometry — says why. */
   approximate?: string
 }
@@ -94,10 +126,11 @@ export function standableGrid(node: VelkynvelveNode): StandableGrid {
   for (let y = 0; y < node.squares; y++) {
     const row = node.walkable[y] ?? ""
     const line: boolean[] = []
-    for (let x = 0; x < node.squares; x++) line.push(row[x] === "o")
+    for (let x = 0; x < node.squares; x++) line.push(row[x] === "o" || row[x] === "b")
     grid.push(line)
   }
   for (const p of node.props) {
+    if (p.layer === "under") continue
     for (let y = p.y; y < p.y + p.h; y++) {
       for (let x = p.x; x < p.x + p.w; x++) {
         if (grid[y] && x >= 0 && x < node.squares) grid[y][x] = false

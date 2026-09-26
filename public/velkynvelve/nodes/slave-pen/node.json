@@ -1,79 +1,160 @@
 {
   "slug": "slave-pen",
   "name": "The Slave Pen",
-  "squares": 12,
+  "squares": 28,
   "squarePx": 32,
   "deck": "deck.png",
   "walkable": [
-    "..o..o......",
-    "..o..o......",
-    "..o..o......",
-    ".oooooo.....",
-    "oooooooooo..",
-    "ooooooooooo.",
-    "ooooooooooo.",
-    "ooooooooooo.",
-    "ooooooooooo.",
-    "ooooooooooo.",
-    ".ooooooooo..",
-    "..oooooooo.."
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........bb.........bb.....",
+    "..........gg.........bb.....",
+    ".........oooooo......bb.....",
+    "........oooooooo.....bb.....",
+    ".......oooooooooo....bb.....",
+    ".......oooooooooogbbbbbbbbbb",
+    ".......oooooooooogbbbbbbbbbb",
+    ".......oooooooooo....bb.....",
+    ".......oooooooooo....bb.....",
+    ".......oooooooooo....bb.....",
+    "........oooooooo.....bb.....",
+    ".........oooooo......bb.....",
+    ".....................bb.....",
+    ".....................bb.....",
+    ".....................bb.....",
+    ".....................bb.....",
+    ".....................bb.....",
+    ".....................bb.....",
+    ".....................bb.....",
+    ".....................bb....."
   ],
   "edge": "bars",
-  "approximate": "Mock-up. Canon node 11 is a gated cave in the eastern wall with 92 floor squares; its cell geometry (vtt-assets/node-maps/v5/node-11.json) could not be fetched, so this outline is hand-drawn to the same size. Gates follow the canon doors: node-10 gate (canon, locked DC 20) and node-12 door (homebrew, locked DC 20).",
+  "approximate": "Mock-up to Sam's brief (2026-09-26): octagonal pen hung over the abyss, gates flush in the wall a right angle apart, rope bridges out to the quaggoth den and to a junction of bridges. Canon V5 node 11 is a gated cave in the eastern wall (92 floor squares); its cell geometry could not be fetched here. This octagon has 88.",
+  "doors": [
+    {
+      "squares": [
+        [
+          17,
+          13
+        ],
+        [
+          17,
+          14
+        ]
+      ],
+      "leadsTo": "the bridge junction, and on to the guard tower (node 10)",
+      "canon": true,
+      "locked": true,
+      "lockDc": 20,
+      "lockNote": "Heavy iron gate bolted into stone, kept locked. Pick DC 20 DEX with thieves' tools (makeshift at disadvantage; may draw guards - Stealth vs passive Perception). Force DC 20 STR. Guards on duty elsewhere carry keys. (oota-encounters Ch.1 p18)"
+    },
+    {
+      "squares": [
+        [
+          10,
+          9
+        ],
+        [
+          11,
+          9
+        ]
+      ],
+      "leadsTo": "the quaggoth den (node 12)",
+      "canon": false,
+      "locked": true,
+      "lockDc": 20,
+      "lockNote": "HOMEBREW - the book gives the pen one locked gate; this second door is Sam's call. Pick DC 20 DEX with thieves' tools, force DC 20 STR. Beyond it lies the quaggoth den, not freedom."
+    }
+  ],
+  "waterfall": {
+    "x": 2,
+    "width": 2
+  },
+  "labels": [
+    {
+      "x": 10.5,
+      "y": 0,
+      "text": "to the quaggoth den"
+    },
+    {
+      "x": 21.5,
+      "y": 0,
+      "text": "to the guard tower"
+    },
+    {
+      "x": 21.5,
+      "y": 27,
+      "text": "to the camp"
+    },
+    {
+      "x": 26,
+      "y": 12,
+      "text": "to the camp"
+    }
+  ],
   "props": [
-    {
-      "id": "gate-node-10",
-      "image": "gate.png",
-      "x": 2,
-      "y": 0,
-      "w": 1,
-      "h": 1
-    },
-    {
-      "id": "door-node-12",
-      "image": "gate.png",
-      "x": 5,
-      "y": 0,
-      "w": 1,
-      "h": 1
-    },
     {
       "id": "pallet-w",
       "image": "pallet.png",
-      "x": 0,
-      "y": 6,
+      "x": 7,
+      "y": 14,
       "w": 2,
       "h": 2
     },
     {
-      "id": "pallet-e",
+      "id": "pallet-s",
       "image": "pallet.png",
-      "x": 9,
-      "y": 6,
-      "w": 2,
-      "h": 2
-    },
-    {
-      "id": "pallet-sw",
-      "image": "pallet.png",
-      "x": 2,
-      "y": 9,
+      "x": 12,
+      "y": 17,
       "w": 2,
       "h": 2
     },
     {
       "id": "chains",
       "image": "chains.png",
-      "x": 6,
-      "y": 6,
+      "x": 11,
+      "y": 14,
       "w": 1,
       "h": 1
     },
     {
+      "id": "bones-nw",
+      "image": "bones.png",
+      "x": 8,
+      "y": 11,
+      "w": 1,
+      "h": 1,
+      "scale": 0.6
+    },
+    {
+      "id": "bones-se",
+      "image": "bones.png",
+      "x": 15,
+      "y": 16,
+      "w": 1,
+      "h": 1,
+      "scale": 0.6
+    },
+    {
+      "id": "skeleton-sw",
+      "image": "skeleton.png",
+      "x": 9,
+      "y": 18,
+      "w": 1,
+      "h": 1,
+      "scale": 0.75
+    },
+    {
       "id": "torch-nw",
       "image": "brazier.png",
-      "x": 1,
-      "y": 3,
+      "x": 13,
+      "y": 11,
       "w": 1,
       "h": 1,
       "light": {
@@ -83,10 +164,10 @@
       }
     },
     {
-      "id": "torch-e",
+      "id": "torch-sw",
       "image": "brazier.png",
-      "x": 9,
-      "y": 4,
+      "x": 7,
+      "y": 17,
       "w": 1,
       "h": 1,
       "light": {
@@ -94,22 +175,49 @@
         "radius": 100,
         "flicker": 0.22
       }
+    },
+    {
+      "id": "web-n",
+      "image": "web.png",
+      "x": 12,
+      "y": 4,
+      "w": 1,
+      "h": 1,
+      "layer": "under"
+    },
+    {
+      "id": "web-e",
+      "image": "web.png",
+      "x": 19,
+      "y": 15,
+      "w": 1,
+      "h": 1,
+      "layer": "under"
+    },
+    {
+      "id": "web-j",
+      "image": "web.png",
+      "x": 23,
+      "y": 20,
+      "w": 1,
+      "h": 1,
+      "layer": "under"
     }
   ],
   "spawns": [
     {
       "id": "freia",
       "sprite": "/sprites/freia/sprite.json",
-      "x": 4,
-      "y": 8,
-      "facing": "north"
+      "x": 10,
+      "y": 13,
+      "facing": "south"
     },
     {
       "id": "samson",
       "sprite": "/sprites/samson/sprite.json",
-      "x": 7,
-      "y": 9,
-      "facing": "north-west"
+      "x": 13,
+      "y": 15,
+      "facing": "west"
     }
   ]
 }
