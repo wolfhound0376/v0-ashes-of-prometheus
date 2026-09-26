@@ -118,29 +118,32 @@ const HEMP_DARK = hex("#5b4226")
 const HEMP_SHADE = hex("#2e2012")
 const WEB = hex("#c9cfd8", 120)
 
+/** Which part of a bridge a pixel belongs to: the walkway, or the sides. */
+type RopePart = "deck" | "side"
+
 /**
  * One rope bridge in the bridge's own frame: u runs along it (px from a),
- * v across it (px from the centre line). Returns a colour or null (a gap —
- * the abyss shows through).
+ * v across it (px from the centre line). Returns a colour and the part it
+ * belongs to, or null (a gap — the abyss shows through).
  */
-function ropeAt(u: number, v: number, half: number, len: number): RGBA | null {
+function ropeAt(u: number, v: number, half: number, len: number): { c: RGBA; part: RopePart } | null {
   const av = Math.abs(v)
   if (u < 0 || u > len || av > half) return null
   // Hand ropes along both sides, twisted, with a knot every 16 px.
   if (av > half - 3 && av <= half) {
     const knot = u % 16 < 3
-    if (av > half - 1) return knot ? HEMP_SHADE : HEMP_DARK
-    return (Math.floor(u) + Math.floor(av)) % 3 === 0 ? HEMP_LIT : knot ? HEMP_DARK : HEMP
+    if (av > half - 1) return { c: knot ? HEMP_SHADE : HEMP_DARK, part: "side" }
+    return { c: (Math.floor(u) + Math.floor(av)) % 3 === 0 ? HEMP_LIT : knot ? HEMP_DARK : HEMP, part: "side" }
   }
   // Ties from the hand rope down to the deck.
-  if (av > half - 6 && av <= half - 3) return u % 16 < 1.5 ? HEMP_DARK : null
+  if (av > half - 6 && av <= half - 3) return u % 16 < 1.5 ? { c: HEMP_DARK, part: "side" } : null
   // The deck: ropes laid along the bridge every 5 px, woven through by
   // cross ropes every 7 px. Everything between them is open air.
   const lane = (v + half) % 5
   const cross = u % 7
-  if (cross < 1.2) return (Math.floor(v) & 1) === 0 ? HEMP_DARK : HEMP
-  if (lane < 1.2) return Math.floor(u) % 3 === 0 ? HEMP_LIT : HEMP
-  if (lane < 2.2) return HEMP_SHADE
+  if (cross < 1.2) return { c: (Math.floor(v) & 1) === 0 ? HEMP_DARK : HEMP, part: "deck" }
+  if (lane < 1.2) return { c: Math.floor(u) % 3 === 0 ? HEMP_LIT : HEMP, part: "deck" }
+  if (lane < 2.2) return { c: HEMP_SHADE, part: "deck" }
   return null
 }
 
@@ -166,15 +169,32 @@ export function paintBridges(ctx: CanvasRenderingContext2D, node: LoadedNode, o:
   const H = ctx.canvas.height
   const img = ctx.getImageData(0, 0, W, H)
   const d = img.data
-  g.bridges.forEach((br: RopeBridge, bi) => {
+  // Every bridge in its own frame, so each pixel can ask "is this also on
+  // another bridge's walkway?" Where two bridges meet, neither may draw its
+  // hand ropes, ties or cobwebs across the other's deck, or the join is
+  // fenced shut; and only one deck is drawn in the overlap — the bridge
+  // listed first owns the crossing, so a branch runs cleanly into the
+  // bridge it leaves from instead of weaving a second pattern over it.
+  const frames = g.bridges.map((br) => {
     const ax = br.a[0] * S
     const ay = br.a[1] * S
     const bx = br.b[0] * S
     const by = br.b[1] * S
     const len = Math.hypot(bx - ax, by - ay)
-    const ux = (bx - ax) / len
-    const uy = (by - ay) / len
-    const half = (br.width * S) / 2 - 3
+    return { ax, ay, bx, by, len, ux: (bx - ax) / len, uy: (by - ay) / len, half: (br.width * S) / 2 - 3 }
+  })
+  /** The first other bridge whose walkway covers this pixel, or -1. */
+  const otherDeck = (x: number, y: number, self: number) =>
+    frames.findIndex((f, j) => {
+      if (j === self) return false
+      const px = x - f.ax
+      const py = y - f.ay
+      const u = px * f.ux + py * f.uy
+      const v = -px * f.uy + py * f.ux
+      return u >= 0 && u <= f.len && Math.abs(v) <= f.half
+    })
+  g.bridges.forEach((br: RopeBridge, bi) => {
+    const { ax, ay, bx, by, len, ux, uy, half } = frames[bi]
     const pad = half + 16
     const minX = Math.max(0, Math.floor(Math.min(ax, bx) - pad))
     const maxX = Math.min(W, Math.ceil(Math.max(ax, bx) + pad))
@@ -187,8 +207,14 @@ export function paintBridges(ctx: CanvasRenderingContext2D, node: LoadedNode, o:
         const u = px * ux + py * uy
         const v = -px * uy + py * ux
         const i = (y * W + x) * 4
-        if (d[i + 3] === 255) continue // a platform is already here
-        const c = ropeAt(u, v, half, len) ?? webAt(u, v, half, bi + 1)
+        if (d[i + 3] === 255) continue // a platform (or an earlier bridge) is already here
+        const rope = ropeAt(u, v, half, len)
+        const other = otherDeck(x + 0.5, y + 0.5, bi)
+        if (other !== -1 && other < bi) continue // the earlier bridge owns this crossing
+        const shared = other !== -1
+        let c: RGBA | null = null
+        if (rope) c = rope.part === "side" && shared ? null : rope.c
+        else if (!shared) c = webAt(u, v, half, bi + 1)
         if (!c) continue
         d[i] = c[0]
         d[i + 1] = c[1]

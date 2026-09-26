@@ -22,7 +22,7 @@
 import type { SpriteManifest, SpriteState } from "@/lib/sprite-token"
 import type { Facing, LoadedNode } from "@/lib/velkynvelve/node"
 import { standableGrid } from "@/lib/velkynvelve/node"
-import { findPath, type Point } from "@/lib/velkynvelve/pathfinding"
+import { findPath, lineClear, type Point } from "@/lib/velkynvelve/pathfinding"
 import { buildCage, paintBridges, paintPlatforms } from "./geometry-art"
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -63,6 +63,38 @@ const DARKNESS = 0.62
 const FIGURE_LIGHT_RADIUS = 72
 /** Margin of abyss around the platform the camera may wander into. */
 const MARGIN = 160
+/**
+ * Keys that walk the active figure, by physical key (event.code), so the
+ * numpad works with Num Lock on or off. 8 forward (up the screen), 2 back,
+ * 4 left, 6 right; 7 9 1 3 are the diagonals. Arrow keys do the same for
+ * keyboards without a numpad.
+ */
+const MOVE_KEYS: Record<string, [number, number]> = {
+  Numpad8: [0, -1],
+  Numpad2: [0, 1],
+  Numpad4: [-1, 0],
+  Numpad6: [1, 0],
+  Numpad7: [-1, -1],
+  Numpad9: [1, -1],
+  Numpad1: [-1, 1],
+  Numpad3: [1, 1],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+}
+/** The pixel gauntlet pointer; the hotspot is its fingertip. */
+const CURSOR = "url(/velkynvelve/cursor-gauntlet.png) 6 0, pointer"
+/** How long the ripple marking a clicked spot lasts, ms. */
+const MARKER_MS = 520
+/**
+ * The darkness layer is redrawn every frame; it is all soft gradients, so it
+ * is kept at 1/DARK_SCALE resolution and stretched — a quarter of the work
+ * at 2, and the eye cannot tell.
+ */
+const DARK_SCALE = 2
+/** Longest step a single frame may take, s — a stalled tab must not teleport anyone. */
+const MAX_STEP = 0.1
 /** Pointer travel (screen px) that turns a tap into a drag. */
 const DRAG_SLOP = 6
 
@@ -168,6 +200,10 @@ export function createVelkynvelveScene(
     streaks: any
     foam: any[] = []
     down: { x: number; y: number; sx: number; sy: number; dragging: boolean } | null = null
+    held = new Set<string>()
+    lastTime = 0
+    marker: any = null
+    markerBorn = 0
 
     constructor() {
       super({ key: "velkynvelve" })
@@ -265,10 +301,16 @@ export function createVelkynvelveScene(
       }
 
       // 5. Darkness.
-      this.darkTex = this.textures.createCanvas("vv-dark", worldW + MARGIN * 2, worldH + MARGIN * 2)
+      this.darkTex = this.textures.createCanvas(
+        "vv-dark",
+        Math.ceil((worldW + MARGIN * 2) / DARK_SCALE),
+        Math.ceil((worldH + MARGIN * 2) / DARK_SCALE),
+      )
+      this.darkTex.setFilter(Phaser.Textures.FilterMode.LINEAR)
       this.add
         .image(-MARGIN, -MARGIN, "vv-dark")
         .setOrigin(0, 0)
+        .setScale(DARK_SCALE)
         .setDepth(20000)
 
       // Camera.
@@ -310,6 +352,16 @@ export function createVelkynvelveScene(
         const w = cam.getWorldPoint(p.x, p.y)
         this.tap(w.x, w.y)
       })
+
+      this.input.setDefaultCursor(CURSOR)
+      this.input.keyboard?.on("keydown", (e: KeyboardEvent) => {
+        if (!(e.code in MOVE_KEYS)) return
+        e.preventDefault()
+        this.held.add(e.code)
+      })
+      this.input.keyboard?.on("keyup", (e: KeyboardEvent) => this.held.delete(e.code))
+      // Let go of everything if the window loses focus mid-stride.
+      this.game.events.on("blur", () => this.held.clear())
 
       this.announce()
     }
@@ -590,8 +642,103 @@ export function createVelkynvelveScene(
       const f = this.figs[this.active]
       if (!f) return
       const path = findPath(grid, { x: f.sprite.x, y: f.sprite.y }, { x: wx, y: wy }, { squarePx: S })
+      this.showMarker(wx, wy, !!path)
       if (!path || path.length === 0) return
       f.path = path
+    }
+
+    /**
+     * A ripple on the floor where the pointer landed: gold when the figure
+     * can walk there, red when it cannot (a prop, the drop, a locked gate).
+     * It widens and fades in about half a second, and is swept away the
+     * moment anything else moves the figure.
+     */
+    showMarker(x: number, y: number, ok: boolean) {
+      this.clearMarker()
+      const colour = ok ? 0xe8c98a : 0xd0504a
+      // Above the darkness: it is a pointer mark, and must read even in the gloom.
+      const g = this.add.graphics().setPosition(x, y).setDepth(20003)
+      g.lineStyle(2, colour, 1).strokeEllipse(0, 0, 18, 9)
+      g.lineStyle(1, colour, 0.6).strokeEllipse(0, 0, 9, 4.5)
+      g.fillStyle(colour, 0.9).fillRect(-1, -1, 2, 2)
+      g.setScale(0.5)
+      this.marker = g
+      // Animated in update() on the same real clock as walking.
+      this.markerBorn = this.lastTime
+    }
+
+    clearMarker() {
+      if (!this.marker) return
+      this.marker.destroy()
+      this.marker = null
+    }
+
+    /** Widen and fade the click ripple; gone after MARKER_MS. */
+    tickMarker(time: number) {
+      if (!this.marker) return
+      const t = (time - this.markerBorn) / MARKER_MS
+      if (t >= 1) return this.clearMarker()
+      const ease = 1 - (1 - t) * (1 - t)
+      this.marker.setScale(0.5 + 0.85 * ease).setAlpha(1 - ease)
+    }
+
+    /**
+     * Keyboard walking: the held keys add up to a direction (8+6 walks
+     * north-east), the figure steps that way at walking speed, and slides
+     * along a wall rather than sticking to it. Any click-path is dropped.
+     */
+    keyWalk(dt: number) {
+      const f = this.figs[this.active]
+      if (!f) return
+      let dx = 0
+      let dy = 0
+      for (const code of this.held) {
+        const d = MOVE_KEYS[code]
+        if (d) {
+          dx += d[0]
+          dy += d[1]
+        }
+      }
+      const moving = dx !== 0 || dy !== 0
+      if (!moving) {
+        if (f.path.length === 0 && f.state === "walk") this.play(f, "idle")
+        return
+      }
+      f.path = []
+      this.clearMarker()
+      const len = Math.hypot(dx, dy)
+      const step = WALK_SPEED * dt
+      const from = { x: f.sprite.x, y: f.sprite.y }
+      const tries: Point[] = [
+        { x: from.x + (dx / len) * step, y: from.y + (dy / len) * step },
+        { x: from.x + Math.sign(dx) * step, y: from.y },
+        { x: from.x, y: from.y + Math.sign(dy) * step },
+      ]
+      const to = tries.find((t) => (t.x !== from.x || t.y !== from.y) && lineClear(grid, S, from, t))
+      const facing = facingFor(dx, dy)
+      if (facing !== f.facing || f.state !== "walk") {
+        f.facing = facing
+        this.play(f, "walk")
+      }
+      if (to) f.sprite.setPosition(to.x, to.y)
+    }
+
+    /** Keep the figure you are moving on screen: pan once it nears an edge. */
+    follow() {
+      const f = this.figs[this.active]
+      if (!f || this.down?.dragging) return
+      const cam = this.cameras.main
+      const v = cam.worldView
+      const mx = v.width * 0.2
+      const my = v.height * 0.2
+      let tx = cam.scrollX
+      let ty = cam.scrollY
+      if (f.sprite.x < v.x + mx) tx -= v.x + mx - f.sprite.x
+      if (f.sprite.x > v.right - mx) tx += f.sprite.x - (v.right - mx)
+      if (f.sprite.y < v.y + my) ty -= v.y + my - f.sprite.y
+      if (f.sprite.y > v.bottom - my) ty += f.sprite.y - (v.bottom - my)
+      cam.scrollX += (tx - cam.scrollX) * 0.12
+      cam.scrollY += (ty - cam.scrollY) * 0.12
     }
 
     announce() {
@@ -599,8 +746,14 @@ export function createVelkynvelveScene(
       if (f) callbacks.onActiveChange?.(f.def.id, f.def.manifest.name)
     }
 
-    update(time: number, delta: number) {
-      const dt = delta / 1000
+    update(time: number) {
+      // Real elapsed time, not Phaser's smoothed delta: the smoothing pins a
+      // step to 1/60 s even when a slow device only manages a few frames a
+      // second, and everyone would walk in slow motion.
+      const dt = Math.min(MAX_STEP, this.lastTime ? (time - this.lastTime) / 1000 : 0)
+      this.lastTime = time
+      this.tickMarker(time)
+      this.keyWalk(dt)
 
       // Walk.
       for (const f of this.figs) {
@@ -628,6 +781,9 @@ export function createVelkynvelveScene(
         f.glow.setPosition(f.sprite.x, f.sprite.y - S * 0.5)
       }
 
+      const lead = this.figs[this.active]
+      if (lead && (lead.state === "walk" || this.held.size > 0)) this.follow()
+
       // Mist drifts on its own as well as with the camera.
       if (this.mist) {
         this.mist.tilePositionX = time * 0.006
@@ -636,8 +792,10 @@ export function createVelkynvelveScene(
 
       // Darkness with light pools.
       const ctx: CanvasRenderingContext2D = this.darkTex.getContext()
-      const w = this.darkTex.width
-      const h = this.darkTex.height
+      // Draw in world px; the transform shrinks it onto the smaller canvas.
+      ctx.setTransform(1 / DARK_SCALE, 0, 0, 1 / DARK_SCALE, 0, 0)
+      const w = worldW + MARGIN * 2
+      const h = worldH + MARGIN * 2
       ctx.globalCompositeOperation = "source-over"
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = `rgba(0,0,0,${DARKNESS})`
