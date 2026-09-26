@@ -41,23 +41,111 @@ import {
 import { XP_THRESHOLDS } from "./game-data"
 
 // ============================================================================
-// §2 THE MENU — one camp action per character per rest
+// §10 RATIONS DECIDE THE REST (Sam, 2026-09-26)
 // ============================================================================
+//
+// "Once all characters have used up their actions they rest according to their
+//  rations available. Full rest takes 20 rations, partial 10, larger parties
+//  (6-8+ take 30). More than 8 is 40."
+//
+// A full rest is the long rest (lib/long-rest); a partial rest is the short
+// rest (`shortRest` below). The cost is charged against `party_supplies`.
+// NOTE for the route: lib/exhaustion `suppliesForParty` charges one per mouth
+// for the SRD food rule. At camp, this table is the charge — do not apply both.
 
-/** Every camp action. `sleep` is deliberately absent: it is never an action. */
-export const CAMP_ACTIONS = ["watch", "forage", "tend", "talk", "perform", "craft", "level_up"] as const
-export type CampAction = (typeof CAMP_ACTIONS)[number]
+export type RestKind = "full" | "partial"
+
+/** Rations a FULL rest costs, by party size. Sam's numbers, verbatim. */
+export function fullRestRations(partySize: number): number {
+  const n = Math.max(1, Math.trunc(partySize || 1))
+  if (n > 8) return 40
+  if (n >= 6) return 30
+  return 20
+}
+
+/** Rations a PARTIAL rest costs: half the full cost, every party size. Sam, 2026-09-26 (late). */
+export function partialRestRations(partySize: number): number {
+  return fullRestRations(partySize) / 2
+}
+
+export interface RestChoice {
+  /** The best rest the rations buy, or null when they cannot even buy a partial one. */
+  kind: RestKind | null
+  cost: number
+  suppliesAfter: number
+  flags: string[]
+  note: string
+}
+
+/** Which rest the party can afford tonight, and what it will cost them. */
+export function affordableRest(supplies: number | null | undefined, partySize: number): RestChoice {
+  const have = Math.max(0, Math.trunc(Number(supplies) || 0))
+  const full = fullRestRations(partySize)
+  const partial = partialRestRations(partySize)
+  const flags: string[] = []
+  if (have >= full) return { kind: "full", cost: full, suppliesAfter: have - full, flags, note: `Full rest: ${full} rations spent, ${have - full} left.` }
+  if (have >= partial) return { kind: "partial", cost: partial, suppliesAfter: have - partial, flags, note: `Only a partial rest: ${partial} rations spent, ${have - partial} left (a full rest needs ${full}).` }
+  return { kind: null, cost: 0, suppliesAfter: have, flags, note: `No rest: ${have} rations on hand and a partial rest needs ${partial}. The party goes hungry — see lib/exhaustion.` }
+}
+
+// ============================================================================
+// §2 THE MENU — camp actions per character per rest
+// ============================================================================
+//
+// Sam, 2026-09-26: "Each person for each full Rest gets two camp actions.
+// Partial rest is one unless the bard inspires and plays for the group
+// successfully." The SRD has no camp-action economy at all; the existing
+// `characters.rest_actions_remaining` column holds the budget.
 
 /**
- * The budget `characters.rest_actions_remaining` is set to when the party makes
- * camp. One, not more: the SRD has no camp-action economy at all, so this is
- * Sam's rule (Playable Layer §7), and the column that already exists holds it.
+ * Every camp action, as Sam listed them (2026-09-26), plus `talk` from §5,
+ * which he confirmed stays (same evening). `sleep` is deliberately absent: it
+ * is never an action.
  */
-export const CAMP_ACTIONS_PER_REST = 1
+export const CAMP_ACTIONS = [
+  "attune", "investigate", "decipher", "artifice", "forage", "mend", "brew",
+  "pray", "level_up", "trade", "hunt", "explore", "perform", "talk",
+] as const
+export type CampAction = (typeof CAMP_ACTIONS)[number]
 
-/** What `make_camp` writes to every character's `rest_actions_remaining`. */
-export function makeCampBudget(): number {
-  return CAMP_ACTIONS_PER_REST
+export const CAMP_ACTIONS_FULL = 2
+export const CAMP_ACTIONS_PARTIAL = 1
+
+/** What `make_camp` writes to every character's `rest_actions_remaining`, given the rest the rations buy. */
+export function makeCampBudget(kind: RestKind | null): number {
+  if (kind === "full") return CAMP_ACTIONS_FULL
+  if (kind === "partial") return CAMP_ACTIONS_PARTIAL
+  return 0
+}
+
+/**
+ * The bard's exception: on a partial rest, a bard who spends an action to
+ * perform and succeeds (`perform().inspires`) lifts everyone — the bard
+ * included — to the full-rest budget. Returns the new `rest_actions_remaining`
+ * for one character; a no-op on a full rest, and never applied twice.
+ */
+export function bardUpgrade(remaining: number | null | undefined, kind: RestKind | null, inspires: boolean, alreadyUpgraded = false): number {
+  const have = Math.max(0, Math.trunc(Number(remaining) || 0))
+  if (kind !== "partial" || !inspires || alreadyUpgraded) return have
+  return have + (CAMP_ACTIONS_FULL - CAMP_ACTIONS_PARTIAL)
+}
+
+/** How each action resolves, so the vocabulary carries its own provenance. */
+export const CAMP_ACTION_RULES: Record<CampAction, { resolves: string; source: string }> = {
+  attune: { resolves: "attune()", source: "SRD 5.1, Magic Items: Attunement" },
+  investigate: { resolves: "identifyItem()", source: "SRD 5.1, Magic Items: Identifying a Magic Item" },
+  decipher: { resolves: "decipher() — INT (Arcana) vs the DM's DC", source: "SRD 5.1, Using Ability Scores" },
+  artifice: { resolves: "craftProgress()", source: "SRD 5.1, Between Adventures: Crafting" },
+  forage: { resolves: "forage()", source: "OotA-Enc p.25; DMG p.111" },
+  mend: { resolves: "dmScene() — Mending cantrip repairs one break up to 1 ft; otherwise a tool check", source: "SRD 5.1, Mending" },
+  brew: { resolves: "craftProgress() against a catalog potion with a craft block", source: "SRD 5.1, Between Adventures: Crafting" },
+  pray: { resolves: "dmScene() — no rule; the DM answers or does not", source: "Sam, 2026-09-26" },
+  level_up: { resolves: "levelUp()", source: "SRD 5.1, Beyond 1st Level; Sam, 2026-08-20" },
+  trade: { resolves: "trade() — only when the passive roll brought a merchant", source: "Sam, 2026-09-26" },
+  hunt: { resolves: "hunt() — the foraging rule; the SRD has no separate hunting rule", source: "DMG p.111" },
+  explore: { resolves: "dmScene() — the nearby area is the DM's to describe", source: "Sam, 2026-09-26" },
+  perform: { resolves: "perform() — a band, and on a partial rest the bard's exception", source: "Sam, 2026-08-20 and 2026-09-26" },
+  talk: { resolves: "weightRelationshipEvent()", source: "Sam's gravity system" },
 }
 
 export interface SpendOutcome {
@@ -233,6 +321,125 @@ export function resolveWatch(
   else if (results.length === 1 && head && /no encounter/i.test(results[0])) note = `Watch${where}: ${head.roll} on ${tableKey} — no encounter.`
   else note = `Watch${where}: ${results.join("; ")}${creatures.length ? ` — ${creatures.join(", ")} approach; resolve surprise, then initiative.` : "."}`
   return { rolled: true, tableKey, chain, results, creatures, handoff, flags, note }
+}
+
+// ============================================================================
+// §10 THE PASSIVE ROLL — who comes to the fire (Sam, 2026-09-26)
+// ============================================================================
+//
+// "There should be a passive roll to determine if randomly they encounter
+//  brigands, villains, wandering merchants (rare), mysterious person (may be
+//  malicious, hidden god/fey spirit (rare), or neutral (common))."
+//
+// Passive: nobody at the table rolls it; the route draws it server-side when
+// the rest resolves. It is NOT a camp action. The rows below are in exactly the
+// shape of `encounter_table_rows` / `encounter_tables`, so they can move into
+// the database without touching this code, and `resolveWatch` rolls them like
+// any other table.
+//
+// THE FACES ARE SAM'S (2026-09-26, late): "Nobody 85%, 5% Brigands, 5%
+// Villains, 2.5% merchant, 2.5% a wandering person (deep gnome / duergar /
+// human / kuo-toa / crazy dwarf / crazy drow / hag or witch). 25% malicious,
+// 80% neutral, 5% divine (50:50 Good / Evil)."
+//
+// A d40 gives the 2.5% steps exactly. Two readings remain, both flagged on the
+// result when they fire:
+//   - 25 + 80 + 5 is 110. Malicious 25 and divine 5 are kept exact; neutral is
+//     the remainder, 70. Sam corrects it in a word.
+//   - The seven kinds of wandering person carry no weights, so they are equal
+//     odds on a d7.
+
+export const CAMP_VISITOR_TABLE = "camp_visitors"
+export const CAMP_VISITOR_KIND_TABLE = "camp_visitor_kind"
+export const CAMP_VISITOR_PERSON_TABLE = "camp_visitor_person"
+export const CAMP_VISITOR_DIVINE_TABLE = "camp_visitor_divine"
+
+export type CampVisitor = "brigands" | "villains" | "merchant" | "person"
+export type VisitorDisposition = "malicious" | "divine" | "neutral"
+export type DivineAlignment = "good" | "evil"
+
+/** `encounter_tables` rows: the die each table uses. */
+export const CAMP_VISITOR_TABLES: EncounterTable[] = [
+  { table_key: CAMP_VISITOR_TABLE, die: 40 },
+  { table_key: CAMP_VISITOR_KIND_TABLE, die: 7 },
+  { table_key: CAMP_VISITOR_PERSON_TABLE, die: 20 },
+  { table_key: CAMP_VISITOR_DIVINE_TABLE, die: 2 },
+]
+
+export const CAMP_VISITOR_ROWS: EncounterTableRow[] = [
+  // d40 — who comes
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 1, roll_max: 34, result: "No one comes", detail: { rolls: [] } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 35, roll_max: 36, result: "Brigands", detail: { kind: "brigands", hostile: true } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 37, roll_max: 38, result: "Villains", detail: { kind: "villains", hostile: true } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 39, roll_max: 39, result: "A wandering merchant", detail: { kind: "merchant" } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 40, roll_max: 40, result: "A wandering person", detail: { kind: "person", rolls: [CAMP_VISITOR_KIND_TABLE, CAMP_VISITOR_PERSON_TABLE] } },
+  // d7 — what kind of person (equal odds: Sam gave no weights)
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 1, roll_max: 1, result: "a deep gnome", detail: { who: "deep gnome" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 2, roll_max: 2, result: "a duergar", detail: { who: "duergar" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 3, roll_max: 3, result: "a human", detail: { who: "human" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 4, roll_max: 4, result: "a kuo-toa", detail: { who: "kuo-toa" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 5, roll_max: 5, result: "a crazy dwarf", detail: { who: "crazy dwarf" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 6, roll_max: 6, result: "a crazy drow", detail: { who: "crazy drow" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 7, roll_max: 7, result: "a hag or witch", detail: { who: "hag or witch" } },
+  // d20 — disposition (25 / 70 / 5; see the note above on Sam's 110%)
+  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 1, roll_max: 5, result: "who means harm", detail: { disposition: "malicious" } },
+  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 6, roll_max: 19, result: "who is simply passing through", detail: { disposition: "neutral" } },
+  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 20, roll_max: 20, result: "who is something divine in disguise", detail: { disposition: "divine", rolls: [CAMP_VISITOR_DIVINE_TABLE] } },
+  // d2 — which way the divine leans
+  { table_key: CAMP_VISITOR_DIVINE_TABLE, roll_min: 1, roll_max: 1, result: "(good)", detail: { alignment: "good" } },
+  { table_key: CAMP_VISITOR_DIVINE_TABLE, roll_min: 2, roll_max: 2, result: "(evil)", detail: { alignment: "evil" } },
+]
+
+export interface PassiveEncounter {
+  /** The underlying roll chain, for the log. */
+  watch: WatchOutcome
+  visitor: CampVisitor | null
+  /** For a wandering person: which of Sam's seven. */
+  who: string | null
+  disposition: VisitorDisposition | null
+  /** For a divine visitor: good or evil, 50:50. */
+  alignment: DivineAlignment | null
+  /** Brigands and villains come to fight; the DM picks the stat block from the bestiary. */
+  hostile: boolean
+  /** What the `trade` action reads. */
+  merchantPresent: boolean
+  flags: string[]
+  note: string
+}
+
+/**
+ * The passive roll. A safe node (`metadata.safe = true`) gets no visitor.
+ * `opts.rows` / `opts.tables` let the route pass database rows once the tables
+ * live there; until then the constants above are the tables.
+ */
+export function passiveCampEncounter(node: WatchNode, rng: Rng, opts: { rows?: EncounterTableRow[]; tables?: EncounterTable[] } = {}): PassiveEncounter {
+  const rows = opts.rows ?? CAMP_VISITOR_ROWS
+  const tables = opts.tables ?? CAMP_VISITOR_TABLES
+  const watch = resolveWatch({ ...node, metadata: { ...(node.metadata ?? {}), encounter_table: CAMP_VISITOR_TABLE } }, rows, rng, { resting: true, tables })
+  const flags = [...watch.flags]
+  const details = watch.chain.map((c) => c.detail ?? {})
+  const pick = (key: string): string | null => {
+    const vals = details.map((d) => d[key]).filter((v): v is string => typeof v === "string")
+    return vals.length ? vals[vals.length - 1] : null
+  }
+  const visitor = pick("kind") as CampVisitor | null
+  const who = pick("who")
+  const disposition = pick("disposition") as VisitorDisposition | null
+  const alignment = pick("alignment") as DivineAlignment | null
+  const hostile = details.some((d) => d.hostile === true)
+  if (hostile) flags.push(`${visitor}: no bestiary row is named by the table; the DM picks the stat block.`)
+  if (visitor === "person") flags.push("Disposition odds read as 25 / 70 / 5 — Sam's 25 / 80 / 5 sums to 110; neutral took the difference. The seven kinds are equal odds — no weights given.")
+  // For a person, every row in the chain after the first is part of the description
+  // (kind, disposition, and the divine lean), including the ones that rolled again.
+  const personParts = watch.chain.slice(1).map((c) => c.result).filter((r): r is string => !!r)
+  const note = !watch.rolled
+    ? watch.note
+    : visitor == null
+      ? `The night passes; no one comes to the fire.`
+      : visitor === "person"
+        ? `A wandering person comes to the fire: ${personParts.join(", ")}.`
+        : `${watch.results.join(" ")}${hostile ? " — they mean to fight." : "."}`
+  return { watch, visitor, who, disposition, alignment, hostile, merchantPresent: visitor === "merchant", flags, note }
 }
 
 // ============================================================================
@@ -558,31 +765,40 @@ export function weightRelationshipEvent(scene: TalkScene): RelationshipEventRow 
 export type PerformanceBand = "flat" | "warm" | "moving"
 
 /**
- * Where the bands sit. The SRD's Typical Difficulty Classes ladder (Easy 10,
- * Medium 15) is the only published scale to hang them on; that reading is
- * Claude's and needs Sam's yes, so it is flagged in every result.
+ * Where the bands sit: the SRD's Typical Difficulty Classes ladder (Easy 10,
+ * Medium 15). Sam confirmed "success" = warm, 2026-09-26 (late).
  */
 export const PERFORMANCE_BANDS: { warm: number; moving: number } = { warm: 10, moving: 15 }
 
 export interface PerformOutcome {
   check: CheckResult
   band: PerformanceBand
-  /** Always null: the DM sets any relationship deltas after reading the band. No mechanical buff (Sam, 2026-08-20). */
+  /** Always null: the DM sets any relationship deltas after reading the band (Sam, 2026-08-20). */
   deltas: null
+  /**
+   * "The bard inspires and plays for the group successfully" (Sam, 2026-09-26):
+   * true at `warm` or better. On a partial rest this is what `bardUpgrade` reads.
+   */
+  inspires: boolean
   flags: string[]
   note: string
 }
 
-/** Bard performance is a camp action with no mechanical buff — one CHA (Performance) check the DM reads. Sam, 2026-08-20. */
+/**
+ * One CHA (Performance) check the DM reads as a band. Its only mechanical
+ * effect is the partial-rest exception (`inspires`); it buffs nothing else.
+ */
 export function perform(sheet: SheetSlice, rng: Rng): PerformOutcome {
   const check = resolveSkillCheck(sheet, "performance", PERFORMANCE_BANDS.warm, rng)
   const band: PerformanceBand = check.total >= PERFORMANCE_BANDS.moving ? "moving" : check.total >= PERFORMANCE_BANDS.warm ? "warm" : "flat"
+  const inspires = band !== "flat"
   return {
     check,
     band,
     deltas: null,
-    flags: [`Band thresholds (${PERFORMANCE_BANDS.warm}/${PERFORMANCE_BANDS.moving}) follow the SRD Typical DC ladder — a reading, needs Sam's yes.`],
-    note: `${sheet.name} performs: ${check.total} — ${band}. (${check.arithmetic.replace(/ vs DC \d+$/, "")})`,
+    inspires,
+    flags: [],
+    note: `${sheet.name} performs: ${check.total} — ${band}${inspires ? ", and the group is lifted by it" : ""}. (${check.arithmetic.replace(/ vs DC \d+$/, "")})`,
   }
 }
 
@@ -694,6 +910,92 @@ export function craftProgress(
       ? `${crafter.name} finishes the ${item.name} (${after}/${value} gp of work).`
       : `${crafter.name} works ${d} day${d === 1 ? "" : "s"} on the ${item.name}: ${after}/${value} gp, ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} to go.`,
   }
+}
+
+// ============================================================================
+// §10 THE REST OF THE MENU — attune, investigate, decipher, hunt, trade, scenes
+// ============================================================================
+
+/** SRD 5.1, Attunement: "A creature can be attuned to no more than three magic items at a time." */
+export const MAX_ATTUNED = 3
+
+export interface MagicItem {
+  name: string
+  /** `items.attunement`. */
+  attunement: boolean | null
+  /** `items.cursed`. Never revealed by anything in this file. */
+  cursed?: boolean | null
+  description?: string | null
+  properties?: Record<string, unknown> | null
+  item_type?: string | null
+}
+
+export interface AttuneOutcome {
+  ok: boolean
+  attunedCount: number
+  /** Always false: "most methods of identifying items ... fail to reveal such a curse" (SRD). */
+  curseRevealed: false
+  note: string
+}
+
+/**
+ * SRD 5.1, Attunement: a short rest focused on the item; one item per rest;
+ * three at a time. A cursed item attunes like any other and says nothing.
+ */
+export function attune(c: { name: string; attunedCount: number; attunedThisRest: boolean }, item: MagicItem): AttuneOutcome {
+  const count = Math.max(0, Math.trunc(c.attunedCount || 0))
+  if (item.attunement !== true) return { ok: false, attunedCount: count, curseRevealed: false, note: `${item.name} needs no attunement.` }
+  if (c.attunedThisRest) return { ok: false, attunedCount: count, curseRevealed: false, note: `${c.name} has already attuned to an item this rest — one per rest (SRD).` }
+  if (count >= MAX_ATTUNED) return { ok: false, attunedCount: count, curseRevealed: false, note: `${c.name} is attuned to ${MAX_ATTUNED} items already — the limit (SRD).` }
+  return { ok: true, attunedCount: count + 1, curseRevealed: false, note: `${c.name} attunes to ${item.name} (${count + 1}/${MAX_ATTUNED}).` }
+}
+
+export interface IdentifyOutcome {
+  revealed: { name: string; description: string | null; attunement: boolean; properties: Record<string, unknown> }
+  curseRevealed: false
+  note: string
+}
+
+/**
+ * SRD 5.1, Identifying a Magic Item: a short rest in physical contact with the
+ * item reveals its properties. The curse is the one thing it never reveals —
+ * the returned object has no `cursed` field at all, so a route cannot leak it
+ * by accident. Potions need only a taste (SRD), so identifying one is free.
+ */
+export function identifyItem(item: MagicItem): IdentifyOutcome {
+  const { craft: _craft, ...rest } = item.properties ?? {}
+  const potion = /potion/i.test(item.item_type ?? "") || /potion/i.test(item.name)
+  return {
+    revealed: { name: item.name, description: item.description ?? null, attunement: item.attunement === true, properties: rest },
+    curseRevealed: false,
+    note: potion
+      ? `A taste is enough: ${item.name} is what it is.`
+      : `${item.name}: an hour's handling reveals what it does${item.attunement ? " and that it wants attunement" : ""}.`,
+  }
+}
+
+/** INT (Arcana) against the DC the DM sets for the text (SRD Typical DCs: 10 easy, 15 medium, 20 hard). */
+export function decipher(sheet: SheetSlice, dc: number, rng: Rng): { check: CheckResult; note: string } {
+  const check = resolveSkillCheck(sheet, "arcana", Math.max(1, Math.trunc(dc || 15)), rng)
+  return { check, note: `${sheet.name} ${check.success ? "makes sense of" : "cannot make sense of"} the arcana (${check.arithmetic}).` }
+}
+
+/** Hunting: the SRD and the DMG have no separate rule, so it is the foraging rule, said so. */
+export function hunt(sheet: SheetSlice, rng: Rng, opts: { dc?: number; slowPace?: boolean } = {}): ForageOutcome {
+  const out = forage(sheet, rng, opts)
+  return { ...out, flags: ["Hunting uses the foraging rule (DMG p.111); there is no separate one.", ...out.flags], note: out.note.replace("forages", "hunts") }
+}
+
+/** Trade needs a merchant, and only the passive roll brings one. */
+export function trade(c: { name: string }, encounter: { merchantPresent: boolean }): { ok: boolean; note: string } {
+  if (!encounter.merchantPresent) return { ok: false, note: `${c.name} looks for someone to trade with; there is no merchant at this fire.` }
+  return { ok: true, note: `${c.name} trades with the merchant — prices and stock are the DM's; every item resolves against the catalog.` }
+}
+
+/** The actions with no rule — pray, explore, mend — are the DM's scene. This says so instead of pretending. */
+export function dmScene(action: CampAction, c: { name: string }): { action: CampAction; rule: string; source: string; flags: string[]; note: string } {
+  const r = CAMP_ACTION_RULES[action]
+  return { action, rule: r.resolves, source: r.source, flags: [`${action}: no mechanical rule; resolved as a scene by the DM.`], note: `${c.name} spends the evening on ${action.replace("_", " ")}.` }
 }
 
 // ============================================================================

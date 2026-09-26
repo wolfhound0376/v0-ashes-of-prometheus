@@ -1,6 +1,7 @@
 # Ashes of Prometheus — Camp Module (decision of record, 2026-09-26)
 
-**Status:** delivered as `lib/camp.ts` + `lib/camp.test.ts` (24 seeded tests pass, `tsc --strict` clean). Not yet in the repo — wiring is a repo-attached PR (§8).
+**Status:** delivered as `lib/camp.ts` + `lib/camp.test.ts` (32 seeded tests pass, `tsc --strict` clean). In PR #463. Wiring is PRs 2–5 (§8).
+**Amended the same evening by §10** — Sam's rulings on the two-tier budget, rations, the bard's exception, the full menu, and the passive visitor roll. Where §10 and §2–§3 disagree, §10 wins.
 **Authority:** sits under `claude_Architecture_Canon.md` (Layer 1) and `claude_Game_Context_State_Machine.md` §1 (the camp context). Expands `claude_Playable_Layer_Design.md` §7 ("Camp — a menu of time") into rules and tables. Nothing here changes the four layers, the Claude-only stack, the 5-ft grid, or the dice roller. Rules stay 5E. Every number below is SRD 5.1, Out of the Abyss (D&D Encounters), DMG p.111 (flagged — not SRD), or a dated house rule of Sam's. Nothing is improvised; where a rule is missing the code returns a `flags` entry instead of a guess.
 
 ---
@@ -94,3 +95,71 @@ Deferred: a camp UI ("one still scene, a fire, tap a character") is HD-2D work a
 - **Sam-originated:** camp as a menu of time; level-ups gated to camp with location exceptions; positive-tail visitors; palliation 60–70%; bard performance as a camp action; "keep it 5E".
 - **Claude-originated, for Sam's yes:** one-action-per-rest budget using the existing column; slow pace = advantage; PHB minimum-1-hp reading; `items.properties.craft` as the recipe convention; `travel_nodes.metadata.safe` / `encounter_table` / `allows_level_up` conventions.
 - **Books:** SRD 5.1 (Resting, Beyond 1st Level, Crafting, Bard, Warlock); OotA D&D Encounters ch.2 pp.24–32; DMG p.111 (foraging yield — the only non-SRD number, flagged in code).
+
+---
+
+## 10. Rulings of 2026-09-26 (evening) — the budget, the rations, the passive roll
+
+Sam, verbatim:
+
+> Each person for each full Rest gets two camp actions. Partial rest is one unless the bard inspires and plays for the group successfully. Attuning to magical items, investigation of magical items, deciphering arcana, building / artificing, foraging, mending items, combining ingredients/building potions/elixirs, praying for guidance, leveling up, trading with merchants, hunting, exploring in the nearby area, playing music/entertaining all take actions. Once all characters have used up their actions they rest according to their rations available. Full rest takes 20 rations, partial 10, larger parties (6-8+ take 30). More than 8 is 40. There should be a passive roll to determine if randomly they encounter brigands, villains, wandering merchants (rare), mysterious person (may be malicious, hidden god/fey spirit (rare), or neutral (common).
+
+How the code reads it:
+
+**The rest is bought with rations.** A *full* rest is the long rest (`lib/long-rest.ts`); a *partial* rest is the short rest (`shortRest`). `fullRestRations(partySize)` is 20 for up to five, 30 for six to eight, 40 past eight — Sam's numbers verbatim. `partialRestRations` is 10 for a normal party as Sam said; for larger parties he gave only the full cost, so **half** is the reading and `affordableRest` flags it. `affordableRest(supplies, partySize)` returns the best rest the rations buy, or `null` (the party goes hungry — `lib/exhaustion.ts` takes over). The route must charge this cost at camp and **not also** `suppliesForParty` (one per mouth) — two economies would double-charge.
+
+**The budget follows the rest.** `makeCampBudget("full")` = 2, `("partial")` = 1, `(null)` = 0. It is decided when camp is made, from the rations then on hand; foraging or hunting during the actions may raise the rations, and the rest that resolves at the end is bought with what is on hand *then*. (So a party that forages its way from partial to full gets the full rest but had the partial budget — a consequence, not a bug. Sam can rule otherwise.)
+
+**The bard's exception.** `perform()` now returns `inspires` — true at *warm* or better, the same SRD Typical-DC reading as the bands, needs Sam's yes. On a partial rest, `bardUpgrade(remaining, "partial", inspires)` adds one action to every character, the bard included, once. The bard's own performance still costs their action. On a full rest it does nothing. This supersedes the 2026-08-20 "no mechanical buff" — the buff is exactly one action and nothing else.
+
+**The menu is Sam's list.** `CAMP_ACTIONS` = attune, investigate, decipher, artifice, forage, mend, brew, pray, level_up, trade, hunt, explore, perform, talk. `CAMP_ACTION_RULES` names how each resolves and its source. `watch` and `tend` left the menu: the encounter roll is passive (below) and the short rest *is* the partial rest. **`talk` is kept from §5 — Sam's list did not name it. Needs his yes.**
+
+| Action | Resolves as | Source |
+|---|---|---|
+| attune | `attune` — one item per rest, three at a time; a curse stays silent | SRD Attunement |
+| investigate | `identifyItem` — a rest's handling reveals properties, never the curse; potions need a taste | SRD Identifying a Magic Item |
+| decipher | `decipher` — INT (Arcana) vs the DM's DC | SRD Typical DCs |
+| artifice, brew | `craftProgress` — catalog items with a `craft` block only (§6) | SRD Crafting |
+| forage | `forage` (§2) | OotA-Enc p.25; DMG p.111 |
+| hunt | `hunt` — the foraging rule; neither the SRD nor the DMG has a separate one, and the code says so | DMG p.111 |
+| mend | `dmScene` — SRD Mending repairs one break up to a foot; anything larger is a tool check the DM sets | SRD Mending |
+| pray, explore | `dmScene` — no rule; the DM's scene, flagged as such | Sam, 2026-09-26 |
+| level_up | `levelUp` (§4) | SRD; Sam 2026-08-20 |
+| trade | `trade` — refused unless the passive roll brought a merchant | Sam, 2026-09-26 |
+| perform | `perform` — a band, and the partial-rest exception | Sam, 2026-08-20 / 09-26 |
+| talk | `weightRelationshipEvent` (§5) | Sam's gravity system |
+
+**The passive roll.** Not an action; the route draws it server-side when the rest resolves. `passiveCampEncounter(node, rng)` rolls `CAMP_VISITOR_ROWS`, which are in the exact shape of `encounter_table_rows` (`camp_visitors` → `camp_visitor_person`) so they can move into the database without a code change. A safe node gets no visitor. Brigands and villains are `hostile` and the DM picks the stat block from the bestiary (no row names one). A merchant sets `merchantPresent`, which `trade` reads. A mysterious person is rolled again: malicious, a hidden god or fey spirit (rare), or neutral (common).
+
+The faces were first a reading of "rare" and "common"; Sam gave his own numbers the same evening — **§11 has them and is the table.** The OotA random-encounter table (§3) is untouched and still rolls through `resolveWatch` wherever the route wants it.
+
+**Still needs Sam's yes** (§11 settled the rest): slow pace = advantage (§2); minimum 1 hp per level (§2); stable-at-0 spending Hit Dice on a partial rest; and the 110% in §11.
+
+---
+
+## 11. Rulings of 2026-09-26 (late) — confirmed
+
+Sam, verbatim, answering the four readings in §10:
+
+> 1. Yes. 2. Yes. 3. Talk stays. 4. Nobody 85%, 5% Brigands, 5% Villians, 2.5% merchant, 2.5% a wandering person (deep gnome/drueggar/human/Kuo-toa/crazy dwarf/crazy drow/or hag/witch). 25% malicious, 80% neutral, 5% divine (50:50 Good / Evil).
+
+So, now Sam's and no longer flagged: the partial rest costs **half** the full rest at every party size; the bard's success is **warm or better**; **`talk` stays** on the menu.
+
+**The visitor tables.** A d40 gives the 2.5% steps exactly. All four tables are in `encounter_tables` / `encounter_table_rows` shape (`CAMP_VISITOR_TABLES`, `CAMP_VISITOR_ROWS`) and can be loaded into the database as they are.
+
+| d40 `camp_visitors` | | d7 `camp_visitor_kind` | | d20 `camp_visitor_person` | | d2 `camp_visitor_divine` |
+|---|---|---|---|---|---|---|
+| 1–34 no one (85%) | | 1 deep gnome | | 1–5 malicious (25%) | | 1 good |
+| 35–36 brigands (5%) | | 2 duergar | | 6–19 neutral (70%) | | 2 evil |
+| 37–38 villains (5%) | | 3 human | | 20 divine (5%) → d2 | | |
+| 39 a wandering merchant (2.5%) | | 4 kuo-toa | | | | |
+| 40 a wandering person (2.5%) → d7, d20 | | 5 crazy dwarf | | | | |
+| | | 6 crazy drow | | | | |
+| | | 7 hag or witch | | | | |
+
+Brigands and villains come to fight; no row names a stat block, so the DM picks one from the bestiary and the code says so. A merchant sets `merchantPresent`, which `trade` reads.
+
+**Two readings remain, flagged on every wandering-person result until Sam speaks:**
+
+- **25 + 80 + 5 is 110.** Malicious 25 and divine 5 are kept exact; neutral is the remainder, **70**. If Sam meant 20 / 75 / 5 or 15 / 80 / 5, it is one number to change in `CAMP_VISITOR_ROWS`.
+- **The seven kinds of wandering person carry no weights**, so they are equal odds on a d7.
