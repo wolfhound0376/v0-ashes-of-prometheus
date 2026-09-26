@@ -1,0 +1,97 @@
+{
+  "slug": "tavern",
+  "name": "The Tavern Platform",
+  "squares": 12,
+  "squarePx": 32,
+  "deck": "deck.png",
+  "walkable": [
+    "............",
+    "............",
+    "............",
+    "...ooooooo..",
+    "...oooooooo.",
+    "...ooooooooo",
+    "...ooooooooo",
+    "...oooooooo.",
+    "...ooooooo..",
+    "...ooooooo..",
+    "....oooo....",
+    ".....oo....."
+  ],
+  "props": [
+    {
+      "id": "pillar",
+      "image": "pillar.png",
+      "x": 5,
+      "y": 5,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "table-nw",
+      "image": "table.png",
+      "x": 3,
+      "y": 3,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "table-se",
+      "image": "table.png",
+      "x": 7,
+      "y": 7,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "winch",
+      "image": "winch.png",
+      "x": 3,
+      "y": 8,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "brazier-ne",
+      "image": "brazier.png",
+      "x": 8,
+      "y": 3,
+      "w": 1,
+      "h": 1,
+      "light": {
+        "color": "#b98cff",
+        "radius": 110,
+        "flicker": 0.18
+      }
+    },
+    {
+      "id": "brazier-w",
+      "image": "brazier.png",
+      "x": 3,
+      "y": 6,
+      "w": 1,
+      "h": 1,
+      "light": {
+        "color": "#b98cff",
+        "radius": 110,
+        "flicker": 0.18
+      }
+    }
+  ],
+  "spawns": [
+    {
+      "id": "freia",
+      "sprite": "/sprites/freia/sprite.json",
+      "x": 10,
+      "y": 5,
+      "facing": "west"
+    },
+    {
+      "id": "samson",
+      "sprite": "/sprites/samson/sprite.json",
+      "x": 6,
+      "y": 10,
+      "facing": "north"
+    }
+  ]
+}
