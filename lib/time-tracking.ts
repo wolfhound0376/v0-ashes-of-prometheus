@@ -179,7 +179,13 @@ It is Day ${clock.day}, ${timeOfDay.toLowerCase()} in the Underdark. ${clock.exc
 
 TIME TAGS — emit these inline in your prose; the system strips them before the
 players ever see them, and the database advances the clock:
-- [TIME:short_rest] — the party takes a short rest (1+ hour)
+- [TIME:short_rest|spend=Kenta:1,Samson:max] — the party takes a short rest (1+ hour).
+  spend= lists each character who chooses to spend Hit Dice and how many, or
+  "max" to heal as far as their dice allow; a character you do not name spends
+  none, so carry exactly what the players said. Add |song=<bard name> if a bard
+  performs Song of Rest, or |song=none to skip it. The system rolls the dice
+  and applies hit points, Hit Dice and warlock pact slots — never invent those
+  totals in your prose.
 - [TIME:long_rest] — the party takes a long rest (8+ hours; only one per 24h)
 - [TIME:combat_encounter] — a fight has just concluded
 - [TIME:labor_shift] — a Velkynvelve forced-labor shift passes
@@ -198,8 +204,10 @@ the clock, or the roll in the visible narration.`
 // TAG PARSING
 // ============================================================================
 
-// Matches [TIME:event] or [TIME:cinematic_cut|minutes=90]
-const TIME_TAG_RE = /\[TIME:\s*([a-z_]+)\s*(?:\|\s*minutes\s*=\s*(\d+))?\s*\]/gi
+// Matches [TIME:event], [TIME:cinematic_cut|minutes=90] or
+// [TIME:short_rest|spend=Kenta:1,Samson:max|song=Scott]. Group 2 is the whole
+// `|key=value|...` body; `parseTagArgs` splits it.
+const TIME_TAG_RE = /\[TIME:\s*([a-z_]+)\s*((?:\|[^\]]*)?)\]/gi
 // Matches [STORY_ADVANCE] or [STORY_ADVANCE|die=d20|result=14|purpose=...|source=...]
 const STORY_ADVANCE_RE = /\[STORY_ADVANCE\s*((?:\|[^\]]*)?)\]/gi
 
@@ -216,21 +224,23 @@ export function stripTimeTags(text: string): string {
   return out
 }
 
-function parseHiddenRoll(body: string): HiddenRoll | undefined {
-  // body looks like: |die=d20|result=14|purpose=guard rotation|source=homebrew
-  const parts = body
-    .split("|")
-    .map((p) => p.trim())
-    .filter(Boolean)
-  if (parts.length === 0) return undefined
+/** `|die=d20|result=14|purpose=...` → `{ die: "d20", result: "14", purpose: "..." }`. Keys are lower-cased. */
+function parseTagArgs(body: string): Record<string, string> {
   const kv: Record<string, string> = {}
-  for (const part of parts) {
+  for (const part of body.split("|").map((p) => p.trim()).filter(Boolean)) {
     const eq = part.indexOf("=")
     if (eq === -1) continue
     const key = part.slice(0, eq).trim().toLowerCase()
     const value = part.slice(eq + 1).trim()
     if (key) kv[key] = value
   }
+  return kv
+}
+
+function parseHiddenRoll(body: string): HiddenRoll | undefined {
+  // body looks like: |die=d20|result=14|purpose=guard rotation|source=homebrew
+  const kv = parseTagArgs(body)
+  if (Object.keys(kv).length === 0) return undefined
   const result = Number(kv.result)
   if (!kv.die || !Number.isFinite(result)) return undefined
   return {
@@ -239,6 +249,51 @@ function parseHiddenRoll(body: string): HiddenRoll | undefined {
     purpose: kv.purpose || "unspecified",
     source: kv.source || "homebrew",
   }
+}
+
+// ============================================================================
+// SHORT REST ARGUMENTS
+// ============================================================================
+//
+// Spending Hit Dice is a player's choice (SRD 5.1, Resting: "A character can
+// spend one or more Hit Dice at the end of a short rest"), so the route never
+// decides it. Malachar carries what the players said into the tag:
+//
+//   [TIME:short_rest|spend=Kenta:1,Samson:max|song=Scott]
+//
+// `spend` names each character and a count, or `max` for "as many as it takes
+// to reach full hit points". A character not named spends nothing. `song`
+// names the bard who performs Song of Rest; `song=none` means no bard sings.
+// With no `song` argument, the route lets a bard in the party sing.
+
+export interface ShortRestArgs {
+  /** Character name (as written) → dice to spend, or "max". */
+  spend: Record<string, number | "max">
+  /** Bard's name, `null` when the tag said `song=none`, `undefined` when it said nothing. */
+  song: string | null | undefined
+}
+
+const SHORT_REST_TAG_RE = /\[TIME:\s*short_rest\s*((?:\|[^\]]*)?)\]/i
+
+/** The `spend=` and `song=` arguments of the first [TIME:short_rest] tag, or null when there is no such tag. */
+export function parseShortRestArgs(rawText: string): ShortRestArgs | null {
+  const m = SHORT_REST_TAG_RE.exec(rawText)
+  if (!m) return null
+  const kv = parseTagArgs(m[1] || "")
+  const spend: Record<string, number | "max"> = {}
+  for (const entry of (kv.spend ?? "").split(",").map((e) => e.trim()).filter(Boolean)) {
+    const colon = entry.lastIndexOf(":")
+    if (colon === -1) continue
+    const name = entry.slice(0, colon).trim()
+    const raw = entry.slice(colon + 1).trim().toLowerCase()
+    if (!name) continue
+    if (raw === "max" || raw === "all") spend[name] = "max"
+    else if (/^\d+$/.test(raw)) spend[name] = Number(raw)
+    else console.warn(`[time] ignoring short_rest spend "${entry}" — not a number or max`)
+  }
+  const songRaw = kv.song?.trim()
+  const song = songRaw == null || songRaw === "" ? undefined : /^(none|no|nobody)$/i.test(songRaw) ? null : songRaw
+  return { spend, song }
 }
 
 /**
@@ -257,7 +312,7 @@ export function parseTimeEvents(rawText: string): TimeEventInput[] {
     }
     if (type === "story_advance" || type === "dialogue_exchange") continue // handled elsewhere
     if (type === "cinematic_cut") {
-      const minutes = m[2] ? Number(m[2]) : NaN
+      const minutes = Number(parseTagArgs(m[2] || "").minutes ?? NaN)
       if (!Number.isFinite(minutes)) {
         console.warn("[time] ignoring [TIME:cinematic_cut] without a minutes value")
         continue
