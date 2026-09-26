@@ -345,6 +345,16 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
 - **Portrait rule, non-negotiable**: character and NPC art is **never cropped through the
   head**. `object-fit: contain` for framed portraits; where a cover crop is unavoidable
   (circular avatars) anchor with `object-position: center 10–18%`. Everywhere art renders.
+- **Sprite height rule (Sam's ruling)**: a battle sprite's `ppu` (pixels per 5-ft square)
+  is set so the figure stands at its real height, measured from the drawn figure in its
+  `idle` sheet (`ppu = figure_px × 5 / feet`), never left at the default. Humans (and
+  half-elves) 5.5–6.5 ft, default 5.9 ft; a height on the character sheet
+  (`sheet_appearance.height`) wins. Elves (drow included) 6 ft. Dwarves (duergar included)
+  4–4.5 ft, default 4.3 ft. Halflings just above gnomes: Freía 3.3 ft, deep gnome 3.0 ft.
+  Creatures without a stated height stand at their 5e size: Tiny ~2 ft, Small ~3–3.5 ft,
+  Large ~9–10 ft (wide ones measured across, to fill their 10-ft space); the ancient deep
+  dragon is 40 ft across. `scripts/sprites/underdark-roster.json` holds every monster's
+  target.
 - **Item art**: use the uploaded `icon_url` when present, otherwise a neutral framed glyph
   tile. **Never AI-generate item art.**
 - **Don't build empty pages.** A nav item with an honest "soon" badge beats a dead page.
