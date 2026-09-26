@@ -1,6 +1,6 @@
 # Ashes of Prometheus — Camp Scene (design draft, 2026-09-26)
 
-**Status:** draft for Sam's reaction. A working mock is published (artifact "Camp at the Fire"): the party's real repo sprites around a fire on three placeholder backdrops, a bedroll per member, ambient activity, and the menu of time as a pixel HUD wired to `lib/camp.ts`.
+**Status:** draft for Sam's reaction, amended 2026-09-26 17:20 with his rulings (player view, action box, sleep = done) and brought in line with the camp rules that merged to main the same evening (PR #477–#480: two-tier budget, rations, the 14-action menu, the passive visitor roll). A working mock is published (artifact "Camp at the Fire"): the party's real repo sprites around a fire on three placeholder backdrops, a bedroll per member, ambient activity, and the menu of time as a pixel HUD wired to `lib/camp.ts`.
 **Authority:** under `claude_HD2D_Pivot.md` (exploration looks like Octopath: 3D diorama, tilt-shift, 2D pixel actors, fixed oblique camera) and `docs/claude_Camp_Module.md` (the rules). This doc is the *look and behaviour* of the camp context; it changes no rule.
 
 ---
@@ -15,7 +15,19 @@
 - **Fire** dead centre-low (240,172). Warm radial glow lights the floor and the figures; figures far from the fire fall into shadow (that shading is per-sprite, not baked).
 - **Seats** around the fire (5 spots facing in). **Stations** off the ring: whetstone rock (left), cookpot (right), the quiet rock (back, meditation), a talking pair (right), and each member's **bedroll + tent**, colour-keyed to class, in an arc across the back and down both sides.
 - **Depth sort** by feet-y; beds and props draw under figures; ambient particles (embers, spores, mist over water) on top.
-- **HUD**: the camp menu in chunky pixel type at the bottom — WATCH · FORAGE · TEND WOUNDS · TALK · PERFORM · CRAFT · LEVEL UP · SLEEP · BREAK CAMP. A clock plate top-left (day, time-of-day word, supplies, context). Hovering a figure shows name, class, HP, Hit Dice and what they are doing.
+- **HUD**: Sam's menu (`CAMP_ACTIONS` in `lib/camp.ts`: attune, investigate, decipher, artifice, forage, mend, brew, pray, level_up, trade, hunt, explore, perform, talk) in chunky pixel type at the bottom — the seven most used as buttons, the rest under MORE. **The action box** top-left: `YOU ARE Fifi · 2/2`, red at `0/2`; it is `characters.rest_actions_remaining` and nothing else. A clock plate (day, time-of-day word, rations, full/partial rest).
+
+## 1a. Whose view this is (Sam, 2026-09-26)
+
+**The scene is one player's view.** Your own figure is the only one you can select or act for; the others are on screen, doing their things, but not yours to touch. The **DM view** shows every figure with its budget and readiness. Nothing here changes who may act — the route already refuses a `[CAMP_ACTION]` for a character the seat does not own.
+
+**TALK leaves the scene.** Choosing TALK opens the dashboard's existing conversation UI (the dialogue log, the input, Malachar's voice — the same `/api/chat` route) with the fire behind it, a small side rail listing who is at the fire, and the action box. Picking someone spends the action (`talk`); walking back to camp closes it. No second chat system.
+
+**SLEEP means "I'm done."** It sets the player's `rest_actions_remaining` to 0 (unspent actions are forfeited — sleep is a choice) and walks their figure to bed. The readiness state *is* that column, so no new table: when every player character is at 0, the route's existing rule fires ("once all characters have used up their actions they rest according to their rations") — rations charged, the **passive roll** drawn once (`passiveCampEncounter`), the long or partial rest applied. A clean roll: the cave dims and every figure plays `sleep`. A hostile roll: the figures scramble to the fire, surprise (passive Perception vs Stealth) and initiative follow. A merchant or a wandering person: they walk in and stand at the fire for the DM's scene. The scene learns all of this from realtime on `characters` (budgets, readiness) and `rest_events` (the night's result).
+
+## 1b. Is the backdrop 3D?
+
+Yes — that is the HD-2D pivot, and the mock's flat plates are the one thing in it that is not the real thing. Recommendation: build the camp plate the way `/battle` already builds its room, **live in React Three Fiber**: low-poly cave geometry (floor, back wall, stalagmites, water plane) with pixel-textured materials, a fixed oblique camera, real depth-of-field for the tilt-shift, the fire as a point light so it lights the walls, and the figures as `lib/sprite-token.ts` billboards standing on the floor with real shadows. That is what makes it look 3D rather than painted, and every piece of it exists in the repo today. Pre-rendered PixelLab plates (§2, §5) are the fallback if the R3F build is too far out; they look right but the light cannot move.
 
 ## 2. Three backdrops = three biomes
 
@@ -33,7 +45,7 @@ Real plates: pixel-textured HD-2D dioramas per `claude_HD2D_Pivot.md` — not sm
 
 Each member runs a small loop: pick a station → walk (walk sheet, facing from velocity) → do the thing for 4–10 s → pick again. Stations have capacity; the talking pair needs two. Chooses from: fire (weighted ×3), whetstone, cookpot, quiet rock, talk, own bed.
 
-**SLEEP** sends everyone to their bedroll, dims the cave, rolls the watch (`resolveWatch`, OotA p.32) and then the long rest runs exactly as it does today (`lib/long-rest.ts`).
+The night itself is §1a: sleep is per player, the rest resolves when everyone is done, and the passive roll decides whether anyone comes.
 
 **Layer 1 hooks (later, not in the mock):** the choice of station should read the world — hunger (`unfed_rest_streak`) pushes toward the cookpot or away from it when supplies are 0; the relationship dimensions decide who sits next to whom and who will not talk to whom; a character with a pending level-up drifts to the quiet rock. This is where the gravity system becomes visible without a single number on screen.
 
@@ -65,12 +77,12 @@ Style anchor: Fifi's sheet (PixelLab character `8691d89b-…`). 480×270, top-do
 
 ## 6. Wiring plan
 
-1. **Scene component** `components/camp/camp-scene.tsx` (canvas, as in the mock) mounted on the `camp` context; reads party + allies (`characters.in_party`), node biome, supplies, clock. No schema change.
-2. **HUD → routes**: each button posts the same tag Malachar would (`[TIME:short_rest]`, `[TIME:long_rest]`) so there is one path for a rest whether the player or the DM starts it. Level-up, forage, craft go through the camp-module wiring PRs (spec §8).
+1. **Scene component** `components/camp/camp-scene.tsx` (R3F per §1b, canvas as the fallback) mounted on the `camp` context; reads party + allies, node biome, `party_supplies`, the clock, and subscribes to `characters` (`rest_actions_remaining`) and `rest_events`. No schema change.
+2. **HUD → routes**: each button sends the `[CAMP_ACTION: <me> | <action>]` tag through `/api/chat` as that character, so the player and the DM spend actions down one path. SLEEP writes `rest_actions_remaining = 0` for that character (service-role route); the route's existing all-done rule does the rest. TALK is the dashboard conversation with the scene behind it — no new endpoint.
 3. **Assets** land in `public/sprites/<slug>/{sit,sleep,sharpen,eat,meditate,talk}.png` and `public/camp/plates/<biome>.png`, `public/camp/props.png`.
 4. **Layer 1 hooks** (§3) last.
 
 ## 7. Provenance
 
-- **Sam (2026-09-26):** sprite camp scene; at least three Underdark backdrops; "looks 3D"; a bed or tent per character; pixelated UI for the options; NPCs visibly doing things (sharpening, talking, eating, meditating).
-- **Claude, for Sam's yes:** biome as node metadata; station loop with capacities; six new animation states; distance-from-fire shading; SLEEP rolling the watch before the long rest; relationship-driven seating as the Layer 1 hook.
+- **Sam (2026-09-26):** sprite camp scene; at least three Underdark backdrops; "looks 3D"; a bed or tent per character; pixelated UI for the options; NPCs visibly doing things (sharpening, talking, eating, meditating). Later the same day: one player's view, only your own character selectable; TALK opens the existing dashboard UI; an action box (1/2, 0/2); SLEEP = done; when everyone has hit sleep the rest executes and the encounter roll is passive; a clean roll plays the sleep animation.
+- **Claude, for Sam's yes:** biome as node metadata; station loop with capacities; six new animation states; distance-from-fire shading; readiness = `rest_actions_remaining` hitting 0 (no new table; unspent actions forfeited on SLEEP); live R3F plate over pre-rendered; relationship-driven seating as the Layer 1 hook.
