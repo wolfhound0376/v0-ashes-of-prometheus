@@ -13,6 +13,12 @@ export const CONDITION_PRESETS = [
   "Prone",
   "Invisible",
   "Exhaustion",
+  // The three the battle board draws on the body (lib/status-kinds.ts):
+  // flames and a pain hop, a lightning crackle, a web over the figure and
+  // on its square. Restrained already draws as webbed.
+  "Burning",
+  "Charged",
+  "Webbed",
 ] as const
 
 // Tailwind text color per known condition (case-insensitive key). Free-text
@@ -26,6 +32,9 @@ const CONDITION_COLORS: Record<string, string> = {
   prone: "text-yellow-400",
   invisible: "text-cyan-300",
   exhaustion: "text-amber-600",
+  burning: "text-orange-500",
+  charged: "text-sky-300",
+  webbed: "text-stone-200",
   // Additional 5e conditions that may already exist in saved data.
   blinded: "text-stone-400",
   charmed: "text-pink-400",

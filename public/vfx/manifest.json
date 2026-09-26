@@ -227,10 +227,28 @@
     "frames": 20,
     "rows": 4
   },
+  "pxArc": {
+    "bytes": 314,
+    "cols": 6,
+    "file": "pxArc.webp",
+    "fps": 12,
+    "frames": 6,
+    "loop": true,
+    "rows": 1
+  },
   "pxFireball": {
     "bytes": 932,
     "cols": 4,
     "file": "pxFireball.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxFlame": {
+    "bytes": 968,
+    "cols": 4,
+    "file": "pxFlame.webp",
     "fps": 12,
     "frames": 8,
     "loop": true,
@@ -322,6 +340,22 @@
     "frames": 8,
     "loop": true,
     "rows": 2
+  },
+  "pxWebFloor": {
+    "bytes": 452,
+    "cols": 1,
+    "file": "pxWebFloor.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
+  },
+  "pxWebWrap": {
+    "bytes": 342,
+    "cols": 1,
+    "file": "pxWebWrap.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
   },
   "radiantColumn": {
     "bytes": 22500,
