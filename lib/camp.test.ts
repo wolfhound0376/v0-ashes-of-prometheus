@@ -26,6 +26,7 @@ import {
   partialRestRations,
   passiveCampEncounter,
   perform,
+  planHitDice,
   resolveWatch,
   shortRest,
   spendCampAction,
@@ -360,6 +361,19 @@ describe("short rest", () => {
     expect(res.characters[0].pactSlotsRestored).toBe(2)
     expect(res.characters[1].slots).toBeNull()
     expect(res.characters[1].pactSlotsRestored).toBe(0)
+  })
+
+  it("planHitDice spends the fewest dice whose average heal reaches full, none at full, never more than owned", () => {
+    // d12, CON +2: average 8.5. Missing 30 → 4 dice; missing 8 → 1; missing 17 → 2.
+    const bastet = { class: "Barbarian", sheet_hit_dice: "5d12", hpMax: 50, hitDiceRemaining: 5, con_score: 15 }
+    expect(planHitDice({ ...bastet, hp: 20 })).toBe(4)
+    expect(planHitDice({ ...bastet, hp: 42 })).toBe(1)
+    expect(planHitDice({ ...bastet, hp: 33 })).toBe(2)
+    expect(planHitDice({ ...bastet, hp: 50 })).toBe(0)
+    expect(planHitDice({ ...bastet, hp: 1, hitDiceRemaining: 2 })).toBe(2)
+    expect(planHitDice({ ...bastet, hp: 1, hitDiceRemaining: null })).toBe(0)
+    // d6, CON −3: the average floors at 1, so a wizard missing 3 spends 3.
+    expect(planHitDice({ class: "Wizard", sheet_hit_dice: "3d6", hp: 3, hpMax: 6, hitDiceRemaining: 3, con_score: 4 })).toBe(3)
   })
 
   it("a low die against a negative CON heals nothing rather than wounding", () => {

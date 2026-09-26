@@ -560,6 +560,23 @@ export function songOfRestDie(bardLevel: number): number | null {
   return null
 }
 
+/**
+ * How many Hit Dice to spend when nobody at the table can be asked (the chat
+ * route resolves a `[TIME:short_rest]` tag mid-turn). The SRD leaves the
+ * number to the player; this spends the fewest dice whose AVERAGE heal
+ * (die/2 + 1/2 + CON, minimum 1) reaches full, never more than are owned,
+ * none at full. A policy, not a rule — Sam's to change (camp doc §12).
+ */
+export function planHitDice(c: Pick<ShortRester, "hp" | "hpMax" | "hitDiceRemaining" | "con_score" | "class" | "sheet_hit_dice">): number {
+  const hp = Math.max(0, c.hp ?? 0)
+  const max = Math.max(0, c.hpMax ?? 0)
+  const dice = Math.max(0, Math.trunc(c.hitDiceRemaining ?? 0))
+  const die = hitDieFor(c)
+  if (die == null || dice <= 0 || hp >= max) return 0
+  const average = Math.max(1, (die + 1) / 2 + abilityMod(c.con_score ?? 10))
+  return Math.min(dice, Math.ceil((max - hp) / average))
+}
+
 export interface ShortRestOutcome {
   id: string
   name: string

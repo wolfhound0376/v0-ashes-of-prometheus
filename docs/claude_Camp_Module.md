@@ -160,3 +160,16 @@ So, now Sam's and no longer flagged: the partial rest costs **half** the full re
 Brigands and villains come to fight; no row names a stat block, so the DM picks one from the bestiary and the code says so. A merchant sets `merchantPresent`, which `trade` reads.
 
 Sam's 25 + 80 + 5 summed to 110; he confirmed **25 / 70 / 5** ("70 is fine", 2026-09-26). **One reading remains,** flagged on every wandering-person result: the seven kinds of person carry no weights, so they are equal odds on a d7.
+
+---
+
+## 12. PR 2 — the short rest in the chat route (2026-09-26)
+
+`[TIME:short_rest]` was already in Malachar's tag vocabulary and already moved the clock 60 minutes (`time_advancement_rules`); it did nothing else. The route now calls `shortRest` when the tag lands (a `[TIME:long_rest]` in the same turn wins), writes `hp_current`, `hit_dice_remaining` and Pact Magic slots, and inserts a `rest_events` row with `rest_type = 'short'`, `bard_character_id`, `bard_spent_die`, and the faces rolled in `detail`. Song of Rest is sung by the highest-level bard on their feet at 2nd level or above — a free feature of the rest, not a camp action. Nobody eats on a short rest: supplies pass through untouched and `fed` is false.
+
+**Two things decided in the route that the SRD leaves to people at a table — Sam's to change:**
+
+- **How many Hit Dice.** Nobody can be asked mid-turn, so `planHitDice` spends the fewest dice whose *average* heal (die/2 + ½ + CON, minimum 1) reaches full; none at full; never more than are owned.
+- **Whose dice.** Drawn server-side with `Math.random`. The 3D roller is a browser thing and a rest is not a player's roll. The faces are written to `rest_events.detail` so they can be read back.
+
+Not in this PR, by §8: the ration charge (§10) and the camp-action budget belong to PR 3 with `make_camp`.
