@@ -1348,6 +1348,7 @@ export function formatCampBlock(s: CampBlockState): string {
         `When a character spends one, emit [CAMP_ACTION: <name> | <action>] — the system counts it and refuses one past their count. ` +
         `Forage and hunt (Survival, DC 15 in the Underdark) and perform (Performance) are settled by the acting player's own dice: put the tag in the SAME reply as their roll request, e.g. [CAMP_ACTION: Kenta | forage] Roll Survival. [[1d20-1 | survival | DC 15]]. ` +
         `You will be told the result; never invent food or its amount.\n` +
+        `Level up (one level, only when their XP has earned it): [CAMP_ACTION: <name> | level up]. For rolled hit points, put it in the same reply as their Hit Die roll, e.g. [[1d8]]; with no roll, the fixed value applies. The system writes the numbers; the choices land on their sheet for them to make at the fire.\n` +
         `Emit [TIME:break_camp] if they pack up without resting.`,
     )
   }
@@ -1441,7 +1442,6 @@ export const CAMP_CHECK_SKILL: Partial<Record<CampAction, "survival" | "performa
 
 /** On the menu but not wired yet — refused without spending the action. */
 export const CAMP_ACTIONS_NOT_YET: Partial<Record<CampAction, string>> = {
-  level_up: "Levelling at camp is PR 4 — not wired yet.",
   artifice: "Crafting waits on Sam's recipes and a place to bank progress (camp doc §14).",
   brew: "Brewing is crafting, and crafting waits on Sam's recipes and a place to bank progress (camp doc §14).",
 }
@@ -1570,4 +1570,92 @@ export function settlePerform(name: string, total: number, restKind: RestKind | 
       ? `${name} plays, and it falls flat.`
       : `${name} plays, and it is ${band}${lifts ? " — the camp is lifted by it, and everyone finds the energy for one more thing tonight" : ""}.`
   return { band, inspires, lifts, note }
+}
+
+// ============================================================================
+// §15 LEVELLING AT CAMP — PR 4 (2026-09-26)
+// ============================================================================
+//
+// `[CAMP_ACTION: <name> | level up]` takes ONE level (§4). It is refused
+// without spending when `levelUp` would refuse: not enough XP, a multiclassed
+// sheet, no Hit Die on the sheet. At camp it costs a camp action; at a node
+// with `travel_nodes.metadata.allows_level_up = true` it needs no camp and
+// costs nothing (Sam, 2026-08-20).
+//
+// Hit points, the SRD's two ways:
+//   ROLLED — Malachar puts the tag in the same reply as the player's roll for
+//     the class Hit Die ([[1d8]]). The request is stamped `camp:level_up`; the
+//     committed FACE from the table's dice is read back next turn and the level
+//     is applied before Malachar speaks. Never a server roll.
+//   FIXED — no roll in the reply: the SRD's fixed value (half the die + 1),
+//     applied at once.
+//
+// What the SRD fixes is written; what the players choose (ASI, subclass,
+// features, spells) is written to the sheet as ONE pending feature entry,
+// which the character card already shows, for them to settle at the fire.
+
+/** Plays back one physical die face to `levelUp`, so the table's roll is the roll. */
+export function faceRng(face: number, die: number): Rng {
+  let used = false
+  return () => {
+    if (used) throw new Error("faceRng: one face, one draw")
+    used = true
+    return (Math.min(die, Math.max(1, Math.trunc(face))) - 1) / die + 1e-9
+  }
+}
+
+/** A face read back from a committed roll: the first die, only if it is a legal face of this die. */
+export function hitDieFace(rolls: unknown, die: number): number | null {
+  const first = Array.isArray(rolls) ? Number(rolls[0]) : NaN
+  return Number.isInteger(first) && first >= 1 && first <= die ? first : null
+}
+
+/** One entry of `characters.sheet_features`, as the sheet stores them. */
+export interface SheetFeature {
+  name: string
+  desc: string
+  source: string
+  [k: string]: unknown
+}
+
+export const PENDING_LEVEL_SOURCE = "Level up — pending"
+
+/**
+ * The choices the players make at the fire, as one sheet feature the card
+ * already renders. Replaces any earlier pending entry for the same level, so a
+ * retried write cannot stack two.
+ */
+export function withPendingChoices(features: unknown, level: number, choices: PendingChoice[]): SheetFeature[] {
+  const list = (Array.isArray(features) ? features : []).filter(
+    (f): f is SheetFeature => !!f && typeof f === "object" && typeof (f as SheetFeature).name === "string",
+  )
+  const name = `Level ${level} — choices to make`
+  const kept = list.filter((f) => !(f.source === PENDING_LEVEL_SOURCE && f.name === name))
+  if (!choices.length) return kept
+  return [...kept, { name, desc: choices.map((c) => c.text).join(" "), source: PENDING_LEVEL_SOURCE }]
+}
+
+/**
+ * The full `characters` patch for one level. `hp_current` rises by the same
+ * hit points as the maximum — the SRD is silent on current hit points when a
+ * level is gained; this is the common table reading, flagged in the doc.
+ */
+export function levelUpPatch(
+  outcome: LevelUpOutcome,
+  current: { hp_current: number | null; sheet_features: unknown },
+): Record<string, unknown> | null {
+  if (!outcome.ok || !outcome.write || !outcome.hp) return null
+  const w = outcome.write
+  const patch: Record<string, unknown> = {
+    level: w.level,
+    hp_max: w.hp_max,
+    hp_current: Math.max(0, current.hp_current ?? 0) + outcome.hp.gained,
+    proficiency_bonus: w.proficiency_bonus,
+    sheet_hit_dice: w.sheet_hit_dice,
+    xp_to_next: w.xp_to_next,
+    sheet_features: withPendingChoices(current.sheet_features, w.level, outcome.pendingChoices),
+  }
+  if (w.hit_dice_remaining != null) patch.hit_dice_remaining = w.hit_dice_remaining
+  if (w.sheet_spellcasting) patch.sheet_spellcasting = w.sheet_spellcasting
+  return patch
 }

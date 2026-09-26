@@ -15,6 +15,11 @@ import {
   campRest,
   campPurpose,
   craftProgress,
+  faceRng,
+  hitDieFace,
+  levelUpPatch,
+  withPendingChoices,
+  PENDING_LEVEL_SOURCE,
   decideCampAction,
   normaliseCampAction,
   parseCampActions,
@@ -632,8 +637,8 @@ describe("spending camp actions", () => {
     expect(decideCampAction({ ...base, action: "forage", requestSkill: "survival", isSpeaker: false }).note).toMatch(/own player/)
   })
 
-  it("levelling and crafting are refused without spending; trade needs a merchant", () => {
-    expect(decideCampAction({ ...base, action: "level up" })).toMatchObject({ spend: false, note: expect.stringMatching(/PR 4/) })
+  it("levelling spends like any action; crafting is refused without spending; trade needs a merchant", () => {
+    expect(decideCampAction({ ...base, action: "level up" })).toMatchObject({ action: "level_up", spend: true, remaining: 1, check: null })
     expect(decideCampAction({ ...base, action: "craft" })).toMatchObject({ spend: false, note: expect.stringMatching(/recipes/) })
     expect(decideCampAction({ ...base, action: "brew" }).spend).toBe(false)
     expect(decideCampAction({ ...base, action: "trade" }).note).toMatch(/no merchant/)
@@ -670,9 +675,63 @@ describe("spending camp actions", () => {
   it("the CAMP block teaches the tag and carries what the dice settled", () => {
     const block = formatCampBlock({ camping: true, supplies: 20, partySize: 4, budgets: [{ name: "Kenta", remaining: 2 }], visitor: null, results: ["Kenta forages and brings back 3 days of food. Rations now 23."] })
     expect(block).toMatch(/\[CAMP_ACTION: <name> \| <action>\]/)
-    expect(block).toMatch(/Not yet: level up, artifice, brew/)
+    expect(block).toMatch(/Not yet: artifice, brew/)
+    expect(block).toMatch(/\[CAMP_ACTION: <name> \| level up\]/)
     expect(block).toMatch(/SETTLED BY THE DICE/)
     expect(block).toMatch(/Rations now 23/)
     expect(formatCampBlock({ camping: false, supplies: 0, partySize: 4, budgets: [], visitor: null, results: ["Scott plays, and it falls flat."] })).toMatch(/falls flat/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §15 levelling at camp
+// ---------------------------------------------------------------------------
+
+describe("levelling at camp", () => {
+  const kentaSheet: LevelUpSheet = {
+    id: "kenta", name: "Kenta", class: "Sorcerer", level: 1, xp: 300, hp_max: 8, con_score: 15,
+    hit_dice_remaining: 1, sheet_hit_dice: "1d6",
+    sheet_spellcasting: { pact: false, ability: "Charisma", slots: { "1": { max: 2, used: 1 } } },
+  }
+  const features = [{ name: "Spellcasting", desc: "Cast prepared Sorcerer spells.", source: "Sorcerer 1" }]
+
+  it("the table's face is the roll: faceRng feeds it to levelUp exactly once", () => {
+    const out = levelUp(kentaSheet, { method: "roll", rng: faceRng(5, 6) })
+    expect(out.hp).toMatchObject({ die: 6, face: 5, con: 2, gained: 7, method: "roll" })
+    const rng = faceRng(3, 6)
+    rng()
+    expect(() => rng()).toThrow(/one face/)
+  })
+
+  it("reads a face only when it is a legal face of the Hit Die", () => {
+    expect(hitDieFace([4], 6)).toBe(4)
+    expect(hitDieFace([7], 6)).toBeNull()
+    expect(hitDieFace([0], 6)).toBeNull()
+    expect(hitDieFace("4", 6)).toBeNull()
+    expect(hitDieFace([], 6)).toBeNull()
+  })
+
+  it("pending choices become one feature entry on the sheet, never two for the same level", () => {
+    const choices = [{ kind: "asi" as const, text: "Ability Score Improvement.", source: "SRD" }, { kind: "spells" as const, text: "Spells known.", source: "SRD" }]
+    const once = withPendingChoices(features, 4, choices)
+    expect(once).toHaveLength(2)
+    expect(once[1]).toEqual({ name: "Level 4 — choices to make", desc: "Ability Score Improvement. Spells known.", source: PENDING_LEVEL_SOURCE })
+    expect(withPendingChoices(once, 4, choices)).toHaveLength(2)
+    expect(withPendingChoices(null, 2, [])).toEqual([])
+  })
+
+  it("the patch writes what the SRD fixes, lifts current hp by the same amount, and keeps the sheet's other features", () => {
+    const out = levelUp(kentaSheet, { method: "average" })
+    const patch = levelUpPatch(out, { hp_current: 5, sheet_features: features })
+    expect(patch).toMatchObject({
+      level: 2, hp_max: 14, hp_current: 11, proficiency_bonus: 2, sheet_hit_dice: "2d6", hit_dice_remaining: 2, xp_to_next: 900,
+      sheet_spellcasting: { pact: false, ability: "Charisma", slots: { "1": { max: 3, used: 1 } } },
+    })
+    const f = patch!.sheet_features as { name: string; source: string }[]
+    expect(f[0]).toEqual(features[0])
+    expect(f[1].name).toBe("Level 2 — choices to make")
+    expect(levelUpPatch(levelUp({ ...kentaSheet, xp: 0 }, { method: "average" }), { hp_current: 5, sheet_features: features })).toBeNull()
+    const noDice = levelUpPatch(levelUp({ ...kentaSheet, hit_dice_remaining: null }, { method: "average" }), { hp_current: 5, sheet_features: [] })
+    expect(noDice).not.toHaveProperty("hit_dice_remaining")
   })
 })
