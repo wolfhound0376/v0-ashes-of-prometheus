@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
+import { evaluate as evaluateSkillProgress, skillTitle, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
+import { loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
+import { normaliseSkill } from "@/lib/game-context"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
 // ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
@@ -731,6 +734,65 @@ STRICT LIMITS ON USING THESE:
   const gameClock: GameClock | null = await readGameClock(timeAdmin, activeSessionId)
   const pacingBlock = buildPacingBlock(gameClock)
 
+  // === EARNED PROFICIENCY — the one line Malachar is allowed to see ===
+  // docs/claude_Earned_Proficiency.md §4-§5. The engine awards; Malachar is
+  // told once, on the turn after the award landed, and never sees the tally.
+  // "Since Malachar last spoke" is the whole rule: an award row newer than his
+  // latest line is his to narrate this turn, and nothing older is repeated.
+  // Best-effort: any failure here costs the line, never the turn.
+  let proficiencyBlock = ""
+  if (timeAdmin) {
+    try {
+      const { data: lastDm } = await supabase
+        .from("dialogue")
+        .select("created_at")
+        .eq("speaker_type", "dm")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      let awardsQuery = timeAdmin
+        .from("skill_progress")
+        .select("character_id, skill, stake_key, campaign_day, created_at")
+        .eq("kind", "award")
+        .order("created_at", { ascending: true })
+        .limit(5)
+      if (lastDm?.created_at) awardsQuery = awardsQuery.gt("created_at", lastDm.created_at)
+      const { data: awards } = await awardsQuery
+      if (awards && awards.length) {
+        const ids = Array.from(new Set(awards.map((a: { character_id: string }) => a.character_id)))
+        const { data: named } = await timeAdmin.from("characters").select("id, name").in("id", ids)
+        const nameOf = new Map<string, string>((named || []).map((c: { id: string; name: string }) => [c.id, c.name]))
+        const rules = await loadSkillProgressRules(timeAdmin)
+        const lines: string[] = []
+        for (const a of awards as { character_id: string; skill: string; stake_key: string | null }[]) {
+          const skill = normaliseSkill(a.skill)
+          const who = nameOf.get(a.character_id)
+          if (!skill || !who) continue
+          // The summary ("8 successes over 23 days") is derived, not stored:
+          // re-run the evaluation over everything but the award row itself.
+          const { data: rows } = await timeAdmin
+            .from("skill_progress")
+            .select("character_id, skill, kind, amount, dc, stake_key, teacher_id, campaign_day, roll_request_id")
+            .eq("character_id", a.character_id)
+            .eq("skill", skill)
+            .neq("kind", "award")
+          const ev = evaluateSkillProgress((rows || []) as SkillLedgerRow[], a.character_id, skill, rules)
+          const path = a.stake_key || ev.path || "practice"
+          lines.push(
+            `PROFICIENCY EARNED: ${who} is now proficient in ${skillTitle(skill)} (path: ${path}${ev.summary ? `, ${ev.summary}` : ""}). Narrate it; do not explain the rule.`,
+          )
+        }
+        if (lines.length) {
+          proficiencyBlock = `=== EARNED PROFICIENCY (this turn only) ===
+${lines.join("\n")}
+This is a fact the engine already wrote to the sheet. Make it land in the fiction - the beast calming, the lock giving, the lesson clicking - in a sentence or two, in character. Never say "proficiency", never mention rules, counts, days or dice. You cannot grant, deny or hurry these; there is no tag for it.`
+        }
+      }
+    } catch (e) {
+      console.warn("[skill-progress] award line unavailable this turn:", e)
+    }
+  }
+
   // Per-encounter stat injection (replaces the old hardcoded Hook Horror block).
   // Read the SHARED active encounters — no character_id filter — so every
   // player's narrator sees the same combatants with the same real HP/AC. Only
@@ -1325,7 +1387,7 @@ result exists until the engine reports it.
   numbers only in the tag ("Roll Stealth. [[1d20+7 | stealth | DC 15]]"). Honor features that
   change rolls (Lucky, Brave, Fey Ancestry, Sneak Attack conditions) without
   the player having to remind you.
-${pacingBlock ? `\n${pacingBlock}` : ""}`
+${pacingBlock ? `\n${pacingBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
 
   // A provider failure here used to escape as a bare 500 with no body: the UI
   // showed nothing, the client retried, and each retry persisted the player's

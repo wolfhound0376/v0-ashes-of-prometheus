@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { resultForTransport, type StructuredRollResult } from "@/lib/roll-requests"
+import { applyAcceptedRoll } from "@/lib/skill-progress-apply"
 
 type ResolveBody = {
   requestId?: unknown
@@ -118,10 +119,37 @@ export async function POST(req: Request) {
     else sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/dice_settle" })
   }
 
+  // === EARNED PROFICIENCY ===
+  // docs/claude_Earned_Proficiency.md §4. The result is committed above; if
+  // the request named a skill, the engine now counts it. Best-effort: the
+  // tally can never fail a roll, and a retried POST (duplicate) counts nothing
+  // twice because the ledger is only touched on the first acceptance.
+  let proficiencyAwarded: string | null = null
+  if (!duplicate) {
+    try {
+      const outcome = await applyAcceptedRoll(admin, {
+        requestId,
+        characterId,
+        die: transport.die,
+        rolls: transport.rolls,
+        total: transport.total,
+      })
+      if (outcome) {
+        console.log("[skill-progress] request", requestId, "appended", outcome.appended.map((r) => r.kind).join("+") || "nothing", outcome.skipped.length ? `(skipped: ${outcome.skipped.join(", ")})` : "")
+        if (outcome.award) proficiencyAwarded = outcome.award.logLine
+      }
+    } catch (error) {
+      console.error("[skill-progress] failed to record the check:", error)
+    }
+  }
+
   return Response.json({
     accepted: true,
     duplicate,
     shouldDispatch: !duplicate,
+    // The one thing the tally ever tells the client: the award line, when
+    // this exact roll earned one. Never a count, never a path.
+    proficiencyAwarded,
     // Full bucket paths, not bare slugs: the client plays what it is given and
     // keeps no category lookup that could drift from the bucket.
     sfxCues,
