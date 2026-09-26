@@ -63,11 +63,7 @@ export function fullRestRations(partySize: number): number {
   return 20
 }
 
-/**
- * Rations a PARTIAL rest costs. Sam gave 10 for a normal party; for larger
- * parties he gave only the full-rest cost, so half is the reading here and it
- * is flagged by `affordableRest` until he says yes.
- */
+/** Rations a PARTIAL rest costs: half the full cost, every party size. Sam, 2026-09-26 (late). */
 export function partialRestRations(partySize: number): number {
   return fullRestRations(partySize) / 2
 }
@@ -87,7 +83,6 @@ export function affordableRest(supplies: number | null | undefined, partySize: n
   const full = fullRestRations(partySize)
   const partial = partialRestRations(partySize)
   const flags: string[] = []
-  if (partySize > 5) flags.push(`Partial-rest cost for a party of ${partySize} read as half the full cost (${partial}); Sam gave only the full number — needs his yes.`)
   if (have >= full) return { kind: "full", cost: full, suppliesAfter: have - full, flags, note: `Full rest: ${full} rations spent, ${have - full} left.` }
   if (have >= partial) return { kind: "partial", cost: partial, suppliesAfter: have - partial, flags, note: `Only a partial rest: ${partial} rations spent, ${have - partial} left (a full rest needs ${full}).` }
   return { kind: null, cost: 0, suppliesAfter: have, flags, note: `No rest: ${have} rations on hand and a partial rest needs ${partial}. The party goes hungry — see lib/exhaustion.` }
@@ -103,9 +98,9 @@ export function affordableRest(supplies: number | null | undefined, partySize: n
 // `characters.rest_actions_remaining` column holds the budget.
 
 /**
- * Every camp action, as Sam listed them (2026-09-26). `sleep` is deliberately
- * absent: it is never an action. `talk` is kept from the original document
- * (§5) — Sam's list did not name it; flagged in the doc for his yes.
+ * Every camp action, as Sam listed them (2026-09-26), plus `talk` from §5,
+ * which he confirmed stays (same evening). `sleep` is deliberately absent: it
+ * is never an action.
  */
 export const CAMP_ACTIONS = [
   "attune", "investigate", "decipher", "artifice", "forage", "mend", "brew",
@@ -338,38 +333,72 @@ export function resolveWatch(
 //
 // Passive: nobody at the table rolls it; the route draws it server-side when
 // the rest resolves. It is NOT a camp action. The rows below are in exactly the
-// shape of `encounter_table_rows`, so they can move into the database under
-// `camp_visitors` / `camp_visitor_person` without touching this code, and
-// `resolveWatch` rolls them like any other table.
+// shape of `encounter_table_rows` / `encounter_tables`, so they can move into
+// the database without touching this code, and `resolveWatch` rolls them like
+// any other table.
 //
-// THE NUMBERS ARE CLAUDE'S READING OF "rare" AND "common" — Sam gave the
-// categories and the rarities, not the faces. 60% nobody, 15% brigands, 5%
-// villains, 5% merchant (rare), 15% a mysterious person who is 25% malicious,
-// 5% a hidden god or fey spirit (rare), 70% neutral (common). Flagged on every
-// result until he says yes or gives his own faces.
+// THE FACES ARE SAM'S (2026-09-26, late): "Nobody 85%, 5% Brigands, 5%
+// Villains, 2.5% merchant, 2.5% a wandering person (deep gnome / duergar /
+// human / kuo-toa / crazy dwarf / crazy drow / hag or witch). 25% malicious,
+// 80% neutral, 5% divine (50:50 Good / Evil)."
+//
+// A d40 gives the 2.5% steps exactly. Two readings remain, both flagged on the
+// result when they fire:
+//   - 25 + 80 + 5 is 110. Malicious 25 and divine 5 are kept exact; neutral is
+//     the remainder, 70. Sam corrects it in a word.
+//   - The seven kinds of wandering person carry no weights, so they are equal
+//     odds on a d7.
 
 export const CAMP_VISITOR_TABLE = "camp_visitors"
+export const CAMP_VISITOR_KIND_TABLE = "camp_visitor_kind"
 export const CAMP_VISITOR_PERSON_TABLE = "camp_visitor_person"
+export const CAMP_VISITOR_DIVINE_TABLE = "camp_visitor_divine"
 
 export type CampVisitor = "brigands" | "villains" | "merchant" | "person"
 export type VisitorDisposition = "malicious" | "divine" | "neutral"
+export type DivineAlignment = "good" | "evil"
+
+/** `encounter_tables` rows: the die each table uses. */
+export const CAMP_VISITOR_TABLES: EncounterTable[] = [
+  { table_key: CAMP_VISITOR_TABLE, die: 40 },
+  { table_key: CAMP_VISITOR_KIND_TABLE, die: 7 },
+  { table_key: CAMP_VISITOR_PERSON_TABLE, die: 20 },
+  { table_key: CAMP_VISITOR_DIVINE_TABLE, die: 2 },
+]
 
 export const CAMP_VISITOR_ROWS: EncounterTableRow[] = [
-  { table_key: CAMP_VISITOR_TABLE, roll_min: 1, roll_max: 12, result: "No one comes", detail: { rolls: [] } },
-  { table_key: CAMP_VISITOR_TABLE, roll_min: 13, roll_max: 15, result: "Brigands", detail: { kind: "brigands", hostile: true } },
-  { table_key: CAMP_VISITOR_TABLE, roll_min: 16, roll_max: 16, result: "Villains", detail: { kind: "villains", hostile: true } },
-  { table_key: CAMP_VISITOR_TABLE, roll_min: 17, roll_max: 17, result: "A wandering merchant", detail: { kind: "merchant", rarity: "rare" } },
-  { table_key: CAMP_VISITOR_TABLE, roll_min: 18, roll_max: 20, result: "A mysterious person", detail: { kind: "person", rolls: [CAMP_VISITOR_PERSON_TABLE] } },
-  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 1, roll_max: 5, result: "…who means harm", detail: { kind: "person", disposition: "malicious" } },
-  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 6, roll_max: 6, result: "…who is a hidden god or fey spirit", detail: { kind: "person", disposition: "divine", rarity: "rare" } },
-  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 7, roll_max: 20, result: "…who is simply passing through", detail: { kind: "person", disposition: "neutral", rarity: "common" } },
+  // d40 — who comes
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 1, roll_max: 34, result: "No one comes", detail: { rolls: [] } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 35, roll_max: 36, result: "Brigands", detail: { kind: "brigands", hostile: true } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 37, roll_max: 38, result: "Villains", detail: { kind: "villains", hostile: true } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 39, roll_max: 39, result: "A wandering merchant", detail: { kind: "merchant" } },
+  { table_key: CAMP_VISITOR_TABLE, roll_min: 40, roll_max: 40, result: "A wandering person", detail: { kind: "person", rolls: [CAMP_VISITOR_KIND_TABLE, CAMP_VISITOR_PERSON_TABLE] } },
+  // d7 — what kind of person (equal odds: Sam gave no weights)
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 1, roll_max: 1, result: "a deep gnome", detail: { who: "deep gnome" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 2, roll_max: 2, result: "a duergar", detail: { who: "duergar" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 3, roll_max: 3, result: "a human", detail: { who: "human" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 4, roll_max: 4, result: "a kuo-toa", detail: { who: "kuo-toa" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 5, roll_max: 5, result: "a crazy dwarf", detail: { who: "crazy dwarf" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 6, roll_max: 6, result: "a crazy drow", detail: { who: "crazy drow" } },
+  { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 7, roll_max: 7, result: "a hag or witch", detail: { who: "hag or witch" } },
+  // d20 — disposition (25 / 70 / 5; see the note above on Sam's 110%)
+  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 1, roll_max: 5, result: "who means harm", detail: { disposition: "malicious" } },
+  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 6, roll_max: 19, result: "who is simply passing through", detail: { disposition: "neutral" } },
+  { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 20, roll_max: 20, result: "who is something divine in disguise", detail: { disposition: "divine", rolls: [CAMP_VISITOR_DIVINE_TABLE] } },
+  // d2 — which way the divine leans
+  { table_key: CAMP_VISITOR_DIVINE_TABLE, roll_min: 1, roll_max: 1, result: "(good)", detail: { alignment: "good" } },
+  { table_key: CAMP_VISITOR_DIVINE_TABLE, roll_min: 2, roll_max: 2, result: "(evil)", detail: { alignment: "evil" } },
 ]
 
 export interface PassiveEncounter {
   /** The underlying roll chain, for the log. */
   watch: WatchOutcome
   visitor: CampVisitor | null
+  /** For a wandering person: which of Sam's seven. */
+  who: string | null
   disposition: VisitorDisposition | null
+  /** For a divine visitor: good or evil, 50:50. */
+  alignment: DivineAlignment | null
   /** Brigands and villains come to fight; the DM picks the stat block from the bestiary. */
   hostile: boolean
   /** What the `trade` action reads. */
@@ -380,25 +409,37 @@ export interface PassiveEncounter {
 
 /**
  * The passive roll. A safe node (`metadata.safe = true`) gets no visitor.
- * `opts.rows` lets the route pass database rows once the table lives there;
- * until then the constant above is the table.
+ * `opts.rows` / `opts.tables` let the route pass database rows once the tables
+ * live there; until then the constants above are the tables.
  */
-export function passiveCampEncounter(node: WatchNode, rng: Rng, opts: { rows?: EncounterTableRow[] } = {}): PassiveEncounter {
+export function passiveCampEncounter(node: WatchNode, rng: Rng, opts: { rows?: EncounterTableRow[]; tables?: EncounterTable[] } = {}): PassiveEncounter {
   const rows = opts.rows ?? CAMP_VISITOR_ROWS
-  const watch = resolveWatch({ ...node, metadata: { ...(node.metadata ?? {}), encounter_table: CAMP_VISITOR_TABLE } }, rows, rng, { resting: true })
+  const tables = opts.tables ?? CAMP_VISITOR_TABLES
+  const watch = resolveWatch({ ...node, metadata: { ...(node.metadata ?? {}), encounter_table: CAMP_VISITOR_TABLE } }, rows, rng, { resting: true, tables })
   const flags = [...watch.flags]
-  const leaf = [...watch.chain].reverse().find((c) => c.detail && typeof c.detail.kind === "string")
-  const visitor = (leaf?.detail?.kind as CampVisitor | undefined) ?? null
-  const disposition = (leaf?.detail?.disposition as VisitorDisposition | undefined) ?? null
-  const hostile = leaf?.detail?.hostile === true
-  if (watch.rolled) flags.push("Visitor odds are Claude's reading of Sam's rare/common — needs his yes or his own faces.")
+  const details = watch.chain.map((c) => c.detail ?? {})
+  const pick = (key: string): string | null => {
+    const vals = details.map((d) => d[key]).filter((v): v is string => typeof v === "string")
+    return vals.length ? vals[vals.length - 1] : null
+  }
+  const visitor = pick("kind") as CampVisitor | null
+  const who = pick("who")
+  const disposition = pick("disposition") as VisitorDisposition | null
+  const alignment = pick("alignment") as DivineAlignment | null
+  const hostile = details.some((d) => d.hostile === true)
   if (hostile) flags.push(`${visitor}: no bestiary row is named by the table; the DM picks the stat block.`)
+  if (visitor === "person") flags.push("Disposition odds read as 25 / 70 / 5 — Sam's 25 / 80 / 5 sums to 110; neutral took the difference. The seven kinds are equal odds — no weights given.")
+  // For a person, every row in the chain after the first is part of the description
+  // (kind, disposition, and the divine lean), including the ones that rolled again.
+  const personParts = watch.chain.slice(1).map((c) => c.result).filter((r): r is string => !!r)
   const note = !watch.rolled
     ? watch.note
     : visitor == null
       ? `The night passes; no one comes to the fire.`
-      : `${watch.results.join(" ")}${hostile ? " — they mean to fight." : disposition === "divine" ? " (rare)" : ""}`
-  return { watch, visitor, disposition, hostile, merchantPresent: visitor === "merchant", flags, note }
+      : visitor === "person"
+        ? `A wandering person comes to the fire: ${personParts.join(", ")}.`
+        : `${watch.results.join(" ")}${hostile ? " — they mean to fight." : "."}`
+  return { watch, visitor, who, disposition, alignment, hostile, merchantPresent: visitor === "merchant", flags, note }
 }
 
 // ============================================================================
@@ -724,9 +765,8 @@ export function weightRelationshipEvent(scene: TalkScene): RelationshipEventRow 
 export type PerformanceBand = "flat" | "warm" | "moving"
 
 /**
- * Where the bands sit. The SRD's Typical Difficulty Classes ladder (Easy 10,
- * Medium 15) is the only published scale to hang them on; that reading is
- * Claude's and needs Sam's yes, so it is flagged in every result.
+ * Where the bands sit: the SRD's Typical Difficulty Classes ladder (Easy 10,
+ * Medium 15). Sam confirmed "success" = warm, 2026-09-26 (late).
  */
 export const PERFORMANCE_BANDS: { warm: number; moving: number } = { warm: 10, moving: 15 }
 
@@ -737,8 +777,7 @@ export interface PerformOutcome {
   deltas: null
   /**
    * "The bard inspires and plays for the group successfully" (Sam, 2026-09-26):
-   * true at `warm` or better. On a partial rest this is what `bardUpgrade`
-   * reads. The threshold is the same reading as the bands — needs Sam's yes.
+   * true at `warm` or better. On a partial rest this is what `bardUpgrade` reads.
    */
   inspires: boolean
   flags: string[]
@@ -758,7 +797,7 @@ export function perform(sheet: SheetSlice, rng: Rng): PerformOutcome {
     band,
     deltas: null,
     inspires,
-    flags: [`Band thresholds (${PERFORMANCE_BANDS.warm}/${PERFORMANCE_BANDS.moving}) and "success" = warm follow the SRD Typical DC ladder — a reading, needs Sam's yes.`],
+    flags: [],
     note: `${sheet.name} performs: ${check.total} — ${band}${inspires ? ", and the group is lifted by it" : ""}. (${check.arithmetic.replace(/ vs DC \d+$/, "")})`,
   }
 }

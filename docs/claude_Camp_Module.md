@@ -131,16 +131,35 @@ How the code reads it:
 
 **The passive roll.** Not an action; the route draws it server-side when the rest resolves. `passiveCampEncounter(node, rng)` rolls `CAMP_VISITOR_ROWS`, which are in the exact shape of `encounter_table_rows` (`camp_visitors` → `camp_visitor_person`) so they can move into the database without a code change. A safe node gets no visitor. Brigands and villains are `hostile` and the DM picks the stat block from the bestiary (no row names one). A merchant sets `merchantPresent`, which `trade` reads. A mysterious person is rolled again: malicious, a hidden god or fey spirit (rare), or neutral (common).
 
-**The faces are Claude's reading of "rare" and "common", not Sam's numbers:**
+The faces were first a reading of "rare" and "common"; Sam gave his own numbers the same evening — **§11 has them and is the table.** The OotA random-encounter table (§3) is untouched and still rolls through `resolveWatch` wherever the route wants it.
 
-| d20 | Visitor | | d20 | The person is… |
-|---|---|---|---|---|
-| 1–12 | No one comes (60%) | | 1–5 | malicious (25%) |
-| 13–15 | Brigands (15%) | | 6 | a hidden god or fey spirit (5%, rare) |
-| 16 | Villains (5%) | | 7–20 | neutral (70%, common) |
-| 17 | A wandering merchant (5%, rare) | | | |
-| 18–20 | A mysterious person (15%) | | | |
+**Still needs Sam's yes** (§11 settled the rest): slow pace = advantage (§2); minimum 1 hp per level (§2); stable-at-0 spending Hit Dice on a partial rest; and the 110% in §11.
 
-Every result carries the flag until Sam says yes or gives his own faces. The OotA random-encounter table (§3) is untouched and still rolls through `resolveWatch` wherever the route wants it.
+---
 
-**Still needs Sam's yes, in one place:** partial-rest cost for parties over five (half); `inspires` = warm; `talk` staying on the menu; the visitor faces above; slow pace = advantage (§2); minimum 1 hp per level (§2); stable-at-0 spending Hit Dice on a partial rest.
+## 11. Rulings of 2026-09-26 (late) — confirmed
+
+Sam, verbatim, answering the four readings in §10:
+
+> 1. Yes. 2. Yes. 3. Talk stays. 4. Nobody 85%, 5% Brigands, 5% Villians, 2.5% merchant, 2.5% a wandering person (deep gnome/drueggar/human/Kuo-toa/crazy dwarf/crazy drow/or hag/witch). 25% malicious, 80% neutral, 5% divine (50:50 Good / Evil).
+
+So, now Sam's and no longer flagged: the partial rest costs **half** the full rest at every party size; the bard's success is **warm or better**; **`talk` stays** on the menu.
+
+**The visitor tables.** A d40 gives the 2.5% steps exactly. All four tables are in `encounter_tables` / `encounter_table_rows` shape (`CAMP_VISITOR_TABLES`, `CAMP_VISITOR_ROWS`) and can be loaded into the database as they are.
+
+| d40 `camp_visitors` | | d7 `camp_visitor_kind` | | d20 `camp_visitor_person` | | d2 `camp_visitor_divine` |
+|---|---|---|---|---|---|---|
+| 1–34 no one (85%) | | 1 deep gnome | | 1–5 malicious (25%) | | 1 good |
+| 35–36 brigands (5%) | | 2 duergar | | 6–19 neutral (70%) | | 2 evil |
+| 37–38 villains (5%) | | 3 human | | 20 divine (5%) → d2 | | |
+| 39 a wandering merchant (2.5%) | | 4 kuo-toa | | | | |
+| 40 a wandering person (2.5%) → d7, d20 | | 5 crazy dwarf | | | | |
+| | | 6 crazy drow | | | | |
+| | | 7 hag or witch | | | | |
+
+Brigands and villains come to fight; no row names a stat block, so the DM picks one from the bestiary and the code says so. A merchant sets `merchantPresent`, which `trade` reads.
+
+**Two readings remain, flagged on every wandering-person result until Sam speaks:**
+
+- **25 + 80 + 5 is 110.** Malicious 25 and divine 5 are kept exact; neutral is the remainder, **70**. If Sam meant 20 / 75 / 5 or 15 / 80 / 5, it is one number to change in `CAMP_VISITOR_ROWS`.
+- **The seven kinds of wandering person carry no weights**, so they are equal odds on a d7.

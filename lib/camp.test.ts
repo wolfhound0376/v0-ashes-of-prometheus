@@ -6,6 +6,7 @@ import {
   CAMP_ACTIONS_PARTIAL,
   CAMP_ACTION_RULES,
   CAMP_VISITOR_ROWS,
+  CAMP_VISITOR_TABLES,
   DEFAULT_ENCOUNTER_TABLE,
   PALLIATION,
   affordableRest,
@@ -97,7 +98,8 @@ describe("rations decide the rest", () => {
     expect(affordableRest(19, 4)).toMatchObject({ kind: "partial", cost: 10, suppliesAfter: 9 })
     expect(affordableRest(0, 4)).toMatchObject({ kind: null, cost: 0, suppliesAfter: 0 })
     expect(affordableRest(19, 4).flags).toEqual([])
-    expect(affordableRest(30, 7).flags[0]).toMatch(/needs his yes/)
+    expect(affordableRest(30, 7)).toMatchObject({ kind: "full", cost: 30, flags: [] })
+    expect(affordableRest(16, 7)).toMatchObject({ kind: "partial", cost: 15 })
   })
 })
 
@@ -137,28 +139,37 @@ describe("camp action budget", () => {
 })
 
 describe("the passive roll", () => {
-  it("a safe node gets no visitor; 1–12 no one; brigands come to fight; a merchant opens trade", () => {
-    expect(passiveCampEncounter({ metadata: { safe: true } }, script())).toMatchObject({ visitor: null, hostile: false, merchantPresent: false })
-    expect(passiveCampEncounter({ metadata: {} }, script(d(9, 20)))).toMatchObject({ visitor: null, hostile: false, merchantPresent: false })
-    const brigands = passiveCampEncounter({ metadata: {} }, script(d(14, 20)))
-    expect(brigands).toMatchObject({ visitor: "brigands", hostile: true, disposition: null })
+  it("a safe node gets no visitor; on a d40, 1–34 no one, 35–36 brigands, 39 a merchant who opens trade", () => {
+    expect(passiveCampEncounter({ metadata: { safe: true } }, script())).toMatchObject({ visitor: null, hostile: false, merchantPresent: false, flags: [] })
+    const quiet = passiveCampEncounter({ metadata: {} }, script(d(34, 40)))
+    expect(quiet).toMatchObject({ visitor: null, hostile: false, merchantPresent: false, flags: [] })
+    expect(quiet.watch.chain[0]).toMatchObject({ tableKey: "camp_visitors", die: 40, roll: 34 })
+    const brigands = passiveCampEncounter({ metadata: {} }, script(d(35, 40)))
+    expect(brigands).toMatchObject({ visitor: "brigands", hostile: true, who: null, disposition: null })
     expect(brigands.flags.some((f) => /DM picks the stat block/.test(f))).toBe(true)
-    const merchant = passiveCampEncounter({ metadata: {} }, script(d(17, 20)))
+    expect(passiveCampEncounter({ metadata: {} }, script(d(38, 40))).visitor).toBe("villains")
+    const merchant = passiveCampEncounter({ metadata: {} }, script(d(39, 40)))
     expect(merchant).toMatchObject({ visitor: "merchant", merchantPresent: true, hostile: false })
     expect(trade({ name: "Kenta" }, merchant).ok).toBe(true)
     expect(trade({ name: "Kenta" }, brigands).ok).toBe(false)
   })
 
-  it("a mysterious person is rolled again for disposition, and the odds are flagged as a reading", () => {
-    const divine = passiveCampEncounter({ metadata: {} }, script(d(19, 20), d(6, 20)))
-    expect(divine).toMatchObject({ visitor: "person", disposition: "divine", hostile: false })
-    expect(divine.watch.chain.map((c) => c.tableKey)).toEqual(["camp_visitors", "camp_visitor_person"])
-    expect(passiveCampEncounter({ metadata: {} }, script(d(18, 20), d(2, 20))).disposition).toBe("malicious")
-    expect(passiveCampEncounter({ metadata: {} }, script(d(20, 20), d(15, 20))).disposition).toBe("neutral")
-    expect(divine.flags.some((f) => /needs his yes/.test(f))).toBe(true)
-    // The table is in the shape of encounter_table_rows and covers every face once.
-    for (const key of ["camp_visitors", "camp_visitor_person"]) {
-      for (let face = 1; face <= 20; face++) expect(CAMP_VISITOR_ROWS.filter((r) => r.table_key === key && face >= r.roll_min && face <= r.roll_max)).toHaveLength(1)
+  it("a wandering person is one of Sam's seven, with a disposition, and a divine one leans good or evil", () => {
+    // 40 → person; d7 7 → hag or witch; d20 20 → divine; d2 1 → good.
+    const divine = passiveCampEncounter({ metadata: {} }, script(d(40, 40), d(7, 7), d(20, 20), d(1, 2)))
+    expect(divine).toMatchObject({ visitor: "person", who: "hag or witch", disposition: "divine", alignment: "good", hostile: false })
+    expect(divine.watch.chain.map((c) => [c.tableKey, c.die])).toEqual([["camp_visitors", 40], ["camp_visitor_kind", 7], ["camp_visitor_person", 20], ["camp_visitor_divine", 2]])
+    expect(divine.note).toMatch(/hag or witch, who is something divine in disguise, \(good\)/)
+    const malicious = passiveCampEncounter({ metadata: {} }, script(d(40, 40), d(3, 7), d(5, 20)))
+    expect(malicious).toMatchObject({ who: "human", disposition: "malicious", alignment: null })
+    const neutral = passiveCampEncounter({ metadata: {} }, script(d(40, 40), d(4, 7), d(19, 20)))
+    expect(neutral).toMatchObject({ who: "kuo-toa", disposition: "neutral", alignment: null })
+    expect(neutral.flags.some((f) => /110/.test(f))).toBe(true)
+    // Every table covers every face of its die exactly once, so the rows can move to the database as they are.
+    for (const t of CAMP_VISITOR_TABLES) {
+      for (let face = 1; face <= (t.die as number); face++) {
+        expect(CAMP_VISITOR_ROWS.filter((r) => r.table_key === t.table_key && face >= r.roll_min && face <= r.roll_max), `${t.table_key} face ${face}`).toHaveLength(1)
+      }
     }
   })
 })
@@ -410,7 +421,7 @@ describe("perform", () => {
     expect(moving.deltas).toBeNull()
     expect(perform(scott, script(d(5, 20))).inspires).toBe(false)
     expect(perform(scott, script(d(6, 20))).inspires).toBe(true)
-    expect(moving.flags.some((f) => /needs Sam's yes/.test(f))).toBe(true)
+    expect(moving.flags).toEqual([])
   })
 })
 
