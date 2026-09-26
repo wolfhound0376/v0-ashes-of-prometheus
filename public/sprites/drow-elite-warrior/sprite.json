@@ -17,6 +17,12 @@
       "fps": 10,
       "loop": true
     },
+    "dodge": {
+      "sheet": "dodge.png",
+      "frames": 9,
+      "fps": 12,
+      "loop": false
+    },
     "attack": {
       "sheet": "attack.png",
       "frames": 9,
