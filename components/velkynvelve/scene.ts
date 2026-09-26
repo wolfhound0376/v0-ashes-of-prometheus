@@ -165,6 +165,8 @@ interface FigureRuntime {
   facing: Facing
   state: SpriteState
   path: Point[]
+  /** Draw scale per animation, so every animation stands the same height. */
+  scales: Partial<Record<SpriteState, number>>
 }
 
 export function createVelkynvelveScene(
@@ -578,6 +580,19 @@ export function createVelkynvelveScene(
       // Scale by the pixels actually drawn, not by the manifest's ppu: two
       // PixelLab characters can fill their cells very differently.
       const scale = (FIGURE_SQUARES * S) / visibleHeight(src, cw, ch)
+      // Animations made at different times can be drawn at different sizes:
+      // Samson's newer walk is ~10% taller than his older idle, so he grew
+      // every time he set off. Each animation's first frame is an upright
+      // pose (even the death fall starts standing), so measure that and
+      // scale every animation to the idle's height. Clamped, so a sheet that
+      // does not start upright cannot balloon.
+      const scales: Partial<Record<SpriteState, number>> = {}
+      for (const state of Object.keys(f.manifest.animations) as SpriteState[]) {
+        const h = visibleHeight(this.textures.get(sheetKey(f, state)).getSourceImage(), cw, ch)
+        scales[state] = (FIGURE_SQUARES * S) / h
+        const ratio = scales[state]! / scale
+        if (ratio < 0.8 || ratio > 1.25) scales[state] = scale
+      }
 
       for (const [state, anim] of Object.entries(f.manifest.animations)) {
         if (!anim) continue
@@ -617,7 +632,7 @@ export function createVelkynvelveScene(
         .setAlpha(0.55)
         .setScale((FIGURE_LIGHT_RADIUS * 2) / 128)
         .setDepth(20001)
-      const rt: FigureRuntime = { def: f, sprite, shadow, glow, facing: f.facing, state: "idle", path: [] }
+      const rt: FigureRuntime = { def: f, sprite, shadow, glow, facing: f.facing, state: "idle", path: [], scales }
       this.figs.push(rt)
       this.play(rt, "idle")
     }
@@ -626,6 +641,8 @@ export function createVelkynvelveScene(
       const has = f.def.manifest.animations[state]
       const s = has ? state : "idle"
       f.state = s
+      const scale = f.scales[s]
+      if (scale) f.sprite.setScale(scale)
       f.sprite.play(animKey(f.def, s, f.facing), true)
     }
 
