@@ -222,6 +222,7 @@ function speakerColor(speaker: string): string {
   if (speaker === "Malachar" || speaker === "DM") return "#a879e1"
   if (speaker === "Sam") return "#52a5d4"
   if (speaker === "System") return "#b7a683"
+  if (speaker === "Combat") return "#c9a14a"
   const hash = Array.from(speaker).reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 0)
   return SPEAKER_COLORS[hash % SPEAKER_COLORS.length]
 }

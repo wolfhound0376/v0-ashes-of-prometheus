@@ -8,7 +8,7 @@
  *    curated ElevenLabs premade voices below.
  */
 
-import { toSpokenNotation } from "./speech-notation"
+import { stripRollMath } from "./speech-notation"
 
 // ============================================================================
 // VOICE ROUTING — the single gate every TTS entry point funnels through.
@@ -107,8 +107,9 @@ export function sanitizeForTTS(text: string): string {
     .replace(/\.\.\./g, "...") // keep ellipsis (TTS handles it)
     .replace(/\s{2,}/g, " ") // collapse whitespace
     .trim()
-  // Speech-only rewrite: dice/DC notation -> spoken words (the UI keeps 1d20+3).
-  return toSpokenNotation(stripped)
+  // Speech-only: roll maths is removed, never pronounced (the UI keeps every
+  // number). See lib/speech-notation.
+  return stripRollMath(stripped)
 }
 
 export interface ElevenVoice {

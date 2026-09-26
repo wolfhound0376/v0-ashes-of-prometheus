@@ -84,6 +84,9 @@ const NARRATORS = new Set(["dm", "narrator", "malachar", "the lich"])
 function categorize(entry: DialogueEntry): Exclude<LogFilter, "all"> {
   const speaker = entry.speaker.trim().toLowerCase()
   if (speaker === "system") return "system"
+  // The board's own event log (app/api/combat narrate): who hit whom, the
+  // numbers behind it. Written, never spoken.
+  if (speaker === "combat") return "combat"
   // Roll announcements are prefixed with a die in the dice-announce flow.
   if (entry.text.startsWith("🎲") || /\[dice roll\]/i.test(entry.text)) return "combat"
   if (NARRATORS.has(speaker)) return "narration"
