@@ -9,7 +9,7 @@
  *    `g` = a locked gate, `.` = chasm. Deck is derived from the composed
  *    Wang deck (a square is deck when at least three of its four tile
  *    corners are deck), so it matches what the eye sees. Bridges and gates
- *    are drawn by the scene itself.
+ *    come from `geometry` when a node has it (see geometry.ts).
  *  - `props`: furniture. Each blocks the rectangle of squares it covers; a
  *    brazier also carries a light.
  *  - `spawns`: who stands where when the node opens. `sprite` points at the
@@ -18,6 +18,8 @@
  * Coordinates are squares, (0,0) top-left. One square is `squarePx` source
  * pixels (32 = 5 ft).
  */
+
+import { walkableFromGeometry, type NodeGeometry } from "./geometry"
 
 export type Facing =
   | "south"
@@ -58,18 +60,6 @@ export interface NodeProp {
   layer?: "under"
 }
 
-/** A door in a `g` square — what it is, where it leads, and its lock. */
-export interface NodeDoor {
-  /** The gate squares it fills. */
-  squares: Array<[number, number]>
-  leadsTo: string
-  /** From the book (true) or the table's own addition (false). */
-  canon: boolean
-  locked: boolean
-  lockDc?: number
-  lockNote?: string
-}
-
 export interface NodeLabel {
   x: number
   y: number
@@ -92,20 +82,27 @@ export interface VelkynvelveNode {
   squares: number
   /** Source pixels per square. */
   squarePx: number
-  /** Deck image, relative to the node folder. Chasm pixels are transparent. */
-  deck: string
+  /**
+   * Deck image, relative to the node folder. Chasm pixels are transparent.
+   * Omitted when the node's floor is drawn from `geometry` instead.
+   */
+  deck?: string
+  /**
+   * Floor as shapes (octagon platforms, rope bridges at any angle, gates).
+   * When present, `walkable` is computed from it on load and the scene
+   * draws the shapes; see geometry.ts.
+   */
+  geometry?: NodeGeometry
+  /** Stone texture tile for geometry platforms, relative to the node folder. */
+  floorTile?: string
   walkable: string[]
   props: NodeProp[]
   spawns: NodeSpawn[]
   /**
-   * How the rim of the deck is dressed. "bars": iron cage bars stand along
-   * every edge where standable floor meets the drop (the slave pen). Mirrors
-   * `render.edge` on the node's generated_maps row. Omitted: an open rim.
+   * A waterfall falling through the abyss, `width` squares wide from
+   * column `x`, breaking into foam at each of `ledges` (rows, in squares).
    */
-  edge?: "bars"
-  doors?: NodeDoor[]
-  /** A waterfall falling through the abyss, `width` squares wide from column `x`. */
-  waterfall?: { x: number; width: number }
+  waterfall?: { x: number; width: number; ledges?: number[] }
   /** Where the bridges lead, written over the abyss. */
   labels?: NodeLabel[]
   /** Set when the layout is not yet the canon cell geometry — says why. */
@@ -149,5 +146,11 @@ export async function loadNode(slug: string): Promise<LoadedNode> {
   const res = await fetch(`${baseUrl}node.json`)
   if (!res.ok) throw new Error(`Velkynvelve node "${slug}" not found (${res.status})`)
   const node = (await res.json()) as VelkynvelveNode
-  return { ...node, baseUrl }
+  return withWalkable({ ...node, baseUrl })
+}
+
+/** Fill in `walkable` from `geometry` when the node is described by shapes. */
+export function withWalkable<T extends VelkynvelveNode>(node: T): T {
+  if (node.geometry) return { ...node, walkable: walkableFromGeometry(node.geometry, node.squares) }
+  return node
 }

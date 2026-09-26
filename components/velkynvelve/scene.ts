@@ -23,6 +23,7 @@ import type { SpriteManifest, SpriteState } from "@/lib/sprite-token"
 import type { Facing, LoadedNode } from "@/lib/velkynvelve/node"
 import { standableGrid } from "@/lib/velkynvelve/node"
 import { findPath, type Point } from "@/lib/velkynvelve/pathfinding"
+import { buildCage, paintBridges, paintPlatforms } from "./geometry-art"
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type PhaserNS = any
@@ -68,10 +69,13 @@ const DRAG_SLOP = 6
 const LIGHT_KEY = "vv-light"
 const GLINT_KEY = "vv-glint"
 const BAR_KEY = "vv-bar"
-const BRIDGE_KEY = "vv-bridges"
+const FLOOR_KEY = "vv-floor"
+const STONE_KEY = "vv-stone"
 const WATER_KEY = "vv-water"
-/** Waterfall fall speed, source px per millisecond. */
-const WATER_SPEED = 0.22
+const FOAM_KEY = "vv-foam"
+/** Waterfall fall speeds, source px per millisecond: the sheet, and the fast streaks on it. */
+const WATER_SPEED = 0.16
+const STREAK_SPEED = 0.42
 /** Cage bars: height above the floor (source px, ~7 ft) and spacing. */
 const BAR_HEIGHT = 40
 const BAR_GAP = 5
@@ -144,6 +148,8 @@ export function createVelkynvelveScene(
   const lit = node.props.filter((p) => p.light)
   // Where the platform itself is, so the camera opens on it rather than on
   // the middle of a larger map of bridges.
+  // A geometry node opens on its first platform (the pen, not the hub).
+  const firstPlatform = node.geometry?.platforms[0]
   const deckSquares = node.walkable.flatMap((row, y) => [...row].map((c, x) => (c === "o" ? [x, y] : null)).filter(Boolean)) as Array<[number, number]>
   const deckCx = deckSquares.length ? ((Math.min(...deckSquares.map((d) => d[0])) + Math.max(...deckSquares.map((d) => d[0])) + 1) / 2) * S : worldW / 2
   const deckCy = deckSquares.length ? ((Math.min(...deckSquares.map((d) => d[1])) + Math.max(...deckSquares.map((d) => d[1])) + 1) / 2) * S : worldH / 2
@@ -159,6 +165,8 @@ export function createVelkynvelveScene(
     braziers: Array<{ x: number; y: number; glow: any; phase: number }> = []
     mist: any
     water: any
+    streaks: any
+    foam: any[] = []
     down: { x: number; y: number; sx: number; sy: number; dragging: boolean } | null = null
 
     constructor() {
@@ -166,7 +174,8 @@ export function createVelkynvelveScene(
     }
 
     preload() {
-      this.load.image("vv-deck", node.baseUrl + node.deck)
+      if (node.deck) this.load.image("vv-deck", node.baseUrl + node.deck)
+      if (node.floorTile) this.load.image(STONE_KEY, node.baseUrl + node.floorTile)
       for (const p of node.props) this.load.image(`vv-prop-${p.image}`, node.baseUrl + p.image)
       for (const f of figures) {
         for (const [state, anim] of Object.entries(f.manifest.animations)) {
@@ -185,22 +194,32 @@ export function createVelkynvelveScene(
 
       this.buildAbyss()
 
-      // 2. The drop beneath the planks.
-      for (const [ox, oy, a] of [
-        [7, 17, 0.28],
-        [3, 8, 0.45],
-      ] as const) {
-        this.add
-          .image(ox, oy, "vv-deck")
-          .setOrigin(0, 0)
-          .setTint(0x000000)
-          .setTintMode(Phaser.TintModes.FILL)
-          .setAlpha(a)
-          .setDepth(-50)
+      // 2-3. The floor — a painted deck, or platforms and rope bridges drawn
+      // from the node's geometry — and its shadow on the drop below.
+      let floorKey: string | null = node.deck ? "vv-deck" : null
+      if (node.geometry) {
+        const tex = this.textures.createCanvas(FLOOR_KEY, worldW, worldH)
+        const opts = { S, barKey: BAR_KEY, barHeight: BAR_HEIGHT, stone: node.floorTile ? this.textures.get(STONE_KEY).getSourceImage() : null }
+        paintPlatforms(tex.getContext(), node, opts)
+        paintBridges(tex.getContext(), node, opts)
+        tex.refresh()
+        floorKey = FLOOR_KEY
       }
-      // 3. The deck, and any rope bridges leading off it.
-      this.add.image(0, 0, "vv-deck").setOrigin(0, 0).setDepth(-40)
-      this.buildBridges()
+      if (floorKey) {
+        for (const [ox, oy, a] of [
+          [7, 17, 0.28],
+          [3, 8, 0.45],
+        ] as const) {
+          this.add
+            .image(ox, oy, floorKey)
+            .setOrigin(0, 0)
+            .setTint(0x000000)
+            .setTintMode(Phaser.TintModes.FILL)
+            .setAlpha(a)
+            .setDepth(-50)
+        }
+        this.add.image(0, 0, floorKey).setOrigin(0, 0).setDepth(-40)
+      }
 
       // 4a. Props, feet at the bottom of their footprint.
       for (const p of node.props) {
@@ -223,8 +242,8 @@ export function createVelkynvelveScene(
         }
       }
 
-      // 4a'. Cage bars along the rim, when the node has them.
-      if (node.edge === "bars") this.buildBars()
+      // 4a'. Cage bars and locked gates round caged platforms.
+      if (node.geometry) buildCage(this, node, { S, barKey: BAR_KEY, barHeight: BAR_HEIGHT, stone: null })
 
       // 4b. Figures.
       for (const f of figures) this.addFigure(f)
@@ -266,7 +285,9 @@ export function createVelkynvelveScene(
         const slack = view / 2 - S
         return Math.abs(f - c) > slack ? f - Math.sign(f - c) * Math.max(0, slack) : c
       }
-      cam.centerOn(keep(deckCx, lead?.x, viewW), keep(deckCy, lead?.y, viewH))
+      const openX = firstPlatform ? firstPlatform.cx * S : deckCx
+      const openY = firstPlatform ? firstPlatform.cy * S : deckCy
+      cam.centerOn(keep(openX, lead?.x, viewW), keep(openY, lead?.y, viewH))
       this.scale.on("resize", () => this.fitZoom())
 
       this.input.on("pointerdown", (p: any) => {
@@ -386,265 +407,115 @@ export function createVelkynvelveScene(
     }
 
     /**
-     * Bars stand on every edge where a standable square meets the drop.
-     * Each bar is its own image sorted by its foot, so a figure standing
-     * inside the pen is drawn in front of the far bars and behind the near
-     * ones. Where the pen meets a gate square the bars become the gate,
-     * flush with the rest of the wall; props block movement, not the view,
-     * so they get no bars.
-     */
-    buildBars() {
-      const open = (x: number, y: number) => node.walkable[y]?.[x] === "o"
-      const inGrid = (x: number, y: number) => x >= 0 && y >= 0 && x < node.squares && y < node.squares
-      const rail = this.add.graphics().setDepth(-1)
-      const put = (x: number, y: number) => {
-        this.add.image(x, y, BAR_KEY).setOrigin(0.5, 1).setDepth(y)
-      }
-      for (let sy = 0; sy < node.squares; sy++) {
-        for (let sx = 0; sx < node.squares; sx++) {
-          if (!open(sx, sy)) continue
-          const x0 = sx * S
-          const y0 = sy * S
-          const sides: Array<[number, number, "h" | "v", number]> = [
-            [sx, sy - 1, "h", y0 + 2],
-            [sx, sy + 1, "h", y0 + S - 1],
-            [sx - 1, sy, "v", x0 + 2],
-            [sx + 1, sy, "v", x0 + S - 2],
-          ]
-          for (const [nx, ny, dir, at] of sides) {
-            const next = inGrid(nx, ny) ? node.walkable[ny][nx] : "."
-            if (next === "o" || next === "b") continue
-            if (next === "g") {
-              this.buildGate(dir, at, x0, y0)
-              continue
-            }
-            if (dir === "h") {
-              for (let x = x0 + 2; x < x0 + S; x += BAR_GAP) put(x, at)
-              rail.lineStyle(2, 0x2a2631, 1).lineBetween(x0, at - BAR_HEIGHT + 1, x0 + S, at - BAR_HEIGHT + 1)
-            } else {
-              // Seen end-on from above, a run of bars would collapse into a
-              // one-pixel line. Draw it as the strip the eye expects: a
-              // shadowed band with the bars' tops ticked across it.
-              this.buildSideBars(at, y0, 5, BAR_GAP, 0.4)
-            }
-          }
-        }
-      }
-    }
-
-    /** A side wall of bars (or a gate, when heavier), as a ticked strip from bar top to foot. */
-    buildSideBars(at: number, y0: number, width: number, gap: number, shade: number, tick = 0x6a6275) {
-      const g = this.add.graphics().setDepth(y0 + S)
-      const top = y0 - BAR_HEIGHT
-      g.fillStyle(0x0c0a10, shade).fillRect(at - width / 2, top, width, S + BAR_HEIGHT)
-      for (let y = top; y <= y0 + S; y += gap) {
-        g.fillStyle(0x15131a, 1).fillRect(at - width / 2, y, width, 2)
-        g.fillStyle(tick, 1).fillRect(at - width / 2, y, width, 1)
-      }
-      g.fillStyle(0x2a2631, 1).fillRect(at - width / 2 - 1, top, 1, S)
-      g.fillStyle(0x2a2631, 1).fillRect(at + width / 2, top + BAR_HEIGHT, 1, S)
-      return g
-    }
-
-    /** A locked gate in the line of the bars: closer bars, two crossbars and a lock plate. */
-    buildGate(dir: "h" | "v", at: number, x0: number, y0: number) {
-      const g = this.add.graphics()
-      const iron = 0x1b1820
-      const lit = 0x7a7285
-      if (dir === "h") {
-        g.setDepth(at)
-        for (let x = x0 + 1; x < x0 + S; x += 3) {
-          g.fillStyle(iron, 1).fillRect(x, at - BAR_HEIGHT - 2, 2, BAR_HEIGHT + 2)
-          g.fillStyle(lit, 1).fillRect(x, at - BAR_HEIGHT - 1, 1, BAR_HEIGHT)
-        }
-        for (const h of [8, 24, BAR_HEIGHT]) g.fillStyle(iron, 1).fillRect(x0, at - h - 1, S, 3)
-        g.fillStyle(0x3a3440, 1).fillRect(x0 + S / 2 - 4, at - 22, 8, 9)
-        g.fillStyle(0xb09a5a, 1).fillRect(x0 + S / 2 - 1, at - 19, 2, 3)
-      } else {
-        // Heavier than the wall beside it: wider, denser, crossbars, a lock.
-        g.destroy()
-        const side = this.buildSideBars(at, y0, 9, 3, 0.6, 0x9a92a8)
-        for (const dx of [-4, 4]) side.fillStyle(iron, 1).fillRect(at + dx - 1, y0 - BAR_HEIGHT, 2, S + BAR_HEIGHT)
-        side.fillStyle(0x3a3440, 1).fillRect(at - 7, y0 + S / 2 - 26, 14, 16)
-        side.fillStyle(0xc9a95c, 1).fillRect(at - 6, y0 + S / 2 - 25, 12, 1)
-        side.fillStyle(0xc9a95c, 1).fillRect(at - 1, y0 + S / 2 - 21, 3, 6)
-      }
-    }
-
-    /**
-     * Rope bridges: planks laid across the direction of travel, rope rails
-     * and posts wherever a side faces the drop, drawn once into one texture
-     * that casts the same shadow as the deck. A square with bridge on all
-     * four sides is a junction and gets a boxed platform. Off the map counts
-     * as more bridge — the walkway carries on to the next node.
-     */
-    buildBridges() {
-      const at = (x: number, y: number) =>
-        x < 0 || y < 0 || x >= node.squares || y >= node.squares ? "edge" : node.walkable[y][x]
-      const joins = (c: string) => c === "b" || c === "g" || c === "o" || c === "edge"
-      const cells: Array<[number, number]> = []
-      node.walkable.forEach((row, y) => [...row].forEach((c, x) => (c === "b" || c === "g") && cells.push([x, y])))
-      if (cells.length === 0) return
-
-      const tex = this.textures.createCanvas(BRIDGE_KEY, worldW, worldH)
-      const ctx: CanvasRenderingContext2D = tex.getContext()
-      let seed = 99
-      const rnd = () => {
-        seed = (seed * 16807) % 2147483647
-        return seed / 2147483647
-      }
-      const woods = ["#5a4330", "#4d3a2a", "#634a35", "#57422f", "#4a3727"]
-      const plank = (x: number, y: number, w: number, h: number) => {
-        ctx.fillStyle = woods[Math.floor(rnd() * woods.length)]
-        ctx.fillRect(x, y, w, h)
-        ctx.fillStyle = "rgba(255,230,190,0.18)"
-        if (w > h) ctx.fillRect(x, y, w, 1)
-        else ctx.fillRect(x, y, 1, h)
-        ctx.fillStyle = "#231a13"
-        if (w > h) {
-          ctx.fillRect(x + 2, y + Math.floor(h / 2), 1, 1)
-          ctx.fillRect(x + w - 3, y + Math.floor(h / 2), 1, 1)
-        } else {
-          ctx.fillRect(x + Math.floor(w / 2), y + 2, 1, 1)
-          ctx.fillRect(x + Math.floor(w / 2), y + h - 3, 1, 1)
-        }
-      }
-      const runOf = (x: number, y: number) => {
-        const up = joins(at(x, y - 1))
-        const down = joins(at(x, y + 1))
-        const left = joins(at(x - 1, y))
-        const right = joins(at(x + 1, y))
-        return { vertical: (up && down) || (!(left && right) && (up || down)), horizontal: left && right }
-      }
-      const isJunction = (x: number, y: number) => {
-        const c = at(x, y)
-        if (c !== "b") return false
-        const r = runOf(x, y)
-        return r.vertical && r.horizontal
-      }
-      for (const [x, y] of cells) {
-        const x0 = x * S
-        const y0 = y * S
-        const { vertical, horizontal } = runOf(x, y)
-        // The gaps between planks are left empty: the abyss shows through,
-        // which is most of what makes a rope bridge look like one.
-        const c = node.walkable[y][x]
-        const skip = () => c === "b" && rnd() < 0.06
-        if (vertical && horizontal) {
-          // Junction: a solid lashed platform with a heavy frame.
-          ctx.fillStyle = "#1c140e"
-          ctx.fillRect(x0, y0, S, S)
-          for (let py = y0 + 1; py < y0 + S; py += 5) plank(x0 + 1, py, S - 2, 4)
-          // Frame the platform where it meets plain bridge.
-          ctx.fillStyle = "#2a1f16"
-          if (!isJunction(x, y - 1)) ctx.fillRect(x0, y0, S, 3)
-          if (!isJunction(x, y + 1)) ctx.fillRect(x0, y0 + S - 3, S, 3)
-          if (!isJunction(x - 1, y)) ctx.fillRect(x0, y0, 3, S)
-          if (!isJunction(x + 1, y)) ctx.fillRect(x0 + S - 3, y0, 3, S)
-        } else if (vertical) {
-          for (let py = y0; py < y0 + S; py += 6) if (!skip()) plank(x0 + 3 + Math.round(rnd() * 2 - 1), py, S - 6, 4)
-        } else {
-          for (let px = x0; px < x0 + S; px += 6) if (!skip()) plank(px, y0 + 3 + Math.round(rnd() * 2 - 1), 4, S - 6)
-        }
-        // Rope rails and posts on every side that faces the drop.
-        // Two side ropes: the plank lashing and, a little outside it, the
-        // hand line, twisted (alternating light and dark pixels).
-        const rope = (x1: number, y1: number, x2: number, y2: number) => {
-          const horiz = y1 === y2
-          const len = horiz ? Math.abs(x2 - x1) : Math.abs(y2 - y1)
-          for (let i = 0; i < len; i++) {
-            const px = horiz ? Math.min(x1, x2) + i : x1
-            const py = horiz ? y1 : Math.min(y1, y2) + i
-            ctx.fillStyle = "#24180d"
-            ctx.fillRect(px + (horiz ? 0 : 1), py + (horiz ? 1 : 0), horiz ? 1 : 2, horiz ? 2 : 1)
-            ctx.fillStyle = i % 3 === 0 ? "#6e5431" : "#b8925a"
-            ctx.fillRect(px, py, horiz ? 1 : 2, horiz ? 2 : 1)
-          }
-        }
-        const post = (px: number, py: number) => {
-          ctx.fillStyle = "#1a120c"
-          ctx.fillRect(px - 3, py - 3, 7, 7)
-          ctx.fillStyle = "#6b5238"
-          ctx.fillRect(px - 2, py - 2, 4, 4)
-          ctx.fillStyle = "#8c6c48"
-          ctx.fillRect(px - 2, py - 2, 4, 1)
-        }
-        if (at(x, y - 1) === ".") {
-          rope(x0, y0 + 1, x0 + S, y0 + 1)
-          if (x % 2 === 0) post(x0 + 1, y0 + 2)
-        }
-        if (at(x, y + 1) === ".") {
-          rope(x0, y0 + S - 3, x0 + S, y0 + S - 3)
-          if (x % 2 === 0) post(x0 + 1, y0 + S - 2)
-        }
-        if (at(x - 1, y) === ".") {
-          rope(x0 + 1, y0, x0 + 1, y0 + S)
-          if (y % 2 === 0) post(x0 + 2, y0 + 1)
-        }
-        if (at(x + 1, y) === ".") {
-          rope(x0 + S - 3, y0, x0 + S - 3, y0 + S)
-          if (y % 2 === 0) post(x0 + S - 2, y0 + 1)
-        }
-      }
-      tex.refresh()
-      for (const [ox, oy, a] of [
-        [7, 17, 0.28],
-        [3, 8, 0.45],
-      ] as const) {
-        this.add.image(ox, oy, BRIDGE_KEY).setOrigin(0, 0).setTint(0x000000).setTintMode(Phaser.TintModes.FILL).setAlpha(a).setDepth(-50)
-      }
-      this.add.image(0, 0, BRIDGE_KEY).setOrigin(0, 0).setDepth(-39)
-    }
-
-    /**
-     * A waterfall pouring through the abyss: a sheet of falling streaks,
-     * scrolled every frame, under the mist so it sits deep in the dark,
-     * with a cold glow of its own.
+     * A waterfall pouring through the abyss, and plainly moving: a sheet of
+     * water scrolling down, brighter streaks racing down it faster, white
+     * foam boiling where it breaks over each ledge, and spray thrown off
+     * into the dark. It sits under the mist, deep in the chasm, and lights
+     * itself (see the pools in update()).
      */
     buildWaterfall() {
       const wf = node.waterfall
       if (!wf) return
-      const tw = wf.width * S
-      const th = 96
-      const t = this.textures.createCanvas(WATER_KEY, tw, th)
-      const c: CanvasRenderingContext2D = t.getContext()
-      c.fillStyle = "rgba(50,85,130,0.7)"
-      c.fillRect(0, 0, tw, th)
       let seed = 4242
       const rnd = () => {
         seed = (seed * 16807) % 2147483647
         return seed / 2147483647
       }
-      for (let i = 0; i < 35 * wf.width; i++) {
+      const tw = Math.round(wf.width * S)
+      const th = 128
+      const feather = (c: CanvasRenderingContext2D, w: number, h: number) => {
+        c.globalCompositeOperation = "destination-in"
+        const edge = c.createLinearGradient(0, 0, w, 0)
+        edge.addColorStop(0, "rgba(0,0,0,0)")
+        edge.addColorStop(0.16, "rgba(0,0,0,1)")
+        edge.addColorStop(0.84, "rgba(0,0,0,1)")
+        edge.addColorStop(1, "rgba(0,0,0,0)")
+        c.fillStyle = edge
+        c.fillRect(0, 0, w, h)
+        c.globalCompositeOperation = "source-over"
+      }
+      // The body: deep blue, darker columns, soft vertical grain.
+      const body = this.textures.createCanvas(WATER_KEY, tw, th)
+      const bc: CanvasRenderingContext2D = body.getContext()
+      bc.fillStyle = "rgba(44,78,122,0.82)"
+      bc.fillRect(0, 0, tw, th)
+      for (let i = 0; i < 26 * wf.width; i++) {
         const x = Math.floor(rnd() * tw)
         const y = Math.floor(rnd() * th)
-        const len = 6 + Math.floor(rnd() * 22)
-        const light = rnd() > 0.35
-        c.fillStyle = light ? `rgba(215,235,255,${0.45 + rnd() * 0.5})` : "rgba(30,55,90,0.7)"
-        // Draw twice so the streaks wrap and the texture tiles vertically.
-        c.fillRect(x, y, 1, len)
-        c.fillRect(x, y - th, 1, len)
+        const len = 10 + Math.floor(rnd() * 30)
+        bc.fillStyle = rnd() > 0.5 ? "rgba(90,135,185,0.7)" : "rgba(22,40,70,0.7)"
+        bc.fillRect(x, y, 1, len)
+        bc.fillRect(x, y - th, 1, len)
       }
-      // Feather the sides so it reads as falling water, not a painted slab.
-      c.globalCompositeOperation = "destination-in"
-      const edge = c.createLinearGradient(0, 0, tw, 0)
-      edge.addColorStop(0, "rgba(0,0,0,0)")
-      edge.addColorStop(0.18, "rgba(0,0,0,1)")
-      edge.addColorStop(0.82, "rgba(0,0,0,1)")
-      edge.addColorStop(1, "rgba(0,0,0,0)")
-      c.fillStyle = edge
-      c.fillRect(0, 0, tw, th)
-      c.globalCompositeOperation = "source-over"
-      t.refresh()
+      feather(bc, tw, th)
+      body.refresh()
+      // The streaks: sparse bright threads, moving faster than the sheet.
+      const streak = this.textures.createCanvas(`${WATER_KEY}-fast`, tw, th)
+      const sc: CanvasRenderingContext2D = streak.getContext()
+      for (let i = 0; i < 22 * wf.width; i++) {
+        const x = Math.floor(rnd() * tw)
+        const y = Math.floor(rnd() * th)
+        const len = 4 + Math.floor(rnd() * 16)
+        sc.fillStyle = `rgba(225,242,255,${0.5 + rnd() * 0.5})`
+        sc.fillRect(x, y, 1, len)
+        sc.fillRect(x, y - th, 1, len)
+      }
+      feather(sc, tw, th)
+      streak.refresh()
+      // Foam: a band of white clots that tiles sideways.
+      // Foam: soft round clots, densest along the lip, thinning into drips
+      // below it. Tiles sideways so it can churn.
+      const foam = this.textures.createCanvas(FOAM_KEY, 64, 20)
+      const fc: CanvasRenderingContext2D = foam.getContext()
+      for (let i = 0; i < 90; i++) {
+        const x = rnd() * 64
+        const y = 4 + Math.pow(rnd(), 1.8) * 13
+        const r = 1 + rnd() * 2.5 * (1 - (y - 4) / 16)
+        fc.fillStyle = `rgba(232,243,255,${0.35 + rnd() * 0.5})`
+        for (const ox of [-64, 0, 64]) {
+          fc.beginPath()
+          fc.arc(x + ox, y, r, 0, Math.PI * 2)
+          fc.fill()
+        }
+      }
+      foam.refresh()
+
       const x = wf.x * S
-      const w = wf.width * S
-      this.water = this.add.tileSprite(x, -MARGIN, w, worldH + MARGIN * 2, WATER_KEY).setOrigin(0, 0).setDepth(-95)
-      // Foam where it breaks in over the top of the map.
-      this.add
-        .image(x + w / 2, -MARGIN / 3, LIGHT_KEY)
-        .setScale((w * 2.2) / 128, 1.2)
-        .setAlpha(0.7)
-        .setDepth(-94)
+      const w = tw
+      this.water = this.add.tileSprite(x, -MARGIN, w, worldH + MARGIN * 2, WATER_KEY).setOrigin(0, 0).setDepth(-96)
+      this.streaks = this.add
+        .tileSprite(x, -MARGIN, w, worldH + MARGIN * 2, `${WATER_KEY}-fast`)
+        .setOrigin(0, 0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(-95)
+      // Where it breaks in over the top of the map, and over each ledge.
+      const breaks = [0, ...(wf.ledges ?? [])]
+      for (const ly of breaks) {
+        const y = ly * S
+        const band = this.add
+          .tileSprite(x - 2, y - 6, w + 4, 20, FOAM_KEY)
+          .setOrigin(0, 0)
+          .setDepth(-94)
+        this.foam.push(band)
+        this.add
+          .image(x + w / 2, y + 2, LIGHT_KEY)
+          .setScale((w * 1.8) / 128, 0.35)
+          .setAlpha(0.55)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(-94)
+        this.add
+          .particles(x + w / 2, y + 4, LIGHT_KEY, {
+            x: { min: -w / 2, max: w / 2 },
+            speedX: { min: -14, max: 14 },
+            speedY: { min: -22, max: 18 },
+            scale: { start: 0.04, end: 0.14 },
+            alpha: { start: 0.55, end: 0 },
+            lifespan: { min: 700, max: 1400 },
+            frequency: 70,
+            blendMode: Phaser.BlendModes.ADD,
+          })
+          .setDepth(-93)
+      }
     }
 
     addFigure(f: SceneFigure) {
@@ -792,6 +663,11 @@ export function createVelkynvelveScene(
       for (const f of this.figs) pool(f.sprite.x, f.sprite.y - S * 0.4, FIGURE_LIGHT_RADIUS, 1)
       if (this.water && node.waterfall) {
         this.water.tilePositionY = -time * WATER_SPEED
+        this.streaks.tilePositionY = -time * STREAK_SPEED
+        this.foam.forEach((f, i) => {
+          f.tilePositionX = time * (i % 2 ? 0.05 : -0.04)
+          f.setAlpha(0.75 + 0.25 * Math.sin(time / 90 + i * 1.7))
+        })
         const wx = (node.waterfall.x + node.waterfall.width / 2) * S
         for (let y = 0; y <= worldH; y += 64) pool(wx, y, 46 * node.waterfall.width, 0.75)
       }
