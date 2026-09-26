@@ -54,6 +54,15 @@ describe("poseAt", () => {
     expect(Math.hypot(end.side, end.up)).toBeLessThan(1e-6)
   })
 
+  it("a seeking dart swings wide, alternates sides by seed, and arrives dead centre", () => {
+    const left = poseAt(MOTION.seek, 0.4, 6, 0).side
+    const right = poseAt(MOTION.seek, 0.4, 6, 1).side
+    expect(Math.abs(left)).toBeGreaterThan(0.3)
+    expect(Math.sign(left)).not.toBe(Math.sign(right))
+    expect(Math.abs(poseAt(MOTION.seek, 1, 6, 0).side)).toBeLessThan(1e-6)
+    expect(Math.abs(poseAt(MOTION.seek, 0, 6, 0).side)).toBeLessThan(1e-6)
+  })
+
   it("a dart flies dead straight", () => {
     for (const p of [0.2, 0.5, 0.8]) {
       const pose = poseAt(MOTION.dart, p, 6)

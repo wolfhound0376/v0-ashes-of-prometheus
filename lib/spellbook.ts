@@ -86,6 +86,8 @@ export interface AreaSpec {
  */
 export type Resolution = "attack" | "save" | "auto" | "none"
 
+import type { VolleySpec } from "@/lib/volley"
+
 export interface SpellEntry {
   /** 0 = cantrip, else the slot level it burns. */
   level: number
@@ -117,6 +119,17 @@ export interface SpellEntry {
    * is a contradiction the board cannot draw.
    */
   area?: AreaSpec
+  /**
+   * More than one projectile, each resolved on its own and aimed where the
+   * caster chooses — Magic Missile's darts, Scorching Ray's rays, Eldritch
+   * Blast's beams. `dice` is then PER PROJECTILE. See lib/volley.
+   */
+  volley?: VolleySpec
+  /**
+   * A shove on a failed save: "pushed 10 feet away from you". Feet, straight
+   * away from the caster. See lib/volley pushPath.
+   */
+  push?: { feet: number }
 }
 
 const S = (e: SpellEntry) => e
@@ -159,17 +172,28 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
 
   // ---- commonly reached for, so the registry does not go stale the first
   //      time somebody levels ------------------------------------------------
-  "eldritch blast":    S({ level: 0, school: "eldritch", damage: "force",     rangeFt: 120, target: "creature", resolve: "attack", dice: "1d10" }),
+  // SRD: "two beams at 5th level, three beams at 11th level, and four beams at
+  // 17th level ... Make a separate attack roll for each beam."
+  "eldritch blast":    S({ level: 0, school: "eldritch", damage: "force",     rangeFt: 120, target: "creature", resolve: "attack", dice: "1d10", volley: { count: 1, byCasterLevel: [[5, 2], [11, 3], [17, 4]] } }),
   "sacred flame":      S({ level: 0, school: "holy",     damage: "radiant",   rangeFt: 60,  target: "creature", resolve: "save", save: "DEX", dice: "1d8" }),
   "fire bolt":         S({ level: 0, school: "fire",     damage: "fire",      rangeFt: 120, target: "creature", resolve: "attack", dice: "1d10" }),
   "cure wounds":       S({ level: 1, school: "holy",                          rangeFt: 5,   target: "creature", helpful: true, resolve: "auto", dice: "1d8", heals: true }),
-  "magic missile":     S({ level: 1, school: "arcane",   damage: "force",     rangeFt: 120, target: "creature", resolve: "auto", dice: "3d4+3" }),
+  // SRD: "three glowing darts ... A dart deals 1d4 + 1 force damage ... one
+  // more dart for each slot level above 1st." Dice are per dart now; the old
+  // "3d4+3" was the three darts summed onto one creature.
+  "magic missile":     S({ level: 1, school: "arcane",   damage: "force",     rangeFt: 120, target: "creature", resolve: "auto", dice: "1d4+1", volley: { count: 3, perSlotAbove: 1 } }),
+  // SRD: "three rays of fire ... Make a ranged spell attack for each ray. On a
+  // hit, the target takes 2d6 fire damage ... one additional ray for each
+  // slot level above 2nd."
+  "scorching ray":     S({ level: 2, school: "fire",     damage: "fire",      rangeFt: 120, target: "creature", resolve: "attack", dice: "2d6", volley: { count: 3, perSlotAbove: 1 } }),
   // Self-origin shapes. rangeFt is 0 because the spell reaches nowhere on its
   // own — the SHAPE is its reach, and the player picks a direction rather than
   // a distant point. Leaving rangeFt at 15 made the board offer a 15 ft
   // "range" it then had no way to honour.
   "burning hands":     S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 0,   target: "point", resolve: "save", save: "DEX", dice: "3d6", halfOnSave: true, area: cone(15) }),
-  "thunderwave":       S({ level: 1, school: "arcane",   damage: "thunder",   rangeFt: 0,   target: "point", resolve: "save", save: "CON", dice: "2d8", halfOnSave: true, area: cube(15, "self") }),
+  // SRD: "On a failed save, a creature takes 2d8 thunder damage and is pushed
+  // 10 feet away from you."
+  "thunderwave":       S({ level: 1, school: "arcane",   damage: "thunder",   rangeFt: 0,   target: "point", resolve: "save", save: "CON", dice: "2d8", halfOnSave: true, area: cube(15, "self"), push: { feet: 10 } }),
   "color spray":       S({ level: 1, school: "arcane",                        rangeFt: 0,   target: "point", area: cone(15) }),
   "inflict wounds":    S({ level: 1, school: "necrotic", damage: "necrotic",  rangeFt: 5,   target: "creature", resolve: "attack", dice: "3d10" }),
   "hellish rebuke":    S({ level: 1, school: "fire",     damage: "fire",      rangeFt: 60,  target: "creature" }),

@@ -151,7 +151,9 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff, burst: { tint: 0x9c6bff, sparks: 12, ring: false } },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff, burst: { tint: 0xc678ff, sparks: 18, ring: true } },
   poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
-  force:    { rune: "runeForce",    route: "ball",        travel: "pxMissile",     impact: "forceHit",       charge: 0.65, speed: 18, motion: "weave", tint: 0xffffff, burst: { tint: 0xa78bff, sparks: 18, ring: true } },
+  // A missile SEEKS: each dart of a volley swings out on its own side and
+  // homes in, so three darts leave as a fan and arrive together.
+  force:    { rune: "runeForce",    route: "ball",        travel: "pxMissile",     impact: "forceHit",       charge: 0.65, speed: 16, motion: "seek",  tint: 0xffffff, burst: { tint: 0xa78bff, sparks: 18, ring: true } },
   psychic:  { rune: "runePsychic",  route: "ball",        travel: "pxPsychic",     impact: "psychicImpact",  charge: 0.70, speed: 12, motion: "drift", tint: 0xffffff, burst: { tint: 0xff8cf0, sparks: 14, ring: true, power: 0.9 } },
   thunder:  { rune: "runeStorm",    route: "radiate",     travel: "thunderGust",   impact: "thunderImpact",  charge: 0.60, tint: 0xffffff, burst: { tint: 0xffffff, sparks: 24, ring: true, power: 1.5 } },
   // Lightning got its own art in the end.

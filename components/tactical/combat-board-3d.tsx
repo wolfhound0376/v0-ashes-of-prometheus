@@ -68,6 +68,7 @@ import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { StatusVfx, type StatusBody } from "./status-vfx"
 import { conditionNames, statusKindsOf } from "@/lib/status-kinds"
+import { allocate, allocated, projectileCount, type Allocation } from "@/lib/volley"
 import { STABILIZE, STABILIZE_ENTRY } from "@/lib/stabilize"
 import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
@@ -335,14 +336,24 @@ type CastAnswer = {
    * their own verdict. Null or absent for a cast with one target.
    */
   victims?: AreaVictim[] | null
+  /**
+   * A VOLLEY: how many projectiles flew at this target and how each landed.
+   * Magic Missile's darts, Scorching Ray's rays. The effect flies once per
+   * projectile; the hit points land with the last one.
+   */
+  volley?: { count: number; shots: { hit: boolean }[] } | null
 }
 
 /**
  * One body in an area cast, as the server reports it — the single-target
  * verdict's vocabulary, per creature. The target rolled the save, so a
- * positive margin is how well THEY got out of the way.
+ * positive margin is how well THEY got out of the way. `pushed` is where a
+ * blast threw them and whether they went down on arrival.
  */
-type AreaVictim = { id: string; amount: number; heals: boolean; outcome: string; margin: number }
+type AreaVictim = {
+  id: string; amount: number; heals: boolean; outcome: string; margin: number
+  pushed?: { to: { x: number; y: number }; feet: number; prone: boolean } | null
+}
 
 /** `victims` off the wire → the ones with enough fields to draw. */
 const parseVictims = (v: unknown): AreaVictim[] => {
@@ -352,12 +363,17 @@ const parseVictims = (v: unknown): AreaVictim[] => {
     if (!raw || typeof raw !== "object") continue
     const r = raw as Record<string, unknown>
     if (typeof r.id !== "string" || !r.id) continue
+    const p = r.pushed as { to?: { x?: unknown; y?: unknown }; feet?: unknown; prone?: unknown } | undefined
+    const pushed = p && typeof p.to?.x === "number" && typeof p.to?.y === "number"
+      ? { to: { x: p.to.x, y: p.to.y }, feet: typeof p.feet === "number" ? p.feet : 0, prone: p.prone === true }
+      : null
     out.push({
       id: r.id,
       amount: typeof r.amount === "number" ? r.amount : 0,
       heals: r.heals === true,
       outcome: typeof r.outcome === "string" ? r.outcome : "",
       margin: typeof r.margin === "number" ? r.margin : 0,
+      pushed,
     })
   }
   return out
@@ -779,11 +795,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        * each use, so the rings, the click handler, the hover read-out and the
        * banner can never disagree about what the player is being asked for.
        */
-      mode: "creature" | "point"
+      mode: "creature" | "point" | "volley"
     } | null
   >(null)
   const armedRef = useRef<typeof armedSpell>(null)
   useEffect(() => { armedRef.current = armedSpell }, [armedSpell])
+  /**
+   * THE VOLLEY BEING AIMED. Sam: "the ability to choose how many projectiles
+   * (clicks in a circle like BG3 for each target out of a total available)."
+   *
+   * While a volley spell is armed, each click on a legal creature gives it
+   * one more dart; the panel shows who has how many and LOOSE throws them
+   * all. `total` is fixed at arming from the spell and the caster's level
+   * (lib/volley); `picks` is the order they were chosen in.
+   */
+  const [volleyPick, setVolleyPick] = useState<{ total: number; picks: Allocation } | null>(null)
+  const volleyRef = useRef<typeof volleyPick>(null)
+  useEffect(() => { volleyRef.current = volleyPick }, [volleyPick])
+  useEffect(() => { if (!armedSpell) setVolleyPick(null) }, [armedSpell])
+  /** LOOSE: throws the aimed volley. Set inside the scene effect. */
+  const volleyLooseRef = useRef<() => void>(() => {})
   const windupRef = useRef<PlayHandle | null>(null)
   const releaseAtRef = useRef<(tokenId: string) => void>(() => {})
   // The RAMP-UP. Sam asked for the windup animation to be wired, not just the
@@ -860,6 +891,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // on that answer instead of running ahead of it.
   const castVerbRef = useRef<
     (caster: string, target: string, ability: string, crossSide?: boolean) => Promise<CastAnswer>
+  >(async () => ({ ok: false }))
+  /** The volley: every pick in one request, one answer per creature. */
+  const castVolleyVerbRef = useRef<
+    (caster: string, picks: Allocation, ability: string, slotLevel: number) => Promise<{
+      ok: boolean
+      victims?: { id: string; amount: number; verdict: { outcome: AttackOutcome; margin: number } | null; count: number; shots: { hit: boolean }[] }[]
+    }>
   >(async () => ({ ok: false }))
   /**
    * Put the server's verdict on the body at once: hit points if they moved,
@@ -2114,9 +2152,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
        * standing in it — until now nobody in a Fireball reacted at all,
        * because the impact handler only ever knew about one victim.
        */
-      victims?: { id: string; reaction: TokenState | null; amount: number; heals: boolean; word: "saved" | "miss" | null }[]
+      victims?: {
+        id: string; reaction: TokenState | null; amount: number; heals: boolean; word: "saved" | "miss" | null
+        pushed?: { to: { x: number; y: number }; feet: number; prone: boolean } | null
+      }[]
       /** The single target's hit points, applied when the effect lands. */
       damage?: { amount: number; heals: boolean; word: "saved" | "miss" | null } | null
+      /**
+       * A volley: one effect per projectile, staggered, each told whether it
+       * hit. The hit points and the reaction ride the LAST one, so the body
+       * answers when the volley is done rather than when its first dart is.
+       */
+      volley?: { count: number; shots: { hit: boolean }[] } | null
       /** Played on the frame the effect arrives — the impact sound. */
       onLand?: () => void
       /**
@@ -2258,6 +2305,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           heals: v.heals,
           word: v.amount > 0 ? null : v.outcome === "saved" ? ("saved" as const) : ("miss" as const),
           reaction: reactionFor({ ok: true, hurt: v.amount > 0 && !v.heals, verdict }, row),
+          pushed: v.pushed ?? null,
         }
       })
     }
@@ -2552,6 +2600,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // The single target's hit points, carried to the impact frame rather
         // than applied when the fetch returned.
         damage: outcome?.damage ?? null,
+        volley: outcome?.volley ?? null,
         cells: shape?.cells,
         centre: shape?.centre,
         casterTokenId: shape?.casterTokenId,
@@ -2813,6 +2862,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         )
         return
       }
+      // A VOLLEY: this click is one dart, not the throw. It goes on the
+      // creature clicked; LOOSE on the panel throws them all. The same-side
+      // question is asked here rather than at the throw, so a friend never
+      // ends up with a dart aimed at them by accident.
+      if (armed.mode === "volley") {
+        const v = volleyRef.current
+        if (!v) return
+        if (status.confirm) { say(`${armed.name} is not for aiming at your own side.`); return }
+        if (allocated(v.picks) >= v.total) { say(`Every ${armed.name} projectile is aimed — LOOSE, or take one back.`); return }
+        uiTick("firm")
+        setVolleyPick({ total: v.total, picks: allocate(v.picks, tokenId, v.total) })
+        return
+      }
       // THE THROW, as one closure over the three things it needs. `armed`,
       // `shooter` and `victim` are the locals resolved above — values, not
       // refs — so a confirm dialog can hold this for as long as it likes and
@@ -2881,6 +2943,51 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       commit(false)
     }
     releaseAtRef.current = releaseAt
+
+    /**
+     * LOOSE: the volley that was aimed leaves the hand.
+     *
+     * One request carries every pick; the server rolls each projectile and
+     * answers per creature. Each creature then gets its own performCast with
+     * its own count, so the darts aimed at the drow fly at the drow and the
+     * one aimed at the spider flies at the spider, all from the same swing
+     * of the arm.
+     */
+    volleyLooseRef.current = () => {
+      const armed = armedRef.current
+      const v = volleyRef.current
+      if (!armed || armed.mode !== "volley" || !v || allocated(v.picks) !== v.total) return
+      const shooter = tokensRef.current.get(armed.tokenId)
+      if (!shooter) return
+      const picks = v.picks.map((p) => ({ ...p }))
+      uiTick("firm")
+      windupRef.current?.stop(0.08)
+      windupRef.current = null
+      stopCharge()
+      clearTargets()
+      affectedRef.current.clear()
+      setArmedSpell(null)
+      setVolleyPick(null)
+      void (async () => {
+        const res = await castVolleyVerbRef.current(shooter.row.id, picks, armed.name, armed.entry.level)
+        if (!res?.ok) return
+        for (const vic of res.victims ?? []) {
+          const target = tokensRef.current.get(vic.id)
+          if (!target) continue
+          performCast(
+            shooter.row.character_id as string, armed.name, armed.kind,
+            shooter, target.row, null,
+            {
+              ok: true,
+              hurt: vic.amount > 0,
+              verdict: vic.verdict,
+              damage: { amount: vic.amount, heals: false, word: vic.amount > 0 ? null : "miss" },
+              volley: { count: vic.count, shots: vic.shots },
+            },
+          )
+        }
+      })()
+    }
 
     /**
      * The other throw: a SQUARE, not a creature.
@@ -6002,6 +6109,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           for (const v of p.victims ?? []) {
             applyCastOutcomeRef.current(v.id, { amount: v.amount, hit: v.amount > 0, heals: v.heals, word: v.word })
             answerFor(v.id, v.reaction)
+            // THROWN BACK. The server has already moved the row; the realtime
+            // echo would glide them there a beat later. Gliding NOW, on the
+            // impact frame, is what makes it a shove rather than a stroll —
+            // and the same glide dedupes the echo. Going down on arrival is
+            // the Prone the server laid, drawn by the status looks.
+            if (v.pushed && v.pushed.feet > 0) {
+              const body = tokensRef.current.get(v.id)
+              if (body) glideToken({ ...body.row, grid_x: v.pushed.to.x, grid_y: v.pushed.to.y })
+            }
           }
           // THE MARK IT LEAVES, on the same frame the shape resolves.
           //
@@ -6063,7 +6179,42 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           flinch()
           continue
         }
-        if (kitType) {
+        if (kitType && p.volley && p.volley.count > 1) {
+          // A VOLLEY: one effect per projectile, each on its own seed so the
+          // darts fan out (lib/projectile-motion "seek"), each a beat behind
+          // the one before. A dart that hit makes the body flinch as it
+          // lands; the hit points, the number and the full answer ride the
+          // last one, so the volley is over when the body is.
+          const n = p.volley.count
+          for (let i = 0; i < n; i++) {
+            const shot = p.volley.shots[i] ?? { hit: true }
+            const last = i === n - 1
+            const one = castSpellKitVfx({
+              parent: scene,
+              anchor: bone,
+              type: kitType,
+              target: p.target,
+              camera,
+              spell: p.spell,
+              seed: i * 2 + 1,
+              outcome: shot.hit ? "hit" : "miss",
+              onImpact: last ? flinch : () => { if (shot.hit && p.victimId) answerFor(p.victimId, "hurt") },
+            })
+            if (last) cast = one
+            // Held back by a beat: the handle simply is not advanced until
+            // its turn. Nothing is drawn until the first update, so the
+            // later darts appear as they leave rather than idling in the hand.
+            const delay = i * 0.16
+            let held = 0
+            vfx.push({
+              update: (dt: number) => {
+                if (held < delay) { held += dt; return true }
+                return one.update(dt)
+              },
+              dispose: () => one.dispose(),
+            })
+          }
+        } else if (kitType) {
           cast = castSpellKitVfx({
             parent: scene,
             anchor: bone,
@@ -6683,6 +6834,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // the effect arrives - see CastAnswer.damage. Applying it here is
           // what put a body on the floor before the spell that killed it had
           // left the caster's hand.
+          // A VOLLEY SPELL CAST THE OLD WAY — one click, one creature — comes
+          // back with every projectile on that creature. Its total and its
+          // shots are read off the one victim so the darts still fly one by
+          // one rather than as a single lump.
+          if (data.volley === true && Array.isArray(data.victims) && data.victims[0]) {
+            const v = data.victims[0] as Record<string, unknown>
+            const amount = typeof v.amount === "number" ? v.amount : 0
+            const shots = (Array.isArray(v.shots) ? v.shots : []).map((s: unknown) => ({ hit: (s as { hit?: unknown })?.hit === true }))
+            if (typeof data.damageType === "string" && amount > 0) lastHitWithRef.current.set(target_token, data.damageType)
+            return {
+              ok: true,
+              hurt: amount > 0,
+              verdict: isAttackOutcome(v.outcome) ? { outcome: v.outcome, margin: typeof v.margin === "number" ? v.margin : 0 } : null,
+              damage: { amount, heals: false, word: amount > 0 ? null : "miss" },
+              volley: { count: typeof v.count === "number" ? v.count : shots.length || 1, shots },
+            }
+          }
           const damage = {
             amount: Number(data.amount ?? 0),
             heals: Boolean(data.heals),
@@ -6720,6 +6888,52 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return { ok: true, hurt: false }
       } catch {
         say("The spell did not reach the server — nothing was spent.")
+        return { ok: false }
+      }
+    }
+
+    /**
+     * The volley, resolved server-side one projectile at a time.
+     *
+     * Same wire as a creature cast plus `targets` — who gets how many — and
+     * the slot it is cast from. The answer is per creature: their total, the
+     * verdict, and how each projectile aimed at them landed.
+     */
+    castVolleyVerbRef.current = async (caster_token, picks, ability, slotLevel) => {
+      try {
+        const res = await fetch("/api/combat", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...dmHeaders() },
+          body: JSON.stringify({
+            action: "cast", caster_token, ability, sandbox,
+            target_token: picks[0]?.token, targets: picks, slot_level: slotLevel,
+          }),
+        })
+        const data = await res.json().catch(() => null)
+        if (!res.ok) {
+          say(data?.error ?? "The volley would not resolve.")
+          return { ok: false }
+        }
+        if (data?.line) say(data.line as string)
+        playCues(data?.sfxCues)
+        const victims = (Array.isArray(data?.victims) ? data.victims : []).map((raw: unknown) => {
+          const r = raw as Record<string, unknown>
+          const amount = typeof r.amount === "number" ? r.amount : 0
+          if (typeof data.damageType === "string" && amount > 0 && typeof r.id === "string") {
+            lastHitWithRef.current.set(r.id, data.damageType)
+          }
+          const shots = (Array.isArray(r.shots) ? r.shots : []).map((s: unknown) => ({ hit: (s as { hit?: unknown })?.hit === true }))
+          return {
+            id: String(r.id ?? ""),
+            amount,
+            verdict: isAttackOutcome(r.outcome) ? { outcome: r.outcome, margin: typeof r.margin === "number" ? r.margin : 0 } : null,
+            count: typeof r.count === "number" ? r.count : shots.length || 1,
+            shots,
+          }
+        }).filter((v: { id: string }) => v.id)
+        return { ok: true, victims }
+      } catch {
+        say("The volley did not reach the server — nothing was spent.")
         return { ok: false }
       }
     }
@@ -7388,6 +7602,50 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         </div>
       )}
 
+      {/* THE VOLLEY PANEL. Who has how many, and LOOSE. Sam: "clicks in a
+          circle like BG3 for each target out of a total available." */}
+      {armedSpell?.mode === "volley" && volleyPick && (
+        <div className="pointer-events-auto absolute bottom-[22%] left-1/2 z-40 w-[300px] -translate-x-1/2 border border-[#8f6bff] bg-[#0b0d12]/95 p-3 font-mono shadow-[0_0_28px_#8f6bff44]">
+          <div className="flex items-baseline justify-between">
+            <div className="text-[10px] tracking-[0.2em] text-[#cfc0ff]">{armedSpell.name.toUpperCase()}</div>
+            <div className="text-[10px] text-[#8f8aa8]">{allocated(volleyPick.picks)} of {volleyPick.total} aimed</div>
+          </div>
+          <div className="mt-2 space-y-1">
+            {volleyPick.picks.length === 0 && (
+              <p className="text-[10px] leading-relaxed text-[#8f8aa8]">Click a creature once for each projectile. The same creature can take several.</p>
+            )}
+            {volleyPick.picks.map((p) => (
+              <div key={p.token} className="flex items-center gap-2 text-[11px] text-[#d8e4f2]">
+                <span className="flex-1 truncate">{tokensRef.current.get(p.token)?.row.label ?? "?"}</span>
+                <span className="tracking-[0.25em] text-[#cfc0ff]">{"●".repeat(p.count)}{"○".repeat(Math.max(0, volleyPick.total - allocated(volleyPick.picks)))}</span>
+                <button
+                  onClick={() => setVolleyPick({ total: volleyPick.total, picks: allocate(volleyPick.picks, p.token, volleyPick.total, -1) })}
+                  className="border border-[#4a4034] px-1.5 text-[10px] text-[#b6a888] hover:border-[#8f6bff]"
+                  title="Take one back"
+                >
+                  −
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              disabled={allocated(volleyPick.picks) !== volleyPick.total}
+              onClick={() => volleyLooseRef.current()}
+              className="flex-1 border border-[#8f6bff] bg-[#2a1a5e] px-3 py-1.5 text-[10px] tracking-wider text-[#e8e0ff] hover:bg-[#3a2680] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              LOOSE
+            </button>
+            <button
+              onClick={() => setArmedSpell(null)}
+              className="flex-1 border border-[#4a4034] bg-black/60 px-3 py-1.5 text-[10px] tracking-wider text-[#b6a888] hover:border-[#6b5123]"
+            >
+              CANCEL
+            </button>
+          </div>
+        </div>
+      )}
+
       <TurnBanner
         active={Boolean(combat)}
         isMine={isMyTurn}
@@ -7503,9 +7761,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // A weapon always wants a body. Everything else asks the spellbook:
           // `point` spells are aimed at the FLOOR, and treating them as
           // creature spells is what made Mage Hand impossible to cast.
-          const mode: "creature" | "point" =
-            kind !== "weapon" && e.target === "point" ? "point" : "creature"
+          const mode: "creature" | "point" | "volley" =
+            kind !== "weapon" && e.target === "point" ? "point"
+            : kind !== "weapon" && e.volley ? "volley"
+            : "creature"
           setArmedSpell({ characterId, tokenId: mine.row.id, name: ability, kind, entry: e, mode })
+          if (mode === "volley") {
+            // How many there are comes from the spell and the caster's own
+            // level (lib/volley) — Eldritch Blast grows with the warlock,
+            // Magic Missile with the slot. Cast at the spell's own level here;
+            // the slot picker is a later piece.
+            const level = sheets.find((s) => s.id === characterId)?.level ?? 1
+            const total = projectileCount(e, { slotLevel: e.level, casterLevel: level })
+            setVolleyPick({ total, picks: [] })
+            say(`${ability} — ${total} to aim. Click a creature once per projectile, then LOOSE.`)
+            return
+          }
           say(
             mode === "point"
               ? `${ability} — choose a spot${e.rangeFt ? ` within ${e.rangeFt} ft` : ""}.`
@@ -7513,7 +7784,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           )
         }}
         showLog={showLog}
-        armedSpell={armedSpell ? { name: armedSpell.name, rangeFt: armedSpell.entry.rangeFt, mode: armedSpell.mode } : null}
+        armedSpell={armedSpell ? { name: armedSpell.name, rangeFt: armedSpell.entry.rangeFt, mode: armedSpell.mode === "point" ? "point" : "creature" } : null}
         onCancelArm={() => setArmedSpell(null)}
       />
 
