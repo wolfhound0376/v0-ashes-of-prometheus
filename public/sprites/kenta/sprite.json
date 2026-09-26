@@ -44,7 +44,7 @@
     },
     "cast": {
       "sheet": "cast.png",
-      "frames": 6,
+      "frames": 9,
       "fps": 10,
       "loop": false,
       "hit": 0.6
