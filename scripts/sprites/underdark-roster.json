@@ -43,6 +43,13 @@
     "target_ft": 10.0
   },
   {
+    "slug": "giant-rat",
+    "name": "Giant Rat",
+    "pixellab_character_id": "f443cf12-c02c-4736-aa97-714b17b89e73",
+    "size_by": "width",
+    "target_ft": 3.0
+  },
+  {
     "slug": "quaggoth",
     "name": "Quaggoth",
     "pixellab_character_id": "010bae69-e137-43b9-9665-a09f9dca4231",
