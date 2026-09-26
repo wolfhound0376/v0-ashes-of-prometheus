@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "name": "Prince Derendil",
+  "cell": [
+    128,
+    128
+  ],
+  "pivot": [
+    64,
+    126
+  ],
+  "ppu": 89,
+  "animations": {
+    "hurt": {
+      "sheet": "hurt.png",
+      "frames": 6,
+      "fps": 10,
+      "loop": false
+    },
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 6,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.75
+    },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 8,
+      "fps": 10,
+      "loop": true
+    },
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 4,
+      "fps": 5,
+      "loop": true
+    },
+    "dead": {
+      "sheet": "dead.png",
+      "frames": 7,
+      "fps": 8,
+      "loop": false
+    }
+  }
+}
