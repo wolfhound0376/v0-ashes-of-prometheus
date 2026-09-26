@@ -47,30 +47,6 @@
         "width": 2
       },
       {
-        "id": "to-lift",
-        "a": [
-          20.889,
-          8.111
-        ],
-        "b": [
-          29,
-          0
-        ],
-        "width": 2
-      },
-      {
-        "id": "to-upper",
-        "a": [
-          13.111,
-          8.111
-        ],
-        "b": [
-          5,
-          0
-        ],
-        "width": 2
-      },
-      {
         "id": "to-western-bridge",
         "a": [
           3,
@@ -93,6 +69,18 @@
           32
         ],
         "width": 2
+      },
+      {
+        "id": "to-lift",
+        "a": [
+          28,
+          12
+        ],
+        "b": [
+          40,
+          0
+        ],
+        "width": 2
       }
     ],
     "gates": [
@@ -111,26 +99,10 @@
         "locked": true,
         "lockDc": 20,
         "lockNote": "HOMEBREW - the book gives the pen one locked gate. Same heavy iron: pick DC 20 DEX with thieves' tools (makeshift at disadvantage), force DC 20 STR."
-      },
-      {
-        "bridge": "to-lift",
-        "leadsTo": "14 Northern Lift / 13 Waterfall Cavern",
-        "canon": false,
-        "locked": true,
-        "lockDc": 20,
-        "lockNote": "HOMEBREW - the book gives the pen one locked gate. Same heavy iron: pick DC 20 DEX with thieves' tools (makeshift at disadvantage), force DC 20 STR."
-      },
-      {
-        "bridge": "to-upper",
-        "leadsTo": "unnamed on the camp map",
-        "canon": false,
-        "locked": true,
-        "lockDc": 20,
-        "lockNote": "HOMEBREW - the book gives the pen one locked gate. Same heavy iron: pick DC 20 DEX with thieves' tools (makeshift at disadvantage), force DC 20 STR."
       }
     ]
   },
-  "approximate": "Laid out from Sam's Velkynvelve camp map (2026-09-26): 1 Slave Pens is a caged octagon over the abyss with four rope bridges, the waterfall beside it. The map's numbering is its own, not the V5 node numbers. Canon V5 node 11 is a gated cave in the eastern wall; its cell geometry could not be fetched here. Which gate is the book's is a guess: the one toward the guards.",
+  "approximate": "Laid out from Sam's Velkynvelve camp map (2026-09-26): 1 Slave Pens is a caged octagon over the abyss with rope bridges to 3 Guard Barracks and 16 Priestess Chamber (the Northern Lift bridge branches off the east bridge), the waterfall beside it. The map's numbering is its own, not the V5 node numbers. Canon V5 node 11 is a gated cave in the eastern wall; its cell geometry could not be fetched here. Which gate is the book's is a guess: the one toward the guards.",
   "waterfall": {
     "x": 23.2,
     "width": 3,
@@ -156,13 +128,13 @@
       "text": "7 \u00b7 Central Platform"
     },
     {
-      "x": 29,
-      "y": 10.6,
+      "x": 29.5,
+      "y": 13.9,
       "text": "16 \u00b7 Priestess Chamber"
     },
     {
-      "x": 27.3,
-      "y": 1.2,
+      "x": 29.2,
+      "y": 7.2,
       "text": "14 \u00b7 Northern Lift"
     }
   ],
@@ -249,15 +221,6 @@
       "image": "web.png",
       "x": 11,
       "y": 19,
-      "w": 1,
-      "h": 1,
-      "layer": "under"
-    },
-    {
-      "id": "web-upper",
-      "image": "web.png",
-      "x": 11,
-      "y": 4,
       "w": 1,
       "h": 1,
       "layer": "under"
