@@ -32,7 +32,7 @@ export const TIME_EVENT_TYPES = [
   "labor_shift",
   "cinematic_cut",
   "story_advance",
-  // The camp module (lib/camp.ts §12). No rule rows: they are logged at zero
+  // The camp module (lib/camp.ts §13). No rule rows: they are logged at zero
   // minutes so time_log can say whether the party is camping.
   "make_camp",
   "break_camp",

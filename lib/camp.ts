@@ -1190,7 +1190,7 @@ export function levelUp(sheet: LevelUpSheet, opts: { method: "roll" | "average";
 }
 
 // ============================================================================
-// §12 THE CAMP IN THE ROUTE — PR 3 (2026-09-26)
+// §13 THE CAMP IN THE ROUTE — PR 3 (2026-09-26)
 // ============================================================================
 //
 // What the chat route needs to run a camp without a new column:

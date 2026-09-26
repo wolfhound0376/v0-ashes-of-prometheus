@@ -737,7 +737,7 @@ STRICT LIMITS ON USING THESE:
   const gameClock: GameClock | null = await readGameClock(timeAdmin, activeSessionId)
   const pacingBlock = buildPacingBlock(gameClock)
 
-  // === THE CAMP (lib/camp.ts §12) ===
+  // === THE CAMP (lib/camp.ts §13) ===
   // Whether the party is camping is read from time_log — the latest of
   // make_camp / break_camp / long_rest / short_rest — so no column holds it.
   // A visitor rolled at the end of the last rest waits on that rest_events row
@@ -3092,7 +3092,7 @@ Rules:
     const clockAfter = await readGameClock(timeAdmin, activeSessionId)
     if (clockAfter) playerTimeOfDay = describeTimeOfDay(clockAfter.minutesOfDay)
 
-    // === THE CAMP (lib/camp.ts §12) ===
+    // === THE CAMP (lib/camp.ts §13) ===
     const admin = timeAdmin
     // Malachar has now been told about last night's visitor, once.
     if (pendingVisitorRestId) {
@@ -3379,11 +3379,16 @@ Rules:
     // the table's roller should own these faces one day, through the same
     // roll-request path attacks use. The faces are recorded in rest_events so
     // nothing about the roll is hidden in the meantime.
-    const shortRestArgs = timeEvents.some((e) => e.eventType === "short_rest") ? parseShortRestArgs(rawText) : null
-    // AT CAMP the rations price the partial rest too (camp doc §10). A long
-    // rest this turn has already settled the night, so it wins.
+    //
+    // A long rest in the same turn wins: the hour is inside the night, and the
+    // long rest already restored everything a short rest could. Resolving both
+    // would spend Hit Dice the long rest then hands back — a free heal.
+    const shortRestArgs = !restingTonight && timeEvents.some((e) => e.eventType === "short_rest")
+      ? parseShortRestArgs(rawText)
+      : null
+    // AT CAMP the rations price the partial rest too (camp doc §10).
     let shortCamp: CampRestDecision | null = null
-    if (shortRestArgs && campingAtRest && !restingTonight) {
+    if (shortRestArgs && campingAtRest) {
       const { data: pool } = await admin.from("party_supplies").select("id,supplies").limit(1).maybeSingle()
       const size = await countPartyForCamp()
       shortCamp = campRest("partial", pool?.supplies ?? 0, size)
