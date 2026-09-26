@@ -5917,11 +5917,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // uses on a model with no death clip. It is replaced for free the
           // day a real clip exists, because this only runs when there is not
           // one.
-          // A sprite has drawn flinches only; a dodge, parry or block on one
-          // is the scripted body motion below, same as a model without the clip.
+          // A sprite plays its drawn flinch or its drawn dodge when it has
+          // one; a parry or block, or a dodge nobody drew, is the scripted
+          // body motion below, same as a model without the clip.
           const played = victim.anim
             ? playState(victim.anim, reaction, true)
-            : reaction === "hurt" && victimRig?.has("hurt") ? victimRig.playFor("hurt") : null
+            : (reaction === "hurt" || reaction === "dodge") && victimRig?.has(reaction) ? victimRig.playFor(reaction) : null
           if (!played) {
             const m = defenceMotion({
               body: victim.obj,
