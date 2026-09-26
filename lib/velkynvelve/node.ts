@@ -70,6 +70,14 @@ export interface VelkynvelveNode {
   walkable: string[]
   props: NodeProp[]
   spawns: NodeSpawn[]
+  /**
+   * How the rim of the deck is dressed. "bars": iron cage bars stand along
+   * every edge where standable floor meets the drop (the slave pen). Mirrors
+   * `render.edge` on the node's generated_maps row. Omitted: an open rim.
+   */
+  edge?: "bars"
+  /** Set when the layout is not yet the canon cell geometry — says why. */
+  approximate?: string
 }
 
 /** A node as loaded, with the folder its relative paths resolve against. */

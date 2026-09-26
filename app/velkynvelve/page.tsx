@@ -5,6 +5,15 @@ export const metadata = {
   description: "Top-down sprite map of Velkynvelve.",
 }
 
-export default function VelkynvelvePage() {
-  return <VelkynvelveGame nodeSlug="tavern" />
+/** Nodes with sprite art built. ?node=<slug> picks one; anything else opens the tavern. */
+const NODES = ["tavern", "slave-pen"] as const
+
+export default async function VelkynvelvePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ node?: string }>
+}) {
+  const { node } = await searchParams
+  const slug = NODES.find((n) => n === node) ?? "tavern"
+  return <VelkynvelveGame key={slug} nodeSlug={slug} />
 }

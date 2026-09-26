@@ -67,6 +67,10 @@ const DRAG_SLOP = 6
 
 const LIGHT_KEY = "vv-light"
 const GLINT_KEY = "vv-glint"
+const BAR_KEY = "vv-bar"
+/** Cage bars: height above the floor (source px, ~7 ft) and spacing. */
+const BAR_HEIGHT = 40
+const BAR_GAP = 5
 const MIST_KEY = "vv-mist"
 
 function hexToNumber(hex: string): number {
@@ -203,6 +207,9 @@ export function createVelkynvelveScene(
         }
       }
 
+      // 4a'. Cage bars along the rim, when the node has them.
+      if (node.edge === "bars") this.buildBars()
+
       // 4b. Figures.
       for (const f of figures) this.addFigure(f)
 
@@ -274,6 +281,17 @@ export function createVelkynvelveScene(
       lc.fillRect(0, 0, size, size)
       l.refresh()
 
+      // One iron bar: dark body, a lit edge, a cap at the top.
+      const bar = this.textures.createCanvas(BAR_KEY, 3, BAR_HEIGHT)
+      const bc: CanvasRenderingContext2D = bar.getContext()
+      bc.fillStyle = "#15131a"
+      bc.fillRect(0, 0, 3, BAR_HEIGHT)
+      bc.fillStyle = "#6a6275"
+      bc.fillRect(1, 1, 1, BAR_HEIGHT - 2)
+      bc.fillStyle = "#2c2833"
+      bc.fillRect(0, 0, 3, 2)
+      bar.refresh()
+
       // A single-pixel glint.
       const gl = this.textures.createCanvas(GLINT_KEY, 3, 3)
       const glc: CanvasRenderingContext2D = gl.getContext()
@@ -331,6 +349,48 @@ export function createVelkynvelveScene(
         .setScrollFactor(0.7)
         .setAlpha(0.95)
         .setDepth(-90)
+    }
+
+    /**
+     * Bars stand on every edge where a standable square meets the drop.
+     * Each bar is its own image sorted by its foot, so a figure standing
+     * inside the pen is drawn in front of the far bars and behind the near
+     * ones. The top edge of the map, where walkways run on to the next
+     * node, stays open; props block movement, not the view, so they get no
+     * bars.
+     */
+    buildBars() {
+      const open = (x: number, y: number) => node.walkable[y]?.[x] === "o"
+      const inGrid = (x: number, y: number) => x >= 0 && y >= 0 && x < node.squares && y < node.squares
+      const rail = this.add.graphics().setDepth(-1)
+      const put = (x: number, y: number) => {
+        this.add.image(x, y, BAR_KEY).setOrigin(0.5, 1).setDepth(y)
+      }
+      for (let sy = 0; sy < node.squares; sy++) {
+        for (let sx = 0; sx < node.squares; sx++) {
+          if (!open(sx, sy)) continue
+          const x0 = sx * S
+          const y0 = sy * S
+          const sides: Array<[number, number, "h" | "v", number]> = [
+            [sx, sy - 1, "h", y0 + 2],
+            [sx, sy + 1, "h", y0 + S - 1],
+            [sx - 1, sy, "v", x0 + 2],
+            [sx + 1, sy, "v", x0 + S - 2],
+          ]
+          for (const [nx, ny, dir, at] of sides) {
+            // Off the top of the map is where walkways run on to the next
+            // node; every other side of the map is the drop.
+            if (ny < 0 || (inGrid(nx, ny) && open(nx, ny))) continue
+            if (dir === "h") {
+              for (let x = x0 + 2; x < x0 + S; x += BAR_GAP) put(x, at)
+              rail.lineStyle(2, 0x2a2631, 1).lineBetween(x0, at - BAR_HEIGHT + 1, x0 + S, at - BAR_HEIGHT + 1)
+            } else {
+              for (let y = y0 + 2; y <= y0 + S; y += BAR_GAP) put(at, y)
+              rail.lineStyle(2, 0x2a2631, 1).lineBetween(at, y0 - BAR_HEIGHT + 1, at, y0 + S - BAR_HEIGHT + 1)
+            }
+          }
+        }
+      }
     }
 
     addFigure(f: SceneFigure) {

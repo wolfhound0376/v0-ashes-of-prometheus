@@ -1,0 +1,115 @@
+{
+  "slug": "slave-pen",
+  "name": "The Slave Pen",
+  "squares": 12,
+  "squarePx": 32,
+  "deck": "deck.png",
+  "walkable": [
+    "..o..o......",
+    "..o..o......",
+    "..o..o......",
+    ".oooooo.....",
+    "oooooooooo..",
+    "ooooooooooo.",
+    "ooooooooooo.",
+    "ooooooooooo.",
+    "ooooooooooo.",
+    "ooooooooooo.",
+    ".ooooooooo..",
+    "..oooooooo.."
+  ],
+  "edge": "bars",
+  "approximate": "Mock-up. Canon node 11 is a gated cave in the eastern wall with 92 floor squares; its cell geometry (vtt-assets/node-maps/v5/node-11.json) could not be fetched, so this outline is hand-drawn to the same size. Gates follow the canon doors: node-10 gate (canon, locked DC 20) and node-12 door (homebrew, locked DC 20).",
+  "props": [
+    {
+      "id": "gate-node-10",
+      "image": "gate.png",
+      "x": 2,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "door-node-12",
+      "image": "gate.png",
+      "x": 5,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "pallet-w",
+      "image": "pallet.png",
+      "x": 0,
+      "y": 6,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "pallet-e",
+      "image": "pallet.png",
+      "x": 9,
+      "y": 6,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "pallet-sw",
+      "image": "pallet.png",
+      "x": 2,
+      "y": 9,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "chains",
+      "image": "chains.png",
+      "x": 6,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "torch-nw",
+      "image": "brazier.png",
+      "x": 1,
+      "y": 3,
+      "w": 1,
+      "h": 1,
+      "light": {
+        "color": "#ff9a4a",
+        "radius": 100,
+        "flicker": 0.22
+      }
+    },
+    {
+      "id": "torch-e",
+      "image": "brazier.png",
+      "x": 9,
+      "y": 4,
+      "w": 1,
+      "h": 1,
+      "light": {
+        "color": "#ff9a4a",
+        "radius": 100,
+        "flicker": 0.22
+      }
+    }
+  ],
+  "spawns": [
+    {
+      "id": "freia",
+      "sprite": "/sprites/freia/sprite.json",
+      "x": 4,
+      "y": 8,
+      "facing": "north"
+    },
+    {
+      "id": "samson",
+      "sprite": "/sprites/samson/sprite.json",
+      "x": 7,
+      "y": 9,
+      "facing": "north-west"
+    }
+  ]
+}
