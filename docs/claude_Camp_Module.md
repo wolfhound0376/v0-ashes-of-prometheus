@@ -290,3 +290,40 @@ alter table public.crafting_projects enable row level security;
 ### One more question the build raised
 
 **When should the passive roll happen?** PR 3 rolls it after the rest, which ends the camp. So a merchant always arrives after the actions are spent, and **trade as a camp action can almost never happen**. Rolling it when camp is made instead would let merchants be traded with and brigands interrupt the evening. It's a one-line move either way, and Sam's call.
+
+### Crafting — rulings of 2026-09-26 (late), and the table
+
+Sam, answering the three questions above:
+
+> 1. Run it. 2. One action does not equal one day of crafting. You can roll for success per each point of actions you have. 3. Lets find an equivalent to track.
+
+- **The table is live.** `crafting_projects` was applied to Supabase on 2026-09-26 at Sam's word and verified afterwards: 10 columns, one open project per character per item, row security on, no policies, 0 rows. The SQL is `supabase/migrations/20260927010000_crafting_projects.sql`.
+- **Crafting advances by a roll per camp action, not by the day.** Each camp action spent on crafting is one roll for success. The table keeps `attempts` and `successes` for this, beside the SRD's `progress_gp`, because what a single success is worth hasn't been ruled yet.
+- **The equivalent that tracks the materials' gold is the coin purse.** `characters.sheet_currency` already holds cp / sp / ep / gp / pp for every character (Kenta 50 gp, Bastet 29, Samson 15, Scott and Fifi 0). The SRD's half-value materials come out of it when work starts, and `crafting_projects.materials_gp_paid` records what was paid, so the purse and the project agree.
+
+**Still Sam's before crafting is wired, all three about the roll:**
+
+1. **Which check.** An ability check with the recipe's tool, adding proficiency. Which ability? Commonly INT for a Poisoner's Kit or Alchemist's Supplies, DEX for Thieves' Tools, but the SRD doesn't fix one.
+2. **What DC.** The SRD's Typical DCs are 10 easy, 15 medium, 20 hard. Fixed per recipe, or set by the item's value?
+3. **What one success buys.** The finished item? Or a fixed step of progress, and if so how many successes finish drow poison?
+
+---
+
+## 15. PR 4 — levelling at camp (2026-09-26)
+
+`[CAMP_ACTION: <name> | level up]` takes **one** level through `levelUp` (§4).
+
+- **Refused before anything is spent** when `levelUp` would refuse: the XP hasn't earned the next level, the sheet is multiclassed, or it has no Hit Die. Every player character is level 1 with 0 XP today, so nobody can level yet. That's correct.
+- **Where.** At camp it costs one camp action. Away from camp it needs a node with `travel_nodes.metadata.allows_level_up = true` (Sam, 2026-08-20) and costs nothing. Anywhere else it's refused.
+- **Hit points, the SRD's two ways:**
+  - **Rolled.** Malachar puts the tag in the same reply as the player's Hit Die roll (`[[1d8]]`, one die of the class's size). The request is stamped `camp:level_up`, and next turn the committed **face** from the table's dice is fed to `levelUp` (`faceRng`) before Malachar speaks. The server never rolls it.
+  - **Fixed.** With no such roll in the reply, the SRD's fixed value (half the die + 1) applies at once.
+- **What gets written:** `level`, `hp_max`, `hp_current`, `proficiency_bonus`, `sheet_hit_dice`, `hit_dice_remaining` (the new die unspent), `xp_to_next`, and the next full-caster slot row. The level-up sting plays.
+- **The players' choices** (ASI, subclass, features, spells) become **one entry on `sheet_features`**, "Level N — choices to make", which the character card already shows. It's removed once settled. A retry can't stack a second entry.
+- **The XP award uses the one table now.** The chat route's inline array is gone (`levelForXp` / `xpToNext`). It had a bug: past level 10 its lookup returned -1, so the level-up sting stopped playing. The award still doesn't write a level, because levels are taken at camp.
+
+**Readings to know about — Sam's to overrule:**
+
+- **Current hit points rise with the maximum.** The SRD is silent on current hit points when a level is gained. Raising them by the same amount is the common table reading.
+- **Stored `passive_perception` isn't recomputed.** When the proficiency bonus rises (level 5, 9, 13, 17), a character proficient in Perception will show a stale passive score until it's corrected. It doesn't bite before level 5.
+- **XP still goes to one character.** The award gives the whole `xp_value` to the killer, not divided among the party as the SRD does (§7). Out of scope here, unchanged.

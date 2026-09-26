@@ -39,6 +39,9 @@ import {
   // PR 5 — spending camp actions, and the three the dice settle.
   parseCampActions, decideCampAction, campPurpose, parseCampPurpose, settleForage, settlePerform,
   bardUpgrade, CAMP_ACTION_STRIP_RE, CAMP_CHECK_SKILL,
+  // PR 4 — levelling at camp, and the one XP table.
+  normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext,
+  type LevelUpSheet,
 } from "@/lib/camp"
 // Which of the SRD's four states a character is in, so the rest can refuse to
 // sleep off being downed.
@@ -802,6 +805,36 @@ STRICT LIMITS ON USING THESE:
                 campResults.push(out.note)
               }
               console.log(`[camp] ${linked.action} settled: ${total} vs DC ${out.dc} — ${out.note} ${out.flags.join(" ")}`)
+            } else if (linked.action === "level_up") {
+              // The Hit Die was rolled on the table. The FACE is the SRD's
+              // "roll", read from the committed dice — never re-rolled here.
+              const { data: sheet } = await timeAdmin
+                .from("characters")
+                .select("id, name, class, level, xp, hp_max, hp_current, con_score, hit_dice_remaining, sheet_hit_dice, sheet_spellcasting, sheet_features")
+                .eq("id", playerCharacter.id)
+                .maybeSingle()
+              const die = sheet ? hitDieFor(sheet as { class: string | null; sheet_hit_dice: string | null }) : null
+              const face = die ? hitDieFace((req.result as { rolls?: unknown } | null)?.rolls, die) : null
+              if (!sheet || !die || face == null) {
+                campResults.push(`${name}'s level-up roll could not be read as a d${die ?? "?"} face — nothing applied; ask for the Hit Die again.`)
+              } else {
+                const out = levelUp(sheet as unknown as LevelUpSheet, { method: "roll", rng: faceRng(face, die) })
+                const patch = levelUpPatch(out, { hp_current: sheet.hp_current as number | null, sheet_features: sheet.sheet_features })
+                if (patch) {
+                  const { error } = await timeAdmin.from("characters")
+                    .update({ ...patch, updated_at: new Date().toISOString() }).eq("id", sheet.id)
+                  if (error) {
+                    console.error("[camp] level up:", error.message)
+                    campResults.push(`${name}'s level could not be written — tell the DM.`)
+                  } else {
+                    sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
+                    campResults.push(`${out.note} The choices are on their sheet; give them the moment.`)
+                  }
+                } else {
+                  campResults.push(`${name} does not level: ${out.note}`)
+                }
+                console.log(`[camp] level up settled: d${die}(${face}) — ${out.note} ${out.flags.join(" ")}`)
+              }
             } else if (linked.action === "perform") {
               // Once per camp: an earlier inspired performance since the camp
               // was made already lifted everyone.
@@ -2490,16 +2523,19 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${
             if (xpError) {
               console.error("[v0] Error awarding XP:", xpError)
             } else {
-              // Check if this crossed a level threshold
-              const xpThresholds = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000]
-              const currentLevel = xpThresholds.findIndex(xp => newXp < xp) || xpThresholds.length
-              const leveledUp = currentLevel > (char.level || 1)
+              // Did this cross a level threshold? The one XP table is lib/camp
+              // (SRD, via lib/game-data). The inline array this replaces broke
+              // past level 10: findIndex returned -1, which is truthy, so the
+              // sting never played. The level itself is NOT written here —
+              // levels are taken at camp (camp doc §15).
+              const earnedLevel = levelForXp(newXp)
+              const leveledUp = earnedLevel > (char.level || 1)
 
               if (leveledUp) {
-                console.log("[v0] LEVEL UP! New level:", currentLevel, '| XP:', newXp)
+                console.log("[v0] XP for level", earnedLevel, "— taken at camp | XP:", newXp)
                 sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
               } else {
-                console.log("[v0] XP awarded. Total XP:", newXp, "| Next level at:", xpThresholds[Math.min((char.level || 1) + 1, xpThresholds.length - 1)])
+                console.log("[v0] XP awarded. Total XP:", newXp, "| Next level at:", xpToNext(char.level || 1))
               }
             }
           }
@@ -3278,20 +3314,22 @@ Rules:
     }
     // The passive roll (camp doc §10–11). The party's node decides whether
     // anyone can come: `travel_nodes.metadata.safe = true` means no one does.
-    const rollCampVisitor = async (): Promise<StoredVisitor> => {
-      let node: WatchNode = { metadata: {} }
+    // The party's node: `metadata.safe` (no visitors) and `metadata.allows_level_up`.
+    const readPartyNode = async (): Promise<WatchNode & { metadata: { allows_level_up?: boolean; [k: string]: unknown } }> => {
       try {
         const { data: pos } = await admin.from("party_position").select("node_id")
           .order("updated_at", { ascending: false }).limit(1).maybeSingle()
         if (pos?.node_id) {
           const { data: n } = await admin.from("travel_nodes").select("name, metadata").eq("id", pos.node_id).maybeSingle()
-          if (n) node = { name: n.name as string | null, metadata: (n.metadata ?? {}) as WatchNode["metadata"] }
+          if (n) return { name: n.name as string | null, metadata: (n.metadata ?? {}) as { allows_level_up?: boolean } }
         }
       } catch (e) {
-        console.warn("[camp] party node unavailable; rolling as an unsafe node:", e)
+        console.warn("[camp] party node unavailable:", e)
       }
-      return storedVisitor(passiveCampEncounter(node, Math.random))
+      return { metadata: {} }
     }
+    const rollCampVisitor = async (): Promise<StoredVisitor> =>
+      storedVisitor(passiveCampEncounter(await readPartyNode(), Math.random))
     if (makingCamp) {
       // Sam, 2026-09-26: two actions on a full rest, one on a partial, decided
       // by the rations on hand when camp is made.
@@ -3330,6 +3368,61 @@ Rules:
       for (const tag of campTags) {
         const row = byName(tag.who)
         if (!row) { console.warn(`[camp] "${tag.who}" in [CAMP_ACTION] matches no player character — nothing spent.`); continue }
+
+        // === LEVEL UP (lib/camp.ts §15) ===
+        // Checked in full BEFORE anything is spent: a level the XP does not
+        // earn, a multiclassed sheet or a missing Hit Die refuses for free.
+        if (normaliseCampAction(tag.action) === "level_up") {
+          const { data: sheet } = await admin
+            .from("characters")
+            .select("id, name, class, level, xp, hp_max, hp_current, con_score, hit_dice_remaining, sheet_hit_dice, sheet_spellcasting, sheet_features")
+            .eq("id", row.id)
+            .maybeSingle()
+          if (!sheet) continue
+          const fixed = levelUp(sheet as unknown as LevelUpSheet, { method: "average" })
+          if (!fixed.ok) { console.log(`[camp] action: ${row.name} — level up refused: ${fixed.note}`); continue }
+          // At camp it costs an action; at a node that allows levelling it is free.
+          let spendIt = false
+          if (campingAtRest) {
+            const d = decideCampAction({
+              camping: true, who: row.name, action: "level_up", remaining: row.rest_actions_remaining,
+              isSpeaker: !!playerCharacter && playerCharacter.id === row.id,
+              requestSkill: thisRoll ? thisRoll.skill : undefined, merchantPresent,
+            })
+            if (!d.spend) { console.log(`[camp] action: ${d.note}`); continue }
+            spendIt = true
+            const { error } = await admin.from("characters")
+              .update({ rest_actions_remaining: d.remaining, updated_at: new Date().toISOString() }).eq("id", row.id)
+            if (error) { console.error("[camp] spend:", error.message); continue }
+            row.rest_actions_remaining = d.remaining
+          } else {
+            const node = await readPartyNode()
+            if (node.metadata?.allows_level_up !== true) {
+              console.log(`[camp] action: ${row.name} — level up is taken at camp, or at a place that allows it; this is neither.`)
+              continue
+            }
+          }
+          // ROLLED: this player's roll for this Hit Die is in the reply, and no
+          // other dice action has claimed it. Settled from the table's face
+          // next turn. Otherwise FIXED, applied now.
+          const die = fixed.hp!.die
+          const rollsHitDie =
+            !!thisRoll && thisRoll.die === `d${die}` && thisRoll.diceCount === 1 &&
+            !!playerCharacter && playerCharacter.id === row.id && !campCheckPurpose
+          if (rollsHitDie) {
+            campCheckPurpose = { purpose: campPurpose("level_up"), skill: "" }
+            console.log(`[camp] action: ${row.name} — level up, Hit Die d${die} to be rolled on the table${spendIt ? " (1 camp action)" : ""}.`)
+            continue
+          }
+          const patch = levelUpPatch(fixed, { hp_current: sheet.hp_current as number | null, sheet_features: sheet.sheet_features })
+          if (!patch) continue
+          const { error } = await admin.from("characters").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", row.id)
+          if (error) { console.error("[camp] level up:", error.message); continue }
+          sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
+          console.log(`[camp] action: ${fixed.note}${spendIt ? " (1 camp action)" : " (free here)"}`)
+          continue
+        }
+
         const d = decideCampAction({
           camping: campingAtRest,
           who: row.name,
