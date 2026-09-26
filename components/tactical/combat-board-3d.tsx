@@ -77,6 +77,7 @@ import { withinReach, type GroundItemRow } from "@/lib/ground-items"
 import { defenceMotion } from "./defence-motion"
 import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
+import { HealPairing } from "@/lib/heal-line"
 // Twelve deaths, one per way of being killed - see death-vfx.ts.
 import { deathSceneVfx } from "./death-vfx"
 // The headstone. Raised on TRUE death only - see tombstone.ts on why being
@@ -831,6 +832,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // rises a moment later. If the realtime row beats the response the number
   // simply is not gold — a missed flourish, never a wrong figure.
   const critRef = useRef<Set<string>>(new Set())
+  // Pairs each golden heal number with the log line that carries its
+  // breakdown ("2 + 3 WIS"), whichever reaches this seat first. Shared by the
+  // token effect, which raises the number, and the log effect, which reads
+  // the line (lib/heal-line).
+  const healPairingRef = useRef(new HealPairing())
   /**
    * WHAT the damage was, in the server's own words — "piercing", "fire",
    * "necrotic". Parked here for exactly the same reason as the crit flag, and
@@ -3785,7 +3791,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // Read the crit flag and spend it in the same breath, so a stale
         // answer can never gild a later, ordinary blow.
         const wasCrit = critRef.current.delete(row.id)
-        vfx.push(damageNumberVfx({
+        // A heal is gold, with its breakdown underneath: drawn now if the
+        // log line beat the hit points here, written in when it lands if not.
+        let writeDetail: (d: string) => void = () => {}
+        const detail = healed
+          ? healPairingRef.current.onNumber(row.label, delta, performance.now(), (d) => writeDetail(d))
+          : undefined
+        const number = damageNumberVfx({
           parent: scene,
           position: new THREE.Vector3(entry.obj.position.x, 0, entry.obj.position.z),
           amount: delta,
@@ -3795,7 +3807,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           heals: healed,
           crit: wasCrit && !healed,
           scale: radiusFor(row.token_size) / 0.75,
-        }))
+          detail,
+        })
+        writeDetail = (d) => number.setDetail(d)
+        vfx.push(number)
 
         // Sam: "Whenever someone regains hit points use this audio clip."
         //
@@ -5637,6 +5652,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         .channel("combat-log-board")
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "dialogue" }, (payload: { new: { speaker?: string | null; text?: string | null } }) => {
           void loadLog()
+          // A heal line carries the breakdown for the golden number over the
+          // healed body; hand it to the pairing (lib/heal-line).
+          healPairingRef.current.onLine(payload.new?.text, performance.now())
           // AND IF THAT LINE WAS A BARK, IT IS HEARD.
           //
           // Every seat runs this, which is the point: a drow sneering is for
