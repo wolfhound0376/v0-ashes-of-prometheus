@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { standableGrid, type VelkynvelveNode } from "./node"
+import { standableGrid, withWalkable, type VelkynvelveNode } from "./node"
 import { findPath, lineClear, type Point } from "./pathfinding"
 
 const PX = 32
@@ -99,6 +99,34 @@ describe("the tavern node", () => {
       }
     }
     expect(unreachable).toEqual([])
+    for (const s of node.spawns) expect(grid[s.y][s.x]).toBe(true)
+  })
+})
+
+describe("the slave pen node", () => {
+  const node = withWalkable(
+    JSON.parse(
+      readFileSync(join(__dirname, "../../public/velkynvelve/nodes/slave-pen/node.json"), "utf8"),
+    ) as VelkynvelveNode,
+  )
+  const grid = standableGrid(node)
+  const pen = node.geometry!.platforms.find((p) => p.id === "pen")!
+
+  it("every pen square is reachable and the locked gates seal it", () => {
+    const from = centre(node.spawns[0].x, node.spawns[0].y)
+    const cutOff: string[] = []
+    const escaped: string[] = []
+    for (let y = 0; y < node.squares; y++) {
+      for (let x = 0; x < node.squares; x++) {
+        if (!grid[y][x]) continue
+        const inPen = node.walkable[y][x] === "o" && Math.max(Math.abs(x + 0.5 - pen.cx), Math.abs(y + 0.5 - pen.cy)) <= pen.apothem
+        const path = findPath(grid, from, centre(x, y), { squarePx: node.squarePx })
+        if (inPen && !path) cutOff.push(`${x},${y}`)
+        if (!inPen && path) escaped.push(`${x},${y}`)
+      }
+    }
+    expect(cutOff).toEqual([])
+    expect(escaped).toEqual([])
     for (const s of node.spawns) expect(grid[s.y][s.x]).toBe(true)
   })
 })

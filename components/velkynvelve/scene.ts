@@ -23,6 +23,7 @@ import type { SpriteManifest, SpriteState } from "@/lib/sprite-token"
 import type { Facing, LoadedNode } from "@/lib/velkynvelve/node"
 import { standableGrid } from "@/lib/velkynvelve/node"
 import { findPath, type Point } from "@/lib/velkynvelve/pathfinding"
+import { buildCage, paintBridges, paintPlatforms } from "./geometry-art"
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type PhaserNS = any
@@ -67,6 +68,17 @@ const DRAG_SLOP = 6
 
 const LIGHT_KEY = "vv-light"
 const GLINT_KEY = "vv-glint"
+const BAR_KEY = "vv-bar"
+const FLOOR_KEY = "vv-floor"
+const STONE_KEY = "vv-stone"
+const WATER_KEY = "vv-water"
+const FOAM_KEY = "vv-foam"
+/** Waterfall fall speeds, source px per millisecond: the sheet, and the fast streaks on it. */
+const WATER_SPEED = 0.16
+const STREAK_SPEED = 0.42
+/** Cage bars: height above the floor (source px, ~7 ft) and spacing. */
+const BAR_HEIGHT = 40
+const BAR_GAP = 5
 const MIST_KEY = "vv-mist"
 
 function hexToNumber(hex: string): number {
@@ -134,6 +146,13 @@ export function createVelkynvelveScene(
   const worldH = node.squares * S
   const grid = standableGrid(node)
   const lit = node.props.filter((p) => p.light)
+  // Where the platform itself is, so the camera opens on it rather than on
+  // the middle of a larger map of bridges.
+  // A geometry node opens on its first platform (the pen, not the hub).
+  const firstPlatform = node.geometry?.platforms[0]
+  const deckSquares = node.walkable.flatMap((row, y) => [...row].map((c, x) => (c === "o" ? [x, y] : null)).filter(Boolean)) as Array<[number, number]>
+  const deckCx = deckSquares.length ? ((Math.min(...deckSquares.map((d) => d[0])) + Math.max(...deckSquares.map((d) => d[0])) + 1) / 2) * S : worldW / 2
+  const deckCy = deckSquares.length ? ((Math.min(...deckSquares.map((d) => d[1])) + Math.max(...deckSquares.map((d) => d[1])) + 1) / 2) * S : worldH / 2
 
   const sheetKey = (f: SceneFigure, state: string) => `vv-${f.id}-${state}`
   const animKey = (f: SceneFigure, state: string, dir: Facing) => `vv-${f.id}-${state}-${dir}`
@@ -145,6 +164,9 @@ export function createVelkynvelveScene(
     lightImg: HTMLCanvasElement | null = null
     braziers: Array<{ x: number; y: number; glow: any; phase: number }> = []
     mist: any
+    water: any
+    streaks: any
+    foam: any[] = []
     down: { x: number; y: number; sx: number; sy: number; dragging: boolean } | null = null
 
     constructor() {
@@ -152,7 +174,8 @@ export function createVelkynvelveScene(
     }
 
     preload() {
-      this.load.image("vv-deck", node.baseUrl + node.deck)
+      if (node.deck) this.load.image("vv-deck", node.baseUrl + node.deck)
+      if (node.floorTile) this.load.image(STONE_KEY, node.baseUrl + node.floorTile)
       for (const p of node.props) this.load.image(`vv-prop-${p.image}`, node.baseUrl + p.image)
       for (const f of figures) {
         for (const [state, anim] of Object.entries(f.manifest.animations)) {
@@ -171,27 +194,43 @@ export function createVelkynvelveScene(
 
       this.buildAbyss()
 
-      // 2. The drop beneath the planks.
-      for (const [ox, oy, a] of [
-        [7, 17, 0.28],
-        [3, 8, 0.45],
-      ] as const) {
-        this.add
-          .image(ox, oy, "vv-deck")
-          .setOrigin(0, 0)
-          .setTint(0x000000)
-          .setTintMode(Phaser.TintModes.FILL)
-          .setAlpha(a)
-          .setDepth(-50)
+      // 2-3. The floor — a painted deck, or platforms and rope bridges drawn
+      // from the node's geometry — and its shadow on the drop below.
+      let floorKey: string | null = node.deck ? "vv-deck" : null
+      if (node.geometry) {
+        const tex = this.textures.createCanvas(FLOOR_KEY, worldW, worldH)
+        const opts = { S, barKey: BAR_KEY, barHeight: BAR_HEIGHT, stone: node.floorTile ? this.textures.get(STONE_KEY).getSourceImage() : null }
+        paintPlatforms(tex.getContext(), node, opts)
+        paintBridges(tex.getContext(), node, opts)
+        tex.refresh()
+        floorKey = FLOOR_KEY
       }
-      // 3. The deck.
-      this.add.image(0, 0, "vv-deck").setOrigin(0, 0).setDepth(-40)
+      if (floorKey) {
+        for (const [ox, oy, a] of [
+          [7, 17, 0.28],
+          [3, 8, 0.45],
+        ] as const) {
+          this.add
+            .image(ox, oy, floorKey)
+            .setOrigin(0, 0)
+            .setTint(0x000000)
+            .setTintMode(Phaser.TintModes.FILL)
+            .setAlpha(a)
+            .setDepth(-50)
+        }
+        this.add.image(0, 0, floorKey).setOrigin(0, 0).setDepth(-40)
+      }
 
       // 4a. Props, feet at the bottom of their footprint.
       for (const p of node.props) {
         const cx = (p.x + p.w / 2) * S
         const feet = (p.y + p.h) * S - 3
-        this.add.image(cx, feet, `vv-prop-${p.image}`).setOrigin(0.5, 1).setDepth(feet)
+        if (p.layer === "under") {
+          // Hangs beneath the walkway: over the abyss and its shadow, under the planks.
+          this.add.image(cx, (p.y + p.h / 2) * S, `vv-prop-${p.image}`).setScale(p.scale ?? 1).setDepth(-45)
+          continue
+        }
+        this.add.image(cx, feet, `vv-prop-${p.image}`).setOrigin(0.5, 1).setScale(p.scale ?? 1).setDepth(feet)
         if (p.light) {
           const ly = feet - Math.min(S * p.h, 20)
           const glow = this.add
@@ -203,8 +242,27 @@ export function createVelkynvelveScene(
         }
       }
 
+      // 4a'. Cage bars and locked gates round caged platforms.
+      if (node.geometry) buildCage(this, node, { S, barKey: BAR_KEY, barHeight: BAR_HEIGHT, stone: null })
+
       // 4b. Figures.
       for (const f of figures) this.addFigure(f)
+
+      // Where each bridge goes, written over the dark.
+      for (const l of node.labels ?? []) {
+        this.add
+          .text((l.x + 0.5) * S, (l.y + 0.5) * S, l.text, {
+            fontFamily: "Georgia, serif",
+            fontSize: "9px",
+            color: "#e8c98a",
+            stroke: "#000000",
+            strokeThickness: 3,
+            align: "center",
+            resolution: 4,
+          })
+          .setOrigin(0.5)
+          .setDepth(20002)
+      }
 
       // 5. Darkness.
       this.darkTex = this.textures.createCanvas("vv-dark", worldW + MARGIN * 2, worldH + MARGIN * 2)
@@ -227,7 +285,9 @@ export function createVelkynvelveScene(
         const slack = view / 2 - S
         return Math.abs(f - c) > slack ? f - Math.sign(f - c) * Math.max(0, slack) : c
       }
-      cam.centerOn(keep(worldW / 2, lead?.x, viewW), keep(worldH / 2, lead?.y, viewH))
+      const openX = firstPlatform ? firstPlatform.cx * S : deckCx
+      const openY = firstPlatform ? firstPlatform.cy * S : deckCy
+      cam.centerOn(keep(openX, lead?.x, viewW), keep(openY, lead?.y, viewH))
       this.scale.on("resize", () => this.fitZoom())
 
       this.input.on("pointerdown", (p: any) => {
@@ -273,6 +333,17 @@ export function createVelkynvelveScene(
       lc.fillStyle = g
       lc.fillRect(0, 0, size, size)
       l.refresh()
+
+      // One iron bar: dark body, a lit edge, a cap at the top.
+      const bar = this.textures.createCanvas(BAR_KEY, 3, BAR_HEIGHT)
+      const bc: CanvasRenderingContext2D = bar.getContext()
+      bc.fillStyle = "#15131a"
+      bc.fillRect(0, 0, 3, BAR_HEIGHT)
+      bc.fillStyle = "#6a6275"
+      bc.fillRect(1, 1, 1, BAR_HEIGHT - 2)
+      bc.fillStyle = "#2c2833"
+      bc.fillRect(0, 0, 3, 2)
+      bar.refresh()
 
       // A single-pixel glint.
       const gl = this.textures.createCanvas(GLINT_KEY, 3, 3)
@@ -324,6 +395,8 @@ export function createVelkynvelveScene(
           .setAlpha(0.25 + rnd() * 0.55)
           .setDepth(-100)
       }
+      this.buildWaterfall()
+
       const ext = worldW + MARGIN * 6
       this.mist = this.add
         .tileSprite(-MARGIN * 3, -MARGIN * 3, ext, ext, MIST_KEY)
@@ -331,6 +404,118 @@ export function createVelkynvelveScene(
         .setScrollFactor(0.7)
         .setAlpha(0.95)
         .setDepth(-90)
+    }
+
+    /**
+     * A waterfall pouring through the abyss, and plainly moving: a sheet of
+     * water scrolling down, brighter streaks racing down it faster, white
+     * foam boiling where it breaks over each ledge, and spray thrown off
+     * into the dark. It sits under the mist, deep in the chasm, and lights
+     * itself (see the pools in update()).
+     */
+    buildWaterfall() {
+      const wf = node.waterfall
+      if (!wf) return
+      let seed = 4242
+      const rnd = () => {
+        seed = (seed * 16807) % 2147483647
+        return seed / 2147483647
+      }
+      const tw = Math.round(wf.width * S)
+      const th = 128
+      const feather = (c: CanvasRenderingContext2D, w: number, h: number) => {
+        c.globalCompositeOperation = "destination-in"
+        const edge = c.createLinearGradient(0, 0, w, 0)
+        edge.addColorStop(0, "rgba(0,0,0,0)")
+        edge.addColorStop(0.16, "rgba(0,0,0,1)")
+        edge.addColorStop(0.84, "rgba(0,0,0,1)")
+        edge.addColorStop(1, "rgba(0,0,0,0)")
+        c.fillStyle = edge
+        c.fillRect(0, 0, w, h)
+        c.globalCompositeOperation = "source-over"
+      }
+      // The body: deep blue, darker columns, soft vertical grain.
+      const body = this.textures.createCanvas(WATER_KEY, tw, th)
+      const bc: CanvasRenderingContext2D = body.getContext()
+      bc.fillStyle = "rgba(44,78,122,0.82)"
+      bc.fillRect(0, 0, tw, th)
+      for (let i = 0; i < 26 * wf.width; i++) {
+        const x = Math.floor(rnd() * tw)
+        const y = Math.floor(rnd() * th)
+        const len = 10 + Math.floor(rnd() * 30)
+        bc.fillStyle = rnd() > 0.5 ? "rgba(90,135,185,0.7)" : "rgba(22,40,70,0.7)"
+        bc.fillRect(x, y, 1, len)
+        bc.fillRect(x, y - th, 1, len)
+      }
+      feather(bc, tw, th)
+      body.refresh()
+      // The streaks: sparse bright threads, moving faster than the sheet.
+      const streak = this.textures.createCanvas(`${WATER_KEY}-fast`, tw, th)
+      const sc: CanvasRenderingContext2D = streak.getContext()
+      for (let i = 0; i < 22 * wf.width; i++) {
+        const x = Math.floor(rnd() * tw)
+        const y = Math.floor(rnd() * th)
+        const len = 4 + Math.floor(rnd() * 16)
+        sc.fillStyle = `rgba(225,242,255,${0.5 + rnd() * 0.5})`
+        sc.fillRect(x, y, 1, len)
+        sc.fillRect(x, y - th, 1, len)
+      }
+      feather(sc, tw, th)
+      streak.refresh()
+      // Foam: a band of white clots that tiles sideways.
+      // Foam: soft round clots, densest along the lip, thinning into drips
+      // below it. Tiles sideways so it can churn.
+      const foam = this.textures.createCanvas(FOAM_KEY, 64, 20)
+      const fc: CanvasRenderingContext2D = foam.getContext()
+      for (let i = 0; i < 90; i++) {
+        const x = rnd() * 64
+        const y = 4 + Math.pow(rnd(), 1.8) * 13
+        const r = 1 + rnd() * 2.5 * (1 - (y - 4) / 16)
+        fc.fillStyle = `rgba(232,243,255,${0.35 + rnd() * 0.5})`
+        for (const ox of [-64, 0, 64]) {
+          fc.beginPath()
+          fc.arc(x + ox, y, r, 0, Math.PI * 2)
+          fc.fill()
+        }
+      }
+      foam.refresh()
+
+      const x = wf.x * S
+      const w = tw
+      this.water = this.add.tileSprite(x, -MARGIN, w, worldH + MARGIN * 2, WATER_KEY).setOrigin(0, 0).setDepth(-96)
+      this.streaks = this.add
+        .tileSprite(x, -MARGIN, w, worldH + MARGIN * 2, `${WATER_KEY}-fast`)
+        .setOrigin(0, 0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(-95)
+      // Where it breaks in over the top of the map, and over each ledge.
+      const breaks = [0, ...(wf.ledges ?? [])]
+      for (const ly of breaks) {
+        const y = ly * S
+        const band = this.add
+          .tileSprite(x - 2, y - 6, w + 4, 20, FOAM_KEY)
+          .setOrigin(0, 0)
+          .setDepth(-94)
+        this.foam.push(band)
+        this.add
+          .image(x + w / 2, y + 2, LIGHT_KEY)
+          .setScale((w * 1.8) / 128, 0.35)
+          .setAlpha(0.55)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setDepth(-94)
+        this.add
+          .particles(x + w / 2, y + 4, LIGHT_KEY, {
+            x: { min: -w / 2, max: w / 2 },
+            speedX: { min: -14, max: 14 },
+            speedY: { min: -22, max: 18 },
+            scale: { start: 0.04, end: 0.14 },
+            alpha: { start: 0.55, end: 0 },
+            lifespan: { min: 700, max: 1400 },
+            frequency: 70,
+            blendMode: Phaser.BlendModes.ADD,
+          })
+          .setDepth(-93)
+      }
     }
 
     addFigure(f: SceneFigure) {
@@ -476,6 +661,16 @@ export function createVelkynvelveScene(
         b.glow.setScale((r * 1.4) / 128).setAlpha(0.8 + 0.2 * Math.sin(t * 9))
       }
       for (const f of this.figs) pool(f.sprite.x, f.sprite.y - S * 0.4, FIGURE_LIGHT_RADIUS, 1)
+      if (this.water && node.waterfall) {
+        this.water.tilePositionY = -time * WATER_SPEED
+        this.streaks.tilePositionY = -time * STREAK_SPEED
+        this.foam.forEach((f, i) => {
+          f.tilePositionX = time * (i % 2 ? 0.05 : -0.04)
+          f.setAlpha(0.75 + 0.25 * Math.sin(time / 90 + i * 1.7))
+        })
+        const wx = (node.waterfall.x + node.waterfall.width / 2) * S
+        for (let y = 0; y <= worldH; y += 64) pool(wx, y, 46 * node.waterfall.width, 0.75)
+      }
       ctx.globalCompositeOperation = "source-over"
       this.darkTex.refresh()
     }

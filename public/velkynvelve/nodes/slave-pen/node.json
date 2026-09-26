@@ -1,0 +1,254 @@
+{
+  "slug": "slave-pen",
+  "name": "The Slave Pen",
+  "squares": 32,
+  "squarePx": 32,
+  "floorTile": "stone.png",
+  "walkable": [],
+  "geometry": {
+    "platforms": [
+      {
+        "id": "pen",
+        "cx": 17,
+        "cy": 12,
+        "apothem": 5.5,
+        "bars": true
+      },
+      {
+        "id": "guard-barracks",
+        "cx": 6,
+        "cy": 24,
+        "apothem": 3
+      }
+    ],
+    "bridges": [
+      {
+        "id": "to-barracks",
+        "a": [
+          13.111,
+          15.889
+        ],
+        "b": [
+          8.121,
+          21.879
+        ],
+        "width": 2
+      },
+      {
+        "id": "to-priestess",
+        "a": [
+          22.5,
+          12.0
+        ],
+        "b": [
+          32,
+          12
+        ],
+        "width": 2
+      },
+      {
+        "id": "to-western-bridge",
+        "a": [
+          3,
+          24
+        ],
+        "b": [
+          0,
+          24
+        ],
+        "width": 2
+      },
+      {
+        "id": "to-central-platform",
+        "a": [
+          6,
+          27
+        ],
+        "b": [
+          6,
+          32
+        ],
+        "width": 2
+      },
+      {
+        "id": "to-lift",
+        "a": [
+          28,
+          12
+        ],
+        "b": [
+          40,
+          0
+        ],
+        "width": 2
+      }
+    ],
+    "gates": [
+      {
+        "bridge": "to-barracks",
+        "leadsTo": "3 Guard Barracks",
+        "canon": true,
+        "locked": true,
+        "lockDc": 20,
+        "lockNote": "Heavy iron gate bolted into stone, kept locked. Pick DC 20 DEX with thieves' tools (makeshift at disadvantage; may draw guards - Stealth vs passive Perception). Force DC 20 STR. Guards on duty elsewhere carry keys. (oota-encounters Ch.1 p18)"
+      },
+      {
+        "bridge": "to-priestess",
+        "leadsTo": "16 Priestess Chamber",
+        "canon": false,
+        "locked": true,
+        "lockDc": 20,
+        "lockNote": "HOMEBREW - the book gives the pen one locked gate. Same heavy iron: pick DC 20 DEX with thieves' tools (makeshift at disadvantage), force DC 20 STR."
+      }
+    ]
+  },
+  "approximate": "Laid out from Sam's Velkynvelve camp map (2026-09-26): 1 Slave Pens is a caged octagon over the abyss with rope bridges to 3 Guard Barracks and 16 Priestess Chamber (the Northern Lift bridge branches off the east bridge), the waterfall beside it. The map's numbering is its own, not the V5 node numbers. Canon V5 node 11 is a gated cave in the eastern wall; its cell geometry could not be fetched here. Which gate is the book's is a guess: the one toward the guards.",
+  "waterfall": {
+    "x": 23.2,
+    "width": 3,
+    "ledges": [
+      17,
+      25
+    ]
+  },
+  "labels": [
+    {
+      "x": 6,
+      "y": 20.5,
+      "text": "3 \u00b7 Guard Barracks"
+    },
+    {
+      "x": 1.5,
+      "y": 22.6,
+      "text": "6 \u00b7 Western Bridge"
+    },
+    {
+      "x": 8.7,
+      "y": 30.5,
+      "text": "7 \u00b7 Central Platform"
+    },
+    {
+      "x": 29.5,
+      "y": 13.9,
+      "text": "16 \u00b7 Priestess Chamber"
+    },
+    {
+      "x": 29.2,
+      "y": 7.2,
+      "text": "14 \u00b7 Northern Lift"
+    }
+  ],
+  "props": [
+    {
+      "id": "pallet-w",
+      "image": "pallet.png",
+      "x": 13,
+      "y": 12,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "pallet-e",
+      "image": "pallet.png",
+      "x": 19,
+      "y": 14,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "chains",
+      "image": "chains.png",
+      "x": 17,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "bones-n",
+      "image": "bones.png",
+      "x": 15,
+      "y": 8,
+      "w": 1,
+      "h": 1,
+      "scale": 0.6
+    },
+    {
+      "id": "bones-e",
+      "image": "bones.png",
+      "x": 21,
+      "y": 11,
+      "w": 1,
+      "h": 1,
+      "scale": 0.6
+    },
+    {
+      "id": "skeleton-s",
+      "image": "skeleton.png",
+      "x": 16,
+      "y": 16,
+      "w": 1,
+      "h": 1,
+      "scale": 0.75
+    },
+    {
+      "id": "torch-nw",
+      "image": "brazier.png",
+      "x": 13,
+      "y": 10,
+      "w": 1,
+      "h": 1,
+      "light": {
+        "color": "#ff9a4a",
+        "radius": 100,
+        "flicker": 0.22
+      }
+    },
+    {
+      "id": "torch-se",
+      "image": "brazier.png",
+      "x": 20,
+      "y": 13,
+      "w": 1,
+      "h": 1,
+      "light": {
+        "color": "#ff9a4a",
+        "radius": 100,
+        "flicker": 0.22
+      }
+    },
+    {
+      "id": "web-barracks",
+      "image": "web.png",
+      "x": 11,
+      "y": 19,
+      "w": 1,
+      "h": 1,
+      "layer": "under"
+    },
+    {
+      "id": "web-priestess",
+      "image": "web.png",
+      "x": 28,
+      "y": 13,
+      "w": 1,
+      "h": 1,
+      "layer": "under"
+    }
+  ],
+  "spawns": [
+    {
+      "id": "freia",
+      "sprite": "/sprites/freia/sprite.json",
+      "x": 15,
+      "y": 10,
+      "facing": "south"
+    },
+    {
+      "id": "samson",
+      "sprite": "/sprites/samson/sprite.json",
+      "x": 18,
+      "y": 13,
+      "facing": "west"
+    }
+  ]
+}
