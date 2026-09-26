@@ -25,6 +25,9 @@ import { canonicalizeCondition } from "@/lib/conditions"
 // A long rest, as the SRD writes it. The rule is pure and lives in its own
 // file; this route only owns the rows it touches.
 import { longRest, absoluteMinutes, type SheetSpellcasting } from "@/lib/long-rest"
+// The short rest (the camp module's "partial rest"): Hit Dice, Song of Rest,
+// Pact Magic. Pure in lib/camp; this route only owns the rows.
+import { shortRest, planHitDice, songOfRestDie, type ShortRester, type SongOfRest } from "@/lib/camp"
 // Which of the SRD's four states a character is in, so the rest can refuse to
 // sleep off being downed.
 import { vitalityOf } from "@/lib/death-saves"
@@ -3006,6 +3009,7 @@ Rules:
     await logTimeEvent(timeAdmin, activeSessionId, { eventType: "dialogue_exchange" })
     const timeEvents = parseTimeEvents(rawText)
     const restingTonight = timeEvents.some((e) => e.eventType === "long_rest")
+    const shortResting = timeEvents.some((e) => e.eventType === "short_rest")
 
     // The PREVIOUS long rest, read BEFORE this one is written. Every time_log
     // row is stamped with the clock it produced (game_day_after /
@@ -3198,6 +3202,113 @@ Rules:
       if (restErr) console.error("[rest] rest_events:", restErr.message)
 
       console.log("[rest] long rest applied:\n  " + notes.join("\n  "))
+    }
+
+    // === THE SHORT REST ===
+    //
+    // [TIME:short_rest] has moved the clock an hour since the time tracker
+    // landed and done nothing else — no Hit Dice, no Song of Rest, no pact
+    // slots. Same reasoning as the long rest above: the tag is the moment the
+    // world says an hour of rest happened, so it is the only honest place to
+    // apply one. A long rest in the same turn wins; the hour is inside the
+    // night.
+    //
+    // The rule is lib/camp.ts `shortRest`, pure and tested. This owns the rows.
+    //
+    // Two things decided here that the SRD leaves to people at a table, both
+    // recorded in the camp doc (§12) for Sam to change:
+    //   HOW MANY HIT DICE — nobody can be asked mid-turn, so `planHitDice`
+    //     spends the fewest dice whose average heal reaches full.
+    //   WHOSE DICE — drawn here, server-side. The 3D roller is a browser thing
+    //     and a rest is not a player's roll; the faces are written to
+    //     rest_events.detail so they can be read back.
+    if (shortResting && !restingTonight) {
+      const { data: party } = await timeAdmin
+        .from("characters")
+        .select("id,name,class,level,hp_current,hp_max,hit_dice_remaining,sheet_hit_dice,sheet_spellcasting,conditions,con_score")
+        .eq("is_player", true)
+
+      const resters: ShortRester[] = (party ?? []).map((p) => {
+        const conditions = Array.isArray(p.conditions) ? (p.conditions as unknown[]).map(String) : []
+        const base = {
+          id: p.id as string,
+          name: p.name as string,
+          level: p.level as number | null,
+          class: p.class as string | null,
+          sheet_hit_dice: p.sheet_hit_dice as string | null,
+          hp: p.hp_current as number | null,
+          hpMax: p.hp_max as number | null,
+          hitDiceRemaining: p.hit_dice_remaining as number | null,
+          con_score: p.con_score as number | null,
+          spellcasting: (p.sheet_spellcasting ?? null) as ShortRester["spellcasting"],
+          vitality: vitalityOf(p.hp_current as number | null, conditions),
+        }
+        return { ...base, spend: planHitDice(base) }
+      })
+
+      // Song of Rest: the highest-level bard who is on their feet sings. It is
+      // a free feature of the rest (SRD Bard 2nd), not a camp action.
+      const bard = resters
+        .filter((r) => /bard/i.test(r.class ?? "") && r.vitality === "up" && songOfRestDie(r.level ?? 0) != null)
+        .sort((a, b) => (b.level ?? 0) - (a.level ?? 0))[0]
+      const song: SongOfRest | null = bard ? { bardId: bard.id, bardName: bard.name, bardLevel: bard.level ?? 0 } : null
+
+      const rest = shortRest(resters, Math.random, song)
+      const notes: string[] = []
+      const flags: string[] = []
+      for (const c of rest.characters) {
+        notes.push(c.note)
+        flags.push(...c.flags)
+        if (!c.rested) continue
+        const p = (party ?? []).find((x) => x.id === c.id)
+        if (!p) continue
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        let touched = false
+        if (c.hp !== (p.hp_current ?? 0)) { patch.hp_current = c.hp; touched = true }
+        if (c.hitDiceRemaining != null && c.hitDiceRemaining !== p.hit_dice_remaining) {
+          patch.hit_dice_remaining = c.hitDiceRemaining
+          touched = true
+        }
+        if (c.slots) {
+          // The whole object back with only `used` zeroed — same care as the
+          // long rest: writing just `{slots}` would drop the caster's sheet.
+          const sc = (p.sheet_spellcasting ?? null) as SheetSpellcasting | null
+          patch.sheet_spellcasting = sc ? { ...sc, slots: c.slots } : { slots: c.slots }
+          touched = true
+        }
+        if (touched) {
+          const { error } = await timeAdmin.from("characters").update(patch).eq("id", c.id)
+          if (error) console.error(`[rest] ${c.name}:`, error.message)
+        }
+      }
+
+      // The record of the hour. Nobody eats on a short rest — the meal belongs
+      // to the long rest above — so supplies pass through untouched and `fed`
+      // is honestly false. bard_character_id / bard_spent_die are the columns
+      // the 2026-08-20 migration reserved for exactly this.
+      const { data: pool } = await timeAdmin
+        .from("party_supplies").select("supplies").limit(1).maybeSingle()
+      const supplies = Math.max(0, Number(pool?.supplies ?? 0))
+      const { error: shortErr } = await timeAdmin.from("rest_events").insert({
+        session_id: activeSessionId,
+        rest_type: "short",
+        fed: false,
+        supplies_before: supplies,
+        supplies_cost: 0,
+        supplies_after: supplies,
+        party_size: resters.length,
+        bard_character_id: rest.restEvent.bard_character_id,
+        bard_spent_die: rest.restEvent.bard_spent_die,
+        detail: {
+          notes,
+          flags,
+          minutes: rest.minutes,
+          dice: rest.characters.map((c) => ({ id: c.id, dice: c.dice, songOfRest: c.songOfRest, pactSlotsRestored: c.pactSlotsRestored })),
+        },
+      })
+      if (shortErr) console.error("[rest] rest_events:", shortErr.message)
+
+      console.log("[rest] short rest applied:\n  " + notes.join("\n  "))
     }
   }
 
