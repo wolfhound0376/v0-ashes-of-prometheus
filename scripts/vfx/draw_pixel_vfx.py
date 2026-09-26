@@ -24,9 +24,13 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxFlash      48x48  6f        the white impact flash: star, bloom, rays, dots
   pxRing       64x64  8f        the floor shockwave, drawn flat: ring runs out
   pxSpark       8x8   1f        one spark, the texture the burst particles wear
+  pxIce        64x64  4f loop   rime left on the floor after a frost hit, drawn flat
+  pxGlow       64x64  8f loop   healing luminescence around a target, motes rising
+  pxSwirl      48x48  8f loop   the dizzy spiral over a mocked head, violet and blue
 
-pxFlash, pxRing and pxSpark are drawn WHITE on purpose: the kit tints them
-with the damage type's colour, so one sheet serves every type.
+pxFlash, pxRing, pxSpark and pxGlow are drawn WHITE on purpose: the kit tints
+them with the damage type's colour, so one sheet serves every type. (The
+Vicious Mockery ghost is a drawn sprite, packed by import_sprite_sheet.py.)
 
 Usage: draw_pixel_vfx.py <public/vfx> [--preview <dir>]
 """
@@ -336,6 +340,109 @@ def shockring(f, n):
     return cell
 
 
+def ice(f, n):
+    """Rime left on the floor where a frost spell landed: a frozen patch with
+    shards, drawn flat. Four frames so the ice glints rather than sits."""
+    cell = Cell(64, 64)
+    cx = cy = 32
+    ICE = hexes("#1e3d5c", "#3f7fb5", "#8ecbee", "#d6f3ff", "#ffffff")
+    for y in range(64):
+        for x in range(64):
+            d = math.hypot((x - cx) / 27, (y - cy) / 21)
+            nz = fbm(x * 0.16, y * 0.16, 31) * 2 - 1
+            if d + nz * 0.28 > 1:
+                continue
+            crack = fbm(x * 0.45, y * 0.45, 32)
+            h = 0.28 + 0.4 * (1 - d) + (0.35 if crack > 0.68 else 0)
+            cell.put(x, y, tone(ICE, min(0.99, h)))
+    # Shards standing up out of the rime, each a small spike.
+    for k in range(7):
+        sx = cx + (_hash(k, 0, 40) * 2 - 1) * 22
+        sy = cy + (_hash(k, 1, 40) * 2 - 1) * 14
+        ln = 4 + int(_hash(k, 2, 40) * 6)
+        for i in range(ln):
+            cell.put(round(sx + i * 0.35), round(sy - i), ICE[3 if i < ln - 2 else 4])
+            cell.put(round(sx + i * 0.35) + 1, round(sy - i), ICE[2])
+    # The glint: one bright pixel wandering across the patch per frame.
+    for k in range(3):
+        gp = (f / n + k / 3) % 1
+        gx = int(cx - 18 + gp * 36)
+        gy = int(cy + math.sin(gp * math.pi * 2 + k) * 10)
+        if cell.get(gx, gy)[3]:
+            cell.put(gx, gy, ICE[4])
+            cell.put(gx + 1, gy, ICE[3])
+    return cell
+
+
+def glow(f, n):
+    """A healing luminescence: a halo around the target with RAYS streaking
+    outward from it and motes rising through it. Sam: "golden, luminescent,
+    and have rays of light streaking outwards." Drawn white; the kit tints
+    it gold, so the gold is one number in the kit rather than a repaint."""
+    cell = Cell(64, 64)
+    cx, cy = 32, 36
+    ph = f / n
+    # The rays first, so the halo draws over their roots. Twelve of them,
+    # each with its own length that breathes on its own phase, turning
+    # slowly as a whole.
+    for k in range(12):
+        a = k * math.pi / 6 + ph * math.pi / 6
+        breathe = 0.5 + 0.5 * math.sin(ph * 2 * math.pi * 2 + k * 1.3)
+        r0 = 20
+        r1 = 24 + 8 * breathe
+        for i in range(int((r1 - r0) * 2)):
+            r = r0 + i / 2
+            x = cx + math.cos(a) * r * 1.0
+            y = cy + math.sin(a) * r * 1.15
+            tip = (r - r0) / max(1, r1 - r0)
+            cell.put(round(x), round(y), WHITE[4] if tip < 0.4 else WHITE[3] if tip < 0.75 else WHITE[1])
+    for y in range(64):
+        for x in range(64):
+            d = math.hypot((x - cx) / 21, (y - cy) / 26)
+            nz = fbm(x * 0.2 + ph * 2, y * 0.2 - ph * 3, 51) * 2 - 1
+            r = d + nz * 0.16
+            if r > 1 or r < 0.66:
+                continue
+            cell.put(x, y, WHITE[4] if r > 0.9 else WHITE[3] if r > 0.8 else WHITE[2])
+    # Motes rising: small crosses that drift up and fade through the ramp.
+    for k in range(7):
+        mp = (ph + k / 7) % 1
+        mx = int(cx + math.sin(k * 2.1 + mp * 3) * 16)
+        my = int(cy + 24 - mp * 46)
+        col = WHITE[4] if mp < 0.5 else WHITE[2]
+        cell.put(mx, my, col)
+        if mp < 0.7:
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                cell.put(mx + dx, my + dy, WHITE[1])
+    return cell
+
+
+def swirl(f, n):
+    """The dizzy spiral over a mocked head — the reference has a violet and
+    blue whorl with sparks in it. Two arms, turning, drawn flat in its own
+    colours (the ghosts are green; this is not)."""
+    cell = Cell(48, 48)
+    cx = cy = 24
+    SW = hexes("#3b2a7a", "#7b4fd8", "#c56cff", "#8fd0ff", "#ffffff")
+    ph = f / n
+    for arm in (0, 1):
+        for i in range(0, 150):
+            t = i / 150
+            a = t * math.pi * 2.6 + ph * math.pi * 2 + arm * math.pi
+            r = 3 + t * 19
+            x = cx + math.cos(a) * r
+            y = cy + math.sin(a) * r * 0.55
+            cell.put(round(x), round(y), SW[3] if t < 0.3 else SW[2] if t < 0.7 else SW[1])
+            if t > 0.4 and i % 9 == 0:
+                cell.put(round(x), round(y) + 1, SW[0])
+    for k in range(5):
+        sp = (ph + k / 5) % 1
+        a = sp * math.pi * 2 + k
+        r = 8 + sp * 12
+        cell.put(round(cx + math.cos(a) * r), round(cy + math.sin(a) * r * 0.55), SW[4])
+    return cell
+
+
 def spark(f, n):
     """One spark. The burst particles are this, scaled, tinted, thrown."""
     cell = Cell(8, 8)
@@ -359,6 +466,9 @@ SHEETS = [
     ("pxFlash",    flash,     6, 6, 24, False),
     ("pxRing",     shockring, 8, 4, 20, False),
     ("pxSpark",    spark,     1, 1, 1,  False),
+    ("pxIce",      ice,       4, 4, 6,  True),
+    ("pxGlow",     glow,      8, 4, 10, True),
+    ("pxSwirl",    swirl,     8, 4, 12, True),
 ]
 
 

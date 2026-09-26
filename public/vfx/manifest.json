@@ -244,6 +244,33 @@
     "frames": 6,
     "rows": 1
   },
+  "pxGhost": {
+    "bytes": 1528,
+    "cols": 1,
+    "file": "pxGhost.webp",
+    "fps": 8,
+    "frames": 1,
+    "loop": true,
+    "rows": 1
+  },
+  "pxGlow": {
+    "bytes": 2712,
+    "cols": 4,
+    "file": "pxGlow.webp",
+    "fps": 10,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxIce": {
+    "bytes": 578,
+    "cols": 4,
+    "file": "pxIce.webp",
+    "fps": 6,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
   "pxMissile": {
     "bytes": 278,
     "cols": 4,
@@ -286,6 +313,15 @@
     "fps": 1,
     "frames": 1,
     "rows": 1
+  },
+  "pxSwirl": {
+    "bytes": 754,
+    "cols": 4,
+    "file": "pxSwirl.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
   },
   "radiantColumn": {
     "bytes": 22500,
