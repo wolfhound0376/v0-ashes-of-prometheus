@@ -1,19 +1,34 @@
 import { describe, expect, it } from "vitest"
 import type { Rng, SheetSlice } from "./game-context"
 import {
-  CAMP_ACTIONS_PER_REST,
+  CAMP_ACTIONS,
+  CAMP_ACTIONS_FULL,
+  CAMP_ACTIONS_PARTIAL,
+  CAMP_ACTION_RULES,
+  CAMP_VISITOR_ROWS,
   DEFAULT_ENCOUNTER_TABLE,
   PALLIATION,
+  affordableRest,
+  attune,
+  bardUpgrade,
   craftProgress,
+  decipher,
+  dmScene,
   forage,
+  fullRestRations,
+  hunt,
+  identifyItem,
   levelForXp,
   levelUp,
   levelUpAllowedHere,
   makeCampBudget,
+  partialRestRations,
+  passiveCampEncounter,
   perform,
   resolveWatch,
   shortRest,
   spendCampAction,
+  trade,
   weightRelationshipEvent,
   xpToNext,
   type EncounterTableRow,
@@ -68,25 +83,114 @@ const rows: EncounterTableRow[] = [
 // §2 the budget
 // ---------------------------------------------------------------------------
 
+describe("rations decide the rest", () => {
+  it("a full rest costs 20, 30 for six to eight, 40 past eight; a partial rest is half", () => {
+    expect([1, 4, 5].map(fullRestRations)).toEqual([20, 20, 20])
+    expect([6, 7, 8].map(fullRestRations)).toEqual([30, 30, 30])
+    expect(fullRestRations(9)).toBe(40)
+    expect(partialRestRations(4)).toBe(10)
+    expect(partialRestRations(7)).toBe(15)
+  })
+
+  it("buys the best rest the rations allow, and none when they cannot buy a partial one", () => {
+    expect(affordableRest(25, 4)).toMatchObject({ kind: "full", cost: 20, suppliesAfter: 5 })
+    expect(affordableRest(19, 4)).toMatchObject({ kind: "partial", cost: 10, suppliesAfter: 9 })
+    expect(affordableRest(0, 4)).toMatchObject({ kind: null, cost: 0, suppliesAfter: 0 })
+    expect(affordableRest(19, 4).flags).toEqual([])
+    expect(affordableRest(30, 7).flags[0]).toMatch(/needs his yes/)
+  })
+})
+
 describe("camp action budget", () => {
-  it("make_camp grants one action and spending it leaves none", () => {
-    expect(makeCampBudget()).toBe(CAMP_ACTIONS_PER_REST)
-    const spent = spendCampAction(makeCampBudget(), "forage")
-    expect(spent.ok).toBe(true)
-    expect(spent.remaining).toBe(0)
+  it("a full rest grants two actions, a partial one, no rest none", () => {
+    expect(makeCampBudget("full")).toBe(CAMP_ACTIONS_FULL)
+    expect(makeCampBudget("partial")).toBe(CAMP_ACTIONS_PARTIAL)
+    expect(makeCampBudget(null)).toBe(0)
+    const first = spendCampAction(makeCampBudget("full"), "forage")
+    expect(first).toMatchObject({ ok: true, remaining: 1 })
+    expect(spendCampAction(first.remaining, "level_up")).toMatchObject({ ok: true, remaining: 0 })
   })
 
-  it("a second action in the same rest is refused and the budget is untouched", () => {
-    const second = spendCampAction(0, "watch")
-    expect(second.ok).toBe(false)
-    expect(second.remaining).toBe(0)
-    expect(second.note).toMatch(/No camp action left/)
+  it("an action past the budget is refused and the budget is untouched", () => {
+    const third = spendCampAction(0, "pray")
+    expect(third.ok).toBe(false)
+    expect(third.remaining).toBe(0)
+    expect(third.note).toMatch(/No camp action left/)
   })
 
-  it("sleep is never an action, and neither is anything off the menu", () => {
-    expect(spendCampAction(1, "sleep").ok).toBe(false)
-    expect(spendCampAction(1, "loot").ok).toBe(false)
-    expect(spendCampAction(1, "sleep").remaining).toBe(1)
+  it("the bard's success lifts a partial rest to the full budget, once, and never a full rest", () => {
+    expect(bardUpgrade(0, "partial", true)).toBe(1)
+    expect(bardUpgrade(1, "partial", true)).toBe(2)
+    expect(bardUpgrade(1, "partial", false)).toBe(1)
+    expect(bardUpgrade(1, "partial", true, true)).toBe(1)
+    expect(bardUpgrade(2, "full", true)).toBe(2)
+  })
+
+  it("sleep is never an action, watch and tend are no longer actions, and every action names its rule", () => {
+    expect(spendCampAction(2, "sleep").ok).toBe(false)
+    expect(spendCampAction(2, "watch").ok).toBe(false)
+    expect(spendCampAction(2, "tend").ok).toBe(false)
+    expect(spendCampAction(2, "sleep").remaining).toBe(2)
+    for (const a of CAMP_ACTIONS) expect(CAMP_ACTION_RULES[a].source).toBeTruthy()
+    expect(CAMP_ACTIONS).toHaveLength(14)
+  })
+})
+
+describe("the passive roll", () => {
+  it("a safe node gets no visitor; 1–12 no one; brigands come to fight; a merchant opens trade", () => {
+    expect(passiveCampEncounter({ metadata: { safe: true } }, script())).toMatchObject({ visitor: null, hostile: false, merchantPresent: false })
+    expect(passiveCampEncounter({ metadata: {} }, script(d(9, 20)))).toMatchObject({ visitor: null, hostile: false, merchantPresent: false })
+    const brigands = passiveCampEncounter({ metadata: {} }, script(d(14, 20)))
+    expect(brigands).toMatchObject({ visitor: "brigands", hostile: true, disposition: null })
+    expect(brigands.flags.some((f) => /DM picks the stat block/.test(f))).toBe(true)
+    const merchant = passiveCampEncounter({ metadata: {} }, script(d(17, 20)))
+    expect(merchant).toMatchObject({ visitor: "merchant", merchantPresent: true, hostile: false })
+    expect(trade({ name: "Kenta" }, merchant).ok).toBe(true)
+    expect(trade({ name: "Kenta" }, brigands).ok).toBe(false)
+  })
+
+  it("a mysterious person is rolled again for disposition, and the odds are flagged as a reading", () => {
+    const divine = passiveCampEncounter({ metadata: {} }, script(d(19, 20), d(6, 20)))
+    expect(divine).toMatchObject({ visitor: "person", disposition: "divine", hostile: false })
+    expect(divine.watch.chain.map((c) => c.tableKey)).toEqual(["camp_visitors", "camp_visitor_person"])
+    expect(passiveCampEncounter({ metadata: {} }, script(d(18, 20), d(2, 20))).disposition).toBe("malicious")
+    expect(passiveCampEncounter({ metadata: {} }, script(d(20, 20), d(15, 20))).disposition).toBe("neutral")
+    expect(divine.flags.some((f) => /needs his yes/.test(f))).toBe(true)
+    // The table is in the shape of encounter_table_rows and covers every face once.
+    for (const key of ["camp_visitors", "camp_visitor_person"]) {
+      for (let face = 1; face <= 20; face++) expect(CAMP_VISITOR_ROWS.filter((r) => r.table_key === key && face >= r.roll_min && face <= r.roll_max)).toHaveLength(1)
+    }
+  })
+})
+
+describe("attune, identify, decipher, hunt, scenes", () => {
+  const ring = { name: "Ring of Protection", attunement: true, cursed: true, description: "A plain band.", properties: { ac: 1, craft: { tools: "Jeweler's Tools" } } }
+
+  it("attunement is one item per rest, three at a time, and a curse stays silent", () => {
+    expect(attune({ name: "Fifi", attunedCount: 0, attunedThisRest: false }, ring)).toMatchObject({ ok: true, attunedCount: 1, curseRevealed: false })
+    expect(attune({ name: "Fifi", attunedCount: 1, attunedThisRest: true }, ring).note).toMatch(/one per rest/)
+    expect(attune({ name: "Fifi", attunedCount: 3, attunedThisRest: false }, ring).note).toMatch(/limit/)
+    expect(attune({ name: "Fifi", attunedCount: 0, attunedThisRest: false }, { name: "Rope", attunement: false }).ok).toBe(false)
+  })
+
+  it("identifying reveals the properties and never the curse; a potion needs only a taste", () => {
+    const out = identifyItem(ring)
+    expect(out.revealed).toEqual({ name: "Ring of Protection", description: "A plain band.", attunement: true, properties: { ac: 1 } })
+    expect("cursed" in out.revealed).toBe(false)
+    expect(out.curseRevealed).toBe(false)
+    expect(identifyItem({ name: "Potion of Healing", attunement: false, item_type: "potion" }).note).toMatch(/taste/)
+  })
+
+  it("decipher is INT (Arcana) vs the DM's DC, hunting is foraging by another name, and the rest is the DM's scene", () => {
+    const kenta = sheet({ name: "Kenta", int_score: 14, proficiency_bonus: 2, sheet_skill_proficiencies: { Arcana: "proficient" } })
+    expect(decipher(kenta, 15, script(d(11, 20))).check).toMatchObject({ skill: "arcana", total: 15, success: true })
+    const h = hunt(kenta, script(d(20, 20), d(3, 6)))
+    expect(h.supplies).toBe(3)
+    expect(h.flags[0]).toMatch(/foraging rule/)
+    expect(h.note).toMatch(/hunts/)
+    const pray = dmScene("pray", kenta)
+    expect(pray.source).toBe("Sam, 2026-09-26")
+    expect(pray.flags[0]).toMatch(/no mechanical rule/)
   })
 })
 
@@ -304,6 +408,8 @@ describe("perform", () => {
     const moving = perform(scott, script(d(11, 20)))
     expect(moving.band).toBe("moving")
     expect(moving.deltas).toBeNull()
+    expect(perform(scott, script(d(5, 20))).inspires).toBe(false)
+    expect(perform(scott, script(d(6, 20))).inspires).toBe(true)
     expect(moving.flags.some((f) => /needs Sam's yes/.test(f))).toBe(true)
   })
 })
