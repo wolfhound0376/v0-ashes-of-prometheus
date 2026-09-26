@@ -233,8 +233,24 @@ async function loadBoard(db: ReturnType<typeof createAdminClient>, mapId: string
   return { width, height, walkable, combatants, beast }
 }
 
-/** The board's log is the dialogue feed; the HUD is already subscribed to it. */
-async function narrate(db: ReturnType<typeof createAdminClient>, speaker: string, text: string) {
+/**
+ * The board's log is the dialogue feed; the HUD is already subscribed to it.
+ *
+ * EVERY BOARD EVENT IS FILED UNDER "Combat", never under the creature it is
+ * about. It used to carry the creature's name, and the narration voice speaks
+ * any line whose speaker is a known NPC or PC - so "Sarith strikes at Kenta -
+ * 14+5 = 19 vs AC 15: hit for 7" was read aloud in Sarith's own voice. Sam,
+ * 9/26: "no one, not even Malachar, should talk about rolls - just the
+ * consequences." The numbers stay in the written log; nobody says them.
+ * What a creature actually SAYS goes through say().
+ */
+const COMBAT_LOG = "Combat"
+async function narrate(db: ReturnType<typeof createAdminClient>, text: string) {
+  await db.from("dialogue").insert({ speaker: COMBAT_LOG, text, channel: "dm" })
+}
+
+/** A line spoken by the creature itself (a bark) - its name, its voice. */
+async function say(db: ReturnType<typeof createAdminClient>, speaker: string, text: string) {
   await db.from("dialogue").insert({ speaker, text, channel: "dm" })
 }
 
@@ -399,9 +415,9 @@ async function deathSaveOnTurnStart(
   const label = (ch.name as string | null) ?? "Someone"
   const stamp = new Date().toISOString()
   if (vitality === "dead") {
-    await narrate(db, label, `${label} lies dead.`)
+    await narrate(db, `${label} lies dead.`)
   } else if (vitality === "stable") {
-    await narrate(db, label, `${label} is stable, and still unconscious.`)
+    await narrate(db, `${label} is stable, and still unconscious.`)
   } else {
     const { data: tally } = await db
       .from("characters").select("death_saves").eq("id", characterId).maybeSingle()
@@ -415,7 +431,7 @@ async function deathSaveOnTurnStart(
       // A 20: back on their feet with 1 hit point, on the token too.
       await db.from("vtt_tokens").update({ hp_current: out.hp, updated_by: "death-save", updated_at: stamp }).eq("id", tokenId)
     }
-    await narrate(db, label, out.note ?? "")
+    await narrate(db, out.note ?? "")
     if (out.vitality === "up") return false
   }
   // Down for the turn: nothing to spend. The DM passes it on.
@@ -632,7 +648,7 @@ export async function POST(req: NextRequest) {
       const sneaks = stealth.map((s) => `${s.actor} ${s.arithmetic.replace(/ vs DC 0$/, "")}`).join("; ")
       for (const v of verdicts) {
         if (!v.surprised) continue
-        await narrate(db, v.observer, `${v.observer} is surprised — passive Perception ${v.passivePerception} noticed no one (Stealth: ${sneaks}).`)
+        await narrate(db, `${v.observer} is surprised — passive Perception ${v.passivePerception} noticed no one (Stealth: ${sneaks}).`)
       }
     }
 
@@ -766,7 +782,7 @@ export async function POST(req: NextRequest) {
     for (const h of hands ?? []) {
       if (withinLeash({ x: h.grid_x ?? 0, y: h.grid_y ?? 0 }, { x: gx, y: gy })) continue
       await db.from("vtt_tokens").delete().eq("id", h.id)
-      await narrate(db, h.label ?? MAGE_HAND.name, `${h.label ?? MAGE_HAND.name} is left more than ${MAGE_HAND.leashFt} ft behind, and fades.`)
+      await narrate(db, `${h.label ?? MAGE_HAND.name} is left more than ${MAGE_HAND.leashFt} ft behind, and fades.`)
     }
     const next = { ...state, moved_ft: usedFt + feet }
     // Spending the action in the same write as the move: no window exists in
@@ -818,7 +834,7 @@ export async function POST(req: NextRequest) {
     const self = board.combatants.find((c) => c.token_id === entry.token_id)
     if (!self) return NextResponse.json({ error: "that combatant is no longer on the board" }, { status: 409 })
     if ((self.hp_current ?? 1) <= 0) {
-      await narrate(db, self.label, `${self.label} lies still.`)
+      await narrate(db, `${self.label} lies still.`)
       return NextResponse.json({ ok: true, decision: { kind: "none" }, note: "down" })
     }
     // A token with no stat block has nothing to fight with, and the AI used
@@ -828,7 +844,7 @@ export async function POST(req: NextRequest) {
     // Same speaker as every other board note, so the chat route does not
     // mistake it for one of Malachar's own lines.
     if (!self.bestiary_id) {
-      await narrate(db, self.label, `${self.label} stands its ground — no stat block is linked to this token. Link one in the bestiary and it will fight.`)
+      await narrate(db, `${self.label} stands its ground — no stat block is linked to this token. Link one in the bestiary and it will fight.`)
       return NextResponse.json({ ok: true, decision: { kind: "none" }, note: "no-stat-block" })
     }
 
@@ -914,8 +930,8 @@ export async function POST(req: NextRequest) {
     // It is deterministic over (name, round), so every browser at the table
     // gets the same line with nothing stored and nothing synchronised.
     const bark = barkFor(self.label, combat.round)
-    if (bark) await narrate(db, self.label ?? "Someone", bark)
-    await narrate(db, self.label, decision.narration)
+    if (bark) await say(db, self.label ?? "Someone", bark)
+    await narrate(db, decision.narration)
 
     // The creature's whole turn is spent in one call, so the economy reads
     // honestly for anyone watching the tray.
@@ -1042,7 +1058,7 @@ export async function POST(req: NextRequest) {
       if (!withinLeash({ x: gx, y: gy }, casterAt)) {
         // Sent past the leash: the SRD says it vanishes, so it vanishes.
         await db.from("vtt_tokens").delete().eq("id", hand.id)
-        await narrate(db, casterName, `${casterName} sends the hand past ${MAGE_HAND.leashFt} ft — it fades.`)
+        await narrate(db, `${casterName} sends the hand past ${MAGE_HAND.leashFt} ft — it fades.`)
       } else {
         await db.from("vtt_tokens")
           // MOVING IS DOING SOMETHING. A spectral hand drifting across the
@@ -1050,7 +1066,7 @@ export async function POST(req: NextRequest) {
           // reveals it along with the four uses below.
           .update({ grid_x: gx, grid_y: gy, is_hidden: false, updated_by: "summon-move", updated_at: stamp })
           .eq("id", hand.id)
-        await narrate(db, casterName, `${casterName}'s spectral hand drifts ${Math.max(Math.abs(gx - from.x), Math.abs(gy - from.y)) * 5} ft.`)
+        await narrate(db, `${casterName}'s spectral hand drifts ${Math.max(Math.abs(gx - from.x), Math.abs(gy - from.y)) * 5} ft.`)
       }
     } else if (op === "use") {
       const use = handUse(String(body?.what ?? ""))
@@ -1059,10 +1075,10 @@ export async function POST(req: NextRequest) {
       // until it actually does something." Opening a door is that something.
       await db.from("vtt_tokens")
         .update({ is_hidden: false, updated_by: "summon-use", updated_at: stamp }).eq("id", hand.id)
-      await narrate(db, casterName, use.line(casterName))
+      await narrate(db, use.line(casterName))
     } else if (op === "dismiss") {
       await db.from("vtt_tokens").delete().eq("id", hand.id)
-      await narrate(db, casterName, `${casterName} dismisses the spectral hand.`)
+      await narrate(db, `${casterName} dismisses the spectral hand.`)
     } else {
       return NextResponse.json({ error: "summon needs op: 'move'|'use'|'dismiss'" }, { status: 400 })
     }
@@ -1349,7 +1365,7 @@ export async function POST(req: NextRequest) {
         const conds = normalizeConditions(ch?.conditions).filter((c) => c.toLowerCase() !== "sanctuary")
         await db.from("characters").update({ conditions: conds, updated_at: stamp }).eq("id", caster.character_id)
       }
-      await narrate(db, caster.label ?? "Someone", `${caster.label} strikes out, and the sanctuary around them fails.`)
+      await narrate(db, `${caster.label} strikes out, and the sanctuary around them fails.`)
     }
 
     /**
@@ -1524,14 +1540,14 @@ export async function POST(req: NextRequest) {
           })
           if (handErr) return NextResponse.json({ error: handErr.message }, { status: 500 })
           await payFor()
-          await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${MAGE_HAND.name} — a spectral hand appears ${Math.max(Math.abs(aim.x - origin.x), Math.abs(aim.y - origin.y)) * 5} ft away.`)
+          await narrate(db, `${caster.label} casts ${MAGE_HAND.name} — a spectral hand appears ${Math.max(Math.abs(aim.x - origin.x), Math.abs(aim.y - origin.y)) * 5} ft away.`)
           return NextResponse.json({ ok: true, resolved: false, note: "summoned", summoned: true })
         }
         // A point spell with no shape lands on its square and does nothing to
         // anybody — Misty Step, Minor Illusion. Real spells with nothing to
         // roll.
         await payFor()
-        await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability}.`)
+        await narrate(db, `${caster.label} casts ${ability}.`)
         return NextResponse.json({ ok: true, resolved: false, note: "no dice to roll for this ability" })
       }
 
@@ -1568,7 +1584,7 @@ export async function POST(req: NextRequest) {
       await payFor()
 
       if (caught.length === 0) {
-        await narrate(db, caster.label ?? "Someone", `${caster.label} casts ${ability} — it catches no one.`)
+        await narrate(db, `${caster.label} casts ${ability} — it catches no one.`)
         return NextResponse.json({ ok: true, resolved: true, area: true, hit: false, victims: [] })
       }
 
@@ -1640,7 +1656,7 @@ export async function POST(req: NextRequest) {
         const line = parts.length
           ? `${caster.label} casts ${ability} — ${parts.join("; ")}.`
           : `${caster.label} casts ${ability} — it covers ${caught.map((t) => t.label).join(", ")}.`
-        await narrate(db, caster.label ?? "Someone", line)
+        await narrate(db, line)
 
         // AND IF NOTHING MECHANISED IT, THE DM RULES IT. See lib/spell-effects:
         // silence is a bug, a ruling is not.
@@ -1648,7 +1664,7 @@ export async function POST(req: NextRequest) {
           ? { spell: ability, text: areaEffects.find((e) => e.kind === "dm")?.text ?? null }
           : null
         if (ruling) {
-          await narrate(db, "Board", `${ability} needs a ruling from Malachar.${ruling.text ? ` (${ruling.text})` : ""}`)
+          await narrate(db, `${ability} needs a ruling from Malachar.${ruling.text ? ` (${ruling.text})` : ""}`)
         }
         return NextResponse.json({
           ok: true, resolved: Boolean(handled), area: true, line,
@@ -1767,7 +1783,7 @@ export async function POST(req: NextRequest) {
       }
 
       const line = `${caster.label} casts ${ability} — ${parts.join("; ")}.`
-      await narrate(db, caster.label ?? "Someone", line)
+      await narrate(db, line)
       // The blast's damage type travels with it. Without this a Fireball kill
       // produced a bone-white number and a generic corpse, because the board
       // had no word for what had just happened to five creatures at once —
@@ -1825,7 +1841,7 @@ export async function POST(req: NextRequest) {
         const line = ward === "sanctuary"
           ? `${caster.label} wards ${victim.id === caster.id ? "themself" : victim.label} with Sanctuary — attackers must make a Wisdom save to strike them.`
           : `${caster.label} raises a shimmering field around ${victim.id === caster.id ? "themself" : victim.label} — +2 AC.`
-        await narrate(db, caster.label ?? "Someone", line)
+        await narrate(db, line)
         return NextResponse.json({
           ok: true, resolved: false, warded: ward, line,
           target_token: victim.id, caster_token: caster.id,
@@ -1840,12 +1856,12 @@ export async function POST(req: NextRequest) {
       const line = laid
         ? `${caster.label} casts ${ability} on ${victim.id === caster.id ? "themself" : victim.label}.`
         : `${caster.label} casts ${ability}.`
-      await narrate(db, caster.label ?? "Someone", line)
+      await narrate(db, line)
       const ruling = needsRuling({ effects: single, handled: laid > 0 })
         ? { spell: ability, text: single.find((e) => e.kind === "dm")?.text ?? null }
         : null
       if (ruling) {
-        await narrate(db, "Board", `${ability} needs a ruling from Malachar.${ruling.text ? ` (${ruling.text})` : ""}`)
+        await narrate(db, `${ability} needs a ruling from Malachar.${ruling.text ? ` (${ruling.text})` : ""}`)
       }
       return NextResponse.json({
         ok: true, resolved: laid > 0, line,
@@ -1928,7 +1944,7 @@ export async function POST(req: NextRequest) {
         // Sanctuary worth a slot - so payFor runs before the refusal.
         await payFor()
         const line = `${caster.label} turns on ${victim.label} and falters — Wisdom ${check.total} vs DC ${check.dc}: the sanctuary holds, and the attack is lost.`
-        await narrate(db, caster.label ?? "Someone", line)
+        await narrate(db, line)
         return NextResponse.json({
           ok: true, resolved: false, sanctuary: true, line,
           roll: check.total, dc: check.dc,
@@ -2164,7 +2180,7 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-    await narrate(db, caster.label ?? "Someone", line)
+    await narrate(db, line)
 
     // Paid by the same call that resolved it, so a hit and its cost can never
     // drift apart.
@@ -2292,7 +2308,7 @@ export async function POST(req: NextRequest) {
     // the die exhaustion took away rather than being told the result.
     const medNote = medic.note ? ` [${medic.note}]` : ""
     const line = `${me.label} tends to ${them.label} — Medicine ${showDice(thrownMed)}${bonus >= 0 ? "+" : ""}${bonus} = ${check.total} vs DC ${STABILIZE_DC}${medNote}: ${check.success ? `${them.label} is stable.` : "no change."}`
-    await narrate(db, me.label ?? "Someone", line)
+    await narrate(db, line)
     const spent = { ...state, action: true }
     await db.from("combat_state").update({ turn_state: spent, updated_at: stamp }).eq("id", combat.id)
     return NextResponse.json({ ok: true, line, stable: check.success, roll, total: check.total, turn_state: spent })
@@ -2431,7 +2447,7 @@ export async function POST(req: NextRequest) {
         .update({ is_hidden: true, updated_by: "player-hide", updated_at: new Date().toISOString() })
         .eq("id", token_id)
       const line = `${tok.label} steps out of every line of sight — no roll needed.`
-      await narrate(db, tok.label ?? "Someone", line)
+      await narrate(db, line)
       return NextResponse.json({
         ok: true, hidden: true, unopposed: true, line, seenBy: [],
         sfxCues: [{ type: "raw" as const, scope: "party" as const, key: "ui/hide_vanish" }],
@@ -2447,7 +2463,7 @@ export async function POST(req: NextRequest) {
     // to stand next time instead of just costing them a turn.
     const watchers = survey.seenBy.map((w) => (w.how === "smell" ? `${w.label} (scent)` : w.how === "blindsight" ? `${w.label} (blindsight)` : w.label))
     const line = `${tok.label} rolls Stealth ${roll}${bonus >= 0 ? "+" : ""}${bonus} = ${total} against ${survey.keenest}'s passive ${survey.dc} — ${hidden ? "and is gone" : "and is spotted"}. Watching: ${watchers.join(", ")}.`
-    await narrate(db, tok.label ?? "Someone", line)
+    await narrate(db, line)
 
     return NextResponse.json({
       ok: true, hidden, line, roll, total, dc: survey.dc,
@@ -2526,7 +2542,7 @@ export async function POST(req: NextRequest) {
         const info = normaliseSummon(t.summon)
         if (!info || !expired(info, entering)) continue
         await db.from("vtt_tokens").delete().eq("id", t.id)
-        await narrate(db, t.label ?? MAGE_HAND.name, `${t.label ?? MAGE_HAND.name} fades — the spell has run its minute.`)
+        await narrate(db, `${t.label ?? MAGE_HAND.name} fades — the spell has run its minute.`)
       }
 
       // AND THE WARDS, swept by the same round turn and for the same reason:
@@ -2548,7 +2564,7 @@ export async function POST(req: NextRequest) {
           await db.from("characters").update({ conditions: conds, updated_at: stamp }).eq("id", t.character_id)
         }
         if (info) {
-          await narrate(db, t.label ?? "Someone", info.spell === "sanctuary"
+          await narrate(db, info.spell === "sanctuary"
             ? `The sanctuary around ${t.label} fades.`
             : `The shimmering field around ${t.label} winks out.`)
         }
@@ -2574,7 +2590,7 @@ export async function POST(req: NextRequest) {
           await db.from("characters").update({ conditions: conds, updated_at: stamp }).eq("id", t.character_id)
         }
         for (const e of gone) {
-          await narrate(db, t.label ?? "Someone", `${e?.condition} fades from ${t.label}.`)
+          await narrate(db, `${e?.condition} fades from ${t.label}.`)
         }
       }
     }
@@ -2600,7 +2616,7 @@ export async function POST(req: NextRequest) {
         runner.x = to.x
         runner.y = to.y
         const atEdge = Math.min(to.x, to.y, board.width - 1 - to.x, board.height - 1 - to.y) === 0
-        await narrate(db, runner.label, atEdge
+        await narrate(db, atEdge
           ? `${runner.label} presses against the far wall, as far from the fighting as the cavern allows.`
           : `${runner.label} scrambles away from the fighting.`)
       }

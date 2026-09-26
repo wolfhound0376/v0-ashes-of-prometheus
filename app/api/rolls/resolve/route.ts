@@ -96,7 +96,7 @@ export async function POST(req: Request) {
   const label = transport.label || "Roll"
   const message = `[ROLL_RESULT:${requestId}] [Dice Roll] ${label}: ${transport.total} (${transport.die} → [${transport.rolls.join(
     ", ",
-  )}]${transport.modifier >= 0 ? ` +${transport.modifier}` : ` ${transport.modifier}`}). Narrate this committed result; do not re-roll or change its numbers.`
+  )}]${transport.modifier >= 0 ? ` +${transport.modifier}` : ` ${transport.modifier}`}). Rule on this committed result and narrate only what happens - never say the roll, the total, the DC or the AC; do not re-roll.`
 
   // === SOUND CUES ===
   // Derived here, from the faces the server has just COMMITTED, rather than

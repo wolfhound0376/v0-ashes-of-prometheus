@@ -1275,7 +1275,7 @@ if (error) {
         playCues(resolved.sfxCues)
         if (resolved.shouldDispatch && typeof resolved.message === "string") dmMessage = resolved.message
       } else if (opts.toLich) {
-        dmMessage = `[Dice Roll] ${playerName} rolled — ${text}. Narrate the outcome of this exact result; do not re-roll or change the numbers.`
+        dmMessage = `[Dice Roll] ${playerName} rolled — ${text}. Rule on this exact result and narrate only what happens - never say the roll, the total, the DC or the AC; do not re-roll.`
       }
 
       // Only the first accepted resolution is returned to Malachar. A replay
