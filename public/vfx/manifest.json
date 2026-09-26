@@ -1,6 +1,6 @@
 {
   "acidImpact": {
-    "bytes": 223746,
+    "bytes": 7504,
     "cols": 5,
     "file": "acidImpact.webp",
     "fps": 24,
@@ -8,7 +8,7 @@
     "rows": 4
   },
   "aoeFire": {
-    "bytes": 1014436,
+    "bytes": 85974,
     "cols": 6,
     "file": "aoeFire.webp",
     "fps": 18,
@@ -17,7 +17,7 @@
     "rows": 6
   },
   "aoeFog": {
-    "bytes": 457994,
+    "bytes": 194616,
     "cols": 6,
     "file": "aoeFog.webp",
     "fps": 18,
@@ -26,7 +26,7 @@
     "rows": 6
   },
   "aoeFrost": {
-    "bytes": 763154,
+    "bytes": 136466,
     "cols": 6,
     "file": "aoeFrost.webp",
     "fps": 18,
@@ -35,7 +35,7 @@
     "rows": 6
   },
   "aoeHoly": {
-    "bytes": 932666,
+    "bytes": 144060,
     "cols": 6,
     "file": "aoeHoly.webp",
     "fps": 18,
@@ -44,7 +44,7 @@
     "rows": 6
   },
   "eldBeam": {
-    "bytes": 186428,
+    "bytes": 6700,
     "cols": 4,
     "file": "eldBeam.webp",
     "fps": 22,
@@ -52,7 +52,7 @@
     "rows": 4
   },
   "eldImpact": {
-    "bytes": 441470,
+    "bytes": 14606,
     "cols": 5,
     "file": "eldImpact.webp",
     "fps": 24,
@@ -60,7 +60,7 @@
     "rows": 4
   },
   "fireImpact": {
-    "bytes": 251182,
+    "bytes": 6444,
     "cols": 5,
     "file": "fireImpact.webp",
     "fps": 24,
@@ -68,7 +68,7 @@
     "rows": 4
   },
   "fireball": {
-    "bytes": 180318,
+    "bytes": 27186,
     "cols": 8,
     "file": "fireball.webp",
     "fps": 24,
@@ -76,7 +76,7 @@
     "rows": 4
   },
   "forceHit": {
-    "bytes": 318986,
+    "bytes": 9656,
     "cols": 5,
     "file": "forceHit.webp",
     "fps": 24,
@@ -84,7 +84,7 @@
     "rows": 4
   },
   "frostBeam": {
-    "bytes": 112564,
+    "bytes": 3232,
     "cols": 4,
     "file": "frostBeam.webp",
     "fps": 20,
@@ -92,7 +92,7 @@
     "rows": 4
   },
   "frostImpact": {
-    "bytes": 555066,
+    "bytes": 24018,
     "cols": 5,
     "file": "frostImpact.webp",
     "fps": 24,
@@ -100,7 +100,7 @@
     "rows": 4
   },
   "groundAcid": {
-    "bytes": 200270,
+    "bytes": 7668,
     "cols": 4,
     "file": "groundAcid.webp",
     "fps": 18,
@@ -108,7 +108,7 @@
     "rows": 4
   },
   "groundArcane": {
-    "bytes": 170910,
+    "bytes": 8674,
     "cols": 4,
     "file": "groundArcane.webp",
     "fps": 18,
@@ -116,7 +116,7 @@
     "rows": 4
   },
   "groundFrost": {
-    "bytes": 219306,
+    "bytes": 10332,
     "cols": 4,
     "file": "groundFrost.webp",
     "fps": 18,
@@ -124,7 +124,7 @@
     "rows": 4
   },
   "groundGloom": {
-    "bytes": 154148,
+    "bytes": 7790,
     "cols": 4,
     "file": "groundGloom.webp",
     "fps": 18,
@@ -132,7 +132,7 @@
     "rows": 4
   },
   "groundHallowed": {
-    "bytes": 209452,
+    "bytes": 4418,
     "cols": 4,
     "file": "groundHallowed.webp",
     "fps": 18,
@@ -140,7 +140,7 @@
     "rows": 4
   },
   "groundMiasma": {
-    "bytes": 821958,
+    "bytes": 21388,
     "cols": 5,
     "file": "groundMiasma.webp",
     "fps": 20,
@@ -148,7 +148,7 @@
     "rows": 4
   },
   "groundScorch": {
-    "bytes": 161314,
+    "bytes": 7510,
     "cols": 4,
     "file": "groundScorch.webp",
     "fps": 18,
@@ -156,7 +156,7 @@
     "rows": 4
   },
   "groundShock": {
-    "bytes": 111004,
+    "bytes": 6826,
     "cols": 4,
     "file": "groundShock.webp",
     "fps": 18,
@@ -164,7 +164,7 @@
     "rows": 4
   },
   "groundWeb": {
-    "bytes": 86784,
+    "bytes": 4956,
     "cols": 4,
     "file": "groundWeb.webp",
     "fps": 18,
@@ -172,7 +172,7 @@
     "rows": 4
   },
   "healingShimmer": {
-    "bytes": 113920,
+    "bytes": 4430,
     "cols": 5,
     "file": "healingShimmer.webp",
     "fps": 18,
@@ -180,7 +180,7 @@
     "rows": 4
   },
   "lightningStrike": {
-    "bytes": 297828,
+    "bytes": 9116,
     "cols": 5,
     "file": "lightningStrike.webp",
     "fps": 24,
@@ -188,7 +188,7 @@
     "rows": 4
   },
   "missileDart": {
-    "bytes": 60918,
+    "bytes": 2790,
     "cols": 4,
     "file": "missileDart.webp",
     "fps": 20,
@@ -196,7 +196,7 @@
     "rows": 4
   },
   "necroBeam": {
-    "bytes": 79854,
+    "bytes": 4748,
     "cols": 4,
     "file": "necroBeam.webp",
     "fps": 20,
@@ -204,7 +204,7 @@
     "rows": 4
   },
   "necroImpact": {
-    "bytes": 375720,
+    "bytes": 10006,
     "cols": 5,
     "file": "necroImpact.webp",
     "fps": 24,
@@ -212,7 +212,7 @@
     "rows": 4
   },
   "physicalImpact": {
-    "bytes": 372784,
+    "bytes": 7472,
     "cols": 5,
     "file": "physicalImpact.webp",
     "fps": 24,
@@ -220,7 +220,7 @@
     "rows": 4
   },
   "poisonBolt": {
-    "bytes": 54516,
+    "bytes": 4272,
     "cols": 4,
     "file": "poisonBolt.webp",
     "fps": 16,
@@ -228,7 +228,7 @@
     "rows": 4
   },
   "poisonCloud": {
-    "bytes": 84234,
+    "bytes": 5396,
     "cols": 6,
     "file": "poisonCloud.webp",
     "fps": 20,
@@ -236,7 +236,7 @@
     "rows": 4
   },
   "psychicHalo": {
-    "bytes": 95746,
+    "bytes": 3782,
     "cols": 4,
     "file": "psychicHalo.webp",
     "fps": 14,
@@ -244,7 +244,7 @@
     "rows": 4
   },
   "psychicImpact": {
-    "bytes": 420892,
+    "bytes": 8606,
     "cols": 5,
     "file": "psychicImpact.webp",
     "fps": 24,
@@ -252,7 +252,7 @@
     "rows": 4
   },
   "radiantColumn": {
-    "bytes": 414446,
+    "bytes": 22500,
     "cols": 5,
     "file": "radiantColumn.webp",
     "fps": 22,
@@ -260,7 +260,7 @@
     "rows": 4
   },
   "runeAcid": {
-    "bytes": 404320,
+    "bytes": 9176,
     "cols": 4,
     "file": "runeAcid.webp",
     "fps": 13,
@@ -268,7 +268,7 @@
     "rows": 4
   },
   "runeEldritch": {
-    "bytes": 476636,
+    "bytes": 15012,
     "cols": 4,
     "file": "runeEldritch.webp",
     "fps": 14,
@@ -276,7 +276,7 @@
     "rows": 4
   },
   "runeFire": {
-    "bytes": 505770,
+    "bytes": 15162,
     "cols": 4,
     "file": "runeFire.webp",
     "fps": 14,
@@ -284,7 +284,7 @@
     "rows": 4
   },
   "runeForce": {
-    "bytes": 409154,
+    "bytes": 9666,
     "cols": 4,
     "file": "runeForce.webp",
     "fps": 15,
@@ -292,7 +292,7 @@
     "rows": 4
   },
   "runeFrost": {
-    "bytes": 464482,
+    "bytes": 10726,
     "cols": 4,
     "file": "runeFrost.webp",
     "fps": 13,
@@ -300,7 +300,7 @@
     "rows": 4
   },
   "runeHealing": {
-    "bytes": 453256,
+    "bytes": 12944,
     "cols": 4,
     "file": "runeHealing.webp",
     "fps": 12,
@@ -308,7 +308,7 @@
     "rows": 4
   },
   "runeNecrotic": {
-    "bytes": 418166,
+    "bytes": 8344,
     "cols": 4,
     "file": "runeNecrotic.webp",
     "fps": 12,
@@ -316,7 +316,7 @@
     "rows": 4
   },
   "runePsychic": {
-    "bytes": 393512,
+    "bytes": 8708,
     "cols": 4,
     "file": "runePsychic.webp",
     "fps": 12,
@@ -324,7 +324,7 @@
     "rows": 4
   },
   "runeRadiant": {
-    "bytes": 475678,
+    "bytes": 12990,
     "cols": 4,
     "file": "runeRadiant.webp",
     "fps": 15,
@@ -332,7 +332,7 @@
     "rows": 4
   },
   "runeStorm": {
-    "bytes": 436540,
+    "bytes": 13360,
     "cols": 4,
     "file": "runeStorm.webp",
     "fps": 16,
@@ -340,7 +340,7 @@
     "rows": 4
   },
   "thunderGust": {
-    "bytes": 143650,
+    "bytes": 6684,
     "cols": 5,
     "file": "thunderGust.webp",
     "fps": 22,
@@ -348,7 +348,7 @@
     "rows": 4
   },
   "thunderImpact": {
-    "bytes": 240512,
+    "bytes": 10950,
     "cols": 5,
     "file": "thunderImpact.webp",
     "fps": 24,
@@ -356,7 +356,7 @@
     "rows": 4
   },
   "thunderWave": {
-    "bytes": 161616,
+    "bytes": 5264,
     "cols": 5,
     "file": "thunderWave.webp",
     "fps": 24,

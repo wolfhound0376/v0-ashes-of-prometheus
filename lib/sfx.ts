@@ -129,7 +129,14 @@ async function load(name: string): Promise<AudioBuffer | null> {
     const c = context()
     if (!c) return null
     try {
-      const res = await fetch(`${BASE}/${name}.ogg`, { cache: "force-cache" })
+      // A recorded line can ship with the app (public/sfx/barks/) - that is
+      // where the drow's re-cut voices live, because this session could not
+      // write to the bucket. The app's copy wins; the bucket is the fallback,
+      // so Derendil's and Jimjar's lines keep playing from where they are.
+      let res = name.startsWith("barks/")
+        ? await fetch(`/sfx/${name}.ogg`, { cache: "force-cache" }).catch(() => null)
+        : null
+      if (!res || !res.ok) res = await fetch(`${BASE}/${name}.ogg`, { cache: "force-cache" })
       if (!res.ok) {
         console.warn(`[sfx] ${name} → HTTP ${res.status}`)
         return null

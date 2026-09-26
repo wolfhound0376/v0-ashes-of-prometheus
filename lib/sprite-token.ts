@@ -34,7 +34,7 @@ export const SPRITE_DIRECTIONS = [
   "south-west",
 ] as const
 
-export type SpriteState = "idle" | "walk" | "attack" | "cast" | "hurt" | "dead"
+export type SpriteState = "idle" | "walk" | "attack" | "cast" | "hurt" | "dodge" | "dead"
 
 export interface SpriteAnimation {
   /** Sheet PNG, relative to the manifest. Rows = SPRITE_DIRECTIONS, columns = frames. */
@@ -89,6 +89,9 @@ const FALLBACK: Record<SpriteState, SpriteState[]> = {
   attack: ["cast", "idle"],
   cast: ["attack", "idle"],
   hurt: [],
+  // No borrowed pose for a dodge: a figure that flinches on a miss is lying.
+  // Undrawn, the board moves the body instead (defenceMotion).
+  dodge: [],
   dead: [],
 }
 
@@ -291,6 +294,7 @@ export class SpriteRig {
       action === "cast" ? "cast"
       : action === "attack" || action === "lightAttack" ? "attack"
       : action === "hurt" ? "hurt"
+      : action === "dodge" ? "dodge"
       : null
     if (!state || !this.manifest) return null
     const resolved = this.resolve(state)
