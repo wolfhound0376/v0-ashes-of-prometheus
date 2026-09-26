@@ -1,0 +1,76 @@
+# Ashes of Prometheus — Camp Scene (design draft, 2026-09-26)
+
+**Status:** draft for Sam's reaction. A working mock is published (artifact "Camp at the Fire"): the party's real repo sprites around a fire on three placeholder backdrops, a bedroll per member, ambient activity, and the menu of time as a pixel HUD wired to `lib/camp.ts`.
+**Authority:** under `claude_HD2D_Pivot.md` (exploration looks like Octopath: 3D diorama, tilt-shift, 2D pixel actors, fixed oblique camera) and `docs/claude_Camp_Module.md` (the rules). This doc is the *look and behaviour* of the camp context; it changes no rule.
+
+---
+
+## 0. The one line
+
+**One still diorama, a fire in the middle, the company doing camp things until you choose how to spend the night.** Nothing moves that matters mechanically; what moves is the company, so the scene feels inhabited while the player reads the menu.
+
+## 1. Composition (from the mock)
+
+- Fixed oblique camera, 16:9, logical 480×270 pixel canvas scaled up with nearest-neighbour; tilt-shift blur on the top third and bottom sixth so the plate reads as a diorama, not a map.
+- **Fire** dead centre-low (240,172). Warm radial glow lights the floor and the figures; figures far from the fire fall into shadow (that shading is per-sprite, not baked).
+- **Seats** around the fire (5 spots facing in). **Stations** off the ring: whetstone rock (left), cookpot (right), the quiet rock (back, meditation), a talking pair (right), and each member's **bedroll + tent**, colour-keyed to class, in an arc across the back and down both sides.
+- **Depth sort** by feet-y; beds and props draw under figures; ambient particles (embers, spores, mist over water) on top.
+- **HUD**: the camp menu in chunky pixel type at the bottom — WATCH · FORAGE · TEND WOUNDS · TALK · PERFORM · CRAFT · LEVEL UP · SLEEP · BREAK CAMP. A clock plate top-left (day, time-of-day word, supplies, context). Hovering a figure shows name, class, HP, Hit Dice and what they are doing.
+
+## 2. Three backdrops = three biomes
+
+Biome is a property of the node: `travel_nodes.metadata.biome` ∈ `tunnels | fungal | shore` (extendable). The same scene serves every camp; only the plate, palette and ambient particles change. This mirrors the encounter-table convention (`metadata.encounter_table`).
+
+| Biome | Where in OotA | Plate | Ambient | Glow colour |
+|---|---|---|---|---|
+| `tunnels` | Drow passages below Velkynvelve, the escape days | stalagmites, webs in the corners, faint violet moss | drifting violet motes | faerzress violet |
+| `fungal` | Fungus caverns on the road to Sloobludop (OotA-Enc terrain "Fungus cavern") | luminous mushrooms, teal/purple | rising spores | purple/teal |
+| `shore` | Darklake edge, underground streams (terrain "Underground stream") | dark water on the right third, wet rocks, blue rim light | mist, ripples | cold blue |
+
+Real plates: pixel-textured HD-2D dioramas per `claude_HD2D_Pivot.md` — not smooth 3D, not photo. Generation path is PixelLab (`create_image_pro` / pro-flash at 480×270 or built from `create_topdown_tileset` + props), style-anchored to Fifi's sheet. Prompts in §5. The mock's procedural plates are placeholders only.
+
+## 3. The company at rest — ambient behaviour
+
+Each member runs a small loop: pick a station → walk (walk sheet, facing from velocity) → do the thing for 4–10 s → pick again. Stations have capacity; the talking pair needs two. Chooses from: fire (weighted ×3), whetstone, cookpot, quiet rock, talk, own bed.
+
+**SLEEP** sends everyone to their bedroll, dims the cave, rolls the watch (`resolveWatch`, OotA p.32) and then the long rest runs exactly as it does today (`lib/long-rest.ts`).
+
+**Layer 1 hooks (later, not in the mock):** the choice of station should read the world — hunger (`unfed_rest_streak`) pushes toward the cookpot or away from it when supplies are 0; the relationship dimensions decide who sits next to whom and who will not talk to whom; a character with a pending level-up drifts to the quiet rock. This is where the gravity system becomes visible without a single number on screen.
+
+## 4. Assets needed (real, not stand-ins)
+
+**Per character (8 today: Fifi, Kenta, Samson, Scott, Eldeth, Ront, Sarith, Derendil), new PixelLab animation states, 4 facings are enough for camp (S, SE, SW, E/W mirrored):**
+- `sit` — cross-legged, hands to the fire (loop, 4 f)
+- `sleep` — lying in a bedroll, breathing (loop, 4 f)
+- `sharpen` — whetstone over a blade (loop, 6 f)
+- `eat` — bowl and spoon (loop, 6 f)
+- `meditate` — still, faint breath (loop, 4 f)
+- `talk` — gesturing (loop, 6 f)
+
+`lib/sprite-token.ts`'s `SpriteState` grows by those six; `scripts/sprites/build-sprite.py` gains a `--camp` set. **Collision:** `origin/claude/monster-animations` is live on `lib/sprite-token.ts` today — branch from it or sequence behind it.
+
+**Props (one sheet):** fire (4 f), bedroll ×8 in class colours, tent peak ×8, whetstone rock, cookpot on a tripod, the quiet rock, a lantern.
+
+**Plates:** three 480×270 pixel dioramas (§2), each with a night variant or a darkening overlay (the mock uses an overlay).
+
+**Sprite name to fix:** the repo folder is `public/sprites/freia` and its manifest says "Freía la Fey" (a shelved concept). The figure is Fifi. Rename to `fifi` when the camp sheets are built so the manifest and the character row agree.
+
+## 5. PixelLab prompts (plates)
+
+Style anchor: Fifi's sheet (PixelLab character `8691d89b-…`). 480×270, top-down oblique ~35°, no characters, no fire (the fire is a separate animated prop), a clear 120-px-wide floor in the centre-low third for the ring.
+
+- **tunnels:** "Underdark cavern camp clearing, drow tunnel mouth at the back, stalagmites, pale spider webs in the upper corners, faint violet bioluminescent moss on the floor, dark grey basalt, pixel art, top-down oblique, HD-2D diorama, no characters"
+- **fungal:** "Underdark fungal grove clearing, giant luminous purple and teal mushrooms, spore haze, soft moss floor, pixel art, top-down oblique, HD-2D diorama, no characters"
+- **shore:** "Underdark lake shore camp, black still water on the right third, wet dark rocks, cold blue rim light, faint mist, pixel art, top-down oblique, HD-2D diorama, no characters"
+
+## 6. Wiring plan
+
+1. **Scene component** `components/camp/camp-scene.tsx` (canvas, as in the mock) mounted on the `camp` context; reads party + allies (`characters.in_party`), node biome, supplies, clock. No schema change.
+2. **HUD → routes**: each button posts the same tag Malachar would (`[TIME:short_rest]`, `[TIME:long_rest]`) so there is one path for a rest whether the player or the DM starts it. Level-up, forage, craft go through the camp-module wiring PRs (spec §8).
+3. **Assets** land in `public/sprites/<slug>/{sit,sleep,sharpen,eat,meditate,talk}.png` and `public/camp/plates/<biome>.png`, `public/camp/props.png`.
+4. **Layer 1 hooks** (§3) last.
+
+## 7. Provenance
+
+- **Sam (2026-09-26):** sprite camp scene; at least three Underdark backdrops; "looks 3D"; a bed or tent per character; pixelated UI for the options; NPCs visibly doing things (sharpening, talking, eating, meditating).
+- **Claude, for Sam's yes:** biome as node metadata; station loop with capacities; six new animation states; distance-from-fire shading; SLEEP rolling the watch before the long rest; relationship-driven seating as the Layer 1 hook.
