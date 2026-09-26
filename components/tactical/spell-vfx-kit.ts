@@ -23,8 +23,10 @@
 // ============================================================================
 import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
+import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
+import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
 
 export type DamageType =
   | "fire" | "cold" | "lightning" | "thunder" | "acid" | "poison"
@@ -36,6 +38,22 @@ export type DamageType =
 
 /** How the spell gets from the hand to the target. From the kit's DELIVERY. */
 type Route = "ball" | "beam" | "radiate" | "sky" | "impact-only"
+
+/**
+ * What comes off the hit besides the type's own impact sheet: the white flash
+ * (pxFlash), the floor shockwave (pxRing) and the thrown sparks (pxSpark),
+ * all drawn white and tinted here so one set of sheets serves every type.
+ */
+interface BurstSpec {
+  /** The colour the flash settles to, the ring wears and the sparks are. */
+  tint: number
+  /** How many sparks. 0 throws none. */
+  sparks: number
+  /** Whether the shockwave runs out across the floor — a blast does, a drip does not. */
+  ring: boolean
+  /** How far the sparks fly, 1 = a cantrip's worth. */
+  power?: number
+}
 
 interface TypeSpec {
   /**
@@ -60,6 +78,14 @@ interface TypeSpec {
   charge: number
   /** Board units per second for a thrown ball. */
   speed?: number
+  /**
+   * How a thrown ball crosses the room — lobbed, weaving, straight, or
+   * corkscrewing. See lib/projectile-motion. Absent means a straight lerp,
+   * which is what every ball did before there was a choice.
+   */
+  motion?: MotionKind
+  /** The flash, shockwave and sparks on arrival. Absent means the impact sheet alone. */
+  burst?: BurstSpec
   /** Tint applied to the (grayscale-ish) baked art. */
   tint: number
   /**
@@ -91,15 +117,22 @@ interface TypeSpec {
 // than the ball's was because the burst fills about 40% of its letterboxed
 // cell where the ball filled 72% — 4.6 keeps the visible footprint where
 // 2.6 had it.
+//
+// THE FOUR THROWN TYPES NOW FLY DRAWN PIXEL ART (public/vfx/px*, from
+// scripts/vfx/draw_pixel_vfx.py): a sprite with a head at +X and a tail
+// behind, so the kit can turn it to face its own travel. The old sheets were
+// paintings shrunk into blocks — radially symmetric blobs with no front, so
+// there was nothing to point. Each has a MOTION to match its weight: a
+// Fireball is lobbed, a Magic Missile weaves, a psychic bolt corkscrews.
 const TYPES: Partial<Record<DamageType, TypeSpec>> = {
-  fire:     { rune: "runeFire",     route: "ball",        travel: "fireball",      impact: "fireImpact",     impactScale: 4.6, charge: 0.80, speed: 15, tint: 0xffffff, decal: "aoeFire" },
-  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff, decal: "aoeFrost" },
-  necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff },
-  eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff },
-  poison:   { rune: "runeAcid",     route: "ball",        travel: "poisonBolt",    impact: "poisonCloud",    charge: 0.65, speed: 11, tint: 0xffffff },
-  force:    { rune: "runeForce",    route: "ball",        travel: "missileDart",   impact: "forceHit",       charge: 0.65, speed: 20, tint: 0xffffff },
-  psychic:  { rune: "runePsychic",  route: "ball",        travel: "psychicHalo",   impact: "psychicImpact",  charge: 0.70, speed: 14, tint: 0xffffff },
-  thunder:  { rune: "runeStorm",    route: "radiate",     travel: "thunderGust",   impact: "thunderImpact",  charge: 0.60, tint: 0xffffff },
+  fire:     { rune: "runeFire",     route: "ball",        travel: "pxFireball",    impact: "fireImpact",     impactScale: 4.6, charge: 0.80, speed: 13, motion: "lob",   tint: 0xffffff, decal: "aoeFire",  burst: { tint: 0xffa030, sparks: 28, ring: true, power: 1.4 } },
+  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true } },
+  necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff, burst: { tint: 0x9c6bff, sparks: 12, ring: false } },
+  eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff, burst: { tint: 0xc678ff, sparks: 18, ring: true } },
+  poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
+  force:    { rune: "runeForce",    route: "ball",        travel: "pxMissile",     impact: "forceHit",       charge: 0.65, speed: 18, motion: "weave", tint: 0xffffff, burst: { tint: 0xa78bff, sparks: 18, ring: true } },
+  psychic:  { rune: "runePsychic",  route: "ball",        travel: "pxPsychic",     impact: "psychicImpact",  charge: 0.70, speed: 12, motion: "drift", tint: 0xffffff, burst: { tint: 0xff8cf0, sparks: 14, ring: true, power: 0.9 } },
+  thunder:  { rune: "runeStorm",    route: "radiate",     travel: "thunderGust",   impact: "thunderImpact",  charge: 0.60, tint: 0xffffff, burst: { tint: 0xffffff, sparks: 24, ring: true, power: 1.5 } },
   // Lightning got its own art in the end.
   //
   // The first pass reused thunder's sheets tinted cold, on the argument that
@@ -109,13 +142,14 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   // a lightning strike comes DOWN and then runs away across the floor. The
   // borrowed sheet had no descent and no ground crawl, so every Lightning
   // Bolt read as a small thunderclap. Same sheet, wrong verb.
-  lightning:{ rune: "runeStorm",    route: "beam",        travel: "thunderGust",   impact: "lightningStrike", impactScale: 1.5, charge: 0.45, tint: 0xffffff },
-  radiant:  { rune: "runeRadiant",  route: "sky",         impact: "radiantColumn",  impactScale: 1.0, charge: 0.85, tint: 0xffffff, decal: "aoeHoly" },
-  healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff, decal: "aoeHoly" },
-  acid:     { rune: "runeAcid",     route: "impact-only", impact: "acidImpact",     charge: 0.60, tint: 0xffffff },
+  lightning:{ rune: "runeStorm",    route: "beam",        travel: "thunderGust",   impact: "lightningStrike", impactScale: 1.5, charge: 0.45, tint: 0xffffff, burst: { tint: 0xbfe8ff, sparks: 26, ring: true, power: 1.3 } },
+  radiant:  { rune: "runeRadiant",  route: "sky",         impact: "radiantColumn",  impactScale: 1.0, charge: 0.85, tint: 0xffffff, decal: "aoeHoly", burst: { tint: 0xffe9a8, sparks: 18, ring: true } },
+  healing:  { rune: "runeHealing",  route: "sky",         impact: "healingShimmer", impactScale: 1.2, charge: 0.80, tint: 0xffffff, decal: "aoeHoly", burst: { tint: 0xbfffd8, sparks: 10, ring: false, power: 0.6 } },
+  acid:     { rune: "runeAcid",     route: "impact-only", impact: "acidImpact",     charge: 0.60, tint: 0xffffff, burst: { tint: 0xb8ff3a, sparks: 16, ring: false, power: 0.8 } },
   // No rune, and a charge short enough to read as a swing rather than a cast.
-  // A weapon hit has no windup to show: the animation IS the windup.
-  physical: {                       route: "impact-only", impact: "physicalImpact", impactScale: 1.3, charge: 0.12, tint: 0xffffff },
+  // A weapon hit has no windup to show: the animation IS the windup. Steel
+  // still throws sparks, though — fewer, and no shockwave.
+  physical: {                       route: "impact-only", impact: "physicalImpact", impactScale: 1.3, charge: 0.12, tint: 0xffffff, burst: { tint: 0xffe6b0, sparks: 12, ring: false, power: 0.7 } },
   // Nothing flies and nothing blooms: the fog IS the arrival. The storm sigil
   // is the closest rune to a weather conjuration, and a spell still needs a
   // charge — that is what casting looks like.
@@ -163,9 +197,14 @@ function routeFor(type: DamageType, spellName?: string): TypeSpec | undefined {
     // impact art for the bolt itself and let it bloom again on arrival.
     travel: spec.travel ?? spec.impact,
     speed: spec.speed ?? 18,
+    // A ray or a bolt resolved by an attack roll is a straight, fast shot.
+    motion: spec.motion ?? "dart",
     impactScale: (spec.impactScale ?? 1.6) * 0.8,
   }
 }
+
+/** The three white sheets every burst is built from. */
+const BURST_SHEETS = { flash: "pxFlash", ring: "pxRing", spark: "pxSpark" } as const
 
 // ── flag + resolver ─────────────────────────────────────────────────────────
 // One entry point for the board: given a spell name, either a type the kit can
@@ -289,6 +328,9 @@ export function prewarmKit(type: DamageType): void {
   if (spec.travel) void loadSheet(spec.travel).catch(() => {})
   if (spec.impact) void loadSheet(spec.impact).catch(() => {})
   if (spec.decal) void loadSheet(spec.decal).catch(() => {})
+  if (spec.burst) {
+    for (const key of Object.values(BURST_SHEETS)) void loadSheet(key).catch(() => {})
+  }
 }
 
 // ── one animated quad ───────────────────────────────────────────────────────
@@ -344,6 +386,19 @@ export class Flip {
   setLooping(p: number) {
     this.setFrame(Math.floor(p * this.sheet.frames) % this.sheet.frames)
   }
+
+  /**
+   * Drive a looping sheet by the clock, at the frame rate it was drawn at.
+   * `t` is seconds since it started. setLooping() takes a fraction of the
+   * sheet, which made every sheet play at whatever rate the caller multiplied
+   * by; the drawn pixel sheets carry their own fps and mean it.
+   */
+  clock(t: number) {
+    this.setFrame(Math.floor(Math.max(0, t) * this.sheet.fps) % this.sheet.frames)
+  }
+
+  /** Recolour on the fly — the flash goes white to the type's colour as it cools. */
+  set tint(v: number) { this.mat.color.setHex(v) }
 
   private setFrame(i: number) {
     const col = i % this.sheet.cols
@@ -506,11 +561,18 @@ export function castSpellKitVfx(opts: {
    * this rather than off a guessed delay.
    */
   onImpact?: () => void
+  /**
+   * Picks the phase of a weave and the spread of the sparks, so a replay on
+   * another seat throws the same sparks. Optional: without it the cast's
+   * geometry stands in, which is the same on every seat for the same cast.
+   */
+  seed?: number
 }): CastHandle {
   const { parent, anchor, type } = opts
   const spec = routeFor(type, opts.spell)
   const target = opts.target ? opts.target.clone() : null
   const areaScale = opts.scale ?? 1
+  const motion = spec?.motion ? MOTION[spec.motion] : null
 
   // The floor mark, for an area spell whose type has one. Read off the
   // spellbook: `area` is what makes a spell an area, and `concentration` is
@@ -531,9 +593,27 @@ export function castSpellKitVfx(opts: {
   let decal: Flip | null = null
   let decalSheet: Sheet | null = null
   let decalFailed = false
+  // The after-images behind a thrown ball, the flash and shockwave on
+  // arrival, and the sparks. All optional: a sheet that never arrives costs
+  // its piece and nothing else.
+  const ghosts: Flip[] = []
+  let flash: Flip | null = null
+  let ring: Flip | null = null
+  let sparks: ImpactBurst | null = null
 
   const hand = new THREE.Vector3()
   anchor.getWorldPosition(hand)
+  const seed = opts.seed ?? (Math.floor(Math.abs(hand.x * 31 + hand.z * 17 + (target?.x ?? 0) * 7 + (target?.z ?? 0) * 3) * 10) & 0xffff)
+
+  // Where the ball has been, for the after-images. A small ring buffer of
+  // positions and rolls, filled once per frame while it flies.
+  const HISTORY = 12
+  const history: { p: THREE.Vector3; s: number }[] = []
+  for (let i = 0; i < HISTORY; i++) history.push({ p: new THREE.Vector3(), s: 1 })
+  let histLen = 0
+  let histHead = 0
+  // The last direction of travel, for the sparks to bounce back along.
+  const lastVel = new THREE.Vector3()
 
   const charge = spec ? spec.charge : 0
   const flightTime =
@@ -572,6 +652,16 @@ export function castSpellKitVfx(opts: {
         travel = new Flip(s, spec.tint, isBeam ? 1 : 0.9, isBeam ? 0.55 : 0.9)
         travel.opacity = 0
         group.add(travel.mesh)
+        // After-images share the sheet and trail the ball, each fainter and
+        // smaller than the last — the streak a fast thing leaves on the eye.
+        if (spec.route === "ball" && motion && motion.trail > 0) {
+          for (let i = 0; i < motion.trail; i++) {
+            const g = new Flip(s, spec.tint, 0.9, 0.9)
+            g.opacity = 0
+            group.add(g.mesh)
+            ghosts.push(g)
+          }
+        }
       }).catch(() => {})
     }
 
@@ -583,6 +673,32 @@ export function castSpellKitVfx(opts: {
         impact.opacity = 0
         group.add(impact.mesh)
       }).catch(() => {})
+    }
+
+    if (spec.burst) {
+      const b = spec.burst
+      const k = Math.sqrt(areaScale)
+      void loadSheet(BURST_SHEETS.flash).then((s) => {
+        if (disposed || castGone) return
+        flash = new Flip(s, 0xffffff, 1.4 * k, 1.4 * k)
+        flash.opacity = 0
+        group.add(flash.mesh)
+      }).catch(() => {})
+      if (b.ring) {
+        void loadSheet(BURST_SHEETS.ring).then((s) => {
+          if (disposed || castGone) return
+          ring = new Flip(s, b.tint, 2.6 * k, 2.6 * k)
+          ring.mesh.rotation.x = -Math.PI / 2   // flat on the floor
+          ring.opacity = 0
+          group.add(ring.mesh)
+        }).catch(() => {})
+      }
+      if (b.sparks > 0) {
+        void loadSheet(BURST_SHEETS.spark).then((s) => {
+          if (disposed || castGone) return
+          sparks = new ImpactBurst(group, s, b.tint, Math.round(b.sparks * k))
+        }).catch(() => {})
+      }
     }
 
     if (mark) {
@@ -611,12 +727,14 @@ export function castSpellKitVfx(opts: {
   const disposeCast = () => {
     if (castGone) return
     castGone = true
-    for (const f of [disc, travel, impact]) {
+    for (const f of [disc, travel, impact, flash, ring, ...ghosts]) {
       if (!f) continue
       group.remove(f.mesh)
       f.dispose()
     }
-    disc = travel = impact = null
+    disc = travel = impact = flash = ring = null
+    ghosts.length = 0
+    if (sparks) { sparks.dispose(); sparks = null }
     if (light) { group.remove(light); light = null }
   }
 
@@ -636,6 +754,44 @@ export function castSpellKitVfx(opts: {
   const dest = new THREE.Vector3()
   const dir = new THREE.Vector3()
   const foot = new THREE.Vector3()
+  // Scratch for the flight maths — allocated once, reused every frame.
+  const camRight = new THREE.Vector3()
+  const camUp = new THREE.Vector3()
+  const ahead = new THREE.Vector3()
+  const vel = new THREE.Vector3()
+
+  // The flight's frame — right and up of the line from hand to target — is
+  // refreshed once per update (the hand bone moves) and read by ballAt.
+  const fr = { right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0), distance: 0 }
+  const refreshFrame = () => {
+    const f = flightFrame(hand, dest)
+    fr.right.set(f.right.x, f.right.y, f.right.z)
+    fr.up.set(f.up.x, f.up.y, f.up.z)
+    fr.distance = f.distance
+  }
+
+  /** World position of a thrown ball at flight progress `p`. */
+  const ballAt = (p: number, out: THREE.Vector3): THREE.Vector3 => {
+    if (!motion) return out.lerpVectors(hand, dest, p)
+    const pose = poseAt(motion, p, fr.distance, seed)
+    return out
+      .lerpVectors(hand, dest, pose.along)
+      .addScaledVector(fr.right, pose.side)
+      .addScaledVector(fr.up, pose.up)
+  }
+
+  /**
+   * Face the camera, then roll so the sprite's +X points along `v` on
+   * screen — the head leads and the tail streams behind, whatever the
+   * camera is doing. Without a camera the sprite simply stands as drawn.
+   */
+  const aim = (m: THREE.Object3D, v: THREE.Vector3) => {
+    billboard(m)
+    if (!opts.camera || v.lengthSq() < 1e-8) return
+    camRight.set(1, 0, 0).applyQuaternion(opts.camera.quaternion)
+    camUp.set(0, 1, 0).applyQuaternion(opts.camera.quaternion)
+    m.rotateZ(screenRoll(v, camRight, camUp))
+  }
 
   return {
     update(dt: number) {
@@ -683,13 +839,42 @@ export function castSpellKitVfx(opts: {
         const p = flightTime > 0 ? Math.min(1, ft / flightTime) : 1
 
         if (spec.route === "ball") {
-          travel.mesh.position.lerpVectors(hand, dest, p)
-          billboard(travel.mesh)
-          travel.setLooping(ft * 2.2)
-          travel.opacity = 1
+          // Where it is, and where it is about to be: the difference is the
+          // heading, which the sprite is rolled to and the tail streams from.
+          refreshFrame()
+          ballAt(p, travel.mesh.position)
+          ballAt(Math.min(1, p + 0.03), ahead)
+          vel.subVectors(ahead, travel.mesh.position)
+          if (vel.lengthSq() > 1e-8) lastVel.copy(vel)
+          aim(travel.mesh, lastVel)
+          // Stretched along its travel as it speeds up: motion smear, the
+          // way a sprite artist draws speed. Thinner as it lengthens so the
+          // area, and so the brightness, stays about the same.
+          const st = motion ? stretchAt(motion, p) : 1
+          travel.mesh.scale.set(st, 1 / Math.sqrt(st), 1)
+          travel.clock(ft)
+          travel.opacity = p < 0.08 ? p / 0.08 : 1
           if (light) {
             light.position.copy(travel.mesh.position).sub(group.position)
             light.intensity = 14
+          }
+          // After-images: remember this frame, and draw the ghosts at frames
+          // gone by, each fainter and smaller than the one in front of it.
+          const slot = history[histHead]
+          slot.p.copy(travel.mesh.position); slot.s = st
+          histHead = (histHead + 1) % HISTORY
+          histLen = Math.min(HISTORY, histLen + 1)
+          for (let i = 0; i < ghosts.length; i++) {
+            const back = (i + 1) * 2
+            const g = ghosts[i]
+            if (back >= histLen || p >= 1) { g.opacity = 0; continue }
+            const h = history[(histHead - 1 - back + HISTORY * 2) % HISTORY]
+            g.mesh.position.copy(h.p)
+            aim(g.mesh, lastVel)
+            const shrink = Math.pow(0.82, i + 1)
+            g.mesh.scale.set(h.s * shrink, shrink / Math.sqrt(h.s), 1)
+            g.clock(ft)
+            g.opacity = 0.42 * Math.pow(0.6, i)
           }
         } else {
           // Beam and radiate: a quad stretched from the hand outward. Thunder
@@ -714,6 +899,16 @@ export function castSpellKitVfx(opts: {
           // Announce the landing even when the impact sheet is still loading,
           // so a flinch is never skipped just because a texture was slow.
           opts.onImpact?.()
+          // The ball is gone the instant it lands: it became the burst.
+          if (travel && spec.route === "ball") travel.opacity = 0
+          for (const g of ghosts) g.opacity = 0
+          // The direction it arrived from, for the sparks to bounce off. A
+          // beam or a column has no flight; they throw evenly.
+          const incoming = spec.route === "ball" && lastVel.lengthSq() > 1e-8
+            ? lastVel
+            : spec.route === "sky" ? new THREE.Vector3(0, -1, 0) : null
+          const power = (spec.burst?.power ?? 1) * Math.sqrt(areaScale)
+          sparks?.fire(dest, incoming, power, seed)
         }
         if (impact && impact.mesh.position.lengthSq() === 0) {
           impact.mesh.position.copy(dest)
@@ -721,7 +916,8 @@ export function castSpellKitVfx(opts: {
         }
       }
       if (t >= impactAt && impact) {
-        const p = Math.min(1, (t - impactAt) / impactLife)
+        const it = t - impactAt
+        const p = Math.min(1, it / impactLife)
         if (spec.route === "sky") {
           // A column stands upright rather than facing the camera.
           impact.mesh.quaternion.identity()
@@ -734,10 +930,41 @@ export function castSpellKitVfx(opts: {
         }
         impact.setProgress(p)
         impact.opacity = 1 - Math.max(0, (p - 0.7) / 0.3)
+        // THE PUNCH. It lands big and settles in a tenth of a second — the
+        // overshoot-and-settle every hit in a fighting game has, and the
+        // single cheapest thing that makes an impact feel like it has mass.
+        const punch = 1 + 0.35 * Math.max(0, 1 - it / 0.12)
+        impact.mesh.scale.setScalar(punch)
         if (light) {
           light.position.copy(dest).sub(group.position)
-          light.intensity = 18 * (1 - p)
+          // A spike, not a ramp: bright for a few frames, then the decay.
+          light.intensity = 18 * (1 - p) + 22 * Math.max(0, 1 - it / 0.1)
         }
+      }
+      // The flash, the shockwave, the sparks. Each on its own clock, all
+      // starting on the impact frame, all shorter than the impact sheet.
+      if (t >= impactAt && spec.burst) {
+        const it = t - impactAt
+        const b = spec.burst
+        if (flash) {
+          const FLASH_LIFE = 0.24
+          const fp = Math.min(1, it / FLASH_LIFE)
+          flash.mesh.position.copy(dest)
+          if (spec.route === "sky") flash.mesh.position.y += 0.4
+          billboard(flash.mesh)
+          flash.setProgress(fp)
+          // White at the instant of the hit, cooling to the type's colour.
+          flash.tint = fp < 0.3 ? 0xffffff : b.tint
+          flash.opacity = fp < 1 ? 1 : 0
+        }
+        if (ring) {
+          const RING_LIFE = 0.45
+          const rp = Math.min(1, it / RING_LIFE)
+          ring.mesh.position.set(dest.x, 0.03, dest.z)   // a hair above the floor marks
+          ring.setProgress(rp)
+          ring.opacity = rp < 1 ? 1 - rp * 0.5 : 0
+        }
+        sparks?.update(dt, opts.camera)
       }
 
       // ── 4. the floor mark ──────────────────────────────────────────────

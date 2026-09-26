@@ -32,6 +32,32 @@ drifts off the palm within three frames.
 - `components/tactical/spell-vfx-kit.ts` — the ported engine, per-cast instances
 - `components/tactical/spell-vfx.ts` — untouched; still the default path
 
+## Projectile motion and impacts (pixel pass 2)
+
+The first pixel pass shrank the painted flipbooks into blocks. This pass draws
+the thrown spells as pixel art and gives them motion:
+
+- `public/vfx/px*.webp` — drawn by `scripts/vfx/draw_pixel_vfx.py` (Python +
+  Pillow, deterministic; rerun it and the sheets come out byte-identical). The
+  four thrown types (`pxFireball`, `pxMissile`, `pxPoison`, `pxPsychic`) have a
+  head at +X and a tail behind, 8 looping frames each. `pxFlash`, `pxRing` and
+  `pxSpark` are white and tinted per type by the kit.
+- `lib/projectile-motion.ts` — pure. Four profiles: `lob` (fire, poison —
+  rises and falls), `weave` (force — hunts the target, tightening as it
+  closes), `dart` (any attack-roll spell whose type has no thrown art, e.g.
+  Guiding Bolt), `drift` (psychic — corkscrews in). Progress is eased so
+  arrival is the fastest moment. Tested in `lib/projectile-motion.test.ts`.
+- `spell-vfx-kit.ts` — a ball is placed by the profile, billboarded, then
+  rolled so its +X points along its screen-space travel (`screenRoll`),
+  stretched with speed, and followed by after-images. On impact: the type's
+  sheet lands with a scale punch, a white flash cools to the type's colour, a
+  shockwave ring runs out across the floor, and `impact-burst.ts` throws
+  pixel sparks (one InstancedMesh per cast, nothing allocated per frame).
+- `/cast-preview` — dev page, nine lanes, one cast per damage type. `?loop`
+  recasts every few seconds; `?manual` hands the clock to `window.__castStep`
+  so a screenshot script can photograph exact moments; `?cam=x,y,z&look=x,y,z`
+  moves the eye.
+
 ## Collision note
 
 `feat/cast-animation-and-spell-vfx` is live on `combat-board-3d.tsx` and
