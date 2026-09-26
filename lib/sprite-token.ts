@@ -125,6 +125,52 @@ function sheetTexture(url: string): THREE.Texture {
 }
 
 /** A stable 0..1 from a token id, so two figures never breathe in lockstep. */
+/**
+ * EVERY ANIMATION THE SAME HEIGHT. Animations made at different times can be
+ * drawn at different sizes: PixelLab's newer skeleton walk stands a figure
+ * at its full rotation height, ~10% taller than the older idle, so the
+ * figure grew each time it set off and shrank when it stopped. Each sheet's
+ * first frame (south, frame 0) is an upright pose, even a death fall's, so
+ * its drawn height is measured once the image has loaded and the card is
+ * scaled to match the idle's. Measured per sheet URL and shared, like the
+ * sheets themselves.
+ */
+const drawnHeights = new Map<string, number | null>()
+
+/** Rows of opaque pixels in a sheet's first cell, or null until the image has loaded. */
+function drawnHeight(tex: THREE.Texture, cell: [number, number]): number | null {
+  const img = tex.image as (CanvasImageSource & { width: number; height: number }) | undefined
+  const key = (img as HTMLImageElement | undefined)?.src ?? ""
+  if (key && drawnHeights.has(key)) return drawnHeights.get(key)!
+  if (!img || !img.width) return null
+  const [cw, ch] = cell
+  const c = document.createElement("canvas")
+  c.width = cw
+  c.height = ch
+  const ctx = c.getContext("2d")
+  if (!ctx) return null
+  // Flipped textures are stored the right way up in the image itself.
+  ctx.drawImage(img, 0, 0, cw, ch, 0, 0, cw, ch)
+  const data = ctx.getImageData(0, 0, cw, ch).data
+  let top = -1
+  let bottom = -1
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      if (data[(y * cw + x) * 4 + 3] > 16) {
+        if (top < 0) top = y
+        bottom = y
+        break
+      }
+    }
+  }
+  const h = top < 0 ? null : bottom - top + 1
+  if (key) drawnHeights.set(key, h)
+  return h
+}
+
+/** Beyond this, a sheet's first frame is not a standing pose; leave it alone. */
+const HEIGHT_MATCH_LIMIT: [number, number] = [0.8, 1.25]
+
 function phaseOf(seed: string): number {
   let h = 2166136261
   for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
@@ -159,6 +205,8 @@ export class SpriteRig {
   private fallen = false
   private onHit: (() => void) | null = null
   private hitAt = Infinity
+  /** Per-state card scale so every animation stands as tall as the idle (see drawnHeight). */
+  private heightScale = new Map<SpriteState, number>()
   private disposed = false
   private readonly fwd = new THREE.Vector3()
 
@@ -294,6 +342,10 @@ export class SpriteRig {
     rel = Math.atan2(Math.sin(rel), Math.cos(rel))
     const dir = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8
 
+    // ---- the same height whatever it is doing (feet are the origin, so they stay put)
+    const k = this.fallen ? 1 : this.scaleFor(this.state)
+    mesh.scale.set(k, k, 1)
+
     // ---- stand the card up facing the camera, whatever the body is doing
     mesh.rotation.set(this.fallen ? -Math.PI / 2 : -pitch * LEAN, camYaw + Math.PI - bodyYaw, 0, "YXZ")
     // Lying down: above the floor layers (see FEET_BAND), which would
@@ -347,6 +399,23 @@ export class SpriteRig {
     if (a[state]) return state
     for (const alt of FALLBACK[state]) if (a[alt]) return alt
     return null
+  }
+
+  /** Card scale that brings this state's drawing to the idle's height; 1 until both sheets have loaded. */
+  private scaleFor(state: SpriteState): number {
+    const known = this.heightScale.get(state)
+    if (known !== undefined) return known
+    const m = this.manifest
+    const mine = this.textures.get(state)
+    const idle = this.textures.get("idle")
+    if (!m || !mine || !idle || state === "idle") return 1
+    const hIdle = drawnHeight(idle, m.cell)
+    const hMine = drawnHeight(mine, m.cell)
+    if (!hIdle || !hMine) return 1
+    let k = hIdle / hMine
+    if (k < HEIGHT_MATCH_LIMIT[0] || k > HEIGHT_MATCH_LIMIT[1]) k = 1
+    this.heightScale.set(state, k)
+    return k
   }
 
   private fireHit(): void {
