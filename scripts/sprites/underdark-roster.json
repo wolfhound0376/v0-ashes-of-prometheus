@@ -4,21 +4,21 @@
     "name": "Drow Guard (male)",
     "pixellab_character_id": "a3e90f9e-3b75-4b56-b213-2cdac6db9b17",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 6.0
   },
   {
     "slug": "drow-guard-female",
     "name": "Drow Guard (female)",
     "pixellab_character_id": "97e39822-8dd0-4d00-b537-bbc51bed23f9",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 6.0
   },
   {
     "slug": "drow-elite-warrior",
     "name": "Drow Elite Warrior",
     "pixellab_character_id": "cdf786e6-b96d-4b8a-8998-7a0852d66318",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 6.1
   },
   {
     "slug": "hook-horror",
@@ -47,7 +47,7 @@
     "name": "Quaggoth",
     "pixellab_character_id": "010bae69-e137-43b9-9665-a09f9dca4231",
     "size_by": "height",
-    "target_ft": 6.0
+    "target_ft": 9.0
   },
   {
     "slug": "gas-spore",
@@ -61,7 +61,7 @@
     "name": "Myconid Adult",
     "pixellab_character_id": "764deb77-6def-4e68-a77f-2f60d60bb34e",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 5.0
   },
   {
     "slug": "duergar",
@@ -75,7 +75,7 @@
     "name": "Deep Gnome (Svirfneblin)",
     "pixellab_character_id": "747a8e26-d34d-4f70-8736-f48996d1b707",
     "size_by": "height",
-    "target_ft": 3.2
+    "target_ft": 3.0
   },
   {
     "slug": "cloaker",
@@ -131,7 +131,7 @@
     "name": "Ancient Deep Dragon",
     "pixellab_character_id": "29db7396-3d73-4fee-95d1-2e4a395fda6c",
     "size_by": "width",
-    "target_ft": 20.0
+    "target_ft": 40.0
   },
   {
     "slug": "imp",
