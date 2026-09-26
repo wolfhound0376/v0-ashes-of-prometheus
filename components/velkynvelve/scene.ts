@@ -344,6 +344,14 @@ export function createVelkynvelveScene(
 
       for (const [state, anim] of Object.entries(f.manifest.animations)) {
         if (!anim) continue
+        // Figure sheets are drawn at ~128 px a figure and shown at a third of
+        // that. Nearest-pixel sampling (the game's pixelArt default) keeps only
+        // every third row or so, and the row it drops can be the one-pixel
+        // outline under the feet — Samson's bare soles lost their bottoms
+        // (Sam, 9/26: "Samson's feet are cut off a bit"). Smooth sampling
+        // blends every row in. The deck and props stay nearest: they are
+        // drawn at the world's own pixel size and never shrink.
+        this.textures.get(sheetKey(f, state)).setFilter(Phaser.Textures.FilterMode.LINEAR)
         DIRECTIONS.forEach((dir, row) => {
           this.anims.create({
             key: animKey(f, state, dir),
