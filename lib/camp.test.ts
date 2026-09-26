@@ -1,0 +1,410 @@
+import { describe, expect, it } from "vitest"
+import type { Rng, SheetSlice } from "./game-context"
+import {
+  CAMP_ACTIONS_PER_REST,
+  DEFAULT_ENCOUNTER_TABLE,
+  PALLIATION,
+  craftProgress,
+  forage,
+  levelForXp,
+  levelUp,
+  levelUpAllowedHere,
+  makeCampBudget,
+  perform,
+  resolveWatch,
+  shortRest,
+  spendCampAction,
+  weightRelationshipEvent,
+  xpToNext,
+  type EncounterTableRow,
+  type LevelUpSheet,
+  type ShortRester,
+} from "./camp"
+
+// ---------------------------------------------------------------------------
+// Seeded dice. Same seed, same stream, every run — the module never touches
+// Math.random, so a test can name the face it wants.
+// ---------------------------------------------------------------------------
+
+/** A float that makes `1 + floor(rng() * sides)` come up `face`. */
+const d = (face: number, sides: number) => (face - 1) / sides + 0.001
+
+/** Plays back exact floats in order and refuses to be over-drawn. */
+function script(...values: number[]): Rng {
+  let i = 0
+  return () => {
+    if (i >= values.length) throw new Error("scripted rng exhausted")
+    return values[i++]
+  }
+}
+
+const sheet = (over: Partial<SheetSlice> & { name: string }): SheetSlice => ({
+  id: over.name.toLowerCase(),
+  level: 1,
+  str_score: 10,
+  dex_score: 10,
+  con_score: 10,
+  int_score: 10,
+  wis_score: 10,
+  cha_score: 10,
+  ...over,
+})
+
+// A slice of `encounter_table_rows` as loaded 2026-08-21 (OotA-Enc ch.2).
+const rows: EncounterTableRow[] = [
+  { table_key: "underdark_random", roll_min: 1, roll_max: 13, result: "No encounter", detail: { rolls: [] } },
+  { table_key: "underdark_random", roll_min: 14, roll_max: 15, result: "Terrain", detail: { rolls: ["underdark_terrain"] } },
+  { table_key: "underdark_random", roll_min: 16, roll_max: 17, result: "One or more creatures", detail: { rolls: ["underdark_creature"] } },
+  { table_key: "underdark_random", roll_min: 18, roll_max: 20, result: "Terrain featuring one or more creatures", detail: { rolls: ["underdark_terrain", "underdark_creature"] } },
+  { table_key: "underdark_terrain", roll_min: 14, roll_max: 14, result: "Shelter", detail: {} },
+  { table_key: "underdark_creature", roll_min: 1, roll_max: 2, result: "Ambushers", detail: { note: "reroll this result if the characters are resting", rolls: ["underdark_ambush"] } },
+  { table_key: "underdark_creature", roll_min: 3, roll_max: 3, result: "Carrion crawler", detail: { bestiary: "Carrion Crawler" } },
+  { table_key: "underdark_creature", roll_min: 17, roll_max: 17, result: "Society of Brilliance", detail: {} },
+  { table_key: "underdark_creature", roll_min: 19, roll_max: 20, result: "Traders", detail: {} },
+  { table_key: "underdark_ambush", roll_min: 1, roll_max: 2, result: "1 chuul lurking in a pool of water", detail: { count: 1, bestiary: "Chuul" } },
+]
+
+// ---------------------------------------------------------------------------
+// §2 the budget
+// ---------------------------------------------------------------------------
+
+describe("camp action budget", () => {
+  it("make_camp grants one action and spending it leaves none", () => {
+    expect(makeCampBudget()).toBe(CAMP_ACTIONS_PER_REST)
+    const spent = spendCampAction(makeCampBudget(), "forage")
+    expect(spent.ok).toBe(true)
+    expect(spent.remaining).toBe(0)
+  })
+
+  it("a second action in the same rest is refused and the budget is untouched", () => {
+    const second = spendCampAction(0, "watch")
+    expect(second.ok).toBe(false)
+    expect(second.remaining).toBe(0)
+    expect(second.note).toMatch(/No camp action left/)
+  })
+
+  it("sleep is never an action, and neither is anything off the menu", () => {
+    expect(spendCampAction(1, "sleep").ok).toBe(false)
+    expect(spendCampAction(1, "loot").ok).toBe(false)
+    expect(spendCampAction(1, "sleep").remaining).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §3 the watch
+// ---------------------------------------------------------------------------
+
+describe("the watch", () => {
+  it("a safe node rolls nothing", () => {
+    const out = resolveWatch({ name: "Sloobludop", metadata: { safe: true } }, rows, script())
+    expect(out.rolled).toBe(false)
+    expect(out.chain).toEqual([])
+    expect(out.handoff).toBeNull()
+  })
+
+  it("rolls the default OotA table and 1–13 is no encounter", () => {
+    const out = resolveWatch({ name: "a side passage", metadata: {} }, rows, script(d(7, 20)))
+    expect(out.tableKey).toBe(DEFAULT_ENCOUNTER_TABLE)
+    expect(out.chain.map((c) => [c.tableKey, c.roll])).toEqual([["underdark_random", 7]])
+    expect(out.results).toEqual(["No encounter"])
+    expect(out.creatures).toEqual([])
+    expect(out.handoff).toBeNull()
+  })
+
+  it("follows the chain into the creature table, and the positive tail is not a fight", () => {
+    // 16 → creatures; 17 on the creature table → Society of Brilliance.
+    const out = resolveWatch({ metadata: {} }, rows, script(d(16, 20), d(17, 20)))
+    expect(out.chain.map((c) => c.tableKey)).toEqual(["underdark_random", "underdark_creature"])
+    expect(out.results).toEqual(["Society of Brilliance"])
+    expect(out.creatures).toEqual([])
+    expect(out.handoff).toBeNull()
+  })
+
+  it("a bestiary result hands off to the existing surprise path", () => {
+    // 18 → terrain + creature; terrain 14 → Shelter; creature 3 → Carrion crawler.
+    const out = resolveWatch({ metadata: {} }, rows, script(d(18, 20), d(14, 20), d(3, 20)))
+    expect(out.results).toEqual(["Shelter", "Carrion crawler"])
+    expect(out.creatures).toEqual(["Carrion Crawler"])
+    expect(out.handoff).toBe("surprise")
+    expect(out.flags).toEqual([])
+  })
+
+  it("a table with no rows loaded is a flag for the DM, never an invented result", () => {
+    const out = resolveWatch({ metadata: { encounter_table: "surface_forest" } }, rows, script())
+    expect(out.rolled).toBe(true)
+    expect(out.results).toEqual([])
+    expect(out.flags[0]).toMatch(/NO ROW/)
+    expect(out.handoff).toBeNull()
+  })
+
+  it("resting rerolls the Ambushers row once, as the book says", () => {
+    // 16 → creatures; creature 1 → Ambushers (reroll while resting); creature 19 → Traders.
+    const out = resolveWatch({ metadata: {} }, rows, script(d(16, 20), d(1, 20), d(19, 20)), { resting: true })
+    const creature = out.chain[1]
+    expect(creature.rerolledFrom).toBe("Ambushers")
+    expect(creature.roll).toBe(19)
+    expect(out.results).toEqual(["Traders"])
+    // Not resting: the Ambushers row stands and the ambush table is rolled.
+    const awake = resolveWatch({ metadata: {} }, rows, script(d(16, 20), d(1, 20), d(2, 20)), { resting: false })
+    expect(awake.creatures).toEqual(["Chuul"])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §2 forage
+// ---------------------------------------------------------------------------
+
+describe("forage", () => {
+  const bastet = sheet({ name: "Bastet", level: 5, wis_score: 10, proficiency_bonus: 3, sheet_skill_proficiencies: { Survival: "proficient" } })
+
+  it("a success yields 1d6 + WIS person-days; a miss yields none, and the yield is flagged as DMG", () => {
+    // d20 12 + prof 3 = 15 vs DC 15 → success; d6 face 4; WIS +0.
+    const hit = forage(bastet, script(d(12, 20), d(4, 6)))
+    expect(hit.check.success).toBe(true)
+    expect(hit.yieldDie).toBe(4)
+    expect(hit.supplies).toBe(4)
+    expect(hit.flags.some((f) => /DMG p\.111/.test(f))).toBe(true)
+    const miss = forage(bastet, script(d(11, 20)))
+    expect(miss.check.total).toBe(14)
+    expect(miss.supplies).toBe(0)
+    expect(miss.yieldDie).toBeNull()
+  })
+
+  it("slow pace is read as advantage and says so", () => {
+    const out = forage(bastet, script(d(3, 20), d(15, 20), d(6, 6)), { slowPace: true })
+    expect(out.check.mode).toBe("advantage")
+    expect(out.check.roll).toBe(15)
+    expect(out.supplies).toBe(6)
+    expect(out.flags.some((f) => /needs Sam's yes/.test(f))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §2 tend — the short rest
+// ---------------------------------------------------------------------------
+
+const rester = (over: Partial<ShortRester> & { name: string }): ShortRester => ({
+  id: over.name.toLowerCase(),
+  level: 1,
+  class: "Fighter",
+  sheet_hit_dice: "1d10",
+  hp: 5,
+  hpMax: 12,
+  hitDiceRemaining: 1,
+  con_score: 10,
+  spend: 0,
+  vitality: "up",
+  ...over,
+})
+
+describe("short rest", () => {
+  it("each Hit Die heals the face plus CON, never past the maximum, never more dice than are owned", () => {
+    const bastet = rester({ name: "Bastet", level: 5, class: "Barbarian", sheet_hit_dice: "5d12", hp: 20, hpMax: 50, hitDiceRemaining: 3, con_score: 15, spend: 2 })
+    const out = shortRest([bastet], script(d(5, 12), d(12, 12))).characters[0]
+    expect(out.dice).toEqual([{ face: 5, healed: 7 }, { face: 12, healed: 14 }])
+    expect(out.hp).toBe(41)
+    expect(out.hitDiceRemaining).toBe(1)
+
+    const nearFull = shortRest([{ ...bastet, hp: 45, spend: 1 }], script(d(12, 12))).characters[0]
+    expect(nearFull.hp).toBe(50)
+    expect(nearFull.dice[0].healed).toBe(5)
+
+    const greedy = shortRest([{ ...bastet, hitDiceRemaining: 1, spend: 3 }], script(d(6, 12))).characters[0]
+    expect(greedy.dice).toHaveLength(1)
+    expect(greedy.hitDiceRemaining).toBe(0)
+    expect(greedy.flags[0]).toMatch(/has 1; spending 1/)
+  })
+
+  it("Song of Rest adds the bard's die to everyone who spent a Hit Die, and the rest event records the bard", () => {
+    const scott = rester({ name: "Scott", class: "Bard", sheet_hit_dice: "2d8", level: 2, hp: 3, hpMax: 15, hitDiceRemaining: 2, con_score: 13, spend: 1 })
+    const kenta = rester({ name: "Kenta", class: "Sorcerer", sheet_hit_dice: "1d6", hp: 2, hpMax: 8, hitDiceRemaining: 1, con_score: 15, spend: 1 })
+    const samson = rester({ name: "Samson", class: "Cleric", sheet_hit_dice: "1d8", hp: 9, hpMax: 9, spend: 0 })
+    // Scott d8(4) + song d6(3); Kenta d6(2) + song d6(5); Samson spends nothing so no song die.
+    const res = shortRest([scott, kenta, samson], script(d(4, 8), d(3, 6), d(2, 6), d(5, 6)), { bardId: "scott", bardName: "Scott", bardLevel: 2 })
+    const [s, k, m] = res.characters
+    expect(s.songOfRest).toEqual({ face: 3, healed: 3 })
+    expect(s.hp).toBe(3 + 4 + 1 + 3)
+    expect(k.songOfRest).toEqual({ face: 5, healed: 2 }) // d6(2)+CON 2 took him to 6; the song is capped at 8
+    expect(k.hp).toBe(8)
+    expect(m.songOfRest).toBeNull()
+    expect(res.restEvent).toEqual({ rest_type: "short", bard_character_id: "scott", bard_spent_die: true })
+    expect(res.minutes).toBe(60)
+
+    // A 1st-level bard has no Song of Rest yet.
+    const early = shortRest([kenta], script(d(2, 6)), { bardId: "scott", bardName: "Scott", bardLevel: 1 })
+    expect(early.characters[0].songOfRest).toBeNull()
+    expect(early.restEvent.bard_character_id).toBeNull()
+    expect(early.characters[0].flags.some((f) => /starts at 2nd/.test(f))).toBe(true)
+  })
+
+  it("Pact Magic slots come back on a short rest; class-list slots do not", () => {
+    const warlock = rester({ name: "Freía", class: "Warlock", sheet_hit_dice: "2d8", spellcasting: { pact: true, slots: { "1": { max: 2, used: 2 } } } })
+    const sorcerer = rester({ name: "Kenta", class: "Sorcerer", sheet_hit_dice: "1d6", spellcasting: { pact: false, slots: { "1": { max: 2, used: 1 } } } })
+    const res = shortRest([warlock, sorcerer], script())
+    expect(res.characters[0].slots).toEqual({ "1": { max: 2, used: 0 } })
+    expect(res.characters[0].pactSlotsRestored).toBe(2)
+    expect(res.characters[1].slots).toBeNull()
+    expect(res.characters[1].pactSlotsRestored).toBe(0)
+  })
+
+  it("a low die against a negative CON heals nothing rather than wounding", () => {
+    const frail = rester({ name: "Frail", class: "Wizard", sheet_hit_dice: "1d6", hp: 4, hpMax: 6, con_score: 4, spend: 1 })
+    const out = shortRest([frail], script(d(2, 6))).characters[0]
+    expect(out.dice).toEqual([{ face: 2, healed: 0 }])
+    expect(out.hp).toBe(4)
+    expect(out.hitDiceRemaining).toBe(0)
+  })
+
+  it("the dying and the dead do not rest, and stable-at-0 is flagged rather than assumed", () => {
+    const dying = shortRest([rester({ name: "Dying", vitality: "dying", hp: 0, spend: 1 })], script()).characters[0]
+    expect(dying.rested).toBe(false)
+    expect(dying.hitDiceRemaining).toBe(1)
+    const dead = shortRest([rester({ name: "Dead", vitality: "dead", hp: 0, spend: 1 })], script()).characters[0]
+    expect(dead.rested).toBe(false)
+    const stable = shortRest([rester({ name: "Stable", vitality: "stable", hp: 0, spend: 1 })], script(d(6, 10))).characters[0]
+    expect(stable.rested).toBe(true)
+    expect(stable.hp).toBe(6)
+    expect(stable.flags.some((f) => /stable at 0/.test(f))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §5 talk
+// ---------------------------------------------------------------------------
+
+describe("talk", () => {
+  it("positive scenes land at 65%, negatives in full, and the row is tagged camp:talk", () => {
+    const warm = weightRelationshipEvent({
+      subjectId: "a", objectId: "b", kind: "confession", gravity: 80, valence: "positive",
+      deltas: { trust: 20, resentment: -10, glee: 99 } as never, note: "shared the last of the water",
+    })
+    expect(PALLIATION).toBe(0.65)
+    expect(warm.gravity).toBe(52)
+    expect(warm.deltas).toEqual({ trust: 13, resentment: -7 })
+    expect(warm.source).toBe("camp:talk")
+    expect(warm.note).toBe("shared the last of the water")
+
+    const cold = weightRelationshipEvent({ subjectId: "a", objectId: "b", kind: "betrayal_recalled", gravity: 80, valence: "negative", deltas: { trust: -20, fear: 15 } })
+    expect(cold.gravity).toBe(80)
+    expect(cold.deltas).toEqual({ trust: -20, fear: 15 })
+    expect(cold).toMatchObject({ subject_id: "a", object_id: "b", kind: "betrayal_recalled" })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §2 perform
+// ---------------------------------------------------------------------------
+
+describe("perform", () => {
+  it("reads one Performance check as flat / warm / moving and sets no deltas", () => {
+    const scott = sheet({ name: "Scott", cha_score: 15, proficiency_bonus: 2, sheet_skill_proficiencies: { Performance: "proficient" } })
+    // CHA +2, prof +2: d20 5 → 9 flat; 6 → 10 warm; 11 → 15 moving.
+    expect(perform(scott, script(d(5, 20))).band).toBe("flat")
+    expect(perform(scott, script(d(6, 20))).band).toBe("warm")
+    const moving = perform(scott, script(d(11, 20)))
+    expect(moving.band).toBe("moving")
+    expect(moving.deltas).toBeNull()
+    expect(moving.flags.some((f) => /needs Sam's yes/.test(f))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §6 craft
+// ---------------------------------------------------------------------------
+
+describe("craft", () => {
+  const poison = {
+    name: "Drow poison",
+    value: 200,
+    properties: { craft: { tools: "Alchemist's Supplies", materials: [{ slug: "spider-venom-gland", qty: 2 }], requires: "alchemy_lab" } },
+  }
+  const fifi = { name: "Fifi", tools: ["Thieves' Tools", "Alchemist's Supplies"] }
+  const lab = { facilities: ["alchemy_lab"] }
+  const glands = [{ slug: "spider-venom-gland", qty: 2 }]
+
+  it("refuses anything without a recipe, the wrong tools, the wrong place, or missing materials", () => {
+    expect(craftProgress({ name: "Zurkhwood", value: 0, properties: { note: "crafting material" } }, fifi, lab, glands, 0, 1)).toMatchObject({ craftable: false, reason: expect.stringMatching(/no craft recipe/) })
+    expect(craftProgress(poison, { name: "Samson", tools: ["Calligrapher's Supplies"] }, lab, glands, 0, 1).reason).toMatch(/not proficient with Alchemist's Supplies/)
+    expect(craftProgress(poison, fifi, { facilities: [] }, glands, 0, 1).reason).toMatch(/needs a alchemy_lab/)
+    expect(craftProgress(poison, fifi, lab, [{ slug: "spider-venom-gland", qty: 1 }], 0, 1).reason).toMatch(/spider-venom-gland 1\/2/)
+    expect(craftProgress({ ...poison, value: null }, fifi, lab, glands, 0, 1).reason).toMatch(/no market value/)
+  })
+
+  it("banks 5 gp a day against the market value and prices materials at half", () => {
+    const day1 = craftProgress(poison, fifi, lab, glands, 0, 3)
+    expect(day1).toMatchObject({ craftable: true, totalGp: 200, materialsGp: 100, progressGp: 15, daysWorked: 3, daysRemaining: 37, done: false })
+    const last = craftProgress(poison, fifi, lab, glands, 195, 4)
+    expect(last).toMatchObject({ progressGp: 200, daysRemaining: 0, done: true })
+    expect(last.note).toMatch(/finishes the Drow poison/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §4 levelling
+// ---------------------------------------------------------------------------
+
+const kenta: LevelUpSheet = {
+  id: "kenta", name: "Kenta", class: "Sorcerer", level: 1, xp: 300, hp_max: 8, con_score: 15,
+  hit_dice_remaining: 1, sheet_hit_dice: "1d6",
+  sheet_spellcasting: { pact: false, ability: "Charisma", slots: { "1": { max: 2, used: 1 } } },
+}
+
+describe("level up", () => {
+  it("refuses a multiclassed sheet, short XP, and a roll with no die", () => {
+    const freia = { ...kenta, name: "Freía", class: "Rogue 3 / Warlock 2", level: 5, xp: 14000, sheet_hit_dice: "3d8+2d8" }
+    expect(levelUp(freia, { method: "average" })).toMatchObject({ ok: false, note: expect.stringMatching(/multiclassed/) })
+    expect(levelUp({ ...kenta, xp: 299 }, { method: "average" }).note).toMatch(/has 299 XP; level 2 needs 300/)
+    expect(levelUp(kenta, { method: "roll" }).note).toMatch(/needs the die result/)
+    expect(levelUp({ ...kenta, class: "Artificer", sheet_hit_dice: null }, { method: "average" }).note).toMatch(/no Hit Die/)
+  })
+
+  it("the fixed method writes level, hp, proficiency, Hit Dice, xp_to_next and the next slot row", () => {
+    const out = levelUp(kenta, { method: "average" })
+    expect(out.ok).toBe(true)
+    expect(out.hp).toEqual({ die: 6, face: null, con: 2, gained: 6, method: "average" })
+    expect(out.write).toEqual({
+      level: 2,
+      hp_max: 14,
+      proficiency_bonus: 2,
+      sheet_hit_dice: "2d6",
+      hit_dice_remaining: 2,
+      xp_to_next: 900,
+      sheet_spellcasting: { pact: false, ability: "Charisma", slots: { "1": { max: 3, used: 1 } } },
+    })
+    expect(out.pendingChoices.map((p) => p.kind)).toEqual(["class_features", "spells"])
+    expect(out.flags).toEqual([])
+  })
+
+  it("the roll method takes the die from the roller and never gains less than 1 hp", () => {
+    const rolled = levelUp(kenta, { method: "roll", rng: script(d(5, 6)) })
+    expect(rolled.hp).toMatchObject({ face: 5, gained: 7 })
+    expect(rolled.write?.hp_max).toBe(15)
+
+    const frail = levelUp({ ...kenta, class: "Wizard", con_score: 6 }, { method: "roll", rng: script(d(1, 6)) })
+    expect(frail.hp).toMatchObject({ face: 1, con: -2, gained: 1 })
+    expect(frail.write?.hp_max).toBe(9)
+    expect(frail.flags.some((f) => /minimum 1 per level/.test(f))).toBe(true)
+  })
+
+  it("surfaces the ASI and subclass choices, one level at a time, only where the gate allows", () => {
+    const rogue: LevelUpSheet = { ...kenta, name: "Fifi", class: "Rogue", sheet_hit_dice: "2d8", level: 2, xp: 2700, hit_dice_remaining: 2, sheet_spellcasting: null }
+    const third = levelUp(rogue, { method: "average" })
+    expect(third.write?.level).toBe(3)
+    expect(third.pendingChoices.map((p) => p.kind)).toEqual(["subclass", "class_features"])
+    expect(third.flags[0]).toMatch(/XP for level 4; taking one level at a time/)
+    const fourth = levelUp({ ...rogue, level: 3, sheet_hit_dice: "3d8" }, { method: "average" })
+    expect(fourth.pendingChoices.map((p) => p.kind)).toEqual(["asi", "class_features"])
+    expect(fourth.write?.proficiency_bonus).toBe(2)
+
+    expect(levelUpAllowedHere("camp", null)).toBe(true)
+    expect(levelUpAllowedHere("exploration", { metadata: {} })).toBe(false)
+    expect(levelUpAllowedHere("exploration", { metadata: { allows_level_up: true } })).toBe(true)
+
+    expect(levelForXp(0)).toBe(1)
+    expect(levelForXp(6500)).toBe(5)
+    expect(levelForXp(13999)).toBe(5)
+    expect(xpToNext(1)).toBe(300)
+    expect(xpToNext(5)).toBe(14000)
+    expect(xpToNext(20)).toBeNull()
+  })
+})
