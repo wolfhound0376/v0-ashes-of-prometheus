@@ -232,11 +232,26 @@ Because roll requests belong to the player who is speaking, **a check action can
 
 **Not yet, refused without spending:** `level_up` (PR 4, next), `artifice` and `brew` (crafting, below).
 
-### Crafting — blocked on two decisions only Sam can make
+### Crafting — Sam's ruling, 2026-09-26: tool proficiency required, SRD rules
+
+> "lets stick with tool proficiency to craft and use SRD rules."
+
+This settles question 1 below. SRD 5.1, Downtime Activities — Crafting (verified in `campaign_chunks`, `srd-5-1`):
+
+- **"You must be proficient with tools related to the object you are trying to create."** No proficiency, no crafting. `craftProgress` already refuses, so no code changed.
+- **5 gp of progress per day**, and **"raw materials worth half the total market value"**. The SRD prices materials in gold, not in item counts. So a recipe needs no material quantities, and none will be invented.
+- **Several proficient crafters** in the same place each add 5 gp a day.
+- **The tool is sourced where the SRD names it.** The Poisoner's Kit is the SRD's tool for "the creation of poisons", so drow poison's recipe is `{ "tools": "Poisoner's Kit" }`. Named materials (a spider venom gland) are optional per recipe and only listed where Sam wants them held.
+
+An earlier reading, "3 materials until proficient", was Sam's first answer the same evening. He replaced it with the SRD rule before it shipped. It was checked against the campaign data first: Xanathar's Guide is not among the five books in `campaign_books`, and no chunk mentions it.
+
+**What still blocks wiring:** the progress table (question 2) and whether one camp action is one day of crafting. One new question comes with the ruling: are the raw materials' gold paid from the crafter's `sheet_currency` when work starts? The SRD says they must be "expended"; nothing tracks it today.
+
+### Crafting — the original two questions
 
 `craftProgress` (§6) is written and tested: 5 gp of work per day, materials at half the item's value, the right tool proficiency, the right place, catalog items only. Two things stop it being wired.
 
-**1. The recipes are not in any source.** The catalog says what feeds what, but never how much. Inventing the numbers would break "never invent game data", so they are Sam's:
+**1. The recipes are not in any source.** *(Settled above: SRD rules price materials in gold, so no counts are needed.)* The catalog says what feeds what, but never how much. Inventing the numbers would break "never invent game data", so they are Sam's:
 
 | Material in the catalog | `feeds` (from the row) | Output in the catalog? | Tool (SRD where it says so) | Needs from Sam |
 |---|---|---|---|---|
