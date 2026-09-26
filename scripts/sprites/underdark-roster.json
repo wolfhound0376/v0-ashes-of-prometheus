@@ -50,6 +50,20 @@
     "target_ft": 3.0
   },
   {
+    "slug": "swarm-of-rats",
+    "name": "Swarm of Rats",
+    "pixellab_character_id": "3f5c69d2-c6ba-4200-bc51-d9d556223d92",
+    "size_by": "width",
+    "target_ft": 5.0
+  },
+  {
+    "slug": "swarm-of-bats",
+    "name": "Swarm of Bats",
+    "pixellab_character_id": "75abfe3e-c7d6-4494-8d23-dce9098cd94a",
+    "size_by": "width",
+    "target_ft": 5.0
+  },
+  {
     "slug": "quaggoth",
     "name": "Quaggoth",
     "pixellab_character_id": "010bae69-e137-43b9-9665-a09f9dca4231",
