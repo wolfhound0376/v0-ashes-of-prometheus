@@ -9,7 +9,7 @@
     64,
     126
   ],
-  "ppu": 100,
+  "ppu": 95,
   "animations": {
     "cast": {
       "sheet": "cast.png",
