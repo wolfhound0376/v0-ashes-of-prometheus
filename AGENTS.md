@@ -355,8 +355,11 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
   Large ~9–10 ft (wide ones measured across, to fill their 10-ft space); the ancient deep
   dragon is 40 ft across. `scripts/sprites/underdark-roster.json` holds every monster's
   target.
-- **Item art**: use the uploaded `icon_url` when present, otherwise a neutral framed glyph
-  tile. **Never AI-generate item art.**
+- **Item art**: the inventory uses the uploaded `icon_url` when present, otherwise a neutral
+  framed glyph tile. The battle board draws `items.pixel_icon_url` (48px pixel art in
+  `public/item-pixels/<slug>.png`) for items lying on the floor, falling back to the 3D
+  proxy. Sam lifted the no-AI rule for these pixel board icons only (2026-09-26); painted
+  inventory icons are still uploaded, never generated.
 - **Don't build empty pages.** A nav item with an honest "soon" badge beats a dead page.
 
 ---

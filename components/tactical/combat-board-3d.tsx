@@ -4887,7 +4887,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       blood = layBloodDecals({ parent: boardGroup, cellToWorld: (x, y) => sqCentre(x, y), squareSize: SQ })
       blood.sync(meta.marks)
       // What is lying about. Read once here; kept live by the channel below.
-      groundItems = layGroundItems({ parent: boardGroup, cellToWorld: (x, y) => sqCentre(x, y), squareSize: SQ })
+      // Pixel icons by catalogue id; piles drawn before these arrive are redrawn once they do.
+      const pixelIcons = new Map<string, string>()
+      groundItems = layGroundItems({
+        parent: boardGroup,
+        cellToWorld: (x, y) => sqCentre(x, y),
+        squareSize: SQ,
+        iconFor: (row) => pixelIcons.get(row.item_id),
+      })
+      void supabase
+        .from("items")
+        .select("id,pixel_icon_url")
+        .not("pixel_icon_url", "is", null)
+        .then(({ data }: { data: unknown }) => {
+          for (const r of (data ?? []) as { id: string; pixel_icon_url: string }[]) pixelIcons.set(r.id, r.pixel_icon_url)
+          if (!disposed && pixelIcons.size) groundItems?.redraw()
+        })
       void supabase
         .from("vtt_ground_items")
         .select("id,map_id,item_id,name,quantity,grid_x,grid_y,dropped_by,picked_up_at")
