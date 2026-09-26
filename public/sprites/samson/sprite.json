@@ -31,7 +31,7 @@
     },
     "walk": {
       "sheet": "walk.png",
-      "frames": 8,
+      "frames": 6,
       "fps": 10,
       "loop": true
     },

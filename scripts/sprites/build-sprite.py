@@ -91,7 +91,14 @@ def main() -> None:
         "rotation files a 3/4-turned reference one step off (the front view saved as "
         "'south-east'); --shift-facings 1 puts each picture back under the facing it shows",
     )
+    ap.add_argument(
+        "--use", action="append", default=[], metavar="STATE=ANIMATION",
+        help="build STATE from the named PixelLab animation, e.g. --use walk=walk-steady, when "
+        "a character carries more than one animation for it (an old one kept for comparison). "
+        "Without it the first animation matching the state wins",
+    )
     args = ap.parse_args()
+    chosen = dict(u.split("=", 1) for u in args.use)
 
     repo = Path(__file__).resolve().parents[2]
     out = Path(args.out) if args.out else repo / "public" / "sprites" / args.slug
@@ -114,7 +121,10 @@ def main() -> None:
     # Gather each state's frames per direction.
     found: dict[str, dict[str, list[Image.Image]]] = {}
     for anim_name, dirs in frames.get("animations", {}).items():
-        state = state_for(anim_name)
+        state = next((st for st, name in chosen.items() if name == anim_name), None) or state_for(anim_name)
+        if state in chosen and chosen[state] != anim_name:
+            print(f"  skipping animation '{anim_name}' ('{state}' comes from '{chosen[state]}')")
+            continue
         if not state:
             print(f"  skipping animation '{anim_name}' (no board state for it)")
             continue
@@ -153,12 +163,18 @@ def main() -> None:
                     break
                 im = seq[min(col, len(seq) - 1)]
                 if im.size != (cw, ch):
-                    # Centre on the feet line if PixelLab grew this canvas.
-                    x = (cw - im.width) // 2
-                    y = ch - im.height
-                    cell = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-                    cell.alpha_composite(im, (max(0, x), max(0, y)))
-                    im = cell
+                    # PixelLab grows an animation's canvas evenly on every side
+                    # (a 128 px figure animated on 192 px sits 32 px in from each
+                    # edge), so cut the centre back out. Pinning the grown frame
+                    # to a corner instead would shift the figure off its feet.
+                    x = (im.width - cw) // 2
+                    y = (im.height - ch) // 2
+                    if x >= 0 and y >= 0:
+                        im = im.crop((x, y, x + cw, y + ch))
+                    else:
+                        cell = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+                        cell.alpha_composite(im, (max(0, -x), max(0, -y)))
+                        im = cell
                 sheet.alpha_composite(im, (col * cw, row * ch))
         name = f"{state}.png"
         sheet.save(out / name, optimize=True)
