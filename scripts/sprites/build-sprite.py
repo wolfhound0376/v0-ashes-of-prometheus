@@ -40,6 +40,7 @@ STATE_PATTERNS = [
     ("attack", r"^attack$|slash|swing|cross-punch|lead-jab|punch$|kick"),
     ("cast", r"^cast$|fireball|spell"),
     ("hurt", r"^hurt$|taking-punch|hit"),
+    ("dodge", r"^dodge$|dodg|evade|sidestep"),
     ("dead", r"^dead$|death"),
 ]
 
@@ -51,6 +52,7 @@ PLAYBACK = {
     "attack": {"fps": 12, "loop": False, "hit": 0.75},
     "cast": {"fps": 10, "loop": False, "hit": 0.6},
     "hurt": {"fps": 10, "loop": False},
+    "dodge": {"fps": 12, "loop": False},
     "dead": {"fps": 8, "loop": False},
 }
 
