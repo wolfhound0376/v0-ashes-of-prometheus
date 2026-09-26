@@ -366,42 +366,17 @@ export function rollInitiative(combatants: Combatant[], rng: Rng): InitiativeEnt
 }
 
 // ---------------------------------------------------------------------------
-// Time — a clock in hours, not a day/night toggle
+// Time
 // ---------------------------------------------------------------------------
-
-export interface CampaignClock {
-  /** hours elapsed since campaign start */
-  hours: number
-  /** hours value at the last completed long rest (one long-rest benefit per 24 h — SRD 5.1, Adventuring: Resting) */
-  lastLongRestAt: number | null
-}
-
-export const ROUND_HOURS = 6 / 3600 // a round is 6 seconds (SRD 5.1, Combat: The Order of Combat)
-
-export function advanceClock(clock: CampaignClock, by: { rounds?: number; hours?: number }): CampaignClock {
-  return { ...clock, hours: clock.hours + (by.rounds ?? 0) * ROUND_HOURS + (by.hours ?? 0) }
-}
-
-export function canBenefitFromLongRest(clock: CampaignClock): boolean {
-  return clock.lastLongRestAt == null || clock.hours - clock.lastLongRestAt >= 24
-}
-
-export function completeLongRest(clock: CampaignClock): CampaignClock {
-  // 8 hours (SRD 5.1, Adventuring: Long Rest). Feeds characters.rest_actions_remaining / hit_dice_remaining upstream.
-  const after = advanceClock(clock, { hours: 8 })
-  return { ...after, lastLongRestAt: after.hours }
-}
-
-/** Night is only meaningful where the environment has a sky. The Underdark never returns true. */
-export function isNight(clock: CampaignClock, env: { hasSky: boolean; nightStartsAt?: number; nightEndsAt?: number }): boolean {
-  if (!env.hasSky) return false
-  const hourOfDay = ((clock.hours % 24) + 24) % 24
-  const start = env.nightStartsAt ?? 20
-  const end = env.nightEndsAt ?? 6
-  return start > end ? hourOfDay >= start || hourOfDay < end : hourOfDay >= start && hourOfDay < end
-}
-
-export const daysElapsed = (clock: CampaignClock) => Math.floor(clock.hours / 24)
+//
+// The campaign clock lives in the database, not here. `game_clock` and
+// `time_log` (trigger `apply_time_log`) own the running day and minute;
+// `time_advancement_rules` holds how far each event moves it (a combat
+// encounter, a short or long rest, a labour shift); lib/time-tracking.ts is
+// the only module that reads or writes it, and lib/long-rest.ts applies the
+// one-long-rest-benefit-per-24-hours rule against it. An earlier draft of this
+// file carried a second, in-memory clock; it was removed unused so there is
+// exactly one source of truth about what time it is.
 
 // ---------------------------------------------------------------------------
 

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
   applyTransition,
-  isNight,
   normaliseSkill,
   passivePerception,
   resolveSkillCheck,
@@ -151,10 +150,5 @@ describe("helpers", () => {
     expect(normaliseSkill("Sleight of Hand")).toBe("sleight_of_hand")
     expect(normaliseSkill("animal-handling")).toBe("animal_handling")
     expect(normaliseSkill("Lockpicking")).toBeNull()
-  })
-
-  it("never reports night in the Underdark", () => {
-    expect(isNight({ hours: 23, lastLongRestAt: null }, { hasSky: false })).toBe(false)
-    expect(isNight({ hours: 23, lastLongRestAt: null }, { hasSky: true })).toBe(true)
   })
 })
