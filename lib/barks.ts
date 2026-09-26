@@ -157,7 +157,10 @@ export function barkFor(label: string | null | undefined, round: number): string
  * next, which is worse than staying quiet — so the rest print their line and
  * wait their turn to be cut.
  */
-export const RECORDED = new Set(["drow", "prince derendil", "jimjar"])
+// The drow three were re-cut on 2026-09-26 in the voices Sam picked (Victor
+// for the male drow and the elite, Kristen for the priestess) and ship with
+// the app under public/sfx/barks/ - see lib/sfx.ts.
+export const RECORDED = new Set(["drow", "drow elite warrior", "drow priestess of lolth", "prince derendil", "jimjar"])
 
 /**
  * The sound file for a line that has just been spoken, or null.
