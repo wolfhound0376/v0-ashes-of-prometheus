@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "name": "Scott",
+  "cell": [
+    128,
+    128
+  ],
+  "pivot": [
+    64,
+    126
+  ],
+  "ppu": 100,
+  "animations": {
+    "cast": {
+      "sheet": "cast.png",
+      "frames": 6,
+      "fps": 10,
+      "loop": false,
+      "hit": 0.6
+    },
+    "dead": {
+      "sheet": "dead.png",
+      "frames": 7,
+      "fps": 8,
+      "loop": false
+    },
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 6,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.75
+    },
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 4,
+      "fps": 5,
+      "loop": true
+    },
+    "hurt": {
+      "sheet": "hurt.png",
+      "frames": 6,
+      "fps": 10,
+      "loop": false
+    },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 8,
+      "fps": 10,
+      "loop": true
+    }
+  }
+}
