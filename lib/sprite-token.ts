@@ -34,7 +34,12 @@ export const SPRITE_DIRECTIONS = [
   "south-west",
 ] as const
 
-export type SpriteState = "idle" | "walk" | "attack" | "cast" | "hurt" | "dodge" | "dead"
+export type SpriteState =
+  | "idle" | "walk" | "attack" | "cast" | "hurt" | "dodge" | "dead"
+  // Airborne loop: wings beating, used for both standing and moving while
+  // the creature is off the floor. Burrow sinks into the ground, emerge
+  // climbs back out.
+  | "fly" | "burrow" | "emerge"
 
 export interface SpriteAnimation {
   /** Sheet PNG, relative to the manifest. Rows = SPRITE_DIRECTIONS, columns = frames. */
@@ -56,6 +61,13 @@ export interface SpriteManifest {
   pivot: [number, number]
   /** Pixels per world unit. One square is one unit, so 100 makes a 128px cell 1.28 squares tall. */
   ppu: number
+  /**
+   * How high the figure rides over its square while airborne, in world
+   * units (squares). Optional: the board defaults from the stat block's
+   * fly speed (lib/locomotion), so this only tunes the height for art whose
+   * feet or wings sit oddly in the cell.
+   */
+  hover?: number
   animations: Partial<Record<SpriteState, SpriteAnimation>>
 }
 
@@ -93,6 +105,11 @@ const FALLBACK: Record<SpriteState, SpriteState[]> = {
   // Undrawn, the board moves the body instead (defenceMotion).
   dodge: [],
   dead: [],
+  // A flier with no drawn wing-beat keeps walking in the air; the board
+  // still lifts it. Burrow and emerge have no honest stand-in.
+  fly: ["walk", "idle"],
+  burrow: [],
+  emerge: [],
 }
 
 const manifestCache = new Map<string, Promise<SpriteManifest>>()

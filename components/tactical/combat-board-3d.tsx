@@ -137,6 +137,7 @@ import { uiTick } from "@/lib/ui-tick"
 // that under-reports cost. The BFS counts squares; this constant turns them
 // into feet. One definition of a square, shared with the server.
 import { FEET_PER_SQUARE } from "@/lib/tactical"
+import { locomotionOf, type Locomotion } from "@/lib/locomotion"
 
 const TILE_BASE =
   "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/map-tiles/diablo-gothic"
@@ -3285,6 +3286,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
      */
     const speciesArt = new Map<string, { url: string | null; scale: number | null; y: number | null }>()
     const speciesPending = new Set<string>()
+    // HOW EACH SPECIES MOVES, from its stat block (lib/locomotion). A creature
+    // with a printed fly speed rides above its square; nothing else does,
+    // whatever its art suggests. Filled by the same bestiary pass that
+    // fetches the art, so it is ready when the token spawns.
+    const beastLocomotion = new Map<string, Locomotion>()
+    /** World units a flier rides over the floor. Hoverers sit low and steady; true fliers higher. */
+    const hoverHeight = (l: Locomotion, art?: number) => art ?? (l.hover ? 0.32 : 0.55)
 
     /**
      * PUT THE WEAPON IN THE HAND. ONE FUNCTION, BOTH PASSES, ALWAYS AUDIBLE.
@@ -3341,11 +3349,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           speciesPending.add(id)
           void supabase
             .from("bestiary")
-            .select("model_url,model_scale,model_y_offset")
+            .select("model_url,model_scale,model_y_offset,speed,traits,actions")
             .eq("id", id)
             .maybeSingle()
-            .then(({ data }: { data: { model_url: string | null; model_scale: number | null; model_y_offset: number | null } | null }) => {
+            .then(({ data }: { data: { model_url: string | null; model_scale: number | null; model_y_offset: number | null; speed?: string | null; traits?: unknown; actions?: unknown } | null }) => {
               speciesPending.delete(id)
+              if (data) beastLocomotion.set(id, locomotionOf(data))
               speciesArt.set(id, {
                 url: data?.model_url ?? null,
                 scale: data?.model_scale ?? null,
@@ -3386,6 +3395,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         body.position.y = 0.31
         body.castShadow = true
         g.add(body)
+      }
+
+      // AIRBORNE. A species whose stat block prints a fly speed rides above
+      // its square - lifted, bobbing, with a soft shadow left on the floor so
+      // the eye still knows which square it holds. The height comes from the
+      // manifest when the art asks for one, else from whether it hovers.
+      // The lift itself is applied every frame in the animation loop, so a
+      // walk (a glide) keeps its altitude and a stop does not drop it.
+      {
+        const loco = !row.character_id && row.bestiary_id ? beastLocomotion.get(row.bestiary_id) : undefined
+        if (loco && loco.fly > 0) {
+          const shadow = new THREE.Mesh(
+            new THREE.CircleGeometry(r * 0.8, 24),
+            new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }),
+          )
+          shadow.rotation.x = -Math.PI / 2
+          shadow.renderOrder = 2
+          g.add(shadow)
+          g.userData.hover = { height: hoverHeight(loco), phase: Math.random() * Math.PI * 2, shadow, always: loco.walk === 0 }
+        }
       }
 
       // A SPECTRAL SPRITE, NOT A MODEL. A model_url that ends in .png or
@@ -5297,10 +5326,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (speciesIds.length) {
         const { data: species } = await supabase
           .from("bestiary")
-          .select("id,ac,model_url,model_scale,model_y_offset,actions")
+          .select("id,ac,model_url,model_scale,model_y_offset,actions,speed,traits")
           .in("id", speciesIds)
-        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null; actions?: unknown }>) {
+        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null; actions?: unknown; speed?: string | null; traits?: unknown }>) {
           speciesModel.set(b.id, { url: b.model_url, scale: b.model_scale, y: b.model_y_offset })
+          beastLocomotion.set(b.id, locomotionOf(b))
           if (typeof b.ac === "number") acByBeast.set(b.id, b.ac)
           // Its own stat block says what it fights with. lib/stat-block-weapon
           // throws out Multiattack, natural attacks and spells, so a quaggoth
@@ -6308,6 +6338,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           entry.obj.position.y = 0.05 + 0.07 * Math.sin(tt * 2.1 + fl.phase)
           entry.obj.rotation.y = 0.18 * Math.sin(tt * 0.9 + fl.phase)
         }
+        // A flier rides its hover height with a slow bob, standing or moving;
+        // its shadow stays on the floor under it. Down, it lies where it fell.
+        const hv = entry.obj.userData.hover as { height: number; phase: number; shadow: THREE.Object3D } | undefined
+        const airborne = Boolean(hv) && !isDowned(entry.row)
+        const lift = airborne && hv ? hv.height + 0.05 * Math.sin(clock.elapsedTime * 1.7 + hv.phase) : 0
+        if (hv) {
+          hv.shadow.visible = airborne
+          hv.shadow.position.y = -lift + 0.02
+        }
         const gl = entry.obj.userData.glide as { pts: THREE.Vector3[]; seg: number[]; total: number; s: number } | undefined
         // The dead stay dead: a body dragged across the board must not
         // stand up to walk, and must not be handed back to its stance.
@@ -6317,14 +6356,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // One frame of lag on a turn is invisible.
         const rig = entry.obj.userData.spriteRig as SpriteRig | undefined
         if (rig) rig.update(dt, activeCam(), entry.obj.rotation.y)
+        // The airborne stance: the wing-beat loop when one was drawn, for
+        // standing and moving alike (a hovering thing never "walks").
+        const restState = airborne && rig?.has("fly") ? "fly" : "idle"
+        const moveState = airborne && rig?.has("fly") ? "fly" : "walk"
         if (!gl) {
           // Standing still: stance, unless mid-swing.
+          if (airborne) entry.obj.position.y = lift
           if (!down && entry.anim && entry.anim.state === "walk") playState(entry.anim, "idle")
-          if (!down && rig?.current === "walk") rig.play("idle")
+          if (!down && rig && (rig.current === "walk" || (rig.current === "idle" && restState !== "idle"))) rig.play(restState)
           return
         }
         if (entry.anim && !down) playState(entry.anim, "walk")
-        if (rig && !down && (rig.current === "idle" || rig.current === "walk")) rig.play("walk")
+        if (rig && !down && (rig.current === "idle" || rig.current === "walk" || rig.current === "fly")) rig.play(moveState)
         // Constant pace along the whole route: a long walk takes longer,
         // which is what makes it a walk. ~2.2 squares/s ≈ a brisk 11 ft/s.
         gl.s = Math.min(gl.total, gl.s + dt * 2.2)
@@ -6336,8 +6380,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const f = segLen > 1e-6 ? (gl.s - gl.seg[segIdx - 1]) / segLen : 1
         entry.obj.position.lerpVectors(a, b, f)
         // Models WALK, feet on the floor. Only the plain pawn discs keep a
-        // little hop, so their slide still reads as motion.
-        entry.obj.position.y = entry.anim || rig ? 0 : Math.sin(f * Math.PI) * 0.18
+        // little hop, so their slide still reads as motion. A flier keeps
+        // its altitude the whole way.
+        entry.obj.position.y = airborne ? lift : entry.anim || rig ? 0 : Math.sin(f * Math.PI) * 0.18
         // Face the way they are travelling — smoothly, leg by leg.
         const dir = new THREE.Vector3().subVectors(b, a)
         if (dir.lengthSq() > 1e-4) {
@@ -6350,9 +6395,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         if (gl.s >= gl.total) {
           delete entry.obj.userData.glide
           stopFootsteps(entry.row.id)
-          entry.obj.position.y = 0
+          entry.obj.position.y = airborne ? lift : 0
           if (entry.anim && !down) playState(entry.anim, "idle")
-          if (rig && !down && rig.current === "walk") rig.play("idle")
+          if (rig && !down && (rig.current === "walk" || rig.current === "fly")) rig.play(restState)
         }
       })
       // The looks on the bodies: after the walk loop, so the hop rides on top
