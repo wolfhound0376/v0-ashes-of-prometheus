@@ -24,16 +24,16 @@
       "fps": 10,
       "loop": false
     },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 6,
+      "fps": 10,
+      "loop": true
+    },
     "idle": {
       "sheet": "idle.png",
       "frames": 4,
       "fps": 5,
-      "loop": true
-    },
-    "walk": {
-      "sheet": "walk.png",
-      "frames": 8,
-      "fps": 10,
       "loop": true
     },
     "dead": {
