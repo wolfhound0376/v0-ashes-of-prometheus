@@ -35,7 +35,7 @@
         "width": 2
       },
       {
-        "id": "to-priestess",
+        "id": "to-quaggoths",
         "a": [
           22.5,
           12.0
@@ -93,16 +93,16 @@
         "lockNote": "Heavy iron gate bolted into stone, kept locked. Pick DC 20 DEX with thieves' tools (makeshift at disadvantage; may draw guards - Stealth vs passive Perception). Force DC 20 STR. Guards on duty elsewhere carry keys. (oota-encounters Ch.1 p18)"
       },
       {
-        "bridge": "to-priestess",
-        "leadsTo": "16 Priestess Chamber",
+        "bridge": "to-quaggoths",
+        "leadsTo": "the quaggoth pen",
         "canon": false,
         "locked": true,
         "lockDc": 20,
-        "lockNote": "HOMEBREW - the book gives the pen one locked gate. Same heavy iron: pick DC 20 DEX with thieves' tools (makeshift at disadvantage), force DC 20 STR."
+        "lockNote": "HOMEBREW - the book gives the pen one locked gate (the one toward the guard barracks); this one is Sam's call. Same heavy iron: pick DC 20 DEX with thieves' tools (makeshift at disadvantage), force DC 20 STR. Beyond it lies the quaggoth pen, not freedom."
       }
     ]
   },
-  "approximate": "Laid out from Sam's Velkynvelve camp map (2026-09-26): 1 Slave Pens is a caged octagon over the abyss with rope bridges to 3 Guard Barracks and 16 Priestess Chamber (the Northern Lift bridge branches off the east bridge), the waterfall beside it. The map's numbering is its own, not the V5 node numbers. Canon V5 node 11 is a gated cave in the eastern wall; its cell geometry could not be fetched here. Which gate is the book's is a guess: the one toward the guards.",
+  "approximate": "Laid out from Sam's Velkynvelve camp map (2026-09-26): 1 Slave Pens is a caged octagon over the abyss with rope bridges to 3 Guard Barracks and the quaggoth pen (the Northern Lift bridge branches off the east bridge), the waterfall beside it. The map's numbering is its own, not the V5 node numbers. Canon V5 node 11 is a gated cave in the eastern wall; its cell geometry could not be fetched here. The gate toward 3 Guard Barracks is the book's (Sam, 2026-09-26); the east gate to the quaggoth pen is homebrew.",
   "waterfall": {
     "x": 23.2,
     "width": 3,
@@ -130,7 +130,7 @@
     {
       "x": 29.5,
       "y": 13.9,
-      "text": "16 \u00b7 Priestess Chamber"
+      "text": "Quaggoth Pen"
     },
     {
       "x": 29.2,

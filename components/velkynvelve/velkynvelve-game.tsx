@@ -105,7 +105,7 @@ export default function VelkynvelveGame({ nodeSlug }: { nodeSlug: string }) {
             {error ? "Velkynvelve" : nodeName || "Velkynvelve"}
           </h1>
           <p className="text-sm text-stone-300">
-            {error ?? "Tap the floor to walk, tap a figure to switch, drag to look around."}
+            {error ?? "Tap the floor or use the numpad (8 ↑ 2 ↓ 4 ← 6 →) to walk, tap a figure to switch, drag to look around."}
           </p>
           {activeName && !error && <p className="mt-0.5 text-xs text-amber-400/80">Moving: {activeName}</p>}
         </div>
