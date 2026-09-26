@@ -133,7 +133,7 @@ How the code reads it:
 
 The faces were first a reading of "rare" and "common"; Sam gave his own numbers the same evening — **§11 has them and is the table.** The OotA random-encounter table (§3) is untouched and still rolls through `resolveWatch` wherever the route wants it.
 
-**Still needs Sam's yes** (§11 settled the rest): slow pace = advantage (§2); minimum 1 hp per level (§2); stable-at-0 spending Hit Dice on a partial rest; and the 110% in §11.
+**Still needs Sam's yes** (§11 settled the rest): slow pace = advantage (§2); minimum 1 hp per level (§2); stable-at-0 spending Hit Dice on a partial rest.
 
 ---
 
@@ -159,7 +159,4 @@ So, now Sam's and no longer flagged: the partial rest costs **half** the full re
 
 Brigands and villains come to fight; no row names a stat block, so the DM picks one from the bestiary and the code says so. A merchant sets `merchantPresent`, which `trade` reads.
 
-**Two readings remain, flagged on every wandering-person result until Sam speaks:**
-
-- **25 + 80 + 5 is 110.** Malicious 25 and divine 5 are kept exact; neutral is the remainder, **70**. If Sam meant 20 / 75 / 5 or 15 / 80 / 5, it is one number to change in `CAMP_VISITOR_ROWS`.
-- **The seven kinds of wandering person carry no weights**, so they are equal odds on a d7.
+Sam's 25 + 80 + 5 summed to 110; he confirmed **25 / 70 / 5** ("70 is fine", 2026-09-26). **One reading remains,** flagged on every wandering-person result: the seven kinds of person carry no weights, so they are equal odds on a d7.

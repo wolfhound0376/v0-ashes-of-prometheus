@@ -164,7 +164,7 @@ describe("the passive roll", () => {
     expect(malicious).toMatchObject({ who: "human", disposition: "malicious", alignment: null })
     const neutral = passiveCampEncounter({ metadata: {} }, script(d(40, 40), d(4, 7), d(19, 20)))
     expect(neutral).toMatchObject({ who: "kuo-toa", disposition: "neutral", alignment: null })
-    expect(neutral.flags.some((f) => /110/.test(f))).toBe(true)
+    expect(neutral.flags).toEqual(["The seven kinds of wandering person are equal odds — Sam gave no weights."])
     // Every table covers every face of its die exactly once, so the rows can move to the database as they are.
     for (const t of CAMP_VISITOR_TABLES) {
       for (let face = 1; face <= (t.die as number); face++) {
