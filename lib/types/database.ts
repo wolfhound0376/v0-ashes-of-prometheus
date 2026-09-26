@@ -253,3 +253,42 @@ export const EQUIPMENT_SLOTS = [
   'ring1',
   'ring2'
 ] as const
+
+// ---------------------------------------------------------------------------
+// Earned skill proficiency — docs/claude_Earned_Proficiency.md (homebrew,
+// Sam 2026-09-26). Both tables are service-role only (RLS on, no policies).
+// ---------------------------------------------------------------------------
+
+export type SkillProgressPath = "practice" | "talent" | "teaching"
+export type SkillProgressKind = "success" | "crit" | "training_hours" | "award"
+
+/** One row of skill_progress_rules — the tunables. Sam edits numbers here, never in code. */
+export interface SkillProgressRule {
+  path: SkillProgressPath
+  /** 8 successes / 2 crits / 40 hours */
+  threshold: number
+  /** talent: 7 campaign days; others null */
+  window_days: number | null
+  /** practice: 10; teaching's final check: 12; talent null (any DC) */
+  min_dc: number | null
+  source: string
+}
+
+/** One row of the append-only skill_progress ledger. The award is derived from it, never stored as a counter. */
+export interface SkillProgressRow {
+  id: string
+  character_id: string
+  /** snake_case, one of the 18 SRD skills (lib/game-context.ts `Skill`) */
+  skill: string
+  kind: SkillProgressKind
+  /** hours for training_hours; 1 otherwise */
+  amount: number
+  dc: number | null
+  /** interaction key / roll purpose — freshness is one success per stake per campaign day */
+  stake_key: string | null
+  teacher_id: string | null
+  /** game_clock.game_day at the time */
+  campaign_day: number
+  roll_request_id: string | null
+  created_at: string
+}
