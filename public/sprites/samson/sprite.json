@@ -11,6 +11,13 @@
   ],
   "ppu": 97,
   "animations": {
+    "cast": {
+      "sheet": "cast.png",
+      "frames": 9,
+      "fps": 10,
+      "loop": false,
+      "hit": 0.6
+    },
     "hurt": {
       "sheet": "hurt.png",
       "frames": 6,
@@ -34,13 +41,6 @@
       "frames": 6,
       "fps": 10,
       "loop": true
-    },
-    "cast": {
-      "sheet": "cast.png",
-      "frames": 6,
-      "fps": 10,
-      "loop": false,
-      "hit": 0.6
     },
     "attack": {
       "sheet": "attack.png",
