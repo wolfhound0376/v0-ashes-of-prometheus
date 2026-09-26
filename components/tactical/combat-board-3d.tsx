@@ -63,7 +63,7 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
-import { castSpellKitVfx, kitVfxTypeFor, prewarmKit, type CastHandle, type DamageType } from "./spell-vfx-kit"
+import { castSpellKitVfx, kitVfxTypeFor, prewarmKit, loadSheet, Flip, type CastHandle, type DamageType } from "./spell-vfx-kit"
 import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { StatusVfx, type StatusBody } from "./status-vfx"
@@ -3951,6 +3951,53 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // Walk the broadcast route when one arrived for this move; otherwise a
       // straight line. Either way the model WALKS it at ground level, at a
       // constant pace — distance decides duration, not a fixed timer.
+      // A BLINK, NOT A WALK. A creature whose stat block carries a teleport
+      // (phase spider, misty step) or a burrow speed, moved further than it
+      // could have walked in one go, does not slide across the floor: it
+      // vanishes where it stood and reappears where the row says. Anything
+      // within walking reach still walks - a phase spider crossing two
+      // squares is stepping, not jaunting.
+      {
+        const loco = !row.character_id && row.bestiary_id ? beastLocomotion.get(row.bestiary_id) : undefined
+        const kind: "teleport" | "burrow" | null =
+          loco?.teleport ? "teleport" : loco && loco.burrow > 0 ? "burrow" : null
+        if (kind && !entry.obj.userData.blink) {
+          const from = entry.obj.position.clone().setY(0)
+          const to = new THREE.Vector3(c.x, 0, c.z)
+          const squares = from.distanceTo(to) / SQ
+          const walkSquares = (loco?.walk ?? 30) / FEET_PER_SQUARE
+          if (squares > walkSquares || (loco?.walk ?? 30) === 0) {
+            walkPaths.delete(row.id)
+            stopFootsteps(row.id)
+            delete entry.obj.userData.glide
+            entry.obj.userData.blink = { kind, from, to, t: 0, dur: kind === "teleport" ? 0.8 : 1.2, marks: [] as Flip[] }
+            if (kind === "teleport") {
+              // The pack's own teleport cue, and a pixel ring on the floor at
+              // both ends - the same sheet the spell kit draws for a blink.
+              playSfx("spells/teleport-psychic-charge" as SfxName, { volume: 0.8 })
+              void loadSheet("pxRing").then((s) => {
+                const b = entry.obj.userData.blink as { marks: Flip[]; from: THREE.Vector3; to: THREE.Vector3 } | undefined
+                if (!b || disposed) return
+                for (const at of [b.from, b.to]) {
+                  const f = new Flip(s, 0xb08cff, SQ * 1.4, SQ * 1.4)
+                  f.mesh.rotation.x = -Math.PI / 2
+                  f.mesh.position.set(at.x, 0.03, at.z)
+                  scene.add(f.mesh)
+                  b.marks.push(f)
+                }
+              })
+            } else {
+              // Burrowing: the drawn dig where the art has one, else the body
+              // sinks; the same coming back up. No ring - it went THROUGH.
+              const rig = entry.obj.userData.spriteRig as SpriteRig | undefined
+              if (rig?.has("burrow")) rig.play("burrow")
+            }
+            redrawDarkness()
+            return
+          }
+        }
+      }
+
       const stash = walkPaths.get(row.id)
       walkPaths.delete(row.id)
       // Read before the stash is discarded below; the footstep loop is started
@@ -6360,6 +6407,38 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // standing and moving alike (a hovering thing never "walks").
         const restState = airborne && rig?.has("fly") ? "fly" : "idle"
         const moveState = airborne && rig?.has("fly") ? "fly" : "walk"
+        // A blink in progress: shrink away where it stood, cut to the
+        // destination at the midpoint, grow back. A burrow sinks and rises
+        // instead of shrinking. Both keep the body out of the walk below.
+        const bl = entry.obj.userData.blink as
+          | { kind: "teleport" | "burrow"; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; marks: Flip[] }
+          | undefined
+        if (bl) {
+          bl.t += dt
+          const p = Math.min(1, bl.t / bl.dur)
+          const half = p < 0.5
+          const k = half ? 1 - p * 2 : (p - 0.5) * 2 // 1→0 then 0→1
+          if (!half && Math.abs(entry.obj.position.x - bl.to.x) + Math.abs(entry.obj.position.z - bl.to.z) > 1e-3) {
+            entry.obj.position.set(bl.to.x, entry.obj.position.y, bl.to.z)
+            if (bl.kind === "burrow" && rig?.has("emerge")) rig.play("emerge")
+          }
+          if (bl.kind === "teleport") {
+            entry.obj.scale.setScalar(Math.max(0.001, k))
+          } else {
+            // Into the floor: the group sinks a body-height; the floor
+            // layers draw over it, which is what buried looks like.
+            entry.obj.position.y = -(1 - k) * 1.2
+          }
+          for (const m of bl.marks) m.setProgress(p)
+          if (p >= 1) {
+            entry.obj.scale.setScalar(1)
+            entry.obj.position.set(bl.to.x, airborne ? lift : 0, bl.to.z)
+            for (const m of bl.marks) { scene.remove(m.mesh); m.dispose() }
+            delete entry.obj.userData.blink
+            if (rig && !down && rig.current !== "emerge") rig.play(restState)
+          }
+          return
+        }
         if (!gl) {
           // Standing still: stance, unless mid-swing.
           if (airborne) entry.obj.position.y = lift
@@ -6416,7 +6495,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             obj: entry.obj,
             kinds,
             dead: isDowned(entry.row),
-            moving: Boolean(entry.obj.userData.glide || entry.obj.userData.fall || entry.obj.userData.charging),
+            moving: Boolean(entry.obj.userData.glide || entry.obj.userData.fall || entry.obj.userData.charging || entry.obj.userData.blink),
           })
         })
         statusVfx.sync(bodies, dt, activeCam())
