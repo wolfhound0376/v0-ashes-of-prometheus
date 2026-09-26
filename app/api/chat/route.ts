@@ -4,7 +4,10 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
-import { parseRollRequest, type RollRequestSpec } from "@/lib/roll-requests"
+import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
+import { evaluate as evaluateSkillProgress, skillTitle, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
+import { loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
+import { normaliseSkill } from "@/lib/game-context"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
 // ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
@@ -731,6 +734,65 @@ STRICT LIMITS ON USING THESE:
   const gameClock: GameClock | null = await readGameClock(timeAdmin, activeSessionId)
   const pacingBlock = buildPacingBlock(gameClock)
 
+  // === EARNED PROFICIENCY — the one line Malachar is allowed to see ===
+  // docs/claude_Earned_Proficiency.md §4-§5. The engine awards; Malachar is
+  // told once, on the turn after the award landed, and never sees the tally.
+  // "Since Malachar last spoke" is the whole rule: an award row newer than his
+  // latest line is his to narrate this turn, and nothing older is repeated.
+  // Best-effort: any failure here costs the line, never the turn.
+  let proficiencyBlock = ""
+  if (timeAdmin) {
+    try {
+      const { data: lastDm } = await supabase
+        .from("dialogue")
+        .select("created_at")
+        .eq("speaker_type", "dm")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      let awardsQuery = timeAdmin
+        .from("skill_progress")
+        .select("character_id, skill, stake_key, campaign_day, created_at")
+        .eq("kind", "award")
+        .order("created_at", { ascending: true })
+        .limit(5)
+      if (lastDm?.created_at) awardsQuery = awardsQuery.gt("created_at", lastDm.created_at)
+      const { data: awards } = await awardsQuery
+      if (awards && awards.length) {
+        const ids = Array.from(new Set(awards.map((a: { character_id: string }) => a.character_id)))
+        const { data: named } = await timeAdmin.from("characters").select("id, name").in("id", ids)
+        const nameOf = new Map<string, string>((named || []).map((c: { id: string; name: string }) => [c.id, c.name]))
+        const rules = await loadSkillProgressRules(timeAdmin)
+        const lines: string[] = []
+        for (const a of awards as { character_id: string; skill: string; stake_key: string | null }[]) {
+          const skill = normaliseSkill(a.skill)
+          const who = nameOf.get(a.character_id)
+          if (!skill || !who) continue
+          // The summary ("8 successes over 23 days") is derived, not stored:
+          // re-run the evaluation over everything but the award row itself.
+          const { data: rows } = await timeAdmin
+            .from("skill_progress")
+            .select("character_id, skill, kind, amount, dc, stake_key, teacher_id, campaign_day, roll_request_id")
+            .eq("character_id", a.character_id)
+            .eq("skill", skill)
+            .neq("kind", "award")
+          const ev = evaluateSkillProgress((rows || []) as SkillLedgerRow[], a.character_id, skill, rules)
+          const path = a.stake_key || ev.path || "practice"
+          lines.push(
+            `PROFICIENCY EARNED: ${who} is now proficient in ${skillTitle(skill)} (path: ${path}${ev.summary ? `, ${ev.summary}` : ""}). Narrate it; do not explain the rule.`,
+          )
+        }
+        if (lines.length) {
+          proficiencyBlock = `=== EARNED PROFICIENCY (this turn only) ===
+${lines.join("\n")}
+This is a fact the engine already wrote to the sheet. Make it land in the fiction - the beast calming, the lock giving, the lesson clicking - in a sentence or two, in character. Never say "proficiency", never mention rules, counts, days or dice. You cannot grant, deny or hurry these; there is no tag for it.`
+        }
+      }
+    } catch (e) {
+      console.warn("[skill-progress] award line unavailable this turn:", e)
+    }
+  }
+
   // Per-encounter stat injection (replaces the old hardcoded Hook Horror block).
   // Read the SHARED active encounters — no character_id filter — so every
   // player's narrator sees the same combatants with the same real HP/AC. Only
@@ -977,8 +1039,9 @@ Wrong: "You rolled 18 against AC 15 - a hit for 7 damage. (Hook Horror: 63/75 HP
 Right: "Your dagger finds the seam in its chitin; ichor spills and it shrieks."
 Asking for a roll is allowed: say it in words and add the dice tag, which is
 never spoken - it is what puts the right dice in the player's hand:
-"Roll for Stealth. [[1d20+7]]"  "Roll to hit. [[1d20+5]]"
-Never write the dice or the bonus OUTSIDE the [[...]] tag.
+"Roll for Stealth. [[1d20+7 | stealth | DC 15]]"  "Roll to hit. [[1d20+5]]"
+Never write the dice or the bonus OUTSIDE the [[...]] tag. For a skill check
+the tag also carries the skill and the DC; the table sees only the dice.
 The mechanical tags ([[...]], [NPC_DAMAGE: ...], [DAMAGE: ...]) carry exact
 numbers: they are stripped before speech and are how the dashboard keeps score.
 
@@ -1088,7 +1151,10 @@ PROGRESSION TRIGGERS — ENFORCE THESE:
 RULES:
 - Address the player by their character name
 - Reference their class abilities, stats, and inventory when relevant
-- For dice rolls, write [[XdY+Z]] and wait for the player to roll
+- For dice rolls, write [[XdY+Z]] and wait for the player to roll. For a SKILL
+  check, put the skill and the DC inside the tag too: [[1d20+3 | stealth | DC 15]].
+  The dashboard reads the skill and the DC out of the tag and shows the players
+  only the dice; the DC is never seen and never spoken.
 - BREVITY IS THE DEFAULT. Answer in 2-4 sentences. One short paragraph. A whole
   scene does not need describing before the players can act — give them the one
   detail that matters and hand the turn back. If you find yourself writing a
@@ -1116,6 +1182,14 @@ ITEMS:
   - item_type: weapon, armor, consumable, misc, currency
   - icon_hint: keyword for matching existing icons (dagger, potion, key, torch, etc.)
   - Example: [ITEM_AWARD: Rusty Dagger | 1 | A corroded blade found in the rubble | weapon | dagger]
+
+SKILL CHECKS:
+- [[1d20+<bonus> | <skill> | DC <n>]] — when you ask for an ability (skill) check
+  - skill: one of the 18 SRD skills (stealth, animal handling, sleight of hand, persuasion …)
+  - DC: the number the check must meet. It stays inside the tag: the players see the dice only, never the DC
+  - Attacks, damage and saving throws keep the plain form: [[1d20+5]], [[2d6+3]]
+  - Example: "Quiet now. Roll Stealth. [[1d20+7 | stealth | DC 15]]"
+  - Example: "The lizard eyes you. Roll Animal Handling. [[1d20+1 | animal handling | DC 12]]"
 
 JOURNAL:
 - [JOURNAL: the page, in the character's own words] — when the character WRITES in their journal
@@ -1310,10 +1384,10 @@ result exists until the engine reports it.
 - The PLAYER CHARACTERS block lists each character's saving throw bonuses,
   skill bonuses (expertise already doubled) and features. USE THEM to rule
   on results. When you call for a roll, name the SKILL in words and put the
-  numbers only in the tag ("Roll Stealth. [[1d20+7]]"). Honor features that
+  numbers only in the tag ("Roll Stealth. [[1d20+7 | stealth | DC 15]]"). Honor features that
   change rolls (Lucky, Brave, Fey Ancestry, Sneak Attack conditions) without
   the player having to remind you.
-${pacingBlock ? `\n${pacingBlock}` : ""}`
+${pacingBlock ? `\n${pacingBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
 
   // A provider failure here used to escape as a bare 500 with no body: the UI
   // showed nothing, the client retried, and each retry persisted the player's
@@ -2516,7 +2590,9 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}`
   })).filter((segment) => segment.speaker && segment.line)
 
   // Strip control tags from the displayed text, preserving their visible speech.
-  const responseText = rawText
+  // The roll tag is cut back to its bare dice FIRST: the skill and the DC that
+  // ride inside [[1d20+3 | stealth | DC 15]] are for the ledger, never the table.
+  const responseText = stripRollRequestExtras(rawText)
     .replace(/\[NPC_SPEECH:\s*[^\]]+\]/gi, "")
     .replace(/\[\/NPC_SPEECH\]/gi, "")
     .replace(/\[ITEM_ADD:[^\]]+\]/gi, "")
@@ -3459,18 +3535,34 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
           .eq("character_id", playerCharacter.id)
           .eq("status", "pending")
 
-        const { data: created, error: createError } = await admin
+        const baseRow = {
+          session_id: activeSessionId,
+          character_id: playerCharacter.id,
+          requested_expression: parsedRequest.expression,
+          die_sides: Number.parseInt(parsedRequest.die.slice(1), 10),
+          dice_count: parsedRequest.diceCount,
+          modifier: parsedRequest.modifier,
+        }
+        // The skill and the DC make a check legible to the earned-proficiency
+        // ledger (docs/claude_Earned_Proficiency.md §2). They are added only when
+        // the tag carried them, and if the columns are not on the table yet (the
+        // migration is pasted by hand) the request is written without them rather
+        // than lost - the roll itself must never depend on the tally.
+        const extras =
+          parsedRequest.skill || parsedRequest.dc != null
+            ? { ...(parsedRequest.skill ? { skill: parsedRequest.skill } : {}), ...(parsedRequest.dc != null ? { dc: parsedRequest.dc } : {}) }
+            : null
+        const selectCols = "id, correlation_id, requested_expression, die_sides, dice_count, modifier, purpose, status"
+        let insert = await admin
           .from("roll_requests")
-          .insert({
-            session_id: activeSessionId,
-            character_id: playerCharacter.id,
-            requested_expression: parsedRequest.expression,
-            die_sides: Number.parseInt(parsedRequest.die.slice(1), 10),
-            dice_count: parsedRequest.diceCount,
-            modifier: parsedRequest.modifier,
-          })
-          .select("id, correlation_id, requested_expression, die_sides, dice_count, modifier, purpose, status")
+          .insert(extras ? { ...baseRow, ...extras } : baseRow)
+          .select(selectCols)
           .single()
+        if (insert.error && extras) {
+          console.warn("[rolls] skill/dc not accepted by roll_requests (migration not applied?):", insert.error.message)
+          insert = await admin.from("roll_requests").insert(baseRow).select(selectCols).single()
+        }
+        const { data: created, error: createError } = insert
         if (createError) throw createError
         rollRequest = {
           id: created.id,
@@ -3480,6 +3572,7 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
           diceCount: created.dice_count,
           modifier: created.modifier,
           purpose: created.purpose,
+          skill: parsedRequest.skill,
           status: created.status,
         }
       }
