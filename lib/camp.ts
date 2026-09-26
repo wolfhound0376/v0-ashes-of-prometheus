@@ -1317,6 +1317,8 @@ export interface CampBlockState {
   budgets: { name: string; remaining: number }[]
   /** Last rest's visitor, not yet told to Malachar. */
   visitor: StoredVisitor | null
+  /** Camp actions the dice settled this turn (§14), as facts to narrate. */
+  results?: string[]
 }
 
 /**
@@ -1342,7 +1344,10 @@ export function formatCampBlock(s: CampBlockState): string {
     parts.push(
       `The party is CAMPED. Rations on hand: ${s.supplies}. They buy ${rest}\n` +
         `Camp actions left (one each is spent per activity; sleeping is free): ${budgets}.\n` +
-        `The menu: ${CAMP_ACTIONS.map((a) => a.replace("_", " ")).join(", ")}. Hold each character to their count in the fiction; the system does not yet track spending.\n` +
+        `The menu: ${CAMP_ACTIONS.map((a) => a.replace("_", " ")).join(", ")}. Not yet: ${Object.keys(CAMP_ACTIONS_NOT_YET).map((a) => a.replace("_", " ")).join(", ")}.\n` +
+        `When a character spends one, emit [CAMP_ACTION: <name> | <action>] — the system counts it and refuses one past their count. ` +
+        `Forage and hunt (Survival, DC 15 in the Underdark) and perform (Performance) are settled by the acting player's own dice: put the tag in the SAME reply as their roll request, e.g. [CAMP_ACTION: Kenta | forage] Roll Survival. [[1d20-1 | survival | DC 15]]. ` +
+        `You will be told the result; never invent food or its amount.\n` +
         `Emit [TIME:break_camp] if they pack up without resting.`,
     )
   }
@@ -1356,9 +1361,213 @@ export function formatCampBlock(s: CampBlockState): string {
     line += ` Open your next narration with their arrival.`
     parts.push(line)
   }
+  if (s.results?.length) {
+    parts.push(`SETTLED BY THE DICE this turn (facts — narrate them, never the numbers):\n${s.results.map((r) => `- ${r}`).join("\n")}`)
+  }
   if (!parts.length) return ""
   return `════════════════════════════════════════════════════════════════════
 CAMP (facts from the system — never reveal numbers or rolls to players)
 ════════════════════════════════════════════════════════════════════
 ${parts.join("\n\n")}`
+}
+
+// ============================================================================
+// §14 SPENDING CAMP ACTIONS — PR 5 (2026-09-26)
+// ============================================================================
+//
+// `[CAMP_ACTION: <name> | <action>]` spends one action from the named
+// character's `rest_actions_remaining`. Most actions are the DM's scene once
+// spent. Three change the world and are settled by the acting player's OWN roll
+// on the table, never by a number Malachar writes:
+//
+//   forage, hunt   WIS (Survival) → rations into party_supplies
+//   perform        CHA (Performance) → on a partial rest, the bard's exception
+//
+// The link is the roll request. Malachar puts the tag in the same reply as the
+// player's `[[1d20+X | survival | DC 15]]`; the route stamps that request's
+// `purpose` with `camp:<action>`. When the committed result comes back on the
+// next turn, the route reads the real total and the stored DC, claims the
+// request once (`camp:<action>:done`), and settles it before Malachar speaks.
+
+export const CAMP_ACTION_TAG_RE = /\[CAMP_ACTION:\s*([^\]|]+?)\s*\|\s*([^\]|]+?)\s*\]/gi
+
+/** Every tag stripped from player-facing text and speech. */
+export const CAMP_ACTION_STRIP_RE = /\[CAMP_ACTION:[^\]]*\]/gi
+
+export interface CampActionTag {
+  who: string
+  action: string
+}
+
+/** Every [CAMP_ACTION: who | action] in Malachar's reply, in order, at most eight. */
+export function parseCampActions(text: string): CampActionTag[] {
+  const out: CampActionTag[] = []
+  for (const m of text.matchAll(CAMP_ACTION_TAG_RE)) {
+    out.push({ who: m[1].trim(), action: m[2].trim() })
+    if (out.length >= 8) break
+  }
+  return out
+}
+
+const ACTION_ALIASES: Record<string, CampAction> = {
+  attune: "attune", attunement: "attune",
+  investigate: "investigate", identify: "investigate", investigation: "investigate",
+  decipher: "decipher", arcana: "decipher",
+  artifice: "artifice", build: "artifice", building: "artifice", artificing: "artifice", craft: "artifice", crafting: "artifice",
+  forage: "forage", foraging: "forage",
+  mend: "mend", mending: "mend", repair: "mend",
+  brew: "brew", brewing: "brew", potion: "brew", potions: "brew", elixir: "brew", combine: "brew",
+  pray: "pray", prayer: "pray", praying: "pray",
+  level_up: "level_up", levelup: "level_up", level: "level_up",
+  trade: "trade", trading: "trade",
+  hunt: "hunt", hunting: "hunt",
+  explore: "explore", exploring: "explore", scout: "explore",
+  perform: "perform", performance: "perform", music: "perform", play_music: "perform", entertain: "perform", entertaining: "perform",
+  talk: "talk",
+}
+
+/** "Level up" / "level-up" / "Foraging" / "play music" → the menu key, or null. */
+export function normaliseCampAction(raw: string): CampAction | null {
+  const key = raw.trim().toLowerCase().replace(/[\s-]+/g, "_")
+  return ACTION_ALIASES[key] ?? ((CAMP_ACTIONS as readonly string[]).includes(key) ? (key as CampAction) : null)
+}
+
+/** The actions the dice settle, and the skill each one rolls. */
+export const CAMP_CHECK_SKILL: Partial<Record<CampAction, "survival" | "performance">> = {
+  forage: "survival",
+  hunt: "survival",
+  perform: "performance",
+}
+
+/** On the menu but not wired yet — refused without spending the action. */
+export const CAMP_ACTIONS_NOT_YET: Partial<Record<CampAction, string>> = {
+  level_up: "Levelling at camp is PR 4 — not wired yet.",
+  artifice: "Crafting waits on Sam's recipes and a place to bank progress (camp doc §14).",
+  brew: "Brewing is crafting, and crafting waits on Sam's recipes and a place to bank progress (camp doc §14).",
+}
+
+export interface CampActionDecision {
+  action: CampAction | null
+  /** Spend one action now? */
+  spend: boolean
+  /** Budget after this tag. */
+  remaining: number
+  /** The skill the acting player's roll must be, for forage / hunt / perform. */
+  check: "survival" | "performance" | null
+  note: string
+}
+
+/**
+ * Whether one [CAMP_ACTION] tag is honoured. Refusals never spend. A check
+ * action spends only when it can be settled by the dice: the tag names the
+ * player who is speaking (roll requests belong to the speaker) and the same
+ * reply asks that player to roll a compatible skill.
+ */
+export function decideCampAction(input: {
+  camping: boolean
+  who: string
+  action: string
+  remaining: number | null | undefined
+  /** The tag names the character whose player is speaking this turn. */
+  isSpeaker: boolean
+  /** The skill on this reply's roll request: a skill, null for a bare `[[1d20+X]]`, undefined when there is no request. */
+  requestSkill: string | null | undefined
+  merchantPresent: boolean
+}): CampActionDecision {
+  const have = Math.max(0, Math.trunc(Number(input.remaining) || 0))
+  const action = normaliseCampAction(input.action)
+  const refuse = (note: string): CampActionDecision => ({ action, spend: false, remaining: have, check: null, note: `${input.who} — ${note}` })
+  if (!input.camping) return refuse(`${input.action}: the party is not camped.`)
+  if (!action) return refuse(`"${input.action}" is not a camp action.`)
+  const notYet = CAMP_ACTIONS_NOT_YET[action]
+  if (notYet) return refuse(notYet)
+  if (action === "trade" && !input.merchantPresent) return refuse("there is no merchant at this fire to trade with.")
+  const check = CAMP_CHECK_SKILL[action] ?? null
+  if (check) {
+    if (!input.isSpeaker) return refuse(`${action} is settled by their own roll, so only their own player can take it.`)
+    if (input.requestSkill === undefined) return refuse(`${action} needs a ${check} roll in the same reply — nothing spent.`)
+    if (input.requestSkill !== null && input.requestSkill !== check) return refuse(`${action} rolls ${check}, not ${input.requestSkill} — nothing spent.`)
+  }
+  const spent = spendCampAction(have, action)
+  if (!spent.ok) return { action, spend: false, remaining: have, check: null, note: `${input.who} — ${spent.note}` }
+  return { action, spend: true, remaining: spent.remaining, check, note: `${input.who} — ${spent.note}` }
+}
+
+/** What goes on `roll_requests.purpose` to link a check to its camp action. */
+export function campPurpose(action: CampAction): string {
+  return `camp:${action}`
+}
+
+/** `camp:forage` → forage, unsettled. `camp:forage:done` → settled. Anything else → null. */
+export function parseCampPurpose(purpose: string | null | undefined): { action: CampAction; settled: boolean } | null {
+  const m = /^camp:([a-z_]+)(?::(done|inspired))?$/.exec(purpose ?? "")
+  if (!m) return null
+  const action = normaliseCampAction(m[1])
+  return action ? { action, settled: !!m[2] } : null
+}
+
+export interface SettledForage {
+  success: boolean
+  total: number
+  dc: number
+  supplies: number
+  yieldDie: number | null
+  flags: string[]
+  note: string
+}
+
+/**
+ * Forage (or hunt) from a committed roll. The total is the player's, from the
+ * table's dice; the DC is the one Malachar stored on the request (OotA-Enc
+ * p.25: 15, up to 20). The yield, 1d6 + WIS, is DMG p.111 and is rolled
+ * server-side like the short rest's Hit Dice — flagged, faces recorded.
+ */
+export function settleForage(
+  c: { name: string; wis_score: number | null | undefined },
+  roll: { total: number; dc: number | null | undefined },
+  rng: Rng,
+  opts: { hunt?: boolean } = {},
+): SettledForage {
+  const verb = opts.hunt ? "hunts" : "forages"
+  const flags: string[] = []
+  const dc = Math.max(1, Math.trunc(roll.dc ?? FORAGE_DC_DEFAULT))
+  if (roll.dc == null) flags.push(`No DC on the roll request; the Underdark's ${FORAGE_DC_DEFAULT} was used (OotA-Enc p.25).`)
+  if (dc > FORAGE_DC_MAX) flags.push(`DC ${dc} is above the book's ceiling of ${FORAGE_DC_MAX} (OotA-Enc p.25).`)
+  if (opts.hunt) flags.push("Hunting uses the foraging rule (DMG p.111); there is no separate one.")
+  const total = Math.trunc(roll.total)
+  if (total < dc) return { success: false, total, dc, supplies: 0, yieldDie: null, flags, note: `${c.name} ${verb} and comes back with nothing.` }
+  const die = 1 + Math.floor(rng() * 6)
+  const wis = abilityMod(c.wis_score ?? 10)
+  const supplies = Math.max(0, die + wis)
+  flags.push(`Yield 1d6 + WIS is DMG p.111, not SRD; d6 rolled server-side (${die}).`)
+  return {
+    success: true, total, dc, supplies, yieldDie: die, flags,
+    note: supplies > 0
+      ? `${c.name} ${verb} and brings back ${supplies} day${supplies === 1 ? "" : "s"} of food.`
+      : `${c.name} ${verb}, finds something, and it is not enough to eat.`,
+  }
+}
+
+export function bandForTotal(total: number): PerformanceBand {
+  return total >= PERFORMANCE_BANDS.moving ? "moving" : total >= PERFORMANCE_BANDS.warm ? "warm" : "flat"
+}
+
+export interface SettledPerform {
+  band: PerformanceBand
+  inspires: boolean
+  /** True when this performance lifts a partial rest's budget (Sam, 2026-09-26). */
+  lifts: boolean
+  note: string
+}
+
+/** A performance from a committed roll. On a partial rest, warm or better lifts every budget by one, once per camp. */
+export function settlePerform(name: string, total: number, restKind: RestKind | null, alreadyLifted: boolean): SettledPerform {
+  const band = bandForTotal(Math.trunc(total))
+  const inspires = band !== "flat"
+  const lifts = inspires && restKind === "partial" && !alreadyLifted
+  const note =
+    band === "flat"
+      ? `${name} plays, and it falls flat.`
+      : `${name} plays, and it is ${band}${lifts ? " — the camp is lifted by it, and everyone finds the energy for one more thing tonight" : ""}.`
+  return { band, inspires, lifts, note }
 }
