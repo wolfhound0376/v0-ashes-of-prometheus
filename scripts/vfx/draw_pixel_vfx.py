@@ -27,9 +27,14 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxIce        64x64  4f loop   rime left on the floor after a frost hit, drawn flat
   pxGlow       64x64  8f loop   healing luminescence around a target, motes rising
   pxSwirl      48x48  8f loop   the dizzy spiral over a mocked head, violet and blue
+  pxFlame      32x48  8f loop   a tongue of fire riding a burning creature
+  pxArc        24x24  6f        a lightning crackle around a charged creature
+  pxWebWrap    48x64  1f        strands wrapped around a webbed creature
+  pxWebFloor   64x64  1f        the web on a webbed creature's square, flat
 
-pxFlash, pxRing, pxSpark and pxGlow are drawn WHITE on purpose: the kit tints
-them with the damage type's colour, so one sheet serves every type. (The
+pxFlash, pxRing, pxSpark, pxGlow, pxArc and the two webs are drawn WHITE on
+purpose: the kit tints them with the damage type's colour, so one sheet serves
+every type. (The
 Vicious Mockery ghost is a drawn sprite, packed by import_sprite_sheet.py.)
 
 Usage: draw_pixel_vfx.py <public/vfx> [--preview <dir>]
@@ -443,6 +448,105 @@ def swirl(f, n):
     return cell
 
 
+def flame(f, n):
+    """A tongue of fire that rides on a burning creature: taller than wide,
+    licking upward, eight frames of flicker. Sam: "the enemy has flames"."""
+    cell = Cell(32, 48)
+    cx, base = 16.0, 44.0
+    ph = f / n
+    for y in range(48):
+        for x in range(32):
+            up = (base - y) / 40.0              # 0 at the base, 1 at the tip
+            if up < 0 or up > 1:
+                continue
+            sway = 3.0 * math.sin(up * 4.0 - ph * 2 * math.pi) * up
+            nz = fbm(x * 0.24, y * 0.24 - ph * 8, 61) * 2 - 1
+            half = 9.0 * (1 - up) ** 0.9 * (1 + 0.5 * nz) + 1.0
+            dx = abs(x - cx - sway)
+            if dx > half:
+                continue
+            h = (1 - dx / half) * (1 - up * 0.45) + 0.1
+            cell.put(x, y, tone(FIRE, min(0.99, h)))
+    for k in range(3):
+        s = _hash(k, f, 62)
+        cell.put(int(cx + (s * 2 - 1) * 8), int(4 + s * 10), FIRE[3])
+    return cell
+
+
+def arc(f, n):
+    """A crackle of lightning that jumps around a charged creature: a jagged
+    arc across the cell, white, tinted by the kit. Six frames, each a new
+    arc, so playing them at random reads as crackle rather than as a loop."""
+    cell = Cell(24, 24)
+    x0, y0 = 2, 4 + int(_hash(f, 0, 71) * 16)
+    x1, y1 = 21, 4 + int(_hash(f, 1, 71) * 16)
+    pts = [(x0, y0)]
+    for i in range(1, 6):
+        t = i / 6
+        pts.append((round(x0 + (x1 - x0) * t), round(y0 + (y1 - y0) * t + (_hash(f, i, 72) * 2 - 1) * 6)))
+    pts.append((x1, y1))
+    for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+        cell.line(ax, ay, bx, by, WHITE[4])
+    # A fork off the middle.
+    mx, my = pts[3]
+    cell.line(mx, my, mx + (3 if f % 2 else -3), my + (4 if f % 3 else -4), WHITE[2])
+    # Glow one pixel out, dim.
+    lit = cell.px[..., 3] > 0
+    for y in range(24):
+        for x in range(24):
+            if lit[y, x]:
+                continue
+            if any(0 <= x + dx < 24 and 0 <= y + dy < 24 and lit[y + dy, x + dx] for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                cell.put(x, y, WHITE[0])
+    return cell
+
+
+def webwrap(f, n):
+    """Strands wrapped around a webbed creature, drawn as a billboard over the
+    body: a loose cocoon of crossing threads with a few sticky knots."""
+    cell = Cell(48, 64)
+    W = WHITE
+    for k in range(9):
+        y = 6 + k * 6
+        sag = 2 + (k % 3)
+        for x in range(4, 44):
+            t = (x - 4) / 40
+            yy = round(y + math.sin(t * math.pi) * sag * (1 if k % 2 else -1))
+            cell.put(x, yy, W[3] if (x + k) % 5 else W[4])
+    for k in range(5):
+        x = 6 + k * 9
+        for y in range(4, 60):
+            xx = round(x + math.sin(y * 0.18 + k) * 3)
+            if (y + k) % 2:
+                cell.put(xx, y, W[2])
+    for k in range(6):
+        kx = 8 + int(_hash(k, 0, 81) * 32)
+        ky = 8 + int(_hash(k, 1, 81) * 46)
+        cell.put(kx, ky, W[4]); cell.put(kx + 1, ky, W[3]); cell.put(kx, ky + 1, W[3])
+    return cell
+
+
+def webfloor(f, n):
+    """The web on the square a webbed creature stands in, drawn flat: an
+    orb-weaver's wheel, spokes and rings, a little torn."""
+    cell = Cell(64, 64)
+    W = WHITE
+    cx = cy = 32
+    for k in range(10):
+        a = k * math.pi / 5
+        cell.line(cx, cy, cx + math.cos(a) * 30, cy + math.sin(a) * 30, W[2])
+    for r in (6, 11, 16, 21, 26):
+        for i in range(0, 120):
+            a = i / 120 * math.pi * 2
+            if _hash(r, i // 6, 91) < 0.15:
+                continue                       # a torn stretch
+            x = cx + math.cos(a) * (r + math.sin(a * 5) * 0.8)
+            y = cy + math.sin(a) * (r + math.sin(a * 5) * 0.8)
+            cell.put(round(x), round(y), W[3] if r in (11, 21) else W[2])
+    cell.disc(cx, cy, 2, W[4])
+    return cell
+
+
 def spark(f, n):
     """One spark. The burst particles are this, scaled, tinted, thrown."""
     cell = Cell(8, 8)
@@ -469,6 +573,10 @@ SHEETS = [
     ("pxIce",      ice,       4, 4, 6,  True),
     ("pxGlow",     glow,      8, 4, 10, True),
     ("pxSwirl",    swirl,     8, 4, 12, True),
+    ("pxFlame",    flame,     8, 4, 12, True),
+    ("pxArc",      arc,       6, 6, 12, True),
+    ("pxWebWrap",  webwrap,   1, 1, 1,  False),
+    ("pxWebFloor", webfloor,  1, 1, 1,  False),
 ]
 
 

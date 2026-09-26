@@ -66,6 +66,8 @@ import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, kitVfxTypeFor, prewarmKit, type CastHandle, type DamageType } from "./spell-vfx-kit"
 import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
+import { StatusVfx, type StatusBody } from "./status-vfx"
+import { conditionNames, statusKindsOf } from "@/lib/status-kinds"
 import { STABILIZE, STABILIZE_ENTRY } from "@/lib/stabilize"
 import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
@@ -182,6 +184,13 @@ interface TokenRow {
   hp_max: number | null
   /** Set when this token is a spell effect (Mage Hand), see lib/summons. */
   summon?: unknown
+  /**
+   * Timed conditions the combat route laid on this creature — Web's
+   * Restrained, Faerie Fire — as {condition, spell, ...} rows. Read for the
+   * looks the board draws on the body (status-vfx.ts); the rules still read
+   * conditions from the sheet.
+   */
+  effects?: unknown
 }
 
 interface CellsJson {
@@ -2010,6 +2019,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // Live effects, advanced by the same clock as everything else. A cast
     // that is still in the air when the board unmounts is disposed with it.
     const vfx: VfxHandle[] = []
+
+    // ── CONDITION LOOKS ────────────────────────────────────────────────────
+    // Flames, a lightning crackle, webs, lying prone — drawn on the body for
+    // as long as the condition holds (status-vfx.ts). The conditions come
+    // from three places and are folded together each frame: the row's own
+    // timed `effects` (the combat route), npc_encounters by name (Malachar's
+    // tags on monsters), and the character sheet (his tags on players).
+    const statusVfx = new StatusVfx(scene)
+    const npcConds = new Map<string, string[]>()
+    const pcConds = new Map<string, string[]>()
 
     // ── THE GRAVE ──────────────────────────────────────────────────────────
     // Fetched and parsed NOW, while nothing is happening, so that the moment
@@ -5119,7 +5138,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // The combatants.
       const { data: tokenRows } = await supabase
         .from("vtt_tokens")
-        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,is_hidden,hp_current,hp_max,allegiance,summon")
+        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,is_hidden,hp_current,hp_max,allegiance,summon,effects")
         .eq("map_id", map.id)
 
       // A model belongs to the SPECIES. A token that names a bestiary entry
@@ -5255,6 +5274,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (res.error) say("The sheets did not load: " + res.error.message)
         }
         const rows = res.data
+        // The players' conditions, for the looks on their bodies. Refreshed
+        // with the sheets, which the characters channel reloads on change.
+        pcConds.clear()
+        for (const c of (rows ?? []) as unknown as { id: string; conditions?: unknown }[]) {
+          pcConds.set(c.id, conditionNames(c.conditions))
+        }
 
         // WHAT THEY ACTUALLY CARRY.
         //
@@ -5449,12 +5474,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const map: Record<string, string> = {}
         const conds: Record<string, unknown> = {}
         const sides: Record<string, string> = {}
+        npcConds.clear()
         for (const t of (tokenRows ?? []) as TokenRow[]) {
           if (t.allegiance) sides[t.id] = t.allegiance
           const npc = byName.get(t.label)
           const url = npc?.face_url ?? npc?.portrait_url ?? speciesArt.get(t.bestiary_id ?? "") ?? null
           if (url) map[t.id] = url
-          if (npc?.conditions) conds[t.id] = npc.conditions
+          if (npc?.conditions) {
+            conds[t.id] = npc.conditions
+            npcConds.set(t.id, conditionNames(npc.conditions))
+          }
         }
         setTokenPortrait(map)
         setTokenConditions(conds)
@@ -6142,6 +6171,28 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           if (rig && !down && rig.current === "walk") rig.play("idle")
         }
       })
+      // The looks on the bodies: after the walk loop, so the hop rides on top
+      // of wherever the board just put each token, and the prone pitch lands
+      // on the stance the board just set.
+      {
+        const bodies: StatusBody[] = []
+        tokensRef.current.forEach((entry) => {
+          const kinds = statusKindsOf([
+            ...conditionNames(entry.row.effects),
+            ...(npcConds.get(entry.row.id) ?? []),
+            ...(entry.row.character_id ? pcConds.get(entry.row.character_id) ?? [] : []),
+          ])
+          bodies.push({
+            id: entry.row.id,
+            obj: entry.obj,
+            kinds,
+            dead: isDowned(entry.row),
+            moving: Boolean(entry.obj.userData.glide || entry.obj.userData.fall || entry.obj.userData.charging),
+          })
+        })
+        statusVfx.sync(bodies, dt, activeCam())
+      }
+
       // Embers rise, wander, and are reborn at the floor.
       //
       // GUARDED, and the guard is the fix for a dead /battle page: this loop
@@ -6224,6 +6275,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // A spell still in the air when the board goes away takes its
       // geometry and materials with it.
       vfx.forEach((v) => v.dispose())
+      statusVfx.dispose()
       vfx.length = 0
       window.removeEventListener("keydown", onMoveKey)
       clearTargets()
