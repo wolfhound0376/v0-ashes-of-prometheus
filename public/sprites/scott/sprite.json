@@ -11,13 +11,6 @@
   ],
   "ppu": 95,
   "animations": {
-    "cast": {
-      "sheet": "cast.png",
-      "frames": 6,
-      "fps": 10,
-      "loop": false,
-      "hit": 0.6
-    },
     "dead": {
       "sheet": "dead.png",
       "frames": 7,
@@ -48,6 +41,13 @@
       "frames": 8,
       "fps": 10,
       "loop": true
+    },
+    "cast": {
+      "sheet": "cast.png",
+      "frames": 9,
+      "fps": 10,
+      "loop": false,
+      "hit": 0.6
     }
   }
 }
