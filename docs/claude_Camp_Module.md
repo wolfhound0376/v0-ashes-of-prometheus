@@ -208,6 +208,4 @@ A second session built the same PR in parallel (#468, closed unmerged, recoverab
 
 **Not in PR 3.** Spending camp actions is PR 5: forage, hunt, trade and the rest aren't tracked yet, so the bard's partial-rest exception can't fire yet either. Malachar is told to hold each character to their count in the fiction until then.
 
-**Needs Sam's yes:**
-
-- **A camp with fewer rations than a partial rest gives no rest at all.** This is the literal reading of "rest according to their rations". It bites today, because the party has 0 rations, so a camp gives nothing until someone forages. Resting outside a camp is untouched.
+**Sam's ruling, 2026-09-26: "No rest without enough rations."** A camp with fewer rations than a partial rest gives no rest at all. It bites today: the party has 0 rations, so a camp gives nothing until someone forages (PR 5). Resting outside a camp is untouched.

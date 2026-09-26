@@ -564,13 +564,13 @@ describe("camp in the route", () => {
     expect(campRest("partial", 12, 4)).toMatchObject({ allowed: true, cost: 10, suppliesAfter: 2 })
   })
 
-  it("no rations: no rest at all; a long night is hungry, an hour is not; both flagged for Sam", () => {
+  it("no rations: no rest at all (Sam's ruling); a long night is hungry, an hour is not", () => {
     const long = campRest("full", 0, 4)
     expect(long).toMatchObject({ allowed: false, affordable: null, hungerTicks: true, cost: 0 })
     const short = campRest("partial", 9, 4)
     expect(short).toMatchObject({ allowed: false, hungerTicks: false })
-    expect(long.flags[0]).toMatch(/needs Sam's yes/)
-    expect(short.flags[0]).toMatch(/needs Sam's yes/)
+    expect(long.flags).toEqual([])
+    expect(short.flags).toEqual([])
   })
 
   it("the CAMP block tells Malachar what the rations buy, who has actions, and who came to the fire", () => {

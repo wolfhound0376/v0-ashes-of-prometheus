@@ -1253,10 +1253,10 @@ export interface CampRestDecision {
  *                     note tells Malachar to end the camp with a short rest.
  *   fewer           → no rest at all. A long night on nothing is a hungry day.
  *
- * The last line is the literal reading and it bites: the party has 0 rations
- * today, so a camp gives them nothing until someone forages. Resting OUTSIDE a
- * camp is untouched — the SRD long rest with its one-per-mouth meal still
- * runs. Flagged for Sam on every refusal of that kind.
+ * The last line is Sam's ruling ("No rest without enough rations", 2026-09-26)
+ * and it bites: the party has 0 rations today, so a camp gives them nothing
+ * until someone forages. Resting OUTSIDE a camp is untouched — the SRD long
+ * rest with its one-per-mouth meal still runs.
  */
 export function campRest(requested: RestKind, supplies: number | null | undefined, partySize: number): CampRestDecision {
   const before = Math.max(0, Math.trunc(Number(supplies) || 0))
@@ -1282,14 +1282,12 @@ export function campRest(requested: RestKind, supplies: number | null | undefine
     return refuse(
       `No rest: ${before} rations, and even a partial rest needs ${partial}. The night passes hungry.`,
       true,
-      [`Camp with fewer than ${partial} rations gives no rest at all — the literal reading of "rest according to their rations"; needs Sam's yes.`],
     )
   }
   if (afford.kind != null) return allow(partial, `A partial rest for ${partial} rations, ${before - partial} left.`)
   return refuse(
     `No rest: ${before} rations, and a partial rest needs ${partial}.`,
     false,
-    [`Camp with fewer than ${partial} rations gives no rest at all — the literal reading of "rest according to their rations"; needs Sam's yes.`],
   )
 }
 
