@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Giant Spider",
+  "cell": [
+    160,
+    160
+  ],
+  "pivot": [
+    80,
+    158
+  ],
+  "ppu": 76,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}

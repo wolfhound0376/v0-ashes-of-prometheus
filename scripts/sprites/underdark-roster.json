@@ -1,0 +1,200 @@
+[
+  {
+    "slug": "drow-guard-male",
+    "name": "Drow Guard (male)",
+    "pixellab_character_id": "a3e90f9e-3b75-4b56-b213-2cdac6db9b17",
+    "size_by": "height",
+    "target_ft": 5.5
+  },
+  {
+    "slug": "drow-guard-female",
+    "name": "Drow Guard (female)",
+    "pixellab_character_id": "97e39822-8dd0-4d00-b537-bbc51bed23f9",
+    "size_by": "height",
+    "target_ft": 5.5
+  },
+  {
+    "slug": "drow-elite-warrior",
+    "name": "Drow Elite Warrior",
+    "pixellab_character_id": "cdf786e6-b96d-4b8a-8998-7a0852d66318",
+    "size_by": "height",
+    "target_ft": 5.6
+  },
+  {
+    "slug": "hook-horror",
+    "name": "Hook Horror",
+    "pixellab_character_id": "e41cf452-aa3f-4f60-88fe-7647d2bb963e",
+    "size_by": "height",
+    "target_ft": 9.0,
+    "shift_facings": 1
+  },
+  {
+    "slug": "eagleman",
+    "name": "Eagleman",
+    "pixellab_character_id": "2e9ddb86-e6bd-45ab-9980-99f05bf12da6",
+    "size_by": "height",
+    "target_ft": 7.5
+  },
+  {
+    "slug": "giant-spider",
+    "name": "Giant Spider",
+    "pixellab_character_id": "324b3994-e86d-4f20-a5ca-787167aaca1b",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "quaggoth",
+    "name": "Quaggoth",
+    "pixellab_character_id": "010bae69-e137-43b9-9665-a09f9dca4231",
+    "size_by": "height",
+    "target_ft": 6.0
+  },
+  {
+    "slug": "gas-spore",
+    "name": "Gas Spore",
+    "pixellab_character_id": "fcba2ce1-3663-47cc-a997-72c776fec067",
+    "size_by": "height",
+    "target_ft": 8.0
+  },
+  {
+    "slug": "myconid-adult",
+    "name": "Myconid Adult",
+    "pixellab_character_id": "764deb77-6def-4e68-a77f-2f60d60bb34e",
+    "size_by": "height",
+    "target_ft": 5.5
+  },
+  {
+    "slug": "duergar",
+    "name": "Duergar",
+    "pixellab_character_id": "8704b624-9490-4c44-a5f5-1f799f15b632",
+    "size_by": "height",
+    "target_ft": 4.5
+  },
+  {
+    "slug": "deep-gnome",
+    "name": "Deep Gnome (Svirfneblin)",
+    "pixellab_character_id": "747a8e26-d34d-4f70-8736-f48996d1b707",
+    "size_by": "height",
+    "target_ft": 3.2
+  },
+  {
+    "slug": "cloaker",
+    "name": "Cloaker",
+    "pixellab_character_id": "61430dca-a964-4b5f-b66f-f678c47126ee",
+    "size_by": "width",
+    "target_ft": 9.0
+  },
+  {
+    "slug": "nothic",
+    "name": "Nothic",
+    "pixellab_character_id": "61f3f6e6-078c-4a53-bd93-eb09e0ad6967",
+    "size_by": "height",
+    "target_ft": 5.0
+  },
+  {
+    "slug": "mind-flayer",
+    "name": "Mind Flayer",
+    "pixellab_character_id": "9efde1e6-ff2e-4892-a21c-29049c5c06bb",
+    "size_by": "height",
+    "target_ft": 6.0
+  },
+  {
+    "slug": "grimlock",
+    "name": "Grimlock",
+    "pixellab_character_id": "b13df374-6aee-40ee-a408-a9857f794207",
+    "size_by": "height",
+    "target_ft": 5.5
+  },
+  {
+    "slug": "underdark-barbarian",
+    "name": "Underdark Barbarian",
+    "pixellab_character_id": "eeacaa4b-71ea-4be3-8642-9d5a46c41be5",
+    "size_by": "height",
+    "target_ft": 6.5
+  },
+  {
+    "slug": "green-hag",
+    "name": "Green Hag",
+    "pixellab_character_id": "b27a3e14-136d-4fb3-884e-2771b5ab1150",
+    "size_by": "height",
+    "target_ft": 5.5
+  },
+  {
+    "slug": "kuo-toa",
+    "name": "Kuo-toa",
+    "pixellab_character_id": "941a606f-e2ba-4d8a-858f-c1594afe91a3",
+    "size_by": "height",
+    "target_ft": 5.0
+  },
+  {
+    "slug": "deep-dragon",
+    "name": "Ancient Deep Dragon",
+    "pixellab_character_id": "29db7396-3d73-4fee-95d1-2e4a395fda6c",
+    "size_by": "width",
+    "target_ft": 20.0
+  },
+  {
+    "slug": "imp",
+    "name": "Imp",
+    "pixellab_character_id": "818d8f52-d0d4-4378-9c1b-9bb578d3f711",
+    "size_by": "height",
+    "target_ft": 2.0
+  },
+  {
+    "slug": "skeleton-archer",
+    "name": "Skeleton Archer",
+    "pixellab_character_id": "aabd6afa-a8bc-45a7-9a74-c18bfbc139a2",
+    "size_by": "height",
+    "target_ft": 5.6
+  },
+  {
+    "slug": "skeleton-swordsman",
+    "name": "Skeleton Swordsman",
+    "pixellab_character_id": "370cb985-bdf2-415d-97a9-38aa0b8a01be",
+    "size_by": "height",
+    "target_ft": 5.6
+  },
+  {
+    "slug": "zombie-fresh",
+    "name": "Zombie (fresh)",
+    "pixellab_character_id": "9ea6d435-ef75-4279-ad77-98b9abbab852",
+    "size_by": "height",
+    "target_ft": 5.6
+  },
+  {
+    "slug": "zombie-rotting",
+    "name": "Zombie (rotting)",
+    "pixellab_character_id": "b1088c19-d0e2-4ac9-95ba-d4de40361bbd",
+    "size_by": "height",
+    "target_ft": 5.6
+  },
+  {
+    "slug": "zombie-bloated",
+    "name": "Zombie (bloated)",
+    "pixellab_character_id": "40b7aeca-5cbd-4ee1-af95-79585c91abfc",
+    "size_by": "height",
+    "target_ft": 5.6
+  },
+  {
+    "slug": "zombie-withered",
+    "name": "Zombie (withered)",
+    "pixellab_character_id": "5a4086e7-d080-4017-bb71-296c1a97883b",
+    "size_by": "height",
+    "target_ft": 5.6
+  },
+  {
+    "slug": "dretch",
+    "name": "Dretch",
+    "pixellab_character_id": "223998b5-1bc3-4381-9cbc-e0c1de7d8549",
+    "size_by": "height",
+    "target_ft": 3.5
+  },
+  {
+    "slug": "green-ooze",
+    "name": "Green Ooze",
+    "pixellab_object_id": "1d105852-c6f9-451a-9721-5f6413482bb9",
+    "size_by": "width",
+    "target_ft": 5.0,
+    "note": "1-direction object: the puddle is idle in all 8 facings; the 'rise' animation is attack"
+  }
+]

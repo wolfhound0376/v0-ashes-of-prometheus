@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Ancient Deep Dragon",
+  "cell": [
+    192,
+    192
+  ],
+  "pivot": [
+    96,
+    190
+  ],
+  "ppu": 46,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}
