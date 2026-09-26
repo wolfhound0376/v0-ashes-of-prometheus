@@ -4020,7 +4020,22 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
       const seg: number[] = [0]
       for (let i = 1; i < pts.length; i++) seg.push(seg[i - 1] + pts[i - 1].distanceTo(pts[i]))
-      entry.obj.userData.glide = { pts, seg, total: seg[seg.length - 1], s: 0 }
+      // A JUMP. Every 5e creature can long-jump, so a walk whose step lands
+      // in water with no bridge under it is taken as a hop: that segment
+      // arcs through the air instead of wading. Swimmers (a kuo-toa, an
+      // ooze) wade, because that IS their movement; fliers never touch it.
+      const hop: boolean[] = [false]
+      {
+        const loco = !row.character_id && row.bestiary_id ? beastLocomotion.get(row.bestiary_id) : undefined
+        const wades = Boolean(loco && (loco.swim > 0 || loco.fly > 0))
+        for (let i = 1; i < pts.length; i++) {
+          const mx = (pts[i - 1].x + pts[i].x) / 2
+          const mz = (pts[i - 1].z + pts[i].z) / 2
+          const k = Math.floor(mx / SQ) + "," + Math.floor(mz / SQ)
+          hop.push(!wades && waterRef.current.has(k) && !bridgeRef.current.has(k))
+        }
+      }
+      entry.obj.userData.glide = { pts, seg, total: seg[seg.length - 1], s: 0, hop }
       // A second move order landing mid-walk replaces the first: stop before
       // starting, or the old loop is orphaned and plays until the page closes.
       stopFootsteps(row.id)
@@ -6394,7 +6409,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           hv.shadow.visible = airborne
           hv.shadow.position.y = -lift + 0.02
         }
-        const gl = entry.obj.userData.glide as { pts: THREE.Vector3[]; seg: number[]; total: number; s: number } | undefined
+        const gl = entry.obj.userData.glide as { pts: THREE.Vector3[]; seg: number[]; total: number; s: number; hop?: boolean[] } | undefined
         // The dead stay dead: a body dragged across the board must not
         // stand up to walk, and must not be handed back to its stance.
         const down = isDowned(entry.row)
@@ -6461,7 +6476,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // Models WALK, feet on the floor. Only the plain pawn discs keep a
         // little hop, so their slide still reads as motion. A flier keeps
         // its altitude the whole way.
-        entry.obj.position.y = airborne ? lift : entry.anim || rig ? 0 : Math.sin(f * Math.PI) * 0.18
+        // A hop segment (water, no bridge) arcs: up to about a body's
+        // height at the middle and back to the floor at the far bank.
+        const jumping = Boolean(gl.hop?.[segIdx]) && !airborne
+        entry.obj.position.y = airborne ? lift : jumping ? Math.sin(f * Math.PI) * 0.7 : entry.anim || rig ? 0 : Math.sin(f * Math.PI) * 0.18
         // Face the way they are travelling — smoothly, leg by leg.
         const dir = new THREE.Vector3().subVectors(b, a)
         if (dir.lengthSq() > 1e-4) {
