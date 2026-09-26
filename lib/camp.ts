@@ -342,12 +342,10 @@ export function resolveWatch(
 // human / kuo-toa / crazy dwarf / crazy drow / hag or witch). 25% malicious,
 // 80% neutral, 5% divine (50:50 Good / Evil)."
 //
-// A d40 gives the 2.5% steps exactly. Two readings remain, both flagged on the
-// result when they fire:
-//   - 25 + 80 + 5 is 110. Malicious 25 and divine 5 are kept exact; neutral is
-//     the remainder, 70. Sam corrects it in a word.
-//   - The seven kinds of wandering person carry no weights, so they are equal
-//     odds on a d7.
+// A d40 gives the 2.5% steps exactly. Sam's 25 + 80 + 5 summed to 110; he
+// confirmed 25 / 70 / 5 ("70 is fine", 2026-09-26). One reading remains,
+// flagged on the result when it fires: the seven kinds of wandering person
+// carry no weights, so they are equal odds on a d7.
 
 export const CAMP_VISITOR_TABLE = "camp_visitors"
 export const CAMP_VISITOR_KIND_TABLE = "camp_visitor_kind"
@@ -381,7 +379,7 @@ export const CAMP_VISITOR_ROWS: EncounterTableRow[] = [
   { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 5, roll_max: 5, result: "a crazy dwarf", detail: { who: "crazy dwarf" } },
   { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 6, roll_max: 6, result: "a crazy drow", detail: { who: "crazy drow" } },
   { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 7, roll_max: 7, result: "a hag or witch", detail: { who: "hag or witch" } },
-  // d20 — disposition (25 / 70 / 5; see the note above on Sam's 110%)
+  // d20 — disposition (25 / 70 / 5, Sam 2026-09-26)
   { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 1, roll_max: 5, result: "who means harm", detail: { disposition: "malicious" } },
   { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 6, roll_max: 19, result: "who is simply passing through", detail: { disposition: "neutral" } },
   { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 20, roll_max: 20, result: "who is something divine in disguise", detail: { disposition: "divine", rolls: [CAMP_VISITOR_DIVINE_TABLE] } },
@@ -428,7 +426,7 @@ export function passiveCampEncounter(node: WatchNode, rng: Rng, opts: { rows?: E
   const alignment = pick("alignment") as DivineAlignment | null
   const hostile = details.some((d) => d.hostile === true)
   if (hostile) flags.push(`${visitor}: no bestiary row is named by the table; the DM picks the stat block.`)
-  if (visitor === "person") flags.push("Disposition odds read as 25 / 70 / 5 — Sam's 25 / 80 / 5 sums to 110; neutral took the difference. The seven kinds are equal odds — no weights given.")
+  if (visitor === "person") flags.push("The seven kinds of wandering person are equal odds — Sam gave no weights.")
   // For a person, every row in the chain after the first is part of the description
   // (kind, disposition, and the divine lean), including the ones that rolled again.
   const personParts = watch.chain.slice(1).map((c) => c.result).filter((r): r is string => !!r)
@@ -1189,4 +1187,178 @@ export function levelUp(sheet: LevelUpSheet, opts: { method: "roll" | "average";
       `proficiency +${write.proficiency_bonus}, Hit Dice ${write.sheet_hit_dice}` +
       (pendingChoices.length ? ` — ${pendingChoices.length} choice${pendingChoices.length === 1 ? "" : "s"} to make at the fire.` : "."),
   }
+}
+
+// ============================================================================
+// §13 THE CAMP IN THE ROUTE — PR 3 (2026-09-26)
+// ============================================================================
+//
+// What the chat route needs to run a camp without a new column:
+//
+//   WHETHER THE PARTY IS CAMPING is read from `time_log`, which already keeps
+//   every rest in order. `[TIME:make_camp]` and `[TIME:break_camp]` are logged
+//   there at zero minutes (the clock trigger accepts any event with an explicit
+//   minutes value). The party is camping when the latest of make_camp,
+//   break_camp, long_rest and short_rest is a make_camp: the rest that ends the
+//   evening ends the camp.
+//
+//   WHAT THE RATIONS ALLOW is `campRest` below — Sam's rule that the party
+//   "rest[s] according to their rations available".
+//
+//   WHO CAME TO THE FIRE is rolled after the rest and handed to Malachar on
+//   his next turn through `formatCampBlock`, because the rest resolves after
+//   his prose is written and he would otherwise never hear of it.
+
+/** The time_log event types that open and close a camp. */
+export const CAMP_EVENT_TYPES = ["make_camp", "break_camp"] as const
+
+/** Event types, most recent first, as `time_log` returns them. */
+export function isCamping(latestFirst: readonly (string | null | undefined)[]): boolean {
+  for (const t of latestFirst) {
+    if (t === "make_camp") return true
+    if (t === "break_camp" || t === "long_rest" || t === "short_rest") return false
+  }
+  return false
+}
+
+export interface CampRestDecision {
+  /** What Malachar's tag asked for: `full` for [TIME:long_rest], `partial` for [TIME:short_rest]. */
+  requested: RestKind
+  /** The best rest tonight's rations buy, or null. */
+  affordable: RestKind | null
+  /** Does the requested rest give its benefits? */
+  allowed: boolean
+  /** Rations charged to `party_supplies`. Zero when refused. */
+  cost: number
+  suppliesBefore: number
+  suppliesAfter: number
+  /**
+   * The party had nothing at all to eat, so a long night is also a hungry day
+   * (lib/exhaustion `resolveHunger` with fed = false). Never true for a short
+   * rest — an hour is not a day — and never true when food was on hand and the
+   * tag was simply the wrong size.
+   */
+  hungerTicks: boolean
+  flags: string[]
+  note: string
+}
+
+/**
+ * Sam, 2026-09-26: "they rest according to their rations available. Full rest
+ * takes 20 rations, partial 10 ..." Read literally and monotonically — more
+ * food never buys less rest:
+ *
+ *   full rations    → a long rest is allowed; so is a short one, at the partial price.
+ *   partial rations → a short rest is allowed; a long rest is refused, and the
+ *                     note tells Malachar to end the camp with a short rest.
+ *   fewer           → no rest at all. A long night on nothing is a hungry day.
+ *
+ * The last line is Sam's ruling ("No rest without enough rations", 2026-09-26)
+ * and it bites: the party has 0 rations today, so a camp gives them nothing
+ * until someone forages. Resting OUTSIDE a camp is untouched — the SRD long
+ * rest with its one-per-mouth meal still runs.
+ */
+export function campRest(requested: RestKind, supplies: number | null | undefined, partySize: number): CampRestDecision {
+  const before = Math.max(0, Math.trunc(Number(supplies) || 0))
+  const afford = affordableRest(before, partySize)
+  const full = fullRestRations(partySize)
+  const partial = partialRestRations(partySize)
+  const base = { requested, affordable: afford.kind, suppliesBefore: before }
+  const allow = (cost: number, note: string): CampRestDecision => ({
+    ...base, allowed: true, cost, suppliesAfter: before - cost, hungerTicks: false, flags: [], note,
+  })
+  const refuse = (note: string, hungerTicks: boolean, flags: string[] = []): CampRestDecision => ({
+    ...base, allowed: false, cost: 0, suppliesAfter: before, hungerTicks, flags, note,
+  })
+
+  if (requested === "full") {
+    if (afford.kind === "full") return allow(full, `The camp eats well: a full rest for ${full} rations, ${before - full} left.`)
+    if (afford.kind === "partial") {
+      return refuse(
+        `The rations stretch to a partial rest only (${before} on hand; a full rest needs ${full}). The long rest gives nothing — end the camp with a short rest.`,
+        false,
+      )
+    }
+    return refuse(
+      `No rest: ${before} rations, and even a partial rest needs ${partial}. The night passes hungry.`,
+      true,
+    )
+  }
+  if (afford.kind != null) return allow(partial, `A partial rest for ${partial} rations, ${before - partial} left.`)
+  return refuse(
+    `No rest: ${before} rations, and a partial rest needs ${partial}.`,
+    false,
+  )
+}
+
+/** What is stored on `rest_events.detail.visitor` and read back next turn. */
+export interface StoredVisitor {
+  visitor: CampVisitor | null
+  who: string | null
+  disposition: VisitorDisposition | null
+  alignment: DivineAlignment | null
+  hostile: boolean
+  merchantPresent: boolean
+  note: string
+}
+
+export function storedVisitor(e: PassiveEncounter): StoredVisitor {
+  return {
+    visitor: e.visitor, who: e.who, disposition: e.disposition, alignment: e.alignment,
+    hostile: e.hostile, merchantPresent: e.merchantPresent, note: e.note,
+  }
+}
+
+export interface CampBlockState {
+  camping: boolean
+  supplies: number
+  partySize: number
+  /** Each party member's `rest_actions_remaining`. */
+  budgets: { name: string; remaining: number }[]
+  /** Last rest's visitor, not yet told to Malachar. */
+  visitor: StoredVisitor | null
+}
+
+/**
+ * The CAMP section of Malachar's prompt, or "" when there is nothing to say.
+ * Facts only — what the rations buy, who has actions left, who came to the
+ * fire. The narration is his.
+ */
+export function formatCampBlock(s: CampBlockState): string {
+  const parts: string[] = []
+  if (s.camping) {
+    const afford = affordableRest(s.supplies, s.partySize)
+    const full = fullRestRations(s.partySize)
+    const partial = partialRestRations(s.partySize)
+    const rest =
+      afford.kind === "full"
+        ? `a FULL rest (${full} rations). End the camp with [TIME:long_rest], or [TIME:short_rest|spend=…] for a partial rest at ${partial}.`
+        : afford.kind === "partial"
+          ? `only a PARTIAL rest (${partial} rations). End the camp with [TIME:short_rest|spend=…]; a [TIME:long_rest] will give nothing.`
+          : `NO rest — a partial rest needs ${partial}. Any rest tag gives nothing; a long one is a hungry night. Food must be found first.`
+    const budgets = s.budgets.length
+      ? s.budgets.map((b) => `${b.name} ${b.remaining}`).join(", ")
+      : "none recorded"
+    parts.push(
+      `The party is CAMPED. Rations on hand: ${s.supplies}. They buy ${rest}\n` +
+        `Camp actions left (one each is spent per activity; sleeping is free): ${budgets}.\n` +
+        `The menu: ${CAMP_ACTIONS.map((a) => a.replace("_", " ")).join(", ")}. Hold each character to their count in the fiction; the system does not yet track spending.\n` +
+        `Emit [TIME:break_camp] if they pack up without resting.`,
+    )
+  }
+  if (s.visitor && s.visitor.visitor) {
+    const v = s.visitor
+    let line = `SOMEONE CAME TO THE FIRE at the end of the last rest (a hidden roll — never mention it): ${v.note}`
+    if (v.hostile) line += ` They come to fight. Introduce them from the bestiary with [NPC_ENCOUNTER:…]; when the fight starts on the board, surprise and initiative are resolved there — do not roll them in prose.`
+    else if (v.merchantPresent) line += ` A merchant: anyone may spend a camp action to trade. Every item must come from the catalog.`
+    else if (v.disposition === "divine") line += ` Divine in disguise, leaning ${v.alignment ?? "unknown"}. Reveal it only if they earn it.`
+    else if (v.disposition === "malicious") line += ` They mean harm, and will not say so.`
+    line += ` Open your next narration with their arrival.`
+    parts.push(line)
+  }
+  if (!parts.length) return ""
+  return `════════════════════════════════════════════════════════════════════
+CAMP (facts from the system — never reveal numbers or rolls to players)
+════════════════════════════════════════════════════════════════════
+${parts.join("\n\n")}`
 }

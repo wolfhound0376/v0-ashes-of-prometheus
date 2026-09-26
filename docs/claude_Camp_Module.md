@@ -133,7 +133,7 @@ How the code reads it:
 
 The faces were first a reading of "rare" and "common"; Sam gave his own numbers the same evening — **§11 has them and is the table.** The OotA random-encounter table (§3) is untouched and still rolls through `resolveWatch` wherever the route wants it.
 
-**Still needs Sam's yes** (§11 settled the rest): slow pace = advantage (§2); minimum 1 hp per level (§2); stable-at-0 spending Hit Dice on a partial rest; and the 110% in §11.
+**Still needs Sam's yes** (§11 settled the rest): slow pace = advantage (§2); minimum 1 hp per level (§2); stable-at-0 spending Hit Dice on a partial rest.
 
 ---
 
@@ -159,10 +159,7 @@ So, now Sam's and no longer flagged: the partial rest costs **half** the full re
 
 Brigands and villains come to fight; no row names a stat block, so the DM picks one from the bestiary and the code says so. A merchant sets `merchantPresent`, which `trade` reads.
 
-**Two readings remain, flagged on every wandering-person result until Sam speaks:**
-
-- **25 + 80 + 5 is 110.** Malicious 25 and divine 5 are kept exact; neutral is the remainder, **70**. If Sam meant 20 / 75 / 5 or 15 / 80 / 5, it is one number to change in `CAMP_VISITOR_ROWS`.
-- **The seven kinds of wandering person carry no weights**, so they are equal odds on a d7.
+Sam's 25 + 80 + 5 summed to 110; he confirmed **25 / 70 / 5** ("70 is fine", 2026-09-26). **One reading remains,** flagged on every wandering-person result: the seven kinds of person carry no weights, so they are equal odds on a d7.
 
 ---
 
@@ -179,8 +176,36 @@ Brigands and villains come to fight; no row names a stat block, so the DM picks 
 - `spend=` lists each character who chooses to spend and how many; `max` rolls one die at a time and stops at full or when the dice run out, which is how the SRD plays it at the table. A character not named spends nothing. A bare `[TIME:short_rest]` is a rest where nobody spends — pact slots still refill.
 - `song=` names the bard who performs Song of Rest; `song=none` means no bard sings; nothing said lets a bard who is up sing. `shortRest` itself says so if the bard is below 2nd.
 - A `[TIME:long_rest]` in the same turn wins; the hour is inside the night, and resolving both would spend Hit Dice the long rest then hands back.
-- Nobody eats on a short rest. The ration charge for a partial rest (§10) belongs to PR 3 with `make_camp`.
+- Nobody eats on a short rest. The ration charge for a partial rest (§10) belongs to PR 3 with `make_camp` (§13).
 
 **Dice are rolled server-side** (`Math.random`) and every face is written to `rest_events.detail`. Routing them through the table's roller is a follow-up, not a decision.
 
 A second session built the same PR in parallel (#468, closed unmerged, recoverable at `refs/pull/468/head`). Its `planHitDice` — spend the fewest dice whose average heal reaches full — was the auto-spend alternative; Sam chose the ruling above instead.
+
+---
+
+## 13. PR 3 — the camp in the chat route (2026-09-26)
+
+**A note on PR 2 first.** Two sessions built it. Mine (#468) merged into the camp branch instead of `main` and never shipped. Another session's (#471) landed on `main` and is the one in play: Malachar writes which character spends how many Hit Dice from what the players said (`[TIME:short_rest|spend=Kenta:1,Samson:max|song=Scott]`), which is better than guessing. #468 is retired; its commits stay readable at `refs/pull/468/head`.
+
+**Nothing called `make_camp` before this PR.** The transition existed in `lib/game-context.ts`, but no route used it. Now:
+
+- **Making and breaking camp** are two new time tags, `[TIME:make_camp]` and `[TIME:break_camp]`, logged to `time_log` at zero minutes. The clock trigger accepts any event with an explicit minutes value, so no database change was needed. Every `[TIME:…]` tag is already stripped from narration and speech, so nothing new reaches players.
+- **Whether the party is camping** is read from `time_log`, not stored. It's the latest of make_camp, break_camp, long_rest and short_rest. The rest that ends the evening ends the camp.
+- **Making camp sets the budget.** Every player character's `rest_actions_remaining` becomes 2 if the rations on hand buy a full rest, 1 for a partial rest, 0 for none.
+- **Rations price the rest at camp.** Sam's table replaces the SRD's one-supply-per-mouth meal at camp, never both. Outside a camp, the old SRD night runs exactly as before.
+
+| Rations on hand | `[TIME:long_rest]` at camp | `[TIME:short_rest]` at camp |
+|---|---|---|
+| Full (20 / 30 / 40) | Full rest, full price, the party eats | Partial rest, half price |
+| Partial only | **Refused.** Nothing charged, nobody starves, camp stays open for the short rest | Partial rest, half price |
+| Less than partial | **No rest.** The night passes hungry and the camp ends | **Refused.** Camp stays open so food can be found |
+
+- **The passive roll** happens after any rest that was actually given at camp, at the party's node (`party_position` → `travel_nodes`; `metadata.safe = true` means no one comes). The result is stored on the `rest_events` row.
+- **Malachar hears about it on his next turn.** Rests resolve after his prose is written, so the route adds a CAMP section to his next prompt with who came, marked told once he has seen it. Brigands and villains come to fight: he introduces them from the bestiary with `[NPC_ENCOUNTER:…]`, and surprise and initiative are resolved on the board when the fight starts. That is the existing `/api/combat` start, not a new path.
+- **While camped, the CAMP section** also tells him the rations, which rest they buy, each character's actions left, and the menu.
+- **A bug on `main` fixed on the way.** #471's short-rest `rest_events` insert left out `fed` and the three supplies columns, which are required with no default, so every short-rest record was refused by the database. The insert now fills them.
+
+**Not in PR 3.** Spending camp actions is PR 5: forage, hunt, trade and the rest aren't tracked yet, so the bard's partial-rest exception can't fire yet either. Malachar is told to hold each character to their count in the fiction until then.
+
+**Sam's ruling, 2026-09-26: "No rest without enough rations."** A camp with fewer rations than a partial rest gives no rest at all. It bites today: the party has 0 rations, so a camp gives nothing until someone forages (PR 5). Resting outside a camp is untouched.

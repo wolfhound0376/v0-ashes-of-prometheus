@@ -27,10 +27,16 @@ import {
 import { canonicalizeCondition } from "@/lib/conditions"
 // A long rest, as the SRD writes it. The rule is pure and lives in its own
 // file; this route only owns the rows it touches.
-import { longRest, absoluteMinutes, type SheetSpellcasting } from "@/lib/long-rest"
+import { longRest, absoluteMinutes, type SheetSpellcasting, type RestOutcome } from "@/lib/long-rest"
 // The short rest — Hit Dice, Song of Rest, Pact Magic — from the camp module.
 // Same arrangement: the rule is pure and tested, this route only owns the rows.
-import { shortRest, hitDieFor, type ShortRester, type ShortRestOutcome, type SongOfRest } from "@/lib/camp"
+import {
+  shortRest, hitDieFor, type ShortRester, type ShortRestOutcome, type SongOfRest,
+  // PR 3 — the camp itself: whether the party is camping, what the rations
+  // buy, the passive roll at the end of the rest, and Malachar's CAMP block.
+  isCamping, campRest, makeCampBudget, affordableRest, passiveCampEncounter, storedVisitor,
+  formatCampBlock, type CampRestDecision, type StoredVisitor, type WatchNode,
+} from "@/lib/camp"
 // Which of the SRD's four states a character is in, so the rest can refuse to
 // sleep off being downed.
 import { vitalityOf, conditionsFor } from "@/lib/death-saves"
@@ -734,6 +740,54 @@ STRICT LIMITS ON USING THESE:
   const gameClock: GameClock | null = await readGameClock(timeAdmin, activeSessionId)
   const pacingBlock = buildPacingBlock(gameClock)
 
+  // === THE CAMP (lib/camp.ts §13) ===
+  // Whether the party is camping is read from time_log — the latest of
+  // make_camp / break_camp / long_rest / short_rest — so no column holds it.
+  // A visitor rolled at the end of the last rest waits on that rest_events row
+  // until Malachar has been told once; `pendingVisitorRestId` marks it told
+  // after this turn. Best-effort throughout: a failure here never blocks a turn.
+  let campingBefore = false
+  let pendingVisitorRestId: string | null = null
+  let campBlock = ""
+  if (timeAdmin && activeSessionId) {
+    try {
+      const { data: recent } = await timeAdmin
+        .from("time_log")
+        .select("event_type")
+        .eq("session_id", activeSessionId)
+        .in("event_type", ["make_camp", "break_camp", "long_rest", "short_rest"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+      campingBefore = isCamping((recent ?? []).map((r: { event_type: string | null }) => r.event_type))
+
+      const { data: lastRest } = await timeAdmin
+        .from("rest_events")
+        .select("id, detail")
+        .eq("session_id", activeSessionId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const lastDetail = (lastRest?.detail ?? {}) as { visitor?: StoredVisitor | null; visitor_told?: boolean }
+      const pendingVisitor = lastDetail.visitor?.visitor && !lastDetail.visitor_told ? lastDetail.visitor : null
+      if (pendingVisitor) pendingVisitorRestId = String(lastRest!.id)
+
+      let budgets: { name: string; remaining: number }[] = []
+      let supplies = 0
+      if (campingBefore) {
+        const { data: campers } = await timeAdmin
+          .from("characters").select("name, rest_actions_remaining").eq("is_player", true)
+        budgets = (campers ?? []).map((c: { name: string; rest_actions_remaining: number | null }) => ({
+          name: String(c.name), remaining: Math.max(0, Number(c.rest_actions_remaining ?? 0)),
+        }))
+        const { data: pool } = await timeAdmin.from("party_supplies").select("supplies").limit(1).maybeSingle()
+        supplies = Math.max(0, Number(pool?.supplies ?? 0))
+      }
+      campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor })
+    } catch (e) {
+      console.warn("[camp] state unavailable this turn:", e)
+    }
+  }
+
   // === EARNED PROFICIENCY — the one line Malachar is allowed to see ===
   // docs/claude_Earned_Proficiency.md §4-§5. The engine awards; Malachar is
   // told once, on the turn after the award landed, and never sees the tally.
@@ -1387,7 +1441,7 @@ result exists until the engine reports it.
   numbers only in the tag ("Roll Stealth. [[1d20+7 | stealth | DC 15]]"). Honor features that
   change rolls (Lucky, Brave, Fey Ancestry, Sneak Attack conditions) without
   the player having to remind you.
-${pacingBlock ? `\n${pacingBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
+${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
 
   // A provider failure here used to escape as a bare 500 with no body: the UI
   // showed nothing, the client retried, and each retry persisted the player's
@@ -3114,6 +3168,70 @@ Rules:
     const clockAfter = await readGameClock(timeAdmin, activeSessionId)
     if (clockAfter) playerTimeOfDay = describeTimeOfDay(clockAfter.minutesOfDay)
 
+    // === THE CAMP (lib/camp.ts §13) ===
+    const admin = timeAdmin
+    // Malachar has now been told about last night's visitor, once.
+    if (pendingVisitorRestId) {
+      const { data: row } = await admin.from("rest_events").select("detail").eq("id", pendingVisitorRestId).maybeSingle()
+      const { error } = await admin.from("rest_events")
+        .update({ detail: { ...((row?.detail ?? {}) as Record<string, unknown>), visitor_told: true } })
+        .eq("id", pendingVisitorRestId)
+      if (error) console.error("[camp] visitor_told:", error.message)
+    }
+    const makingCamp = timeEvents.some((e) => e.eventType === "make_camp")
+    const breakingCamp = timeEvents.some((e) => e.eventType === "break_camp")
+    // A rest this turn happens at camp if the party was already camped or made
+    // camp in the same breath — and not if they just broke it.
+    const campingAtRest = (campingBefore || makingCamp) && !breakingCamp
+    const setCampBudgets = async (value: number) => {
+      const { error } = await admin.from("characters")
+        .update({ rest_actions_remaining: value, updated_at: new Date().toISOString() })
+        .eq("is_player", true)
+      if (error) console.error("[camp] rest_actions_remaining:", error.message)
+    }
+    const countPartyForCamp = async () => {
+      const { count } = await admin.from("characters").select("id", { count: "exact", head: true }).eq("is_player", true)
+      return count ?? 0
+    }
+    // The passive roll (camp doc §10–11). The party's node decides whether
+    // anyone can come: `travel_nodes.metadata.safe = true` means no one does.
+    const rollCampVisitor = async (): Promise<StoredVisitor> => {
+      let node: WatchNode = { metadata: {} }
+      try {
+        const { data: pos } = await admin.from("party_position").select("node_id")
+          .order("updated_at", { ascending: false }).limit(1).maybeSingle()
+        if (pos?.node_id) {
+          const { data: n } = await admin.from("travel_nodes").select("name, metadata").eq("id", pos.node_id).maybeSingle()
+          if (n) node = { name: n.name as string | null, metadata: (n.metadata ?? {}) as WatchNode["metadata"] }
+        }
+      } catch (e) {
+        console.warn("[camp] party node unavailable; rolling as an unsafe node:", e)
+      }
+      return storedVisitor(passiveCampEncounter(node, Math.random))
+    }
+    if (makingCamp) {
+      // Sam, 2026-09-26: two actions on a full rest, one on a partial, decided
+      // by the rations on hand when camp is made.
+      const { data: pool } = await admin.from("party_supplies").select("supplies").limit(1).maybeSingle()
+      const afford = affordableRest(pool?.supplies ?? 0, await countPartyForCamp())
+      const budget = makeCampBudget(afford.kind)
+      await setCampBudgets(budget)
+      console.log(`[camp] camp made — rations buy ${afford.kind ?? "no"} rest; ${budget} camp action(s) each.`)
+    }
+    if (breakingCamp) {
+      await setCampBudgets(0)
+      console.log("[camp] camp broken without a rest.")
+    }
+    // A refused rest is still written to time_log, which would read as the
+    // end of the camp. When the party can still rest — food on hand, wrong
+    // tag, or an hour that bought nothing — the camp is reopened at zero
+    // minutes so the right rest still happens AT camp and at the camp price,
+    // and nobody loses the actions they had left.
+    const reopenCamp = async (why: string) => {
+      await logTimeEvent(admin, activeSessionId, { eventType: "make_camp", minutesAdvanced: 0 })
+      console.log(`[camp] camp stays open — ${why}`)
+    }
+
     // === THE LONG REST ===
     //
     // [TIME:long_rest] has always moved the clock eight hours and done nothing
@@ -3149,10 +3267,20 @@ Rules:
       const { data: pool } = await timeAdmin
         .from("party_supplies").select("id,supplies").limit(1).maybeSingle()
       const partySize = (party ?? []).length
-      const cost = suppliesForParty(partySize)
       const before = Math.max(0, Number(pool?.supplies ?? 0))
-      const fed = before >= cost && cost > 0
+      // AT CAMP, Sam's ration table (20 / 30 / 40) replaces the SRD's one
+      // supply per mouth — never both — and decides whether the long rest
+      // gives anything at all (lib/camp.ts `campRest`). Outside a camp the
+      // SRD night below runs exactly as before.
+      const camp: CampRestDecision | null = campingAtRest ? campRest("full", before, partySize) : null
+      const cost = camp ? camp.cost : suppliesForParty(partySize)
+      const fed = camp ? camp.allowed : before >= cost && cost > 0
       const after = fed ? before - cost : before
+      const refusedAtCamp = (name: string, hp: number | null, dice: number | null): RestOutcome => ({
+        benefited: false, hp: Math.max(0, hp ?? 0), hitDiceRemaining: dice, slots: null,
+        slotsRestored: 0, hitDiceBack: 0, clearTemp: false,
+        note: `${name} gains nothing from the night — the rations did not buy a long rest.`,
+      })
       if (fed && pool?.id) {
         await timeAdmin.from("party_supplies")
           .update({ supplies: after, updated_at: new Date().toISOString() }).eq("id", pool.id)
@@ -3164,6 +3292,7 @@ Rules:
           ? `The party eats: ${cost} supplies spent, ${after} left.`
           : `NOBODY EATS — ${before} supplies for ${partySize} mouths.`,
       )
+      if (camp) notes.push(`Camp: ${camp.note}`, ...camp.flags)
 
       for (const p of party ?? []) {
         const conditions = Array.isArray(p.conditions) ? (p.conditions as unknown[]).map(String) : []
@@ -3171,17 +3300,29 @@ Rules:
         // Hunger resolves BEFORE the rest, at the end of the day it belongs
         // to. It can only ever add exhaustion; the relief below can only ever
         // remove it, and only when fed — so the two can never fight.
-        const hunger = resolveHunger(
-          {
-            name: p.name as string,
-            conScore: p.con_score as number | null,
-            unfedStreak: p.unfed_rest_streak as number | null,
-            exhaustion: p.exhaustion as number | null,
-          },
-          fed,
-        )
+        // A camp that refused the rest while food was on hand is the wrong
+        // tag, not a hungry day — hunger only moves when the night was real.
+        const hungerApplies = !camp || camp.allowed || camp.hungerTicks
+        const hunger = hungerApplies
+          ? resolveHunger(
+              {
+                name: p.name as string,
+                conScore: p.con_score as number | null,
+                unfedStreak: p.unfed_rest_streak as number | null,
+                exhaustion: p.exhaustion as number | null,
+              },
+              fed,
+            )
+          : {
+              unfedStreak: Math.max(0, Math.trunc(Number(p.unfed_rest_streak) || 0)),
+              exhaustion: normaliseExhaustion(p.exhaustion),
+              starved: false,
+              note: null,
+            }
         if (hunger.note) notes.push(hunger.note)
-        const outcome = longRest(
+        const outcome: RestOutcome = camp && !camp.allowed
+          ? refusedAtCamp(p.name as string, p.hp_current as number | null, p.hit_dice_remaining as number | null)
+          : longRest(
           {
             name: p.name as string,
             level: p.level as number | null,
@@ -3256,6 +3397,22 @@ Rules:
           if (error) console.error(`[rest] ${p.name}:`, error.message)
         }
       }
+      // The camp ends with the night: budgets go to zero, and if the rest was
+      // real, the passive roll decides who comes to the fire (told to
+      // Malachar on his next turn through the CAMP block).
+      let longRestVisitor: StoredVisitor | null = null
+      if (camp) {
+        if (camp.allowed || camp.hungerTicks) {
+          await setCampBudgets(0)
+          if (camp.allowed) {
+            longRestVisitor = await rollCampVisitor()
+            notes.push(`Passive roll: ${longRestVisitor.note}`)
+          }
+        } else {
+          await reopenCamp("the long rest was refused with food on hand; a short rest can still end it.")
+        }
+      }
+
       // The record of the night. rest_events was created by the
       // rest_supplies_starving migration on 2026-08-20 and has been empty
       // since — the schema for this was designed months before anything
@@ -3273,7 +3430,7 @@ Rules:
         supplies_cost: fed ? cost : 0,
         supplies_after: after,
         party_size: partySize,
-        detail: { notes },
+        detail: { notes, ...(camp ? { camp, visitor: longRestVisitor } : {}) },
       })
       if (restErr) console.error("[rest] rest_events:", restErr.message)
 
@@ -3305,7 +3462,34 @@ Rules:
     const shortRestArgs = !restingTonight && timeEvents.some((e) => e.eventType === "short_rest")
       ? parseShortRestArgs(rawText)
       : null
-    if (shortRestArgs) {
+    // AT CAMP the rations price the partial rest too (camp doc §10).
+    let shortCamp: CampRestDecision | null = null
+    if (shortRestArgs && campingAtRest) {
+      const { data: pool } = await admin.from("party_supplies").select("id,supplies").limit(1).maybeSingle()
+      const size = await countPartyForCamp()
+      shortCamp = campRest("partial", pool?.supplies ?? 0, size)
+      if (shortCamp.allowed && shortCamp.cost > 0 && pool?.id) {
+        await admin.from("party_supplies")
+          .update({ supplies: shortCamp.suppliesAfter, updated_at: new Date().toISOString() }).eq("id", pool.id)
+      }
+      if (shortCamp.allowed) await setCampBudgets(0)
+      else await reopenCamp("the short rest was refused; food must be found before anyone rests.")
+      if (!shortCamp.allowed) {
+        const { error } = await admin.from("rest_events").insert({
+          session_id: activeSessionId,
+          rest_type: "short",
+          fed: false,
+          supplies_before: shortCamp.suppliesBefore,
+          supplies_cost: 0,
+          supplies_after: shortCamp.suppliesAfter,
+          party_size: size,
+          detail: { notes: [`Camp: ${shortCamp.note}`], flags: shortCamp.flags, camp: shortCamp },
+        })
+        if (error) console.error("[rest] rest_events:", error.message)
+        console.log(`[camp] short rest refused — ${shortCamp.note}`)
+      }
+    }
+    if (shortRestArgs && !(shortCamp && !shortCamp.allowed)) {
       const { data: party } = await timeAdmin
         .from("characters")
         .select("id,name,class,level,hp_current,hp_max,hit_dice_remaining,sheet_hit_dice,sheet_spellcasting,conditions,death_saves,con_score")
@@ -3421,9 +3605,29 @@ Rules:
       // (the camp module's ration cost for a partial rest is a later PR, and
       // still needs Sam's yes). bard_character_id / bard_spent_die are the
       // columns this rest was designed for.
+      // rest_events.fed and the three supplies columns are NOT NULL with no
+      // default, so a row without them was always refused. Outside a camp
+      // nobody eats on a short rest and the supplies pass through; at camp
+      // the partial-rest rations were charged above.
+      let suppliesBefore: number
+      let suppliesAfter: number
+      if (shortCamp) {
+        suppliesBefore = shortCamp.suppliesBefore
+        suppliesAfter = shortCamp.suppliesAfter
+      } else {
+        const { data: pool } = await admin.from("party_supplies").select("supplies").limit(1).maybeSingle()
+        suppliesBefore = suppliesAfter = Math.max(0, Number(pool?.supplies ?? 0))
+      }
+      const shortRestVisitor = shortCamp?.allowed ? await rollCampVisitor() : null
+      if (shortCamp) notes.unshift(`Camp: ${shortCamp.note}`)
+      if (shortRestVisitor) notes.push(`Passive roll: ${shortRestVisitor.note}`)
       const { error: restErr } = await timeAdmin.from("rest_events").insert({
         session_id: activeSessionId,
         rest_type: "short",
+        fed: !!shortCamp?.allowed,
+        supplies_before: suppliesBefore,
+        supplies_cost: suppliesBefore - suppliesAfter,
+        supplies_after: suppliesAfter,
         party_size: rows.length,
         bard_character_id: bardCharacterId,
         bard_spent_die: bardSpentDie,
@@ -3431,6 +3635,7 @@ Rules:
           notes,
           flags: [...flags, "Hit Dice rolled server-side (Math.random), not on the table's dice roller — faces recorded above."],
           spend: shortRestArgs.spend,
+          ...(shortCamp ? { camp: shortCamp, visitor: shortRestVisitor } : {}),
         },
       })
       if (restErr) console.error("[rest] rest_events:", restErr.message)

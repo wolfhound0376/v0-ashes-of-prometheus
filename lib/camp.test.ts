@@ -12,7 +12,11 @@ import {
   affordableRest,
   attune,
   bardUpgrade,
+  campRest,
   craftProgress,
+  formatCampBlock,
+  isCamping,
+  storedVisitor,
   decipher,
   dmScene,
   forage,
@@ -36,6 +40,7 @@ import {
   type LevelUpSheet,
   type ShortRester,
 } from "./camp"
+import { parseTimeEvents } from "./time-tracking"
 
 // ---------------------------------------------------------------------------
 // Seeded dice. Same seed, same stream, every run — the module never touches
@@ -164,7 +169,7 @@ describe("the passive roll", () => {
     expect(malicious).toMatchObject({ who: "human", disposition: "malicious", alignment: null })
     const neutral = passiveCampEncounter({ metadata: {} }, script(d(40, 40), d(4, 7), d(19, 20)))
     expect(neutral).toMatchObject({ who: "kuo-toa", disposition: "neutral", alignment: null })
-    expect(neutral.flags.some((f) => /110/.test(f))).toBe(true)
+    expect(neutral.flags).toEqual(["The seven kinds of wandering person are equal odds — Sam gave no weights."])
     // Every table covers every face of its die exactly once, so the rows can move to the database as they are.
     for (const t of CAMP_VISITOR_TABLES) {
       for (let face = 1; face <= (t.die as number); face++) {
@@ -523,5 +528,66 @@ describe("level up", () => {
     expect(xpToNext(1)).toBe(300)
     expect(xpToNext(5)).toBe(14000)
     expect(xpToNext(20)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §13 the camp in the route
+// ---------------------------------------------------------------------------
+
+describe("camp in the route", () => {
+  it("[TIME:make_camp] and [TIME:break_camp] parse at zero minutes, so the clock trigger accepts them", () => {
+    expect(parseTimeEvents("They stop. [TIME:make_camp] Later. [TIME:break_camp]")).toEqual([
+      { eventType: "make_camp", minutesAdvanced: 0 },
+      { eventType: "break_camp", minutesAdvanced: 0 },
+    ])
+  })
+
+  it("the party is camping when the latest camp-or-rest event is make_camp; a rest or break_camp ends it", () => {
+    expect(isCamping(["make_camp"])).toBe(true)
+    expect(isCamping(["long_rest", "make_camp"])).toBe(false)
+    expect(isCamping(["short_rest"])).toBe(false)
+    expect(isCamping(["break_camp", "make_camp"])).toBe(false)
+    expect(isCamping([])).toBe(false)
+  })
+
+  it("full rations buy the long rest at Sam's price and nothing else is charged", () => {
+    expect(campRest("full", 25, 4)).toMatchObject({ allowed: true, cost: 20, suppliesAfter: 5, hungerTicks: false, flags: [] })
+    expect(campRest("full", 30, 7)).toMatchObject({ allowed: true, cost: 30, suppliesAfter: 0 })
+    expect(campRest("partial", 25, 4)).toMatchObject({ allowed: true, cost: 10, suppliesAfter: 15 })
+  })
+
+  it("partial rations refuse a long rest without starving anyone, and still buy a short one", () => {
+    const long = campRest("full", 12, 4)
+    expect(long).toMatchObject({ allowed: false, affordable: "partial", cost: 0, suppliesAfter: 12, hungerTicks: false })
+    expect(long.note).toMatch(/end the camp with a short rest/)
+    expect(campRest("partial", 12, 4)).toMatchObject({ allowed: true, cost: 10, suppliesAfter: 2 })
+  })
+
+  it("no rations: no rest at all (Sam's ruling); a long night is hungry, an hour is not", () => {
+    const long = campRest("full", 0, 4)
+    expect(long).toMatchObject({ allowed: false, affordable: null, hungerTicks: true, cost: 0 })
+    const short = campRest("partial", 9, 4)
+    expect(short).toMatchObject({ allowed: false, hungerTicks: false })
+    expect(long.flags).toEqual([])
+    expect(short.flags).toEqual([])
+  })
+
+  it("the CAMP block tells Malachar what the rations buy, who has actions, and who came to the fire", () => {
+    expect(formatCampBlock({ camping: false, supplies: 0, partySize: 4, budgets: [], visitor: null })).toBe("")
+    const camped = formatCampBlock({ camping: true, supplies: 12, partySize: 4, budgets: [{ name: "Kenta", remaining: 1 }, { name: "Scott", remaining: 0 }], visitor: null })
+    expect(camped).toMatch(/Rations on hand: 12/)
+    expect(camped).toMatch(/only a PARTIAL rest/)
+    expect(camped).toMatch(/Kenta 1, Scott 0/)
+    expect(camped).toMatch(/\[TIME:break_camp\]/)
+
+    const brigands = storedVisitor(passiveCampEncounter({ metadata: {} }, script(d(35, 40))))
+    const told = formatCampBlock({ camping: false, supplies: 0, partySize: 4, budgets: [], visitor: brigands })
+    expect(told).toMatch(/SOMEONE CAME TO THE FIRE/)
+    expect(told).toMatch(/come to fight/)
+    expect(told).toMatch(/NPC_ENCOUNTER/)
+    expect(told).not.toMatch(/Rations on hand/)
+    const nobody = storedVisitor(passiveCampEncounter({ metadata: {} }, script(d(10, 40))))
+    expect(formatCampBlock({ camping: false, supplies: 0, partySize: 4, budgets: [], visitor: nobody })).toBe("")
   })
 })
