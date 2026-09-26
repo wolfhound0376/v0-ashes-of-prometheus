@@ -894,8 +894,9 @@ export function V4Dashboard(props: V4DashboardProps) {
 }
 
 // Four down each side (68px buttons on a 610px frame: 5/27/49/71% leaves a
-// clear gap above the bottom row), then feet and the two ring fingers along
-// the bottom. Cloak hangs under the head, hands beside the off hand.
+// clear gap above the bottom row), then the two ring fingers along the
+// bottom. Cloak hangs under the head, hands beside the off hand. There is no
+// Feet slot — boots go on the legs.
 const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string; icon: string }> = [
   { id: "head", label: "Head", position: "left-[4%] top-[5%]", icon: "/icons/equipment/head.png" },
   { id: "neck", label: "Neck", position: "right-[4%] top-[5%]", icon: "/icons/equipment/neck.png" },
@@ -905,9 +906,8 @@ const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position
   { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[49%]", icon: "/icons/equipment/off-hand.png" },
   { id: "legs", label: "Legs", position: "left-[4%] top-[71%]", icon: "/icons/equipment/legs.png" },
   { id: "hands", label: "Hands", position: "right-[4%] top-[71%]", icon: "/icons/equipment/hands.png" },
-  { id: "feet", label: "Feet", position: "left-[28%] bottom-[2%]", icon: "/icons/equipment/feet.png" },
-  { id: "ring1", label: "Ring I", position: "right-[28%] bottom-[2%]", icon: "/icons/equipment/ring.png" },
-  { id: "ring2", label: "Ring II", position: "right-[4%] bottom-[2%]", icon: "/icons/equipment/ring2.png" },
+  { id: "ring1", label: "Ring I", position: "left-[28%] bottom-[2%]", icon: "/icons/equipment/ring.png" },
+  { id: "ring2", label: "Ring II", position: "right-[28%] bottom-[2%]", icon: "/icons/equipment/ring2.png" },
 ]
 
 /** Label for what an inventory row can wear: a `ring` item reads "Ring", not "Ring I". */

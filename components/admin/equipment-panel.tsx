@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
 import { Plus, Pencil, Trash2, Save, X, Loader2, Sword, Hand, Shirt } from "lucide-react"
 import { EQUIPMENT_SLOTS } from "@/lib/types/database"
-import { HoodIcon, NecklaceIcon, RobeIcon as TorsoIcon, PantsIcon, BootsIcon, StaffIcon, OrbIcon, RingIcon } from "@/components/ui/fantasy-icons"
+import { HoodIcon, NecklaceIcon, RobeIcon as TorsoIcon, PantsIcon, StaffIcon, OrbIcon, RingIcon } from "@/components/ui/fantasy-icons"
 import type { EquipmentItem, Character } from "@/lib/types/database"
 
 const SLOT_ICONS: Record<string, React.FC<{ className?: string }>> = {
@@ -15,7 +15,6 @@ const SLOT_ICONS: Record<string, React.FC<{ className?: string }>> = {
   'torso': TorsoIcon,
   'hands': ({ className }) => <Hand className={className} />,
   'legs': PantsIcon,
-  'feet': BootsIcon,
   'main_hand': StaffIcon,
   'off_hand': OrbIcon,
   'ring1': RingIcon,
@@ -29,7 +28,6 @@ const SLOT_LABELS: Record<string, string> = {
   'torso': 'Torso',
   'hands': 'Hands',
   'legs': 'Legs',
-  'feet': 'Feet',
   'main_hand': 'Main Hand',
   'off_hand': 'Off Hand',
   'ring1': 'Ring',
@@ -125,9 +123,9 @@ export function EquipmentPanel() {
       {/* Equipment Grid - Paper Doll Style */}
       <div className="bg-gradient-to-br from-[#1a1614] to-[#0f0d0b] border border-[#3d3428]/60 rounded-lg p-6">
         <div className="grid grid-cols-3 gap-4">
-          {/* Left Column: Head, Neck, Cloak, Torso, Legs, Feet */}
+          {/* Left Column: Head, Neck, Cloak, Torso, Legs */}
           <div className="space-y-3">
-            {(['head', 'neck', 'back', 'torso', 'legs', 'feet'] as const).map(slot => {
+            {(['head', 'neck', 'back', 'torso', 'legs'] as const).map(slot => {
               const item = filteredEquipment.find(e => e.slot === slot)
               const SlotIcon = SLOT_ICONS[slot]
               return (

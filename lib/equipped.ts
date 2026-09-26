@@ -82,6 +82,9 @@ export type RingSlot = (typeof RING_SLOTS)[number]
  * Spellings the catalogue and older rows use for a slot, folded onto the
  * doll's own names. `ring` is the important one: a ring does not know which
  * finger it will end up on, so it is catalogued as a ring, not as a finger.
+ *
+ * THERE IS NO FEET SLOT. Sam: "We don't need feet if we have legs." Boots
+ * are catalogued as `feet` (two rows in `items` today) and go on the legs.
  */
 const SLOT_ALIASES: Record<string, string> = {
   ring_1: "ring1",
@@ -89,6 +92,8 @@ const SLOT_ALIASES: Record<string, string> = {
   cloak: "back",
   gloves: "hands",
   gauntlets: "hands",
+  feet: "legs",
+  boots: "legs",
 }
 
 export function normalizeSlot(slot: string | null | undefined): string {

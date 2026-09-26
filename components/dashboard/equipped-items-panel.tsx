@@ -47,9 +47,10 @@ interface EquippedItemsPanelProps {
 
 // Which columns of the paper doll a slot sits in. Two columns of four,
 // flanking the portrait, matching the reference layout. Cloak sits under the
-// neck (it hangs from the shoulders); Hands sit beside the off hand.
+// neck (it hangs from the shoulders); Hands sit beside the off hand. There is
+// no Feet slot — boots go on the legs.
 const LEFT_SLOTS = ["head", "neck", "back", "main_hand"]
-const RIGHT_SLOTS = ["torso", "hands", "off_hand", "feet"]
+const RIGHT_SLOTS = ["torso", "hands", "off_hand", "legs"]
 
 export function EquippedItemsPanel({
   slots,

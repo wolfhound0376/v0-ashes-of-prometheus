@@ -140,7 +140,6 @@ const EQUIPMENT_SLOTS = [
   { id: "main_hand", label: "Main Hand", icon: "/icons/equipment/main-hand.png", position: "left" },
   { id: "off_hand", label: "Off Hand", icon: "/icons/equipment/off-hand.png", position: "right-low" },
   { id: "legs", label: "Legs", icon: "/icons/equipment/legs.png", position: "bottom-left" },
-  { id: "feet", label: "Feet", icon: "/icons/equipment/feet.png", position: "bottom" },
   { id: "ring1", label: "Ring", icon: "/icons/equipment/ring.png", position: "left-low" },
   { id: "ring2", label: "Ring", icon: "/icons/equipment/ring2.png", position: "bottom-right" },
   { id: "hands", label: "Hands", icon: "/icons/equipment/hands.png", position: "right-mid" },
@@ -920,7 +919,7 @@ age: (selectedCharacter as any).age,
         <div className="h-full flex">
           {/* Main Content Area */}
           <div className="flex-1 flex items-center justify-center p-8">
-            {/* Left Column - Head, Neck, Torso, Legs, Feet */}
+            {/* Left Column - Head, Neck, Cloak, Torso, Legs */}
             <div className="flex flex-col gap-6 mr-8">
               {/* Head */}
               <div className="flex items-center gap-4">
@@ -957,7 +956,7 @@ age: (selectedCharacter as any).age,
               {/* Cloak (back) */}
               <div className="flex items-center gap-4">
                 <EquipmentSlotButton
-                  slot={EQUIPMENT_SLOTS[10]}
+                  slot={EQUIPMENT_SLOTS[9]}
                   equipped={getEquippedItem("back")}
                   isSelected={selectedSlot === "back"}
                   onClick={() => setSelectedSlot(selectedSlot === "back" ? null : "back")}
@@ -1002,21 +1001,6 @@ age: (selectedCharacter as any).age,
                 <span className="text-base text-stone-400 font-medium">Legs</span>
               </div>
               
-              {/* Feet */}
-              <div className="flex items-center gap-4">
-                <EquipmentSlotButton 
-                  slot={EQUIPMENT_SLOTS[6]} 
-                  equipped={getEquippedItem("feet")}
-                  isSelected={selectedSlot === "feet"}
-                  onClick={() => setSelectedSlot(selectedSlot === "feet" ? null : "feet")}
-                  dropState={slotDropState("feet")}
-                  onDragOver={handleSlotDragOver("feet")}
-                  onDragLeave={handleSlotDragLeave("feet")}
-                  onDrop={handleSlotDrop("feet")}
-                  className="w-28 h-28"
-                />
-                <span className="text-base text-stone-400 font-medium">Feet</span>
-              </div>
             </div>
             
             {/* Center - Character Image. The portrait reacts to game state
@@ -1113,7 +1097,7 @@ age: (selectedCharacter as any).age,
               <div className="flex items-center gap-4">
                 <span className="text-base text-stone-400 font-medium w-24 text-right">Hands</span>
                 <EquipmentSlotButton
-                  slot={EQUIPMENT_SLOTS[9]}
+                  slot={EQUIPMENT_SLOTS[8]}
                   equipped={getEquippedItem("hands")}
                   isSelected={selectedSlot === "hands"}
                   onClick={() => setSelectedSlot(selectedSlot === "hands" ? null : "hands")}
@@ -1128,7 +1112,7 @@ age: (selectedCharacter as any).age,
               <div className="flex items-center gap-4">
                 <span className="text-base text-stone-400 font-medium w-24 text-right">Ring</span>
                 <EquipmentSlotButton
-                  slot={EQUIPMENT_SLOTS[7]}
+                  slot={EQUIPMENT_SLOTS[6]}
                   equipped={getEquippedItem("ring1")}
                   isSelected={selectedSlot === "ring1"}
                   onClick={() => setSelectedSlot(selectedSlot === "ring1" ? null : "ring1")}
@@ -1144,7 +1128,7 @@ age: (selectedCharacter as any).age,
               <div className="flex items-center gap-4">
                 <span className="text-base text-stone-400 font-medium w-24 text-right">Ring</span>
                 <EquipmentSlotButton
-                  slot={EQUIPMENT_SLOTS[8]}
+                  slot={EQUIPMENT_SLOTS[7]}
                   equipped={getEquippedItem("ring2")}
                   isSelected={selectedSlot === "ring2"}
                   onClick={() => setSelectedSlot(selectedSlot === "ring2" ? null : "ring2")}

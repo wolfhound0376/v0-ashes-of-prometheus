@@ -76,7 +76,8 @@ export interface Character {
 export interface EquipmentItem {
   id: string
   character_id: string
-  slot: 'head' | 'neck' | 'back' | 'torso' | 'hands' | 'legs' | 'feet' | 'main_hand' | 'off_hand' | 'ring1' | 'ring2'
+  /** No `feet`: boots go on the legs (`slotAccepts` folds `feet` onto `legs`). */
+  slot: 'head' | 'neck' | 'back' | 'torso' | 'hands' | 'legs' | 'main_hand' | 'off_hand' | 'ring1' | 'ring2'
   name: string
   icon_url: string | null
   equipped: boolean
@@ -101,9 +102,10 @@ export interface InventoryItem {
   /**
    * If set, the equipment slot this item can be equipped into. null = not
    * equippable. A ring is catalogued as `ring` and fits either finger
-   * (`ring1` / `ring2`) — see `slotAccepts` in lib/equipped.ts.
+   * (`ring1` / `ring2`); boots are catalogued as `feet` and go on the legs —
+   * see `slotAccepts` in lib/equipped.ts.
    */
-  equippable_slot: EquipmentItem['slot'] | 'ring' | null
+  equippable_slot: EquipmentItem['slot'] | 'ring' | 'feet' | null
   created_at: string
   updated_at: string
 }
@@ -246,7 +248,6 @@ export const EQUIPMENT_SLOTS = [
   'torso',
   'hands',
   'legs',
-  'feet',
   'main_hand',
   'off_hand',
   'ring1',

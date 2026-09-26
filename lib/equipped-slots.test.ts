@@ -8,8 +8,16 @@ describe("slotAccepts", () => {
   it("matches a slot to itself and nothing else", () => {
     expect(slotAccepts("hands", "hands")).toBe(true)
     expect(slotAccepts("back", "back")).toBe(true)
-    expect(slotAccepts("feet", "hands")).toBe(false)
+    expect(slotAccepts("legs", "hands")).toBe(false)
     expect(slotAccepts("main_hand", "off_hand")).toBe(false)
+  })
+
+  it("has no feet slot: boots go on the legs", () => {
+    expect(slotAccepts("feet", "legs")).toBe(true)
+    expect(slotAccepts("boots", "legs")).toBe(true)
+    expect(slotAccepts("feet", "hands")).toBe(false)
+    expect(normalizeSlot("feet")).toBe("legs")
+    expect(defaultSlotFor("feet", [])).toBe("legs")
   })
 
   it("fits a ring on either finger", () => {
