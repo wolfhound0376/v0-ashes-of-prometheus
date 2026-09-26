@@ -23,6 +23,7 @@ import { triggerFor, shouldPlay, readPlayed, rememberPlayed } from "@/lib/cinema
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
 import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
+import { defaultSlotFor, normalizeSlot, slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
 import { isVideoUrl } from "@/lib/media-url"
@@ -892,17 +893,29 @@ export function V4Dashboard(props: V4DashboardProps) {
   </main>
 }
 
+// Four down each side (68px buttons on a 610px frame: 5/27/49/71% leaves a
+// clear gap above the bottom row), then the two ring fingers along the
+// bottom. Cloak hangs under the head, hands beside the off hand. There is no
+// Feet slot — boots go on the legs.
 const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string; icon: string }> = [
   { id: "head", label: "Head", position: "left-[4%] top-[5%]", icon: "/icons/equipment/head.png" },
   { id: "neck", label: "Neck", position: "right-[4%] top-[5%]", icon: "/icons/equipment/neck.png" },
-  { id: "torso", label: "Torso", position: "right-[4%] top-[30%]", icon: "/icons/equipment/torso.png" },
-  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[31%]", icon: "/icons/equipment/main-hand.png" },
-  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[56%]", icon: "/icons/equipment/off-hand.png" },
-  { id: "legs", label: "Legs", position: "left-[4%] top-[58%]", icon: "/icons/equipment/legs.png" },
-  { id: "feet", label: "Feet", position: "left-[28%] bottom-[2%]", icon: "/icons/equipment/feet.png" },
-  { id: "ring1", label: "Ring I", position: "right-[28%] bottom-[2%]", icon: "/icons/equipment/ring.png" },
-  { id: "ring2", label: "Ring II", position: "right-[4%] bottom-[2%]", icon: "/icons/equipment/ring2.png" },
+  { id: "back", label: "Cloak", position: "left-[4%] top-[27%]", icon: "/icons/equipment/back.png" },
+  { id: "torso", label: "Torso", position: "right-[4%] top-[27%]", icon: "/icons/equipment/torso.png" },
+  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[49%]", icon: "/icons/equipment/main-hand.png" },
+  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[49%]", icon: "/icons/equipment/off-hand.png" },
+  { id: "legs", label: "Legs", position: "left-[4%] top-[71%]", icon: "/icons/equipment/legs.png" },
+  { id: "hands", label: "Hands", position: "right-[4%] top-[71%]", icon: "/icons/equipment/hands.png" },
+  { id: "ring1", label: "Ring I", position: "left-[28%] bottom-[2%]", icon: "/icons/equipment/ring.png" },
+  { id: "ring2", label: "Ring II", position: "right-[28%] bottom-[2%]", icon: "/icons/equipment/ring2.png" },
 ]
+
+/** Label for what an inventory row can wear: a `ring` item reads "Ring", not "Ring I". */
+function slotLabel(slot: string | null | undefined): string {
+  const key = normalizeSlot(slot)
+  if (key === "ring") return "Ring"
+  return equipmentSlots.find((entry) => entry.id === key)?.label || key
+}
 
 function ModalShell({ title, children, onClose, wide = false }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
   return <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -1056,13 +1069,14 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
   const portrait = character.avatar_image_url || character.portrait_image_url
   const equippedAt = (slot: EquipmentItem["slot"]) => equipment.find((item) => item.slot === slot && item.equipped !== false)
   const equip = async (item: InventoryItem, slot: EquipmentItem["slot"]) => {
-    if (!item.equippable_slot || item.equippable_slot !== slot) { setMessage(`${item.name} cannot be equipped in ${equipmentSlots.find((entry) => entry.id === slot)?.label || slot}.`); return }
+    // A ring fits either finger; everything else must match its slot exactly.
+    if (!slotAccepts(item.equippable_slot, slot)) { setMessage(`${item.name} cannot be equipped in ${slotLabel(slot)}.`); return }
     if (!onEquip) { setMessage("Equipment changes are unavailable for this character."); return }
     setBusySlot(slot); setMessage(`Equipping ${item.name}…`)
     try { await onEquip(item.id, slot); setMessage(`${item.name} equipped. Live stats refresh from the campaign database.`) } finally { setBusySlot(null) }
   }
   const unequip = async (slot: EquipmentItem["slot"]) => { if (!onUnequip) return; setBusySlot(slot); try { await onUnequip(slot); setMessage(`${equipmentSlots.find((entry) => entry.id === slot)?.label || slot} cleared.`) } finally { setBusySlot(null) } }
-  const eligible = selectedSlot ? inventory.filter((item) => item.equippable_slot === selectedSlot) : inventory
+  const eligible = selectedSlot ? inventory.filter((item) => slotAccepts(item.equippable_slot, selectedSlot)) : inventory
   return <ModalShell title={`${character.name} · Inventory & Equipped Items`} onClose={onClose} wide>
     {/* One shared picker for the whole panel — a per-row input would mount
         dozens of identical nodes. `pickArtFor` records which item is pending. */}
@@ -1084,7 +1098,7 @@ function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, o
       </section>
       <section className="flex min-h-0 flex-col rounded-xl border border-[#5e471f] bg-[#0d0b07]">
         <div className="border-b border-[#49371c] p-3"><div className="flex items-center"><div><h3 className="font-serif text-sm uppercase tracking-[.14em] text-[#e0bf7c]">{selectedSlot ? `Eligible for ${equipmentSlots.find((slot) => slot.id === selectedSlot)?.label}` : "Basic Inventory"}</h3><p className="mt-1 text-[9px] text-[#817154]">{message}</p></div>{selectedSlot && <button onClick={() => setSelectedSlot(null)} className="ml-auto rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162]">Show all</button>}</div></div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">{eligible.length ? eligible.map((item) => { const slot = item.equippable_slot; const equipped = slot ? equippedAt(slot)?.name === item.name : false; return <article key={item.id} draggable={Boolean(slot)} onDragStart={(event) => { event.dataTransfer.setData("application/aop-inventory-item", item.id); event.dataTransfer.effectAllowed = "move" }} className={cn("flex items-center gap-3 rounded border p-2", slot ? "cursor-grab border-[#51401f] bg-[#171109] active:cursor-grabbing" : "border-[#2e281e] bg-[#100e0b] opacity-70")}><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[#55411f] bg-black/50"><ItemIcon iconUrl={artFor(item.name, item.icon_url)} name={item.name} itemType={item.item_type} className="h-9 w-9" /></div><div className="min-w-0 flex-1"><h4 className="font-serif text-xs text-[#e1d0a8]">{item.name}</h4><p className="truncate text-[9px] text-[#817154]">{item.description || `${item.item_type} · ${item.weight} lb`}</p><span className="text-[8px] uppercase text-[#aa8b52]">{slot ? equipmentSlots.find((entry) => entry.id === slot)?.label : "Not equippable"}</span></div>{dmUnlocked && <button type="button" title={`Replace the artwork for ${item.name} — applies to every copy`} aria-label={`Replace artwork for ${item.name}`} disabled={uploadingArtFor === item.id} onClick={(event) => { event.stopPropagation(); pickArtFor(item) }} className="flex items-center rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162] hover:border-[#c99a49] hover:text-[#e0bf7c] disabled:opacity-50">{uploadingArtFor === item.id ? "Uploading…" : <ImagePlus className="h-3 w-3" />}</button>}{onDrop && <button type="button" title={`Set ${item.name} down on the square ${character.name} is standing on`} onClick={(event) => { event.stopPropagation(); void onDrop(item.id) }} className="rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162] hover:border-[#c99a49] hover:text-[#e0bf7c]">Drop</button>}{slot && <button disabled={equipped || busySlot === slot} onClick={() => void equip(item, slot)} className={cn("rounded border px-2 py-1 text-[9px]", equipped ? "border-emerald-700 bg-emerald-900/60 text-emerald-200" : "border-[#8a672d] text-[#d8b873] hover:bg-[#2a1e0d]")}>{equipped ? "Equipped" : "Equip"}</button>}</article> }) : <p className="p-8 text-center text-xs italic text-[#76694f]">No eligible inventory items for this slot.</p>}</div>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">{eligible.length ? eligible.map((item) => { const fits = item.equippable_slot; const slot = fits ? (selectedSlot && slotAccepts(fits, selectedSlot) ? selectedSlot : (defaultSlotFor(fits, equipment) as EquipmentItem["slot"])) : null; const equipped = fits ? equipment.some((entry) => entry.equipped !== false && entry.name === item.name && slotAccepts(fits, entry.slot)) : false; return <article key={item.id} draggable={Boolean(slot)} onDragStart={(event) => { event.dataTransfer.setData("application/aop-inventory-item", item.id); event.dataTransfer.effectAllowed = "move" }} className={cn("flex items-center gap-3 rounded border p-2", slot ? "cursor-grab border-[#51401f] bg-[#171109] active:cursor-grabbing" : "border-[#2e281e] bg-[#100e0b] opacity-70")}><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[#55411f] bg-black/50"><ItemIcon iconUrl={artFor(item.name, item.icon_url)} name={item.name} itemType={item.item_type} className="h-9 w-9" /></div><div className="min-w-0 flex-1"><h4 className="font-serif text-xs text-[#e1d0a8]">{item.name}</h4><p className="truncate text-[9px] text-[#817154]">{item.description || `${item.item_type} · ${item.weight} lb`}</p><span className="text-[8px] uppercase text-[#aa8b52]">{fits ? slotLabel(fits) : "Not equippable"}</span></div>{dmUnlocked && <button type="button" title={`Replace the artwork for ${item.name} — applies to every copy`} aria-label={`Replace artwork for ${item.name}`} disabled={uploadingArtFor === item.id} onClick={(event) => { event.stopPropagation(); pickArtFor(item) }} className="flex items-center rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162] hover:border-[#c99a49] hover:text-[#e0bf7c] disabled:opacity-50">{uploadingArtFor === item.id ? "Uploading…" : <ImagePlus className="h-3 w-3" />}</button>}{onDrop && <button type="button" title={`Set ${item.name} down on the square ${character.name} is standing on`} onClick={(event) => { event.stopPropagation(); void onDrop(item.id) }} className="rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162] hover:border-[#c99a49] hover:text-[#e0bf7c]">Drop</button>}{slot && <button disabled={equipped || busySlot === slot} onClick={() => void equip(item, slot)} className={cn("rounded border px-2 py-1 text-[9px]", equipped ? "border-emerald-700 bg-emerald-900/60 text-emerald-200" : "border-[#8a672d] text-[#d8b873] hover:bg-[#2a1e0d]")}>{equipped ? "Equipped" : "Equip"}</button>}</article> }) : <p className="p-8 text-center text-xs italic text-[#76694f]">No eligible inventory items for this slot.</p>}</div>
         {selectedSlot && equippedAt(selectedSlot) ? <button onClick={() => void unequip(selectedSlot)} className="m-3 rounded border border-red-900/70 bg-red-950/30 py-2 text-[10px] uppercase tracking-wider text-red-300">Unequip {equippedAt(selectedSlot)?.name}</button> : null}
       </section>
     </div>
