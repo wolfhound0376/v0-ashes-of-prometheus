@@ -342,12 +342,10 @@ export function resolveWatch(
 // human / kuo-toa / crazy dwarf / crazy drow / hag or witch). 25% malicious,
 // 80% neutral, 5% divine (50:50 Good / Evil)."
 //
-// A d40 gives the 2.5% steps exactly. Two readings remain, both flagged on the
-// result when they fire:
-//   - 25 + 80 + 5 is 110. Malicious 25 and divine 5 are kept exact; neutral is
-//     the remainder, 70. Sam corrects it in a word.
-//   - The seven kinds of wandering person carry no weights, so they are equal
-//     odds on a d7.
+// A d40 gives the 2.5% steps exactly. Sam's 25 + 80 + 5 summed to 110; he
+// confirmed 25 / 70 / 5 ("70 is fine", 2026-09-26). One reading remains,
+// flagged on the result when it fires: the seven kinds of wandering person
+// carry no weights, so they are equal odds on a d7.
 
 export const CAMP_VISITOR_TABLE = "camp_visitors"
 export const CAMP_VISITOR_KIND_TABLE = "camp_visitor_kind"
@@ -381,7 +379,7 @@ export const CAMP_VISITOR_ROWS: EncounterTableRow[] = [
   { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 5, roll_max: 5, result: "a crazy dwarf", detail: { who: "crazy dwarf" } },
   { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 6, roll_max: 6, result: "a crazy drow", detail: { who: "crazy drow" } },
   { table_key: CAMP_VISITOR_KIND_TABLE, roll_min: 7, roll_max: 7, result: "a hag or witch", detail: { who: "hag or witch" } },
-  // d20 — disposition (25 / 70 / 5; see the note above on Sam's 110%)
+  // d20 — disposition (25 / 70 / 5, Sam 2026-09-26)
   { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 1, roll_max: 5, result: "who means harm", detail: { disposition: "malicious" } },
   { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 6, roll_max: 19, result: "who is simply passing through", detail: { disposition: "neutral" } },
   { table_key: CAMP_VISITOR_PERSON_TABLE, roll_min: 20, roll_max: 20, result: "who is something divine in disguise", detail: { disposition: "divine", rolls: [CAMP_VISITOR_DIVINE_TABLE] } },
@@ -428,7 +426,7 @@ export function passiveCampEncounter(node: WatchNode, rng: Rng, opts: { rows?: E
   const alignment = pick("alignment") as DivineAlignment | null
   const hostile = details.some((d) => d.hostile === true)
   if (hostile) flags.push(`${visitor}: no bestiary row is named by the table; the DM picks the stat block.`)
-  if (visitor === "person") flags.push("Disposition odds read as 25 / 70 / 5 — Sam's 25 / 80 / 5 sums to 110; neutral took the difference. The seven kinds are equal odds — no weights given.")
+  if (visitor === "person") flags.push("The seven kinds of wandering person are equal odds — Sam gave no weights.")
   // For a person, every row in the chain after the first is part of the description
   // (kind, disposition, and the divine lean), including the ones that rolled again.
   const personParts = watch.chain.slice(1).map((c) => c.result).filter((r): r is string => !!r)
