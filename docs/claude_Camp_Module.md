@@ -209,3 +209,69 @@ A second session built the same PR in parallel (#468, closed unmerged, recoverab
 **Not in PR 3.** Spending camp actions is PR 5: forage, hunt, trade and the rest aren't tracked yet, so the bard's partial-rest exception can't fire yet either. Malachar is told to hold each character to their count in the fiction until then.
 
 **Sam's ruling, 2026-09-26: "No rest without enough rations."** A camp with fewer rations than a partial rest gives no rest at all. It bites today: the party has 0 rations, so a camp gives nothing until someone forages (PR 5). Resting outside a camp is untouched.
+
+---
+
+## 14. PR 5 — spending camp actions (2026-09-26)
+
+**The tag.** `[CAMP_ACTION: <name> | <action>]` spends one of that character's camp actions (`rest_actions_remaining`). The name matches like the short rest's (exact, then prefix, so "Fifi" finds "Fifi of Copperas Cove"). The action reads loosely: "level-up", "foraging", "play music". The tag is stripped from the narration players see and from speech, like every other inline tag. Refusals never spend. A refusal comes when the party isn't camped, the action isn't on the menu, the count is already spent, or the action isn't wired yet.
+
+**Three actions change the world, and the table's dice settle them, never a number Malachar writes.**
+
+| Action | Roll | Outcome |
+|---|---|---|
+| forage | WIS (Survival), the DC Malachar stored on the request (OotA: 15, up to 20) | success adds 1d6 + WIS days of food to `party_supplies` |
+| hunt | same, the foraging rule (neither SRD nor DMG has a separate one) | same |
+| perform | CHA (Performance) | warm or better on a **partial** rest gives every character one more action, once per camp |
+
+How the link works: Malachar puts the tag in the same reply as the acting player's roll request (`[CAMP_ACTION: Kenta | forage] … [[1d20-1 | survival | DC 15]]`). The route stamps that request's `purpose` with `camp:forage`. When the committed result comes back, the route reads the real total and the stored DC before Malachar speaks, and settles it. The request is claimed once (`camp:forage:done`) in the same update that checks it hadn't been, so a retried message can't bring the food back twice. Malachar gets the outcome as a fact in his CAMP section and narrates it.
+
+Because roll requests belong to the player who is speaking, **a check action can only be taken by its own player**. Kenta's player can forage for Kenta, not for Scott. A check action with no compatible roll in the same reply spends nothing. One reply carries one roll, so it can settle one dice action; a second one in the same reply is refused without spending. The forage yield d6 is rolled server-side, like the short rest's Hit Dice, and flagged. The check itself is always the player's.
+
+**The other actions** (attune, investigate, decipher, mend, pray, explore, talk, and trade when a merchant is present) spend the action and are the DM's scene. Attunement and identification already have SRD rules in `lib/camp.ts` (`attune`, `identifyItem`) for when an item-aware tag is wanted. **Trade** needs the last passive roll to have brought a merchant.
+
+**Not yet, refused without spending:** `level_up` (PR 4, next), `artifice` and `brew` (crafting, below).
+
+### Crafting — blocked on two decisions only Sam can make
+
+`craftProgress` (§6) is written and tested: 5 gp of work per day, materials at half the item's value, the right tool proficiency, the right place, catalog items only. Two things stop it being wired.
+
+**1. The recipes are not in any source.** The catalog says what feeds what, but never how much. Inventing the numbers would break "never invent game data", so they are Sam's:
+
+| Material in the catalog | `feeds` (from the row) | Output in the catalog? | Tool (SRD where it says so) | Needs from Sam |
+|---|---|---|---|---|
+| Spider Venom Gland | drow poison | Drow poison, 200 gp | Poisoner's Kit (SRD: crafting poisons) | glands per dose |
+| Hook Horror Claw | climbing picks; hooked shortspear | no | ? | output rows, qty, tool |
+| Steeder Silk Spinneret | climbing line, net repair | no | ? | output rows, qty, tool |
+| Ixitxachitl Hide | waterproof leather | no | ? | output row, qty, tool |
+| Quaggoth Pelt | cold-weather lining | no | ? | output row, qty, tool |
+| Grave-Brine (flask) | potion of water breathing | no | ? | output row, qty, tool |
+| Zurkhwood | "crafting material" | — | ? | what it makes |
+| Deep Rothé Leather | "crafting material" | — | ? | what it makes |
+
+Each answer becomes `items.properties.craft = { "tools": "…", "materials": [{"slug": "…", "qty": N}], "requires": "…" }` on the **output** row. That is a data change, shown before it runs.
+
+**2. Crafting takes days, and progress needs a home.** At the SRD's 5 gp a day, one dose of drow poison is 40 days of work. Nothing stores work in progress. The smallest honest home is a new table. **This is a schema change and has not been run.** It is here for Sam to read:
+
+```sql
+-- PROPOSAL — not applied. Paste into the Supabase SQL editor only after Sam says yes.
+create table public.crafting_projects (
+  id            uuid primary key default gen_random_uuid(),
+  character_id  uuid not null references public.characters(id) on delete cascade,
+  item_id       uuid not null references public.items(id),
+  progress_gp   integer not null default 0 check (progress_gp >= 0),
+  started_at    timestamptz not null default now(),
+  finished_at   timestamptz,
+  updated_at    timestamptz not null default now()
+);
+create unique index crafting_projects_one_open
+  on public.crafting_projects (character_id, item_id) where finished_at is null;
+alter table public.crafting_projects enable row level security;
+-- No policies: service-role only, like the time and rest tables.
+```
+
+**A third question comes with it:** does one camp action equal one day of crafting (5 gp)? If so, a dose of drow poison is 40 camps.
+
+### One more question the build raised
+
+**When should the passive roll happen?** PR 3 rolls it after the rest, which ends the camp. So a merchant always arrives after the actions are spent, and **trade as a camp action can almost never happen**. Rolling it when camp is made instead would let merchants be traded with and brigands interrupt the evening. It's a one-line move either way, and Sam's call.

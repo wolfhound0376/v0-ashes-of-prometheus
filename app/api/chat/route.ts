@@ -36,6 +36,9 @@ import {
   // buy, the passive roll at the end of the rest, and Malachar's CAMP block.
   isCamping, campRest, makeCampBudget, affordableRest, passiveCampEncounter, storedVisitor,
   formatCampBlock, type CampRestDecision, type StoredVisitor, type WatchNode,
+  // PR 5 — spending camp actions, and the three the dice settle.
+  parseCampActions, decideCampAction, campPurpose, parseCampPurpose, settleForage, settlePerform,
+  bardUpgrade, CAMP_ACTION_STRIP_RE, CAMP_CHECK_SKILL,
 } from "@/lib/camp"
 // Which of the SRD's four states a character is in, so the rest can refuse to
 // sleep off being downed.
@@ -749,8 +752,87 @@ STRICT LIMITS ON USING THESE:
   let campingBefore = false
   let pendingVisitorRestId: string | null = null
   let campBlock = ""
+  // Set after the reply when a [CAMP_ACTION] needs this player's roll (§14):
+  // stamped onto the roll request created at the end of the turn.
+  let campCheckPurpose: { purpose: string; skill: string } | null = null
   if (timeAdmin && activeSessionId) {
     try {
+      // === CAMP ACTIONS SETTLED BY THE DICE (lib/camp.ts §14) ===
+      // The player has just rolled for a forage, a hunt or a performance.
+      // The total is the committed one from the table's dice; the DC is the
+      // one stored on the request. The request is claimed once — its purpose
+      // gains ":done" in the same UPDATE that checks it had not — so a
+      // retried message cannot bring back the food twice. Settled before
+      // Malachar speaks, so he narrates what actually happened.
+      const campResults: string[] = []
+      const rolledId = /\[ROLL_RESULT:([0-9a-f-]{36})\]/i.exec(message)?.[1]
+      if (rolledId && playerCharacter) {
+        const { data: req } = await timeAdmin
+          .from("roll_requests")
+          .select("id, character_id, purpose, status, result, dc")
+          .eq("id", rolledId)
+          .eq("character_id", playerCharacter.id)
+          .maybeSingle()
+        const linked = parseCampPurpose(req?.purpose as string | null)
+        const total = Number((req?.result as { total?: unknown } | null)?.total)
+        if (req && linked && !linked.settled && req.status === "resolved" && Number.isFinite(total)) {
+          const claimAs = `${req.purpose}:done`
+          const { data: claimed } = await timeAdmin
+            .from("roll_requests")
+            .update({ purpose: claimAs, updated_at: new Date().toISOString() })
+            .eq("id", req.id)
+            .eq("purpose", req.purpose)
+            .select("id")
+          if (claimed && claimed.length) {
+            const { data: who } = await timeAdmin
+              .from("characters").select("name, wis_score").eq("id", playerCharacter.id).maybeSingle()
+            const name = String(who?.name ?? playerCharacter.name)
+            if (linked.action === "forage" || linked.action === "hunt") {
+              const out = settleForage({ name, wis_score: who?.wis_score as number | null }, { total, dc: req.dc as number | null }, Math.random, { hunt: linked.action === "hunt" })
+              if (out.supplies > 0) {
+                const { data: pool } = await timeAdmin.from("party_supplies").select("id, supplies").limit(1).maybeSingle()
+                if (pool?.id) {
+                  const now = Math.max(0, Number(pool.supplies ?? 0)) + out.supplies
+                  await timeAdmin.from("party_supplies").update({ supplies: now, updated_at: new Date().toISOString() }).eq("id", pool.id)
+                  campResults.push(`${out.note} Rations now ${now}.`)
+                } else {
+                  campResults.push(`${out.note} (There is no party_supplies row to add it to — tell the DM.)`)
+                }
+              } else {
+                campResults.push(out.note)
+              }
+              console.log(`[camp] ${linked.action} settled: ${total} vs DC ${out.dc} — ${out.note} ${out.flags.join(" ")}`)
+            } else if (linked.action === "perform") {
+              // Once per camp: an earlier inspired performance since the camp
+              // was made already lifted everyone.
+              const { data: made } = await timeAdmin
+                .from("time_log").select("created_at").eq("session_id", activeSessionId).eq("event_type", "make_camp")
+                .order("created_at", { ascending: false }).limit(1).maybeSingle()
+              let lifted = false
+              if (made?.created_at) {
+                const { count } = await timeAdmin
+                  .from("roll_requests").select("id", { count: "exact", head: true })
+                  .eq("purpose", "camp:perform:inspired").gt("created_at", made.created_at)
+                lifted = (count ?? 0) > 0
+              }
+              const { data: pool } = await timeAdmin.from("party_supplies").select("supplies").limit(1).maybeSingle()
+              const { data: campers } = await timeAdmin.from("characters").select("id, rest_actions_remaining").eq("is_player", true)
+              const kind = affordableRest(pool?.supplies ?? 0, (campers ?? []).length).kind
+              const out = settlePerform(name, total, kind, lifted)
+              if (out.lifts) {
+                for (const c of campers ?? []) {
+                  const next = bardUpgrade(c.rest_actions_remaining as number | null, "partial", true)
+                  await timeAdmin.from("characters").update({ rest_actions_remaining: next, updated_at: new Date().toISOString() }).eq("id", c.id)
+                }
+                await timeAdmin.from("roll_requests").update({ purpose: "camp:perform:inspired" }).eq("id", req.id)
+              }
+              campResults.push(out.note)
+              console.log(`[camp] perform settled: ${total} — ${out.band}${out.lifts ? ", budgets lifted" : ""}`)
+            }
+          }
+        }
+      }
+
       const { data: recent } = await timeAdmin
         .from("time_log")
         .select("event_type")
@@ -782,7 +864,7 @@ STRICT LIMITS ON USING THESE:
         const { data: pool } = await timeAdmin.from("party_supplies").select("supplies").limit(1).maybeSingle()
         supplies = Math.max(0, Number(pool?.supplies ?? 0))
       }
-      campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor })
+      campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor, results: campResults })
     } catch (e) {
       console.warn("[camp] state unavailable this turn:", e)
     }
@@ -2666,6 +2748,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${
     .replace(/\[TIME:[^\]]*\]/gi, "")
     .replace(/\[STORY_ADVANCE[^\]]*\]/gi, "")
     .replace(/\[CINEMATIC:[^\]]*\]/gi, "")
+    .replace(CAMP_ACTION_STRIP_RE, "")
     .replace(/\[JOURNAL:[^\]]*\]/gi, "")
     .replace(/\[FLAG:[^\]]*\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
@@ -3222,6 +3305,55 @@ Rules:
       await setCampBudgets(0)
       console.log("[camp] camp broken without a rest.")
     }
+    // === SPENDING CAMP ACTIONS (lib/camp.ts §14) ===
+    // Each [CAMP_ACTION: who | action] spends one of that character's actions,
+    // or is refused without spending. Processed before any rest in the same
+    // reply, because the fiction runs that way: the evening, then the sleep.
+    const campTags = parseCampActions(rawText)
+    if (campTags.length) {
+      const { data: campers } = await admin
+        .from("characters").select("id, name, rest_actions_remaining").eq("is_player", true)
+      const rowsForCamp = (campers ?? []) as Array<{ id: string; name: string; rest_actions_remaining: number | null }>
+      const low = (v: unknown) => String(v ?? "").trim().toLowerCase()
+      const byName = (n: string) =>
+        rowsForCamp.find((r) => low(r.name) === low(n)) ??
+        rowsForCamp.find((r) => low(r.name).startsWith(low(n)) || low(n).startsWith(low(r.name)))
+      // The roll request this reply creates, if any (it is inserted at the end
+      // of the turn; its skill is known now).
+      const thisRoll = parseRollRequest(rawText)
+      let merchantPresent = false
+      if (campTags.some((t) => /trad/i.test(t.action))) {
+        const { data: lastRest } = await admin.from("rest_events").select("detail")
+          .eq("session_id", activeSessionId).order("created_at", { ascending: false }).limit(1).maybeSingle()
+        merchantPresent = !!(lastRest?.detail as { visitor?: StoredVisitor } | null)?.visitor?.merchantPresent
+      }
+      for (const tag of campTags) {
+        const row = byName(tag.who)
+        if (!row) { console.warn(`[camp] "${tag.who}" in [CAMP_ACTION] matches no player character — nothing spent.`); continue }
+        const d = decideCampAction({
+          camping: campingAtRest,
+          who: row.name,
+          action: tag.action,
+          remaining: row.rest_actions_remaining,
+          isSpeaker: !!playerCharacter && playerCharacter.id === row.id,
+          requestSkill: thisRoll ? thisRoll.skill : undefined,
+          merchantPresent,
+        })
+        // One reply carries one roll request, so it can settle one dice action.
+        if (d.spend && d.check && campCheckPurpose) {
+          console.log(`[camp] action: ${row.name} — ${d.action} needs its own roll; this reply's roll is already spoken for. Nothing spent.`)
+          continue
+        }
+        console.log(`[camp] action: ${d.note}`)
+        if (!d.spend || !d.action) continue
+        const { error } = await admin.from("characters")
+          .update({ rest_actions_remaining: d.remaining, updated_at: new Date().toISOString() }).eq("id", row.id)
+        if (error) { console.error("[camp] spend:", error.message); continue }
+        row.rest_actions_remaining = d.remaining
+        if (d.check) campCheckPurpose = { purpose: campPurpose(d.action), skill: CAMP_CHECK_SKILL[d.action] as string }
+      }
+    }
+
     // A refused rest is still written to time_log, which would read as the
     // end of the camp. When the party can still rest — food on hand, wrong
     // tag, or an hour that bought nothing — the camp is reopened at zero
@@ -3740,7 +3872,14 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
           .eq("character_id", playerCharacter.id)
           .eq("status", "pending")
 
+        // A camp check spent this turn (§14) links itself to the roll it needs,
+        // so the result can be settled from the table's dice next turn.
+        const purpose: string | null =
+          campCheckPurpose && (parsedRequest.skill == null || parsedRequest.skill === campCheckPurpose.skill)
+            ? campCheckPurpose.purpose
+            : null
         const baseRow = {
+          purpose,
           session_id: activeSessionId,
           character_id: playerCharacter.id,
           requested_expression: parsedRequest.expression,

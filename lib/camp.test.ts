@@ -13,7 +13,15 @@ import {
   attune,
   bardUpgrade,
   campRest,
+  campPurpose,
   craftProgress,
+  decideCampAction,
+  normaliseCampAction,
+  parseCampActions,
+  parseCampPurpose,
+  settleForage,
+  settlePerform,
+  CAMP_ACTION_STRIP_RE,
   formatCampBlock,
   isCamping,
   storedVisitor,
@@ -589,5 +597,82 @@ describe("camp in the route", () => {
     expect(told).not.toMatch(/Rations on hand/)
     const nobody = storedVisitor(passiveCampEncounter({ metadata: {} }, script(d(10, 40))))
     expect(formatCampBlock({ camping: false, supplies: 0, partySize: 4, budgets: [], visitor: nobody })).toBe("")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §14 spending camp actions
+// ---------------------------------------------------------------------------
+
+describe("spending camp actions", () => {
+  const base = { camping: true, who: "Kenta", remaining: 2, isSpeaker: true, requestSkill: undefined as string | null | undefined, merchantPresent: false }
+
+  it("parses the tag, reads the menu loosely, and strips cleanly", () => {
+    const text = "The fire catches. [CAMP_ACTION: Kenta | forage] Roll. [CAMP_ACTION:Scott|play music]"
+    expect(parseCampActions(text)).toEqual([{ who: "Kenta", action: "forage" }, { who: "Scott", action: "play music" }])
+    expect(normaliseCampAction("Level-up")).toBe("level_up")
+    expect(normaliseCampAction("Foraging")).toBe("forage")
+    expect(normaliseCampAction("entertain")).toBe("perform")
+    expect(normaliseCampAction("sleep")).toBeNull()
+    expect(text.replace(CAMP_ACTION_STRIP_RE, "")).toBe("The fire catches.  Roll. ")
+  })
+
+  it("a scene action spends one; a spent budget, no camp, or an unknown action spends nothing", () => {
+    expect(decideCampAction({ ...base, action: "pray" })).toMatchObject({ action: "pray", spend: true, remaining: 1, check: null })
+    expect(decideCampAction({ ...base, action: "pray", remaining: 0 })).toMatchObject({ spend: false, remaining: 0 })
+    expect(decideCampAction({ ...base, action: "pray", camping: false }).note).toMatch(/not camped/)
+    expect(decideCampAction({ ...base, action: "dance" }).note).toMatch(/not a camp action/)
+  })
+
+  it("forage spends only when the same reply asks the acting player for a compatible roll", () => {
+    expect(decideCampAction({ ...base, action: "forage", requestSkill: "survival" })).toMatchObject({ spend: true, check: "survival", remaining: 1 })
+    expect(decideCampAction({ ...base, action: "forage", requestSkill: null })).toMatchObject({ spend: true, check: "survival" })
+    expect(decideCampAction({ ...base, action: "forage" }).note).toMatch(/needs a survival roll/)
+    expect(decideCampAction({ ...base, action: "forage", requestSkill: "stealth" }).note).toMatch(/rolls survival, not stealth/)
+    expect(decideCampAction({ ...base, action: "forage", requestSkill: "survival", isSpeaker: false }).note).toMatch(/own player/)
+  })
+
+  it("levelling and crafting are refused without spending; trade needs a merchant", () => {
+    expect(decideCampAction({ ...base, action: "level up" })).toMatchObject({ spend: false, note: expect.stringMatching(/PR 4/) })
+    expect(decideCampAction({ ...base, action: "craft" })).toMatchObject({ spend: false, note: expect.stringMatching(/recipes/) })
+    expect(decideCampAction({ ...base, action: "brew" }).spend).toBe(false)
+    expect(decideCampAction({ ...base, action: "trade" }).note).toMatch(/no merchant/)
+    expect(decideCampAction({ ...base, action: "trade", merchantPresent: true }).spend).toBe(true)
+  })
+
+  it("the purpose links a roll to its action and marks it settled", () => {
+    expect(campPurpose("forage")).toBe("camp:forage")
+    expect(parseCampPurpose("camp:forage")).toEqual({ action: "forage", settled: false })
+    expect(parseCampPurpose("camp:forage:done")).toEqual({ action: "forage", settled: true })
+    expect(parseCampPurpose("camp:perform:inspired")).toEqual({ action: "perform", settled: true })
+    expect(parseCampPurpose(null)).toBeNull()
+    expect(parseCampPurpose("attack")).toBeNull()
+  })
+
+  it("forage settles from the committed total and the stored DC; the yield is 1d6 + WIS", () => {
+    const hit = settleForage({ name: "Samson", wis_score: 16 }, { total: 15, dc: 15 }, script(d(4, 6)))
+    expect(hit).toMatchObject({ success: true, supplies: 7, yieldDie: 4, dc: 15 })
+    expect(hit.flags.some((f) => /DMG p\.111/.test(f))).toBe(true)
+    expect(settleForage({ name: "Samson", wis_score: 16 }, { total: 14, dc: 15 }, script())).toMatchObject({ success: false, supplies: 0, yieldDie: null })
+    const noDc = settleForage({ name: "Kenta", wis_score: 8 }, { total: 15, dc: null }, script(d(1, 6)))
+    expect(noDc).toMatchObject({ success: true, dc: 15, supplies: 0 })
+    expect(noDc.flags[0]).toMatch(/No DC/)
+    expect(settleForage({ name: "Bastet", wis_score: 10 }, { total: 20, dc: 15 }, script(d(6, 6)), { hunt: true }).note).toMatch(/hunts and brings back 6 days/)
+  })
+
+  it("a warm performance lifts a partial rest once; never a full rest, never a flat one", () => {
+    expect(settlePerform("Scott", 12, "partial", false)).toMatchObject({ band: "warm", inspires: true, lifts: true })
+    expect(settlePerform("Scott", 12, "partial", true).lifts).toBe(false)
+    expect(settlePerform("Scott", 12, "full", false).lifts).toBe(false)
+    expect(settlePerform("Scott", 9, "partial", false)).toMatchObject({ band: "flat", lifts: false })
+  })
+
+  it("the CAMP block teaches the tag and carries what the dice settled", () => {
+    const block = formatCampBlock({ camping: true, supplies: 20, partySize: 4, budgets: [{ name: "Kenta", remaining: 2 }], visitor: null, results: ["Kenta forages and brings back 3 days of food. Rations now 23."] })
+    expect(block).toMatch(/\[CAMP_ACTION: <name> \| <action>\]/)
+    expect(block).toMatch(/Not yet: level up, artifice, brew/)
+    expect(block).toMatch(/SETTLED BY THE DICE/)
+    expect(block).toMatch(/Rations now 23/)
+    expect(formatCampBlock({ camping: false, supplies: 0, partySize: 4, budgets: [], visitor: null, results: ["Scott plays, and it falls flat."] })).toMatch(/falls flat/)
   })
 })
