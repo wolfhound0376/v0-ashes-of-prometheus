@@ -32,7 +32,14 @@ export const TIME_EVENT_TYPES = [
   "labor_shift",
   "cinematic_cut",
   "story_advance",
+  // The camp module (lib/camp.ts §12). No rule rows: they are logged at zero
+  // minutes so time_log can say whether the party is camping.
+  "make_camp",
+  "break_camp",
 ] as const
+
+/** Event types that take no time and are logged with an explicit 0. */
+export const ZERO_MINUTE_EVENTS: ReadonlySet<TimeEventType> = new Set<TimeEventType>(["make_camp", "break_camp"])
 
 export type TimeEventType = (typeof TIME_EVENT_TYPES)[number]
 
@@ -187,6 +194,9 @@ players ever see them, and the database advances the clock:
   and applies hit points, Hit Dice and warlock pact slots — never invent those
   totals in your prose.
 - [TIME:long_rest] — the party takes a long rest (8+ hours; only one per 24h)
+- [TIME:make_camp] — the party stops to camp: each character gets camp actions
+  and the rations decide which rest they can afford (see CAMP if present). End
+  the camp with a rest tag, or [TIME:break_camp] if they pack up without one.
 - [TIME:combat_encounter] — a fight has just concluded
 - [TIME:labor_shift] — a Velkynvelve forced-labor shift passes
 - [TIME:cinematic_cut|minutes=NN] — you deliberately skip ahead; NN is required
@@ -318,6 +328,8 @@ export function parseTimeEvents(rawText: string): TimeEventInput[] {
         continue
       }
       events.push({ eventType: "cinematic_cut", minutesAdvanced: minutes })
+    } else if (ZERO_MINUTE_EVENTS.has(type)) {
+      events.push({ eventType: type, minutesAdvanced: 0 })
     } else {
       events.push({ eventType: type })
     }
