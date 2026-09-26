@@ -76,7 +76,7 @@ export interface Character {
 export interface EquipmentItem {
   id: string
   character_id: string
-  slot: 'head' | 'neck' | 'torso' | 'legs' | 'feet' | 'main_hand' | 'off_hand' | 'ring1' | 'ring2'
+  slot: 'head' | 'neck' | 'back' | 'torso' | 'hands' | 'legs' | 'feet' | 'main_hand' | 'off_hand' | 'ring1' | 'ring2'
   name: string
   icon_url: string | null
   equipped: boolean
@@ -98,8 +98,12 @@ export interface InventoryItem {
   weight: number
   value: number
   item_type: 'weapon' | 'armor' | 'consumable' | 'misc' | 'currency'
-  /** If set, the equipment slot this item can be equipped into. null = not equippable. */
-  equippable_slot: EquipmentItem['slot'] | null
+  /**
+   * If set, the equipment slot this item can be equipped into. null = not
+   * equippable. A ring is catalogued as `ring` and fits either finger
+   * (`ring1` / `ring2`) — see `slotAccepts` in lib/equipped.ts.
+   */
+  equippable_slot: EquipmentItem['slot'] | 'ring' | null
   created_at: string
   updated_at: string
 }
@@ -237,8 +241,10 @@ export const INVENTORY_PRESET_ICONS = [
 
 export const EQUIPMENT_SLOTS = [
   'head',
-  'neck', 
+  'neck',
+  'back',
   'torso',
+  'hands',
   'legs',
   'feet',
   'main_hand',

@@ -74,6 +74,65 @@ export function equippedWeapons(carried: CarriedRow[] | null | undefined, doll: 
   })
 }
 
+/** The two ring fingers. A ring is catalogued as `ring` and fits either. */
+export const RING_SLOTS = ["ring1", "ring2"] as const
+export type RingSlot = (typeof RING_SLOTS)[number]
+
+/**
+ * Spellings the catalogue and older rows use for a slot, folded onto the
+ * doll's own names. `ring` is the important one: a ring does not know which
+ * finger it will end up on, so it is catalogued as a ring, not as a finger.
+ */
+const SLOT_ALIASES: Record<string, string> = {
+  ring_1: "ring1",
+  ring_2: "ring2",
+  cloak: "back",
+  gloves: "hands",
+  gauntlets: "hands",
+}
+
+export function normalizeSlot(slot: string | null | undefined): string {
+  const key = String(slot ?? "").trim().toLowerCase()
+  return SLOT_ALIASES[key] ?? key
+}
+
+const isRingSlot = (slot: string): boolean => slot === "ring" || (RING_SLOTS as readonly string[]).includes(slot)
+
+/**
+ * Does an item catalogued for `itemSlot` fit in the doll's `targetSlot`?
+ *
+ * Exact match for everything except rings: a `ring` item fits `ring1` OR
+ * `ring2`, and a row that was once written as `ring1` still fits the other
+ * finger. Nothing else crosses slots — a boot is not a glove.
+ *
+ * THE ONE PLACE this is decided. Every doll (compact bar, full-screen sheet,
+ * V4 modal, admin) and the server's canEquip route through here, so a ring
+ * cannot be accepted by one drop target and refused by the next.
+ */
+export function slotAccepts(itemSlot: string | null | undefined, targetSlot: string | null | undefined): boolean {
+  const want = normalizeSlot(itemSlot)
+  const have = normalizeSlot(targetSlot)
+  if (!want || !have) return false
+  if (want === have) return true
+  return isRingSlot(want) && isRingSlot(have)
+}
+
+/**
+ * Where an item goes when the player just says "equip it" without picking a
+ * slot. Rings take the first empty finger, else the first finger (the caller
+ * will report the swap). Everything else has exactly one home.
+ */
+export function defaultSlotFor(
+  itemSlot: string | null | undefined,
+  doll: Pick<EquippedRow, "slot" | "equipped">[] | null | undefined,
+): string | null {
+  const want = normalizeSlot(itemSlot)
+  if (!want) return null
+  if (!isRingSlot(want)) return want
+  const taken = new Set((doll ?? []).filter((d) => d.equipped !== false).map((d) => normalizeSlot(d.slot)))
+  return RING_SLOTS.find((s) => !taken.has(s)) ?? RING_SLOTS[0]
+}
+
 export type EquipVerdict =
   | { ok: true; slot: HandSlot | string; replacing: string | null }
   | { ok: false; reason: string }
@@ -82,17 +141,18 @@ export type EquipVerdict =
  * May this item go in this slot?
  *
  * The catalogue's own `equippable_slot` decides. A journal has none and is not
- * equipment; a dagger says main_hand. Refusing here rather than at the write
- * means the reason can be a sentence rather than a constraint violation.
+ * equipment; a dagger says main_hand; a ring says ring and fits either finger
+ * (see slotAccepts). Refusing here rather than at the write means the reason
+ * can be a sentence rather than a constraint violation.
  */
 export function canEquip(opts: {
   item: { name: string; equippable_slot?: string | null; items?: { equippable_slot?: string | null } | null }
   slot: string
   doll: EquippedRow[]
 }): EquipVerdict {
-  const allowed = (opts.item.equippable_slot ?? opts.item.items?.equippable_slot ?? "").trim().toLowerCase()
+  const allowed = normalizeSlot(opts.item.equippable_slot ?? opts.item.items?.equippable_slot)
   if (!allowed) return { ok: false, reason: `${opts.item.name} is not something you can wear or hold.` }
-  if (allowed !== opts.slot.trim().toLowerCase()) {
+  if (!slotAccepts(allowed, opts.slot)) {
     return { ok: false, reason: `${opts.item.name} does not go in the ${opts.slot.replace("_", " ")}.` }
   }
   // A slot holds one thing. Naming what is being displaced lets the log say

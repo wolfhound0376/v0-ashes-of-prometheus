@@ -10,6 +10,7 @@
 
 import { useState } from "react"
 import { Backpack as BackpackIcon, ChevronDown } from "lucide-react"
+import { defaultSlotFor, slotAccepts } from "@/lib/equipped"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
 
@@ -44,10 +45,11 @@ interface EquippedItemsPanelProps {
   onUnequip?: (slotId: string) => void
 }
 
-// Which columns of the paper doll a slot sits in. Two columns of three,
-// flanking the portrait, matching the reference layout.
-const LEFT_SLOTS = ["head", "neck", "main_hand"]
-const RIGHT_SLOTS = ["torso", "off_hand", "feet"]
+// Which columns of the paper doll a slot sits in. Two columns of four,
+// flanking the portrait, matching the reference layout. Cloak sits under the
+// neck (it hangs from the shoulders); Hands sit beside the off hand.
+const LEFT_SLOTS = ["head", "neck", "back", "main_hand"]
+const RIGHT_SLOTS = ["torso", "hands", "off_hand", "feet"]
 
 export function EquippedItemsPanel({
   slots,
@@ -88,7 +90,7 @@ export function EquippedItemsPanel({
     } catch {
       /* malformed — rejected below */
     }
-    if (itemId && itemSlot === slotId) {
+    if (itemId && slotAccepts(itemSlot, slotId)) {
       onEquip(itemId, slotId)
       setSelectedSlot(null)
     } else {
@@ -193,9 +195,10 @@ export function EquippedItemsPanel({
             {eligible.length > 0 ? (
               <ul className="space-y-1">
                 {eligible.map((item) => {
-                  const equipped = isEquipped(item)
-                  const targetSlot = selectedSlot ?? item.equippable_slot ?? null
-                  const canEquipHere = !!targetSlot && (selectedSlot ? item.equippable_slot === selectedSlot : true)
+                  const wearing = isEquipped(item)
+                  // No slot picked: a ring goes to the first free finger.
+                  const targetSlot = selectedSlot ?? defaultSlotFor(item.equippable_slot, equipped)
+                  const canEquipHere = !!targetSlot && (selectedSlot ? slotAccepts(item.equippable_slot, selectedSlot) : true)
                   return (
                     <li
                       key={item.id}
@@ -214,7 +217,7 @@ export function EquippedItemsPanel({
                           {slotOf(item.equippable_slot ?? "")?.label ?? "Equippable"}
                         </div>
                       </div>
-                      {equipped ? (
+                      {wearing ? (
                         <span className="flex-shrink-0 rounded bg-emerald-700/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-300">
                           Equipped
                         </span>

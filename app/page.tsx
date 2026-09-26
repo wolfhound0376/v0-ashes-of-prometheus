@@ -22,6 +22,7 @@ import { characterData, dialogueData, actionsData, inventoryData, environmentDat
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
 import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
+import { slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
 import { dmHeaders, ensureDmKey, hasDmKey } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
@@ -1397,7 +1398,8 @@ if (error) {
   const handleEquipItem = async (itemId: string, slot: EquipmentItem['slot']) => {
     if (!selectedCharacterId) return
     const item = characterInventory.find((entry) => entry.id === itemId)
-    if (!item || item.equippable_slot !== slot) return
+    // A ring fits either finger; everything else must match its slot exactly.
+    if (!item || !slotAccepts(item.equippable_slot, slot)) return
     await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
     const itemWithBonuses = item as InventoryItem & { stats_bonus?: Record<string, number> }
     const { error } = await supabase.from('equipment_items').insert({

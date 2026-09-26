@@ -23,6 +23,7 @@ import { AcBreakdownModal, AbilityDetailModal, type AbilityKey } from "./panels/
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { XPTracker } from "./xp-tracker"
 import { calculateAC } from "@/lib/armor-class"
+import { slotAccepts } from "@/lib/equipped"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
 import { ConditionBadges } from "@/components/conditions/condition-badges"
@@ -142,6 +143,8 @@ const EQUIPMENT_SLOTS = [
   { id: "feet", label: "Feet", icon: "/icons/equipment/feet.png", position: "bottom" },
   { id: "ring1", label: "Ring", icon: "/icons/equipment/ring.png", position: "left-low" },
   { id: "ring2", label: "Ring", icon: "/icons/equipment/ring2.png", position: "bottom-right" },
+  { id: "hands", label: "Hands", icon: "/icons/equipment/hands.png", position: "right-mid" },
+  { id: "back", label: "Cloak", icon: "/icons/equipment/back.png", position: "left-mid" },
 ] as const
 
 export function RightColumn({
@@ -379,7 +382,7 @@ age: (selectedCharacter as any).age,
     } catch {
       /* malformed payload — treated as a rejected drop below */
     }
-    if (itemId && itemSlot === slotId && onEquipItem) {
+    if (itemId && slotAccepts(itemSlot, slotId) && onEquipItem) {
       onEquipItem(itemId, slotId)
       setSelectedSlot(null)
     } else {
@@ -950,7 +953,23 @@ age: (selectedCharacter as any).age,
                 />
                 <span className="text-base text-stone-400 font-medium">Neck</span>
               </div>
-              
+
+              {/* Cloak (back) */}
+              <div className="flex items-center gap-4">
+                <EquipmentSlotButton
+                  slot={EQUIPMENT_SLOTS[10]}
+                  equipped={getEquippedItem("back")}
+                  isSelected={selectedSlot === "back"}
+                  onClick={() => setSelectedSlot(selectedSlot === "back" ? null : "back")}
+                  dropState={slotDropState("back")}
+                  onDragOver={handleSlotDragOver("back")}
+                  onDragLeave={handleSlotDragLeave("back")}
+                  onDrop={handleSlotDrop("back")}
+                  className="w-28 h-28"
+                />
+                <span className="text-base text-stone-400 font-medium">Cloak</span>
+              </div>
+
               {/* Torso */}
               <div className="flex items-center gap-4">
                 <EquipmentSlotButton 
@@ -1090,7 +1109,21 @@ age: (selectedCharacter as any).age,
                   className="w-28 h-28"
                 />
               </div>
-              
+              {/* Hands */}
+              <div className="flex items-center gap-4">
+                <span className="text-base text-stone-400 font-medium w-24 text-right">Hands</span>
+                <EquipmentSlotButton
+                  slot={EQUIPMENT_SLOTS[9]}
+                  equipped={getEquippedItem("hands")}
+                  isSelected={selectedSlot === "hands"}
+                  onClick={() => setSelectedSlot(selectedSlot === "hands" ? null : "hands")}
+                  dropState={slotDropState("hands")}
+                  onDragOver={handleSlotDragOver("hands")}
+                  onDragLeave={handleSlotDragLeave("hands")}
+                  onDrop={handleSlotDrop("hands")}
+                  className="w-28 h-28"
+                />
+              </div>
               {/* Ring 1 */}
               <div className="flex items-center gap-4">
                 <span className="text-base text-stone-400 font-medium w-24 text-right">Ring</span>
@@ -1147,9 +1180,9 @@ age: (selectedCharacter as any).age,
                 )}
 
                 {/* Available items — only show items flagged equippable in this slot */}
-                {inventory.filter(item => item.equippable_slot === selectedSlot).length > 0 ? (
+                {inventory.filter(item => slotAccepts(item.equippable_slot, selectedSlot)).length > 0 ? (
                   inventory
-                    .filter(item => item.equippable_slot === selectedSlot)
+                    .filter(item => slotAccepts(item.equippable_slot, selectedSlot))
                     .map(item => (
                       <button
                         key={item.id}

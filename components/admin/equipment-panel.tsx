@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { ImageUploader } from "./image-uploader"
-import { Plus, Pencil, Trash2, Save, X, Loader2, Sword } from "lucide-react"
+import { Plus, Pencil, Trash2, Save, X, Loader2, Sword, Hand, Shirt } from "lucide-react"
 import { EQUIPMENT_SLOTS } from "@/lib/types/database"
 import { HoodIcon, NecklaceIcon, RobeIcon as TorsoIcon, PantsIcon, BootsIcon, StaffIcon, OrbIcon, RingIcon } from "@/components/ui/fantasy-icons"
 import type { EquipmentItem, Character } from "@/lib/types/database"
@@ -11,7 +11,9 @@ import type { EquipmentItem, Character } from "@/lib/types/database"
 const SLOT_ICONS: Record<string, React.FC<{ className?: string }>> = {
   'head': HoodIcon,
   'neck': NecklaceIcon,
+  'back': ({ className }) => <Shirt className={className} />,
   'torso': TorsoIcon,
+  'hands': ({ className }) => <Hand className={className} />,
   'legs': PantsIcon,
   'feet': BootsIcon,
   'main_hand': StaffIcon,
@@ -23,7 +25,9 @@ const SLOT_ICONS: Record<string, React.FC<{ className?: string }>> = {
 const SLOT_LABELS: Record<string, string> = {
   'head': 'Head',
   'neck': 'Neck',
+  'back': 'Cloak',
   'torso': 'Torso',
+  'hands': 'Hands',
   'legs': 'Legs',
   'feet': 'Feet',
   'main_hand': 'Main Hand',
@@ -121,9 +125,9 @@ export function EquipmentPanel() {
       {/* Equipment Grid - Paper Doll Style */}
       <div className="bg-gradient-to-br from-[#1a1614] to-[#0f0d0b] border border-[#3d3428]/60 rounded-lg p-6">
         <div className="grid grid-cols-3 gap-4">
-          {/* Left Column: Head, Neck, Torso, Legs, Feet */}
+          {/* Left Column: Head, Neck, Cloak, Torso, Legs, Feet */}
           <div className="space-y-3">
-            {(['head', 'neck', 'torso', 'legs', 'feet'] as const).map(slot => {
+            {(['head', 'neck', 'back', 'torso', 'legs', 'feet'] as const).map(slot => {
               const item = filteredEquipment.find(e => e.slot === slot)
               const SlotIcon = SLOT_ICONS[slot]
               return (
@@ -145,9 +149,9 @@ export function EquipmentPanel() {
             </div>
           </div>
 
-          {/* Right Column: Main Hand, Off Hand, Ring x2 */}
+          {/* Right Column: Main Hand, Off Hand, Hands, Ring x2 */}
           <div className="space-y-3">
-            {(['main_hand', 'off_hand', 'ring1', 'ring2'] as const).map(slot => {
+            {(['main_hand', 'off_hand', 'hands', 'ring1', 'ring2'] as const).map(slot => {
               const item = filteredEquipment.find(e => e.slot === slot)
               const SlotIcon = SLOT_ICONS[slot]
               return (
