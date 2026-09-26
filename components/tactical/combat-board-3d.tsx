@@ -1074,15 +1074,24 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
     // ---- the locked camera --------------------------------------------
     const target = new THREE.Vector3()
-    // HD-2D: the camera no longer orbits. It holds one oblique pitch (45 deg)
-    // and turns only in quarter steps — Q / E, or the arrow buttons in the
-    // control bar — gliding to the next of four fixed headings. Drag and the
-    // arrow keys pan; the wheel zooms. A fixed angle is what lets the board
-    // read as a diorama, and four headings are enough to see behind a pillar.
-    const el = HD2D.pitch
+    // HD-2D: the camera opens at one oblique pitch (45 deg) and turns in
+    // quarter steps — Q / E, or the arrow buttons in the control bar — gliding
+    // to the next of four headings. Left-drag and the arrow keys pan; the
+    // wheel zooms.
+    //
+    // FREE ORBIT, ON TOP OF THE QUARTER STEPS. Sam: "I should be able to rotate
+    // the map in 3d with mouse." Right-drag (or Shift + left-drag) turns the
+    // board any amount and tilts it; `azFree` is the turn the mouse added, so
+    // Q / E still step a quarter from wherever the mouse left it. The tilt is
+    // clamped: never below 0.3 rad (the camera would skim the floor, see the
+    // distance note below) and never quite straight down.
+    let el = HD2D.pitch
+    const EL_MIN = 0.3
+    const EL_MAX = 1.45
     let azStep = 0                         // which quarter-turn we are heading to
+    let azFree = 0                         // the turn the mouse added, radians
     let az = HD2D.yaw0                     // where the camera is now, mid-glide
-    const azGoal = () => HD2D.yaw0 + azStep * (Math.PI / 2)
+    const azGoal = () => HD2D.yaw0 + azStep * (Math.PI / 2) + azFree
     let dist = 22
     const applyCamera = () => {
       camera.position.set(
@@ -1125,12 +1134,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       drag.x = e.clientX
       drag.y = e.clientY
       if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true
-      // Every drag pans now — the camera's angle is locked, so there is no
-      // orbit left for a drag to mean.
+      // Right-drag, or Shift + left-drag, orbits: sideways turns the board,
+      // up and down tilts it. Applied straight to `az` as well as the goal so
+      // the view follows the hand with no glide lag.
+      if (drag.btn === 2 || drag.shift) {
+        azFree -= dx * 0.008
+        az -= dx * 0.008
+        el = Math.min(EL_MAX, Math.max(EL_MIN, el + dy * 0.006))
+        applyCamera()
+        return
+      }
+      // A plain left-drag pans. Sam: up and down ran backwards (left and right
+      // were right), so the vertical term is negated: the board now moves the
+      // way the hand does.
       const right = new THREE.Vector3().subVectors(camera.position, target).cross(camera.up).normalize()
       const fwd = new THREE.Vector3().crossVectors(camera.up, right)
       target.addScaledVector(right, dx * dist * 0.0015)
-      target.addScaledVector(fwd, dy * dist * 0.0015)
+      target.addScaledVector(fwd, -dy * dist * 0.0015)
       applyCamera()
     }
     // HOW CLOSE THE CAMERA MAY COME, AND WHY IT MATTERS MORE THAN IT LOOKS.
@@ -6977,10 +6997,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           <BoardBtn on={classicCam} onClick={() => setClassicCam((v) => !v)} title={classicCam ? "Classic camera — click for the HD-2D view" : "HD-2D camera — click for classic"}>
             {classicCam ? "CLSC" : "HD2D"}
           </BoardBtn>
-          {/* The quarter-turns. The camera's angle is locked (HD-2D); these,
-              and Q / E, are the only way it turns. */}
-          <BoardBtn onClick={() => rotateRef.current?.(-1)} title="Turn the camera a quarter left (Q)">⟲</BoardBtn>
-          <BoardBtn onClick={() => rotateRef.current?.(1)} title="Turn the camera a quarter right (E)">⟳</BoardBtn>
+          {/* The quarter-turns, and Q / E. Right-drag (or Shift + drag) turns
+              and tilts freely; these step a quarter from wherever it is. */}
+          <BoardBtn onClick={() => rotateRef.current?.(-1)} title="Turn the camera a quarter left (Q). Right-drag to turn and tilt freely">⟲</BoardBtn>
+          <BoardBtn onClick={() => rotateRef.current?.(1)} title="Turn the camera a quarter right (E). Right-drag to turn and tilt freely">⟳</BoardBtn>
           {dm && (
             <BoardBtn on={darknessOn} onClick={() => setDarknessOn((v) => !v)} title={darknessOn ? "Darkness on — click to lift" : "Darkness lifted — click to lower"}>
               DARK
