@@ -56,9 +56,13 @@ the thrown spells as pixel art and gives them motion:
 - **Aftermath and flourishes.** A single-target hit of a type with an
   `aftermath` lays that sheet flat under the struck square and holds it (cold
   → `pxIce`, 8 s); an area spell lays the type's `decal` instead. A `flourish`
-  outlives the impact: `glow` (healing — `pxGlow` halo around the body, motes
-  rising, 2.6 s) and `mockery` (Vicious Mockery, by spell name — three `pxGhost`
-  quads circling the head, 2.4 s). `castSpellKitVfx` takes an optional
+  outlives the impact: `glow` (healing — `pxGlow`, a halo with rays streaking
+  outward and motes rising, tinted gold, 2.6 s) and `mockery` (Vicious
+  Mockery, by spell name — three `pxGhost` sprites circling the head, each
+  mirrored so its finger points at the victim, and the `pxSwirl` whorl over
+  the head, 2.6 s). `pxGhost` is a drawn PixelLab sprite kept under
+  `scripts/vfx/sources/pxGhost/` and packed by `scripts/vfx/import_sprite_sheet.py`;
+  everything else is generated. `castSpellKitVfx` takes an optional
   `outcome` ("hit" | "miss" | "saved"); a flourish plays only when the spell
   took. The board does not pass it yet, so today a flourish plays whenever the
   cast does.

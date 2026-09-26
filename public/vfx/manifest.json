@@ -245,16 +245,16 @@
     "rows": 1
   },
   "pxGhost": {
-    "bytes": 204,
-    "cols": 4,
+    "bytes": 1528,
+    "cols": 1,
     "file": "pxGhost.webp",
-    "fps": 6,
-    "frames": 4,
+    "fps": 8,
+    "frames": 1,
     "loop": true,
     "rows": 1
   },
   "pxGlow": {
-    "bytes": 2440,
+    "bytes": 2712,
     "cols": 4,
     "file": "pxGlow.webp",
     "fps": 10,
@@ -313,6 +313,15 @@
     "fps": 1,
     "frames": 1,
     "rows": 1
+  },
+  "pxSwirl": {
+    "bytes": 754,
+    "cols": 4,
+    "file": "pxSwirl.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
   },
   "radiantColumn": {
     "bytes": 22500,

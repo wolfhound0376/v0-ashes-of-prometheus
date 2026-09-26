@@ -197,10 +197,18 @@ const FLOURISH_BY_SPELL: Record<string, Flourish> = {
   "vicious mockery": "mockery",
 }
 
-/** Sheets and colours the flourishes are built from — white art, tinted here. */
-const FLOURISH_SHEETS: Record<Flourish, { sheet: string; tint: number; life: number }> = {
-  glow:    { sheet: "pxGlow",  tint: 0xbfffd8, life: 2.6 },
-  mockery: { sheet: "pxGhost", tint: 0xd9a6ff, life: 2.4 },
+/**
+ * Sheets and colours the flourishes are built from.
+ *
+ * The glow is white art tinted GOLD here — Sam: "golden, luminescent, and
+ * have rays of light streaking outwards." The ghost is a drawn sprite
+ * (PixelLab, to Sam's reference: mint green, laughing, pointing, trailing
+ * wisps) and carries its own colour, so its tint is white; the swirl over
+ * the mocked head is drawn in its own violet and blue.
+ */
+const FLOURISH_SHEETS: Record<Flourish, { sheet: string; tint: number; life: number; extra?: string }> = {
+  glow:    { sheet: "pxGlow",  tint: 0xffd36a, life: 2.6 },
+  mockery: { sheet: "pxGhost", tint: 0xffffff, life: 2.6, extra: "pxSwirl" },
 }
 
 export function hasKitEffect(type: DamageType): boolean {
@@ -367,7 +375,11 @@ export function prewarmKit(type: DamageType): void {
     for (const key of Object.values(BURST_SHEETS)) void loadSheet(key).catch(() => {})
   }
   if (spec.aftermath) void loadSheet(spec.aftermath.sheet).catch(() => {})
-  if (spec.flourish) void loadSheet(FLOURISH_SHEETS[spec.flourish].sheet).catch(() => {})
+  if (spec.flourish) {
+    const f = FLOURISH_SHEETS[spec.flourish]
+    void loadSheet(f.sheet).catch(() => {})
+    if (f.extra) void loadSheet(f.extra).catch(() => {})
+  }
 }
 
 // ── one animated quad ───────────────────────────────────────────────────────
@@ -656,8 +668,10 @@ export function castSpellKitVfx(opts: {
   let flash: Flip | null = null
   let ring: Flip | null = null
   let sparks: ImpactBurst | null = null
-  // The flourish's quads: one glow, or three laughing ghosts.
+  // The flourish's quads: one glow, or three laughing ghosts — plus, for
+  // the ghosts, the swirl over the victim's head.
   const flourishQuads: Flip[] = []
+  let swirl: Flip | null = null
 
   const hand = new THREE.Vector3()
   anchor.getWorldPosition(hand)
@@ -766,14 +780,25 @@ export function castSpellKitVfx(opts: {
         if (disposed || castGone) return
         const k = Math.sqrt(areaScale)
         const count = flourish === "mockery" ? 3 : 1
-        const size = flourish === "mockery" ? 0.55 : 2.1 * k
+        // A ghost is drawn 48x64: three quarters as wide as it is tall.
+        const w = flourish === "mockery" ? 0.78 : 2.3 * k
+        const h = flourish === "mockery" ? 1.04 : 2.3 * k
         for (let i = 0; i < count; i++) {
-          const q = new Flip(s, flourishSpec.tint, size, size)
+          const q = new Flip(s, flourishSpec.tint, w, h)
           q.opacity = 0
           group.add(q.mesh)
           flourishQuads.push(q)
         }
       }).catch(() => {})
+      if (flourishSpec.extra) {
+        void loadSheet(flourishSpec.extra).then((s) => {
+          if (disposed || castGone) return
+          swirl = new Flip(s, 0xffffff, 1.0, 1.0)
+          swirl.mesh.rotation.x = -Math.PI * 0.32   // tilted toward the eye; re-aimed each frame
+          swirl.opacity = 0
+          group.add(swirl.mesh)
+        }).catch(() => {})
+      }
     }
 
     if (mark) {
@@ -802,12 +827,12 @@ export function castSpellKitVfx(opts: {
   const disposeCast = () => {
     if (castGone) return
     castGone = true
-    for (const f of [disc, travel, impact, flash, ring, ...ghosts, ...flourishQuads]) {
+    for (const f of [disc, travel, impact, flash, ring, swirl, ...ghosts, ...flourishQuads]) {
       if (!f) continue
       group.remove(f.mesh)
       f.dispose()
     }
-    disc = travel = impact = flash = ring = null
+    disc = travel = impact = flash = ring = swirl = null
     ghosts.length = 0
     flourishQuads.length = 0
     if (sparks) { sparks.dispose(); sparks = null }
@@ -1064,20 +1089,38 @@ export function castSpellKitVfx(opts: {
             light.intensity = Math.max(light.intensity, 9 * a)
           }
         } else {
-          // Three ghosts circling the head, bobbing out of step, each on
-          // its own frame of the laugh so the ring never moves as one.
+          // Three ghosts circling the head, bobbing and swaying out of step.
+          // The sprite points its finger to ITS left, so a ghost on the
+          // victim's right is mirrored: every finger points at the victim.
           const n = flourishQuads.length
+          if (opts.camera) camRight.set(1, 0, 0).applyQuaternion(opts.camera.quaternion)
           for (let i = 0; i < n; i++) {
             const q = flourishQuads[i]
-            const ang = ft * 1.7 + (i / n) * Math.PI * 2 + seed
-            q.mesh.position.set(
-              dest.x + Math.cos(ang) * 0.62,
-              dest.y + 0.55 + Math.sin(ft * 4.2 + i * 2.1) * 0.08,
-              dest.z + Math.sin(ang) * 0.62,
-            )
+            const ang = ft * 1.1 + (i / n) * Math.PI * 2 + seed
+            const ox = Math.cos(ang) * 0.72
+            const oz = Math.sin(ang) * 0.72
+            q.mesh.position.set(dest.x + ox, dest.y + 0.5 + Math.sin(ft * 3.1 + i * 2.1) * 0.09, dest.z + oz)
             billboard(q.mesh)
-            q.clock(ft + i * 0.17)
+            q.mesh.rotateZ(Math.sin(ft * 2.3 + i) * 0.08)
+            const onRight = opts.camera ? ox * camRight.x + oz * camRight.z > 0 : false
+            q.mesh.scale.x = onRight ? -1 : 1
+            q.clock(ft + i * 0.31)
             q.opacity = a
+          }
+          if (swirl) {
+            // The whorl over the head, a hand above it, turning with the
+            // sheet. Tilted toward the camera rather than lying flat: flat,
+            // a low camera sees it edge-on as a line; upright, it would hide
+            // the face. This is the angle the reference draws it at.
+            swirl.mesh.position.set(dest.x, dest.y + 1.02, dest.z)
+            if (opts.camera) {
+              dir.subVectors(opts.camera.position, swirl.mesh.position).setY(0)
+              const yaw = dir.lengthSq() > 1e-6 ? Math.atan2(dir.x, dir.z) : 0
+              swirl.mesh.rotation.set(-Math.PI * 0.32, yaw, 0, "YXZ")
+            }
+            swirl.mesh.scale.setScalar(1 + 0.05 * Math.sin(ft * 5))
+            swirl.clock(ft)
+            swirl.opacity = a
           }
         }
       }

@@ -26,10 +26,11 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxSpark       8x8   1f        one spark, the texture the burst particles wear
   pxIce        64x64  4f loop   rime left on the floor after a frost hit, drawn flat
   pxGlow       64x64  8f loop   healing luminescence around a target, motes rising
-  pxGhost      32x32  4f loop   a laughing ghost — Vicious Mockery's flourish
+  pxSwirl      48x48  8f loop   the dizzy spiral over a mocked head, violet and blue
 
-pxFlash, pxRing, pxSpark, pxGlow and pxGhost are drawn WHITE on purpose: the
-kit tints them with the damage type's colour, so one sheet serves every type.
+pxFlash, pxRing, pxSpark and pxGlow are drawn WHITE on purpose: the kit tints
+them with the damage type's colour, so one sheet serves every type. (The
+Vicious Mockery ghost is a drawn sprite, packed by import_sprite_sheet.py.)
 
 Usage: draw_pixel_vfx.py <public/vfx> [--preview <dir>]
 """
@@ -374,23 +375,35 @@ def ice(f, n):
 
 
 def glow(f, n):
-    """A healing luminescence: a soft pixel halo around the target with motes
-    rising through it. Drawn white, tinted by the kit."""
+    """A healing luminescence: a halo around the target with RAYS streaking
+    outward from it and motes rising through it. Sam: "golden, luminescent,
+    and have rays of light streaking outwards." Drawn white; the kit tints
+    it gold, so the gold is one number in the kit rather than a repaint."""
     cell = Cell(64, 64)
     cx, cy = 32, 36
     ph = f / n
+    # The rays first, so the halo draws over their roots. Twelve of them,
+    # each with its own length that breathes on its own phase, turning
+    # slowly as a whole.
+    for k in range(12):
+        a = k * math.pi / 6 + ph * math.pi / 6
+        breathe = 0.5 + 0.5 * math.sin(ph * 2 * math.pi * 2 + k * 1.3)
+        r0 = 20
+        r1 = 24 + 8 * breathe
+        for i in range(int((r1 - r0) * 2)):
+            r = r0 + i / 2
+            x = cx + math.cos(a) * r * 1.0
+            y = cy + math.sin(a) * r * 1.15
+            tip = (r - r0) / max(1, r1 - r0)
+            cell.put(round(x), round(y), WHITE[4] if tip < 0.4 else WHITE[3] if tip < 0.75 else WHITE[1])
     for y in range(64):
         for x in range(64):
-            d = math.hypot((x - cx) / 22, (y - cy) / 28)
+            d = math.hypot((x - cx) / 21, (y - cy) / 26)
             nz = fbm(x * 0.2 + ph * 2, y * 0.2 - ph * 3, 51) * 2 - 1
-            r = d + nz * 0.18
-            if r > 1:
+            r = d + nz * 0.16
+            if r > 1 or r < 0.66:
                 continue
-            # Hollow: a bright rim and nothing inside, so the body shows
-            # through clean rather than behind a screen of dim pixels.
-            if r < 0.62:
-                continue
-            cell.put(x, y, WHITE[4] if r > 0.9 else WHITE[3] if r > 0.78 else WHITE[2])
+            cell.put(x, y, WHITE[4] if r > 0.9 else WHITE[3] if r > 0.8 else WHITE[2])
     # Motes rising: small crosses that drift up and fade through the ramp.
     for k in range(7):
         mp = (ph + k / 7) % 1
@@ -404,44 +417,29 @@ def glow(f, n):
     return cell
 
 
-def ghost(f, n):
-    """A laughing ghost — the Vicious Mockery flourish. A spectral face with
-    its mouth open, four frames of laugh. Drawn white, tinted by the kit."""
-    cell = Cell(32, 32)
-    W = WHITE
+def swirl(f, n):
+    """The dizzy spiral over a mocked head — the reference has a violet and
+    blue whorl with sparks in it. Two arms, turning, drawn flat in its own
+    colours (the ghosts are green; this is not)."""
+    cell = Cell(48, 48)
+    cx = cy = 24
+    SW = hexes("#3b2a7a", "#7b4fd8", "#c56cff", "#8fd0ff", "#ffffff")
     ph = f / n
-    # The sheet of it: a rounded head and a ragged hem that flutters.
-    for y in range(32):
-        for x in range(32):
-            cx, cy = 16, 13
-            if y <= cy:
-                inside = math.hypot((x - cx) / 10, (y - cy) / 9) <= 1
-            else:
-                hem = 26 + 2.5 * math.sin(x * 0.9 + ph * 2 * math.pi)
-                inside = abs(x - cx) <= 10 - max(0, (y - 22)) * 0.6 and y <= hem
-            if not inside:
-                continue
-            edge = (abs(x - cx) > 8) or y < 5
-            cell.put(x, y, W[2] if edge else W[3])
-    # Eyes: shut tight when the laugh is loudest, open otherwise.
-    loud = f % 2 == 1
-    for ex in (12, 20):
-        if loud:
-            cell.put(ex - 1, 11, W[0]); cell.put(ex, 11, W[0]); cell.put(ex + 1, 11, W[0])
-        else:
-            cell.put(ex, 10, W[0]); cell.put(ex, 11, W[0])
-    # Mouth: wide open on the loud frames, a grin on the rest.
-    if loud:
-        for y in range(15, 21):
-            w = 4 if y in (15, 20) else 5
-            for x in range(16 - w, 17 + w):
-                cell.put(x, y, W[0])
-    else:
-        for x in range(11, 22):
-            cell.put(x, 16 + (1 if x in (11, 21) else 0), W[0])
-    # Tears of laughter on the loud frames.
-    if loud:
-        cell.put(9, 13 + (f // 2) % 2, W[4]); cell.put(23, 14 - (f // 2) % 2, W[4])
+    for arm in (0, 1):
+        for i in range(0, 150):
+            t = i / 150
+            a = t * math.pi * 2.6 + ph * math.pi * 2 + arm * math.pi
+            r = 3 + t * 19
+            x = cx + math.cos(a) * r
+            y = cy + math.sin(a) * r * 0.55
+            cell.put(round(x), round(y), SW[3] if t < 0.3 else SW[2] if t < 0.7 else SW[1])
+            if t > 0.4 and i % 9 == 0:
+                cell.put(round(x), round(y) + 1, SW[0])
+    for k in range(5):
+        sp = (ph + k / 5) % 1
+        a = sp * math.pi * 2 + k
+        r = 8 + sp * 12
+        cell.put(round(cx + math.cos(a) * r), round(cy + math.sin(a) * r * 0.55), SW[4])
     return cell
 
 
@@ -470,7 +468,7 @@ SHEETS = [
     ("pxSpark",    spark,     1, 1, 1,  False),
     ("pxIce",      ice,       4, 4, 6,  True),
     ("pxGlow",     glow,      8, 4, 10, True),
-    ("pxGhost",    ghost,     4, 4, 6,  True),
+    ("pxSwirl",    swirl,     8, 4, 12, True),
 ]
 
 
