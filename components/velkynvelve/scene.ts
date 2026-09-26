@@ -21,8 +21,8 @@
  */
 import type { SpriteManifest, SpriteState } from "@/lib/sprite-token"
 import type { Facing, LoadedNode } from "@/lib/velkynvelve/node"
-import { standableGrid } from "@/lib/velkynvelve/node"
-import { findPath, lineClear, type Point } from "@/lib/velkynvelve/pathfinding"
+import { floorGrid, propBlocker } from "@/lib/velkynvelve/node"
+import { findPath, lineClear, type Blocker, type Point } from "@/lib/velkynvelve/pathfinding"
 import { buildCage, paintBridges, paintPlatforms } from "./geometry-art"
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -178,7 +178,10 @@ export function createVelkynvelveScene(
   const S = node.squarePx
   const worldW = node.squares * S
   const worldH = node.squares * S
-  const grid = standableGrid(node)
+  // Walking: the deck, with each prop blocking only the oval where its art
+  // meets the floor. Filled in create(), once the art has loaded and its size is known.
+  const grid = floorGrid(node)
+  let blockers: Blocker[] = []
   const lit = node.props.filter((p) => p.light)
   // Where the platform itself is, so the camera opens on it rather than on
   // the middle of a larger map of bridges.
@@ -258,6 +261,13 @@ export function createVelkynvelveScene(
         }
         this.add.image(0, 0, floorKey).setOrigin(0, 0).setDepth(-40)
       }
+
+      // What figures bump into: each standing prop's footprint oval, sized from its art.
+      blockers = node.props.flatMap((p) => {
+        const src = this.textures.get(`vv-prop-${p.image}`).getSourceImage() as { width: number; height: number }
+        const b = propBlocker(p, S, src.width, src.height)
+        return b ? [b] : []
+      })
 
       // 4a. Props, feet at the bottom of their footprint.
       for (const p of node.props) {
@@ -658,7 +668,7 @@ export function createVelkynvelveScene(
       }
       const f = this.figs[this.active]
       if (!f) return
-      const path = findPath(grid, { x: f.sprite.x, y: f.sprite.y }, { x: wx, y: wy }, { squarePx: S })
+      const path = findPath(grid, { x: f.sprite.x, y: f.sprite.y }, { x: wx, y: wy }, { squarePx: S, blockers })
       this.showMarker(wx, wy, !!path)
       if (!path || path.length === 0) return
       f.path = path
@@ -726,12 +736,39 @@ export function createVelkynvelveScene(
       const len = Math.hypot(dx, dy)
       const step = WALK_SPEED * dt
       const from = { x: f.sprite.x, y: f.sprite.y }
+      // Straight on first; failing that, veer a little either way (so a
+      // figure glides round a pillar instead of stopping dead against it),
+      // then slide along whichever axis is still open.
+      const ux = dx / len
+      const uy = dy / len
+      const veer = (deg: number): Point => {
+        const a = (deg * Math.PI) / 180
+        return {
+          x: from.x + (ux * Math.cos(a) - uy * Math.sin(a)) * step,
+          y: from.y + (ux * Math.sin(a) + uy * Math.cos(a)) * step,
+        }
+      }
       const tries: Point[] = [
-        { x: from.x + (dx / len) * step, y: from.y + (dy / len) * step },
+        veer(0),
+        veer(35),
+        veer(-35),
+        veer(65),
+        veer(-65),
+        // Steep enough to get round the side of an oval, but still forward,
+        // so pushing into a flat wall does not drift along it.
+        veer(80),
+        veer(-80),
         { x: from.x + Math.sign(dx) * step, y: from.y },
         { x: from.x, y: from.y + Math.sign(dy) * step },
       ]
-      const to = tries.find((t) => (t.x !== from.x || t.y !== from.y) && lineClear(grid, S, from, t))
+      // A figure already overlapping something (a spawn or a moved prop) may
+      // step anywhere that is clear, or it would be frozen where it stands.
+      const wedged = !lineClear(grid, S, from, from, undefined, blockers)
+      const to = tries.find(
+        (t) =>
+          (t.x !== from.x || t.y !== from.y) &&
+          (wedged ? lineClear(grid, S, t, t, undefined, blockers) : lineClear(grid, S, from, t, undefined, blockers)),
+      )
       const facing = facingFor(dx, dy)
       if (facing !== f.facing || f.state !== "walk") {
         f.facing = facing

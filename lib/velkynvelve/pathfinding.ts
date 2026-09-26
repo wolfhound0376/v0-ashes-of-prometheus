@@ -10,7 +10,14 @@
  *    both orthogonal cells beside it are open, so nobody squeezes between two
  *    touching table corners.
  *  - A cell is open when a body of radius `radius` centred on it stands
- *    entirely on standable squares — figures keep their feet off the edge.
+ *    entirely on standable squares — figures keep their feet off the edge —
+ *    and touches none of the `blockers`.
+ *  - Blockers are the furniture, as flat ovals where each object meets the
+ *    floor (see propBlocker in node.ts). Furniture used to block whole 5 ft
+ *    squares, which are far bigger than the art: two props whose squares met
+ *    only at a corner sealed the diagonal between them, so the walkway the
+ *    eye could see was a wall. Squares still decide combat; walking follows
+ *    the drawing.
  *  - String-pulling: from each waypoint, jump to the farthest later waypoint
  *    whose straight line is clear for the whole body width, not just the
  *    centre line.
@@ -26,11 +33,21 @@ export interface Point {
   y: number
 }
 
+/** Furniture on the floor: an axis-aligned oval, source px. */
+export interface Blocker {
+  x: number
+  y: number
+  rx: number
+  ry: number
+}
+
 export interface PathOptions {
   /** Source px per square. */
   squarePx: number
   /** Half the body width, source px. */
   radius?: number
+  /** Furniture the body must not touch. */
+  blockers?: readonly Blocker[]
 }
 
 const DEFAULT_RADIUS = 5
@@ -41,17 +58,43 @@ function standableAt(grid: StandableGrid, squarePx: number, x: number, y: number
   return grid[sy]?.[sx] === true
 }
 
-/** Does a body of radius r centred on (x, y) stand entirely on standable squares? */
-function bodyFits(grid: StandableGrid, squarePx: number, x: number, y: number, r: number): boolean {
+/**
+ * Does the body's box (half-width e, centred on x, y) overlap the oval?
+ * Scaling x by 1/rx and y by 1/ry turns the oval into a unit circle and the
+ * box into a box, so this is the exact circle-against-box test.
+ */
+function touches(b: Blocker, x: number, y: number, e: number): boolean {
+  const nx = Math.max(x - e, Math.min(b.x, x + e))
+  const ny = Math.max(y - e, Math.min(b.y, y + e))
+  const dx = (nx - b.x) / b.rx
+  const dy = (ny - b.y) / b.ry
+  return dx * dx + dy * dy < 1
+}
+
+/**
+ * Does a body of radius r centred on (x, y) stand entirely on standable
+ * squares, clear of every blocker?
+ */
+function bodyFits(
+  grid: StandableGrid,
+  squarePx: number,
+  x: number,
+  y: number,
+  r: number,
+  blockers: readonly Blocker[] = [],
+): boolean {
   // Corners of the body's box, nudged inward by a hair so a body exactly
   // touching a square's edge does not count as standing on the next one.
   const e = r - 0.001
-  return (
-    standableAt(grid, squarePx, x - e, y - e) &&
-    standableAt(grid, squarePx, x + e, y - e) &&
-    standableAt(grid, squarePx, x - e, y + e) &&
-    standableAt(grid, squarePx, x + e, y + e)
+  if (
+    !standableAt(grid, squarePx, x - e, y - e) ||
+    !standableAt(grid, squarePx, x + e, y - e) ||
+    !standableAt(grid, squarePx, x - e, y + e) ||
+    !standableAt(grid, squarePx, x + e, y + e)
   )
+    return false
+  for (const b of blockers) if (touches(b, x, y, e)) return false
+  return true
 }
 
 /** Is the straight segment a→b clear for the whole body width? */
@@ -61,6 +104,7 @@ export function lineClear(
   a: Point,
   b: Point,
   r: number = DEFAULT_RADIUS,
+  blockers: readonly Blocker[] = [],
 ): boolean {
   const dx = b.x - a.x
   const dy = b.y - a.y
@@ -68,7 +112,7 @@ export function lineClear(
   const steps = Math.max(1, Math.ceil(len / 2))
   for (let i = 0; i <= steps; i++) {
     const t = i / steps
-    if (!bodyFits(grid, squarePx, a.x + dx * t, a.y + dy * t, r)) return false
+    if (!bodyFits(grid, squarePx, a.x + dx * t, a.y + dy * t, r, blockers)) return false
   }
   return true
 }
@@ -92,20 +136,21 @@ const NEIGHBOURS: Array<[number, number, number]> = [
 export function findPath(grid: StandableGrid, from: Point, to: Point, opts: PathOptions): Point[] | null {
   const { squarePx } = opts
   const r = opts.radius ?? DEFAULT_RADIUS
+  const blockers = opts.blockers ?? []
   const cellPx = squarePx / SUB
   const rows = grid.length
   const cols = grid[0]?.length ?? 0
   const W = cols * SUB
   const H = rows * SUB
 
-  if (!bodyFits(grid, squarePx, to.x, to.y, r)) return null
+  if (!bodyFits(grid, squarePx, to.x, to.y, r, blockers)) return null
   if (Math.hypot(to.x - from.x, to.y - from.y) < 0.5) return []
-  if (lineClear(grid, squarePx, from, to, r)) return [{ x: to.x, y: to.y }]
+  if (lineClear(grid, squarePx, from, to, r, blockers)) return [{ x: to.x, y: to.y }]
 
   const open = new Uint8Array(W * H)
   for (let cy = 0; cy < H; cy++) {
     for (let cx = 0; cx < W; cx++) {
-      open[cy * W + cx] = bodyFits(grid, squarePx, (cx + 0.5) * cellPx, (cy + 0.5) * cellPx, r) ? 1 : 0
+      open[cy * W + cx] = bodyFits(grid, squarePx, (cx + 0.5) * cellPx, (cy + 0.5) * cellPx, r, blockers) ? 1 : 0
     }
   }
   const cellOf = (p: Point) => ({
@@ -116,7 +161,9 @@ export function findPath(grid: StandableGrid, from: Point, to: Point, opts: Path
   const goal = cellOf(to)
   // The figure may stand slightly off the cell lattice; let it start anywhere.
   open[start.cy * W + start.cx] = 1
-  if (!open[goal.cy * W + goal.cx]) return null
+  // Likewise the target: the body already fits there (checked above), even
+  // when the centre of its lattice cell grazes the edge of a prop's oval.
+  open[goal.cy * W + goal.cx] = 1
 
   const startI = start.cy * W + start.cx
   const goalI = goal.cy * W + goal.cx
@@ -204,7 +251,7 @@ export function findPath(grid: StandableGrid, from: Point, to: Point, opts: Path
   let a = 0
   while (a < cells.length - 1) {
     let b = cells.length - 1
-    while (b > a + 1 && !lineClear(grid, squarePx, cells[a], cells[b], r)) b--
+    while (b > a + 1 && !lineClear(grid, squarePx, cells[a], cells[b], r, blockers)) b--
     out.push(cells[b])
     a = b
   }
