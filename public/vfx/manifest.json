@@ -187,14 +187,6 @@
     "frames": 20,
     "rows": 4
   },
-  "missileDart": {
-    "bytes": 2790,
-    "cols": 4,
-    "file": "missileDart.webp",
-    "fps": 20,
-    "frames": 16,
-    "rows": 4
-  },
   "necroBeam": {
     "bytes": 4748,
     "cols": 4,
@@ -219,28 +211,12 @@
     "frames": 20,
     "rows": 4
   },
-  "poisonBolt": {
-    "bytes": 4272,
-    "cols": 4,
-    "file": "poisonBolt.webp",
-    "fps": 16,
-    "frames": 16,
-    "rows": 4
-  },
   "poisonCloud": {
     "bytes": 5396,
     "cols": 6,
     "file": "poisonCloud.webp",
     "fps": 20,
     "frames": 24,
-    "rows": 4
-  },
-  "psychicHalo": {
-    "bytes": 3782,
-    "cols": 4,
-    "file": "psychicHalo.webp",
-    "fps": 14,
-    "frames": 16,
     "rows": 4
   },
   "psychicImpact": {
@@ -250,6 +226,66 @@
     "fps": 24,
     "frames": 20,
     "rows": 4
+  },
+  "pxFireball": {
+    "bytes": 932,
+    "cols": 4,
+    "file": "pxFireball.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxFlash": {
+    "bytes": 564,
+    "cols": 6,
+    "file": "pxFlash.webp",
+    "fps": 24,
+    "frames": 6,
+    "rows": 1
+  },
+  "pxMissile": {
+    "bytes": 278,
+    "cols": 4,
+    "file": "pxMissile.webp",
+    "fps": 14,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxPoison": {
+    "bytes": 756,
+    "cols": 4,
+    "file": "pxPoison.webp",
+    "fps": 10,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxPsychic": {
+    "bytes": 430,
+    "cols": 4,
+    "file": "pxPsychic.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxRing": {
+    "bytes": 906,
+    "cols": 4,
+    "file": "pxRing.webp",
+    "fps": 20,
+    "frames": 8,
+    "rows": 2
+  },
+  "pxSpark": {
+    "bytes": 56,
+    "cols": 1,
+    "file": "pxSpark.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
   },
   "radiantColumn": {
     "bytes": 22500,
