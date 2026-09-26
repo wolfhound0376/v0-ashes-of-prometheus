@@ -262,8 +262,12 @@ export function loadSheet(key: string): Promise<Sheet> {
     if (!meta) throw new Error(`no vfx sheet "${key}"`)
     const tex = await new THREE.TextureLoader().loadAsync(`${VFX_BASE}/${meta.file}`)
     tex.colorSpace = (THREE as any).SRGBColorSpace ?? tex.colorSpace
-    tex.minFilter = THREE.LinearFilter
-    tex.magFilter = THREE.LinearFilter
+    // The sheets are pixel art now (4x4 blocks, hard alpha - Sam: the magic
+    // should look like the sprites). Nearest keeps the blocks square instead
+    // of smearing them back into a blur.
+    tex.minFilter = THREE.NearestFilter
+    tex.magFilter = THREE.NearestFilter
+    tex.generateMipmaps = false
     tex.generateMipmaps = false
     const sheet: Sheet = { ...meta, tex }
     ready.set(key, sheet)
