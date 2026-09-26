@@ -163,3 +163,24 @@ Brigands and villains come to fight; no row names a stat block, so the DM picks 
 
 - **25 + 80 + 5 is 110.** Malicious 25 and divine 5 are kept exact; neutral is the remainder, **70**. If Sam meant 20 / 75 / 5 or 15 / 80 / 5, it is one number to change in `CAMP_VISITOR_ROWS`.
 - **The seven kinds of wandering person carry no weights**, so they are equal odds on a d7.
+
+---
+
+## 12. PR 2 as shipped — the short rest in the chat route (2026-09-26, PR #471)
+
+`[TIME:short_rest]` was already in Malachar's tag vocabulary and already moved the clock 60 minutes (`time_advancement_rules`); it did nothing else. The route now resolves the rest through `shortRest` when the tag lands, writes `hp_current`, `hit_dice_remaining` and Pact Magic slots (the rest of `sheet_spellcasting` kept intact), lifts Unconscious/Stable and resets death saves for a stable character who rises above 0, and inserts one `rest_events` row with `rest_type = 'short'`, `bard_character_id`, `bard_spent_die`, and the faces rolled in `detail`.
+
+**Nobody spends unless Malachar names them — Sam's ruling, 2026-09-26.** Spending Hit Dice is the player's choice in the SRD, so the route never decides it. Malachar carries what the players said into the tag:
+
+```
+[TIME:short_rest|spend=Kenta:1,Samson:max|song=Scott]
+```
+
+- `spend=` lists each character who chooses to spend and how many; `max` rolls one die at a time and stops at full or when the dice run out, which is how the SRD plays it at the table. A character not named spends nothing. A bare `[TIME:short_rest]` is a rest where nobody spends — pact slots still refill.
+- `song=` names the bard who performs Song of Rest; `song=none` means no bard sings; nothing said lets a bard who is up sing. `shortRest` itself says so if the bard is below 2nd.
+- A `[TIME:long_rest]` in the same turn wins; the hour is inside the night, and resolving both would spend Hit Dice the long rest then hands back.
+- Nobody eats on a short rest. The ration charge for a partial rest (§10) belongs to PR 3 with `make_camp`.
+
+**Dice are rolled server-side** (`Math.random`) and every face is written to `rest_events.detail`. Routing them through the table's roller is a follow-up, not a decision.
+
+A second session built the same PR in parallel (#468, closed unmerged, recoverable at `refs/pull/468/head`). Its `planHitDice` — spend the fewest dice whose average heal reaches full — was the auto-spend alternative; Sam chose the ruling above instead.
