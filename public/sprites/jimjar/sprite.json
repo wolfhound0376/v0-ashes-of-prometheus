@@ -9,7 +9,7 @@
     64,
     126
   ],
-  "ppu": 176,
+  "ppu": 192,
   "animations": {
     "hurt": {
       "sheet": "hurt.png",

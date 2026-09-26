@@ -9,7 +9,7 @@
     64,
     126
   ],
-  "ppu": 124,
+  "ppu": 96,
   "animations": {
     "walk": {
       "sheet": "walk.png",
