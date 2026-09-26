@@ -45,7 +45,10 @@ const IDENT: Record<DamageType, { fill: string; ink: string; glow: string }> = {
   force:     { fill: "#e0c8ff", ink: "#22103a", glow: "#a97fff" },
   psychic:   { fill: "#ff8fd8", ink: "#340f28", glow: "#ff4fb8" },
   physical:  { fill: "#f0e6d4", ink: "#241b10", glow: "#c9b48a" },
-  healing:   { fill: "#7df08e", ink: "#082a14", glow: "#33c94d" },
+  // Sam, 26 Sep 2026: "Healing should show a golden '+ [number of HP] +
+  // modifiers' over the character." Gold rather than the old green: it is
+  // the one number at the table that is good news, and it should look it.
+  healing:   { fill: "#ffd766", ink: "#3a2604", glow: "#ffb020" },
   eldritch:  { fill: "#d09aff", ink: "#22083a", glow: "#8a2fd6" },
   // Fog harms nobody, so no number is ever typed with it; the table is keyed
   // by the kit's whole union and this row is what keeps it honest.
@@ -62,8 +65,14 @@ export interface DamageNumberArgs {
   /** Magnitude. The sign is decided by `heals`, not by the caller. */
   amount: number
   type: DamageType
-  /** Renders "+N" in green and ignores `type`. */
+  /** Renders "+N" in gold and ignores `type`. */
   heals?: boolean
+  /**
+   * A heal's breakdown, drawn smaller under the total ("2 + 3 WIS"). May also
+   * arrive after the number is up, through setDetail — the log line that
+   * carries it can land a beat after the hit points change.
+   */
+  detail?: string
   /** Bigger, rimmed in white-gold, and it punches on arrival. */
   crit?: boolean
   /** Scales with the token, so an ogre's number is not a pixie's. */
@@ -71,9 +80,15 @@ export interface DamageNumberArgs {
 }
 
 const LIFE = 1.15        // seconds on screen
+/** A heal stays longer: it carries a second line to read. */
+const HEAL_LIFE = 1.9
 const RISE = 1.5         // world units travelled upward over that life
 const CANVAS_W = 256
 const CANVAS_H = 160
+/** A heal's canvas is taller, to hold the breakdown under the total. */
+const HEAL_CANVAS_H = 236
+/** Where the total sits in either canvas: the same place, so a heal's "+5" is the size and height of a hit's "5". */
+const MAIN_Y = CANVAS_H / 2
 
 /**
  * Paint the glyph once, into its own canvas.
@@ -87,12 +102,14 @@ function paint(
   text: string,
   ident: { fill: string; ink: string; glow: string },
   crit: boolean,
+  opts: { height?: number; detail?: string; into?: HTMLCanvasElement } = {},
 ): HTMLCanvasElement {
-  const c = document.createElement("canvas")
+  const c = opts.into ?? document.createElement("canvas")
   c.width = CANVAS_W
-  c.height = CANVAS_H
+  c.height = opts.height ?? CANVAS_H
   const g = c.getContext("2d")
   if (!g) return c
+  g.clearRect(0, 0, c.width, c.height)
 
   const size = crit ? 104 : 82
   // The board's display face when it has one, falling back through the serif
@@ -103,7 +120,7 @@ function paint(
   g.textBaseline = "middle"
 
   const cx = CANVAS_W / 2
-  const cy = CANVAS_H / 2
+  const cy = MAIN_Y
 
   // Glow first, underneath everything, as several soft passes rather than one
   // hard shadow — a single shadowBlur reads as a smudge at this size.
@@ -130,7 +147,34 @@ function paint(
     g.strokeText(text, cx, cy)
   }
 
+  // The breakdown under a heal: same ink and fill, half the size, so it reads
+  // as the working under the answer rather than a second number.
+  if (opts.detail) {
+    const dy = cy + 64
+    // Shrunk to fit rather than clipped: "12 − 1 CHA, at max" is wider than
+    // the canvas at full size, and a cut-off breakdown is worse than none.
+    const room = CANVAS_W - 16
+    let px = 40
+    g.font = `700 ${px}px var(--font-display), Georgia, "Times New Roman", serif`
+    const w = g.measureText(opts.detail).width
+    if (w > room) {
+      px = Math.max(20, Math.floor((px * room) / w))
+      g.font = `700 ${px}px var(--font-display), Georgia, "Times New Roman", serif`
+    }
+    g.lineWidth = Math.max(4, Math.round(px * 0.18))
+    g.strokeStyle = ident.ink
+    g.strokeText(opts.detail, cx, dy)
+    g.fillStyle = ident.fill
+    g.fillText(opts.detail, cx, dy)
+  }
+
   return c
+}
+
+/** A number whose breakdown can still be written in after it appears. */
+export type NumberHandle = VfxHandle & {
+  /** Write the heal's breakdown under the total. Ignored on a hit. */
+  setDetail(detail: string): void
 }
 
 /**
@@ -141,13 +185,16 @@ function paint(
  * illegible smear; a small random lateral push means simultaneous numbers
  * fan out instead of colliding.
  */
-export function damageNumberVfx(args: DamageNumberArgs): VfxHandle {
-  const { parent, position, amount, type, heals = false, crit = false, scale = 1 } = args
+export function damageNumberVfx(args: DamageNumberArgs): NumberHandle {
+  const { parent, position, amount, type, heals = false, crit = false, scale = 1, detail } = args
 
   const ident = heals ? IDENT.healing : (IDENT[type] ?? FALLBACK)
   const text = `${heals ? "+" : ""}${Math.abs(Math.round(amount))}`
+  // A heal always gets the taller canvas, so filling in the breakdown later
+  // never resizes the sprite mid-flight.
+  const canvasH = heals ? HEAL_CANVAS_H : CANVAS_H
 
-  const canvas = paint(text, ident, crit)
+  const canvas = paint(text, ident, crit, { height: canvasH, detail })
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.needsUpdate = true
@@ -183,21 +230,29 @@ export function damageNumberVfx(args: DamageNumberArgs): VfxHandle {
   // what makes a crit read as a crit rather than merely as a big number.
   const base = (crit ? 4.8 : 3.72) * scale
   const aspect = CANVAS_W / CANVAS_H
-  sprite.scale.set(base * aspect, base, 1)
+  // `base` is the height of a 160-px canvas; a taller heal canvas is taller in
+  // proportion, so its total prints at exactly a hit's size.
+  const tall = canvasH / CANVAS_H
+  sprite.scale.set(base * aspect, base * tall, 1)
+  // ...and is lowered by the extra it hangs below the total, so the total
+  // sits where a hit's number would.
+  const lower = ((canvasH / 2 - MAIN_Y) / CANVAS_H) * base
 
   const drift = (Math.random() - 0.5) * 0.55
   const driftZ = (Math.random() - 0.5) * 0.35
-  const start = position.clone().add(new THREE.Vector3(drift, 1.35 * scale, driftZ))
+  const start = position.clone().add(new THREE.Vector3(drift, 1.35 * scale - lower, driftZ))
   sprite.position.copy(start)
   sprite.renderOrder = 999
   parent.add(sprite)
 
   let t = 0
+  let gone = false
+  const life = heals ? HEAL_LIFE : LIFE
 
   return {
     update(dt: number) {
       t += dt
-      const k = t / LIFE
+      const k = t / life
       if (k >= 1) return false
 
       // Rise fast, then coast. easeOutCubic — the number leaves the body with
@@ -217,12 +272,18 @@ export function damageNumberVfx(args: DamageNumberArgs): VfxHandle {
       // The critical's punch: overshoot on arrival, settled by a fifth of life.
       if (crit && k < 0.2) {
         const p = 1 + 0.35 * (1 - k / 0.2)
-        sprite.scale.set(base * aspect * p, base * p, 1)
+        sprite.scale.set(base * aspect * p, base * tall * p, 1)
       }
 
       return true
     },
+    setDetail(next: string) {
+      if (gone || !heals || !next) return
+      paint(text, ident, crit, { height: canvasH, detail: next, into: canvas })
+      tex.needsUpdate = true
+    },
     dispose() {
+      gone = true
       parent.remove(sprite)
       mat.dispose()
       tex.dispose()

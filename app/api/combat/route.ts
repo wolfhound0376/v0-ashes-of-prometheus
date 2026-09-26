@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
 import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasting } from "@/lib/spellbook"
+import { formatHealLine, healAmount, spellcastingMod } from "@/lib/heal-line"
 import { projectileCount, pushPath, pushSquares } from "@/lib/volley"
 // The SAME geometry the board draws its template with. Not a second
 // implementation that agrees today — the identical function, so an outline a
@@ -1231,6 +1232,9 @@ export async function POST(req: NextRequest) {
     // Hoisted for the same reason: exhaustion 3 is "disadvantage on attack
     // rolls and saving throws", and both of those happen further down.
     let casterExhaustion = 0
+    // Hoisted for HEALING: a cure adds the caster's spellcasting modifier,
+    // which is their spell attack bonus minus proficiency (lib/heal-line).
+    let casterProf: number | null = null
     if (caster.character_id) {
       const { data: cs } = await db.from("characters")
         .select("sheet_spellcasting,str_score,dex_score,proficiency_bonus,class,level,exhaustion")
@@ -1239,6 +1243,7 @@ export async function POST(req: NextRequest) {
       casterClass = (cs?.class as string | null) ?? null
       casterLevel = Number(cs?.level ?? 1) || 1
       casterExhaustion = normaliseExhaustion(cs?.exhaustion)
+      casterProf = cs?.proficiency_bonus == null ? null : Number(cs.proficiency_bonus)
       const { data: inv } = await db.from("inventory_items")
         .select("name,item_key,item_type,equippable_slot,items(item_type,properties,equippable_slot)")
         .eq("character_id", caster.character_id)
@@ -2406,6 +2411,18 @@ export async function POST(req: NextRequest) {
       amount = saved ? (entry.halfOnSave ? Math.floor(full / 2) : 0) : full
       hit = amount > 0
       line = `${caster.label} casts ${ability} — ${victim.label} rolls ${roll}${saveMod >= 0 ? "+" : ""}${saveMod} = ${total} vs DC ${saveDc}: ${saved ? "saves" : "fails"}${amount ? ` and takes ${amount}` : ""}.`
+    } else if (entry.heals) {
+      // A HEAL IS ITS DICE PLUS THE CASTER'S MODIFIER (Cure Wounds 1d8 + mod,
+      // Healing Word 1d4 + mod). This branch used to roll the dice alone: on
+      // 26 Sep 2026 Scott (CHA +2) healed for 1 and Samson (WIS +3) for 3,
+      // both under the lowest total either spell allows. The line it writes
+      // carries the breakdown, which the board reads back to put a golden
+      // "+5 / 2 + 3 WIS" over the body on every seat (lib/heal-line).
+      const sheet = casterSc as { ability?: string; attack_bonus?: number } | null
+      const dice = entry.dice ?? ""
+      const heal = healAmount(dice, rollDice(dice), spellcastingMod(sheet?.attack_bonus, casterProf), sheet?.ability ?? null)
+      amount = heal.total
+      line = formatHealLine(caster.label, ability, victim.label, heal)
     } else {
       amount = rollDice(entry.dice)
       line = `${caster.label} casts ${ability} on ${victim.label} for ${amount}.`
