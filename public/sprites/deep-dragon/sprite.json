@@ -9,7 +9,7 @@
     96,
     190
   ],
-  "ppu": 46,
+  "ppu": 23,
   "animations": {
     "idle": {
       "sheet": "idle.png",

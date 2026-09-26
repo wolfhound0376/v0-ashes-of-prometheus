@@ -4,21 +4,21 @@
     "name": "Drow Guard (male)",
     "pixellab_character_id": "a3e90f9e-3b75-4b56-b213-2cdac6db9b17",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 6.0
   },
   {
     "slug": "drow-guard-female",
     "name": "Drow Guard (female)",
     "pixellab_character_id": "97e39822-8dd0-4d00-b537-bbc51bed23f9",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 6.0
   },
   {
     "slug": "drow-elite-warrior",
     "name": "Drow Elite Warrior",
     "pixellab_character_id": "cdf786e6-b96d-4b8a-8998-7a0852d66318",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 6.0
   },
   {
     "slug": "hook-horror",
@@ -47,7 +47,7 @@
     "name": "Quaggoth",
     "pixellab_character_id": "010bae69-e137-43b9-9665-a09f9dca4231",
     "size_by": "height",
-    "target_ft": 6.0
+    "target_ft": 9.0
   },
   {
     "slug": "gas-spore",
@@ -61,21 +61,21 @@
     "name": "Myconid Adult",
     "pixellab_character_id": "764deb77-6def-4e68-a77f-2f60d60bb34e",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 5.0
   },
   {
     "slug": "duergar",
     "name": "Duergar",
     "pixellab_character_id": "8704b624-9490-4c44-a5f5-1f799f15b632",
     "size_by": "height",
-    "target_ft": 4.5
+    "target_ft": 4.3
   },
   {
     "slug": "deep-gnome",
     "name": "Deep Gnome (Svirfneblin)",
     "pixellab_character_id": "747a8e26-d34d-4f70-8736-f48996d1b707",
     "size_by": "height",
-    "target_ft": 3.2
+    "target_ft": 3.0
   },
   {
     "slug": "cloaker",
@@ -131,7 +131,7 @@
     "name": "Ancient Deep Dragon",
     "pixellab_character_id": "29db7396-3d73-4fee-95d1-2e4a395fda6c",
     "size_by": "width",
-    "target_ft": 20.0
+    "target_ft": 40.0
   },
   {
     "slug": "imp",
@@ -145,42 +145,42 @@
     "name": "Skeleton Archer",
     "pixellab_character_id": "aabd6afa-a8bc-45a7-9a74-c18bfbc139a2",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 5.9
   },
   {
     "slug": "skeleton-swordsman",
     "name": "Skeleton Swordsman",
     "pixellab_character_id": "370cb985-bdf2-415d-97a9-38aa0b8a01be",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 5.9
   },
   {
     "slug": "zombie-fresh",
     "name": "Zombie (fresh)",
     "pixellab_character_id": "9ea6d435-ef75-4279-ad77-98b9abbab852",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 5.9
   },
   {
     "slug": "zombie-rotting",
     "name": "Zombie (rotting)",
     "pixellab_character_id": "b1088c19-d0e2-4ac9-95ba-d4de40361bbd",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 5.9
   },
   {
     "slug": "zombie-bloated",
     "name": "Zombie (bloated)",
     "pixellab_character_id": "40b7aeca-5cbd-4ee1-af95-79585c91abfc",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 5.9
   },
   {
     "slug": "zombie-withered",
     "name": "Zombie (withered)",
     "pixellab_character_id": "5a4086e7-d080-4017-bb71-296c1a97883b",
     "size_by": "height",
-    "target_ft": 5.6
+    "target_ft": 5.9
   },
   {
     "slug": "dretch",
