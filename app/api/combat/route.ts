@@ -4,6 +4,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
 import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasting } from "@/lib/spellbook"
 import { formatHealLine, healAmount, spellcastingMod } from "@/lib/heal-line"
+import { projectileCount, pushPath, pushSquares } from "@/lib/volley"
 // The SAME geometry the board draws its template with. Not a second
 // implementation that agrees today — the identical function, so an outline a
 // player is looking at and the list of creatures this handler damages cannot
@@ -1143,7 +1144,19 @@ export async function POST(req: NextRequest) {
     const aim = Number.isFinite(px) && Number.isFinite(py)
       ? { x: Math.trunc(px), y: Math.trunc(py) }
       : null
-    if (!caster_token || !ability || (!target_token && !aim)) {
+    // A VOLLEY names several creatures and how many projectiles each gets:
+    // `targets: [{token, count}]`. See lib/volley. `slot_level` is the slot
+    // it is cast from, which decides how many there are (Magic Missile gains
+    // a dart per level above 1st); absent means the spell's own level.
+    const volleyTargets: { token: string; count: number }[] | null = Array.isArray(body?.targets)
+      ? (body.targets as unknown[])
+          .map((t) => {
+            const o = t as { token?: unknown; count?: unknown }
+            return { token: String(o?.token ?? ""), count: Math.max(0, Math.trunc(Number(o?.count ?? 0))) }
+          })
+          .filter((t) => t.token && t.count > 0)
+      : null
+    if (!caster_token || !ability || (!target_token && !aim && !volleyTargets?.length)) {
       return NextResponse.json(
         { error: "cast needs caster_token, ability, and either target_token or target_x/target_y" },
         { status: 400 },
@@ -1152,12 +1165,13 @@ export async function POST(req: NextRequest) {
     const { data: rows } = await db
       .from("vtt_tokens")
       .select("id,map_id,label,character_id,bestiary_id,hp_current,hp_max,allegiance,grid_x,grid_y,is_visible,ward")
-      .in("id", [caster_token, target_token].filter(Boolean))
+      .in("id", [caster_token, target_token, ...(volleyTargets ?? []).map((t) => t.token)].filter(Boolean))
     const caster = rows?.find((r) => r.id === caster_token)
     // An aimed square wins over a token id if both somehow arrive: a point
     // spell has no single victim, and picking one would quietly turn Fireball
-    // back into a dart.
-    const victim = aim ? null : rows?.find((r) => r.id === target_token)
+    // back into a dart. A volley's first pick stands in as "the victim" for
+    // the shared fence; every pick is checked again in the volley branch.
+    const victim = aim ? null : rows?.find((r) => r.id === (target_token || volleyTargets?.[0]?.token))
     if (!caster || (!aim && !victim)) return NextResponse.json({ error: "token missing" }, { status: 409 })
 
     // ---- THE FENCE ---------------------------------------------------
@@ -1257,6 +1271,14 @@ export async function POST(req: NextRequest) {
     const weapon = sheetAttacks.find((a) => (a?.name ?? "").toLowerCase() === ability.toLowerCase()) ?? null
 
     const entry = spellEntry(ability)
+    // THE SLOT IT IS CAST FROM. A spell may be cast from a higher slot than
+    // its own level (SRD, "Casting a Spell at a Higher Level"); today the
+    // only thing that reads it is a volley's projectile count. Never below
+    // the spell's level, and a cantrip has no slot at all.
+    const slotAsked = Number(body?.slot_level)
+    const castLevel = entry.level === 0
+      ? 0
+      : Number.isFinite(slotAsked) && Math.trunc(slotAsked) > entry.level ? Math.trunc(slotAsked) : entry.level
 
     // ---- WHOSE SIDE ---------------------------------------------------
     // A heal reaches your own side; a harmful spell reaches the other.
@@ -1330,9 +1352,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Is there a slot? Cantrips are at will, so slotsLeft returns Infinity.
-    if (!weapon && slotsLeft(casterSc, entry.level) <= 0) {
+    if (!weapon && slotsLeft(casterSc, castLevel) <= 0) {
       return NextResponse.json(
-        { error: `no level ${entry.level} slots left` },
+        { error: `no level ${castLevel} slots left` },
         { status: 409 },
       )
     }
@@ -1481,9 +1503,9 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", combat.id)
-      if (weapon || entry.level === 0 || !caster.character_id || !casterSc) return
+      if (weapon || castLevel === 0 || !caster.character_id || !casterSc) return
       const slots = (casterSc.slots ?? {}) as Record<string, { max?: number; used?: number }>
-      const lvl = String(entry.level)
+      const lvl = String(castLevel)
       const cur = slots[lvl] ?? {}
       await db.from("characters")
         .update({
@@ -1494,6 +1516,184 @@ export async function POST(req: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", caster.character_id)
+    }
+
+    // ---- THE VOLLEY ---------------------------------------------------
+    //
+    // Magic Missile, Scorching Ray, Eldritch Blast: several projectiles, each
+    // rolled on its own and aimed where the caster chose. Sam: "projectiles
+    // that match the amount they fire ... choose how many projectiles for
+    // each target out of a total available."
+    //
+    // Until now Magic Missile was one 3d4+3 lump on one creature and Eldritch
+    // Blast one beam at any level. A volley spell cast the old way — one
+    // target_token and no `targets` — still puts every projectile on that one
+    // creature, which is what the lump did and what one click means.
+    if (!weapon && entry.volley && !aim && entry.dice) {
+      const total = projectileCount(entry, { slotLevel: castLevel, casterLevel })
+      const picks = volleyTargets?.length ? volleyTargets : victim ? [{ token: victim.id, count: total }] : []
+      const asked = picks.reduce((s, p) => s + p.count, 0)
+      if (asked !== total) {
+        return NextResponse.json(
+          { error: `${ability} fires ${total} ${total === 1 ? "projectile" : "projectiles"} from a level ${castLevel || "cantrip"} cast — ${asked} ${asked === 1 ? "was" : "were"} aimed` },
+          { status: 400 },
+        )
+      }
+      const bodies = picks.map((p) => ({ count: p.count, row: rows?.find((r) => r.id === p.token) ?? null }))
+      if (bodies.some((b) => !b.row)) return NextResponse.json({ error: "token missing" }, { status: 409 })
+      // Every pick faces the side fence the single target did above.
+      const sideOf = (a: string | null | undefined) => a === "party" || a === "ally"
+      for (const b of bodies) {
+        const t = b.row!
+        const friendlyTarget = t.id === caster.id || sideOf((t as { allegiance?: string | null }).allegiance)
+        if (!entry.helpful && t.id === caster.id) {
+          return NextResponse.json({ error: `${ability} is not for turning on yourself.` }, { status: 409 })
+        }
+        if (body?.allow_cross_side !== true && !entry.helpful && friendlyTarget) {
+          return NextResponse.json({ error: `${t.label} is on your side. ${ability} is not for them.`, cross_side: true }, { status: 409 })
+        }
+      }
+
+      await payFor()
+
+      const scVolley = casterSc as { attack_bonus?: number } | null
+      const attackBonusV = scVolley?.attack_bonus ?? 4
+      const victims: {
+        id: string; label: string; amount: number; fell: boolean; heals: boolean
+        outcome: string; margin: number; roll: number; total: number; dc: number
+        /** How many were aimed at them, and how each one landed. */
+        count: number
+        shots: { hit: boolean; crit: boolean; roll: number; total: number; amount: number }[]
+        /** Their sanctuary held: every projectile aimed at them was lost. */
+        lost: boolean
+      }[] = []
+      const parts: string[] = []
+
+      for (const b of bodies) {
+        const t = b.row!
+        const n = b.count
+        // AC off whichever sheet they have, plus a ward's bonus — the same
+        // two reads the single-target path makes.
+        let ac = 10
+        if (t.character_id) {
+          const { data: c } = await db.from("characters").select("ac").eq("id", t.character_id).maybeSingle()
+          ac = c?.ac ?? 10
+        } else if (t.bestiary_id) {
+          const { data: bb } = await db.from("bestiary").select("ac").eq("id", t.bestiary_id).maybeSingle()
+          ac = bb?.ac ?? 10
+        }
+        const tWard = normaliseWard((t as { ward?: unknown }).ward)
+        ac += wardAcBonus(tWard)
+
+        // SANCTUARY: one Wisdom save per warded target, before anything is
+        // thrown at them; failing it loses every projectile aimed there —
+        // the SRD's "must choose a new target or lose the attack", with no
+        // new target to choose once the volley has been aimed.
+        let lost = false
+        if (needsSanctuarySave(tWard, { helpful: Boolean(entry.helpful) })) {
+          let attackerWis = 0
+          if (caster.character_id) {
+            const { data: cw } = await db.from("characters").select("wis_score").eq("id", caster.character_id).maybeSingle()
+            attackerWis = Math.floor((((cw?.wis_score as number | null) ?? 10) - 10) / 2)
+          }
+          let wardDc = 13
+          const wardCasterTok = tWard?.caster_token
+          if (wardCasterTok) {
+            const { data: wc } = await db.from("vtt_tokens").select("character_id").eq("id", wardCasterTok).maybeSingle()
+            if (wc?.character_id) {
+              const { data: wsheet } = await db.from("characters").select("sheet_spellcasting").eq("id", wc.character_id).maybeSingle()
+              const sc = (wsheet?.sheet_spellcasting ?? null) as { save_dc?: number } | null
+              if (typeof sc?.save_dc === "number") wardDc = sc.save_dc
+            }
+          }
+          lost = !resolveSanctuary({ roll: d20(), wisModifier: attackerWis, dc: wardDc }).passed
+        }
+
+        const againstV = attackContext({
+          targetConditions: await conditionsOf(db, t.character_id ?? null, t.label ?? ""),
+          distanceFt:
+            Math.max(Math.abs((caster.grid_x ?? 0) - (t.grid_x ?? 0)), Math.abs((caster.grid_y ?? 0) - (t.grid_y ?? 0))) * 5,
+          attackerExhaustion: casterExhaustion,
+        })
+
+        const shots: { hit: boolean; crit: boolean; roll: number; total: number; amount: number }[] = []
+        const words: string[] = []
+        let amount = 0
+        let anyHit = false
+        let anyCrit = false
+        let best = -Infinity
+        if (!lost) {
+          for (let i = 0; i < n; i++) {
+            if (entry.resolve === "attack") {
+              // "Make a separate attack roll for each beam."
+              const thrown = rollD20(againstV, d20)
+              const roll = thrown.roll
+              let crit = roll === 20
+              const tot = roll + attackBonusV
+              const hit = crit || (roll !== 1 && tot >= ac)
+              if (hit && againstV.autoCrit) crit = true
+              let dmg = 0
+              if (hit) {
+                dmg = rollDice(entry.dice)
+                if (crit) dmg += rollDice(entry.dice)
+              }
+              shots.push({ hit, crit, roll, total: tot, amount: dmg })
+              words.push(`${showDice(thrown)}+${attackBonusV}=${tot} ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` (${dmg})` : ""}`)
+              amount += dmg
+              anyHit = anyHit || hit
+              anyCrit = anyCrit || crit
+              best = Math.max(best, tot - ac)
+            } else {
+              // "Each dart hits a creature of your choice" — no roll to miss.
+              const dmg = rollDice(entry.dice)
+              shots.push({ hit: true, crit: false, roll: 0, total: 0, amount: dmg })
+              amount += dmg
+              anyHit = true
+            }
+          }
+        }
+
+        let fell = false
+        if (amount > 0) {
+          const cur = t.hp_current ?? t.hp_max ?? 0
+          const max = t.hp_max ?? cur
+          const settled = await settleHitPoints(db, {
+            characterId: t.character_id ?? null, tokenId: t.id, label: t.label ?? "Someone",
+            cur, max, amount, heals: false, crit: anyCrit, by: "player-cast",
+          })
+          fell = settled.fell
+          if (settled.note) words.push(settled.note.replace(/\.$/, ""))
+          if (t.character_id && justBecameDying(cur, settled.hp, max)) {
+            const { data: ch } = await db.from("characters").select("class").eq("id", t.character_id).maybeSingle()
+            const warn = announcementFor("dying", ch?.class as string | null)
+            if (warn) dyingCues.push({ type: "raw" as const, scope: "party" as const, key: warn })
+          }
+        }
+        victims.push({
+          id: t.id, label: t.label ?? "", amount, fell, heals: false,
+          outcome: lost ? "miss" : verdictWord({ heals: false, weapon: false, crit: anyCrit, fumble: false, saved: null, amount, hit: anyHit }),
+          margin: entry.resolve === "attack" && best !== -Infinity ? best : 0,
+          roll: 0, total: 0, dc: entry.resolve === "attack" ? ac : 0,
+          count: n, shots, lost,
+        })
+        parts.push(
+          lost
+            ? `${t.label} ×${n} — the sanctuary holds, and they are lost`
+            : entry.resolve === "attack"
+              ? `${t.label} ×${n}: ${words.join(", ")}`
+              : `${t.label} ×${n} for ${amount}${words.length > 1 ? ` — ${words.slice(1).join(", ")}` : ""}`,
+        )
+      }
+
+      const what = ability.toLowerCase().includes("missile") ? "darts" : ability.toLowerCase().includes("ray") ? "rays" : "beams"
+      const line = `${caster.label} casts ${ability} — ${total} ${what}: ${parts.join("; ")}.`
+      await narrate(db, line)
+      return NextResponse.json({
+        ok: true, resolved: true, volley: true, projectiles: total, line, victims,
+        damageType: entry.damage ?? null,
+        target_token: bodies[0]!.row!.id, caster_token: caster.id,
+        ...(dyingCues.length ? { sfxCues: dyingCues } : {}),
+      })
     }
 
     // ---- THE AREA CAST ------------------------------------------------
@@ -1728,8 +1928,23 @@ export async function POST(req: NextRequest) {
          * and could race with the next write.
          */
         fell: boolean
+        /**
+         * Thrown back by the blast: where they started, where they ended,
+         * and whether they went down on the way. Absent when the spell does
+         * not push or the save held.
+         */
+        pushed?: { from: { x: number; y: number }; to: { x: number; y: number }; feet: number; prone: boolean }
       }[] = []
       const parts: string[] = []
+
+      // THE SHOVE, for a spell that has one (Thunderwave: "pushed 10 feet
+      // away from you"). Straight away from the caster, one square at a time,
+      // stopping at a wall, the map's edge, or another body. Loaded once for
+      // the whole blast; the squares fill in as each creature lands so two
+      // victims cannot be shoved onto the same one.
+      const pushBoard = entry.push && entry.resolve === "save" ? await loadBoard(db, map.id) : null
+      const occupied = new Set((onMap ?? []).filter((t) => t.is_visible).map((t) => cellKey(t.grid_x ?? 0, t.grid_y ?? 0)))
+      const casterCell = { x: caster.grid_x ?? 0, y: caster.grid_y ?? 0 }
 
       for (const t of caught) {
         let saveMod = 0
@@ -1794,8 +2009,45 @@ export async function POST(req: NextRequest) {
             if (warn) dyingCues.push({ type: "raw" as const, scope: "party" as const, key: warn })
           }
         }
+        // Pushed on a failed save, hit or not — a creature at 0 goes flying
+        // too. Stopped short means it hit something.
+        //
+        // SAM'S RULING, not the SRD's: a creature stopped by a wall or a
+        // body goes down (Prone until the round turns). The SRD's push just
+        // stops; "make them fall and stay lying on the ground" is the
+        // table's rule for a body slammed into stone, recorded as homebrew.
+        let pushed: (typeof victims)[number]["pushed"]
+        if (pushBoard && entry.push && entry.resolve === "save" && !saved) {
+          const from = { x: t.grid_x ?? 0, y: t.grid_y ?? 0 }
+          occupied.delete(cellKey(from.x, from.y))
+          const shove = pushPath({
+            from: casterCell, victim: from, squares: pushSquares(entry.push.feet),
+            free: (c) =>
+              c.x >= 0 && c.y >= 0 && c.x < pushBoard.width && c.y < pushBoard.height &&
+              pushBoard.walkable.has(cellKey(c.x, c.y)) && !occupied.has(cellKey(c.x, c.y)),
+          })
+          occupied.add(cellKey(shove.to.x, shove.to.y))
+          if (shove.moved > 0) {
+            await db.from("vtt_tokens")
+              .update({ grid_x: shove.to.x, grid_y: shove.to.y, updated_by: "pushed", updated_at: new Date().toISOString() })
+              .eq("id", t.id)
+          }
+          if (shove.blocked) {
+            await layEffects(
+              [{ kind: "condition", condition: "Prone", rounds: 1 }],
+              [{ id: t.id, label: t.label ?? null, character_id: t.character_id ?? null }],
+            )
+          }
+          pushed = { from, to: shove.to, feet: shove.moved * 5, prone: shove.blocked }
+          parts.push(
+            shove.moved > 0
+              ? `${t.label} is thrown ${shove.moved * 5} ft${shove.blocked ? " into something and goes down" : ""}`
+              : `${t.label} is slammed against what is behind them and goes down`,
+          )
+        }
         victims.push({
           id: t.id, label: t.label ?? "", amount, saved, fell,
+          ...(pushed ? { pushed } : {}),
           // The TARGET rolled, so a positive margin is how well they got out
           // of the way — the same reading the single-target save path asks
           // for. A spell with no save has no margin to speak of.

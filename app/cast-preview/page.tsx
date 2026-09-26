@@ -15,9 +15,9 @@ import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { castSpellKitVfx, prewarmKit, type CastHandle, type DamageType } from "@/components/tactical/spell-vfx-kit"
 
-const LANES: { type: DamageType; spell?: string; label: string; how: string }[] = [
+const LANES: { type: DamageType; spell?: string; label: string; how: string; volley?: number }[] = [
   { type: "fire",      spell: "fire bolt",     label: "fire",      how: "lobbed — rises and falls" },
-  { type: "force",     spell: "magic missile", label: "force",     how: "weaves — hunts the target" },
+  { type: "force",     spell: "magic missile", label: "force ×3",  how: "a volley — three darts seek, fanning out", volley: 3 },
   { type: "poison",                            label: "poison",    how: "lobbed glob" },
   { type: "psychic",                           label: "psychic",   how: "drifts — corkscrews in" },
   { type: "radiant",   spell: "guiding bolt",  label: "radiant",   how: "attack roll: a straight dart" },
@@ -114,15 +114,27 @@ export default function CastPreview() {
       vfx.length = 0
       LANES.forEach((lane, i) => {
         prewarmKit(lane.type)
-        vfx.push(castSpellKitVfx({
-          parent: scene,
-          anchor: hands[i],
-          type: lane.type,
-          target: targets[i],
-          camera,
-          spell: lane.spell,
-          seed: i + 1,
-        }))
+        // A volley lane fires one effect per dart, each a beat behind the
+        // last and on its own seed — the same wrapper the board uses.
+        const count = lane.volley ?? 1
+        for (let d = 0; d < count; d++) {
+          const one = castSpellKitVfx({
+            parent: scene,
+            anchor: hands[i],
+            type: lane.type,
+            target: targets[i],
+            camera,
+            spell: lane.spell,
+            seed: count > 1 ? d * 2 + 1 : i + 1,
+          })
+          const delay = d * 0.16
+          let held = 0
+          vfx.push({
+            update: (dt) => { if (held < delay) { held += dt; return true } return one.update(dt) },
+            dispose: () => one.dispose(),
+            end: () => one.end(),
+          })
+        }
       })
     }
     fire.current = cast

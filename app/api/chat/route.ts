@@ -25,9 +25,12 @@ import { canonicalizeCondition } from "@/lib/conditions"
 // A long rest, as the SRD writes it. The rule is pure and lives in its own
 // file; this route only owns the rows it touches.
 import { longRest, absoluteMinutes, type SheetSpellcasting } from "@/lib/long-rest"
+// The short rest — Hit Dice, Song of Rest, Pact Magic — from the camp module.
+// Same arrangement: the rule is pure and tested, this route only owns the rows.
+import { shortRest, hitDieFor, type ShortRester, type ShortRestOutcome, type SongOfRest } from "@/lib/camp"
 // Which of the SRD's four states a character is in, so the rest can refuse to
 // sleep off being downed.
-import { vitalityOf } from "@/lib/death-saves"
+import { vitalityOf, conditionsFor } from "@/lib/death-saves"
 // Exhaustion and the hunger that causes it. Starvation's only consequence in
 // the SRD is exhaustion, so food could not be real until this existed.
 import {
@@ -38,6 +41,7 @@ import {
   logTimeEvent,
   buildPacingBlock,
   parseTimeEvents,
+  parseShortRestArgs,
   describeTimeOfDay,
   type GameClock,
 } from "@/lib/time-tracking"
@@ -3198,6 +3202,164 @@ Rules:
       if (restErr) console.error("[rest] rest_events:", restErr.message)
 
       console.log("[rest] long rest applied:\n  " + notes.join("\n  "))
+    }
+
+    // === THE SHORT REST ===
+    //
+    // [TIME:short_rest] moved the clock an hour and did nothing else, exactly
+    // as the long rest once did. Same fix, same shape: the tag is the moment
+    // the world says an hour was spent resting, so it is where the rest is
+    // applied. The rule is lib/camp.ts `shortRest` (SRD Resting, Bard, Warlock),
+    // pure and tested; this owns only the rows.
+    //
+    // Spending Hit Dice is the PLAYER'S choice in the SRD, so nothing here
+    // decides it. Malachar carries what the players said into the tag —
+    // `spend=Kenta:1,Samson:max` — and a character not named spends nothing.
+    // `max` means one die at a time until full or out, which is how the SRD
+    // plays it at the table (roll, look, decide again).
+    //
+    // The dice are rolled server-side. That is honest about being a follow-up:
+    // the table's roller should own these faces one day, through the same
+    // roll-request path attacks use. The faces are recorded in rest_events so
+    // nothing about the roll is hidden in the meantime.
+    //
+    // A long rest in the same turn wins: the hour is inside the night, and the
+    // long rest already restored everything a short rest could. Resolving both
+    // would spend Hit Dice the long rest then hands back — a free heal.
+    const shortRestArgs = !restingTonight && timeEvents.some((e) => e.eventType === "short_rest")
+      ? parseShortRestArgs(rawText)
+      : null
+    if (shortRestArgs) {
+      const { data: party } = await timeAdmin
+        .from("characters")
+        .select("id,name,class,level,hp_current,hp_max,hit_dice_remaining,sheet_hit_dice,sheet_spellcasting,conditions,death_saves,con_score")
+        .eq("is_player", true)
+      const rows = (party ?? []) as Array<Record<string, unknown>>
+      const norm = (v: unknown) => String(v ?? "").trim().toLowerCase()
+      // "Fifi" should find "Fifi of Copperas Cove": exact first, then prefix.
+      const findByName = (name: string) =>
+        rows.find((r) => norm(r.name) === norm(name)) ??
+        rows.find((r) => norm(r.name).startsWith(norm(name)) || norm(name).startsWith(norm(r.name)))
+
+      const notes: string[] = []
+      const flags = new Set<string>()
+      const rng = () => Math.random()
+
+      // Who spends what. Names Malachar wrote that match nobody are reported,
+      // never guessed at.
+      const spendById = new Map<string, number | "max">()
+      for (const [name, amount] of Object.entries(shortRestArgs.spend)) {
+        const row = findByName(name)
+        if (!row) { flags.add(`"${name}" in the spend list matches no player character — nothing spent for them.`); continue }
+        spendById.set(String(row.id), amount)
+      }
+
+      // Song of Rest. A named bard, no bard, or (nothing said) a bard who is
+      // up and in the party. `shortRest` itself says so if they are below 2nd.
+      let song: SongOfRest | null = null
+      if (shortRestArgs.song !== null) {
+        const bardRow = shortRestArgs.song
+          ? findByName(shortRestArgs.song)
+          : rows.find((r) => /bard/i.test(String(r.class ?? "")) && vitalityOf(r.hp_current as number | null, Array.isArray(r.conditions) ? (r.conditions as unknown[]).map(String) : []) === "up")
+        if (shortRestArgs.song && !bardRow) flags.add(`"${shortRestArgs.song}" named for Song of Rest matches no player character — no song.`)
+        if (bardRow) song = { bardId: String(bardRow.id), bardName: String(bardRow.name), bardLevel: Number(bardRow.level ?? 1) }
+      }
+
+      let bardSpentDie = false
+      let bardCharacterId: string | null = null
+      for (const p of rows) {
+        const conditions = Array.isArray(p.conditions) ? (p.conditions as unknown[]).map(String) : []
+        const wanted = spendById.get(String(p.id)) ?? 0
+        const rester: ShortRester = {
+          id: String(p.id),
+          name: String(p.name),
+          level: p.level as number | null,
+          class: p.class as string | null,
+          sheet_hit_dice: p.sheet_hit_dice as string | null,
+          hp: p.hp_current as number | null,
+          hpMax: p.hp_max as number | null,
+          hitDiceRemaining: p.hit_dice_remaining as number | null,
+          con_score: p.con_score as number | null,
+          spend: wanted === "max" ? 1 : wanted,
+          spellcasting: (p.sheet_spellcasting ?? null) as ShortRester["spellcasting"],
+          vitality: vitalityOf(p.hp_current as number | null, conditions),
+        }
+
+        // One call per character gives the same answer as one call for the
+        // party — `shortRest` resolves each independently — and lets `max`
+        // go one die at a time: roll, look, stop at full or when the dice run
+        // out. Song of Rest is offered once, on the first die.
+        const first = shortRest([rester], rng, song)
+        if (first.restEvent.bard_spent_die) bardSpentDie = true
+        bardCharacterId = first.restEvent.bard_character_id
+        let out: ShortRestOutcome = first.characters[0]
+        if (wanted === "max" && out.rested && out.dice.length > 0) {
+          const dice = [...out.dice]
+          let cur = out
+          while (cur.hp < (rester.hpMax ?? 0) && (cur.hitDiceRemaining ?? 0) > 0) {
+            const again = shortRest([{ ...rester, hp: cur.hp, hitDiceRemaining: cur.hitDiceRemaining, spend: 1 }], rng, null).characters[0]
+            if (again.dice.length === 0) break
+            dice.push(...again.dice)
+            cur = again
+          }
+          const healed = cur.hp - Math.max(0, rester.hp ?? 0)
+          const parts = [`spends ${dice.length} Hit Di${dice.length === 1 ? "e" : "ce"} (d${hitDieFor(rester)}: ${dice.map((d) => d.face).join(", ")})`]
+          if (out.songOfRest) parts.push(`Song of Rest (${out.songOfRest.face})`)
+          if (out.pactSlotsRestored) parts.push(`${out.pactSlotsRestored} pact slot${out.pactSlotsRestored === 1 ? "" : "s"} back`)
+          out = {
+            ...out, hp: cur.hp, hitDiceRemaining: cur.hitDiceRemaining, dice, healed,
+            note: `${rester.name} ${parts.join(", ")} — regains ${healed} hp (${cur.hp}/${rester.hpMax ?? 0}).`,
+          }
+        }
+        notes.push(out.note)
+        out.flags.forEach((f) => flags.add(f))
+        if (!out.rested) continue
+
+        const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        let touched = false
+        const hpBefore = Math.max(0, (p.hp_current as number | null) ?? 0)
+        if (out.hp !== hpBefore) { patch.hp_current = out.hp; touched = true }
+        if (out.hitDiceRemaining != null && out.hitDiceRemaining !== p.hit_dice_remaining) { patch.hit_dice_remaining = out.hitDiceRemaining; touched = true }
+        if (out.slots) {
+          const sc = (p.sheet_spellcasting ?? null) as SheetSpellcasting | null
+          // The whole object back with only `used` zeroed — writing just
+          // `{slots}` would drop the caster's ability, DC and known spells.
+          patch.sheet_spellcasting = sc ? { ...sc, slots: out.slots } : { slots: out.slots }
+          touched = true
+        }
+        // A stable character who spent Hit Dice and rose above 0 is up: the
+        // words that meant "a body on the floor" come off, and regaining any
+        // hit points resets death saves (SRD).
+        if (hpBefore <= 0 && out.hp > 0) {
+          patch.conditions = conditionsFor(conditions, "up")
+          patch.death_saves = { successes: 0, failures: 0 }
+          touched = true
+        }
+        if (touched) {
+          const { error } = await timeAdmin.from("characters").update(patch).eq("id", p.id)
+          if (error) console.error(`[rest] ${String(p.name)}:`, error.message)
+        }
+      }
+
+      // The record of the hour. No food columns: a short rest is not a meal
+      // (the camp module's ration cost for a partial rest is a later PR, and
+      // still needs Sam's yes). bard_character_id / bard_spent_die are the
+      // columns this rest was designed for.
+      const { error: restErr } = await timeAdmin.from("rest_events").insert({
+        session_id: activeSessionId,
+        rest_type: "short",
+        party_size: rows.length,
+        bard_character_id: bardCharacterId,
+        bard_spent_die: bardSpentDie,
+        detail: {
+          notes,
+          flags: [...flags, "Hit Dice rolled server-side (Math.random), not on the table's dice roller — faces recorded above."],
+          spend: shortRestArgs.spend,
+        },
+      })
+      if (restErr) console.error("[rest] rest_events:", restErr.message)
+
+      console.log("[rest] short rest applied:\n  " + notes.join("\n  "))
     }
   }
 

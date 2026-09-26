@@ -66,7 +66,26 @@ the thrown spells as pixel art and gives them motion:
   `outcome` ("hit" | "miss" | "saved"); a flourish plays only when the spell
   took. The board does not pass it yet, so today a flourish plays whenever the
   cast does.
-- `/cast-preview` — dev page, one lane per damage type. `?loop`
+- **Volleys and knockback** (lib/volley.ts, tested). A spellbook entry with
+  `volley` fires several projectiles: Magic Missile 3 darts +1 per slot above
+  1st, Scorching Ray 3 rays +1 per slot above 2nd, Eldritch Blast 1/2/3/4 beams
+  at caster level 1/5/11/17 (all SRD). `dice` is then per projectile. On the
+  board a volley spell arms in `volley` mode: each click on a legal creature
+  aims one projectile at it, the panel shows who has how many, LOOSE sends
+  `targets: [{token, count}]` plus `slot_level` to `/api/combat`, which rolls
+  each projectile on its own (a separate attack roll per beam; darts auto-hit)
+  and answers per creature with `count` and `shots`. The board then spawns one
+  effect per projectile, a beat apart, on its own seed — the `seek` motion
+  swings each dart out on its own side so a volley fans out — and lands the
+  hit points on the last one. A volley spell cast with one click puts every
+  projectile on that creature. An entry with `push` (Thunderwave, 10 ft)
+  shoves each creature that fails the save straight away from the caster,
+  square by square, stopping at a wall, the map edge or a body; the board
+  glides them on the impact frame. **Sam's ruling, not the SRD's:** a
+  creature stopped short has hit something and goes Prone until the round
+  turns (laid through `vtt_tokens.effects`, drawn by the status looks).
+- `/cast-preview` — dev page, one lane per damage type; the force lane fires
+  a three-dart volley. `?loop`
   recasts every few seconds; `?manual` hands the clock to `window.__castStep`
   so a screenshot script can photograph exact moments; `?cam=x,y,z&look=x,y,z`
   moves the eye.

@@ -16,7 +16,7 @@
 // board turns the numbers into a mesh.
 // ============================================================================
 
-export type MotionKind = "lob" | "weave" | "dart" | "drift"
+export type MotionKind = "lob" | "weave" | "dart" | "drift" | "seek"
 
 export interface MotionProfile {
   kind: MotionKind
@@ -40,6 +40,13 @@ export interface MotionProfile {
   stretch: number
   /** After-images drawn behind it. 0 = none. */
   trail: number
+  /**
+   * A swing out wide before it comes home: the peak sideways bulge of the
+   * whole path, in board units. The seed picks the side, so a volley fans
+   * out — three darts leave by three routes and all arrive. Sam: "Magic
+   * missile can actually move around to find a target."
+   */
+  bow?: number
 }
 
 export const MOTION: Record<MotionKind, MotionProfile> = {
@@ -51,6 +58,10 @@ export const MOTION: Record<MotionKind, MotionProfile> = {
   dart:  { kind: "dart",  ease: 1.60, lift: 0,    liftMax: 0,    weaveAmp: 0,    weaveCycles: 0,   spiralRadius: 0,    spiralTurns: 0, stretch: 1.45, trail: 2 },
   // A psychic bolt: it corkscrews in, unhurried until the end.
   drift: { kind: "drift", ease: 1.05, lift: 0.03, liftMax: 0.15, weaveAmp: 0,    weaveCycles: 0,   spiralRadius: 0.12, spiralTurns: 2, stretch: 1.0,  trail: 3 },
+  // Magic Missile: each dart swings out on its own side and homes in — a
+  // volley leaves as a fan and closes as a fist. Still weaves a little, so
+  // it reads as hunting rather than as a fixed arc.
+  seek:  { kind: "seek",  ease: 1.25, lift: 0.04, liftMax: 0.25, weaveAmp: 0.08, weaveCycles: 2,   spiralRadius: 0,    spiralTurns: 0, stretch: 1.3,  trail: 3, bow: 0.9 },
 }
 
 export interface Vec3 { x: number; y: number; z: number }
@@ -88,6 +99,15 @@ export function poseAt(profile: MotionProfile, p: number, distance: number, seed
     const a = c * profile.spiralTurns * Math.PI * 2 + phase
     side += Math.cos(a) * profile.spiralRadius * damp
     up += Math.sin(a) * profile.spiralRadius * damp
+  }
+  if (profile.bow) {
+    // A half-sine bulge to one side, peaking before the midpoint so the dart
+    // is already turning home by the time it is furthest out. Which side, and
+    // how far, is the seed's: consecutive seeds alternate and spread, so a
+    // fan of darts opens rather than three darts stacking on one path.
+    const sign = seed % 2 === 0 ? 1 : -1
+    const spread = 0.55 + 0.45 * (((seed >> 1) % 3) / 2)
+    side += Math.sin(Math.pow(c, 0.8) * Math.PI) * profile.bow * spread * sign
   }
   return { along, up, side }
 }
