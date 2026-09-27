@@ -558,7 +558,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   //
   // These MUST stay class-neutral. They previously read as cleric lines
   // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
-  // player whose generation failed was handed Samson's options ���������� the exact
+  // player whose generation failed was handed Samson's options ����������� the exact
   // leak the per-player chips exist to prevent. No class, no skill tag, no
   // named party member: whatever sits here is shown to EVERY seat at once.
   // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
@@ -1290,12 +1290,12 @@ function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; 
     initiative: "66.666% 40%",
     proficiency: "100% 40%",
   }
-  return <button type="button" onClick={onClick} className="group relative flex h-[115px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`}>
-    <span className="absolute inset-x-1 top-0 h-[92px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
+  return <button type="button" onClick={onClick} className="group relative flex h-[144px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`}>
+    <span className="absolute inset-x-1 top-0 h-[115px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
       <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
     </span>
     <b className="absolute bottom-[14px] z-10 rounded-full border border-[#c49b4f] bg-[#080604]/90 px-1.5 py-0.5 font-serif text-[9px] leading-none text-[#f3dfb4] shadow-[0_1px_5px_#000]">{value}</b>
-    <span className="relative z-10 max-w-full truncate px-0.5 text-[6px] font-bold uppercase tracking-[.08em] text-[#cdb276]">{label}</span>
+    <span className="relative z-10 max-w-full truncate px-0.5 text-[8px] font-bold uppercase tracking-[.08em] text-[#cdb276]">{label}</span>
   </button>
 }
 
