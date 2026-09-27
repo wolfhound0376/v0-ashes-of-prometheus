@@ -11,10 +11,42 @@
   ],
   "ppu": 98,
   "animations": {
+    "dead": {
+      "sheet": "dead.png",
+      "frames": 9,
+      "fps": 8,
+      "loop": false
+    },
+    "cast": {
+      "sheet": "cast.png",
+      "frames": 9,
+      "fps": 10,
+      "loop": false,
+      "hit": 0.6
+    },
+    "hurt": {
+      "sheet": "hurt.png",
+      "frames": 7,
+      "fps": 10,
+      "loop": false
+    },
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 9,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.75
+    },
     "idle": {
       "sheet": "idle.png",
-      "frames": 1,
+      "frames": 5,
       "fps": 5,
+      "loop": true
+    },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 9,
+      "fps": 10,
       "loop": true
     }
   }
