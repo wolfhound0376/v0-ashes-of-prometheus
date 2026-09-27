@@ -5,9 +5,9 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
-import { evaluate as evaluateSkillProgress, skillTitle, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
-import { loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
-import { normaliseSkill } from "@/lib/game-context"
+import { evaluate as evaluateSkillProgress, recordTraining, skillTitle, TEACHING_STAKE_PREFIX, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
+import { loadLedger as loadSkillLedger, loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
+import { normaliseSkill, skillProficiency, type SheetSlice } from "@/lib/game-context"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
 // ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
@@ -39,6 +39,8 @@ import {
   // PR 5 — spending camp actions, and the three the dice settle.
   parseCampActions, decideCampAction, campPurpose, parseCampPurpose, settleForage, settlePerform,
   bardUpgrade, CAMP_ACTION_STRIP_RE, CAMP_CHECK_SKILL,
+  // §16 — training: the teaching path of earned proficiency.
+  decideTraining, parseTrainingArgs, settleTraining, type TeacherRow,
   // PR 4 — levelling at camp, and the one XP table.
   normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext,
   type LevelUpSheet,
@@ -785,7 +787,7 @@ STRICT LIMITS ON USING THESE:
       if (rolledId && playerCharacter) {
         const { data: req } = await timeAdmin
           .from("roll_requests")
-          .select("id, character_id, purpose, status, result, dc")
+          .select("id, character_id, purpose, status, result, dc, skill")
           .eq("id", rolledId)
           .eq("character_id", playerCharacter.id)
           .maybeSingle()
@@ -874,6 +876,21 @@ STRICT LIMITS ON USING THESE:
               }
               campResults.push(out.note)
               console.log(`[camp] perform settled: ${total} — ${out.band}${out.lifts ? ", budgets lifted" : ""}`)
+            } else if (linked.action === "train") {
+              // === THE TEACHING TEST (lib/camp.ts §16) ===
+              // The dice ledger already counted this roll against the
+              // teaching stake when it was accepted (lib/skill-progress-apply),
+              // and any award is in the EARNED PROFICIENCY block below. Here
+              // is only the fact of pass or fail, for Malachar to narrate.
+              const skill = normaliseSkill(String(req.skill ?? ""))
+              const { data: teacher } = linked.arg
+                ? await timeAdmin.from("characters").select("name").eq("id", linked.arg).maybeSingle()
+                : { data: null }
+              const teaching = (await loadSkillProgressRules(timeAdmin)).find((r) => r.path === "teaching")
+              if (skill) {
+                campResults.push(settleTraining(name, skill, String(teacher?.name ?? "their teacher"), total, req.dc as number | null, teaching?.min_dc ?? 12))
+              }
+              console.log(`[camp] training test settled: ${total} vs DC ${req.dc ?? teaching?.min_dc ?? 12} (${skill ?? "?"})`)
             }
           }
         }
@@ -910,7 +927,53 @@ STRICT LIMITS ON USING THESE:
         const { data: pool } = await timeAdmin.from("party_supplies").select("supplies").limit(1).maybeSingle()
         supplies = Math.max(0, Number(pool?.supplies ?? 0))
       }
-      campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor, results: campResults })
+      // === TESTS READY (lib/camp.ts §16) ===
+      // Whose lessons have added up. Malachar is told the fact and the DC,
+      // never the hours — the tally stays hidden, like gravity.
+      const testsReady: { name: string; teacher: string; skill: string; dc: number }[] = []
+      if (campingBefore) {
+        try {
+          const rules = await loadSkillProgressRules(timeAdmin)
+          const teaching = rules.find((r) => r.path === "teaching")
+          const threshold = teaching?.threshold ?? 40
+          const minDc = teaching?.min_dc ?? 12
+          const { data: rows } = await timeAdmin
+            .from("skill_progress")
+            .select("character_id, skill, kind, amount, dc, stake_key, teacher_id, created_at")
+            .in("kind", ["training_hours", "award", "success"])
+            .order("created_at", { ascending: true })
+          type ProgressRow = { character_id: string; skill: string; kind: string; amount: number; dc: number | null; stake_key: string | null; teacher_id: string | null }
+          const byKey = new Map<string, ProgressRow[]>()
+          for (const r of (rows ?? []) as ProgressRow[]) {
+            const key = `${r.character_id}|${r.skill}`
+            byKey.set(key, [...(byKey.get(key) ?? []), r])
+          }
+          const ids = new Set<string>()
+          const ready: { characterId: string; teacherId: string; skill: string }[] = []
+          for (const group of byKey.values()) {
+            if (group.some((r) => r.kind === "award")) continue
+            const hours = group.filter((r) => r.kind === "training_hours").reduce((n, r) => n + r.amount, 0)
+            if (hours < threshold) continue
+            if (group.some((r) => r.kind === "success" && (r.stake_key ?? "").startsWith(TEACHING_STAKE_PREFIX) && (r.dc ?? 0) >= minDc)) continue
+            const lastTeacher = [...group].reverse().find((r) => r.kind === "training_hours")?.teacher_id
+            if (!lastTeacher) continue
+            ready.push({ characterId: group[0].character_id, teacherId: lastTeacher, skill: group[0].skill })
+            ids.add(group[0].character_id); ids.add(lastTeacher)
+          }
+          if (ready.length) {
+            const { data: named } = await timeAdmin.from("characters").select("id, name").in("id", [...ids])
+            const nameOf = new Map<string, string>((named ?? []).map((c: { id: string; name: string }) => [c.id, c.name]))
+            for (const r of ready) {
+              const name = nameOf.get(r.characterId)
+              const teacher = nameOf.get(r.teacherId)
+              if (name && teacher) testsReady.push({ name, teacher, skill: r.skill.replace(/_/g, " "), dc: minDc })
+            }
+          }
+        } catch (e) {
+          console.warn("[camp] training state unavailable this turn:", e)
+        }
+      }
+      campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor, results: campResults, testsReady })
     } catch (e) {
       console.warn("[camp] state unavailable this turn:", e)
     }
@@ -3445,6 +3508,89 @@ Rules:
           if (error) { console.error("[camp] level up:", error.message); continue }
           sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
           console.log(`[camp] action: ${fixed.note}${spendIt ? " (1 camp action)" : " (free here)"}`)
+          continue
+        }
+
+        // === TRAIN (lib/camp.ts §16) ===
+        // Hours with a teacher who really has the skill, or - once the hours
+        // are banked - the test on the student's own dice. The teacher is
+        // looked up by name among every character at the table (companions
+        // and NPCs alike); their sheet or stat-block line is what decides.
+        if (normaliseCampAction(tag.action) === "train") {
+          const { teacher: teacherName, skill } = parseTrainingArgs(tag.args)
+          const { data: student } = await admin
+            .from("characters")
+            .select("id, name, level, str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, sheet_skill_proficiencies")
+            .eq("id", row.id)
+            .maybeSingle()
+          let teacher: TeacherRow | null = null
+          if (teacherName) {
+            const { data: found } = await admin
+              .from("characters")
+              .select("id, name, sheet_skill_proficiencies, skills")
+              .is("archived_at", null)
+              .ilike("name", `${teacherName.replace(/[%_]/g, "")}%`)
+              .limit(5)
+            const candidates = (found ?? []) as TeacherRow[]
+            teacher =
+              candidates.find((c) => low(c.name) === low(teacherName)) ??
+              candidates.find((c) => low(c.name).startsWith(low(teacherName))) ??
+              null
+          }
+          const rules = await loadSkillProgressRules(admin)
+          const teaching = rules.find((r) => r.path === "teaching")
+          const ledger = student && skill ? await loadSkillLedger(admin, student.id, skill) : []
+          const d = decideTraining({
+            who: row.name,
+            camping: campingAtRest,
+            remaining: row.rest_actions_remaining,
+            skill,
+            teacherName,
+            teacher,
+            studentId: row.id,
+            studentProficiency: student && skill ? skillProficiency(student as unknown as SheetSlice, skill) : "none",
+            alreadyAwarded: ledger.some((r) => r.kind === "award"),
+            hoursBanked: ledger.filter((r) => r.kind === "training_hours").reduce((n, r) => n + r.amount, 0),
+            threshold: teaching?.threshold ?? 40,
+            minDc: teaching?.min_dc ?? 12,
+            isSpeaker: !!playerCharacter && playerCharacter.id === row.id,
+            requestSkill: thisRoll ? thisRoll.skill : undefined,
+            requestDc: thisRoll ? thisRoll.dc : undefined,
+          })
+          if (d.test && campCheckPurpose) {
+            console.log(`[camp] action: ${row.name} — the training test needs its own roll; this reply's roll is already spoken for. Nothing spent.`)
+            continue
+          }
+          console.log(`[camp] action: ${d.note}${d.flags.length ? ` [${d.flags.join("; ")}]` : ""}`)
+          if (!d.spend) continue
+          if (d.bank != null && student && teacher && skill) {
+            // The ledger row first; the spend only once it is written.
+            // decideTraining has already proved the teacher has the skill
+            // (sheet map or stat-block line, lib/camp teacherProficiency);
+            // recordTraining reads a sheet map only, so the proven skill is
+            // put on the slice it is handed. Nothing is invented.
+            const teacherSlice = {
+              ...(teacher as unknown as SheetSlice),
+              id: teacher.id,
+              name: teacher.name,
+              sheet_skill_proficiencies: { ...(teacher.sheet_skill_proficiencies ?? {}), [skill]: "proficient" },
+            }
+            const banked = recordTraining(
+              { characterId: student.id, skill, teacher: teacherSlice, hours: d.bank, campaignDay: clockAfter?.day ?? gameClock?.day ?? 1 },
+              student as unknown as SheetSlice,
+              ledger,
+            )
+            if (!banked.rows.length) { console.warn(`[camp] train: nothing banked (${banked.skipped.join(", ")})`); continue }
+            const { error: ledgerError } = await admin.from("skill_progress").insert(banked.rows)
+            if (ledgerError) { console.error("[camp] train: ledger write failed:", ledgerError.message); continue }
+            // The clock moves: it is honest downtime.
+            await logTimeEvent(admin, activeSessionId, { eventType: "training", minutesAdvanced: d.bank * 60 })
+          }
+          const { error } = await admin.from("characters")
+            .update({ rest_actions_remaining: d.remaining, updated_at: new Date().toISOString() }).eq("id", row.id)
+          if (error) { console.error("[camp] spend:", error.message); continue }
+          row.rest_actions_remaining = d.remaining
+          if (d.test && d.purpose && skill) campCheckPurpose = { purpose: d.purpose, skill }
           continue
         }
 

@@ -36,6 +36,9 @@ export const TIME_EVENT_TYPES = [
   // minutes so time_log can say whether the party is camping.
   "make_camp",
   "break_camp",
+  // Earned proficiency (lib/camp.ts §16): hours of instruction at camp. No
+  // rule row — the minutes are the hours banked, passed explicitly.
+  "training",
 ] as const
 
 /** Event types that take no time and are logged with an explicit 0. */
@@ -44,7 +47,7 @@ export const ZERO_MINUTE_EVENTS: ReadonlySet<TimeEventType> = new Set<TimeEventT
 export type TimeEventType = (typeof TIME_EVENT_TYPES)[number]
 
 /** Event types that require an explicit minutes_advanced value on insert. */
-export const MINUTES_REQUIRED: ReadonlySet<TimeEventType> = new Set<TimeEventType>(["cinematic_cut"])
+export const MINUTES_REQUIRED: ReadonlySet<TimeEventType> = new Set<TimeEventType>(["cinematic_cut", "training"])
 
 /** A hidden roll recorded against a story-advancement event. Never shown to players. */
 export interface HiddenRoll {

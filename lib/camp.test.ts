@@ -21,6 +21,11 @@ import {
   withPendingChoices,
   PENDING_LEVEL_SOURCE,
   decideCampAction,
+  decideTraining,
+  parseTrainingArgs,
+  settleTraining,
+  teacherProficiency,
+  TRAIN_HOURS_PER_ACTION,
   normaliseCampAction,
   parseCampActions,
   parseCampPurpose,
@@ -152,7 +157,7 @@ describe("camp action budget", () => {
     expect(spendCampAction(2, "tend").ok).toBe(false)
     expect(spendCampAction(2, "sleep").remaining).toBe(2)
     for (const a of CAMP_ACTIONS) expect(CAMP_ACTION_RULES[a].source).toBeTruthy()
-    expect(CAMP_ACTIONS).toHaveLength(14)
+    expect(CAMP_ACTIONS).toHaveLength(15) // 14 from Sam's list + train (§16)
   })
 })
 
@@ -614,7 +619,7 @@ describe("spending camp actions", () => {
 
   it("parses the tag, reads the menu loosely, and strips cleanly", () => {
     const text = "The fire catches. [CAMP_ACTION: Kenta | forage] Roll. [CAMP_ACTION:Scott|play music]"
-    expect(parseCampActions(text)).toEqual([{ who: "Kenta", action: "forage" }, { who: "Scott", action: "play music" }])
+    expect(parseCampActions(text)).toEqual([{ who: "Kenta", action: "forage", args: [] }, { who: "Scott", action: "play music", args: [] }])
     expect(normaliseCampAction("Level-up")).toBe("level_up")
     expect(normaliseCampAction("Foraging")).toBe("forage")
     expect(normaliseCampAction("entertain")).toBe("perform")
@@ -647,9 +652,9 @@ describe("spending camp actions", () => {
 
   it("the purpose links a roll to its action and marks it settled", () => {
     expect(campPurpose("forage")).toBe("camp:forage")
-    expect(parseCampPurpose("camp:forage")).toEqual({ action: "forage", settled: false })
-    expect(parseCampPurpose("camp:forage:done")).toEqual({ action: "forage", settled: true })
-    expect(parseCampPurpose("camp:perform:inspired")).toEqual({ action: "perform", settled: true })
+    expect(parseCampPurpose("camp:forage")).toEqual({ action: "forage", settled: false, arg: null })
+    expect(parseCampPurpose("camp:forage:done")).toEqual({ action: "forage", settled: true, arg: null })
+    expect(parseCampPurpose("camp:perform:inspired")).toEqual({ action: "perform", settled: true, arg: null })
     expect(parseCampPurpose(null)).toBeNull()
     expect(parseCampPurpose("attack")).toBeNull()
   })
@@ -735,3 +740,107 @@ describe("levelling at camp", () => {
     expect(noDice).not.toHaveProperty("hit_dice_remaining")
   })
 })
+
+// ---------------------------------------------------------------------------
+// §16 TRAIN — the teaching path (docs/claude_Earned_Proficiency.md path C)
+// ---------------------------------------------------------------------------
+
+describe("§16 train — hours with a teacher, then the test", () => {
+  const eldeth = { id: "t-eldeth", name: "Eldeth Feldrun", sheet_skill_proficiencies: { "Animal Handling": "proficient" }, skills: null }
+  const buppido = { id: "t-buppido", name: "Buppido", sheet_skill_proficiencies: {}, skills: "Stealth +4" }
+  const base = {
+    who: "Samson",
+    camping: true,
+    remaining: 2,
+    skill: "animal_handling" as const,
+    teacherName: "Eldeth",
+    teacher: eldeth,
+    studentProficiency: "none" as const,
+    studentId: "s-samson",
+    alreadyAwarded: false,
+    hoursBanked: 0,
+    threshold: 40,
+    minDc: 12,
+    isSpeaker: true,
+    requestSkill: undefined,
+    requestDc: undefined,
+  }
+
+  it("the tag carries the teacher and the skill after the action, in either order", () => {
+    const tags = parseCampActions("[CAMP_ACTION: Samson | train | Eldeth | animal handling] and [CAMP_ACTION: Kenta | forage]")
+    expect(tags).toEqual([
+      { who: "Samson", action: "train", args: ["Eldeth", "animal handling"] },
+      { who: "Kenta", action: "forage", args: [] },
+    ])
+    expect(parseTrainingArgs(["Eldeth", "animal handling"])).toEqual({ teacher: "Eldeth", skill: "animal_handling" })
+    expect(parseTrainingArgs(["Sleight of Hand", "Jimjar"])).toEqual({ teacher: "Jimjar", skill: "sleight_of_hand" })
+    expect(parseTrainingArgs(["Jimjar"])).toEqual({ teacher: "Jimjar", skill: null })
+    expect(parseTrainingArgs([])).toEqual({ teacher: null, skill: null })
+  })
+
+  it("a teacher has the skill by their sheet map or their stat-block line — nothing else counts", () => {
+    expect(teacherProficiency(eldeth, "animal_handling")).toBe("proficient")
+    expect(teacherProficiency(buppido, "stealth")).toBe("proficient")
+    expect(teacherProficiency(buppido, "animal_handling")).toBe("none")
+    expect(teacherProficiency({ id: "x", name: "Drow Elite Warrior", skills: "Perception +4, Stealth +10" }, "perception")).toBe("proficient")
+    expect(teacherProficiency({ id: "x", name: "Nobody" }, "arcana")).toBe("none")
+    expect(teacherProficiency({ id: "x", name: "Expert", sheet_skill_proficiencies: { stealth: "expertise" } }, "stealth")).toBe("expertise")
+  })
+
+  it("an evening below the threshold banks hours, spends the action, and flags the house rules", () => {
+    const d = decideTraining(base)
+    expect(d).toMatchObject({ spend: true, remaining: 1, bank: TRAIN_HOURS_PER_ACTION, test: false, purpose: null })
+    expect(d.flags).toHaveLength(2)
+    expect(d.note).toMatch(/evening of animal handling with Eldeth Feldrun/)
+  })
+
+  it("refusals never spend: not camped, no skill, no teacher, unknown teacher, self, a teacher without the skill, no actions", () => {
+    expect(decideTraining({ ...base, camping: false })).toMatchObject({ spend: false, remaining: 2 })
+    expect(decideTraining({ ...base, skill: null }).note).toMatch(/name one of the 18 skills/)
+    expect(decideTraining({ ...base, teacherName: null }).note).toMatch(/name the teacher/)
+    expect(decideTraining({ ...base, teacher: null }).note).toMatch(/nobody called "Eldeth"/)
+    expect(decideTraining({ ...base, teacher: { ...eldeth, id: "s-samson" } }).note).toMatch(/teach themself/)
+    expect(decideTraining({ ...base, teacher: buppido }).note).toMatch(/Buppido does not have animal handling/)
+    expect(decideTraining({ ...base, remaining: 0 })).toMatchObject({ spend: false, remaining: 0 })
+  })
+
+  it("a student who already has the skill, or already earned it, learns nothing", () => {
+    expect(decideTraining({ ...base, studentProficiency: "proficient" }).note).toMatch(/already has animal handling/)
+    expect(decideTraining({ ...base, studentProficiency: "expertise" }).spend).toBe(false)
+    expect(decideTraining({ ...base, alreadyAwarded: true }).note).toMatch(/already earned/)
+  })
+
+  it("once the hours are banked the evening is the test, on the student's own dice at the rule's DC", () => {
+    const ready = { ...base, hoursBanked: 40 }
+    expect(decideTraining(ready).note).toMatch(/needs a animal handling roll at DC 12/)
+    expect(decideTraining({ ...ready, requestSkill: "stealth", requestDc: 12 }).note).toMatch(/rolls animal handling, not stealth/)
+    expect(decideTraining({ ...ready, requestSkill: "animal_handling", requestDc: 10 }).note).toMatch(/DC 12, not 10/)
+    expect(decideTraining({ ...ready, requestSkill: "animal_handling", requestDc: 12, isSpeaker: false }).note).toMatch(/own player/)
+    const d = decideTraining({ ...ready, requestSkill: "animal_handling", requestDc: 12 })
+    expect(d).toMatchObject({ spend: true, remaining: 1, bank: null, test: true, purpose: "camp:train:t-eldeth" })
+    // A bare [[1d20+1]] with no skill on it is still accepted, like forage.
+    expect(decideTraining({ ...ready, requestSkill: null }).test).toBe(true)
+    // Sam's threshold from the rules row, not the code.
+    expect(decideTraining({ ...base, hoursBanked: 8, threshold: 8, requestSkill: "animal_handling", requestDc: 12 }).test).toBe(true)
+  })
+
+  it("the purpose round-trips with the teacher's id, settled or not", () => {
+    expect(parseCampPurpose("camp:train:t-eldeth")).toEqual({ action: "train", settled: false, arg: "t-eldeth" })
+    expect(parseCampPurpose("camp:train:t-eldeth:done")).toEqual({ action: "train", settled: true, arg: "t-eldeth" })
+    expect(parseCampPurpose("camp:forage")).toEqual({ action: "forage", settled: false, arg: null })
+    expect(parseCampPurpose("camp:forage:done")).toEqual({ action: "forage", settled: true, arg: null })
+    expect(parseCampPurpose("camp:perform:inspired")).toEqual({ action: "perform", settled: true, arg: null })
+  })
+
+  it("the generic path never spends a train tag by accident", () => {
+    expect(decideCampAction({ camping: true, who: "Samson", action: "train", remaining: 2, isSpeaker: true, requestSkill: undefined, merchantPresent: false }))
+      .toMatchObject({ action: "train", spend: false, remaining: 2 })
+  })
+
+  it("the settled test is a fact, pass or fail, and the hours survive a failure", () => {
+    expect(settleTraining("Samson", "animal_handling", "Eldeth", 14, 12, 12)).toMatch(/passed Eldeth's animal handling test/)
+    expect(settleTraining("Samson", "animal_handling", "Eldeth", 11, 12, 12)).toMatch(/failed .* hours are not lost/)
+    expect(settleTraining("Samson", "animal_handling", "Eldeth", 12, null, 12)).toMatch(/passed/)
+  })
+})
+

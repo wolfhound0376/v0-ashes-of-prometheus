@@ -60,6 +60,19 @@ export const DEFAULT_RULES: readonly ProgressRule[] = [
 export const TEACHING_STAKE_PREFIX = "teaching:"
 
 /**
+ * The stake a roll request's `purpose` stands for. The camp module stamps the
+ * teaching test as `camp:train:<teacherId>` (lib/camp.ts §16); on the ledger
+ * that is the teaching stake `teaching:<teacherId>`. Any other purpose is its
+ * own stake, and a settled suffix (":done") never changes what was at stake.
+ */
+export function stakeKeyFromPurpose(purpose: string | null | undefined): string | null {
+  if (!purpose) return null
+  const m = /^camp:train:([^:]+)(?::done)?$/.exec(purpose)
+  if (m) return `${TEACHING_STAKE_PREFIX}${m[1]}`
+  return purpose.replace(/:done$/, "")
+}
+
+/**
  * One skill_progress row, as written or as read back. `id` and `created_at`
  * are the database's; the module never needs them.
  */

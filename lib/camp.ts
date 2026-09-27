@@ -31,12 +31,16 @@
 
 import {
   abilityMod,
+  normaliseSkill,
   proficiencyForLevel,
   resolveSkillCheck,
+  skillProficiency,
   type CheckResult,
   type GameContext,
+  type ProficiencyLevel,
   type Rng,
   type SheetSlice,
+  type Skill,
 } from "./game-context"
 import { XP_THRESHOLDS } from "./game-data"
 
@@ -105,6 +109,8 @@ export function affordableRest(supplies: number | null | undefined, partySize: n
 export const CAMP_ACTIONS = [
   "attune", "investigate", "decipher", "artifice", "forage", "mend", "brew",
   "pray", "level_up", "trade", "hunt", "explore", "perform", "talk",
+  // docs/claude_Earned_Proficiency.md §4 — the teaching path lives at camp (§16).
+  "train",
 ] as const
 export type CampAction = (typeof CAMP_ACTIONS)[number]
 
@@ -146,6 +152,7 @@ export const CAMP_ACTION_RULES: Record<CampAction, { resolves: string; source: s
   explore: { resolves: "dmScene() — the nearby area is the DM's to describe", source: "Sam, 2026-09-26" },
   perform: { resolves: "perform() — a band, and on a partial rest the bard's exception", source: "Sam, 2026-08-20 and 2026-09-26" },
   talk: { resolves: "weightRelationshipEvent()", source: "Sam's gravity system" },
+  train: { resolves: "decideTraining() — hours banked with a proficient teacher; the DC 12 test once 40 are banked", source: "Homebrew — docs/claude_Earned_Proficiency.md, Sam 2026-09-26" },
 }
 
 export interface SpendOutcome {
@@ -1319,6 +1326,8 @@ export interface CampBlockState {
   visitor: StoredVisitor | null
   /** Camp actions the dice settled this turn (§14), as facts to narrate. */
   results?: string[]
+  /** Students whose hours are banked and whose teaching test is the next step (§16). Never the hours. */
+  testsReady?: { name: string; teacher: string; skill: string; dc: number }[]
 }
 
 /**
@@ -1349,7 +1358,19 @@ export function formatCampBlock(s: CampBlockState): string {
         `Forage and hunt (Survival, DC 15 in the Underdark) and perform (Performance) are settled by the acting player's own dice: put the tag in the SAME reply as their roll request, e.g. [CAMP_ACTION: Kenta | forage] Roll Survival. [[1d20-1 | survival | DC 15]]. ` +
         `You will be told the result; never invent food or its amount.\n` +
         `Level up (one level, only when their XP has earned it): [CAMP_ACTION: <name> | level up]. For rolled hit points, put it in the same reply as their Hit Die roll, e.g. [[1d8]]; with no roll, the fixed value applies. The system writes the numbers; the choices land on their sheet for them to make at the fire.\n` +
+        `Train (learn a skill from someone who has it - a companion or an NPC at the fire): [CAMP_ACTION: <name> | train | <teacher> | <skill>], e.g. [CAMP_ACTION: Samson | train | Eldeth | animal handling]. The system checks the teacher really has the skill, banks the evening's hours and moves the clock; you narrate the lesson. Never say how many hours are banked or how many remain.\n` +
         `Emit [TIME:break_camp] if they pack up without resting.`,
+    )
+  }
+  if (s.testsReady?.length) {
+    parts.push(
+      `READY FOR THE TEST (the lessons have added up; offer it, do not force it):\n` +
+        s.testsReady
+          .map(
+            (t) =>
+              `- ${t.name} may now be tested in ${t.skill} by ${t.teacher}. When their player asks for it, put the tag in the SAME reply as their roll: [CAMP_ACTION: ${t.name} | train | ${t.teacher} | ${t.skill}] Roll ${t.skill}. [[1d20+<their ${t.skill} bonus> | ${t.skill} | DC ${t.dc}]]. Pass or fail, the system decides and tells you.`,
+          )
+          .join("\n"),
     )
   }
   if (s.visitor && s.visitor.visitor) {
@@ -1390,7 +1411,7 @@ ${parts.join("\n\n")}`
 // next turn, the route reads the real total and the stored DC, claims the
 // request once (`camp:<action>:done`), and settles it before Malachar speaks.
 
-export const CAMP_ACTION_TAG_RE = /\[CAMP_ACTION:\s*([^\]|]+?)\s*\|\s*([^\]|]+?)\s*\]/gi
+export const CAMP_ACTION_TAG_RE = /\[CAMP_ACTION:\s*([^\]|]+?)\s*\|\s*([^\]|]+?)\s*(?:\|\s*([^\]]*?))?\s*\]/gi
 
 /** Every tag stripped from player-facing text and speech. */
 export const CAMP_ACTION_STRIP_RE = /\[CAMP_ACTION:[^\]]*\]/gi
@@ -1398,13 +1419,16 @@ export const CAMP_ACTION_STRIP_RE = /\[CAMP_ACTION:[^\]]*\]/gi
 export interface CampActionTag {
   who: string
   action: string
+  /** Anything after the action, pipe-separated: `train | Eldeth | animal handling` → ["Eldeth", "animal handling"]. */
+  args: string[]
 }
 
-/** Every [CAMP_ACTION: who | action] in Malachar's reply, in order, at most eight. */
+/** Every [CAMP_ACTION: who | action | …] in Malachar's reply, in order, at most eight. */
 export function parseCampActions(text: string): CampActionTag[] {
   const out: CampActionTag[] = []
   for (const m of text.matchAll(CAMP_ACTION_TAG_RE)) {
-    out.push({ who: m[1].trim(), action: m[2].trim() })
+    const args = (m[3] ?? "").split("|").map((a) => a.trim()).filter(Boolean)
+    out.push({ who: m[1].trim(), action: m[2].trim(), args })
     if (out.length >= 8) break
   }
   return out
@@ -1425,6 +1449,7 @@ const ACTION_ALIASES: Record<string, CampAction> = {
   explore: "explore", exploring: "explore", scout: "explore",
   perform: "perform", performance: "perform", music: "perform", play_music: "perform", entertain: "perform", entertaining: "perform",
   talk: "talk",
+  train: "train", training: "train", teach: "train", teaching: "train", learn: "train", learning: "train", lesson: "train", lessons: "train", study: "train", practice: "train", practise: "train",
 }
 
 /** "Level up" / "level-up" / "Foraging" / "play music" → the menu key, or null. */
@@ -1482,6 +1507,7 @@ export function decideCampAction(input: {
   const notYet = CAMP_ACTIONS_NOT_YET[action]
   if (notYet) return refuse(notYet)
   if (action === "trade" && !input.merchantPresent) return refuse("there is no merchant at this fire to trade with.")
+  if (action === "train") return refuse("train is decided by decideTraining (§16) — it needs a teacher and a skill.")
   const check = CAMP_CHECK_SKILL[action] ?? null
   if (check) {
     if (!input.isSpeaker) return refuse(`${action} is settled by their own roll, so only their own player can take it.`)
@@ -1493,17 +1519,24 @@ export function decideCampAction(input: {
   return { action, spend: true, remaining: spent.remaining, check, note: `${input.who} — ${spent.note}` }
 }
 
-/** What goes on `roll_requests.purpose` to link a check to its camp action. */
-export function campPurpose(action: CampAction): string {
-  return `camp:${action}`
+/** What goes on `roll_requests.purpose` to link a check to its camp action. `train` carries the teacher's id. */
+export function campPurpose(action: CampAction, arg?: string | null): string {
+  return arg ? `camp:${action}:${arg}` : `camp:${action}`
 }
 
-/** `camp:forage` → forage, unsettled. `camp:forage:done` → settled. Anything else → null. */
-export function parseCampPurpose(purpose: string | null | undefined): { action: CampAction; settled: boolean } | null {
-  const m = /^camp:([a-z_]+)(?::(done|inspired))?$/.exec(purpose ?? "")
+/**
+ * `camp:forage` → forage, unsettled. `camp:forage:done` → settled.
+ * `camp:train:<teacherId>` → train with that teacher. Anything else → null.
+ */
+export function parseCampPurpose(purpose: string | null | undefined): { action: CampAction; settled: boolean; arg: string | null } | null {
+  const m = /^camp:([a-z_]+)(?::([^:]+?))?(?::(done|inspired))?$/.exec(purpose ?? "")
   if (!m) return null
   const action = normaliseCampAction(m[1])
-  return action ? { action, settled: !!m[2] } : null
+  if (!action) return null
+  // "done" / "inspired" with no argument land in group 2 by greed; put them back.
+  const arg = m[2] === "done" || m[2] === "inspired" ? null : (m[2] ?? null)
+  const settled = !!m[3] || m[2] === "done" || m[2] === "inspired"
+  return { action, settled, arg }
 }
 
 export interface SettledForage {
@@ -1659,3 +1692,175 @@ export function levelUpPatch(
   if (w.sheet_spellcasting) patch.sheet_spellcasting = w.sheet_spellcasting
   return patch
 }
+
+// ============================================================================
+// §16 TRAIN — the teaching path of earned proficiency (2026-09-27)
+// ============================================================================
+//
+// docs/claude_Earned_Proficiency.md §1 path C and §4: forty campaign hours of
+// instruction from a teacher who has the proficiency, then one check at DC 12.
+// Hours accrue only at camp, so `train` is a camp action: each one spends the
+// evening with the teacher and banks TRAIN_HOURS_PER_ACTION on the ledger
+// (skill_progress kind='training_hours', written by the route via
+// lib/skill-progress recordTraining) and moves the clock the same amount.
+// When the banked hours reach the threshold, the next camp offers the test:
+// the acting player's own roll, tagged `| <skill> | DC 12`, stamped
+// `camp:train:<teacherId>`; the dice ledger records it as the teaching stake
+// and lib/skill-progress evaluate() awards. Malachar never sees the hours.
+//
+// HOUSE RULE, needs Sam's yes: an evening at the fire is 4 hours of lessons
+// (SRD downtime counts 8 hours a day; a camp evening is not a day). Ten
+// evenings to the test. Flagged on every decision that banks hours.
+//
+// HOUSE RULE, needs Sam's yes: the teacher's evening is free. Teaching costs
+// the student's action, not the teacher's - a companion teaching is still
+// resting. Flagged likewise.
+
+export const TRAIN_HOURS_PER_ACTION = 4
+export const TRAIN_HOURS_FLAG = "HOUSE RULE — needs Sam's yes: 4 hours of lessons per camp evening"
+export const TRAIN_TEACHER_FREE_FLAG = "HOUSE RULE — needs Sam's yes: the teacher's evening costs them no camp action"
+
+/** The teacher's side of the fire. A `characters` row: a companion's sheet or an NPC's stat-block line. */
+export interface TeacherRow {
+  id: string
+  name: string
+  sheet_skill_proficiencies?: Record<string, string> | null
+  /** Stat-block skills: "Perception +2, Stealth +4". A listed skill is a proficient one. */
+  skills?: string | null
+}
+
+/**
+ * Whether a would-be teacher actually has the skill. A companion's sheet map
+ * is read the way every check reads it; an NPC's stat-block line
+ * ("Perception +2, Stealth +4") lists exactly the skills the creature is
+ * proficient in, so a listed skill counts. Nothing else does - Malachar
+ * cannot declare Buppido a master of Animal Handling.
+ */
+export function teacherProficiency(teacher: TeacherRow, skill: Skill): ProficiencyLevel {
+  const fromSheet = skillProficiency(
+    { sheet_skill_proficiencies: teacher.sheet_skill_proficiencies ?? null } as SheetSlice,
+    skill,
+  )
+  if (fromSheet !== "none") return fromSheet
+  for (const part of String(teacher.skills ?? "").split(",")) {
+    const name = part.trim().replace(/\s*[+-]\s*\d+\s*$/, "")
+    if (name && normaliseSkill(name) === skill) return "proficient"
+  }
+  return "none"
+}
+
+/** "Eldeth | animal handling" out of the tag's extra fields. Order-free: the field that is a skill is the skill. */
+export function parseTrainingArgs(args: readonly string[]): { teacher: string | null; skill: Skill | null } {
+  let teacher: string | null = null
+  let skill: Skill | null = null
+  for (const a of args) {
+    const asSkill = normaliseSkill(a)
+    if (asSkill && !skill) skill = asSkill
+    else if (!teacher) teacher = a.trim() || null
+  }
+  return { teacher, skill }
+}
+
+export interface TrainingInput {
+  who: string
+  camping: boolean
+  remaining: number | null | undefined
+  skill: Skill | null
+  teacherName: string | null
+  /** The teacher row the route found by name, or null. */
+  teacher: TeacherRow | null
+  /** The student's own proficiency in the skill. */
+  studentProficiency: ProficiencyLevel
+  /** The student's id, so a character cannot teach themself. */
+  studentId: string
+  alreadyAwarded: boolean
+  hoursBanked: number
+  /** skill_progress_rules.teaching: threshold (40) and min_dc (12). */
+  threshold: number
+  minDc: number
+  /** The tag names the character whose player is speaking this turn. */
+  isSpeaker: boolean
+  /** The skill on this reply's roll request: a skill, null for a bare `[[1d20+X]]`, undefined when there is no request. */
+  requestSkill: string | null | undefined
+  /** The DC on this reply's roll request, when it carries one. */
+  requestDc: number | null | undefined
+}
+
+export interface TrainingDecision {
+  /** Spend one action now? */
+  spend: boolean
+  remaining: number
+  /** Hours to bank on the ledger this evening, or null when nothing is banked. */
+  bank: number | null
+  /** This reply is the test: the player's roll settles it. */
+  test: boolean
+  /** For the roll request's purpose when `test`: `camp:train:<teacherId>`. */
+  purpose: string | null
+  flags: string[]
+  note: string
+}
+
+/**
+ * One [CAMP_ACTION: who | train | teacher | skill]. Refusals never spend.
+ * Below the threshold the evening banks hours; at or above it the evening IS
+ * the test, which needs the student's own roll of that skill in the same
+ * reply, at the rule's DC or higher.
+ */
+export function decideTraining(input: TrainingInput): TrainingDecision {
+  const have = Math.max(0, Math.trunc(Number(input.remaining) || 0))
+  const refuse = (note: string, flags: string[] = []): TrainingDecision =>
+    ({ spend: false, remaining: have, bank: null, test: false, purpose: null, flags, note: `${input.who} — ${note}` })
+  if (!input.camping) return refuse("train: the party is not camped.")
+  if (!input.skill) return refuse("train: name one of the 18 skills (e.g. animal handling) — nothing spent.")
+  const skillName = input.skill.replace(/_/g, " ")
+  if (input.studentProficiency !== "none") return refuse(`already has ${skillName}; there is nothing to learn here.`)
+  if (input.alreadyAwarded) return refuse(`already earned ${skillName}; nothing more to bank.`)
+  if (!input.teacherName) return refuse("train: name the teacher — nothing spent.")
+  if (!input.teacher) return refuse(`train: nobody called "${input.teacherName}" is known to the table — nothing spent.`)
+  if (input.teacher.id === input.studentId) return refuse("cannot teach themself — nothing spent.")
+  if (teacherProficiency(input.teacher, input.skill) === "none") {
+    return refuse(`${input.teacher.name} does not have ${skillName} and cannot teach it — nothing spent.`)
+  }
+  if (have <= 0) return refuse(`no camp action left this rest (train refused).`)
+
+  if (input.hoursBanked < input.threshold) {
+    return {
+      spend: true,
+      remaining: have - 1,
+      bank: TRAIN_HOURS_PER_ACTION,
+      test: false,
+      purpose: null,
+      flags: [TRAIN_HOURS_FLAG, TRAIN_TEACHER_FREE_FLAG],
+      note: `${input.who} — an evening of ${skillName} with ${input.teacher.name}: ${have - 1} camp action${have - 1 === 1 ? "" : "s"} left this rest.`,
+    }
+  }
+
+  // The hours are banked: this evening is the test.
+  if (!input.isSpeaker) return refuse(`the ${skillName} test is settled by their own roll, so only their own player can take it.`)
+  if (input.requestSkill === undefined) return refuse(`the ${skillName} test needs a ${skillName} roll at DC ${input.minDc} in the same reply — nothing spent.`)
+  if (input.requestSkill !== null && input.requestSkill !== input.skill) {
+    return refuse(`the test rolls ${skillName}, not ${input.requestSkill} — nothing spent.`)
+  }
+  if (input.requestDc != null && input.requestDc < input.minDc) {
+    return refuse(`the ${skillName} test is DC ${input.minDc}, not ${input.requestDc} — nothing spent.`)
+  }
+  return {
+    spend: true,
+    remaining: have - 1,
+    bank: null,
+    test: true,
+    purpose: campPurpose("train", input.teacher.id),
+    flags: [],
+    note: `${input.who} — the ${skillName} test with ${input.teacher.name}, on their own dice: ${have - 1} camp action${have - 1 === 1 ? "" : "s"} left this rest.`,
+  }
+}
+
+/** Settle the test from the committed roll: a fact for Malachar. The ledger already counted it. */
+export function settleTraining(name: string, skill: Skill, teacher: string, total: number, dc: number | null, minDc: number): string {
+  const skillName = skill.replace(/_/g, " ")
+  const bar = dc ?? minDc
+  return total >= bar
+    ? `${name} passed ${teacher}'s ${skillName} test. If the system has awarded the proficiency, that is in the EARNED PROFICIENCY section — narrate the moment.`
+    : `${name} failed ${teacher}'s ${skillName} test. The hours are not lost: another camp, another try.`
+}
+

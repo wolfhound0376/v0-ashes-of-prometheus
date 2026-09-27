@@ -13,7 +13,7 @@
 // logged and swallowed. The roll that triggered it has already been committed
 // to the roll ledger and must never be un-done or held up by the tally.
 
-import { DEFAULT_RULES, buildAward, evaluate, recordCheck, type Award, type LedgerRow, type ProgressRule, type ResolvedCheck } from "./skill-progress"
+import { DEFAULT_RULES, buildAward, evaluate, recordCheck, stakeKeyFromPurpose, type Award, type LedgerRow, type ProgressRule, type ResolvedCheck } from "./skill-progress"
 import { normaliseSkill, type CheckResult, type SheetSlice, type Skill } from "./game-context"
 import { readGameClock } from "./time-tracking"
 
@@ -154,9 +154,10 @@ export async function applyAcceptedRoll(
     total: args.total,
     campaignDay: clock?.day ?? 1,
     // Freshness is judged on what the check was against. Malachar's tag has
-    // no stake field yet, so the request's purpose (when set) or the
-    // expression stands in: same skill, same day, same purpose - once.
-    stakeKey: request.purpose ? String(request.purpose) : null,
+    // no stake field yet, so the request's purpose stands in: same skill,
+    // same day, same purpose - once. A camp training test (camp:train:<id>)
+    // becomes the teaching stake the ledger expects.
+    stakeKey: stakeKeyFromPurpose(request.purpose ? String(request.purpose) : null),
     rollRequestId: request.id,
   })
 }
