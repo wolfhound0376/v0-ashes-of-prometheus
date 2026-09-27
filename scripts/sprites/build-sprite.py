@@ -109,6 +109,11 @@ def main() -> None:
         "out - a shrieker's plain mushroom, a mimic's chest. Its still rotations become "
         "disguise.png, worn in place of idle until the creature takes damage",
     )
+    ap.add_argument(
+        "--state", metavar="NAME",
+        help="build from the named state (outfit) of a character that has more than one, e.g. "
+        "--state \"Regal Armor\". Without it the first state wins",
+    )
     args = ap.parse_args()
     chosen = dict(u.split("=", 1) for u in args.use)
 
@@ -119,6 +124,14 @@ def main() -> None:
     z = open_zip(args.source)
     meta = json.loads(z.read("metadata.json"))
     state_meta = meta["states"][0]
+    if args.state:
+        # A state's files live under its name, spaces as underscores.
+        folder = args.state.replace(" ", "_") + "/"
+        matches = [st for st in meta["states"]
+                   if any(p.startswith(folder) for p in st["frames"].get("rotations", {}).values())]
+        if not matches:
+            sys.exit(f"no state '{args.state}' in this download")
+        state_meta = matches[0]
     frames = state_meta["frames"]
     load = lambda p: Image.open(io.BytesIO(z.read(p))).convert("RGBA")
 

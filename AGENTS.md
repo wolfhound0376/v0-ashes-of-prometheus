@@ -349,7 +349,7 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
   is set so the figure stands at its real height, measured from the drawn figure in its
   `idle` sheet (`ppu = figure_px × 5 / feet`), never left at the default. Humans (and
   half-elves) 5.5–6.5 ft, default 5.9 ft; a height on the character sheet
-  (`sheet_appearance.height`) wins. Elves (drow included) 6 ft. Dwarves (duergar included)
+  (`sheet_appearance.height`) wins. Elves (drow included) 6 ft, except Ilvara Mizzrym 6.4 ft (Sam, 9/27: "a little taller and regal"). Dwarves (duergar included)
   4–4.5 ft, default 4.3 ft. Halflings just above gnomes: Freía 3.8 ft (Sam, 9/27: halflings 15% larger), deep gnome 3.0 ft.
   Orcs 7.5 ft (Sam, 9/26: "orcs need to be about 15% taller" — Ront went 6.5 → 7.5; above the
   book's 6–7 ft, a ruling not a lookup).

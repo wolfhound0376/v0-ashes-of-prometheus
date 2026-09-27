@@ -367,5 +367,13 @@
     "pixellab_character_id": "92c98338-8a20-4cd4-a134-6ee55718576b",
     "size_by": "height",
     "target_ft": 5.9
+  },
+  {
+    "slug": "ilvara",
+    "name": "Ilvara Mizzrym",
+    "pixellab_character_id": "9c8ee5c5-72af-4309-922f-0305abe86040",
+    "size_by": "height",
+    "target_ft": 6.4,
+    "note": "'Regal Armor' state of PixelLab 8250fef4 (build with --state \"Regal Armor\"). Taller than the 6 ft drow default by Sam's 9/27 ruling: regal"
   }
 ]
