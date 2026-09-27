@@ -245,5 +245,77 @@
     "pixellab_character_id": "691c74bd-f300-4c0c-801e-5306b56d1239",
     "size_by": "height",
     "target_ft": 5.9
+  },
+  {
+    "slug": "bandit",
+    "name": "Bandit",
+    "pixellab_character_id": "9cfc3f38-b31a-45d1-b885-f471d6d3e982",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "thug",
+    "name": "Thug",
+    "pixellab_character_id": "9276b3a6-20ed-4a8d-a448-37cbefbd8bef",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "thug-archer",
+    "name": "Thug Archer",
+    "pixellab_character_id": "a6f64f32-027b-4e03-b71e-4596aa6507de",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "ghoul",
+    "name": "Ghoul",
+    "pixellab_character_id": "3e2f9e91-4352-4dd6-9909-49b572c4a7ea",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "ghast",
+    "name": "Ghast",
+    "recolour_of": "ghoul",
+    "size_by": "height",
+    "target_ft": 5.9,
+    "note": "Pillow recolour of public/sprites/ghoul (greener, greyer); no PixelLab character of its own"
+  },
+  {
+    "slug": "dwarf-pirate-captain",
+    "name": "Dwarf Pirate Captain",
+    "pixellab_character_id": "2a4c41e2-3c4f-41e6-9f72-9b1531277941",
+    "size_by": "height",
+    "target_ft": 4.5
+  },
+  {
+    "slug": "goblin-archer",
+    "name": "Goblin Archer",
+    "pixellab_character_id": "ba0349e2-3c59-4265-be64-168a70744acc",
+    "size_by": "height",
+    "target_ft": 3.5
+  },
+  {
+    "slug": "goblin-boss",
+    "name": "Goblin Boss",
+    "pixellab_character_id": "59b11839-a7fd-4088-be88-fe9624e17dba",
+    "size_by": "height",
+    "target_ft": 3.5
+  },
+  {
+    "slug": "necromancer",
+    "name": "Necromancer",
+    "pixellab_character_id": "1f5c2160-7976-4da1-8dbf-80316be455b1",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "diseased-giant-rat",
+    "name": "Diseased Giant Rat",
+    "recolour_of": "giant-rat",
+    "size_by": "width",
+    "target_ft": 3.0,
+    "note": "Pillow recolour of public/sprites/giant-rat (sickly yellow-green); no PixelLab character of its own"
   }
 ]
