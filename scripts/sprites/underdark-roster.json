@@ -317,5 +317,33 @@
     "size_by": "width",
     "target_ft": 3.0,
     "note": "Pillow recolour of public/sprites/giant-rat (sickly yellow-green); no PixelLab character of its own"
+  },
+  {
+    "slug": "zombie",
+    "name": "Zombie",
+    "pixellab_character_id": "0ef6d2b3-43dd-4cea-95c7-7a9257c284c9",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "orog",
+    "name": "Orog",
+    "pixellab_character_id": "12d31ea8-ba76-43cd-9c50-b4a3ce18f54e",
+    "size_by": "height",
+    "target_ft": 7.5
+  },
+  {
+    "slug": "orc-eye-of-gruumsh",
+    "name": "Orc Eye of Gruumsh",
+    "pixellab_character_id": "14a5b32b-a4a4-4368-b3f0-df9eaba2e470",
+    "size_by": "height",
+    "target_ft": 7.5
+  },
+  {
+    "slug": "hobgoblin",
+    "name": "Hobgoblin",
+    "pixellab_character_id": "4e296261-58b9-4b0e-9d73-00f3446ace09",
+    "size_by": "height",
+    "target_ft": 5.9
   }
 ]
