@@ -52,7 +52,7 @@
 ## Already wired into the game from this book
 
 - **Tools and skills together → advantage**, alchemist's supplies with Arcana (camp doc §18).
-- **Either tool makes the item:** antitoxin by herbalism kit or alchemist's supplies (§18; the alchemy recipes themselves still await Sam's yes).
+- **Alchemical Crafting:** acid, alchemist's fire, lamp oil and perfume by alchemist's supplies, and antitoxin by either kit. Live in the catalog 2026-09-27 (camp doc §18).
 - **Rest-time tool uses as camp actions:** disguise, forgery, compose, paint, set a trap (camp doc §19).
 - **Bead of Nourishment** in the catalog, counted as a ration (camp doc §20).
 - **"Recharging without a dawn"** → recharge at the end of a long rest (camp doc §20).
