@@ -1,7 +1,7 @@
 # Xanathar's Guide to Everything, ch. 2 "Dungeon Master's Tools": notes for later
 
 **Status:** reference only. Nothing here is wired unless a doc says so.
-**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 77–92, 106–114). Summarised in Claude's words with page numbers; no prose is copied. Check the book before quoting a rule to players.
+**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 77–92, 106–124). Summarised in Claude's words with page numbers; no prose is copied. Check the book before quoting a rule to players.
 **Why it's here:** Sam, 2026-09-27: "More from the book we can store for info later." It isn't among the five books in `campaign_books`, so Malachar's retrieval can't see it. This file is the only copy in the project.
 
 ---
@@ -78,7 +78,7 @@ Every tool entry also lists the skills it pairs with (Arcana, History, Investiga
 - **How it relates to what's live.** The watch and the passive roll use OotA-Encounters' own tables (`encounter_table_rows`, `underdark_random` → creature / terrain / ambush) and Sam's camp visitor table. Xanathar's Underdark table is a **third source**. It could be loaded as its own `encounter_tables` key (e.g. `xge_underdark_1_4`) and chosen per node through `travel_nodes.metadata.encounter_table`, which `resolveWatch` already reads, with no code change. That would mean copying the table's rows into Sam's private database, as was done for OotA; it hasn't been done, and waits for his word.
 - **Monsters the bestiary lacks — checked 2026-09-27.** A result names a stat block, and before any Xanathar's row goes live every creature it names must resolve against `bestiary`, or the "never invent a stat block" rule bites. By exact name, **35 of the 91 creatures on the levels 1–4 table are in the bestiary (100 rows); 56 are not.** Missing include kobold, stirge, duergar, deep gnome, grimlock, darkmantle, minotaur, ogre, mind flayer, rust monster, hell hound, gelatinous cube and nothic. Some may exist under another name (a duergar variant), so exact matching undercounts a little. Either way, most of the table needs stat blocks first.
 
-## 6. Traps Revisited (pp. 113–116, partly photographed)
+## 6. Traps Revisited (pp. 113–123)
 
 - **Simple traps vs complex traps.** A simple trap fires once and is then harmless or easily avoided. Each has a level range matching the tiers of play, a threat (moderate, dangerous, deadly), a trigger, an effect and countermeasures. Run it by noting passive Perception and asking players exactly where they are and what they do, rather than calling for a bare check.
 - **Advice (p. 114):** traps work best as a surprise, not so often that players search every square. One or two per encounter or adventure.
@@ -90,6 +90,47 @@ Every tool entry also lists the skills it pairs with (Arcana, History, Investiga
   | Crossbow trap | trip wire | two +8 attacks, 5 (1d10) piercing each | DC 15 Perception spots; DC 15 DEX with thieves' tools disables; a total of 5 or lower triggers it |
   | Falling portcullis (moderate) | pressure plate | a portcullis drops, blocking an exit | DC 20 Perception spots; DC 20 DEX with thieves' tools disables; 5 or lower triggers it |
   | Fiery blast (levels 5–10) | stepping on a mosaic without the god's holy symbol | 15-ft cube of fire, DC 15 DEX save, 24 (7d6) fire, half on success | DC 15 Perception reveals ash; DC 15 INT (Religion) defaces the rune (a failure triggers it); *dispel magic* (DC 15) destroys it |
-  | Net trap | — (cut off in the photo) | — | — |
+  | Net trap | trip wire (a bell rings too) | 10×10 ft net: DC 15 DEX save or restrained; escape DC 10 STR as an action; the net has AC 10, 20 hp | DC 15 Perception spots the wire; DC 15 DEX with thieves' tools disables; a failure triggers it |
+  | Pit trap (moderate) | stepping on the canvas | DC 10 DEX save or fall 10 ft, 3 (1d6) bludgeoning | DC 10 Perception reveals the canvas and a 1-ft ledge |
+  | Poison needle (deadly) | picking or opening the lock | DC 20 CON save, 14 (4d10) poison and poisoned 10 min, paralysed while poisoned; half and not poisoned on a success | DC 20 Perception (inspecting the lock); DC 20 DEX with thieves' tools; 10 or lower triggers it |
+  | Scything blade (levels 5–10, dangerous) | a lever | 5×20 ft area, DC 15 DEX save, 22 (4d10) slashing, half on success | DC 15 Perception (marks, bloodstains); DC 15 DEX with thieves' tools disables the lever |
+  | Sleep of ages (levels 11–16, deadly) | pressure plate | *sleep* cast from a 9th-level slot, centred on the plate | DC 20 Perception; DC 20 INT (Arcana) within 5 ft disables (10 or lower triggers); *dispel magic* (DC 19) |
+
+- **Designing simple traps (pp. 115–117).** Start from purpose (alarm, delay, restrain, slay), then trigger, effect, countermeasures and placement. The tables below are what keep an improvised trap honest.
+
+  **Trap save DCs and attack bonuses** (the check DC to spot or disable defaults to the save DC):
+
+  | Danger | Save / check DC | Attack bonus |
+  |---|---|---|
+  | Moderate | 10 | +5 |
+  | Dangerous | 15 | +8 |
+  | Deadly | 20 | +12 |
+
+  **Damage by level** (per creature; use d6s instead of d10s for traps that hit several at once):
+
+  | Levels | Moderate | Dangerous | Deadly |
+  |---|---|---|---|
+  | 1–4 | 5 (1d10) | 11 (2d10) | 22 (4d10) |
+  | 5–10 | 11 (2d10) | 22 (4d10) | 55 (10d10) |
+  | 11–16 | 22 (4d10) | 55 (10d10) | 99 (18d10) |
+  | 17–20 | 55 (10d10) | 99 (18d10) | 132 (24d10) |
+
+  **Spell equivalent by level:** 1–4 cantrip / 1st / 2nd · 5–10 1st / 3rd / 6th · 11–16 3rd / 6th / 9th · 17–20 6th / 9th / 9th + 5th.
+
+  **Triggers:** most are found with DC 20 Perception or Investigation; crude ones DC 15, devious ones DC 25. Spotting a trigger doesn't always reveal the whole trap. **Disarming:** one successful check (thieves' tools DEX, STR to wreck it, INT (Arcana) for a magic trap); the trap may name a number at or below which the attempt triggers it.
+
+- **Complex traps (pp. 118–123).** They run like a legendary monster:
+  - **Initiative:** slow (10), fast (20), or very fast (20 and 10).
+  - **Elements:** active elements act on the trap's turn; dynamic elements escalate over rounds; constant elements hurt anyone who ends a turn in the area, usually at half the active damage.
+  - **Defeating one:** each element falls to its own checks, by default **three successes**. Each success weakens it (save DC or attack bonus down, damage halved, then off), and each attempt usually costs an action.
+  - **XP for overcoming one:** levels 1–4 650 · 5–10 3,850 · 11–16 11,100 · 17–20 21,500.
+  - **Examples photographed:** Path of Blades (levels 1–4, dangerous: whirling blades, crushing pillars, a rune of fear); Sphere of Crushing Doom (5–10, deadly: a steel sphere through portals); Poisoned Tempest (11–16, deadly: locked doors, rising poison gas, a d6 tempest table).
+- **Why it matters here.** Malachar must not improvise trap numbers. With these tables in his prompt, or in a `traps` table the board can place, any trap he builds lands on the book's numbers: a level-1–4 "dangerous" dart is +8 to hit for 11 (2d10), full stop.
+
+## 7. Downtime Revisited: rivals (pp. 123–124, partly photographed)
+
+- **Rivals are NPCs who oppose the characters during downtime,** not necessarily villains: a tax collector, a jealous priest, a rival adventuring party. The book suggests two or three at a time, each with a separate agenda.
+- **Building one:** goals (why they interfere), assets (money, followers, influence), and plans (three or four kinds of action, played out during downtime or described as happening off-screen). A d20 table of example rivals and a worked example (Marina Rodemus) follow.
+- **Why it matters here.** Camp is this campaign's downtime. A rival's plans advancing while the party rests would fit the camp module's passive roll and the six hidden relationship dimensions (§5), if Sam wants it.
 
 - **Why it matters here.** The Velkynvelve escape and the tunnels beyond would use exactly these, and Malachar must not improvise trap numbers. A `traps` table, or catalog-style rows the board can place, would be the canon home if Sam wants them live.
