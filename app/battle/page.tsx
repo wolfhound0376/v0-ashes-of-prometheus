@@ -100,10 +100,23 @@ function BattleMusic() {
   // Hold at the canonical start room until the real one arrives, exactly as
   // the dashboard does — never a client-side default that could pick a pool
   // from another part of the world.
+  //
+  // Combat music is keyed to the FIGHT, not to whether something hostile is
+  // standing there. This used to be `fightLive || threat`, and `threat` is a
+  // presence test: an active encounter row with a CR above zero. End Combat
+  // sets combat_state to 'ended' and does not touch npc_encounters, so a
+  // hostile row outlives the fight and the battle theme played on over a room
+  // where nothing was happening. Verified 2026-09-27 against live data: one
+  // npc_encounters row active at CR 1 alongside 88 ended combat_state rows.
+  //
+  // A threat with no initiative rolled is not a fight — it is the moment
+  // before one, so it now gets the pool's `tense` track instead. That is the
+  // build-up the old OR was reaching for, without claiming the fight started.
   return (
     <DynamicMusic
       location={location ?? CANONICAL_START_LOCATION}
-      inCombat={fightLive || threat}
+      inCombat={fightLive}
+      mood={threat ? "tense" : "ambient"}
     />
   )
 }
