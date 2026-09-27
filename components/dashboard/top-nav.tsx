@@ -8,8 +8,7 @@
 // destination yet call onSection so the dashboard can open the matching panel
 // (or show a "coming in a later round" note) rather than dead-ending.
 
-import Link from "next/link"
-import { BookOpen, Flame, Map, ScrollText, Settings, Smartphone, Sparkles, Users } from "lucide-react"
+import { BookOpen, Flame, Map, ScrollText, Settings, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
@@ -70,14 +69,6 @@ export function TopNav({
 
       {/* Sections */}
       <nav className="flex items-center gap-1.5">
-        <Link
-          href="/forge"
-          className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          The Forge
-        </Link>
-
         {sections.map((s) => {
           const Icon = s.icon
           return (

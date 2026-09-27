@@ -338,10 +338,10 @@ const conditionColor: Record<string, string> = {
 // slot are orthogonal, so this keeps both. The slot exists because the
 // Interactive Log's filter row has no room for a control — six chips need
 // 314px in a 250px column — so panel-level controls live in the title bar.
-function Frame({ title, children, className, action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
+function Frame({ title, children, className, action }: { title?: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return <section className={cn("aop-ornate-panel min-h-0 overflow-hidden", className)}>
-    <header className="aop-ornate-title flex h-8 items-center gap-2 px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
-      <span className="truncate">{title}</span>
+  <header className="aop-ornate-title flex h-8 items-center gap-2 px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
+  {title ? <span className="truncate">{title}</span> : null}
       {action ? <span className="ml-auto shrink-0">{action}</span> : null}
       <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span>
     </header>{children}
@@ -810,7 +810,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     </Frame>
 
     <div className="flex min-h-0 flex-col gap-2">
-      <Frame title="Character Stats" className="shrink-0">
+      <Frame className="shrink-0">
         <div className="p-2.5 text-[10px]">
           <div className="flex items-center gap-2"><div className="h-12 w-12 overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-sm font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="truncate text-[9px] text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"} · {backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2 py-1 text-[#cdb276]">Level {selected?.level ?? 1}</span></div>
           <div className="mt-2 flex justify-between text-[8px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-1 bg-[#251a12]"><div className="h-full w-[2%] bg-[#b62d38]" /></div>
@@ -840,37 +840,6 @@ export function V4Dashboard(props: V4DashboardProps) {
               transcribed from the v4.1 mock image, which meant every character —
               Fifi the Rogue included — showed Sam the Cleric's numbers and the
               literal legend "Cleric class skill". */}
-          <div className="mt-2 grid grid-cols-2 gap-3">
-            <div>
-              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>
-              {rail.saves.map((save) => (
-                <div key={save.key} className="flex items-center gap-1.5 text-[#b6a685]">
-                  <span className={cn("h-1.5 w-1.5 rounded-full", save.proficient ? "bg-[#d9232e]" : "border border-[#6b5a35]")} />
-                  <span>{save.label}</span>
-                  <b className="ml-auto text-white">{formatSigned(save.bonus)}</b>
-                </div>
-              ))}
-              <h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3>
-              <div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{rail.passivePerception}</b></div>
-              <div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">{rail.passiveInsight}</b></div>
-            </div>
-            <div>
-              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>
-              {rail.skills.length === 0 ? (
-                <p className="text-[9px] text-[#8f8061]">No skill proficiencies recorded for {selected?.name ?? "this character"}.</p>
-              ) : (
-                rail.skills.map((skill) => (
-                  <div key={skill.name} className={cn("flex items-center justify-between px-1 text-[#b6a685]", skill.fromClass && "border border-[#725c2f] bg-[#251c0d]")}>
-                    <span className="truncate">{skill.name}</span>
-                    <b className="ml-1 shrink-0 text-white">{formatSigned(skill.bonus)}</b>
-                  </div>
-                ))
-              )}
-              {rail.skills.some((skill) => skill.fromClass) && (
-                <p className="mt-1 text-[8px] text-[#8f8061]">□ {selected?.class ?? "Class"} class skill</p>
-              )}
-            </div>
-          </div>
           <button onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
       </Frame>
