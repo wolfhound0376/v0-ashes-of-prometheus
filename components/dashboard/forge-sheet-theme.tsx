@@ -244,6 +244,12 @@ export function ForgeSheetTheme() {
 }
 .aop-forge-sheet .hdot.p{background:var(--red);border-color:var(--red)}
 .aop-forge-sheet .hdot.e{background:var(--gold);border-color:var(--gold)}
+/* The learning mark (earned proficiency §6): a faint ember in an empty dot.
+   A presence, not a meter - it never grows, fills or counts. */
+.aop-forge-sheet .hdot.l{
+  border-color:rgba(201,168,106,.85);
+  background:radial-gradient(circle at 50% 50%,rgba(201,168,106,.55) 0 30%,transparent 34%);
+}
 
 /* ---- vitals ----------------------------------------------------------- */
 .aop-forge-sheet .hvitals{width:200px;display:flex;flex-direction:column;gap:12px}

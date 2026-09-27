@@ -115,7 +115,7 @@ Teaching hours are logged from camp: a camp action "train with `<teacher>` in `<
 3. **Library PR** — `lib/skill-progress.ts`: `recordCheck`, `evaluate`, pure, vitest with a seeded ledger for each path and each guardrail.
 4. **Wiring PR** — resolve route and `resolveInteraction` call `recordCheck`; award writes the sheet; world-context line.
 5. **Camp PR** — training action in the camp module (`claude_Camp_Module.md` owns camp; add the action there). **Shipped 2026-09-27** as `lib/camp.ts` §17 (`train`); see `claude_Camp_Module.md` §17 for the tag, the teacher check and Sam's three rulings of 2026-09-27 (expertise required to teach; 4 hours per evening; the teacher's evening is free).
-6. **Dashboard PR** — the learning mark (approved, §6).
+6. **Dashboard PR** — the learning mark (approved, §6). **Shipped 2026-09-27**: `GET /api/skill-progress/marks?characterId=` returns only the skill names with unawarded progress (`skillsInProgress`); `lib/hooks/use-skill-marks.ts` reads it once per turn; the full character sheet (`character-sheet-slideover.tsx`) draws a faint ember in the skill's empty dot (`.hdot.l`). No count, no path, no words.
 
 PRs 1–4 are a day. 5 depends on the camp module's shape. Nothing touches `combat-board-3d.tsx`.
 
