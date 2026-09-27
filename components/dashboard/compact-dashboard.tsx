@@ -47,6 +47,8 @@ interface CompactDashboardProps {
   npcEncounters: Npc[]
   isThinking?: boolean
   onExitCompact: () => void
+  /** Opens the talk mini-dashboard once someone is chosen by the fire. */
+  onTalkStart?: (name: string) => void
 }
 
 type Tab = "story" | "camp" | "party" | "sheet"
@@ -417,6 +419,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
                     onClick={() => {
                       setTalkOpen(false)
                       send(`I spend my camp action sitting with ${t.name} by the fire and talking.`)
+                      props.onTalkStart?.(t.name)
                     }}
                     className="flex w-full items-center gap-3 rounded-sm border border-[#3d3428] p-2.5 text-left hover:border-[#e0651a]"
                   >

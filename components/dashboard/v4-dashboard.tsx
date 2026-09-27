@@ -296,6 +296,11 @@ interface V4DashboardProps {
    *  about who was DM. */
   dmMode?: boolean
   audioSlot?: React.ReactNode
+  /** Camp talk mini-dashboard. When set, only the NPC / DM window renders —
+   *  the side columns stay mounted but hidden so music, party chat and
+   *  narration keep running underneath the conversation. */
+  talkWith?: string | null
+  onEndTalk?: () => void
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -359,6 +364,10 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [diceOpen, setDiceOpen] = useState(false)
   const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
+  const talkMode = Boolean(props.talkWith)
+  // Read from the realtime listener and the cue handler, which are bound once.
+  const talkModeRef = useRef(talkMode)
+  talkModeRef.current = talkMode
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   // Restart Campaign DOES clear the dialogue table — the reason it looked like
   // it had failed is right here. An empty feed fell straight back to the
@@ -625,7 +634,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       .channel("cinematic-broadcast")
       .on("broadcast", { event: "play" }, (message: { payload?: unknown }) => {
         const url = (message?.payload as { video_url?: string })?.video_url
-        if (url) setCinematicSrc(url)
+        if (url && !talkModeRef.current) setCinematicSrc(url)
       })
       .subscribe()
     return () => {
@@ -639,7 +648,8 @@ export function V4Dashboard(props: V4DashboardProps) {
   // answering in words, and a failed camera cue is not an error they should
   // ever perceive.
   const playSceneCinematic = async (cue?: { state: string }) => {
-    if (cinematicBusy) return
+    // A fireside talk is a conversation; film would cut across it.
+    if (cinematicBusy || talkModeRef.current) return
     setCinematicBusy(true)
     try {
       // DM Mode does not ask for the DM code, but dm_override without the
@@ -715,8 +725,8 @@ export function V4Dashboard(props: V4DashboardProps) {
     announce(describeRoll(result), { toLich: true, result })
   }
 
-  return <main className="aop-lich-dashboard grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-y-auto p-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]">
-    <div className="flex min-h-0 flex-col gap-2">
+  return <main className={cn("aop-lich-dashboard min-h-0 flex-1 overflow-y-auto p-2", talkMode ? "flex flex-col items-center" : "grid grid-cols-1 gap-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]")}>
+    <div className={cn("flex min-h-0 flex-col gap-2", talkMode && "hidden")}>
       <Frame title="Current Environment" className="shrink-0">
         <div className="p-2.5">
           <h2 className="font-serif text-sm font-bold text-[#e8dcc4]">{props.environment.name}</h2>
@@ -741,8 +751,20 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" hideHeader action={<DmNarration dialogue={dialogue} npcs={props.npcRoster?.length ? props.npcRoster : props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
-      <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 overflow-hidden p-3 pb-4">
+    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", talkMode ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={dialogue} npcs={props.npcRoster?.length ? props.npcRoster : props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
+      {talkMode ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#4b3a19] px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <span className="block font-serif text-[9px] uppercase tracking-[.2em] text-[#8f8061]">Talking by the fire</span>
+            <h1 className="truncate font-serif text-sm font-bold text-[#e8dcc4]">{props.talkWith}</h1>
+          </div>
+          <button type="button" onClick={props.onEndTalk} className="flex items-center gap-1.5 rounded border border-[#695326] px-2.5 py-1.5 font-serif text-[10px] uppercase tracking-wider text-[#cdb276] hover:border-[#c9a868] hover:text-[#f0cd7a]">
+            <X className="h-3 w-3" aria-hidden="true" />
+            Back to camp
+          </button>
+        </div>
+      ) : null}
+      <div className={cn("grid h-[235px] shrink-0 overflow-hidden p-3 pb-4", talkMode ? "grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-3" : "grid-cols-[190px_minmax(240px,1fr)] gap-4")}>
         <div className="relative"><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? shownNpc?.description || "Present in the scene" : "No one has stepped forward yet"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}<button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-0 left-0" title="Open Dice Roller" aria-label="Open Dice Roller" /></div>
         <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{props.environment.npcBackdropUrl ? (<><img src={props.environment.npcBackdropUrl} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />{/* The backdrop is a lit room, so the figure needs somewhere dark to stand against. Vignette, not a flat scrim, or the art goes muddy. */}<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_80%,transparent_18%,#050403d9_80%)]" /></>) : null}{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : onStage ? <>Silent <span className="ml-2">▯▯▯▯</span></> : <>Awaiting an entrance</>}</div>
           {/* MERGE NOTE: Codex's redesign dropped the third column, which held
@@ -807,10 +829,10 @@ export function V4Dashboard(props: V4DashboardProps) {
         />
       </div>
       <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button>{props.dmMode ? <button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button> : null}</div>
-      <div className="sticky bottom-0 z-20 max-h-[34vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]"><div className="flex justify-center gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
+      <div className={cn("sticky bottom-0 z-20 max-h-[34vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]", talkMode && "hidden")}><div className="flex justify-center gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
     </Frame>
 
-    <div className="flex min-h-0 flex-col gap-2">
+    <div className={cn("flex min-h-0 flex-col gap-2", talkMode && "hidden")}>
       <Frame className="shrink-0" hideHeader>
         <div className="min-h-[470px] px-3.5 pt-3.5 pb-0 text-[10px]">
           <div className="flex items-center gap-2.5 pt-3"><div className="h-[73px] w-[73px] overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-[17px] font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="text-[14px] leading-tight text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"}<br />{backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2.5 py-1.5 text-[11px] text-[#f5ff00] drop-shadow-[0_0_5px_#f5ff00]">Level {selected?.level ?? 1}</span></div>
