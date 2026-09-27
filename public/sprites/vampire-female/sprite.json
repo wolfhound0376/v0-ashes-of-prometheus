@@ -17,5 +17,31 @@
       "fps": 5,
       "loop": true
     }
-  }
+  },
+  "disguisePool": [
+    {
+      "sheet": "../townswoman-young-slim/idle.png",
+      "name": "Townswoman"
+    },
+    {
+      "sheet": "../townswoman-young-heavy/idle.png",
+      "name": "Townswoman"
+    },
+    {
+      "sheet": "../townswoman-old-slim/idle.png",
+      "name": "Old Townswoman"
+    },
+    {
+      "sheet": "../townswoman-old-heavy/idle.png",
+      "name": "Old Townswoman"
+    },
+    {
+      "sheet": "../elf-townswoman/idle.png",
+      "name": "Elf Townswoman"
+    },
+    {
+      "sheet": "../elf-elder-woman/idle.png",
+      "name": "Elf Elder"
+    }
+  ]
 }

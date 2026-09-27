@@ -75,6 +75,14 @@ export interface SpriteManifest {
    * says so (SpriteRig.setDisguised); everything else it does is its own.
    */
   disguise?: SpriteAnimation
+  /**
+   * Faces it might be wearing instead - a hag or a vampire passing as some
+   * townsperson. When there is no fixed `disguise`, each token draws one of
+   * these by its own id (SpriteRig.maskName), so which stranger is the
+   * monster is chance: the same on every seat, known to no one in advance.
+   * Each `sheet` is a one-frame, eight-row idle, relative to the manifest.
+   */
+  disguisePool?: { sheet: string; name: string }[]
 }
 
 /** A sheet the figure can wear: one per state, plus the disguise. */
@@ -200,10 +208,14 @@ function drawnHeight(tex: THREE.Texture, cell: [number, number]): number | null 
 /** Beyond this, a sheet's first frame is not a standing pose; leave it alone. */
 const HEIGHT_MATCH_LIMIT: [number, number] = [0.8, 1.25]
 
-function phaseOf(seed: string): number {
+function hashOf(seed: string): number {
   let h = 2166136261
   for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
-  return ((h >>> 0) % 1000) / 1000
+  return h >>> 0
+}
+
+function phaseOf(seed: string): number {
+  return (hashOf(seed) % 1000) / 1000
 }
 
 /** True when a model_url names a sprite manifest rather than a GLB or a cutout. */
@@ -247,8 +259,13 @@ export class SpriteRig {
   private disposed = false
   private readonly fwd = new THREE.Vector3()
 
+  /** The name the disguise answers to, drawn from disguisePool (null for a fixed disguise or none). */
+  private disguiseName: string | null = null
+  private readonly seed: string
+
   constructor(url: string, seed: string, onError?: (e: unknown) => void) {
     this.url = url
+    this.seed = seed
     this.phase = phaseOf(seed)
     loadManifest(url)
       .then((m) => {
@@ -278,6 +295,15 @@ export class SpriteRig {
     if (on === this.disguised) return
     this.disguised = on
     if (this.mesh && !this.fallen) this.bindSheet(this.state)
+  }
+
+  /**
+   * What to call this figure while it wears a pool disguise ("Old
+   * Townswoman"), so its nameplate does not give the hag away; null when it
+   * is showing itself.
+   */
+  get maskName(): string | null {
+    return this.disguised && this.textures.has("disguise") ? this.disguiseName : null
   }
 
   /** Whether the manifest has arrived yet. */
@@ -488,6 +514,11 @@ export class SpriteRig {
   }
 
   private build(m: SpriteManifest): void {
+    if (!m.disguise && m.disguisePool?.length) {
+      const pick = m.disguisePool[hashOf(`${this.seed}:disguise`) % m.disguisePool.length]
+      m = { ...m, disguise: { sheet: pick.sheet, frames: 1, fps: 5, loop: true } }
+      this.disguiseName = pick.name
+    }
     this.manifest = m
     const [cw, ch] = m.cell
     const [px, py] = m.pivot

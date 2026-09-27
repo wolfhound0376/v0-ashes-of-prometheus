@@ -138,7 +138,15 @@
     "name": "Green Hag",
     "pixellab_character_id": "b27a3e14-136d-4fb3-884e-2771b5ab1150",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 5.5,
+    "disguise_pool": [
+      "townswoman-young-slim",
+      "townswoman-young-heavy",
+      "townswoman-old-slim",
+      "townswoman-old-heavy",
+      "elf-townswoman",
+      "elf-elder-woman"
+    ]
   },
   {
     "slug": "kuo-toa",
@@ -428,7 +436,8 @@
     "pixellab_character_id": "b5ec84fb-c191-4615-9b66-7d48e03f22b9",
     "size_by": "width",
     "target_ft": 15.0,
-    "note": "size is a guess (Huge, 15 ft across) - Sam to confirm"
+    "note": "Huge, 15 ft across (Sam approved the size 9/27); built from the 'Bone White' state (f23018bc) - white, bony legs per Sam",
+    "state": "Bone White"
   },
   {
     "slug": "wandering-peddler",
@@ -478,7 +487,15 @@
     "name": "Hag (true form)",
     "pixellab_character_id": "c4e6024e-b6ea-491c-83a9-a5c165e54962",
     "size_by": "height",
-    "target_ft": 5.5
+    "target_ft": 5.5,
+    "disguise_pool": [
+      "townswoman-young-slim",
+      "townswoman-young-heavy",
+      "townswoman-old-slim",
+      "townswoman-old-heavy",
+      "elf-townswoman",
+      "elf-elder-woman"
+    ]
   },
   {
     "slug": "townswoman-young-slim",
@@ -527,14 +544,27 @@
     "name": "Vampire (male)",
     "pixellab_character_id": "f432e9ee-d101-43a7-a47b-8076f1642ab9",
     "size_by": "height",
-    "target_ft": 5.9
+    "target_ft": 5.9,
+    "disguise_pool": [
+      "elf-townsman",
+      "wandering-peddler",
+      "hooded-stranger"
+    ]
   },
   {
     "slug": "vampire-female",
     "name": "Vampire (female)",
     "pixellab_character_id": "339dcb0a-f17d-439f-92ee-4113ed9e46ee",
     "size_by": "height",
-    "target_ft": 5.9
+    "target_ft": 5.9,
+    "disguise_pool": [
+      "townswoman-young-slim",
+      "townswoman-young-heavy",
+      "townswoman-old-slim",
+      "townswoman-old-heavy",
+      "elf-townswoman",
+      "elf-elder-woman"
+    ]
   },
   {
     "slug": "elf-townswoman",
