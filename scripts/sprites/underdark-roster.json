@@ -642,5 +642,14 @@
     "size_by": "scale_of",
     "scale_of": "mimic",
     "note": "a real chest at the mimic's scale, so a mimic and a chest look alike"
+  },
+  {
+    "slug": "vampire",
+    "name": "Vampire",
+    "variants": [
+      "vampire-male",
+      "vampire-female"
+    ],
+    "note": "hand-written manifest: each Vampire token is a man or a woman at random (by token id), and disguises as a townsperson of that gender (Sam, 9/27)"
   }
 ]

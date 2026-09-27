@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "name": "Vampire",
+  "variants": [
+    "../vampire-male/sprite.json",
+    "../vampire-female/sprite.json"
+  ]
+}
