@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Spider Queen",
+  "cell": [
+    256,
+    256
+  ],
+  "pivot": [
+    128,
+    254
+  ],
+  "ppu": 80,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}

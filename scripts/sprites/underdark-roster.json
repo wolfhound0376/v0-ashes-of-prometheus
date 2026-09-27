@@ -375,5 +375,242 @@
     "size_by": "height",
     "target_ft": 6.4,
     "note": "'Regal Armor' state of PixelLab 8250fef4 (build with --state \"Regal Armor\"). Taller than the 6 ft drow default by Sam's 9/27 ruling: regal"
+  },
+  {
+    "slug": "succubus",
+    "name": "Succubus",
+    "pixellab_character_id": "7c1fca7f-4b3b-4756-8fc6-3ca5538fdcab",
+    "size_by": "height",
+    "target_ft": 5.9,
+    "disguise_character_id": "538170d8-d000-4ecc-9669-91425920fbc1",
+    "note": "sized from the disguised (human) form; fiend form shares the ppu, wings stand above the head"
+  },
+  {
+    "slug": "asha",
+    "name": "Asha Vandree",
+    "pixellab_character_id": "dfc0d9d7-3c94-47e3-8225-30b092738745",
+    "size_by": "height",
+    "target_ft": 6.0
+  },
+  {
+    "slug": "shoor",
+    "name": "Shoor Vandree",
+    "pixellab_character_id": "c4d636cd-5988-48e1-bd64-05383bbea280",
+    "size_by": "height",
+    "target_ft": 6.0,
+    "note": "measured to the head, not the blade tip"
+  },
+  {
+    "slug": "drow-merchant",
+    "name": "Drow Merchant",
+    "pixellab_character_id": "2825a7dc-c4fa-44db-82a4-f3c9bd655156",
+    "size_by": "height",
+    "target_ft": 6.0
+  },
+  {
+    "slug": "drow-lizard-rider",
+    "name": "Drow Lizard Rider",
+    "pixellab_character_id": "65554960-0315-4d51-8ef6-2c27d3584361",
+    "size_by": "width",
+    "target_ft": 10.0,
+    "note": "Large mount, measured across to fill its 10-ft space"
+  },
+  {
+    "slug": "giant-lizard",
+    "name": "Giant Lizard",
+    "pixellab_character_id": "f93673f5-0ecd-44aa-be24-bed1f5ad7c8c",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "spider-queen",
+    "name": "Spider Queen",
+    "pixellab_character_id": "b5ec84fb-c191-4615-9b66-7d48e03f22b9",
+    "size_by": "width",
+    "target_ft": 15.0,
+    "note": "size is a guess (Huge, 15 ft across) - Sam to confirm"
+  },
+  {
+    "slug": "wandering-peddler",
+    "name": "Wandering Peddler",
+    "pixellab_character_id": "17bb3645-285e-4eba-b9ca-75d4b14e441c",
+    "size_by": "height",
+    "target_ft": 5.9,
+    "note": "measured to the head, not the pack"
+  },
+  {
+    "slug": "hooded-stranger",
+    "name": "Hooded Stranger",
+    "pixellab_character_id": "d5b1ca4e-7e79-4291-9b75-109a6fa711b5",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "duergar-merchant",
+    "name": "Duergar Merchant",
+    "pixellab_character_id": "7e4ec2a8-fc43-4493-bc8c-1883091efa9b",
+    "size_by": "height",
+    "target_ft": 4.3
+  },
+  {
+    "slug": "duergar-mind-master",
+    "name": "Duergar Mind Master",
+    "pixellab_character_id": "b21fe116-2a8f-439c-8359-ed0c28def148",
+    "size_by": "height",
+    "target_ft": 4.3
+  },
+  {
+    "slug": "deep-gnome-gem-trader",
+    "name": "Deep Gnome Gem Trader",
+    "pixellab_character_id": "ed1f0694-84bc-45ff-a45a-b275d5a8b2c1",
+    "size_by": "height",
+    "target_ft": 3.0
+  },
+  {
+    "slug": "deep-gnome-elder-woman",
+    "name": "Deep Gnome Elder Woman",
+    "pixellab_character_id": "843730e8-4e49-44fb-b73a-8c00c8ad4cda",
+    "size_by": "height",
+    "target_ft": 3.0
+  },
+  {
+    "slug": "hag",
+    "name": "Hag (true form)",
+    "pixellab_character_id": "c4e6024e-b6ea-491c-83a9-a5c165e54962",
+    "size_by": "height",
+    "target_ft": 5.5
+  },
+  {
+    "slug": "townswoman-young-slim",
+    "name": "Townswoman (young, slim)",
+    "pixellab_character_id": "0c6acb91-ba5b-4f7a-924a-aca207cdd84e",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "townswoman-young-heavy",
+    "name": "Townswoman (young, heavy)",
+    "pixellab_character_id": "24bef36a-4bba-4af2-b01f-61cdddb2dd4e",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "townswoman-old-slim",
+    "name": "Townswoman (old, slim)",
+    "pixellab_character_id": "aa6e5563-6e6f-4230-96f3-084ac140eea2",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "townswoman-old-heavy",
+    "name": "Townswoman (old, heavy)",
+    "pixellab_character_id": "a6aa5795-0eb7-4c2a-879e-5cbaec6246a6",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "ghost-female",
+    "name": "Ghost (female)",
+    "pixellab_character_id": "78f00b6a-9074-4233-b67e-8f89558bf28d",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "ghost-male",
+    "name": "Ghost (male)",
+    "pixellab_character_id": "a4a016ef-f8f8-42c1-a25a-eb1771b91c71",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "vampire-male",
+    "name": "Vampire (male)",
+    "pixellab_character_id": "f432e9ee-d101-43a7-a47b-8076f1642ab9",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "vampire-female",
+    "name": "Vampire (female)",
+    "pixellab_character_id": "339dcb0a-f17d-439f-92ee-4113ed9e46ee",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "elf-townswoman",
+    "name": "Elf Townswoman",
+    "pixellab_character_id": "abb9e71c-3f5f-4325-abbe-42e2c8da33c6",
+    "size_by": "height",
+    "target_ft": 6.0
+  },
+  {
+    "slug": "elf-townsman",
+    "name": "Elf Townsman",
+    "pixellab_character_id": "e96c6118-6539-49ac-9be2-9bfa6f1f3f83",
+    "size_by": "height",
+    "target_ft": 6.0
+  },
+  {
+    "slug": "elf-elder-woman",
+    "name": "Elf Elder Woman",
+    "pixellab_character_id": "db0af7d5-7ce5-4288-b7c6-f0a682e061ae",
+    "size_by": "height",
+    "target_ft": 6.0
+  },
+  {
+    "slug": "kuo-toa-spearman",
+    "name": "Kuo-toa Spearman",
+    "pixellab_character_id": "3a92eeeb-d268-46c6-bf7a-d88cf58b06e7",
+    "size_by": "height",
+    "target_ft": 5.0,
+    "note": "measured to the head, not the spear tip"
+  },
+  {
+    "slug": "mimic",
+    "name": "Mimic (wooden chest)",
+    "pixellab_character_id": "e48e1162-1df6-48d0-b2ae-a1efb81ed081",
+    "size_by": "width",
+    "target_ft": 5.0,
+    "disguise_object_id": "b3f77601-338c-43b7-9431-3287f2c7e506"
+  },
+  {
+    "slug": "mimic-iron",
+    "name": "Mimic (iron-bound chest)",
+    "pixellab_character_id": "e48e1162-1df6-48d0-b2ae-a1efb81ed081",
+    "size_by": "width",
+    "target_ft": 5.0,
+    "disguise_object_id": "cc22aecc-49e2-4a66-a0f8-49944724ce1a"
+  },
+  {
+    "slug": "mimic-ornate",
+    "name": "Mimic (ornate chest)",
+    "pixellab_character_id": "e48e1162-1df6-48d0-b2ae-a1efb81ed081",
+    "size_by": "width",
+    "target_ft": 5.0,
+    "disguise_object_id": "fddc40b7-d79a-443d-aa92-9e9b33b7c24b"
+  },
+  {
+    "slug": "chest-wooden",
+    "name": "Treasure Chest (wooden)",
+    "pixellab_object_id": "b3f77601-338c-43b7-9431-3287f2c7e506",
+    "size_by": "scale_of",
+    "scale_of": "mimic",
+    "note": "a real chest at the mimic's scale, so a mimic and a chest look alike"
+  },
+  {
+    "slug": "chest-iron",
+    "name": "Treasure Chest (iron)",
+    "pixellab_object_id": "cc22aecc-49e2-4a66-a0f8-49944724ce1a",
+    "size_by": "scale_of",
+    "scale_of": "mimic",
+    "note": "a real chest at the mimic's scale, so a mimic and a chest look alike"
+  },
+  {
+    "slug": "chest-ornate",
+    "name": "Treasure Chest (ornate)",
+    "pixellab_object_id": "fddc40b7-d79a-443d-aa92-9e9b33b7c24b",
+    "size_by": "scale_of",
+    "scale_of": "mimic",
+    "note": "a real chest at the mimic's scale, so a mimic and a chest look alike"
   }
 ]
