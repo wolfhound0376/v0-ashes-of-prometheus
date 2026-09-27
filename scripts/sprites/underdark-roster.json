@@ -203,5 +203,19 @@
     "size_by": "width",
     "target_ft": 5.0,
     "note": "1-direction object: the puddle is idle in all 8 facings; the 'rise' animation is attack"
+  },
+  {
+    "slug": "shrieker",
+    "name": "Shrieker",
+    "pixellab_character_id": "548d8d4f-e9ac-4517-bf22-f57dd855cf72",
+    "size_by": "height",
+    "target_ft": 5.0
+  },
+  {
+    "slug": "giant-bat",
+    "name": "Giant Bat",
+    "pixellab_character_id": "f83b1dc5-b72d-42eb-8b8a-d1cc9beb94c8",
+    "size_by": "width",
+    "target_ft": 10.0
   }
 ]
