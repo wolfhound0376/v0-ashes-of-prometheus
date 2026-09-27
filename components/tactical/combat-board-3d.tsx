@@ -78,6 +78,7 @@ import { defenceMotion } from "./defence-motion"
 import { areaVisualFor } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
 import { HealPairing } from "@/lib/heal-line"
+import { applyWaterFlow, type WaterFx, type WaterFlowHandle } from "./water-flow"
 // Twelve deaths, one per way of being killed - see death-vfx.ts.
 import { deathSceneVfx } from "./death-vfx"
 // The headstone. Raised on TRUE death only - see tombstone.ts on why being
@@ -207,6 +208,18 @@ interface CellsJson {
     wall_height?: number
     door_texture?: string
     ceiling?: boolean
+    /**
+     * Height of the rock boxes raised on every non-walkable square. 0 keeps
+     * the rock flat, as painted — for plates whose cliffs are already drawn
+     * in perspective (the sandbox river cave), where extruding them would
+     * stack a second, blockier cliff on top of the painted one. Still
+     * unwalkable either way. Default 1.35.
+     */
+    rock_height?: number
+    /** Running water on the painted floor — see water-flow.ts. */
+    water_fx?: WaterFx
+    /** Fixed lights the painting implies: candles, glowing fungi, river glow. */
+    lights?: { sq: [number, number]; color?: string; intensity?: number; distance?: number; height?: number; flicker?: boolean }[]
   }
   cells: {
     floor: { sq: [number, number]; water?: boolean; island?: boolean }[]
@@ -1371,6 +1384,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
     let floorPlane: THREE.Mesh | null = null
+    // The map's own moving parts: running water and the lights its painting implies.
+    let waterFlow: WaterFlowHandle | null = null
+    const mapLights: { light: THREE.PointLight; base: number; seed: number; flicker: boolean }[] = []
     const doorLeaves: THREE.Mesh[] = []
     interface DoorRec {
       cell: string
@@ -5188,7 +5204,19 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const rockTex = tex(storageTex("tiles/floor_cave.png"))
           const plainSide = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x39332c, roughness: 1, metalness: 0 })
           const ironMat = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x2e2a26, roughness: 0.9, metalness: 0.25 })
-          const wallH = 1.35
+          const wallH = typeof R.rock_height === "number" ? R.rock_height : 1.35
+
+          if (R.water_fx && floorPlane) {
+            waterFlow = applyWaterFlow(floorMat as THREE.MeshStandardMaterial, R.water_fx, W / H)
+          }
+          for (const l of R.lights ?? []) {
+            const c = sqCentre(l.sq[0], l.sq[1])
+            const base = l.intensity ?? 4
+            const light = new THREE.PointLight(new THREE.Color(l.color ?? "#ff9a40"), base, l.distance ?? 5, 1.8)
+            light.position.set(c.x, l.height ?? 1.6, c.z)
+            boardGroup.add(light)
+            mapLights.push({ light, base, seed: Math.random() * 100, flicker: l.flicker !== false })
+          }
 
           if (R.cage) {
             // The pen's bars, floor-outward — one panel per open face, so
@@ -5219,7 +5247,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
                 boardGroup.add(sill)
               }
             }
-          } else {
+          } else if (wallH > 0) {
             // Rock: boxes whose top face keeps its own patch of the art.
             for (let y = 0; y < H; y++) {
               for (let x = 0; x < W; x++) {
@@ -5993,6 +6021,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // The rings under the floor items breathe, so a dark shard on dark
       // stone can be found by eye.
       groundItems?.tick(clock.elapsedTime)
+      waterFlow?.tick(clock.elapsedTime)
+      for (const m of mapLights) {
+        if (!m.flicker) continue
+        const t = clock.elapsedTime * 7 + m.seed
+        m.light.intensity = m.base * (0.82 + 0.1 * Math.sin(t) + 0.08 * Math.sin(t * 2.7 + 1.3))
+      }
       // Keyboard pan first, so everything below renders from this frame's view.
       panFromKeys(dt)
       // A quarter-turn in progress glides to its heading, then lands exactly.
