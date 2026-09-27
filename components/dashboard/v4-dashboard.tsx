@@ -558,7 +558,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   //
   // These MUST stay class-neutral. They previously read as cleric lines
   // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
-  // player whose generation failed was handed Samson's options �� the exact
+  // player whose generation failed was handed Samson's options ��� the exact
   // leak the per-player chips exist to prevent. No class, no skill tag, no
   // named party member: whatever sits here is shown to EVERY seat at once.
   // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
@@ -807,7 +807,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         />
       </div>
       <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
-      <div className="sticky bottom-0 z-20 shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-3 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]"><h3 className="mb-2 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Attributes</h3><div className="grid grid-cols-6 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
+      <div className="sticky bottom-0 z-20 shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]"><div className="grid grid-cols-6 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
     </Frame>
 
     <div className="flex min-h-0 flex-col gap-2">
@@ -1274,7 +1274,7 @@ function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { 
   // room for the full name. Either way the full name is on hover and in the
   // native tooltip, so nothing is lost.
   const label = sheet || large ? name : ability.key.toUpperCase()
-  return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : large ? "h-[164px] hover:scale-105 focus-visible:scale-105" : "h-[132px] hover:scale-125 focus-visible:scale-125")} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
+  return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : large ? "h-[190px] hover:scale-105 focus-visible:scale-105" : "h-[132px] hover:scale-125 focus-visible:scale-125")} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
     <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
     <span className="absolute inset-x-0 top-2 z-10 bg-black/0 px-0.5 py-1 text-center font-serif text-[6px] font-bold uppercase tracking-[.04em] text-[#d3ae6b]/0 transition-[color,background-color,text-shadow] duration-200 delay-0 group-hover:bg-black/80 group-hover:text-[#ffe4a8] group-hover:[text-shadow:0_0_7px_#d79b3a] group-hover:delay-500">{name}</span>
     <span className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/92 to-transparent", sheet ? "h-11" : "h-[52px]")} />
