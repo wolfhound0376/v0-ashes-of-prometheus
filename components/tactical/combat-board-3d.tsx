@@ -658,6 +658,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const tokensRef = useRef<
     Map<string, { row: TokenRow; obj: THREE.Object3D; hpArc?: THREE.Mesh; anim?: TokenAnim }>
   >(new Map())
+  /**
+   * The name a token goes by on screen: the face it is wearing while a
+   * disguise holds (lib/sprite-token, disguisePool), so a hag passing as a
+   * townswoman is "Old Townswoman" on every nameplate until she is found out.
+   */
+  const shownLabel = (row: { id: string; label: string }): string =>
+    (tokensRef.current.get(row.id)?.obj.userData.spriteRig as SpriteRig | undefined)?.maskName ?? row.label
   const selectedRef = useRef<TokenRow | null>(null)
   const dmRef = useRef(false)
   const mapRef = useRef<MapRow | null>(null)
@@ -1782,7 +1789,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       setHoverRead({
         x: ev.clientX - r.left,
         y: ev.clientY - r.top,
-        label: victim.row.label,
+        label: shownLabel(victim.row),
         line,
         ok: status.ok,
       })
@@ -2097,6 +2104,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     const statusVfx = new StatusVfx(scene)
     const npcConds = new Map<string, string[]>()
     const pcConds = new Map<string, string[]>()
+    // FOUND OUT BY A CHECK. A disguise also drops when someone sees through
+    // it: Malachar's [CONDITION_ADD: <name> | Revealed] after a passed
+    // Insight or Perception check lands on npc_encounters, which reaches the
+    // token through npcConds like any other condition.
+    const REVEALED = /^(revealed|unmasked|true form)$/i
+    const isRevealed = (row: TokenRow): boolean =>
+      [...conditionNames(row.effects), ...(npcConds.get(row.id) ?? [])].some((c) => REVEALED.test(c.trim()))
+    const masked = (row: TokenRow): boolean =>
+      row.hp_current != null && row.hp_max != null && row.hp_current >= row.hp_max && !isRevealed(row)
 
     // ── THE GRAVE ──────────────────────────────────────────────────────────
     // Fetched and parsed NOW, while nothing is happening, so that the moment
@@ -3467,7 +3483,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // as a flag: every seat sees the same HP, so every seat unmasks it on
         // the same blow, and a reload cannot put the mask back on. Before the
         // death below, so a body felled in one blow falls as itself.
-        rig.setDisguised(row.hp_current != null && row.hp_max != null && row.hp_current >= row.hp_max)
+        rig.setDisguised(masked(row))
         const fresh = freshSpriteDeaths.delete(row.id)
         if (isDowned(row)) {
           if (rig.current !== "dead") rig.play("dead", {}, !fresh)
@@ -6552,6 +6568,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       {
         const bodies: StatusBody[] = []
         tokensRef.current.forEach((entry) => {
+          // A Revealed condition can arrive at any time, not only with a
+          // new row, so the mask is re-read every frame (a no-op when unchanged).
+          ;(entry.obj.userData.spriteRig as SpriteRig | undefined)?.setDisguised(masked(entry.row))
           const kinds = statusKindsOf([
             ...conditionNames(entry.row.effects),
             ...(npcConds.get(entry.row.id) ?? []),
@@ -7440,7 +7459,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
 
       {selected && (
         <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded border border-[#5a4a6a] bg-black/80 px-4 py-2 text-center">
-          <div className="font-serif text-[13px] text-[#e0d0f0]">{selected.label}</div>
+          <div className="font-serif text-[13px] text-[#e0d0f0]">{shownLabel(selected)}</div>
           {selected.hp_max ? (
             <div className="font-mono text-[10px] text-[#9ab0d0]">
               {selected.hp_current ?? selected.hp_max} / {selected.hp_max} HP
@@ -7840,7 +7859,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             )}
             {volleyPick.picks.map((p) => (
               <div key={p.token} className="flex items-center gap-2 text-[11px] text-[#d8e4f2]">
-                <span className="flex-1 truncate">{tokensRef.current.get(p.token)?.row.label ?? "?"}</span>
+                <span className="flex-1 truncate">{(() => { const t = tokensRef.current.get(p.token); return t ? shownLabel(t.row) : "?" })()}</span>
                 <span className="tracking-[0.25em] text-[#cfc0ff]">{"●".repeat(p.count)}{"○".repeat(Math.max(0, volleyPick.total - allocated(volleyPick.picks)))}</span>
                 <button
                   onClick={() => setVolleyPick({ total: volleyPick.total, picks: allocate(volleyPick.picks, p.token, volleyPick.total, -1) })}
@@ -8080,7 +8099,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       {selected && !selected.character_id && (
         <div className={"pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 text-center " + (combat ? "top-24" : "top-16")}>
           <div className="font-serif text-[15px] font-bold uppercase tracking-[0.2em] text-[#c23b2e] [text-shadow:0_1px_3px_#000]">
-            {selected.label}
+            {shownLabel(selected)}
           </div>
           {selected.hp_max ? (
             <div className="mx-auto mt-1 h-1.5 w-44 overflow-hidden rounded-sm border border-[#4a1512] bg-[#160705]">

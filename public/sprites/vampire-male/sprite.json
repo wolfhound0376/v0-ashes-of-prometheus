@@ -17,5 +17,19 @@
       "fps": 5,
       "loop": true
     }
-  }
+  },
+  "disguisePool": [
+    {
+      "sheet": "../elf-townsman/idle.png",
+      "name": "Elf Townsman"
+    },
+    {
+      "sheet": "../wandering-peddler/idle.png",
+      "name": "Wandering Peddler"
+    },
+    {
+      "sheet": "../hooded-stranger/idle.png",
+      "name": "Hooded Stranger"
+    }
+  ]
 }

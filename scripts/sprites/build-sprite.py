@@ -110,6 +110,12 @@ def main() -> None:
         "disguise.png, worn in place of idle until the creature takes damage",
     )
     ap.add_argument(
+        "--disguise-pool", action="append", default=[], metavar="SLUG",
+        help="an already-built sprite (public/sprites/<SLUG>) this creature may be passing as - "
+        "a hag as a townswoman. Repeat for each. The board gives each token one of them at "
+        "random until it is hurt or Revealed. Ignored when --disguise is given",
+    )
+    ap.add_argument(
         "--state", metavar="NAME",
         help="build from the named state (outfit) of a character that has more than one, e.g. "
         "--state \"Regal Armor\". Without it the first state wins",
@@ -224,6 +230,16 @@ def main() -> None:
         sheet.save(out / "disguise.png", optimize=True)
         manifest["disguise"] = {"sheet": "disguise.png", "frames": 1, **PLAYBACK["idle"]}
         print("  disguise: 1 frame -> disguise.png")
+
+    if args.disguise_pool and not args.disguise:
+        pool = []
+        for slug in args.disguise_pool:
+            other = out.parent / slug / "sprite.json"
+            if not other.is_file():
+                sys.exit(f"--disguise-pool {slug}: build {other} first")
+            pool.append({"sheet": f"../{slug}/idle.png", "name": json.loads(other.read_text())["name"]})
+        manifest["disguisePool"] = pool
+        print(f"  disguise pool: {', '.join(args.disguise_pool)}")
 
     (out / "sprite.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"wrote {out / 'sprite.json'}")
