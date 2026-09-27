@@ -24,11 +24,12 @@
 // reason or returns a flag for the DM. The only house rule is HOUSE_RULES below,
 // off by default, and it is Sam's to switch on.
 //
-// Reagents. XGE prices raw materials in gp; this campaign carries them as catalog
-// rows (fire lichen, ormu, waterorb …). The bridge, PROPOSED for Sam's yes: the
-// catalog `value` of the reagents a character spends counts as raw-material gp.
-// A recipe may additionally name specific reagents (`items.properties.craft
-// .materials`, Camp Module §6); when it does, those are required as well.
+// Reagents — Sam's ruling, 2026-09-27: EACH RECIPE NAMES ITS REAGENTS, and having
+// them is enough. No gold changes hands; exactly those reagents are consumed.
+// (In 5e these fungi are food worth copper, and items.value is whole gp, so a
+// price bridge would have read 0 anyway.) The lists below are Claude's, for Sam
+// to adjust — every slug is a catalog row. A recipe with NO list falls back to
+// XGE as written: raw materials bought with coin, half the item's value.
 
 export type AlchemyTool = "Alchemist's Supplies" | "Herbalism Kit" | "Poisoner's Kit"
 export type AlchemyKind = "potion" | "poison" | "utility"
@@ -47,7 +48,7 @@ export interface AlchemyRecipe {
   value: number
   /** Days of work when the method is downtime and the book fixes the time (XGE healing table). */
   days?: number
-  /** Specific reagents required in addition to the gp of raw materials, if the catalog row names them. */
+  /** The reagents this recipe consumes (Sam's ruling: having them is enough). Omit to use XGE coin instead. */
   reagents?: { slug: string; qty: number }[]
   /** Which book the row comes from. */
   source: string
@@ -74,22 +75,22 @@ export const XGE_LONG_REST_ITEMS = ["acid-vial", "alchemists-fire", "antitoxin",
 
 export const RECIPES: AlchemyRecipe[] = [
   // Potions — XGE p.130 Brewing Potions of Healing (herbalism kit; SRD says the kit is required).
-  { out: "potion-of-healing", name: "Potion of Healing", kind: "potion", tools: ["Herbalism Kit"], method: "downtime", value: 25, days: 1, source: "XGE p.130; SRD Herbalism Kit" },
-  { out: "potion-of-greater-healing", name: "Potion of Greater Healing", kind: "potion", tools: ["Herbalism Kit"], method: "downtime", value: 100, days: WORKWEEK_DAYS, source: "XGE p.130", locked: true },
+  { out: "potion-of-healing", name: "Potion of Healing", kind: "potion", tools: ["Herbalism Kit"], method: "downtime", value: 25, days: 1, source: "XGE p.130; SRD Herbalism Kit", reagents: [{ slug: "waterorb", qty: 1 }, { slug: "ormu-moss", qty: 2 }, { slug: "nightlight-fungus", qty: 1 }, { slug: "fire-lichen", qty: 1 }] },
+  { out: "potion-of-greater-healing", name: "Potion of Greater Healing", kind: "potion", tools: ["Herbalism Kit"], method: "downtime", value: 100, days: WORKWEEK_DAYS, source: "XGE p.130", locked: true, reagents: [{ slug: "waterorb", qty: 1 }, { slug: "ormu-moss", qty: 3 }, { slug: "nightlight-fungus", qty: 2 }, { slug: "fire-lichen", qty: 2 }] },
   { out: "potion-of-superior-healing", name: "Potion of Superior Healing", kind: "potion", tools: ["Herbalism Kit"], method: "downtime", value: 1000, days: 3 * WORKWEEK_DAYS, source: "XGE p.130", locked: true },
   { out: "potion-of-supreme-healing", name: "Potion of Supreme Healing", kind: "potion", tools: ["Herbalism Kit"], method: "downtime", value: 10000, days: 4 * WORKWEEK_DAYS, source: "XGE p.130", locked: true },
   // Utility / consumables — XGE p.79 long-rest brewing with alchemist's supplies. Antitoxin also via herbalism kit (SRD).
-  { out: "antitoxin", name: "Antitoxin (vial)", kind: "utility", tools: ["Alchemist's Supplies", "Herbalism Kit"], method: "long_rest", value: 50, source: "XGE p.79; SRD Herbalism Kit" },
-  { out: "acid-vial", name: "Acid (vial)", kind: "utility", tools: ["Alchemist's Supplies"], method: "long_rest", value: 25, source: "XGE p.79" },
-  { out: "alchemists-fire", name: "Alchemist's Fire (flask)", kind: "utility", tools: ["Alchemist's Supplies"], method: "long_rest", value: 50, source: "XGE p.79" },
+  { out: "antitoxin", name: "Antitoxin (vial)", kind: "utility", tools: ["Alchemist's Supplies", "Herbalism Kit"], method: "long_rest", value: 50, source: "XGE p.79; SRD Herbalism Kit", reagents: [{ slug: "waterorb", qty: 1 }, { slug: "ripplebark", qty: 1 }, { slug: "ormu-moss", qty: 1 }] },
+  { out: "acid-vial", name: "Acid (vial)", kind: "utility", tools: ["Alchemist's Supplies"], method: "long_rest", value: 25, source: "XGE p.79", reagents: [{ slug: "gray-ooze-residue", qty: 1 }, { slug: "waterorb", qty: 1 }] },
+  { out: "alchemists-fire", name: "Alchemist's Fire (flask)", kind: "utility", tools: ["Alchemist's Supplies"], method: "long_rest", value: 50, source: "XGE p.79", reagents: [{ slug: "fire-lichen", qty: 2 }, { slug: "lamp-oil", qty: 1 }] },
   { out: "lamp-oil", name: "Oil (flask)", kind: "utility", tools: ["Alchemist's Supplies"], method: "long_rest", value: 0.1, source: "XGE p.79; SRD price 1 sp" },
   { out: "perfume", name: "Perfume (vial)", kind: "utility", tools: ["Alchemist's Supplies"], method: "long_rest", value: 5, source: "XGE p.79; SRD price 5 gp" },
   { out: "soap", name: "Soap", kind: "utility", tools: ["Alchemist's Supplies"], method: "long_rest", value: 0.02, source: "XGE p.79; SRD price 2 cp" },
   // Poisons — DMG p.258: downtime crafting, poisoner's kit required. Prices DMG p.257 (basic poison SRD 100 gp).
-  { out: "basic-poison-vial", name: "Basic Poison (vial)", kind: "poison", tools: ["Poisoner's Kit"], method: "downtime", value: 100, source: "DMG p.258; SRD price 100 gp" },
-  { out: "drow-poison", name: "Drow Poison", kind: "poison", tools: ["Poisoner's Kit"], method: "downtime", value: 200, source: "DMG p.258; DMG p.257 price", locked: true },
+  { out: "basic-poison-vial", name: "Basic Poison (vial)", kind: "poison", tools: ["Poisoner's Kit"], method: "downtime", value: 100, source: "DMG p.258; SRD price 100 gp", reagents: [{ slug: "spider-venom-gland", qty: 1 }, { slug: "waterorb", qty: 1 }] },
+  { out: "drow-poison", name: "Drow Poison", kind: "poison", tools: ["Poisoner's Kit"], method: "downtime", value: 200, source: "DMG p.258; DMG p.257 price", locked: true, reagents: [{ slug: "spider-venom-gland", qty: 2 }, { slug: "timmask", qty: 1 }] },
   { out: "serpent-venom", name: "Serpent Venom", kind: "poison", tools: ["Poisoner's Kit"], method: "downtime", value: 200, source: "DMG p.258; DMG p.257 price", locked: true },
-  { out: "truth-serum", name: "Truth Serum", kind: "poison", tools: ["Poisoner's Kit"], method: "downtime", value: 150, source: "DMG p.258; DMG p.257 price", locked: true },
+  { out: "truth-serum", name: "Truth Serum", kind: "poison", tools: ["Poisoner's Kit"], method: "downtime", value: 150, source: "DMG p.258; DMG p.257 price", locked: true, reagents: [{ slug: "tongue-of-madness", qty: 2 }, { slug: "waterorb", qty: 1 }] },
 ]
 
 export interface Brewer {
@@ -114,7 +115,7 @@ export interface BrewContext {
   longRest: boolean
   /** Has this brewer already made their XGE dose this rest? */
   doseUsedThisRest?: boolean
-  /** Loose raw-material gp the character bought (XGE), if any, on top of reagents. */
+  /** Coin set aside for raw materials (XGE) — only used by recipes that name no reagents. */
   rawMaterialsGp?: number
   /** OotA-Enc ch.2: improvising tools doubles crafting time. */
   improvisedTools?: boolean
@@ -125,7 +126,7 @@ export interface BrewCheck {
   reason: string | null
   /** Materials cost in gp (half value). */
   materialsGp: number
-  /** gp of raw materials available: reagents + loose gp. */
+  /** gp of raw materials available (coin); 0 is fine when the recipe names its reagents. */
   availableGp: number
   /** Time it takes, in days; 0 = "as part of this long rest". */
   days: number
@@ -167,7 +168,8 @@ function hasTool(b: Brewer, tools: AlchemyTool[]): AlchemyTool | null {
 export function canBrew(r: AlchemyRecipe, b: Brewer, pack: ReagentRow[], ctx: BrewContext): BrewCheck {
   const flags: string[] = []
   const cost = materialsGp(r)
-  const available = roundGp(reagentGp(pack) + Math.max(0, ctx.rawMaterialsGp ?? 0))
+  const available = roundGp(Math.max(0, ctx.rawMaterialsGp ?? 0))
+  const named = (r.reagents?.length ?? 0) > 0
   const base = (reason: string | null, ok: boolean, days: number): BrewCheck => ({
     ok, reason, materialsGp: cost, availableGp: available, days, check: null, flags,
   })
@@ -185,7 +187,9 @@ export function canBrew(r: AlchemyRecipe, b: Brewer, pack: ReagentRow[], ctx: Br
     if (have < m.qty) return base(`short of ${m.slug} — ${have}/${m.qty}.`, false, 0)
   }
 
-  if (available < cost) return base(`needs ${cost} gp of raw materials (half of ${r.value} gp); carrying ${available} gp worth.`, false, 0)
+  // Named reagents ARE the materials (Sam's ruling). Only an unlisted recipe costs coin (XGE).
+  if (!named && available < cost) return base(`no reagent list for ${r.name}, so it takes ${cost} gp of raw materials in coin (half of ${r.value} gp, XGE); ${available} gp set aside.`, false, 0)
+  if (!named) flags.push("no reagent list — raw materials bought with coin (XGE as written)")
 
   let days: number
   if (r.method === "long_rest") {
@@ -237,28 +241,22 @@ export function brew(r: AlchemyRecipe, b: Brewer, pack: ReagentRow[], ctx: BrewC
   const fail = (note: string): BrewResult => ({ ...check, spent: [], spentGp: 0, pack, produced: null, roll: null, note })
   if (!check.ok) return fail(`${r.name}: ${check.reason}`)
 
-  // Named reagents first, then cheapest-first until half value is covered (PROPOSED bridge).
+  // Named reagents: exactly those are consumed, nothing else. No list: coin (XGE).
   const remaining = pack.map((p) => ({ ...p }))
   const spent: ReagentRow[] = []
-  let covered = 0
-  const take = (slug: string, qty: number) => {
-    const row = remaining.find((p) => p.slug === slug && p.qty > 0)
-    if (!row) return
-    const n = Math.min(qty, row.qty)
-    row.qty -= n
-    covered = roundGp(covered + n * row.value)
-    const s = spent.find((p) => p.slug === slug)
-    if (s) s.qty += n
-    else spent.push({ slug, qty: n, value: row.value })
+  for (const m of r.reagents ?? []) {
+    let need = m.qty
+    for (const row of remaining) {
+      if (row.slug !== m.slug || row.qty <= 0 || need <= 0) continue
+      const n = Math.min(need, row.qty)
+      row.qty -= n
+      need -= n
+      const s2 = spent.find((p) => p.slug === m.slug)
+      if (s2) s2.qty += n
+      else spent.push({ slug: m.slug, qty: n, value: row.value })
+    }
   }
-  for (const m of r.reagents ?? []) take(m.slug, m.qty)
-  const byValue = [...remaining].filter((p) => p.qty > 0).sort((a, b2) => a.value - b2.value)
-  for (const p of byValue) {
-    while (covered < check.materialsGp && p.qty > 0) take(p.slug, 1)
-    if (covered >= check.materialsGp) break
-  }
-  let spentGp = 0
-  if (covered < check.materialsGp) spentGp = roundGp(check.materialsGp - covered)
+  const spentGp = (r.reagents?.length ?? 0) > 0 ? 0 : check.materialsGp
 
   let roll: BrewResult["roll"] = null
   let success = true
