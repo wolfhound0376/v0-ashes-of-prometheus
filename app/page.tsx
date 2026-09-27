@@ -1525,7 +1525,15 @@ if (error) {
       )}
 
       {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} characterId={claimRef.current.characterId} onClose={() => setCampaignBook(null)} /> : null}
-      {npcAssetsOpen && !claimLocked ? <DmAssetsPanel onClose={() => setNpcAssetsOpen(false)} /> : null}
+      {npcAssetsOpen && !claimLocked ? (
+        <DmAssetsPanel
+          onClose={() => setNpcAssetsOpen(false)}
+          onLore={() => {
+            setNpcAssetsOpen(false)
+            setCampaignBook("lore")
+          }}
+        />
+      ) : null}
 
       {/* Save toast */}
       {saveMessage && (

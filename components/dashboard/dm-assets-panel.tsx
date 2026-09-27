@@ -22,7 +22,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Hammer, KeyRound, X } from "lucide-react"
+import { Hammer, KeyRound, ScrollText, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NpcAssetsTab } from "./npc-assets-panel"
 import { MediaTab, type MediaTabConfig } from "./dm-assets/media-tab"
@@ -103,7 +103,7 @@ const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
   { id: "cinematics", label: "Cinematics", blurb: "Rendered clips for the trigger system — 5–8s loops and moments, tagged by location, variant state, scope and kind. Players never see this panel, only playback." },
 ]
 
-export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
+export function DmAssetsPanel({ onClose, onLore }: { onClose: () => void; onLore: () => void }) {
   const [tab, setTab] = useState<TabId>("npcs")
   const [keySet, setKeySet] = useState(true)
   const [keyDraft, setKeyDraft] = useState("")
@@ -140,10 +140,14 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
         <header className="shrink-0 border-b border-[#3d3428] px-5 py-3">
           <div className="flex items-center gap-3">
             <h2 className="font-serif text-lg tracking-wide text-[#c4a777]">DM Assets</h2>
-            <Link href="/forge" className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open The Forge">
-              <Hammer className="h-3.5 w-3.5" />
-              <span className="leading-none">The Forge</span>
-            </Link>
+  <Link href="/forge" className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open The Forge">
+  <Hammer className="h-3.5 w-3.5" />
+  <span className="leading-none">The Forge</span>
+  </Link>
+  <button type="button" onClick={onLore} className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open Lore">
+  <ScrollText className="h-3.5 w-3.5" />
+  <span className="leading-none">Lore</span>
+  </button>
             <button
               onClick={onClose}
               aria-label="Close DM Assets"
