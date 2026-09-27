@@ -3,7 +3,7 @@
 **Status:** reference only. Nothing here is wired unless a doc says so.
 **Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 77–92, 106–145). Summarised in Claude's words with page numbers; no prose is copied. Check the book before quoting a rule to players.
 **Why it's here:** Sam, 2026-09-27: "More from the book we can store for info later." It isn't among the five books in `campaign_books`, so Malachar's retrieval can't see it. This file is the only copy in the project.
-**Companion:** `docs/reference/xanathars-ch1-bard-and-names-notes.md` (ch. 1 Bard, Appendix B names).
+**Companion:** `docs/reference/xanathars-ch1-classes-and-names-notes.md` (ch. 1 class options, Appendix B names).
 
 ---
 
