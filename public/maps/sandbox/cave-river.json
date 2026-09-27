@@ -174,7 +174,8 @@
     "height": 0.8,
     "flicker": false
    }
-  ]
+  ],
+  "grid_opacity": 0.045
  },
  "cells": {
   "floor": [
