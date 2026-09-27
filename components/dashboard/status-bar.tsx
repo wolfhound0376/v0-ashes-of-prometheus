@@ -58,6 +58,8 @@ export function StatusBar({
     return () => clearInterval(t)
   }, [])
 
+  if (!dmModeActive) return null
+
   return (
     <footer className={cn(
       "group fixed inset-x-0 bottom-0 z-[58] flex items-center justify-between gap-3 border-t border-[#7a5f33]/50 bg-gradient-to-b from-[#0b0907] to-[#14100b] px-4 py-1.5 text-[11px] shadow-[0_-8px_24px_rgba(0,0,0,0.45)] transition-transform duration-300 ease-out",
