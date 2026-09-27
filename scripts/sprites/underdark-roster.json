@@ -21,6 +21,14 @@
     "target_ft": 6.0
   },
   {
+    "slug": "drow-rogue-hooded",
+    "name": "Drow Rogue (hooded)",
+    "pixellab_character_id": "bb727df6-db93-4af9-acb5-bf745d65d4e9",
+    "size_by": "height",
+    "target_ft": 6.0,
+    "note": "measured to the hood tip"
+  },
+  {
     "slug": "hook-horror",
     "name": "Hook Horror",
     "pixellab_character_id": "e41cf452-aa3f-4f60-88fe-7647d2bb963e",
@@ -83,6 +91,30 @@
     "pixellab_character_id": "764deb77-6def-4e68-a77f-2f60d60bb34e",
     "size_by": "height",
     "target_ft": 5.0
+  },
+  {
+    "slug": "myconid-adult-shelfcap",
+    "name": "Myconid Adult (shelf-cap)",
+    "pixellab_character_id": "ad769e30-42bb-4063-a740-22716433b9b2",
+    "size_by": "height",
+    "target_ft": 5.0,
+    "note": "variant A of myconid-adult; measured to the cap top like the base"
+  },
+  {
+    "slug": "myconid-adult-glow",
+    "name": "Myconid Adult (bioluminescent)",
+    "pixellab_character_id": "64a68199-9989-4446-b92f-42594b7d95b1",
+    "size_by": "height",
+    "target_ft": 5.0,
+    "note": "variant B of myconid-adult; measured to the cap top, floating spores ignored (they sit beside it)"
+  },
+  {
+    "slug": "myconid-adult-elder",
+    "name": "Myconid Adult (old puffball)",
+    "pixellab_character_id": "fe9a740c-43e5-4408-bc49-fe1a5ae95f26",
+    "size_by": "height",
+    "target_ft": 5.0,
+    "note": "variant C of myconid-adult; still a Medium adult, not the Large sovereign"
   },
   {
     "slug": "duergar",
