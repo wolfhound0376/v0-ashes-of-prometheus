@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "Swarm of Rats",
+  "name": "Cultist",
   "cell": [
     128,
     128
@@ -9,7 +9,7 @@
     64,
     126
   ],
-  "ppu": 126,
+  "ppu": 104,
   "animations": {
     "idle": {
       "sheet": "idle.png",

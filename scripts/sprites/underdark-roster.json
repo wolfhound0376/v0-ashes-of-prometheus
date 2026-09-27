@@ -52,7 +52,7 @@
   {
     "slug": "swarm-of-rats",
     "name": "Swarm of Rats",
-    "pixellab_character_id": "3f5c69d2-c6ba-4200-bc51-d9d556223d92",
+    "pixellab_character_id": "e8708d39-0d3d-46d0-9345-fd5292490f3e",
     "size_by": "width",
     "target_ft": 5.0
   },
@@ -231,5 +231,19 @@
     "pixellab_character_id": "f83b1dc5-b72d-42eb-8b8a-d1cc9beb94c8",
     "size_by": "width",
     "target_ft": 10.0
+  },
+  {
+    "slug": "goblin",
+    "name": "Goblin",
+    "pixellab_character_id": "e029f242-69ab-496d-a278-fa1f3a58fa71",
+    "size_by": "height",
+    "target_ft": 3.5
+  },
+  {
+    "slug": "cultist",
+    "name": "Cultist",
+    "pixellab_character_id": "691c74bd-f300-4c0c-801e-5306b56d1239",
+    "size_by": "height",
+    "target_ft": 5.9
   }
 ]
