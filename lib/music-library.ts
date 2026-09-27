@@ -20,8 +20,20 @@ export type MusicCategory =
   | "horror"
   | "epic"
   | "ambient"
+  | "camp"
 
 export const MUSIC_LIBRARY: MusicTrack[] = [
+  {
+    // Camp theme (ElevenLabs, 2026-09-26; Sam: "I like it"). Levelled to -27 LUFS
+    // like the combat themes. Written to loop: steady energy, no build, and the
+    // player crossfades the seam. Plays under the camp context in every biome.
+    id: "camp-embers",
+    name: "Camp Embers",
+    url: "/audio/camp-embers.mp3",
+    category: "camp",
+    mood: ["calm", "restful", "underdark", "camp"],
+    description: "Quiet campfire lullaby — lute over a low cello drone, cavern reverb. Loops under camp.",
+  },
   {
     id: "steel-in-the-dark",
     name: "Steel in the Dark",
@@ -440,5 +452,6 @@ export const MUSIC_CATEGORIES: { id: MusicCategory; label: string; description: 
   { id: "nature", label: "Nature", description: "Wilderness and outdoor environments" },
   { id: "horror", label: "Horror", description: "Fear and dread" },
   { id: "epic", label: "Epic", description: "Grand moments and revelations" },
-  { id: "ambient", label: "Ambient", description: "Background atmosphere" }
+  { id: "ambient", label: "Ambient", description: "Background atmosphere" },
+  { id: "camp", label: "Camp", description: "Rest at the fire" }
 ]

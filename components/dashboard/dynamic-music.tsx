@@ -57,6 +57,9 @@ const DEFAULT_COMBAT_TRACK = DEFAULT_COMBAT_TRACKS[0]
 // Neutral dark-ambient default when the location is unknown or unmapped — never
 // a village/tavern track. Fits the Underdark campaign's baseline dread.
 const DEFAULT_TRACK = "dungeon-i"
+// The camp context has one theme wherever the party beds down (per-biome
+// variants can split this later). Combat still overrides it.
+const CAMP_TRACK = "camp-embers"
 
 const LOCATION_POOLS: LocationPool[] = [
   { label: "prison", match: /slave pen|\bjail\b|\bcell\b|prison|captiv|manacl/i, base: "castle-jail", tense: "castle-jail", combat: DEFAULT_COMBAT_TRACK },
@@ -72,7 +75,7 @@ const LOCATION_POOLS: LocationPool[] = [
   { label: "court", match: /throne|court|palace|castle/i, base: "court-of-the-count", combat: DEFAULT_COMBAT_TRACK },
 ]
 
-export type MusicMood = "ambient" | "tense" | "combat"
+export type MusicMood = "ambient" | "tense" | "combat" | "camp"
 
 export interface MusicSelection {
   track: MusicTrack
@@ -98,6 +101,11 @@ export function selectMusic(
 ): MusicSelection {
   const loc = (location || "").trim()
   const effectiveMood: MusicMood = inCombat ? "combat" : mood
+
+  if (effectiveMood === "camp") {
+    const camp = getTrackById(CAMP_TRACK)
+    if (camp) return { track: camp, locationLabel: "camp", mood: "camp" }
+  }
 
   if (loc) {
     for (const pool of LOCATION_POOLS) {

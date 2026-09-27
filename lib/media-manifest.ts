@@ -5,7 +5,7 @@
 // without a data migration. dynamic-music reads the manifest first and falls
 // back to the hardcoded MUSIC_LIBRARY when the manifest is empty/unreachable.
 
-export type MusicMood = "ambient" | "tense" | "combat"
+export type MusicMood = "ambient" | "tense" | "combat" | "camp"
 
 /** A single music row as returned by /api/media-manifest?kind=music. */
 export interface ManifestTrack {
@@ -44,6 +44,9 @@ export const MUSIC_POOL_PATTERNS: { label: string; match: RegExp }[] = [
 export const COMBAT_DEFAULT_POOL = "combat_default"
 // Pool used when no location pool matches (neutral dark-ambient baseline).
 export const NEUTRAL_DEFAULT_POOL = "neutral"
+// Pool for the camp context. Only an explicit row here plays at camp; with
+// none, the resolver returns null and the static library's camp theme plays.
+export const CAMP_POOL = "camp"
 
 function pickSlot(tracks: ManifestTrack[], pool: string, slot: MusicMood): ManifestTrack | undefined {
   const slotKey = slot === "ambient" ? "base" : slot
@@ -73,6 +76,11 @@ export function resolveMusicFromManifest(
 
   const effectiveMood: MusicMood = inCombat ? "combat" : mood
   const loc = (location || "").trim()
+
+  if (effectiveMood === "camp") {
+    const camp = tracks.find((t) => t.pool === CAMP_POOL)
+    return camp ? { track: camp, poolLabel: CAMP_POOL, mood: "camp" } : null
+  }
 
   if (loc) {
     for (const pattern of MUSIC_POOL_PATTERNS) {
