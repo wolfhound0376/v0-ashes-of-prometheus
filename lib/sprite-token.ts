@@ -321,6 +321,18 @@ export class SpriteRig {
     return this.disguised && this.textures.has("disguise") ? this.disguiseName : null
   }
 
+  /**
+   * The pool face this figure was dealt (lib: disguisePool), whether or not
+   * it is worn right now; null for a fixed disguise or none. The rail asks
+   * this and decides for itself, from HP and conditions, whether it holds.
+   */
+  get poolDisguise(): string | null {
+    return this.disguiseName
+  }
+
+  /** Called once the manifest has arrived and the figure can be drawn. */
+  onReady: (() => void) | null = null
+
   /** Whether the manifest has arrived yet. */
   get ready(): boolean {
     return this.manifest !== null
@@ -603,6 +615,7 @@ export class SpriteRig {
     this.pending = null
     this.bindSheet(this.resolve(this.state) ?? "idle")
     if (p) this.play(p.state, p.opts, p.skipToEnd)
+    this.onReady?.()
   }
 
   /**

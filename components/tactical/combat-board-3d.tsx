@@ -140,6 +140,12 @@ import { uiTick } from "@/lib/ui-tick"
 import { FEET_PER_SQUARE } from "@/lib/tactical"
 import { locomotionOf, type Locomotion } from "@/lib/locomotion"
 
+/**
+ * Found out by a check: Malachar's [CONDITION_ADD: <name> | Revealed] after a
+ * passed Insight or Perception check drops a disguise (see masked / maskOf).
+ */
+const REVEALED = /^(revealed|unmasked|true form)$/i
+
 const TILE_BASE =
   "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/map-tiles/diablo-gothic"
 
@@ -667,6 +673,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
    */
   const shownLabel = (row: { id: string; label: string }): string =>
     (tokensRef.current.get(row.id)?.obj.userData.spriteRig as SpriteRig | undefined)?.maskName ?? row.label
+  /** Bumped when a sprite's manifest arrives, so the rail re-asks maskOf. */
+  const [, setRigsReady] = useState(0)
+  /**
+   * The face a token is passing as, for the initiative rail - decided from
+   * the same facts the board uses (unhurt, not Revealed), read from React
+   * state so the rail re-renders the moment either changes. Null when it is
+   * showing itself.
+   */
+  const maskOf = (tokenId: string): string | null => {
+    const e = tokensRef.current.get(tokenId)
+    const name = (e?.obj.userData.spriteRig as SpriteRig | undefined)?.poolDisguise
+    if (!e || !name) return null
+    const r = e.row
+    if (r.hp_current == null || r.hp_max == null || r.hp_current < r.hp_max) return null
+    const conds = [...conditionNames(r.effects), ...conditionNames(tokenConditions[tokenId])]
+    return conds.some((c) => REVEALED.test(c.trim())) ? null : name
+  }
   const selectedRef = useRef<TokenRow | null>(null)
   const dmRef = useRef(false)
   const mapRef = useRef<MapRow | null>(null)
@@ -2110,7 +2133,6 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // it: Malachar's [CONDITION_ADD: <name> | Revealed] after a passed
     // Insight or Perception check lands on npc_encounters, which reaches the
     // token through npcConds like any other condition.
-    const REVEALED = /^(revealed|unmasked|true form)$/i
     const isRevealed = (row: TokenRow): boolean =>
       [...conditionNames(row.effects), ...(npcConds.get(row.id) ?? [])].some((c) => REVEALED.test(c.trim()))
     const masked = (row: TokenRow): boolean =>
@@ -3476,6 +3498,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // No manifest: fall back to the disc rather than an empty square.
           if (!disposed && tokensRef.current.get(row.id)?.obj === g) buildPawn()
         })
+        // A pool disguise is only known once the manifest is in; the rail
+        // re-renders then so it never shows the hag's face first.
+        if (!keptRig) rig.onReady = () => { if (!disposed) setRigsReady((n) => n + 1) }
         rig.object.scale.setScalar(SPRITE_BASE_SCALE)
         g.add(rig.object)
         g.userData.spriteRig = rig
@@ -7419,6 +7444,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     ? rawTurnOrder.filter((e) => presentTokens.has(e.token_id))
     : rawTurnOrder
   const shownActiveIndex = Math.max(0, shownTurnOrder.findIndex((e) => e.token_id === activeTokenId))
+  // A creature in disguise sits on the rail as the face it wears: that
+  // name, and no portrait (so its initial), until it is hurt or Revealed.
+  const railTurnOrder = shownTurnOrder.map((e) => {
+    const mask = maskOf(e.token_id)
+    return mask ? { ...e, label: mask } : e
+  })
+  const railPortrait = railTurnOrder.some((e, i) => e !== shownTurnOrder[i])
+    ? Object.fromEntries(Object.entries(tokenPortrait).filter(([id]) => !maskOf(id)))
+    : tokenPortrait
 
   return (
     // ABSOLUTE, not h-full. The stage container already holds a full-height
@@ -7896,7 +7930,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         active={Boolean(combat)}
         isMine={isMyTurn}
         dm={dm}
-        characterName={activeSheet?.name ?? activeEntry?.label ?? ""}
+        characterName={activeSheet?.name ?? (activeEntry ? maskOf(activeEntry.token_id) ?? activeEntry.label : "")}
         economy={combat?.turn_state ?? {}}
         speedFt={speedFt}
         onAcknowledge={() => void playerVerb({ action: "ack" })}
@@ -7917,11 +7951,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           void summonVerb(op === "use" ? { op, token_id: tokenId, what } : { op, token_id: tokenId })
         }}
         tokenToCharacter={tokenToCharacter}
-        tokenPortrait={tokenPortrait}
+        tokenPortrait={railPortrait}
         tokenSide={tokenSide}
         tokenConditions={tokenConditions}
         tokenHp={tokenHp}
-        turnOrder={shownTurnOrder}
+        turnOrder={railTurnOrder}
         activeIndex={shownActiveIndex}
         round={combat?.round ?? 1}
         log={log}
