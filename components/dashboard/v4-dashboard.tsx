@@ -723,7 +723,7 @@ export function V4Dashboard(props: V4DashboardProps) {
           <p className="text-[10px] text-[#9b8b6b]">{props.environment.region} · {props.environment.timeOfDay}</p>
           <div className="relative mt-2 h-[202px] overflow-hidden rounded border border-[#4b3a19]">
             <img src={props.environment.imageUrl} alt={props.environment.name} className="h-full w-full object-cover" />
-            <div className="absolute left-2 top-2 rounded-sm border border-[#4b3a19] bg-[#0a0907]/90 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-[#cdb276]">{props.environment.name}</div>
+            <div className="absolute left-2 top-2 hidden rounded-sm border border-[#4b3a19] bg-[#0a0907]/90 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-[#cdb276]" aria-hidden="true">{props.environment.name}</div>
           </div>
           <div className="mt-2 flex gap-1.5 text-[9px] text-[#aa9874]"><span className="rounded-full border border-[#4b3a19] px-2">◐ Dim Light</span><span className="rounded-full border border-[#4b3a19] px-2">◒ Stone Floor</span><span className="rounded-full border border-[#4b3a19] px-2">💧 Damp</span></div>
         </div>
