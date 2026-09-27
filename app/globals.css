@@ -169,6 +169,23 @@
     .aop-hp-blood-fill { animation: none; background-position: 50% 0; }
   }
 
+  @keyframes aop-arcane-ebb {
+    0%, 100% { background-position: 180% 0; filter: brightness(0.92); }
+    50% { background-position: 0% 0; filter: brightness(1.3); }
+  }
+
+  .aop-arcane-progress {
+    background: linear-gradient(90deg, #183a87 0%, #347ee8 32%, #9bd7ff 50%, #347ee8 68%, #183a87 100%);
+    background-size: 220% 100%;
+    box-shadow: 0 0 5px rgba(68, 143, 255, 0.9), inset 0 0 2px rgba(199, 235, 255, 0.9);
+    animation: aop-arcane-ebb 2.6s ease-in-out infinite;
+    will-change: background-position, filter;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aop-arcane-progress { animation: none; background-position: 50% 0; }
+  }
+
   @keyframes magical-pulse {
   0%, 100% {
     box-shadow: 0 0 10px rgba(100, 150, 200, 0.3);
