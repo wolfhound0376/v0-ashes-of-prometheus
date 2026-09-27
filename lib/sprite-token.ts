@@ -83,6 +83,13 @@ export interface SpriteManifest {
    * Each `sheet` is a one-frame, eight-row idle, relative to the manifest.
    */
   disguisePool?: { sheet: string; name: string }[]
+  /**
+   * A species drawn more than one way - a Vampire is a man or a woman. The
+   * manifest is then only this list (other manifests, relative to it), and
+   * each token is drawn from one of them, picked by its own id like the
+   * disguise, so the same token is the same body on every seat.
+   */
+  variants?: string[]
 }
 
 /** A sheet the figure can wear: one per state, plus the disguise. */
@@ -262,12 +269,20 @@ export class SpriteRig {
   /** The name the disguise answers to, drawn from disguisePool (null for a fixed disguise or none). */
   private disguiseName: string | null = null
   private readonly seed: string
+  /** Absolute URL of the manifest actually drawn (a variant's, when the species has several). */
+  private base: string
 
   constructor(url: string, seed: string, onError?: (e: unknown) => void) {
     this.url = url
     this.seed = seed
     this.phase = phaseOf(seed)
-    loadManifest(url)
+    this.base = new URL(url, window.location.href).href
+    loadManifest(this.base)
+      .then((m) => {
+        if (!m.variants?.length) return m
+        this.base = new URL(m.variants[hashOf(`${seed}:variant`) % m.variants.length], this.base).href
+        return loadManifest(this.base)
+      })
       .then((m) => {
         if (this.disposed) return
         this.build(m)
@@ -575,7 +590,7 @@ export class SpriteRig {
       this.object.add(hand)
     }
 
-    const base = this.url.replace(/[^/]*$/, "")
+    const base = this.base.replace(/[^/]*$/, "")
     const sheets = Object.entries(m.animations) as [SheetKey, SpriteAnimation][]
     if (m.disguise) sheets.push(["disguise", m.disguise])
     for (const [state, anim] of sheets) {
