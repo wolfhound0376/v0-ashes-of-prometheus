@@ -15,15 +15,21 @@ import {
 const fifi = { name: "Fifi", tools: ["Alchemist's Supplies", "Thieves' Tools"], proficiencyBonus: 2 }
 const herbalist = { name: "Sarith", tools: ["Herbalism Kit"], proficiencyBonus: 2 }
 const poisoner = { name: "Jimjar", tools: ["Poisoner's Kit"], proficiencyBonus: 2 }
+// Reagents carry no price (Sam, 2026-09-27): value is 0, as the catalog has it.
+const r = (slug: string, qty: number): ReagentRow => ({ slug, qty, value: 0 })
 const pack = (): ReagentRow[] => [
-  { slug: "fire-lichen", qty: 3, value: 5 },
-  { slug: "ormu-moss", qty: 2, value: 10 },
-  { slug: "waterorb", qty: 1, value: 15 },
+  r("fire-lichen", 3),
+  r("ormu-moss", 3),
+  r("waterorb", 2),
+  r("nightlight-fungus", 1),
+  r("ripplebark", 1),
+  r("lamp-oil", 1),
+  r("spider-venom-gland", 1),
 ]
 const resting = { longRest: true }
 
 describe("recipes", () => {
-  it("prices materials at half value (SRD)", () => {
+  it("prices materials at half value (SRD) for the coin path", () => {
     expect(materialsGp(recipeFor("alchemists-fire")!)).toBe(25)
     expect(materialsGp(recipeFor("potion-of-healing")!)).toBe(12.5)
   })
@@ -32,7 +38,12 @@ describe("recipes", () => {
     expect(recipeFor("potion-of-supreme-healing")).toMatchObject({ value: 10000, days: 20 })
   })
   it("every recipe names its source", () => {
-    for (const r of RECIPES) expect(r.source.length).toBeGreaterThan(3)
+    for (const x of RECIPES) expect(x.source.length).toBeGreaterThan(3)
+  })
+  it("the common recipes name their reagents (Sam's ruling)", () => {
+    for (const slug of ["potion-of-healing", "antitoxin", "acid-vial", "alchemists-fire", "basic-poison-vial", "drow-poison", "truth-serum"]) {
+      expect(recipeFor(slug)!.reagents?.length).toBeGreaterThan(0)
+    }
   })
 })
 
@@ -42,33 +53,39 @@ describe("canBrew", () => {
     expect(c.ok).toBe(false)
     expect(c.reason).toMatch(/not proficient with Herbalism Kit/)
   })
+  it("having the named reagents is enough — no gold needed", () => {
+    const c = canBrew(recipeFor("potion-of-healing")!, herbalist, pack(), { longRest: false })
+    expect(c.ok).toBe(true)
+    expect(c.availableGp).toBe(0)
+  })
   it("antitoxin accepts either kit", () => {
     expect(canBrew(recipeFor("antitoxin")!, fifi, pack(), resting).ok).toBe(true)
     expect(canBrew(recipeFor("antitoxin")!, herbalist, pack(), resting).ok).toBe(true)
   })
+  it("names the missing reagent", () => {
+    expect(canBrew(recipeFor("alchemists-fire")!, fifi, [r("fire-lichen", 1), r("lamp-oil", 1)], resting).reason).toMatch(/short of fire-lichen — 1\/2/)
+    expect(canBrew(recipeFor("acid-vial")!, fifi, pack(), resting).reason).toMatch(/short of gray-ooze-residue — 0\/1/)
+  })
   it("XGE one-dose items need a long rest and one dose only", () => {
-    const r = recipeFor("alchemists-fire")!
-    expect(canBrew(r, fifi, pack(), { longRest: false }).reason).toMatch(/long rest/)
-    expect(canBrew(r, fifi, pack(), { longRest: true, doseUsedThisRest: true }).reason).toMatch(/one dose/)
-    const ok = canBrew(r, fifi, pack(), resting)
+    const x = recipeFor("alchemists-fire")!
+    expect(canBrew(x, fifi, pack(), { longRest: false }).reason).toMatch(/long rest/)
+    expect(canBrew(x, fifi, pack(), { longRest: true, doseUsedThisRest: true }).reason).toMatch(/one dose/)
+    const ok = canBrew(x, fifi, pack(), resting)
     expect(ok.ok).toBe(true)
     expect(ok.days).toBe(0)
     expect(ok.check).toBeNull()
   })
-  it("counts reagent value plus loose gp toward raw materials", () => {
-    const r = recipeFor("alchemists-fire")! // 25 gp of materials
-    expect(canBrew(r, fifi, [{ slug: "fire-lichen", qty: 1, value: 5 }], resting).reason).toMatch(/needs 25 gp/)
-    expect(canBrew(r, fifi, [{ slug: "fire-lichen", qty: 1, value: 5 }], { longRest: true, rawMaterialsGp: 20 }).ok).toBe(true)
-  })
-  it("requires named reagents when the recipe lists them", () => {
-    const r = { ...recipeFor("alchemists-fire")!, reagents: [{ slug: "lamp-oil", qty: 1 }] }
-    expect(canBrew(r, fifi, pack(), resting).reason).toMatch(/short of lamp-oil — 0\/1/)
+  it("a recipe with no reagent list costs coin (XGE as written)", () => {
+    const soap = recipeFor("perfume")!
+    expect(soap.reagents).toBeUndefined()
+    expect(canBrew(soap, fifi, pack(), resting).reason).toMatch(/2\.5 gp of raw materials in coin/)
+    expect(canBrew(soap, fifi, pack(), { longRest: true, rawMaterialsGp: 3 }).ok).toBe(true)
   })
   it("downtime recipes take the book's days, doubled with improvised tools", () => {
-    const r = recipeFor("potion-of-healing")!
-    expect(canBrew(r, herbalist, pack(), resting).days).toBe(1)
-    expect(canBrew(r, herbalist, pack(), { longRest: false, improvisedTools: true }).days).toBe(2)
-    expect(canBrew(recipeFor("basic-poison-vial")!, poisoner, [{ slug: "spider-venom-gland", qty: 2, value: 30 }], resting).days).toBe(20)
+    const x = recipeFor("potion-of-healing")!
+    expect(canBrew(x, herbalist, pack(), resting).days).toBe(1)
+    expect(canBrew(x, herbalist, pack(), { longRest: false, improvisedTools: true }).days).toBe(2)
+    expect(canBrew(recipeFor("basic-poison-vial")!, poisoner, pack(), resting).days).toBe(20)
   })
   it("proficient but not carrying the kit", () => {
     const c = canBrew(recipeFor("acid-vial")!, { ...fifi, carrying: ["Thieves' Tools"] }, pack(), resting)
@@ -77,25 +94,29 @@ describe("canBrew", () => {
 })
 
 describe("brew", () => {
-  it("spends cheapest reagents first and makes one product with no roll", () => {
+  it("consumes exactly the named reagents and nothing else, with no roll", () => {
     const res = brew(recipeFor("alchemists-fire")!, fifi, pack(), resting)
     expect(res.produced).toEqual({ slug: "alchemists-fire", qty: 1 })
     expect(res.roll).toBeNull()
-    expect(res.spent).toEqual([{ slug: "fire-lichen", qty: 3, value: 5 }, { slug: "ormu-moss", qty: 1, value: 10 }])
-    expect(res.pack).toEqual([{ slug: "ormu-moss", qty: 1, value: 10 }, { slug: "waterorb", qty: 1, value: 15 }])
+    expect(res.spent).toEqual([r("fire-lichen", 2), r("lamp-oil", 1)])
     expect(res.spentGp).toBe(0)
+    expect(res.pack.find((p) => p.slug === "fire-lichen")?.qty).toBe(1)
+    expect(res.pack.find((p) => p.slug === "lamp-oil")).toBeUndefined()
+    expect(res.pack.find((p) => p.slug === "ormu-moss")?.qty).toBe(3)
   })
-  it("named reagents are taken first", () => {
-    const r = { ...recipeFor("antitoxin")!, reagents: [{ slug: "waterorb", qty: 1 }] }
-    const res = brew(r, fifi, pack(), resting)
-    expect(res.spent[0]).toEqual({ slug: "waterorb", qty: 1, value: 15 })
+  it("a coin recipe spends gp, not reagents", () => {
+    const res = brew(recipeFor("perfume")!, fifi, pack(), { longRest: true, rawMaterialsGp: 5 })
+    expect(res.produced).toEqual({ slug: "perfume", qty: 1 })
+    expect(res.spent).toEqual([])
+    expect(res.spentGp).toBe(2.5)
+    expect(res.pack).toEqual(pack())
   })
   it("refusal spends nothing", () => {
     const res = brew(recipeFor("potion-of-healing")!, fifi, pack(), resting)
     expect(res.produced).toBeNull()
     expect(res.pack).toEqual(pack())
   })
-  it("house-rule check uses the rng and can fail", () => {
+  it("house-rule check uses the rng and can fail (reagents still spent)", () => {
     HOUSE_RULES.brewCheck = true
     try {
       const bad = brew(recipeFor("alchemists-fire")!, fifi, pack(), resting, () => 0)
@@ -127,7 +148,7 @@ it("raw materials weigh 1 lb per 50 gp", () => {
 })
 
 it("experiment hands off to the DM", () => {
-  const e = experiment(fifi, [{ slug: "bluecap", qty: 1, value: 2 }])
+  const e = experiment(fifi, [r("bluecap", 1)])
   expect(e.ok).toBe(false)
   expect(e.handoff).toMatch(/DM rules the result/)
 })
