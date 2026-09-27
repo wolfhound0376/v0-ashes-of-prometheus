@@ -8,6 +8,7 @@
 // destination yet call onSection so the dashboard can open the matching panel
 // (or show a "coming in a later round" note) rather than dead-ending.
 
+import type { ReactNode } from "react"
 import { BookOpen, Flame, Map, ScrollText, Settings, Skull, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -27,6 +28,7 @@ interface TopNavProps {
   onCompact?: () => void
   dmMode?: boolean
   onToggleDmMode?: () => void
+  controlSlot?: ReactNode
 }
 
 const SECTIONS: { id: NavSection; label: string; icon: typeof BookOpen }[] = [
@@ -47,6 +49,7 @@ export function TopNav({
   onCompact,
   dmMode = false,
   onToggleDmMode,
+  controlSlot,
 }: TopNavProps) {
   // The NPCs tab is DM-only: players must not reach the roster, since it reveals
   // unencountered NPCs and their stats.
@@ -88,6 +91,8 @@ export function TopNav({
           DM Mode: {dmMode ? "On" : "Off"}
         </button>
       ) : null}
+
+      {controlSlot ? <div className="ml-auto flex items-center gap-2 pr-2">{controlSlot}</div> : null}
 
       {/* Sections */}
       <nav className="flex items-center gap-1.5">

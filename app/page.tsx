@@ -1483,6 +1483,13 @@ if (error) {
         campaignName={activeCampaign.name}
         // NPCs tab is DM-only. A claimed player browser is never the DM.
         isDM={dmMode && !claimLocked}
+  controlSlot={
+    <>
+      {dmMode && !claimLocked && <GameClockPanel refreshSignal={clockRefresh} />}
+      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} className="static bottom-auto right-auto z-auto" />
+      <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
+    </>
+  }
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // In DM Mode, the top-right NPCs button is the direct door to canon
@@ -1885,21 +1892,7 @@ if (error) {
         onRestart={!claimLocked && dmMode ? handleRestartCampaign : undefined}
   onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
   dmModeActive={dmMode && !claimLocked}
-  centerSlot={
-          <>
-            {dmMode && !claimLocked && <GameClockPanel refreshSignal={clockRefresh} />}
-            <DynamicMusic
-              location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
-              inCombat={inCombat}
-              className="static bottom-auto right-auto z-auto"
-            />
-            <MusicPlayer
-              isTTSMuted={isTTSMuted}
-              onToggleTTSMute={toggleTTSMute}
-              className="static bottom-auto right-auto z-auto"
-            />
-          </>
-        }
+
       />
     </div>
     </DiceProvider>
