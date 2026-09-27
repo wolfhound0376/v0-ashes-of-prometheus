@@ -1489,13 +1489,7 @@ if (error) {
         campaignName={activeCampaign.name}
         // NPCs tab is DM-only. A claimed player browser is never the DM.
         isDM={dmMode && !claimLocked}
-  controlSlot={
-    <>
-      {dmMode && !claimLocked && <GameClockPanel refreshSignal={clockRefresh} />}
-      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} className="static bottom-auto right-auto z-auto" />
-      <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
-    </>
-  }
+  controlSlot={dmMode && !claimLocked ? <GameClockPanel refreshSignal={clockRefresh} /> : null}
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // In DM Mode, the top-right NPCs button is the direct door to canon
@@ -1603,8 +1597,14 @@ if (error) {
         </div>
       ) : null}
 
-      <V4Dashboard
-        environment={{
+  <V4Dashboard
+  audioSlot={
+    <>
+      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} className="static bottom-auto right-auto z-auto" />
+      <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
+    </>
+  }
+  environment={{
           name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
           region: "The Underdark",
           timeOfDay: currentEnvironment?.time_of_day || "Afternoon",

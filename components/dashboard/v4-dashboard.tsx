@@ -295,6 +295,7 @@ interface V4DashboardProps {
    *  invisible from the dashboard and left the badge and the toggle disagreeing
    *  about who was DM. */
   dmMode?: boolean
+  audioSlot?: React.ReactNode
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -558,7 +559,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   //
   // These MUST stay class-neutral. They previously read as cleric lines
   // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
-  // player whose generation failed was handed Samson's options ����������������� the exact
+  // player whose generation failed was handed Samson's options ������������������ the exact
   // leak the per-player chips exist to prevent. No class, no skill tag, no
   // named party member: whatever sits here is shown to EVERY seat at once.
   // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
@@ -738,6 +739,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       <Frame title="Party" className={cn("relative flex flex-col transition-[min-height] duration-200", partyMinimized ? "min-h-0" : "min-h-[190px] flex-[1_1_0%]")} action={<button type="button" onClick={() => setPartyMinimized((value) => !value)} aria-expanded={!partyMinimized} aria-label={partyMinimized ? "Expand party" : "Minimize party"} title={partyMinimized ? "Expand party" : "Minimize party"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{partyMinimized ? "Expand" : "Minimize"} party</span>{partyMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
         {!partyMinimized ? <PartyChat bare characterName={props.selectedCharacter?.name} className="min-h-0 flex-1" /> : <p className="px-3 py-2 text-[10px] italic text-[#6d6450]">Party minimized</p>}
       </Frame>
+      {props.audioSlot ? <div className="mt-auto flex min-h-14 items-center justify-center rounded border border-[#3d3428] bg-[#1a1614] px-2 py-1 shadow-lg shadow-black/50">{props.audioSlot}</div> : null}
     </div>
 
     <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" action={<DmNarration dialogue={dialogue} npcs={props.npcRoster?.length ? props.npcRoster : props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
