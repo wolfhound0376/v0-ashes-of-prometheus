@@ -9,7 +9,7 @@
     64,
     126
   ],
-  "ppu": 174,
+  "ppu": 151,
   "animations": {
     "attack": {
       "sheet": "attack.png",
