@@ -16,6 +16,10 @@ import {
   type ManifestTrack,
   type MusicMood as ManifestMusicMood,
 } from "@/lib/media-manifest"
+import {
+  nextCombatTrackId,
+  DEFAULT_COMBAT_TRACK as ROTATION_DEFAULT_COMBAT_TRACK,
+} from "@/lib/combat-music-rotation"
 
 interface DynamicMusicProps {
   /** Canonical session location name (drives the base track pool). */
@@ -44,16 +48,10 @@ interface LocationPool {
 }
 
 // Shared combat themes for pools with no location-specific battle track, which
-// today is every pool but `village`. Both are commissioned tracks: each time a
-// fight begins the component flips a coin between them, so back-to-back battles
-// don't sound identical. Index 0 is what non-rotating callers of selectMusic
-// get, and stays the id every pool below references.
-//
-// "the-pen-erupts" still sits in MUSIC_LIBRARY unreferenced. Kept rather than
-// deleted: it is written for the slave pen, and pinning it back on the `prison`
-// pool is a one-line change if the pen should keep its own.
-const DEFAULT_COMBAT_TRACKS = ["steel-in-the-dark", "the-drow-descend"] as const
-const DEFAULT_COMBAT_TRACK = DEFAULT_COMBAT_TRACKS[0]
+// today is every pool but `village`. The rotation and the shuffle-bag logic
+// live in lib/combat-music-rotation.ts so they can be tested without mounting
+// this component; see that file for why it is a bag and not a coin flip.
+const DEFAULT_COMBAT_TRACK = ROTATION_DEFAULT_COMBAT_TRACK
 // Neutral dark-ambient default when the location is unknown or unmapped — never
 // a village/tavern track. Fits the Underdark campaign's baseline dread.
 const DEFAULT_TRACK = "dungeon-i"
@@ -96,8 +94,13 @@ export function selectMusic(
   location: string | null | undefined,
   inCombat: boolean,
   mood: MusicMood = "ambient",
-  /** Per-fight coin flip from the component: true swaps in the second shared combat theme. */
-  combatAlt = false,
+  /**
+   * The theme this fight should open with, dealt by nextCombatTrackId. It
+   * replaces the shared default only — a pool with its OWN battle track
+   * (`village` -> "burning-village") keeps it, because that track was chosen
+   * for that place and rotating it away would lose the point of the pool.
+   */
+  combatTrackId?: string,
 ): MusicSelection {
   const loc = (location || "").trim()
   const effectiveMood: MusicMood = inCombat ? "combat" : mood
@@ -116,7 +119,7 @@ export function selectMusic(
             : effectiveMood === "tense"
               ? pool.tense || pool.base
               : pool.base
-        const chosenId = combatAlt && trackId === DEFAULT_COMBAT_TRACK ? DEFAULT_COMBAT_TRACKS[1] : trackId
+        const chosenId = combatTrackId && trackId === DEFAULT_COMBAT_TRACK ? combatTrackId : trackId
         const track = getTrackById(chosenId) || getTrackById(pool.base) || getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
         return { track, locationLabel: pool.label, mood: effectiveMood }
       }
@@ -125,11 +128,7 @@ export function selectMusic(
 
   // No location or no mapped pool → neutral dark-ambient (or shared combat theme).
   const fallbackId =
-    effectiveMood === "combat"
-      ? combatAlt
-        ? DEFAULT_COMBAT_TRACKS[1]
-        : DEFAULT_COMBAT_TRACK
-      : DEFAULT_TRACK
+    effectiveMood === "combat" ? combatTrackId || DEFAULT_COMBAT_TRACK : DEFAULT_TRACK
   const track = getTrackById(fallbackId) || getTrackById(DEFAULT_TRACK) || MUSIC_LIBRARY[0]
   return { track, locationLabel: "neutral", mood: effectiveMood }
 }
@@ -183,14 +182,15 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
   // player mounts mid-fight) and playback is idle, start it — unless the
   // listener has music switched off, which always wins. The ref arms once per
   // fight: pausing mid-combat is respected until the next one begins.
-  // Each fight also flips a coin between the two shared combat themes. State
-  // (not a ref) so the re-render recomputes the selection with the new pick.
-  const [combatAlt, setCombatAlt] = useState(false)
+  // Each fight also deals a fresh theme from the shuffle bag, so no two fights
+  // in a row sound the same. State (not a ref) so the re-render recomputes the
+  // selection with the new pick.
+  const [combatTrackId, setCombatTrackId] = useState<string | undefined>(undefined)
   const prevCombat = useRef(false)
   useEffect(() => {
     if (inCombat && !prevCombat.current) {
       prevCombat.current = true
-      setCombatAlt(Math.random() < 0.5)
+      setCombatTrackId(nextCombatTrackId())
       if (!enabled && !isMusicOff()) {
         setEnabled(true)
         setMusicStarted(true)
@@ -223,7 +223,7 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
     inCombat,
     mood as ManifestMusicMood,
   )
-  const fallbackSelection = selectMusic(location, inCombat, mood, combatAlt)
+  const fallbackSelection = selectMusic(location, inCombat, mood, combatTrackId)
 
   const selectionLabel = manifestSelection ? manifestSelection.poolLabel : fallbackSelection.locationLabel
   const selectionMood = manifestSelection ? manifestSelection.mood : fallbackSelection.mood
@@ -350,6 +350,20 @@ export function DynamicMusic({ location, inCombat = false, mood = "ambient", cla
     return () => {
       if (fadeTimer.current) clearInterval(fadeTimer.current)
       detachGesture()
+      // Leaving the page must actually silence it. Removing a media element
+      // from the document is *specified* to pause it, but only after the
+      // browser reaches a stable state — and a route change (/battle back to
+      // the dashboard) mounts the next page's player before that lands, so the
+      // old combat track can keep playing over the new page's ambient one for
+      // a second or more. Pausing here is immediate and unconditional.
+      const audio = audioRef.current
+      if (audio) {
+        audio.pause()
+        // Drop the source too, or the element can be left buffering a track
+        // nobody is listening to.
+        audio.removeAttribute("src")
+        audio.load()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
