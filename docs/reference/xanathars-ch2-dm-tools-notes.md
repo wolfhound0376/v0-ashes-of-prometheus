@@ -10,7 +10,7 @@
 ## 1. Already used
 
 - **Tools and skills together (p. 78).** Proficiency in both a tool and a skill that apply to the same check may earn advantage, an added benefit, or a special use. Camp doc §18 applies it only where the book ties crafting to a skill: alchemist's supplies with Arcana.
-- **Alchemical Crafting (p. 79).** A character proficient with alchemist's supplies can, as part of a long rest, make one dose of **acid, alchemist's fire, antitoxin, oil, perfume or soap**. It costs half the item's value in raw materials, which are bought ahead at 1 lb per 50 gp. Camp doc §18 proposes these as catalog recipes; the catalog has all of them except soap.
+- **Alchemical Crafting (p. 79).** A character proficient with alchemist's supplies can, as part of a long rest, make one dose of **acid, alchemist's fire, antitoxin, oil, perfume or soap**. It costs half the item's value in raw materials, which are bought ahead at 1 lb per 50 gp. They're catalog recipes as of 2026-09-27 (camp doc §18); soap is left out because the catalog has no soap row.
 
 ## 2. Camp and rest rules the book adds — candidates for the camp module
 

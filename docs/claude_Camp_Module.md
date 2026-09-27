@@ -465,22 +465,12 @@ Notes on the whole chapter live in `docs/reference/xanathars-ch2-dm-tools-notes.
 - **Either tool makes the item.** A recipe may carry `alt_tools`. The crafter uses the first tool they're proficient with (and carry). The DC and the ability pair follow that tool, both at the start and when the roll is settled. Antitoxin is the case in point: the SRD's Herbalism Kit, or Xanathar's alchemist's supplies.
 - **Tools and skills together: advantage.** Xanathar's lets a check be made with advantage when the character is proficient with both the tool and the skill that applies. Only alchemist's supplies ties crafting to a skill (Alchemical Crafting names Arcana), so only that pair is in `CRAFT_ADVANTAGE_SKILL`. The menu shows "advantage (Arcana)". The player's line says so, and Malachar asks for the roll with advantage. The engine reads the kept d20 either way.
 
-**Alchemical Crafting recipes — shown, NOT run.** Xanathar's names what alchemist's supplies make: acid, alchemist's fire, antitoxin, oil, perfume and soap. The catalog has all of those except soap. This SQL would give Fifi, who is proficient with Alchemist's Supplies, a lit Alchemy tab the day she carries the supplies and the gold:
-
-```sql
--- PROPOSAL — not applied. Run only after Sam says yes.
-update public.items
-   set properties = coalesce(properties, '{}'::jsonb)
-     || '{"craft": {"tools": "Alchemist''s Supplies", "source": "Xanathar''s Guide to Everything, Tool Proficiencies — Alchemical Crafting"}}'::jsonb,
-       updated_at = now()
- where slug in ('acid-vial', 'alchemists-fire', 'lamp-oil', 'perfume-vial');
-
--- Antitoxin keeps the SRD's Herbalism Kit and gains alchemist's supplies.
-update public.items
-   set properties = jsonb_set(properties, '{craft,alt_tools}', '["Alchemist''s Supplies"]'::jsonb),
-       updated_at = now()
- where slug = 'antitoxin' and properties ? 'craft';
-```
+**Alchemical Crafting recipes — APPLIED 2026-09-27** (Sam: "ADD THE ALCHEMY RECIPES TO THE CATALOG"). SQL: `supabase/migrations/20260927050000_alchemical_crafting_recipes.sql`.
+- Alchemist's supplies now make **acid, alchemist's fire, lamp oil and perfume**.
+- Antitoxin gains alchemist's supplies next to the SRD's herbalism kit.
+- There's no soap row in the catalog, so soap isn't a recipe.
+- **Eight recipes are live in total.** Only Fifi is proficient with alchemist's supplies. She has no set in her pack and 0 gp, so her Alchemy tab stays dim until she has both. When it lights, Arcana gives her advantage if she's proficient.
+- **Price to check:** the catalog lists lamp oil at **1 gp**, but the SRD price of a flask of oil is **1 sp**. The `value` column is whole gold pieces, so the catalog can't say 1 sp. Its materials therefore come to 0.5 gp rather than 5 cp.
 
 ---
 
@@ -534,4 +524,4 @@ Xanathar's Guide ch. 2 gives several tools a special use that takes a rest. Sam 
   - Code: `xpShares`, and the `[NPC_LEAVE:]` handling in `/api/chat`.
 - **Tool uses at rest:** see §19.
 
-**Still waiting on Sam:** the Alchemical Crafting recipes (§18 SQL, not run).
+**Alchemical Crafting recipes:** applied the same evening (§18).
