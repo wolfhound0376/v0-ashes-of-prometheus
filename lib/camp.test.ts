@@ -15,6 +15,10 @@ import {
   campRest,
   campPurpose,
   craftProgress,
+  craftMenu,
+  craftCategoryOf,
+  purseGp,
+  toolKey,
   faceRng,
   hitDieFace,
   levelUpPatch,
@@ -157,7 +161,7 @@ describe("camp action budget", () => {
     expect(spendCampAction(2, "tend").ok).toBe(false)
     expect(spendCampAction(2, "sleep").remaining).toBe(2)
     for (const a of CAMP_ACTIONS) expect(CAMP_ACTION_RULES[a].source).toBeTruthy()
-    expect(CAMP_ACTIONS).toHaveLength(15) // 14 from Sam's list + train (§16)
+    expect(CAMP_ACTIONS).toHaveLength(15) // 14 from Sam's list + train (§17)
   })
 })
 
@@ -742,10 +746,76 @@ describe("levelling at camp", () => {
 })
 
 // ---------------------------------------------------------------------------
-// §16 TRAIN — the teaching path (docs/claude_Earned_Proficiency.md path C)
+// §16 the crafting menu
 // ---------------------------------------------------------------------------
 
-describe("§16 train — hours with a teacher, then the test", () => {
+describe("the crafting menu", () => {
+  // The four recipes the SRD ties to a tool, as the catalog rows will carry them.
+  const herb = { tools: "Herbalism Kit", source: "SRD 5.1 Equipment: Tools — Herbalism Kit" }
+  const poison = { tools: "Poisoner's Kit", source: "SRD 5.1 Equipment: Tools — Poisoner's Kit" }
+  const recipes = [
+    { id: "i1", slug: "potion-of-healing", name: "Potion of Healing", value: 50, properties: { craft: herb } },
+    { id: "i2", slug: "antitoxin", name: "Antitoxin (vial)", value: 50, properties: { craft: herb } },
+    { id: "i3", slug: "basic-poison-vial", name: "Basic Poison (vial)", value: 100, properties: { craft: poison } },
+    { id: "i4", slug: "drow-poison", name: "Drow poison", value: 200, properties: { craft: { ...poison, materials: [{ slug: "spider-venom-gland", qty: 1 }] } } },
+    { id: "i5", slug: "rope", name: "Rope", value: 1, properties: { srd: true } },
+    { id: "i6", slug: "mystery", name: "Mystery", value: 10, properties: { craft: { tools: "Navigator's Tools" } } },
+  ]
+
+  it("reads tools loosely and sorts them onto Sam's three tabs", () => {
+    expect(toolKey("Tinker's Tools (Artificer Kit)")).toBe("tinkers tools")
+    expect(toolKey("Poisoner’s Kit")).toBe("poisoners kit")
+    expect(craftCategoryOf({ tools: "Herbalism Kit" })).toBe("alchemy")
+    expect(craftCategoryOf({ tools: "Building Hammer" })).toBe("construct")
+    expect(craftCategoryOf({ tools: "Tinker's Tools (Artificer Kit)" })).toBe("artifice")
+    expect(craftCategoryOf({ tools: "Navigator's Tools" })).toBeNull()
+    expect(craftCategoryOf({ tools: "Navigator's Tools", category: "artifice" })).toBe("artifice")
+  })
+
+  it("the coin purse counts in gold, SRD rates", () => {
+    expect(purseGp({ pp: 1, gp: 2, ep: 2, sp: 5, cp: 50 })).toBe(14)
+    expect(purseGp(null)).toBe(0)
+  })
+
+  it("lights an option only with proficiency, the tool in the pack, the materials and the gold", () => {
+    const menu = craftMenu({
+      recipes,
+      proficiencies: ["Herbalism Kit", "Thieves' Tools"],
+      carried: [{ name: "Herbalism Kit", quantity: 1, slug: "herbalism-kit" }],
+      currency: { gp: 30 },
+    })
+    expect(menu.construct).toEqual([])
+    expect(menu.artifice).toEqual([])
+    const byName = Object.fromEntries(menu.alchemy.map((o) => [o.name, o]))
+    expect(byName["Potion of Healing"]).toMatchObject({ available: true, missing: [], materialsGp: 25, category: "alchemy" })
+    expect(byName["Antitoxin (vial)"].available).toBe(true)
+    expect(byName["Basic Poison (vial)"]).toMatchObject({ available: false })
+    expect(byName["Basic Poison (vial)"].missing).toEqual([
+      "Not proficient with Poisoner's Kit.",
+      "No Poisoner's Kit carried.",
+      "Needs 50 gp of materials (30 gp in the purse).",
+    ])
+    expect(byName["Drow poison"].missing).toContain("Needs 1 spider venom gland (0 carried).")
+    // Lit first, then by name; unknown tools and non-recipes never appear.
+    expect(menu.alchemy.map((o) => o.name)).toEqual(["Antitoxin (vial)", "Potion of Healing", "Basic Poison (vial)", "Drow poison"])
+  })
+
+  it("a proficient poisoner with kit, gland and gold sees drow poison lit; a facility is required only when named", () => {
+    const menu = craftMenu({
+      recipes: [recipes[3], { ...recipes[2], properties: { craft: { ...poison, requires: "Alchemy lab" } } }],
+      proficiencies: ["Poisoner's Kit"],
+      carried: [{ name: "Poisoner's Kit", quantity: 1 }, { name: "Spider Venom Gland", quantity: 2, slug: "spider-venom-gland" }],
+      currency: { gp: 150 },
+    })
+    expect(menu.alchemy.find((o) => o.slug === "drow-poison")).toMatchObject({ available: true, materialsGp: 100 })
+    expect(menu.alchemy.find((o) => o.slug === "basic-poison-vial")?.missing).toEqual(["Needs a Alchemy lab nearby."])
+  })
+})
+
+// §17 TRAIN — the teaching path (docs/claude_Earned_Proficiency.md path C)
+// ---------------------------------------------------------------------------
+
+describe("§17 train — hours with a teacher, then the test", () => {
   const eldeth = { id: "t-eldeth", name: "Eldeth Feldrun", sheet_skill_proficiencies: { "Animal Handling": "proficient" }, skills: null }
   const buppido = { id: "t-buppido", name: "Buppido", sheet_skill_proficiencies: {}, skills: "Stealth +4" }
   const base = {

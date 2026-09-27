@@ -39,7 +39,7 @@ import {
   // PR 5 — spending camp actions, and the three the dice settle.
   parseCampActions, decideCampAction, campPurpose, parseCampPurpose, settleForage, settlePerform,
   bardUpgrade, CAMP_ACTION_STRIP_RE, CAMP_CHECK_SKILL,
-  // §16 — training: the teaching path of earned proficiency.
+  // §17 — training: the teaching path of earned proficiency.
   decideTraining, parseTrainingArgs, settleTraining, type TeacherRow,
   // PR 4 — levelling at camp, and the one XP table.
   normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext,
@@ -877,7 +877,7 @@ STRICT LIMITS ON USING THESE:
               campResults.push(out.note)
               console.log(`[camp] perform settled: ${total} — ${out.band}${out.lifts ? ", budgets lifted" : ""}`)
             } else if (linked.action === "train") {
-              // === THE TEACHING TEST (lib/camp.ts §16) ===
+              // === THE TEACHING TEST (lib/camp.ts §17) ===
               // The dice ledger already counted this roll against the
               // teaching stake when it was accepted (lib/skill-progress-apply),
               // and any award is in the EARNED PROFICIENCY block below. Here
@@ -927,7 +927,7 @@ STRICT LIMITS ON USING THESE:
         const { data: pool } = await timeAdmin.from("party_supplies").select("supplies").limit(1).maybeSingle()
         supplies = Math.max(0, Number(pool?.supplies ?? 0))
       }
-      // === TESTS READY (lib/camp.ts §16) ===
+      // === TESTS READY (lib/camp.ts §17) ===
       // Whose lessons have added up. Malachar is told the fact and the DC,
       // never the hours — the tally stays hidden, like gravity.
       const testsReady: { name: string; teacher: string; skill: string; dc: number }[] = []
@@ -3511,7 +3511,7 @@ Rules:
           continue
         }
 
-        // === TRAIN (lib/camp.ts §16) ===
+        // === TRAIN (lib/camp.ts §17) ===
         // Hours with a teacher who really has the skill, or - once the hours
         // are banked - the test on the student's own dice. The teacher is
         // looked up by name among every character at the table (companions

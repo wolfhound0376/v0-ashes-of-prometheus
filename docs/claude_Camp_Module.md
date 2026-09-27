@@ -328,7 +328,65 @@ Sam, answering the three questions above:
 - **Stored `passive_perception` isn't recomputed.** When the proficiency bonus rises (level 5, 9, 13, 17), a character proficient in Perception will show a stale passive score until it's corrected. It doesn't bite before level 5.
 - **XP still goes to one character.** The award gives the whole `xp_value` to the killer, not divided among the party as the SRD does (§7). Out of scope here, unchanged.
 
-## 16. PR 6 — train: the teaching path of earned proficiency (2026-09-27)
+---
+
+## 16. The crafting menu (Sam, 2026-09-27)
+
+> "2. Based on what is being done. When you choose crafting in camp there should be a list (Alchemy, Construct, Artifice). Options avaialable light up if you have the proficiency and items."
+
+**The DC is set by what is being made.** It is not stored on the recipe. Malachar sets it when he calls for the roll, from the SRD's Typical Difficulty Classes (5 very easy, 10 easy, 15 medium, 20 hard, 25 very hard, 30 nearly impossible), for the thing actually being crafted.
+
+**The menu.** On the camp screen (`components/dashboard/compact-dashboard.tsx`, Camp tab), Craft and Brew are now one **Craft** button. It opens three tabs: **Alchemy, Construct, Artifice**. Each tab lists every catalog item carrying a recipe (`items.properties.craft`), so the menu can never offer something the catalog does not hold. `lib/camp.ts` `craftMenu` decides each option; `/api/camp/craft-menu` gathers the rows. The screen fetches its own data, so `app/page.tsx` (another session's lane) was not touched.
+
+An option **lights up** when the crafter has everything the SRD asks for:
+
+| Requirement | Read from | SRD |
+|---|---|---|
+| Proficiency with the recipe's tools | `sheet_proficiencies.tools` | "You must be proficient with tools related to the object" |
+| The tools themselves, carried | `inventory_items` | a kit you lack can't be used |
+| Any materials the recipe names | `inventory_items` | "access to special materials" |
+| Half the market value in gold | `sheet_currency` (pp/gp/ep/sp/cp at SRD rates) | "raw materials worth half the total market value" |
+| The facility, when the recipe names one | the party node's `metadata.facilities` | "a forge in order to craft a sword" |
+
+A **dimmed** option lists what's missing in plain words ("No Poisoner's Kit carried.", "Needs 50 gp of materials (30 gp in the purse)."). Lit options come first. Each tab shows a count of what's lit.
+
+**Until the crafting roll is wired**, a lit option reads "Ready — the crafting roll is coming soon" instead of a button that would cost nothing and make nothing. Two answers still wire it: which ability the roll uses, and what one success buys (§14).
+
+### The recipes — SRD-sourced, shown, NOT run
+
+The catalog has **0 recipes** today, so every tab would say "No recipes in the catalog yet". Four catalog items have a tool the SRD names outright. This is the SQL to give them recipes. **It has not been run.**
+
+```sql
+-- PROPOSAL — not applied. Run in the Supabase SQL editor only after Sam says yes.
+-- SRD 5.1 Equipment: Tools — "proficiency with this kit is required to create
+-- antitoxin and potions of healing" (Herbalism Kit); "the creation of poisons"
+-- (Poisoner's Kit). Tab: Alchemy (read from the tool).
+update public.items
+   set properties = coalesce(properties, '{}'::jsonb)
+     || '{"craft": {"tools": "Herbalism Kit", "source": "SRD 5.1 Equipment: Tools — Herbalism Kit"}}'::jsonb
+ where slug in ('potion-of-healing', 'antitoxin');
+
+update public.items
+   set properties = coalesce(properties, '{}'::jsonb)
+     || '{"craft": {"tools": "Poisoner''s Kit", "source": "SRD 5.1 Equipment: Tools — Poisoner''s Kit"}}'::jsonb
+ where slug in ('basic-poison-vial', 'drow-poison');
+```
+
+Named materials are left off. The catalog's "spider venom gland feeds drow poison" note is homebrew, so adding it as a required material is Sam's call.
+
+**Construct and Artifice have no recipes a source supports.** The catalog has their tools (Building Hammer; Tinker's Tools), but nothing says what they make. Those tabs stay honest ("No recipes yet") until Sam names outputs. Alchemist's Fire and Acid are *not* tied to Alchemist's Supplies by the SRD text, so they're left out too.
+
+### Needs Sam's yes
+
+- **Run the recipe SQL above?**
+- **Which tools sit on which tab.** Claude's grouping of the SRD's tools under Sam's three names, in `TOOL_CATEGORY`:
+  - **Alchemy:** Alchemist's Supplies, Herbalism Kit, Poisoner's Kit, Brewer's Supplies.
+  - **Construct:** Building Hammer, and the smith's, carpenter's, mason's, leatherworker's, woodcarver's, weaver's, cobbler's, potter's and glassblower's tools.
+  - **Artifice:** Tinker's Tools, Jeweler's Tools.
+
+  A recipe's own `category` always overrides the grouping.
+
+## 17. PR 6 — train: the teaching path of earned proficiency (2026-09-27)
 
 Owned by `docs/claude_Earned_Proficiency.md` §1 path C and §4; the action lives here because hours accrue only at camp. Homebrew throughout.
 

@@ -36,7 +36,7 @@ export const TIME_EVENT_TYPES = [
   // minutes so time_log can say whether the party is camping.
   "make_camp",
   "break_camp",
-  // Earned proficiency (lib/camp.ts §16): hours of instruction at camp. No
+  // Earned proficiency (lib/camp.ts §17): hours of instruction at camp. No
   // rule row — the minutes are the hours banked, passed explicitly.
   "training",
 ] as const
