@@ -470,7 +470,7 @@ Notes on the whole chapter live in `docs/reference/xanathars-ch2-dm-tools-notes.
 - Antitoxin gains alchemist's supplies next to the SRD's herbalism kit.
 - There's no soap row in the catalog, so soap isn't a recipe.
 - **Eight recipes are live in total.** Only Fifi is proficient with alchemist's supplies. She has no set in her pack and 0 gp, so her Alchemy tab stays dim until she has both. When it lights, Arcana gives her advantage if she's proficient.
-- **Price to check:** the catalog lists lamp oil at **1 gp**, but the SRD price of a flask of oil is **1 sp**. The `value` column is whole gold pieces, so the catalog can't say 1 sp. Its materials therefore come to 0.5 gp rather than 5 cp.
+- **Lamp oil fixed to 1 sp** (Sam, same evening). `value` is whole gold, so the row follows the Rations convention: `value 0`, `properties.price "1 sp"`, and `craft.cost_gp 0.05`, which is the SRD's half, 5 cp. See `20260927060000_lamp_oil_price_and_bastet.sql`.
 
 ---
 
@@ -498,7 +498,7 @@ Xanathar's Guide ch. 2 gives several tools a special use that takes a rest. Sam 
 
 - **"2024 for subclass."** Every class takes its subclass at **level 3** (`SUBCLASS_LEVEL`). That includes clerics, sorcerers and warlocks (2014: level 1) and druids and wizards (2014: level 2).
   - Samson, Kenta, Fifi and Scott choose at 3.
-  - **Bastet (barbarian 5) has no path on her sheet.** Her player should record one.
+  - ~~Bastet (barbarian 5) has no path on her sheet.~~ **Bastet archived** (Sam: "We can remove Bastet's player"). It's a soft delete, reversible from the DM panel. The camp and rest party lists now skip archived characters, so she no longer eats rations or gets camp actions.
 - **"Malachar can make up names; that's fine."** No generator. A spoken name is canon (`npc_encounters` keys faces and voices by name).
 - **"Beads of nourishment can go in the catalog and count towards rations."**
   - **Catalog:** `bead-of-nourishment` added (XGE p. 136, `properties.rations = 1`). Data only; `supabase/migrations/20260927030000_bead_of_nourishment.sql`; APPLIED.
