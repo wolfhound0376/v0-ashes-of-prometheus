@@ -35,6 +35,7 @@ import {
   // PR 3 — the camp itself: whether the party is camping, what the rations
   // buy, the passive roll at the end of the rest, and Malachar's CAMP block.
   isCamping, campRest, makeCampBudget, affordableRest, passiveCampEncounter, storedVisitor,
+  rationsOnHand, spendRations, type PackRation, dawnRecharges,
   formatCampBlock, type CampRestDecision, type StoredVisitor, type WatchNode,
   // PR 5 — spending camp actions, and the three the dice settle.
   parseCampActions, decideCampAction, campPurpose, parseCampPurpose, settleForage, settlePerform,
@@ -42,9 +43,10 @@ import {
   // §17 — training: the teaching path of earned proficiency.
   decideTraining, parseTrainingArgs, settleTraining, type TeacherRow,
   // PR 4 — levelling at camp, and the one XP table.
-  normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext,
+  normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext, xpShares,
   // §18 — the crafting roll.
   craftMenu, craftSpec, craftModifier, keptD20, craftMaterialsGp, payFromPurse, settleCraftRoll, toolKey, toolForCrafter,
+  parseCraftOptions, settleTake10, CRAFT_TAKE10_ACTIONS, craftingLine,
   type CraftMenuRecipeRow, type CarriedItem,
   type LevelUpSheet,
 } from "@/lib/camp"
@@ -232,6 +234,77 @@ function deathCueFor(
     if (voice?.gender === "female") return "creature/death_humanoid_female"
   }
   return null
+}
+
+// === RATIONS: THE POOL PLUS WHAT THE PLAYERS CARRY (camp doc §10) ===
+// Sam, 2026-09-27: beads of nourishment count towards rations. Any catalog
+// item with `properties.rations` counts, carried by a player. The pool is
+// spent first; beads only once it runs dry (lib/camp.ts `spendRations`).
+interface PartyRations { poolId: string | null; pool: number; packs: PackRation[]; total: number }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readPartyRations(client: any): Promise<PartyRations> {
+  const { data: row } = await client.from("party_supplies").select("id, supplies").limit(1).maybeSingle()
+  const pool = Math.max(0, Number(row?.supplies ?? 0))
+  let packs: PackRation[] = []
+  try {
+    // Three plain reads rather than one embed: inventory_items has two
+    // foreign keys to characters (owner, and `confiscated_from`), so an
+    // embed would be ambiguous. A confiscated bead sits in the drow stash,
+    // not a player's pack, and does not feed anyone.
+    const { data: foods } = await client.from("items").select("id, properties").not("properties->rations", "is", null)
+    const per = new Map<string, number>(
+      ((foods ?? []) as { id: string; properties?: { rations?: unknown } | null }[])
+        .map((f) => [f.id, Math.max(0, Number(f.properties?.rations ?? 0))] as [string, number])
+        .filter(([, n]) => n > 0),
+    )
+    if (per.size > 0) {
+      const { data: players } = await client.from("characters").select("id").eq("is_player", true)
+      const ids = ((players ?? []) as { id: string }[]).map((c) => c.id)
+      if (ids.length > 0) {
+        const { data: carried } = await client
+          .from("inventory_items").select("id, quantity, item_id")
+          .in("item_id", [...per.keys()]).in("character_id", ids).is("confiscated_from", null)
+        packs = ((carried ?? []) as { id: string; quantity: number | null; item_id: string }[])
+          .map((r) => ({ id: r.id, quantity: Math.max(0, Number(r.quantity ?? 1)), per: per.get(r.item_id) ?? 0 }))
+          .filter((p) => p.quantity > 0 && p.per > 0)
+      }
+    }
+  } catch (e) {
+    console.warn("[camp] pack rations unavailable:", e)
+  }
+  return { poolId: (row?.id as string | undefined) ?? null, pool, packs, total: rationsOnHand(pool, packs) }
+}
+
+/** Charge `cost` rations; returns how many are left afterwards. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function chargePartyRations(client: any, r: PartyRations, cost: number): Promise<number> {
+  const out = spendRations(r.pool, r.packs, cost)
+  const now = new Date().toISOString()
+  if (r.poolId && out.poolAfter !== r.pool) {
+    await client.from("party_supplies").update({ supplies: out.poolAfter, updated_at: now }).eq("id", r.poolId)
+  }
+  for (const p of out.packs) {
+    if (p.quantity <= 0) await client.from("inventory_items").delete().eq("id", p.id)
+    else await client.from("inventory_items").update({ quantity: p.quantity, updated_at: now }).eq("id", p.id)
+  }
+  return r.total - out.spent
+}
+
+/**
+ * A finished craft goes into the pack — the catalog row, never an invented
+ * one. A stack grows; otherwise a new row. Returns the error message, if any.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function addCraftedToPack(client: any, characterId: string, item: any, qty: number): Promise<string | null> {
+  const { data: stack } = await client.from("inventory_items")
+    .select("id, quantity").eq("character_id", characterId).eq("item_id", item.id).limit(1).maybeSingle()
+  const { error } = stack
+    ? await client.from("inventory_items").update({ quantity: Number(stack.quantity ?? 1) + qty, updated_at: new Date().toISOString() }).eq("id", stack.id)
+    : await client.from("inventory_items").insert({
+        character_id: characterId, item_id: item.id, name: item.name, quantity: qty,
+        item_type: item.item_type, value: item.value, weight: item.weight, description: item.description,
+      })
+  return error?.message ?? null
 }
 
 async function findSharedActiveEncounter(supabase: any, name: string) {
@@ -866,9 +939,9 @@ STRICT LIMITS ON USING THESE:
                   .eq("purpose", "camp:perform:inspired").gt("created_at", made.created_at)
                 lifted = (count ?? 0) > 0
               }
-              const { data: pool } = await timeAdmin.from("party_supplies").select("supplies").limit(1).maybeSingle()
+              const rations = await readPartyRations(timeAdmin)
               const { data: campers } = await timeAdmin.from("characters").select("id, rest_actions_remaining").eq("is_player", true)
-              const kind = affordableRest(pool?.supplies ?? 0, (campers ?? []).length).kind
+              const kind = affordableRest(rations.total, (campers ?? []).length).kind
               const out = settlePerform(name, total, kind, lifted)
               if (out.lifts) {
                 for (const c of campers ?? []) {
@@ -887,7 +960,7 @@ STRICT LIMITS ON USING THESE:
               // is one hour of work; success banks it, failure wastes it.
               const { data: project } = await timeAdmin
                 .from("crafting_projects")
-                .select("id, character_id, item_id, successes, attempts, finished_at")
+                .select("id, character_id, item_id, successes, attempts, finished_at, copies")
                 .eq("id", linked.arg)
                 .eq("character_id", playerCharacter.id)
                 .maybeSingle()
@@ -905,7 +978,8 @@ STRICT LIMITS ON USING THESE:
               // tools this crafter is proficient with.
               const profTools = (crafter?.sheet_proficiencies as { tools?: unknown } | null)?.tools
               const tool = recipe ? toolForCrafter(recipe, Array.isArray(profTools) ? profTools.filter((t): t is string => typeof t === "string") : []) : null
-              const spec = item && recipe && tool ? craftSpec({ rarity: item.rarity as string | null, item_type: item.item_type as string | null }, recipe, tool).spec : null
+              const copies = Math.max(1, Number(project?.copies ?? 1))
+              const spec = item && recipe && tool ? craftSpec({ rarity: item.rarity as string | null, item_type: item.item_type as string | null }, recipe, tool, { copies }).spec : null
               if (!project || project.finished_at || !item || !spec || face == null) {
                 campResults.push(`${name}'s crafting roll could not be settled — nothing changed.`)
               } else {
@@ -926,19 +1000,10 @@ STRICT LIMITS ON USING THESE:
                   campResults.push(`${name}'s crafting could not be recorded — tell the DM.`)
                 } else {
                   if (out.done) {
-                    // The finished item goes into the pack — the catalog row,
-                    // never an invented one. A stack grows; otherwise a new row.
-                    const { data: stack } = await timeAdmin.from("inventory_items")
-                      .select("id, quantity").eq("character_id", playerCharacter.id).eq("item_id", item.id).limit(1).maybeSingle()
-                    const { error: packErr } = stack
-                      ? await timeAdmin.from("inventory_items").update({ quantity: Number(stack.quantity ?? 1) + 1, updated_at: new Date().toISOString() }).eq("id", stack.id)
-                      : await timeAdmin.from("inventory_items").insert({
-                          character_id: playerCharacter.id, item_id: item.id, name: item.name, quantity: 1,
-                          item_type: item.item_type, value: item.value, weight: item.weight, description: item.description,
-                        })
-                    if (packErr) console.error("[camp] craft into pack:", packErr.message)
+                    const packErr = await addCraftedToPack(timeAdmin, playerCharacter.id, item, copies)
+                    if (packErr) console.error("[camp] craft into pack:", packErr)
                   }
-                  campResults.push(out.note)
+                  campResults.push(copies > 1 && out.done ? out.note.replace(`the ${item.name}`, `${copies} ${item.name}s`) : out.note)
                 }
                 console.log(`[camp] craft settled: d20(${face}) + ${mod.modifier} (${mod.ability.toUpperCase()}+prof) = ${out.total} vs DC ${spec.dc} — ${out.success ? "success" : "fail"} (${out.successes}/${spec.checks})`)
               }
@@ -990,8 +1055,7 @@ STRICT LIMITS ON USING THESE:
         budgets = (campers ?? []).map((c: { name: string; rest_actions_remaining: number | null }) => ({
           name: String(c.name), remaining: Math.max(0, Number(c.rest_actions_remaining ?? 0)),
         }))
-        const { data: pool } = await timeAdmin.from("party_supplies").select("supplies").limit(1).maybeSingle()
-        supplies = Math.max(0, Number(pool?.supplies ?? 0))
+        supplies = (await readPartyRations(timeAdmin)).total
       }
       // === TESTS READY (lib/camp.ts §17) ===
       // Whose lessons have added up. Malachar is told the fact and the DC,
@@ -1039,7 +1103,41 @@ STRICT LIMITS ON USING THESE:
           console.warn("[camp] training state unavailable this turn:", e)
         }
       }
-      campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor, results: campResults, testsReady })
+      // === CRAFTING (lib/camp.ts §18) ===
+      // Where every project stands, so Malachar never guesses progress —
+      // take 10 banks its hour with no roll, so this is how he hears of it.
+      const crafting: string[] = []
+      if (campingBefore) {
+        try {
+          const { data: made } = await timeAdmin
+            .from("time_log").select("created_at").eq("session_id", activeSessionId).eq("event_type", "make_camp")
+            .order("created_at", { ascending: false }).limit(1).maybeSingle()
+          const { data: projects } = await timeAdmin
+            .from("crafting_projects")
+            .select("successes, copies, finished_at, items(name, rarity, item_type, properties), characters(name, sheet_proficiencies)")
+            .or(made?.created_at ? `finished_at.is.null,finished_at.gte.${made.created_at}` : "finished_at.is.null")
+          for (const pr of (projects ?? []) as unknown as {
+            successes: number; copies: number | null; finished_at: string | null
+            items: { name: string; rarity: string | null; item_type: string | null; properties: { craft?: Parameters<typeof craftSpec>[1] } | null } | null
+            characters: { name: string; sheet_proficiencies: { tools?: unknown } | null } | null
+          }[]) {
+            const recipe = pr.items?.properties?.craft
+            if (!pr.items || !pr.characters || !recipe) continue
+            const profs = pr.characters.sheet_proficiencies?.tools
+            const tool = toolForCrafter(recipe, Array.isArray(profs) ? profs.filter((t): t is string => typeof t === "string") : []) ?? recipe.tools
+            const copies = Math.max(1, Number(pr.copies ?? 1))
+            const spec = craftSpec({ rarity: pr.items.rarity, item_type: pr.items.item_type }, recipe, tool, { copies }).spec
+            if (!spec) continue
+            crafting.push(craftingLine({
+              crafter: pr.characters.name, item: pr.items.name, copies,
+              successes: Number(pr.successes ?? 0), checks: spec.checks, finished: !!pr.finished_at,
+            }))
+          }
+        } catch (e) {
+          console.warn("[camp] crafting status unavailable:", e)
+        }
+      }
+      campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor, results: campResults, testsReady, crafting })
     } catch (e) {
       console.warn("[camp] state unavailable this turn:", e)
     }
@@ -1653,6 +1751,10 @@ INTERPRETING PLAYER MESSAGES:
 EXPERIENCE POINTS:
 - When players defeat monsters, complete quests, or achieve milestones, announce XP awards narratively
 - Follow D&D 5E XP values based on CR
+- XP is SHARED: the system splits a defeated creature's XP evenly across the seated party (NPC companions get none). Announce the share each player gets, never the whole sum to one of them.
+
+MAGIC ITEM CHARGES:
+- There is no dawn in the Underdark. Anything that recharges "at dawn" recharges when a long rest ends. The rest report names which items refill; never refill one mid-day.
 
 ════════════════════════════════════════════════════════════════════
 LENGTH — THIS OVERRIDES EVERY OTHER INSTRUCTION ABOVE
@@ -2654,45 +2756,47 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${
           if (death) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: death })
         }
 
-        // Award XP if the NPC has xp_value (true defeat)
+        // Award XP if the NPC has xp_value (true defeat).
+        // Sam, 2026-09-27: "XP is shared across the active party except NPCs."
+        // Split evenly over the seated players plus whoever landed the blow
+        // (lib/camp.ts `xpShares`). Service-role reads and writes: characters
+        // is read-only to the anon key since the 2026-08-20 security pass.
         if (npc.xp_value && (npc.hp_current || 0) <= 0) {
-          console.log("[v0] Awarding", npc.xp_value, 'XP for defeating', name)
-
-          // Get current XP and level to check for level-up
-          const { data: char } = await supabase
+          const xpAdmin = createAdminClient()
+          const { data: roster } = await xpAdmin
             .from("characters")
-            .select("xp, level")
-            .eq("id", playerCharacter.id)
-            .single()
+            .select("id, name, xp, level, is_player, character_type, in_party, archived_at")
+            .or(`in_party.eq.true,id.eq.${playerCharacter.id}`)
+          const rows = (roster ?? []) as { id: string; name: string; xp: number | null; level: number | null; is_player: boolean | null; character_type: string | null; in_party: boolean | null; archived_at: string | null }[]
+          const shares = xpShares(npc.xp_value, rows, playerCharacter.id)
+          console.log("[v0] Awarding", npc.xp_value, "XP for defeating", name, "split", shares.length, "ways")
 
-          if (char) {
-            const newXp = (char.xp || 0) + npc.xp_value
-            // Service-role write: characters is read-only to the anon key
-            // since the 2026-08-20 security pass.
-            const { error: xpError } = await createAdminClient()
+          let anyLevel = false
+          for (const share of shares) {
+            const char = rows.find((r) => r.id === share.id)
+            if (!char) continue
+            const newXp = (char.xp || 0) + share.xp
+            const { error: xpError } = await xpAdmin
               .from("characters")
               .update({ xp: newXp })
-              .eq("id", playerCharacter.id)
+              .eq("id", char.id)
 
             if (xpError) {
-              console.error("[v0] Error awarding XP:", xpError)
+              console.error("[v0] Error awarding XP to", char.name, xpError)
+              continue
+            }
+            // Did this cross a level threshold? The one XP table is lib/camp
+            // (SRD, via lib/game-data). The level itself is NOT written here —
+            // levels are taken at camp (camp doc §15).
+            const earnedLevel = levelForXp(newXp)
+            if (earnedLevel > (char.level || 1)) {
+              anyLevel = true
+              console.log("[v0] XP for level", earnedLevel, "—", char.name, "takes it at camp | XP:", newXp)
             } else {
-              // Did this cross a level threshold? The one XP table is lib/camp
-              // (SRD, via lib/game-data). The inline array this replaces broke
-              // past level 10: findIndex returned -1, which is truthy, so the
-              // sting never played. The level itself is NOT written here —
-              // levels are taken at camp (camp doc §15).
-              const earnedLevel = levelForXp(newXp)
-              const leveledUp = earnedLevel > (char.level || 1)
-
-              if (leveledUp) {
-                console.log("[v0] XP for level", earnedLevel, "— taken at camp | XP:", newXp)
-                sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
-              } else {
-                console.log("[v0] XP awarded. Total XP:", newXp, "| Next level at:", xpToNext(char.level || 1))
-              }
+              console.log("[v0] XP awarded to", char.name, "+", share.xp, "| Total:", newXp, "| Next level at:", xpToNext(char.level || 1))
             }
           }
+          if (anyLevel) sfxCues.push({ type: "raw" as const, scope: "party" as const, key: "ui/level_up" })
         }
       }
 
@@ -3487,8 +3591,7 @@ Rules:
     if (makingCamp) {
       // Sam, 2026-09-26: two actions on a full rest, one on a partial, decided
       // by the rations on hand when camp is made.
-      const { data: pool } = await admin.from("party_supplies").select("supplies").limit(1).maybeSingle()
-      const afford = affordableRest(pool?.supplies ?? 0, await countPartyForCamp())
+      const afford = affordableRest((await readPartyRations(admin)).total, await countPartyForCamp())
       const budget = makeCampBudget(afford.kind)
       await setCampBudgets(budget)
       console.log(`[camp] camp made — rations buy ${afford.kind ?? "no"} rest; ${budget} camp action(s) each.`)
@@ -3586,17 +3689,24 @@ Rules:
         // needs the hour. The roll is settled next turn from the table's die.
         if (normaliseCampAction(tag.action) === "artifice" || normaliseCampAction(tag.action) === "brew") {
           const want = toolKey(tag.args[0] ?? "")
+          // Two-Parts options after the item (Sam, 2026-09-27): "take 10" —
+          // no roll, sure success, twice as long (both of a full rest's
+          // actions); "two copies" — a consumable's full time for two.
+          const opts = parseCraftOptions(tag.args.slice(1))
           const refuse = (why: string) => console.log(`[camp] action: ${row.name} — craft refused: ${why} Nothing spent.`)
           if (!want) { refuse("no item named."); continue }
           if (!campingAtRest) { refuse("the party is not camped."); continue }
-          if (!playerCharacter || playerCharacter.id !== row.id) { refuse("crafting is settled by their own roll, so only their own player can take it."); continue }
+          if (!playerCharacter || playerCharacter.id !== row.id) { refuse("crafting is the crafter's own choice, so only their own player can take it."); continue }
           const rollsD20 = !!thisRoll && thisRoll.die === "d20" && thisRoll.diceCount === 1 && !campCheckPurpose
-          if (!rollsD20) { refuse("needs their d20 crafting roll in the same reply."); continue }
+          if (!opts.take10 && !rollsD20) { refuse("needs their d20 crafting roll in the same reply (or take 10)."); continue }
+          if (opts.take10 && Math.max(0, Number(row.rest_actions_remaining ?? 0)) < CRAFT_TAKE10_ACTIONS) {
+            refuse(`taking 10 takes twice as long — both of a full rest's ${CRAFT_TAKE10_ACTIONS} camp actions.`); continue
+          }
           const [{ data: recipes }, { data: crafter }, { data: pack }, { data: open }] = await Promise.all([
-            admin.from("items").select("id, slug, name, value, rarity, item_type, properties").not("properties->craft", "is", null),
+            admin.from("items").select("id, slug, name, value, weight, description, rarity, item_type, properties").not("properties->craft", "is", null),
             admin.from("characters").select("id, sheet_proficiencies, sheet_currency, sheet_skill_proficiencies").eq("id", row.id).maybeSingle(),
             admin.from("inventory_items").select("name, quantity, items(slug)").eq("character_id", row.id),
-            admin.from("crafting_projects").select("id, item_id, successes").eq("character_id", row.id).is("finished_at", null),
+            admin.from("crafting_projects").select("id, item_id, successes, attempts, copies").eq("character_id", row.id).is("finished_at", null),
           ])
           const target = ((recipes ?? []) as CraftMenuRecipeRow[]).find((r) => toolKey(r.name) === want || toolKey(r.slug) === want)
           if (!target || !crafter) { refuse(`"${tag.args[0]}" is not on the crafting list.`); continue }
@@ -3605,27 +3715,36 @@ Rules:
           const carried: CarriedItem[] = ((pack ?? []) as { name: string; quantity: number | null; items: { slug: string | null } | { slug: string | null }[] | null }[])
             .map((r) => ({ name: r.name, quantity: r.quantity, slug: (Array.isArray(r.items) ? r.items[0] : r.items)?.slug ?? null }))
           const tools = (crafter.sheet_proficiencies as { tools?: unknown } | null)?.tools
+          const openRows = (open ?? []) as { id: string; item_id: string; successes: number; attempts: number; copies: number | null }[]
           const option = Object.values(craftMenu({
             recipes: [target], carried, currency: crafter.sheet_currency, facilities,
             skills: (crafter.sheet_skill_proficiencies ?? null) as Record<string, unknown> | null,
             proficiencies: Array.isArray(tools) ? tools.filter((t): t is string => typeof t === "string") : [],
-            openProjects: (open ?? []) as { item_id: string; successes: number }[],
+            openProjects: openRows,
           })).flat()[0]
           if (!option) { refuse(`"${target.name}" has no crafting tab.`); continue }
-          if (!option.available) { refuse(option.missing.join(" ")); continue }
+          const openRow = openRows.find((p) => p.item_id === target.id) ?? null
+          // An open project keeps the count it began with.
+          const copies = openRow ? Math.max(1, Number(openRow.copies ?? 1)) : opts.copies
+          if (!openRow && copies === 2) {
+            if (!option.twoCopies) { refuse(`only a consumable whose source doesn't print its own hours can be made two at a time.`); continue }
+            if (!option.twoCopies.available) { refuse(option.missing.length ? option.missing.join(" ") : `needs ${option.twoCopies.materialsGp} gp of materials for two.`); continue }
+          } else if (!option.available) { refuse(option.missing.join(" ")); continue }
           const d = decideCampAction({
             camping: true, who: row.name, action: "artifice", remaining: row.rest_actions_remaining,
             isSpeaker: true, requestSkill: thisRoll ? thisRoll.skill : undefined, merchantPresent,
           })
           if (!d.spend) { console.log(`[camp] action: ${d.note}`); continue }
+          // Taking 10 spends the whole evening: two actions, checked above.
+          const remainingAfter = opts.take10 ? Math.max(0, Number(row.rest_actions_remaining ?? 0) - CRAFT_TAKE10_ACTIONS) : d.remaining
           // Start the project (and pay for it) only when none is open.
-          let projectId = ((open ?? []) as { id: string; item_id: string }[]).find((p) => p.item_id === target.id)?.id ?? null
+          let projectId = openRow?.id ?? null
           if (!projectId) {
-            const cost = craftMaterialsGp(target.value, target.properties!.craft!)
+            const cost = craftMaterialsGp(target.value, target.properties!.craft!) * copies
             const purse = payFromPurse(crafter.sheet_currency, cost)
             if (!purse) { refuse(`cannot pay ${cost} gp of materials.`); continue }
             const { data: created, error: projErr } = await admin.from("crafting_projects")
-              .insert({ character_id: row.id, item_id: target.id, materials_gp_paid: Math.round(cost) })
+              .insert({ character_id: row.id, item_id: target.id, materials_gp_paid: Math.round(cost), copies })
               .select("id").maybeSingle()
             if (projErr || !created) { console.error("[camp] craft project:", projErr?.message); continue }
             const { error: payErr } = await admin.from("characters")
@@ -3639,11 +3758,34 @@ Rules:
             projectId = String(created.id)
           }
           const { error: spendErr } = await admin.from("characters")
-            .update({ rest_actions_remaining: d.remaining, updated_at: new Date().toISOString() }).eq("id", row.id)
+            .update({ rest_actions_remaining: remainingAfter, updated_at: new Date().toISOString() }).eq("id", row.id)
           if (spendErr) { console.error("[camp] spend:", spendErr.message); continue }
-          row.rest_actions_remaining = d.remaining
+          row.rest_actions_remaining = remainingAfter
+          if (opts.take10) {
+            // No dice: the hour is banked now. The CRAFTING line of the camp
+            // block tells Malachar the progress next turn.
+            const spec = craftSpec({ rarity: target.rarity ?? null, item_type: target.item_type ?? null }, target.properties!.craft!, option.tool, { copies }).spec
+            if (!spec) { console.error("[camp] take 10: no spec for", target.name); continue }
+            const out = settleTake10({
+              crafter: row.name, item: target.name, spec, copies,
+              successes: Number(openRow?.successes ?? 0), attempts: Number(openRow?.attempts ?? 0),
+            })
+            const { error: progErr } = await admin.from("crafting_projects").update({
+              successes: out.successes, attempts: out.attempts,
+              progress_gp: Math.round((Math.max(0, Number(target.value) || 0) * copies * out.successes) / spec.checks),
+              finished_at: out.done ? new Date().toISOString() : null,
+              updated_at: new Date().toISOString(),
+            }).eq("id", projectId)
+            if (progErr) { console.error("[camp] take 10 progress:", progErr.message); continue }
+            if (out.done) {
+              const packErr = await addCraftedToPack(admin, row.id, target, copies)
+              if (packErr) console.error("[camp] take 10 into pack:", packErr)
+            }
+            console.log(`[camp] action: ${out.note} (${CRAFT_TAKE10_ACTIONS} camp actions)`)
+            continue
+          }
           campCheckPurpose = { purpose: `camp:artifice:${projectId}`, skill: "" }
-          console.log(`[camp] action: ${row.name} — crafting ${target.name} with ${option.tool} (DC ${option.dc}, ${option.checks} good hour${option.checks === 1 ? "" : "s"}${option.advantage ? `, advantage from ${option.advantage}` : ""}); d20 to be rolled on the table.`)
+          console.log(`[camp] action: ${row.name} — crafting ${copies > 1 ? `${copies}× ` : ""}${target.name} with ${option.tool} (DC ${option.dc}, ${option.checks} good hour${option.checks === 1 ? "" : "s"}${option.advantage ? `, advantage from ${option.advantage}` : ""}); d20 to be rolled on the table.`)
           continue
         }
 
@@ -3796,10 +3938,10 @@ Rules:
       // character eats and drinks the full required amount." A starving party
       // that could rest its exhaustion away would make hunger an inconvenience
       // instead of a threat.
-      const { data: pool } = await timeAdmin
-        .from("party_supplies").select("id,supplies").limit(1).maybeSingle()
+      // The pool plus every bead of nourishment a player carries (§10).
+      const rations = await readPartyRations(timeAdmin)
       const partySize = (party ?? []).length
-      const before = Math.max(0, Number(pool?.supplies ?? 0))
+      const before = rations.total
       // AT CAMP, Sam's ration table (20 / 30 / 40) replaces the SRD's one
       // supply per mouth — never both — and decides whether the long rest
       // gives anything at all (lib/camp.ts `campRest`). Outside a camp the
@@ -3807,16 +3949,13 @@ Rules:
       const camp: CampRestDecision | null = campingAtRest ? campRest("full", before, partySize) : null
       const cost = camp ? camp.cost : suppliesForParty(partySize)
       const fed = camp ? camp.allowed : before >= cost && cost > 0
-      const after = fed ? before - cost : before
+      let after = before
       const refusedAtCamp = (name: string, hp: number | null, dice: number | null): RestOutcome => ({
         benefited: false, hp: Math.max(0, hp ?? 0), hitDiceRemaining: dice, slots: null,
         slotsRestored: 0, hitDiceBack: 0, clearTemp: false,
         note: `${name} gains nothing from the night — the rations did not buy a long rest.`,
       })
-      if (fed && pool?.id) {
-        await timeAdmin.from("party_supplies")
-          .update({ supplies: after, updated_at: new Date().toISOString() }).eq("id", pool.id)
-      }
+      if (fed) after = await chargePartyRations(timeAdmin, rations, cost)
 
       const notes: string[] = []
       notes.push(
@@ -3825,6 +3964,26 @@ Rules:
           : `NOBODY EATS — ${before} supplies for ${partySize} mouths.`,
       )
       if (camp) notes.push(`Camp: ${camp.note}`, ...camp.flags)
+      // Sam, 2026-09-27: "Dawn items charge at long rest" — no dawn down here.
+      if (!camp || camp.allowed) {
+        try {
+          const ids = (party ?? []).map((p: { id: string }) => p.id)
+          const names = new Map((party ?? []).map((p: { id: string; name: string }) => [p.id, p.name]))
+          const { data: gear } = ids.length
+            ? await timeAdmin.from("inventory_items").select("character_id, name, items(name, description, properties)")
+                .in("character_id", ids).is("confiscated_from", null).not("item_id", "is", null)
+            : { data: [] }
+          notes.push(...dawnRecharges(((gear ?? []) as unknown as { character_id: string; name: string; items: { name?: string; description?: string | null; properties?: { recharge?: unknown } | null } | null }[])
+            .map((g) => ({
+              owner: String(names.get(g.character_id) ?? "Someone"),
+              name: g.items?.name ?? g.name,
+              recharge: g.items?.properties?.recharge,
+              description: g.items?.description ?? null,
+            }))))
+        } catch (e) {
+          console.warn("[rest] dawn recharge lookup failed:", e)
+        }
+      }
 
       for (const p of party ?? []) {
         const conditions = Array.isArray(p.conditions) ? (p.conditions as unknown[]).map(String) : []
@@ -3997,13 +4156,10 @@ Rules:
     // AT CAMP the rations price the partial rest too (camp doc §10).
     let shortCamp: CampRestDecision | null = null
     if (shortRestArgs && campingAtRest) {
-      const { data: pool } = await admin.from("party_supplies").select("id,supplies").limit(1).maybeSingle()
+      const rations = await readPartyRations(admin)
       const size = await countPartyForCamp()
-      shortCamp = campRest("partial", pool?.supplies ?? 0, size)
-      if (shortCamp.allowed && shortCamp.cost > 0 && pool?.id) {
-        await admin.from("party_supplies")
-          .update({ supplies: shortCamp.suppliesAfter, updated_at: new Date().toISOString() }).eq("id", pool.id)
-      }
+      shortCamp = campRest("partial", rations.total, size)
+      if (shortCamp.allowed && shortCamp.cost > 0) await chargePartyRations(admin, rations, shortCamp.cost)
       if (shortCamp.allowed) await setCampBudgets(0)
       else await reopenCamp("the short rest was refused; food must be found before anyone rests.")
       if (!shortCamp.allowed) {
@@ -4147,8 +4303,7 @@ Rules:
         suppliesBefore = shortCamp.suppliesBefore
         suppliesAfter = shortCamp.suppliesAfter
       } else {
-        const { data: pool } = await admin.from("party_supplies").select("supplies").limit(1).maybeSingle()
-        suppliesBefore = suppliesAfter = Math.max(0, Number(pool?.supplies ?? 0))
+        suppliesBefore = suppliesAfter = (await readPartyRations(admin)).total
       }
       const shortRestVisitor = shortCamp?.allowed ? await rollCampVisitor() : null
       if (shortCamp) notes.unshift(`Camp: ${shortCamp.note}`)

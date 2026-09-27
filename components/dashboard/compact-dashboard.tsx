@@ -623,26 +623,54 @@ function CraftMenuPanel({
             </span>
             {o.progress && (
               <span className="text-xs text-[#c9a868]">
-                Under way: {o.progress.successes} of {o.progress.checks} done — materials already paid.
+                Under way{o.progress.copies > 1 ? ` (making ${o.progress.copies})` : ""}: {o.progress.successes} of {o.progress.checks} done — materials already paid.
               </span>
             )}
             {o.available ? (
               notYet ? (
                 <span className="text-xs text-[#c9a868]">Ready — the crafting roll is coming soon.</span>
               ) : (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    onCraft(
-                      `I spend my camp action ${o.progress ? "working on" : "crafting"} ${o.name} with my ${o.tool}.` +
-                        (o.advantage ? ` My ${o.advantage} training gives me advantage on the roll.` : ""),
-                    )
-                  }
-                  className="mt-1 self-start rounded-sm bg-[#c9a868] px-3 py-1.5 font-serif text-xs text-[#0a0806] hover:bg-[#e2c98e] disabled:opacity-40"
-                >
-                  {o.progress ? "Keep working" : "Craft"}
-                </button>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      onCraft(
+                        `I spend my camp action ${o.progress ? "working on" : "crafting"} ${o.name} with my ${o.tool}.` +
+                          (o.advantage ? ` My ${o.advantage} training gives me advantage on the roll.` : ""),
+                      )
+                    }
+                    className="rounded-sm bg-[#c9a868] px-3 py-1.5 font-serif text-xs text-[#0a0806] hover:bg-[#e2c98e] disabled:opacity-40"
+                  >
+                    {o.progress ? "Keep working" : "Craft"}
+                  </button>
+                  {/* Two-Parts: take 10 — no roll, sure progress, both of a full rest's actions. */}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    title="No roll: one sure hour of work, but it takes both of a full rest's camp actions."
+                    onClick={() =>
+                      onCraft(`I take 10 and spend the whole evening ${o.progress ? "working on" : "crafting"} ${o.name} with my ${o.tool}, slow and sure. (take 10)`)
+                    }
+                    className="rounded-sm border border-[#c9a868] px-3 py-1.5 font-serif text-xs text-[#e2c98e] hover:bg-[#1d1812] disabled:opacity-40"
+                  >
+                    Take 10
+                  </button>
+                  {o.twoCopies && (
+                    <button
+                      type="button"
+                      disabled={busy || !o.twoCopies.available}
+                      title={`Two at once: ${o.twoCopies.checks} good hour${o.twoCopies.checks === 1 ? "" : "s"}, ${o.twoCopies.materialsGp} gp of materials.`}
+                      onClick={() =>
+                        onCraft(`I spend my camp action crafting two ${o.name} at once with my ${o.tool}. (two copies)` +
+                          (o.advantage ? ` My ${o.advantage} training gives me advantage on the roll.` : ""))
+                      }
+                      className="rounded-sm border border-[#c9a868] px-3 py-1.5 font-serif text-xs text-[#e2c98e] hover:bg-[#1d1812] disabled:opacity-40"
+                    >
+                      Make two · {o.twoCopies.materialsGp} gp
+                    </button>
+                  )}
+                </div>
               )
             ) : (
               <ul className="flex flex-col gap-0.5">

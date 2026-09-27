@@ -67,6 +67,14 @@ import {
   trade,
   weightRelationshipEvent,
   xpToNext,
+  xpShares,
+  rationsOnHand,
+  spendRations,
+  dawnRecharges,
+  parseCraftOptions,
+  twoCopiesAllowed,
+  settleTake10,
+  CRAFT_TAKE10_ACTIONS,
   type EncounterTableRow,
   type LevelUpSheet,
   type ShortRester,
@@ -560,6 +568,29 @@ describe("level up", () => {
     expect(xpToNext(5)).toBe(14000)
     expect(xpToNext(20)).toBeNull()
   })
+
+  it("shares XP across the seated players and the actor, never NPCs (Sam, 2026-09-27)", () => {
+    const rows = [
+      { id: "fifi", is_player: true, in_party: true },
+      { id: "kenta", is_player: true, in_party: true },
+      { id: "samson", character_type: "player", in_party: true },
+      { id: "scott", is_player: true, in_party: true },
+      { id: "bastet", is_player: true, in_party: false },
+      { id: "jimjar", is_player: false, character_type: "npc", in_party: true },
+      { id: "gone", is_player: true, in_party: true, archived_at: "2026-09-01" },
+    ]
+    // Four seated players split 100 → 25 each; the NPC and the archived row get nothing.
+    expect(xpShares(100, rows, "fifi")).toEqual([
+      { id: "fifi", xp: 25 }, { id: "kenta", xp: 25 }, { id: "samson", xp: 25 }, { id: "scott", xp: 25 },
+    ])
+    // An unseated player who lands the blow joins the share.
+    expect(xpShares(100, rows, "bastet").map((s) => s.id).sort()).toEqual(["bastet", "fifi", "kenta", "samson", "scott"])
+    expect(xpShares(100, rows, "bastet")[0].xp).toBe(20)
+    // Rounded down; nobody seated means the actor keeps it all.
+    expect(xpShares(10, rows, "fifi")[0].xp).toBe(2)
+    expect(xpShares(50, [], "fifi")).toEqual([{ id: "fifi", xp: 50 }])
+    expect(xpShares(0, rows, "fifi")).toEqual([])
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1049,5 +1080,85 @@ describe("either tool, and Xanathar's tool-and-skill advantage", () => {
     expect(craftAdvantage("Alchemist's Supplies", { arcana: "expertise" })).toBe("Arcana")
     expect(craftAdvantage("Alchemist's Supplies", { Nature: "proficient" })).toBeNull()
     expect(craftAdvantage("Poisoner's Kit", { Arcana: "proficient" })).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Beads of nourishment count as rations (Sam, 2026-09-27)
+// ---------------------------------------------------------------------------
+
+describe("pack rations", () => {
+  const packs = [
+    { id: "fifi-beads", quantity: 3, per: 1 },
+    { id: "kenta-beads", quantity: 2, per: 1 },
+  ]
+  it("counts the pool plus every bead carried", () => {
+    expect(rationsOnHand(10, packs)).toBe(15)
+    expect(rationsOnHand(null, [])).toBe(0)
+  })
+  it("spends the pool first, then beads, whole units", () => {
+    expect(spendRations(12, packs, 10)).toEqual({ poolAfter: 2, packs: [], spent: 10 })
+    expect(spendRations(8, packs, 10)).toEqual({ poolAfter: 0, packs: [{ id: "fifi-beads", quantity: 1 }], spent: 10 })
+    expect(spendRations(0, packs, 4)).toEqual({
+      poolAfter: 0, packs: [{ id: "fifi-beads", quantity: 0 }, { id: "kenta-beads", quantity: 1 }], spent: 4,
+    })
+  })
+  it("never charges past what is on hand", () => {
+    expect(spendRations(1, packs, 20).spent).toBe(6)
+  })
+})
+
+
+describe("dawn recharge at the long rest (Sam, 2026-09-27)", () => {
+  it("names items whose row says they recharge at dawn, and only those", () => {
+    expect(dawnRecharges([
+      { owner: "Kenta", name: "Wand of Winter", recharge: "1d6+1 at dawn" },
+      { owner: "Fifi", name: "Wand of Smiles", description: "The wand regains all expended charges daily at dawn." },
+      { owner: "Scott", name: "Ring of Three Wishes", description: "Cast wish; ring becomes nonmagical at 0 charges" },
+    ])).toEqual([
+      "Kenta's Wand of Winter regains 1d6+1 charges (dawn comes with the long rest).",
+      "Fifi's Wand of Smiles regains its charges (dawn comes with the long rest).",
+    ])
+  })
+})
+
+describe("take 10 and two copies (Two-Parts; Sam, 2026-09-27)", () => {
+  const poison = { tools: "Poisoner's Kit" }
+  const bomb = { tools: "Alchemist's Supplies", dc: 12, hours: 1 }
+
+  it("reads the options after the item", () => {
+    expect(parseCraftOptions([])).toEqual({ take10: false, copies: 1 })
+    expect(parseCraftOptions(["take 10"])).toEqual({ take10: true, copies: 1 })
+    expect(parseCraftOptions(["Two copies", "Take 10"])).toEqual({ take10: true, copies: 2 })
+    expect(parseCraftOptions(["x2"]).copies).toBe(2)
+  })
+
+  it("two copies of a consumable take the full time; not when the source prints the hours", () => {
+    expect(twoCopiesAllowed({ item_type: "consumable" }, poison)).toBe(true)
+    expect(twoCopiesAllowed({ item_type: "weapon" }, poison)).toBe(false)
+    expect(twoCopiesAllowed({ item_type: "consumable" }, bomb)).toBe(false)
+    expect(craftSpec({ rarity: "very_rare", item_type: "consumable" }, poison).spec?.checks).toBe(3)
+    expect(craftSpec({ rarity: "very_rare", item_type: "consumable" }, poison, poison.tools, { copies: 2 }).spec?.checks).toBe(6)
+  })
+
+  it("taking 10 banks an hour with no roll, for two actions", () => {
+    expect(CRAFT_TAKE10_ACTIONS).toBe(2)
+    const spec = craftSpec({ rarity: "uncommon", item_type: "consumable" }, poison, poison.tools, { copies: 2 }).spec!
+    const first = settleTake10({ crafter: "Fifi", item: "Drow poison", spec, successes: 0, attempts: 0, copies: 2 })
+    expect(first).toMatchObject({ success: true, successes: 1, attempts: 1, done: false })
+    const last = settleTake10({ crafter: "Fifi", item: "Drow poison", spec, successes: 1, attempts: 1, copies: 2 })
+    expect(last.done).toBe(true)
+    expect(last.note).toMatch(/2 Drow poisons/)
+  })
+
+  it("the menu offers two copies with both copies' materials, and an open project keeps its count", () => {
+    const recipes = [{ id: "i1", slug: "drow-poison", name: "Drow poison", value: 200, rarity: "uncommon", item_type: "consumable", properties: { craft: poison } }]
+    const base = { recipes, proficiencies: ["Poisoner's Kit"], carried: [{ name: "Poisoner's Kit", quantity: 1 }], currency: { gp: 150 } }
+    const fresh = craftMenu(base).alchemy[0]
+    expect(fresh.twoCopies).toEqual({ checks: 2, materialsGp: 200, available: false })
+    expect(craftMenu({ ...base, currency: { gp: 200 } }).alchemy[0].twoCopies?.available).toBe(true)
+    const underway = craftMenu({ ...base, openProjects: [{ item_id: "i1", successes: 1, copies: 2 }] }).alchemy[0]
+    expect(underway.progress).toEqual({ successes: 1, checks: 2, copies: 2 })
+    expect(underway.twoCopies).toBeNull()
   })
 })
