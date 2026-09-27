@@ -615,7 +615,16 @@ function CraftMenuPanel({
               <span className={cn("font-serif text-sm", o.available ? "text-[#e2c98e]" : "text-stone-300")}>{o.name}</span>
               <span className="shrink-0 text-xs text-stone-400">{o.materialsGp} gp materials</span>
             </div>
-            <span className="text-xs text-stone-400">{o.tools}</span>
+            <span className="text-xs text-stone-400">
+              {o.tools}
+              {o.dc != null && ` · DC ${o.dc}`}
+              {o.checks != null && ` · ${o.checks} good hour${o.checks === 1 ? "" : "s"}`}
+            </span>
+            {o.progress && (
+              <span className="text-xs text-[#c9a868]">
+                Under way: {o.progress.successes} of {o.progress.checks} done — materials already paid.
+              </span>
+            )}
             {o.available ? (
               notYet ? (
                 <span className="text-xs text-[#c9a868]">Ready — the crafting roll is coming soon.</span>
@@ -623,10 +632,10 @@ function CraftMenuPanel({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => onCraft(`I spend my camp action crafting ${o.name}.`)}
+                  onClick={() => onCraft(`I spend my camp action ${o.progress ? "working on" : "crafting"} ${o.name}.`)}
                   className="mt-1 self-start rounded-sm bg-[#c9a868] px-3 py-1.5 font-serif text-xs text-[#0a0806] hover:bg-[#e2c98e] disabled:opacity-40"
                 >
-                  Craft
+                  {o.progress ? "Keep working" : "Craft"}
                 </button>
               )
             ) : (
