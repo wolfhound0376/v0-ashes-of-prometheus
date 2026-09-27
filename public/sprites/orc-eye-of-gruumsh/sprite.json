@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Orc Eye of Gruumsh",
+  "cell": [
+    128,
+    128
+  ],
+  "pivot": [
+    64,
+    126
+  ],
+  "ppu": 84,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}
