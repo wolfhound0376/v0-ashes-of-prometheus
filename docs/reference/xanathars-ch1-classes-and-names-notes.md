@@ -1,7 +1,7 @@
 # Xanathar's Guide to Everything: class options (ch. 1) and Character Names (Appendix B), notes for later
 
 **Status:** reference only. Nothing here is wired.
-**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 12–25, 175–180; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
+**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 12–30, 37–40, 175–180; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
 **Companion:** `docs/reference/xanathars-ch2-dm-tools-notes.md` (ch. 2, DM's tools).
 
 ---
@@ -94,9 +94,54 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
   - Level 10, Hidden Paths: teleport short distances.
   - Level 14, Walker in Dreams: after a short rest, cast dream-and-travel spells once.
 - **Circle of the Shepherd:** speech with beasts and fey. Spirit Totem (bear, hawk or unicorn) buffs allies in an area. Later features strengthen summoned creatures.
-- **Learning Beast Shapes (pp. 24–25):** Wild Shape options sorted by environment, with CR and fly/swim notes. Only the Arctic, Coast and Desert lists were photographed.
+- **Learning Beast Shapes (pp. 24–25):** Wild Shape options sorted by environment, with CR and fly/swim notes. The later photo adds Forest, Grassland, Hill, Mountain, Swamp, **Underdark** and Underwater, but it's too low-resolution to read the Underdark rows. Re-photograph that page if a druid ever joins.
 
-## 4. Character names (Appendix B, pp. 175–180)
+## 4. Fighter (ch. 1, pp. 27–30)
+
+**No fighter in the party** as of 2026-09-27.
+
+- **Character flavour:** d6 tables for heraldic sign, instructor (gladiator, military, city watch, tribal warrior, street fighter, weapon master) and signature style.
+- **Arcane Archer.**
+  - Level 3: Arcana or Nature, plus *prestidigitation* or *druidcraft*. **Arcane Shot:** twice per short rest, a hit with a bow gains a magical effect. The save DC is 8 + proficiency + INT. The options are banishing, beguiling, bursting, enfeebling, grasping, piercing, seeking and shadow, each adding 2d6 of some damage type plus a rider.
+  - Level 7: Magic Arrow and Curving Shot.
+  - Level 15: Ever-Ready Shot.
+  - Level 18: the extra damage rises to 4d6.
+- **Cavalier.**
+  - Level 3: a skill or language; Born to the Saddle (mounting costs 5 ft, advantage against falling off); **Unwavering Mark**, which punishes a marked foe for attacking anyone else.
+  - Level 7: Warding Maneuver, a reaction that adds 1d8 to an ally's AC.
+  - Level 10: Hold the Line, where opportunity attacks stop movement.
+  - Levels 15 and 18: Ferocious Charger and Vigilant Defender.
+- **Samurai:** not photographed.
+
+## 5. Paladin (ch. 1, pp. 37–39)
+
+**No paladin in the party.**
+
+- **Character flavour:** d6 tables for nemesis and temptation (fury, pride, lust, envy, despair, greed).
+- **Oath of Conquest.**
+  - Tenets: douse the flame of hope, rule with an iron fist, strength above all.
+  - Level 3: Channel Divinity **Conquering Presence** (frighten creatures within 30 ft) or **Guided Strike** (+10 to one attack).
+  - Level 7: Aura of Conquest. Frightened foes nearby can't move and take psychic damage.
+  - Level 15: Scornful Rebuke.
+  - Level 20: Invincible Conqueror.
+  - The book ties this oath to Bel and the hell knights of Avernus.
+- **Oath of Redemption.**
+  - Tenets: peace, innocence, patience, wisdom.
+  - Level 3: Channel Divinity **Emissary of Peace** (+5 Persuasion for 10 minutes) or **Rebuke the Violent** (radiant damage back at an attacker).
+  - Level 7: Aura of the Guardian, taking an ally's damage instead.
+  - Level 15: Protective Spirit, some healing each turn while below half hp.
+  - Level 20: Emissary of Redemption.
+
+**Why it matters here.** Both oaths make good **NPC templates**. A Conquest paladin is the natural shape for a demon-hunting zealot in *Out of the Abyss*, and a Redemption paladin for someone trying to talk a drow patrol down. Stat blocks for any such NPC still come from the bestiary or the campaign book, never from these class features (AGENTS.md §8, "no silent default").
+
+## 6. Ranger (ch. 1, p. 40, first page only)
+
+**No ranger in the party.**
+
+- **Character flavour:** d6 tables for view of the world (towns and cities, from "necessary" to "breeds weakness") and **homeland**. One homeland is **the Underdark**, a childhood spent learning to fight its creatures, which suits a character built for this campaign.
+- The archetypes follow on later pages, which weren't photographed.
+
+## 7. Character names (Appendix B, pp. 175–180)
 
 **What it is.** A set of **d100 tables of names**, each with 50 names, two numbers per name. They're sorted by people and by kind of name:
 
