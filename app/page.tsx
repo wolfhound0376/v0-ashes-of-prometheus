@@ -14,6 +14,9 @@ import { CompactDashboard } from "@/components/dashboard/compact-dashboard"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
+
+// Rollback switch: set NEXT_PUBLIC_DASHBOARD=legacy and redeploy to restore the v3 dashboard.
+const USE_LEGACY_DASHBOARD = process.env.NEXT_PUBLIC_DASHBOARD === "legacy"
 import { DmAssetsPanel } from "@/components/dashboard/dm-assets-panel"
 import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
@@ -1615,6 +1618,12 @@ if (error) {
         </div>
       ) : null}
 
+  {USE_LEGACY_DASHBOARD ? (
+    <>
+      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} />
+      <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} />
+    </>
+  ) : (
   <V4Dashboard
   audioSlot={
     <>
@@ -1665,10 +1674,12 @@ if (error) {
         isThinking={lichLoading}
         claimLocked={claimLocked}
       />
+  )}
 
-      {/* Legacy dashboard remains mounted out of view during the v4.1 migration
-          so its existing handlers can be compared without losing code. */}
-      <div className="hidden grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
+      {/* Retired v3 dashboard. Only mounted when NEXT_PUBLIC_DASHBOARD=legacy —
+          mounting it hidden would still run its TTS and NPC-audio effects. */}
+      {USE_LEGACY_DASHBOARD && (
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
@@ -1803,6 +1814,7 @@ if (error) {
   }}
 />
       </div>
+      )}
 
       {/* Campaign Change Confirmation Dialog */}
       {showCampaignChangeDialog && pendingCampaignChange && (
