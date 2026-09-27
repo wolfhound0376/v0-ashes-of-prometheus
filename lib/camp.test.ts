@@ -16,6 +16,15 @@ import {
   campPurpose,
   craftProgress,
   craftMenu,
+  recipeTools,
+  toolForCrafter,
+  craftAdvantage,
+  craftSpec,
+  craftModifier,
+  keptD20,
+  craftMaterialsGp,
+  payFromPurse,
+  settleCraftRoll,
   craftCategoryOf,
   purseGp,
   toolKey,
@@ -646,10 +655,10 @@ describe("spending camp actions", () => {
     expect(decideCampAction({ ...base, action: "forage", requestSkill: "survival", isSpeaker: false }).note).toMatch(/own player/)
   })
 
-  it("levelling spends like any action; crafting is refused without spending; trade needs a merchant", () => {
+  it("levelling and crafting spend like any action; trade needs a merchant", () => {
     expect(decideCampAction({ ...base, action: "level up" })).toMatchObject({ action: "level_up", spend: true, remaining: 1, check: null })
-    expect(decideCampAction({ ...base, action: "craft" })).toMatchObject({ spend: false, note: expect.stringMatching(/recipes/) })
-    expect(decideCampAction({ ...base, action: "brew" }).spend).toBe(false)
+    expect(decideCampAction({ ...base, action: "craft" })).toMatchObject({ action: "artifice", spend: true, remaining: 1 })
+    expect(decideCampAction({ ...base, action: "brew" })).toMatchObject({ action: "brew", spend: true })
     expect(decideCampAction({ ...base, action: "trade" }).note).toMatch(/no merchant/)
     expect(decideCampAction({ ...base, action: "trade", merchantPresent: true }).spend).toBe(true)
   })
@@ -684,7 +693,8 @@ describe("spending camp actions", () => {
   it("the CAMP block teaches the tag and carries what the dice settled", () => {
     const block = formatCampBlock({ camping: true, supplies: 20, partySize: 4, budgets: [{ name: "Kenta", remaining: 2 }], visitor: null, results: ["Kenta forages and brings back 3 days of food. Rations now 23."] })
     expect(block).toMatch(/\[CAMP_ACTION: <name> \| <action>\]/)
-    expect(block).toMatch(/Not yet: artifice, brew/)
+    expect(block).not.toMatch(/Not yet:/)
+    expect(block).toMatch(/\[CAMP_ACTION: <name> \| craft \| <catalog item>\]/)
     expect(block).toMatch(/\[CAMP_ACTION: <name> \| level up\]/)
     expect(block).toMatch(/SETTLED BY THE DICE/)
     expect(block).toMatch(/Rations now 23/)
@@ -929,3 +939,115 @@ describe("§17 train — hours with a teacher, then the test", () => {
   })
 })
 
+
+// ---------------------------------------------------------------------------
+// §18 the crafting roll
+// ---------------------------------------------------------------------------
+
+describe("the crafting roll", () => {
+  const herb = { tools: "Herbalism Kit" }
+  const poison = { tools: "Poisoner's Kit" }
+
+  it("DC and hours come from rarity, halved for consumables, one check per good hour", () => {
+    expect(craftSpec({ rarity: "common", item_type: "consumable" }, poison).spec).toMatchObject({ dc: 12, hours: 1, checks: 1, abilities: ["int", "wis"] })
+    expect(craftSpec({ rarity: "uncommon", item_type: "consumable" }, poison).spec).toMatchObject({ dc: 15, hours: 1, checks: 1 })
+    expect(craftSpec({ rarity: "rare", item_type: "weapon" }, { tools: "Smith's Tools" }).spec).toMatchObject({ dc: 18, hours: 4, checks: 4, abilities: ["str", "dex"] })
+    expect(craftSpec({ rarity: "very_rare", item_type: "consumable" }, poison).spec).toMatchObject({ dc: 21, hours: 3, checks: 3 })
+    expect(craftSpec({ rarity: "legendary", item_type: "armor" }, { tools: "Smith's Tools" }).spec).toMatchObject({ dc: 24, checks: 8 })
+  })
+
+  it("a recipe's own printed DC and hours win (Fireburst Bomb: DC 12, 1 hour; Silence Bomb: DC 16, 8 hours)", () => {
+    expect(craftSpec({ rarity: "rare", item_type: "consumable" }, { tools: "Alchemist's Supplies", dc: 16, hours: 8 }).spec).toMatchObject({ dc: 16, hours: 8, checks: 8 })
+    expect(craftSpec({ rarity: "uncommon", item_type: "consumable" }, { tools: "Alchemist's Supplies", dc: 12, hours: 1 }).spec).toMatchObject({ dc: 12, checks: 1 })
+  })
+
+  it("says why when the sources give no way to roll it, and flags the readings", () => {
+    expect(craftSpec({ rarity: "common", item_type: "gear" }, { tools: "Navigator's Tools" })).toMatchObject({ spec: null, reason: expect.stringMatching(/No crafting abilities/) })
+    expect(craftSpec({ rarity: "artifact", item_type: "gear" }, poison).reason).toMatch(/Artifacts/)
+    expect(craftSpec({ rarity: null, item_type: "gear" }, poison).spec?.flags[0]).toMatch(/crafted as common/)
+    expect(craftSpec({ rarity: "common", item_type: "consumable" }, herb).spec?.flags[0]).toMatch(/Claude's reading/)
+  })
+
+  it("the modifier is the better of the tool's two abilities plus proficiency", () => {
+    // Samson: INT 10, WIS 16, +2 → WIS +3 + 2.
+    expect(craftModifier({ int_score: 10, wis_score: 16 }, ["int", "wis"], 2)).toEqual({ ability: "wis", modifier: 5 })
+    expect(craftModifier({ str_score: 17, dex_score: 12 }, ["str", "dex"], 3)).toEqual({ ability: "str", modifier: 6 })
+    expect(craftModifier({}, ["int", "wis"], 2)).toEqual({ ability: "int", modifier: 2 })
+  })
+
+  it("reads the table's kept d20, and refuses anything that is not one", () => {
+    expect(keptD20({ total: 17, modifier: 5 })).toBe(12)
+    expect(keptD20({ total: 30, modifier: 5 })).toBeNull()
+    expect(keptD20(null)).toBeNull()
+  })
+
+  it("materials cost the recipe's printed price, or half the market value", () => {
+    expect(craftMaterialsGp(50, herb)).toBe(25)
+    expect(craftMaterialsGp(550, { tools: "Alchemist's Supplies", cost_gp: 300 })).toBe(300)
+  })
+
+  it("pays from the purse in gold first, and gives change when it must", () => {
+    expect(payFromPurse({ gp: 50, sp: 3 }, 25)).toEqual({ cp: 0, sp: 3, ep: 0, gp: 25, pp: 0 })
+    expect(payFromPurse({ pp: 1, gp: 0 }, 2.5)).toEqual({ cp: 0, sp: 5, ep: 0, gp: 7, pp: 0 })
+    expect(payFromPurse({ gp: 10 }, 25)).toBeNull()
+  })
+
+  it("success banks the hour and finishes the item; failure wastes the hour but keeps the work", () => {
+    const spec = { dc: 15, hours: 2, checks: 2, abilities: ["int", "wis"] as ["int", "wis"], flags: [] }
+    const first = settleCraftRoll({ crafter: "Fifi", item: "Drow poison", face: 11, modifier: 5, spec, successes: 0, attempts: 0 })
+    expect(first).toMatchObject({ success: true, total: 16, successes: 1, attempts: 1, done: false })
+    expect(first.note).toMatch(/1 more hour/)
+    const miss = settleCraftRoll({ crafter: "Fifi", item: "Drow poison", face: 3, modifier: 5, spec, successes: 1, attempts: 1 })
+    expect(miss).toMatchObject({ success: false, successes: 1, attempts: 2, done: false })
+    expect(miss.note).toMatch(/still holds/)
+    const last = settleCraftRoll({ crafter: "Fifi", item: "Drow poison", face: 10, modifier: 5, spec, successes: 1, attempts: 2 })
+    expect(last).toMatchObject({ success: true, successes: 2, done: true })
+    expect(last.note).toMatch(/in their pack/)
+  })
+
+  it("the menu shows DC and hours, and an open project needs no second payment", () => {
+    const recipes = [{ id: "i1", slug: "drow-poison", name: "Drow poison", value: 200, rarity: "uncommon", item_type: "consumable", properties: { craft: poison } }]
+    const base = { recipes, proficiencies: ["Poisoner's Kit"], carried: [{ name: "Poisoner's Kit", quantity: 1 }], currency: { gp: 0 } }
+    const fresh = craftMenu(base).alchemy[0]
+    expect(fresh).toMatchObject({ dc: 15, checks: 1, progress: null, available: false })
+    expect(fresh.missing).toEqual(["Needs 100 gp of materials (0 gp in the purse)."])
+    const underway = craftMenu({ ...base, openProjects: [{ item_id: "i1", successes: 0 }] }).alchemy[0]
+    expect(underway).toMatchObject({ available: true, progress: { successes: 0, checks: 1 }, missing: [] })
+  })
+})
+
+describe("either tool, and Xanathar's tool-and-skill advantage", () => {
+  const antitoxin = { tools: "Herbalism Kit", alt_tools: ["Alchemist's Supplies", "herbalism kit"] }
+
+  it("a recipe's tools are the main one then the alternatives, without repeats", () => {
+    expect(recipeTools(antitoxin)).toEqual(["Herbalism Kit", "Alchemist's Supplies"])
+    expect(toolForCrafter(antitoxin, ["Thieves' Tools", "Alchemist's Supplies"])).toBe("Alchemist's Supplies")
+    expect(toolForCrafter(antitoxin, ["Navigator's Tools"])).toBeNull()
+  })
+
+  it("an alchemist lights antitoxin with their own supplies, and Arcana gives advantage", () => {
+    const menu = craftMenu({
+      recipes: [{ id: "a", slug: "antitoxin", name: "Antitoxin (vial)", value: 50, rarity: "common", item_type: "consumable", properties: { craft: antitoxin } }],
+      proficiencies: ["Alchemist's Supplies"],
+      carried: [{ name: "Alchemist's Supplies", quantity: 1 }],
+      currency: { gp: 25 },
+      skills: { Arcana: "proficient" },
+    }).alchemy[0]
+    expect(menu).toMatchObject({ available: true, tool: "Alchemist's Supplies", tools: "Herbalism Kit or Alchemist's Supplies", advantage: "Arcana", dc: 12, checks: 1 })
+  })
+
+  it("with neither tool, the reason names both", () => {
+    const menu = craftMenu({
+      recipes: [{ id: "a", slug: "antitoxin", name: "Antitoxin (vial)", value: 50, rarity: "common", item_type: "consumable", properties: { craft: antitoxin } }],
+      proficiencies: [], carried: [], currency: { gp: 25 },
+    }).alchemy[0]
+    expect(menu.missing).toEqual(["Not proficient with Herbalism Kit or Alchemist's Supplies.", "No Herbalism Kit or Alchemist's Supplies carried."])
+    expect(menu.advantage).toBeNull()
+  })
+
+  it("advantage only where the book ties the craft to a skill, and only with that skill", () => {
+    expect(craftAdvantage("Alchemist's Supplies", { arcana: "expertise" })).toBe("Arcana")
+    expect(craftAdvantage("Alchemist's Supplies", { Nature: "proficient" })).toBeNull()
+    expect(craftAdvantage("Poisoner's Kit", { Arcana: "proficient" })).toBeNull()
+  })
+})

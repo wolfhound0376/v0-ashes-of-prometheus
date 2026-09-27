@@ -405,3 +405,79 @@ Owned by `docs/claude_Earned_Proficiency.md` §1 path C and §4; the action live
 - **4 hours of lessons per camp evening.** SRD downtime counts 8 hours a day; a camp evening is not a day. Ten evenings to the test.
 - **The teacher's evening is free.** Teaching costs the student's action, not the teacher's.
 
+
+---
+
+## 18. The crafting roll (Sam, 2026-09-27)
+
+Sam answered "which ability, and what does one success buy" with five pages:
+
+- **Two-Parts Crafting** (homebrew): the Tools table, the Crafting Time table, and the basics.
+- **Kibbles' Crafting Compendium**, Blacksmithing: the crafting roll and progress per success.
+- **Three item pages that print their own crafting lines:** Fireburst Bomb (Alchemist's Supplies, DC 12, 1 hour), Silence Bomb (Alchemist's Supplies or Tinker's Tools, DC 16, 8 hours), and ammunition for the Hand Cannon and Repeating Crossbow.
+
+Combined with his rule that crafting is "a roll for success per camp action", this is what `lib/camp.ts` §18 does:
+
+- **One camp action is one crafting check, which is one hour of work.** Two-Parts has one check per hour of crafting, and Kibbles marks time per successful roll.
+- **The check is d20 + the better of the tool's two abilities + proficiency.** The abilities come from Two-Parts' Tools table (Poisoner INT/WIS, Smith STR/DEX, Tinker INT/DEX, and the rest). Kibbles' Blacksmithing modifier is the same shape. The **d20 is the player's**, from the table's dice. The **modifier is the engine's**, recomputed from the sheet, never the number in Malachar's tag.
+- **The DC and the hours come from the recipe when its source prints them** (the bombs do); otherwise from Two-Parts' table:
+
+  | Rarity | DC | Hours |
+  |---|---|---|
+  | Common | 12 | 1 |
+  | Uncommon | 15 | 2 |
+  | Rare | 18 | 4 |
+  | Very rare | 21 | 6 |
+  | Legendary | 24 | 8 |
+
+  **Consumables take half the time, minimum one hour.** So all four live recipes need one good hour each. That's common DC 12, and uncommon drow poison DC 15.
+- **Success banks the hour. Failure wastes it but never undoes banked work.** Both sources agree on this. When the good hours reach the total, the **catalog item goes into the crafter's pack**, stacking onto an existing row.
+- **Materials are paid when work begins.** The recipe's printed cost wins; otherwise the SRD's half of the market value. It comes out of `sheet_currency`, gold first, with change given in silver and copper when needed. It's recorded in `crafting_projects.materials_gp_paid`. An open project never pays twice: the menu shows it as "Under way: N of M done — materials already paid", and its button reads **Keep working**.
+
+**The flow at the table:**
+
+1. The player taps a lit option on the Camp tab.
+2. Malachar writes `[CAMP_ACTION: <name> | craft | <item>]` in the same reply as their bare `[[1d20+N]]`.
+3. The route checks everything before spending: camped, their own player, a d20 in the reply, and the item on their list and lit.
+4. Then it opens or continues the project, spends the action, and stamps the roll `camp:artifice:<projectId>`.
+5. When the die comes back, the check is settled before Malachar speaks. He gets the outcome as a camp fact.
+
+One reply settles one dice action, as with forage and train.
+
+### Left out, on purpose, until Sam says
+
+- **Three failures in a row lose the materials** (Kibbles). Nothing counts *consecutive* failures yet; `crafting_projects` has `attempts` and `successes` only. It needs one new column, which is a schema change. Say the word.
+- **Take 10** (Two-Parts): skip the roll, succeed automatically, take twice as long. Not built.
+- **Two copies of a consumable in the time of one** (Two-Parts' other option for consumables). Not built; halved time was used instead.
+- **Named materials aren't consumed from the pack yet.** No live recipe names any.
+- **The items on those pages aren't in the catalog.** Fireburst Bomb, Silence Bomb, Hand Cannon, Repeating Crossbow and their shot come from the sources Sam shared, not from the catalog, and the AI may not invent items. They'd fill Alchemy, Artifice and Construct if Sam wants them added.
+
+### Readings — Sam's to overrule
+
+- **Herbalism Kit rolls INT or WIS.** Two-Parts' Tools table doesn't list it; INT/WIS matches its neighbours, Alchemist's Supplies and Poisoner's Kit.
+- **The engine takes the better of the two abilities.** The table lets the crafter choose; nobody would choose the worse one.
+- **An item with no rarity in the catalog is crafted as common.** It's flagged on the spec.
+
+### Xanathar's Guide, ch. 2 (pages Sam shared the same day)
+
+Notes on the whole chapter live in `docs/reference/xanathars-ch2-dm-tools-notes.md`. Two parts are already in the crafting code:
+
+- **Either tool makes the item.** A recipe may carry `alt_tools`. The crafter uses the first tool they're proficient with (and carry). The DC and the ability pair follow that tool, both at the start and when the roll is settled. Antitoxin is the case in point: the SRD's Herbalism Kit, or Xanathar's alchemist's supplies.
+- **Tools and skills together: advantage.** Xanathar's lets a check be made with advantage when the character is proficient with both the tool and the skill that applies. Only alchemist's supplies ties crafting to a skill (Alchemical Crafting names Arcana), so only that pair is in `CRAFT_ADVANTAGE_SKILL`. The menu shows "advantage (Arcana)". The player's line says so, and Malachar asks for the roll with advantage. The engine reads the kept d20 either way.
+
+**Alchemical Crafting recipes — shown, NOT run.** Xanathar's names what alchemist's supplies make: acid, alchemist's fire, antitoxin, oil, perfume and soap. The catalog has all of those except soap. This SQL would give Fifi, who is proficient with Alchemist's Supplies, a lit Alchemy tab the day she carries the supplies and the gold:
+
+```sql
+-- PROPOSAL — not applied. Run only after Sam says yes.
+update public.items
+   set properties = coalesce(properties, '{}'::jsonb)
+     || '{"craft": {"tools": "Alchemist''s Supplies", "source": "Xanathar''s Guide to Everything, Tool Proficiencies — Alchemical Crafting"}}'::jsonb,
+       updated_at = now()
+ where slug in ('acid-vial', 'alchemists-fire', 'lamp-oil', 'perfume-vial');
+
+-- Antitoxin keeps the SRD's Herbalism Kit and gains alchemist's supplies.
+update public.items
+   set properties = jsonb_set(properties, '{craft,alt_tools}', '["Alchemist''s Supplies"]'::jsonb),
+       updated_at = now()
+ where slug = 'antitoxin' and properties ? 'craft';
+```

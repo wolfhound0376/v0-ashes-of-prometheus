@@ -36,6 +36,7 @@ import {
   proficiencyForLevel,
   resolveSkillCheck,
   skillProficiency,
+  type Ability,
   type CheckResult,
   type GameContext,
   type ProficiencyLevel,
@@ -819,6 +820,12 @@ export const CRAFT_MATERIALS_FRACTION = 0.5
 /** The recipe convention on `items.properties.craft`. No block → not craftable. */
 export interface CraftRecipe {
   tools: string
+  /**
+   * Other tools that make the same item (Antitoxin: the SRD's Herbalism Kit,
+   * or Xanathar's alchemist's supplies). Proficiency with, and possession of,
+   * any one of them is enough.
+   */
+  alt_tools?: string[] | null
   /** Menu tab (§16). When absent, read from the tool (`TOOL_CATEGORY`). */
   category?: CraftCategory | null
   /** Where the recipe's tool comes from, e.g. "SRD 5.1 Equipment: Tools — Herbalism Kit". */
@@ -826,6 +833,12 @@ export interface CraftRecipe {
   materials?: { slug: string; qty: number }[]
   /** A facility the location must offer: "forge", "alchemy_lab" … */
   requires?: string | null
+  /** §18 — a DC the recipe's source names (Fireburst Bomb: 12). Otherwise the rarity table. */
+  dc?: number | null
+  /** §18 — hours of work the source names (Silence Bomb: 8). Otherwise the rarity table. */
+  hours?: number | null
+  /** §18 — the materials' gold the source names. Otherwise the SRD's half of the market value. */
+  cost_gp?: number | null
 }
 
 export interface CraftableItem {
@@ -1358,10 +1371,15 @@ export function formatCampBlock(s: CampBlockState): string {
     parts.push(
       `The party is CAMPED. Rations on hand: ${s.supplies}. They buy ${rest}\n` +
         `Camp actions left (one each is spent per activity; sleeping is free): ${budgets}.\n` +
-        `The menu: ${CAMP_ACTIONS.map((a) => a.replace("_", " ")).join(", ")}. Not yet: ${Object.keys(CAMP_ACTIONS_NOT_YET).map((a) => a.replace("_", " ")).join(", ")}.\n` +
+        `The menu: ${CAMP_ACTIONS.map((a) => a.replace("_", " ")).join(", ")}.` +
+        (Object.keys(CAMP_ACTIONS_NOT_YET).length
+          ? ` Not yet: ${Object.keys(CAMP_ACTIONS_NOT_YET).map((a) => a.replace("_", " ")).join(", ")}.`
+          : "") +
+        `\n` +
         `When a character spends one, emit [CAMP_ACTION: <name> | <action>] — the system counts it and refuses one past their count. ` +
         `Forage and hunt (Survival, DC 15 in the Underdark) and perform (Performance) are settled by the acting player's own dice: put the tag in the SAME reply as their roll request, e.g. [CAMP_ACTION: Kenta | forage] Roll Survival. [[1d20-1 | survival | DC 15]]. ` +
         `You will be told the result; never invent food or its amount.\n` +
+        `Craft (one hour of work per action): [CAMP_ACTION: <name> | craft | <catalog item>] in the SAME reply as their own crafting roll, a bare [[1d20+N]] where N is the better of the tool's two abilities plus proficiency. The system recomputes N, uses the DC for that item, charges the materials when work begins, and puts the finished item in their pack. When the player says their skill gives advantage (alchemist's supplies with Arcana), ask for the roll with advantage. Only items on their crafting list can be made; never invent one.\n` +
         `Level up (one level, only when their XP has earned it): [CAMP_ACTION: <name> | level up]. For rolled hit points, put it in the same reply as their Hit Die roll, e.g. [[1d8]]; with no roll, the fixed value applies. The system writes the numbers; the choices land on their sheet for them to make at the fire.\n` +
         `Train (learn a skill from someone who has MASTERED it - a companion or an NPC at the fire with expertise in it): [CAMP_ACTION: <name> | train | <teacher> | <skill>], e.g. [CAMP_ACTION: Samson | train | Eldeth | animal handling]. The system checks the teacher's sheet for expertise, banks the evening's hours and moves the clock; you narrate the lesson. A merely competent teacher is refused. Never say how many hours are banked or how many remain.\n` +
         `Emit [TIME:break_camp] if they pack up without resting.`,
@@ -1472,8 +1490,6 @@ export const CAMP_CHECK_SKILL: Partial<Record<CampAction, "survival" | "performa
 
 /** On the menu but not wired yet — refused without spending the action. */
 export const CAMP_ACTIONS_NOT_YET: Partial<Record<CampAction, string>> = {
-  artifice: "Crafting waits on Sam's recipes and a place to bank progress (camp doc §14).",
-  brew: "Brewing is crafting, and crafting waits on Sam's recipes and a place to bank progress (camp doc §14).",
 }
 
 export interface CampActionDecision {
@@ -1780,6 +1796,9 @@ export interface CraftMenuRecipeRow {
   slug: string | null
   name: string
   value: number | null
+  /** §18 — for the DC and the hours. */
+  rarity?: string | null
+  item_type?: string | null
   properties: { craft?: CraftRecipe | null; [k: string]: unknown } | null
 }
 
@@ -1803,6 +1822,15 @@ export interface CraftMenuOption {
   /** Why it is dimmed, one plain line each. Empty when lit. */
   missing: string[]
   source: string | null
+  /** §18 — the tool this crafter would use (proficient, and carried when possible). */
+  tool: string
+  /** §18 — the skill that gives the crafting check advantage (Xanathar's), or null. */
+  advantage: string | null
+  /** §18 — the check's DC and the good hours it takes, when the sources give a way to roll it. */
+  dc: number | null
+  checks: number | null
+  /** §18 — an open project: materials already paid, work banked. */
+  progress: { successes: number; checks: number } | null
 }
 
 export type CraftMenu = Record<CraftCategory, CraftMenuOption[]>
@@ -1821,6 +1849,10 @@ export function craftMenu(input: {
   currency: unknown
   /** The node's facilities, e.g. `travel_nodes.metadata.facilities`. */
   facilities?: string[] | null
+  /** §18 — this crafter's open `crafting_projects` rows. */
+  openProjects?: { item_id: string; successes: number }[] | null
+  /** §18 — `sheet_skill_proficiencies`, for Xanathar's tool-and-skill advantage. */
+  skills?: Record<string, unknown> | null
 }): CraftMenu {
   const menu: CraftMenu = { alchemy: [], construct: [], artifice: [] }
   const profs = new Set((input.proficiencies ?? []).map(toolKey))
@@ -1837,21 +1869,35 @@ export function craftMenu(input: {
     const category = craftCategoryOf(recipe)
     if (!category) continue
     const valueGp = Math.max(0, Number(row.value) || 0)
-    const materialsGp = valueGp * CRAFT_MATERIALS_FRACTION
+    const materialsGp = craftMaterialsGp(row.value, recipe)
+    // Any of the recipe's tools will do: the first one they are proficient
+    // with AND carry, else the first they are proficient with.
+    const tools = recipeTools(recipe)
+    const known = tools.filter((t) => profs.has(toolKey(t)))
+    const tool = known.find((t) => holding({ name: t }) >= 1) ?? known[0] ?? recipe.tools
+    const { spec, reason } = craftSpec({ rarity: row.rarity ?? null, item_type: row.item_type ?? null }, recipe, tool)
+    const open = (input.openProjects ?? []).find((p) => p.item_id === row.id) ?? null
     const missing: string[] = []
-    if (!profs.has(toolKey(recipe.tools))) missing.push(`Not proficient with ${recipe.tools}.`)
-    if (holding({ name: recipe.tools }) < 1) missing.push(`No ${recipe.tools} carried.`)
-    for (const m of recipe.materials ?? []) {
-      const need = Math.max(1, Math.trunc(m.qty ?? 1))
-      const have = holding({ slug: m.slug, name: m.slug.replace(/-/g, " ") })
-      if (have < need) missing.push(`Needs ${need} ${m.slug.replace(/-/g, " ")} (${have} carried).`)
+    if (!known.length) missing.push(`Not proficient with ${tools.join(" or ")}.`)
+    if (holding({ name: tool }) < 1) missing.push(`No ${known.length ? tool : tools.join(" or ")} carried.`)
+    // An open project already paid for its materials; only the work remains.
+    if (!open) {
+      for (const m of recipe.materials ?? []) {
+        const need = Math.max(1, Math.trunc(m.qty ?? 1))
+        const have = holding({ slug: m.slug, name: m.slug.replace(/-/g, " ") })
+        if (have < need) missing.push(`Needs ${need} ${m.slug.replace(/-/g, " ")} (${have} carried).`)
+      }
+      if (valueGp <= 0 && recipe.cost_gp == null) missing.push("No market value in the catalog, so it cannot be priced.")
+      else if (gold < materialsGp) missing.push(`Needs ${materialsGp} gp of materials (${Math.floor(gold)} gp in the purse).`)
     }
-    if (valueGp <= 0) missing.push("No market value in the catalog, so it cannot be priced.")
-    else if (gold < materialsGp) missing.push(`Needs ${materialsGp} gp of materials (${Math.floor(gold)} gp in the purse).`)
     if (recipe.requires && !here.has(toolKey(recipe.requires))) missing.push(`Needs a ${recipe.requires} nearby.`)
+    if (!spec && reason) missing.push(reason)
     menu[category].push({
-      itemId: row.id, slug: row.slug, name: row.name, category, tools: recipe.tools,
+      itemId: row.id, slug: row.slug, name: row.name, category, tools: tools.join(" or "), tool,
+      advantage: craftAdvantage(tool, input.skills),
       valueGp, materialsGp, available: missing.length === 0, missing, source: recipe.source ?? null,
+      dc: spec?.dc ?? null, checks: spec?.checks ?? null,
+      progress: open && spec ? { successes: Math.max(0, open.successes), checks: spec.checks } : null,
     })
   }
   for (const c of CRAFT_CATEGORIES) {
@@ -2056,3 +2102,203 @@ export function settleTraining(name: string, skill: Skill, teacher: string, tota
     : `${name} failed ${teacher}'s ${skillName} test. The hours are not lost: another camp, another try.`
 }
 
+
+// ============================================================================
+// §18 THE CRAFTING ROLL (Sam, 2026-09-27)
+// ============================================================================
+//
+// Sam answered "which ability, and what does one success buy" with five pages:
+// Two-Parts Crafting (homebrew), Kibbles' Crafting Compendium (Blacksmithing),
+// and three item pages that print their own crafting lines (Fireburst Bomb:
+// "alchemist's supplies, DC 12, 1 hour of work"). Read together, with his own
+// rule that crafting advances by a roll per camp action, not by the day:
+//
+//   ONE CAMP ACTION = ONE CRAFTING CHECK = ONE HOUR OF WORK.
+//   The check: d20 + the better of the tool's two abilities + proficiency
+//     (Two-Parts' Tools table; Kibbles: "Blacksmithing Modifier = Blacksmiths'
+//     Tools proficiency bonus + your Strength modifier").
+//   The DC and the hours: the recipe's own, when its source prints them;
+//     otherwise by rarity (Two-Parts' Crafting Time table).
+//   Consumables take half the time, minimum one hour (Two-Parts).
+//   Success banks the hour; failure wastes it, no progress (both sources).
+//   Enough successes finish the item, and it goes into the crafter's pack.
+//
+// The d20 is the player's, from the table's dice. The modifier is the
+// engine's, recomputed from the sheet — never the number in Malachar's tag.
+
+/** Two-Parts Crafting, Tools table: the two abilities a tool's checks may use. The crafter takes the better. */
+export const CRAFT_TOOL_ABILITIES: Record<string, [Ability, Ability]> = {
+  "alchemists supplies": ["int", "wis"],
+  "brewers supplies": ["con", "wis"],
+  "building hammer": ["str", "int"], // Two-Parts: "Builder"
+  "calligraphers supplies": ["dex", "wis"],
+  "glassblowers tools": ["str", "con"],
+  "jewelers tools": ["int", "cha"],
+  "leatherworkers tools": ["str", "dex"],
+  "painters supplies": ["cha", "dex"],
+  "poisoners kit": ["int", "wis"],
+  "smiths tools": ["str", "dex"],
+  "tinkers tools": ["int", "dex"], // Two-Parts: "Tinkerer"
+  "weavers tools": ["cha", "dex"],
+  "woodcarvers tools": ["str", "dex"],
+  // Not on Two-Parts' table. INT/WIS like its neighbours (Alchemist's,
+  // Poisoner's) — Claude's reading, needs Sam's yes (camp doc §18).
+  "herbalism kit": ["int", "wis"],
+}
+
+/** Two-Parts Crafting, Crafting Time table: DC and hours by rarity. */
+export const CRAFT_BY_RARITY: Record<string, { dc: number; hours: number }> = {
+  common: { dc: 12, hours: 1 },
+  uncommon: { dc: 15, hours: 2 },
+  rare: { dc: 18, hours: 4 },
+  very_rare: { dc: 21, hours: 6 },
+  legendary: { dc: 24, hours: 8 },
+}
+
+export interface CraftSpec {
+  dc: number
+  hours: number
+  /** Successful checks to finish: one per hour of work. */
+  checks: number
+  abilities: [Ability, Ability]
+  flags: string[]
+}
+
+/** What crafting this item takes, or null (with the reason) when the sources give no way to roll it. */
+export function craftSpec(
+  item: { rarity: string | null; item_type: string | null },
+  recipe: CraftRecipe,
+  tool: string = recipe.tools,
+): { spec: CraftSpec | null; reason: string | null } {
+  const flags: string[] = []
+  const abilities = CRAFT_TOOL_ABILITIES[toolKey(tool)]
+  if (!abilities) return { spec: null, reason: `No crafting abilities are listed for ${tool}.` }
+  if (toolKey(tool) === "herbalism kit") flags.push("Herbalism Kit rolls INT or WIS — Claude's reading; Two-Parts does not list it.")
+  const rarity = (item.rarity ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_")
+  if (rarity === "artifact") return { spec: null, reason: "Artifacts are not crafted." }
+  let row = CRAFT_BY_RARITY[rarity]
+  if (!row) {
+    row = CRAFT_BY_RARITY.common
+    flags.push(`No rarity on the catalog row; crafted as common (DC ${row.dc}).`)
+  }
+  const dc = Math.max(1, Math.trunc(recipe.dc ?? row.dc))
+  let hours = Math.max(1, Number(recipe.hours ?? row.hours))
+  // Consumables take half the time, minimum one hour — unless the recipe's
+  // own source already printed the hours for this very item.
+  if (recipe.hours == null && (item.item_type ?? "").toLowerCase() === "consumable") hours = Math.max(1, hours / 2)
+  return { spec: { dc, hours, checks: Math.ceil(hours), abilities, flags }, reason: null }
+}
+
+/** The crafting modifier: the better of the tool's two abilities, plus proficiency. */
+export function craftModifier(
+  scores: Partial<Record<`${Ability}_score`, number | null>>,
+  abilities: [Ability, Ability],
+  proficiencyBonus: number,
+): { ability: Ability; modifier: number } {
+  const [a, b] = abilities
+  const ma = abilityMod(Number(scores[`${a}_score`] ?? 10))
+  const mb = abilityMod(Number(scores[`${b}_score`] ?? 10))
+  const ability = mb > ma ? b : a
+  return { ability, modifier: Math.max(ma, mb) + Math.max(0, Math.trunc(proficiencyBonus || 0)) }
+}
+
+/** The d20 the table kept: the committed total less the committed modifier. Null if it is not a legal face. */
+export function keptD20(result: { total?: unknown; modifier?: unknown } | null | undefined): number | null {
+  const face = Number(result?.total) - Number(result?.modifier)
+  return Number.isInteger(face) && face >= 1 && face <= 20 ? face : null
+}
+
+/** What the materials cost: the recipe's printed cost, or the SRD's half of the market value. */
+export function craftMaterialsGp(value: number | null, recipe: CraftRecipe): number {
+  if (recipe.cost_gp != null) return Math.max(0, Number(recipe.cost_gp))
+  return Math.max(0, Number(value) || 0) * CRAFT_MATERIALS_FRACTION
+}
+
+/**
+ * Pay `gp` out of a `sheet_currency` purse. Gold first; if that is short, the
+ * whole purse is counted in copper and returned as gp / sp / cp — same value,
+ * change given the way a merchant would. Null when the purse cannot cover it.
+ */
+export function payFromPurse(currency: unknown, gp: number): Record<string, number> | null {
+  const c = (currency && typeof currency === "object" ? currency : {}) as Record<string, unknown>
+  const n = (k: string) => Math.max(0, Math.trunc(Number(c[k]) || 0))
+  const purse = { cp: n("cp"), sp: n("sp"), ep: n("ep"), gp: n("gp"), pp: n("pp") }
+  const cost = Math.round(gp * 100)
+  if (cost <= 0) return purse
+  if (cost % 100 === 0 && purse.gp * 100 >= cost) return { ...purse, gp: purse.gp - cost / 100 }
+  const total = purse.cp + purse.sp * 10 + purse.ep * 50 + purse.gp * 100 + purse.pp * 1000
+  if (total < cost) return null
+  let left = total - cost
+  const out = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 }
+  out.gp = Math.floor(left / 100); left -= out.gp * 100
+  out.sp = Math.floor(left / 10); left -= out.sp * 10
+  out.cp = left
+  return out
+}
+
+export interface CraftRollOutcome {
+  success: boolean
+  total: number
+  successes: number
+  attempts: number
+  done: boolean
+  note: string
+}
+
+/** One crafting check against the project. Failure wastes the hour; it never undoes banked work. */
+export function settleCraftRoll(input: {
+  crafter: string
+  item: string
+  face: number
+  modifier: number
+  spec: CraftSpec
+  successes: number
+  attempts: number
+}): CraftRollOutcome {
+  const total = input.face + input.modifier
+  const success = total >= input.spec.dc
+  const successes = Math.max(0, input.successes) + (success ? 1 : 0)
+  const attempts = Math.max(0, input.attempts) + 1
+  const done = successes >= input.spec.checks
+  const left = input.spec.checks - successes
+  const note = success
+    ? done
+      ? `${input.crafter} finishes the ${input.item}. It is in their pack.`
+      : `${input.crafter} makes good progress on the ${input.item} — ${left} more hour${left === 1 ? "" : "s"} of good work to go.`
+    : `${input.crafter} spends the hour on the ${input.item} and it comes to nothing; the work already done still holds.`
+  return { success, total, successes, attempts, done, note }
+}
+
+/** Every tool that makes this item: the main one, then any alternatives. */
+export function recipeTools(recipe: CraftRecipe): string[] {
+  const all = [recipe.tools, ...(recipe.alt_tools ?? [])].filter((t): t is string => typeof t === "string" && !!t.trim())
+  return all.filter((t, i) => all.findIndex((u) => toolKey(u) === toolKey(t)) === i)
+}
+
+/** The first of the recipe's tools this crafter is proficient with — the one their crafting checks use. */
+export function toolForCrafter(recipe: CraftRecipe, proficiencies: string[] | null | undefined): string | null {
+  const profs = new Set((proficiencies ?? []).map(toolKey))
+  return recipeTools(recipe).find((t) => profs.has(toolKey(t))) ?? null
+}
+
+/**
+ * Xanathar's Guide to Everything, Tool Proficiencies: "If the use of a tool and
+ * the use of a skill both apply to a check, and a character is proficient with
+ * both the tool and the skill, consider allowing the character to make the check
+ * with advantage." Only where the book ties crafting to a skill: alchemist's
+ * supplies (Alchemical Crafting — "make a check using the indicated skill with
+ * advantage"; the indicated skill is Arcana).
+ */
+export const CRAFT_ADVANTAGE_SKILL: Record<string, string> = {
+  "alchemists supplies": "arcana",
+}
+
+/** The skill that gives this tool's crafting check advantage, when the crafter is proficient in it. */
+export function craftAdvantage(tool: string, skills: Record<string, unknown> | null | undefined): string | null {
+  const skill = CRAFT_ADVANTAGE_SKILL[toolKey(tool)]
+  if (!skill) return null
+  const has = Object.entries(skills ?? {}).some(
+    ([k, v]) => k.trim().toLowerCase().replace(/[\s-]+/g, "_") === skill && /^(proficient|expertise|true|yes)$/i.test(String(v)),
+  )
+  return has ? skill.charAt(0).toUpperCase() + skill.slice(1) : null
+}

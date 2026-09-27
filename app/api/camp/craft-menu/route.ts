@@ -39,7 +39,7 @@ export async function GET(req: Request) {
 
   const { data: character, error: charError } = await admin
     .from("characters")
-    .select("id, sheet_proficiencies, sheet_currency")
+    .select("id, sheet_proficiencies, sheet_currency, sheet_skill_proficiencies")
     .eq("id", characterId)
     .is("archived_at", null)
     .maybeSingle()
@@ -49,10 +49,12 @@ export async function GET(req: Request) {
   }
   if (!character) return Response.json({ error: "not_found" }, { status: 404 })
 
-  const [{ data: recipes }, { data: pack }, { data: pos }] = await Promise.all([
-    admin.from("items").select("id, slug, name, value, properties").not("properties->craft", "is", null),
+  const [{ data: recipes }, { data: pack }, { data: pos }, { data: open }] = await Promise.all([
+    admin.from("items").select("id, slug, name, value, rarity, item_type, properties").not("properties->craft", "is", null),
     admin.from("inventory_items").select("name, quantity, items(slug)").eq("character_id", characterId),
     admin.from("party_position").select("node_id").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+    // Open projects (§18): materials already paid, only the work remains.
+    admin.from("crafting_projects").select("item_id, successes").eq("character_id", characterId).is("finished_at", null),
   ])
 
   let facilities: string[] = []
@@ -74,6 +76,8 @@ export async function GET(req: Request) {
     carried,
     currency: character.sheet_currency,
     facilities,
+    openProjects: (open ?? []) as { item_id: string; successes: number }[],
+    skills: (character.sheet_skill_proficiencies ?? null) as Record<string, unknown> | null,
   })
   return Response.json({ menu })
 }
