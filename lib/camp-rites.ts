@@ -29,6 +29,8 @@
 //
 // The character's god is `sheet_personality.faith` (the Forge writes it).
 
+import { MAX_ATTUNED } from "./camp"
+
 export type Rng = () => number
 
 const die = (rng: Rng, sides: number) => 1 + Math.floor(rng() * sides)
@@ -482,9 +484,9 @@ export function prayToGod(me: RiteSheet, party: RiteSheet[], rng: Rng, opts: { p
 // Identify (both Ritual); Spell Scroll (readable only if the spell is on your
 // class list); Wizard — Copying a Spell into the Book (2 hours and 50 GP per
 // spell level, a level you can prepare); Comprehend Languages (Ritual).
-// Project rule (AGENTS.md): a cursed item reveals nothing.
+// Project rule (AGENTS.md): a cursed item reveals nothing — lib/camp enforces it.
 
-export const MAX_ATTUNED = 3
+export { MAX_ATTUNED }
 
 /** One thing in the pack, as the study tiles see it. From items + inventory_items. */
 export interface StudyItem {
@@ -536,26 +538,10 @@ export function studyMenu(me: StudySheet, pack: StudyItem[]): Option[] {
 
 export interface StudyResult { ok: boolean; note: string; write?: Record<string, unknown>; check?: Check | null; flags?: string[] }
 
-/** SRD 5.2.1 Attunement: a Short Rest's focus; three items at most; prerequisites hold. */
-export function attune(me: StudySheet, item: StudyItem, pack: StudyItem[]): StudyResult {
-  const flags = ["Attunement needs somewhere to live: inventory_items has no attuned column yet — a migration Sam pastes by hand"]
-  if (!isMagic(item) || !needsAttunement(item)) return { ok: false, note: `${item.name} does not need attunement.`, flags }
-  if (item.attunedBy === me.id) return { ok: false, note: `${me.name} is already attuned to ${item.name}.`, flags }
-  if (item.attunedBy) return { ok: false, note: `Someone else is attuned to ${item.name}. They must end it first.`, flags }
-  if (pack.filter((it) => it.attunedBy === me.id).length >= MAX_ATTUNED) return { ok: false, note: `${me.name} is already attuned to ${MAX_ATTUNED} items.`, flags }
-  const pre = typeof item.attunement === "string" ? item.attunement.match(/by an? ([a-z ]+)/i)?.[1]?.trim() : null
-  if (pre && !classIs(me, pre.replace(/s$/, ""))) return { ok: false, note: `${item.name} requires attunement by a ${pre}.`, flags }
-  // Project rule: a cursed item binds without saying so.
-  return { ok: true, note: `${me.name} spends the evening with ${item.name} and feels it settle into place. Attuned.`, write: { attuned_by: me.id }, flags }
-}
-
-/** SRD 5.2.1: a Short Rest in contact with an item reveals its properties. A curse says nothing. */
-export function identify(me: StudySheet, item: StudyItem): StudyResult {
-  if (item.identified) return { ok: false, note: `${me.name} already knows what ${item.name} is.` }
-  if (!isMagic(item)) return { ok: true, note: `${me.name} turns ${item.name} over through the evening. Nothing stirs in it. It is not magic.`, write: { identified: true } }
-  if (item.cursed) return { ok: true, note: `${me.name} studies ${item.name}. It is magic — ${item.rarity}. What it does, it keeps to itself.`, write: { identified: true } }
-  return { ok: true, note: `${me.name} studies ${item.name} through the evening and learns it: ${item.rarity} magic${needsAttunement(item) ? ", and it wants attunement" : ""}.`, write: { identified: true } }
-}
+// Attune, identify and decipher already live in lib/camp (attune: one per rest,
+// three at most; identifyItem: never reveals a curse; decipher: INT (Arcana)).
+// The Study tiles call those directly — they are not repeated here.
+export { attune, identifyItem, decipher } from "./camp"
 
 /** SRD 5.2.1 Spell Scroll: readable only if the spell is on your class list. */
 export function readScroll(me: StudySheet, item: StudyItem): StudyResult {
@@ -579,21 +565,4 @@ export function copyScroll(me: StudySheet, item: StudyItem, gp: number): StudyRe
   const cost = 50 * s.level
   if (gp < cost) return { ok: false, note: `Copying ${s.name} takes ${cost} gp of inks; ${me.name} has ${gp}.` }
   return { ok: true, note: `${me.name} copies ${s.name} into the spellbook: ${2 * s.level} hours, ${cost} gp of ink. The scroll is spent.`, write: { spellbook_add: s.name, gp_spent: cost, consume: item.id } }
-}
-
-/**
- * Decipher a book or passage. In a language you know: you read it. With
- * Comprehend Languages (Ritual) known: you read it. Otherwise an Intelligence
- * check on the subject — the DC is the DM's (DMG p.238 medium 15 until set).
- */
-export function decipher(me: StudySheet, item: StudyItem, rng: Rng, dc = 15): StudyResult {
-  const lang = item.language ?? null
-  if (lang && (me.languages ?? []).some((l) => l.toLowerCase() === lang.toLowerCase())) return { ok: true, note: `${me.name} reads ${item.name} — it is in ${lang}.` }
-  if (knowsSpell(me, "Comprehend Languages")) return { ok: true, note: `${me.name} casts Comprehend Languages as a ritual and reads ${item.name}.` }
-  const subject = item.subject ?? "history"
-  const d = die(rng, 20)
-  const total = d + mod(me.int_score) + skillProf(me, subject) * pb(me.level)
-  const Sk = subject[0].toUpperCase() + subject.slice(1)
-  const c: Check = { d20: d, total, dc, success: total >= dc, label: `Intelligence (${Sk}) ${d} → ${total} vs DC ${dc}` }
-  return { ok: true, check: c, note: c.success ? `${me.name} works through ${item.name}${lang ? ` (${lang})` : ""} — ${c.label}. The meaning comes clear; the DM tells you what it says.` : `${me.name} works through ${item.name}${lang ? ` (${lang})` : ""} — ${c.label}. The words stay shut.`, flags: ["Decipher DC defaults to 15 (DMG p.238 medium) until the DM sets it"] }
 }

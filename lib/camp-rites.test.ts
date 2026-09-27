@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  ailmentsOf, attune, copyScroll, cure, cureOptions, decipher, deityOf, devotionPath, identify, investigate,
+  ailmentsOf, copyScroll, cure, cureOptions, deityOf, devotionPath, identifyItem, investigate,
   medicineMenu, prayMenu, prayToGod, readScroll, riteOptions, studyMenu, tend, tendOptions,
   type RiteSheet, type StudyItem, type StudySheet,
 } from "./camp-rites"
@@ -90,13 +90,8 @@ describe("study", () => {
     expect(studyMenu(fifi, [scroll]).some((o) => o.k === "learn-scroll")).toBe(false)
     expect(studyMenu(wiz, [scroll]).find((o) => o.k === "learn-scroll")?.ok).toBe(true)
   })
-  it("three attunements at most", () => {
-    const pack = [1, 2, 3].map((i) => ({ ...ring, id: `a${i}`, attunedBy: "w" }))
-    expect(attune(wiz, ring, [...pack, ring]).ok).toBe(false)
-    expect(attune(wiz, ring, [ring]).ok).toBe(true)
-  })
-  it("a cursed item reveals nothing", () => {
-    expect(identify(fifi, cursed).note).toMatch(/keeps to itself/)
+  it("a cursed item reveals nothing (lib/camp)", () => {
+    expect(identifyItem({ name: "Dark Blade", attunement: false, cursed: true })).not.toHaveProperty("revealed.cursed")
   })
   it("a scroll off your list is unintelligible", () => {
     expect(readScroll(samson, scroll).note).toMatch(/Unintelligible/)
@@ -105,9 +100,5 @@ describe("study", () => {
   it("copying costs 50 gp a level", () => {
     expect(copyScroll(wiz, scroll, 40).ok).toBe(false)
     expect(copyScroll(wiz, scroll, 60).write).toMatchObject({ gp_spent: 50 })
-  })
-  it("a known language reads without a roll", () => {
-    expect(decipher(wiz, { id: "b", name: "Journal", kind: "book", language: "Elvish" }, seq(1)).check).toBeUndefined()
-    expect(decipher(wiz, { id: "b", name: "Tablet", kind: "book", language: "Undercommon", subject: "arcana" }, seq(10)).check?.total).toBe(13)
   })
 })
