@@ -811,6 +811,10 @@ export const CRAFT_MATERIALS_FRACTION = 0.5
 /** The recipe convention on `items.properties.craft`. No block → not craftable. */
 export interface CraftRecipe {
   tools: string
+  /** Menu tab (§16). When absent, read from the tool (`TOOL_CATEGORY`). */
+  category?: CraftCategory | null
+  /** Where the recipe's tool comes from, e.g. "SRD 5.1 Equipment: Tools — Herbalism Kit". */
+  source?: string | null
   materials?: { slug: string; qty: number }[]
   /** A facility the location must offer: "forge", "alchemy_lab" … */
   requires?: string | null
@@ -1658,4 +1662,166 @@ export function levelUpPatch(
   if (w.hit_dice_remaining != null) patch.hit_dice_remaining = w.hit_dice_remaining
   if (w.sheet_spellcasting) patch.sheet_spellcasting = w.sheet_spellcasting
   return patch
+}
+
+// ============================================================================
+// §16 THE CRAFTING MENU (Sam, 2026-09-27)
+// ============================================================================
+//
+// "When you choose crafting in camp there should be a list (Alchemy,
+//  Construct, Artifice). Options available light up if you have the
+//  proficiency and items."
+//
+// An option LIGHTS UP when the crafter has everything the SRD asks for
+// (Sam, 2026-09-26: "tool proficiency to craft and use SRD rules"):
+//   proficiency with the recipe's tools      SRD: "you must be proficient"
+//   the tools themselves, carried            you cannot use a kit you lack
+//   any materials the recipe names           catalog items, carried
+//   the materials' gold in the coin purse    SRD: "raw materials worth half
+//                                            the total market value"
+//   the facility, when the recipe names one  SRD: "a forge to craft a sword"
+// A dimmed option lists what is missing, in those words.
+//
+// The DC is "based on what is being done" (Sam, 2026-09-27): it is not stored
+// on the recipe. Malachar sets it when he calls for the roll, from the SRD's
+// Typical Difficulty Classes, for the thing actually being made.
+
+export const CRAFT_CATEGORIES = ["alchemy", "construct", "artifice"] as const
+export type CraftCategory = (typeof CRAFT_CATEGORIES)[number]
+
+export const CRAFT_CATEGORY_LABEL: Record<CraftCategory, string> = {
+  alchemy: "Alchemy",
+  construct: "Construct",
+  artifice: "Artifice",
+}
+
+/**
+ * Which tab a tool's work belongs on. Claude's grouping of the SRD's tools
+ * under Sam's three names — needs Sam's yes (camp doc §16). A recipe's own
+ * `category` always wins.
+ */
+export const TOOL_CATEGORY: Record<string, CraftCategory> = {
+  "alchemists supplies": "alchemy",
+  "herbalism kit": "alchemy",
+  "poisoners kit": "alchemy",
+  "brewers supplies": "alchemy",
+  "building hammer": "construct",
+  "smiths tools": "construct",
+  "carpenters tools": "construct",
+  "masons tools": "construct",
+  "leatherworkers tools": "construct",
+  "woodcarvers tools": "construct",
+  "weavers tools": "construct",
+  "cobblers tools": "construct",
+  "potters tools": "construct",
+  "glassblowers tools": "construct",
+  "tinkers tools": "artifice",
+  "jewelers tools": "artifice",
+}
+
+/** "Tinker's Tools (Artificer Kit)" and "tinkers tools" are the same tool. */
+export function toolKey(name: string | null | undefined): string {
+  return String(name ?? "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
+export function craftCategoryOf(recipe: CraftRecipe): CraftCategory | null {
+  if (recipe.category && (CRAFT_CATEGORIES as readonly string[]).includes(recipe.category)) return recipe.category
+  return TOOL_CATEGORY[toolKey(recipe.tools)] ?? null
+}
+
+/** `characters.sheet_currency` → gold pieces (SRD: 1 pp = 10 gp, 1 ep = ½ gp, 1 sp = 1/10 gp, 1 cp = 1/100 gp). */
+export function purseGp(currency: unknown): number {
+  const c = (currency && typeof currency === "object" ? currency : {}) as Record<string, unknown>
+  const n = (k: string) => Math.max(0, Number(c[k]) || 0)
+  return n("pp") * 10 + n("gp") + n("ep") / 2 + n("sp") / 10 + n("cp") / 100
+}
+
+export interface CraftMenuRecipeRow {
+  id: string
+  slug: string | null
+  name: string
+  value: number | null
+  properties: { craft?: CraftRecipe | null; [k: string]: unknown } | null
+}
+
+export interface CarriedItem {
+  slug?: string | null
+  name: string
+  quantity: number | null
+}
+
+export interface CraftMenuOption {
+  itemId: string
+  slug: string | null
+  name: string
+  category: CraftCategory
+  tools: string
+  valueGp: number
+  /** SRD: raw materials worth half the market value. */
+  materialsGp: number
+  /** Lit: everything the SRD asks for is here. */
+  available: boolean
+  /** Why it is dimmed, one plain line each. Empty when lit. */
+  missing: string[]
+  source: string | null
+}
+
+export type CraftMenu = Record<CraftCategory, CraftMenuOption[]>
+
+/**
+ * The menu for one crafter: every catalog recipe, on its tab, lit or dimmed.
+ * Recipes whose tool fits no tab are left out rather than guessed.
+ */
+export function craftMenu(input: {
+  recipes: CraftMenuRecipeRow[]
+  /** `sheet_proficiencies.tools`. */
+  proficiencies: string[] | null | undefined
+  /** `inventory_items`, with the catalog slug when `item_id` links one. */
+  carried: CarriedItem[]
+  /** `characters.sheet_currency`. */
+  currency: unknown
+  /** The node's facilities, e.g. `travel_nodes.metadata.facilities`. */
+  facilities?: string[] | null
+}): CraftMenu {
+  const menu: CraftMenu = { alchemy: [], construct: [], artifice: [] }
+  const profs = new Set((input.proficiencies ?? []).map(toolKey))
+  const gold = purseGp(input.currency)
+  const here = new Set((input.facilities ?? []).map(toolKey))
+  const holding = (want: { slug?: string | null; name?: string | null }) =>
+    input.carried
+      .filter((c) => (want.slug && c.slug === want.slug) || toolKey(c.name) === toolKey(want.name ?? want.slug ?? ""))
+      .reduce((n, c) => n + Math.max(0, Number(c.quantity ?? 1)), 0)
+
+  for (const row of input.recipes) {
+    const recipe = row.properties?.craft
+    if (!recipe || typeof recipe.tools !== "string" || !recipe.tools) continue
+    const category = craftCategoryOf(recipe)
+    if (!category) continue
+    const valueGp = Math.max(0, Number(row.value) || 0)
+    const materialsGp = valueGp * CRAFT_MATERIALS_FRACTION
+    const missing: string[] = []
+    if (!profs.has(toolKey(recipe.tools))) missing.push(`Not proficient with ${recipe.tools}.`)
+    if (holding({ name: recipe.tools }) < 1) missing.push(`No ${recipe.tools} carried.`)
+    for (const m of recipe.materials ?? []) {
+      const need = Math.max(1, Math.trunc(m.qty ?? 1))
+      const have = holding({ slug: m.slug, name: m.slug.replace(/-/g, " ") })
+      if (have < need) missing.push(`Needs ${need} ${m.slug.replace(/-/g, " ")} (${have} carried).`)
+    }
+    if (valueGp <= 0) missing.push("No market value in the catalog, so it cannot be priced.")
+    else if (gold < materialsGp) missing.push(`Needs ${materialsGp} gp of materials (${Math.floor(gold)} gp in the purse).`)
+    if (recipe.requires && !here.has(toolKey(recipe.requires))) missing.push(`Needs a ${recipe.requires} nearby.`)
+    menu[category].push({
+      itemId: row.id, slug: row.slug, name: row.name, category, tools: recipe.tools,
+      valueGp, materialsGp, available: missing.length === 0, missing, source: recipe.source ?? null,
+    })
+  }
+  for (const c of CRAFT_CATEGORIES) {
+    menu[c].sort((a, b) => Number(b.available) - Number(a.available) || a.name.localeCompare(b.name))
+  }
+  return menu
 }
