@@ -558,7 +558,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   //
   // These MUST stay class-neutral. They previously read as cleric lines
   // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
-  // player whose generation failed was handed Samson's options ���������������� the exact
+  // player whose generation failed was handed Samson's options ����������������� the exact
   // leak the per-player chips exist to prevent. No class, no skill tag, no
   // named party member: whatever sits here is shown to EVERY seat at once.
   // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
@@ -813,7 +813,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       <Frame className="shrink-0" hideHeader>
         <div className="min-h-[470px] px-3.5 pt-3.5 pb-0 text-[10px]">
           <div className="flex items-center gap-2.5"><div className="h-[58px] w-[58px] overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-[17px] font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="truncate text-[11px] text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"} · {backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2.5 py-1.5 text-[11px] text-[#cdb276]">Level {selected?.level ?? 1}</span></div>
-          <div className="mt-2 flex justify-between text-[8px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-1 bg-[#251a12]"><div className="h-full w-[2%] bg-[#b62d38]" /></div>
+          <div className="mt-2 flex justify-between text-[12px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-[5px] bg-[#251a12]"><div className="h-full w-[2%] bg-[#b62d38]" /></div>
           <div className="mt-5 flex items-center gap-5"><b className="text-[30px] text-[#ddd2bc]">HP {selected?.hp_current ?? 10} / {selected?.hp_max ?? 10}</b><div className="h-5 flex-1 bg-[#281315]"><div className="h-full bg-[#bd3039]" style={{ width: `${((selected?.hp_current ?? 10)/(selected?.hp_max ?? 10))*100}%` }} /></div></div>
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
           {hasSpellSlots ? (
