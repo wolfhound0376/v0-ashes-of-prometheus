@@ -28,6 +28,7 @@ import { defaultSlotFor, normalizeSlot, slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
 import { isVideoUrl } from "@/lib/media-url"
+import { campBiome, CAMP_BIOME_LABEL, CAMP_PLATES } from "@/lib/camp-plates"
 import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
@@ -370,6 +371,17 @@ export function V4Dashboard(props: V4DashboardProps) {
   // Read from the realtime listener and the cue handler, which are bound once.
   const talkModeRef = useRef(talkMode)
   talkModeRef.current = talkMode
+  // Talking by the fire happens in front of the camp's own painting, not the
+  // room the party was last in (Sam, 2026-09-27). The camp link may name the
+  // plate outright (?plate=fungal); otherwise the location name picks it.
+  const [plateParam, setPlateParam] = useState<string | null>(null)
+  useEffect(() => {
+    if (!talkMode) return
+    setPlateParam(new URLSearchParams(window.location.search).get("plate"))
+  }, [talkMode])
+  const talkBiome = talkMode ? campBiome(props.environment.name, plateParam) : null
+  const talkPlate = talkBiome ? CAMP_PLATES[talkBiome] : null
+  const stageBackdrop = talkPlate ?? props.environment.npcBackdropUrl
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   // Restart Campaign DOES clear the dialogue table — the reason it looked like
   // it had failed is right here. An empty feed fell straight back to the
@@ -495,6 +507,24 @@ export function V4Dashboard(props: V4DashboardProps) {
   // falls below the panel and the feet meet the ground line. Both default to
   // the previous behaviour (1 / 0), so untuned characters are unchanged.
   const stageFrame = characterStageStyle(selected as (Character & StageFramingRow) | undefined)
+  // Talking by the fire: the big scene is the camp, and the figure standing in
+  // it is the person you sat down with, not your own point of view (Sam,
+  // 2026-09-27 — "the first image character should be the character I chose
+  // to talk to"). Their idle loop at rest, their talking loop as they speak.
+  const partnerNpc = talkPartner?.kind === "npc" ? talkPartner.npc : undefined
+  const partnerStageMedia = talkMode
+    ? partnerPlayer
+      ? ((playerTalking ? partnerPlayer.talking_url : null) || partnerPlayer.idle_url || partnerPlayer.portrait_image_url || partnerPlayer.avatar_image_url)
+      : partnerNpc
+        ? ((speakingNpc?.id === partnerNpc.id ? partnerNpc.talking_url : null) || partnerNpc.idle_url || partnerNpc.portrait_url || partnerNpc.face_url)
+        : null
+    : null
+  const sceneMedia = talkMode ? partnerStageMedia : characterStageMedia
+  const sceneName = talkMode ? (partnerPlayer?.name ?? partnerNpc?.name ?? props.talkWith ?? "") : (selected?.name ?? "Active character")
+  const sceneFrame = talkMode
+    ? characterStageStyle((partnerPlayer ?? partnerNpc) as StageFramingRow | undefined)
+    : stageFrame
+  const sceneImage = talkPlate ?? props.environment.imageUrl
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && isCombatant(npc.challenge_rating))
   // A fight breaking out sends this browser to the board — once per fight,
   // and only the DM's browser: yanking every player off their sheet
@@ -757,7 +787,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     announce(describeRoll(result), { toLich: true, result })
   }
 
-  return <main className={cn("aop-lich-dashboard min-h-0 flex-1 overflow-y-auto p-2", talkMode ? "flex flex-col items-center" : "grid grid-cols-1 gap-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]")}>
+  return <main style={talkPlate ? { backgroundImage: `linear-gradient(#050403b3, #050403e6), url(${talkPlate})`, backgroundSize: "cover", backgroundPosition: "51% 64%" } : undefined} className={cn("aop-lich-dashboard min-h-0 flex-1 overflow-y-auto p-2", talkMode ? "flex flex-col items-center" : "grid grid-cols-1 gap-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]")}>
     <div className={cn("flex min-h-0 flex-col gap-2", talkMode && "hidden")}>
       <Frame title="Current Environment" className="shrink-0">
         <div className="p-2.5">
@@ -798,7 +828,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       ) : null}
       <div className={cn("grid h-[235px] shrink-0 overflow-hidden p-3 pb-4", talkMode ? "grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-3" : "grid-cols-[190px_minmax(240px,1fr)] gap-4")}>
         <div className="relative"><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? shownNpc?.description || "Present in the scene" : "No one has stepped forward yet"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}<button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-0 left-0" title="Open Dice Roller" aria-label="Open Dice Roller" /></div>
-        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{props.environment.npcBackdropUrl ? (<><img src={props.environment.npcBackdropUrl} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />{/* The backdrop is a lit room, so the figure needs somewhere dark to stand against. Vignette, not a flat scrim, or the art goes muddy. */}<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_80%,transparent_18%,#050403d9_80%)]" /></>) : null}{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : onStage ? <>Silent <span className="ml-2">▯▯▯▯</span></> : <>Awaiting an entrance</>}</div>
+        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{stageBackdrop ? (<><img src={stageBackdrop} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" style={talkPlate ? { objectPosition: "51% 64%" } : undefined} />{/* The backdrop is a lit room, so the figure needs somewhere dark to stand against. Vignette, not a flat scrim, or the art goes muddy. */}<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_80%,transparent_18%,#050403d9_80%)]" /></>) : null}{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : onStage ? <>Silent <span className="ml-2">▯▯▯▯</span></> : <>Awaiting an entrance</>}</div>
           {/* MERGE NOTE: Codex's redesign dropped the third column, which held
               disposition / CR / DM-only health. Those are real row data, not
               mock text, so they are re-homed here as a compact strip beneath
@@ -817,18 +847,18 @@ export function V4Dashboard(props: V4DashboardProps) {
         </div>
       </div>
       <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
-        <img src={props.environment.imageUrl} alt="Current scene" className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
+        <img src={sceneImage} alt="Current scene" style={talkPlate ? { objectPosition: "51% 64%" } : undefined} className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
         <div className="absolute left-3 top-3 z-20 flex gap-1 rounded border border-[#6b5123] bg-[#080705]/85 p-1 text-[8px] uppercase tracking-wider">
           <button onClick={() => setStageMode("scene")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "scene" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Compass className="h-3 w-3" />Character View</button>
           <button onClick={() => setStageMode("tactical")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "tactical" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Map className="h-3 w-3" />Tactical Map{inCombat ? " · Live" : ""}</button>
         </div>
         {stageMode === "scene" ? <>
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
-          {characterStageMedia ? (isVideoUrl(characterStageMedia)
-            ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
-            : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+          {sceneMedia ? (isVideoUrl(sceneMedia)
+            ? <video key={sceneMedia} src={sceneMedia} autoPlay loop muted playsInline aria-hidden="true" style={sceneFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+            : <img src={sceneMedia} alt={sceneName} style={sceneFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
-          <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">Point of view</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {props.environment.name}</b></div>
+          <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">{talkMode ? "By the fire" : "Point of view"}</span><b className="font-serif text-[10px] text-[#e1d0a8]">{sceneName} · {talkBiome ? CAMP_BIOME_LABEL[talkBiome] : props.environment.name}</b></div>
         </> : <>
           <MapPanel initial="location" onBack={() => setStageMode("scene")} />
           {/* The battle board is a PLACE, not a panel. Rendering it inside
