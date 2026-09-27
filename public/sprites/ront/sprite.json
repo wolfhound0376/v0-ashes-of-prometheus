@@ -41,6 +41,24 @@
       "frames": 8,
       "fps": 10,
       "loop": true
+    },
+    "eat": {
+      "sheet": "eat.png",
+      "frames": 7,
+      "fps": 6,
+      "loop": true
+    },
+    "sit": {
+      "sheet": "sit.png",
+      "frames": 5,
+      "fps": 4,
+      "loop": true
+    },
+    "sleep": {
+      "sheet": "sleep.png",
+      "frames": 5,
+      "fps": 3,
+      "loop": true
     }
   }
 }
