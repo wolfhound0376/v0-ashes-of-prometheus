@@ -47,6 +47,8 @@ import {
   // §18 — the crafting roll.
   craftMenu, craftSpec, craftModifier, keptD20, craftMaterialsGp, payFromPurse, settleCraftRoll, toolKey, toolForCrafter,
   parseCraftOptions, settleTake10, CRAFT_TAKE10_ACTIONS, craftingLine,
+  // §19 — tool uses timed to a rest.
+  isCampToolAction, decideCampTool, settleCampTool, trapGuardNote, CAMP_TOOL_ACTIONS,
   type CraftMenuRecipeRow, type CarriedItem,
   type LevelUpSheet,
 } from "@/lib/camp"
@@ -1006,6 +1008,29 @@ STRICT LIMITS ON USING THESE:
                   campResults.push(copies > 1 && out.done ? out.note.replace(`the ${item.name}`, `${copies} ${item.name}s`) : out.note)
                 }
                 console.log(`[camp] craft settled: d20(${face}) + ${mod.modifier} (${mod.ability.toUpperCase()}+prof) = ${out.total} vs DC ${spec.dc} — ${out.success ? "success" : "fail"} (${out.successes}/${spec.checks})`)
+              }
+            } else if (linked.action === "forge" || linked.action === "set_trap") {
+              // === FORGERY / A TRAP (lib/camp.ts §19) ===
+              // The table's d20 plus the sheet's own modifier (INT for a
+              // forgery, DEX for thieves' tools) plus proficiency. The total
+              // is the DC. A trap's DC is kept on the request's purpose so the
+              // passive roll can find it when someone comes in the night.
+              const face = keptD20(req.result as { total?: unknown; modifier?: unknown } | null)
+              const ability = CAMP_TOOL_ACTIONS[linked.action].roll ?? "dex"
+              const { data: sheet } = await timeAdmin.from("characters")
+                .select("str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, level")
+                .eq("id", playerCharacter.id).maybeSingle()
+              if (face == null || !sheet) {
+                campResults.push(`${name}'s ${linked.action === "forge" ? "forgery" : "trap"} roll could not be read — nothing set.`)
+              } else {
+                const pb = Number(sheet.proficiency_bonus ?? 0) || Math.floor((Math.max(1, Number(sheet.level ?? 1)) - 1) / 4) + 2
+                const score = Number((sheet as Record<string, unknown>)[`${ability}_score`] ?? 10)
+                const out = settleCampTool(linked.action, name, face, Math.floor((score - 10) / 2) + pb)
+                if (linked.action === "set_trap") {
+                  await timeAdmin.from("roll_requests").update({ purpose: `camp:set_trap:${out.dc}:done` }).eq("id", req.id)
+                }
+                campResults.push(out.note)
+                console.log(`[camp] ${linked.action} settled: d20(${face}) + ${ability.toUpperCase()}+prof = DC ${out.dc}`)
               }
             } else if (linked.action === "train") {
               // === THE TEACHING TEST (lib/camp.ts §17) ===
@@ -3586,8 +3611,32 @@ Rules:
       }
       return { metadata: {} }
     }
-    const rollCampVisitor = async (): Promise<StoredVisitor> =>
-      storedVisitor(passiveCampEncounter(await readPartyNode(), Math.random))
+    const rollCampVisitor = async (): Promise<StoredVisitor> => {
+      const v = storedVisitor(passiveCampEncounter(await readPartyNode(), Math.random))
+      // A trap set this camp (§19, Sam: "a nice camp defence") meets anyone
+      // who comes to fight. Its DC rides on the settled request's purpose.
+      if (v.visitor && v.hostile) {
+        try {
+          const { data: made } = await admin
+            .from("time_log").select("created_at").eq("session_id", activeSessionId).eq("event_type", "make_camp")
+            .order("created_at", { ascending: false }).limit(1).maybeSingle()
+          if (made?.created_at) {
+            const { data: traps } = await admin
+              .from("roll_requests").select("purpose, character_id").like("purpose", "camp:set_trap:%:done")
+              .gt("created_at", made.created_at).order("created_at", { ascending: false }).limit(1)
+            const trap = (traps ?? [])[0] as { purpose: string; character_id: string } | undefined
+            const dc = Number(/^camp:set_trap:(\d+):done$/.exec(trap?.purpose ?? "")?.[1])
+            if (trap && Number.isFinite(dc) && dc > 0) {
+              const { data: setter } = await admin.from("characters").select("name").eq("id", trap.character_id).maybeSingle()
+              v.note += trapGuardNote(dc, (setter?.name as string | undefined) ?? null)
+            }
+          }
+        } catch (e) {
+          console.warn("[camp] trap lookup failed:", e)
+        }
+      }
+      return v
+    }
     if (makingCamp) {
       // Sam, 2026-09-26: two actions on a full rest, one on a partial, decided
       // by the rations on hand when camp is made.
@@ -3786,6 +3835,39 @@ Rules:
           }
           campCheckPurpose = { purpose: `camp:artifice:${projectId}`, skill: "" }
           console.log(`[camp] action: ${row.name} — crafting ${copies > 1 ? `${copies}× ` : ""}${target.name} with ${option.tool} (DC ${option.dc}, ${option.checks} good hour${option.checks === 1 ? "" : "s"}${option.advantage ? `, advantage from ${option.advantage}` : ""}); d20 to be rolled on the table.`)
+          continue
+        }
+
+        // === TOOL USES TIMED TO A REST (lib/camp.ts §19) ===
+        // Disguise, forgery, a tune, a painting, a trap — Xanathar's rest-time
+        // tool uses, at the rest length Sam ruled. Proficiency and the tool in
+        // the pack are checked before anything is spent. Forgery and the trap
+        // are settled next turn from the table's d20; the rest need no roll.
+        const toolAction = normaliseCampAction(tag.action)
+        if (isCampToolAction(toolAction)) {
+          const [{ data: toolSheet }, { data: toolPack }, rationsNow, partyNow] = await Promise.all([
+            admin.from("characters").select("sheet_proficiencies").eq("id", row.id).maybeSingle(),
+            admin.from("inventory_items").select("name, quantity").eq("character_id", row.id),
+            readPartyRations(admin),
+            countPartyForCamp(),
+          ])
+          const profs = (toolSheet?.sheet_proficiencies as { tools?: unknown } | null)?.tools
+          const d = decideCampTool({
+            action: toolAction, who: row.name, camping: campingAtRest,
+            restKind: affordableRest(rationsNow.total, partyNow).kind,
+            remaining: row.rest_actions_remaining,
+            proficiencies: Array.isArray(profs) ? profs.filter((t): t is string => typeof t === "string") : [],
+            carried: ((toolPack ?? []) as { name: string; quantity: number | null }[]).map((r) => ({ name: r.name, quantity: r.quantity })),
+            isSpeaker: !!playerCharacter && playerCharacter.id === row.id,
+            rollsD20: !!thisRoll && thisRoll.die === "d20" && thisRoll.diceCount === 1 && !campCheckPurpose,
+          })
+          if (!d.spend) { console.log(`[camp] action: ${d.note}`); continue }
+          const { error: spendErr } = await admin.from("characters")
+            .update({ rest_actions_remaining: d.remaining, updated_at: new Date().toISOString() }).eq("id", row.id)
+          if (spendErr) { console.error("[camp] spend:", spendErr.message); continue }
+          row.rest_actions_remaining = d.remaining
+          if (d.purpose) campCheckPurpose = { purpose: d.purpose, skill: "" }
+          console.log(`[camp] action: ${d.note}${d.purpose ? " — d20 to be rolled on the table." : ""}`)
           continue
         }
 

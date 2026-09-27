@@ -75,6 +75,10 @@ import {
   twoCopiesAllowed,
   settleTake10,
   CRAFT_TAKE10_ACTIONS,
+  decideCampTool,
+  settleCampTool,
+  trapGuardNote,
+  isCampToolAction,
   type EncounterTableRow,
   type LevelUpSheet,
   type ShortRester,
@@ -178,7 +182,7 @@ describe("camp action budget", () => {
     expect(spendCampAction(2, "tend").ok).toBe(false)
     expect(spendCampAction(2, "sleep").remaining).toBe(2)
     for (const a of CAMP_ACTIONS) expect(CAMP_ACTION_RULES[a].source).toBeTruthy()
-    expect(CAMP_ACTIONS).toHaveLength(15) // 14 from Sam's list + train (§17)
+    expect(CAMP_ACTIONS).toHaveLength(20) // 14 from Sam's list + train (§17) + five tool uses (§19)
   })
 })
 
@@ -1160,5 +1164,47 @@ describe("take 10 and two copies (Two-Parts; Sam, 2026-09-27)", () => {
     const underway = craftMenu({ ...base, openProjects: [{ item_id: "i1", successes: 1, copies: 2 }] }).alchemy[0]
     expect(underway.progress).toEqual({ successes: 1, checks: 2, copies: 2 })
     expect(underway.twoCopies).toBeNull()
+  })
+})
+
+describe("tool uses timed to a rest (§19, Sam 2026-09-27)", () => {
+  const base = {
+    who: "Fifi", camping: true, restKind: "full" as const, remaining: 2,
+    proficiencies: ["Thieves' Tools", "Disguise Kit", "Lute"],
+    carried: [{ name: "Thieves' Tools", quantity: 1 }, { name: "Disguise kit", quantity: 1 }, { name: "Lute", quantity: 1 }],
+    isSpeaker: true, rollsD20: true,
+  }
+
+  it("knows the five actions by their table names", () => {
+    expect(normaliseCampAction("set a trap")).toBe("set_trap")
+    expect(normaliseCampAction("Quick fake")).toBe("forge")
+    expect(normaliseCampAction("compose a tune")).toBe("compose")
+    expect(isCampToolAction(normaliseCampAction("painting"))).toBe(true)
+    expect(isCampToolAction(normaliseCampAction("forage"))).toBe(false)
+  })
+
+  it("a trap is a short-rest use: fine on a partial rest, rolled on their own d20", () => {
+    const d = decideCampTool({ ...base, action: "set_trap", restKind: "partial", remaining: 1 })
+    expect(d).toMatchObject({ spend: true, remaining: 0, tool: "thieves tools", purpose: "camp:set_trap" })
+    expect(decideCampTool({ ...base, action: "set_trap", rollsD20: false }).spend).toBe(false)
+  })
+
+  it("a disguise and a song need a long rest; no roll", () => {
+    expect(decideCampTool({ ...base, action: "disguise", restKind: "partial" }).note).toMatch(/long rest/)
+    expect(decideCampTool({ ...base, action: "disguise" })).toMatchObject({ spend: true, purpose: null })
+    expect(decideCampTool({ ...base, action: "compose", rollsD20: false })).toMatchObject({ spend: true, tool: "lute" })
+  })
+
+  it("needs the proficiency and the tool in the pack", () => {
+    expect(decideCampTool({ ...base, action: "forge" }).note).toMatch(/proficiency with forgery kit/)
+    expect(decideCampTool({ ...base, action: "set_trap", carried: [] }).note).toMatch(/in their pack/)
+    expect(decideCampTool({ ...base, action: "paint", proficiencies: ["Painter's Supplies"], carried: [] }).spend).toBe(false)
+  })
+
+  it("the check total is the DC; a trap deals half of it", () => {
+    expect(settleCampTool("set_trap", "Fifi", 14, 5)).toMatchObject({ dc: 19 })
+    expect(settleCampTool("set_trap", "Fifi", 14, 5).note).toMatch(/9 damage/)
+    expect(settleCampTool("forge", "Kenta", 10, 2).note).toMatch(/DC 12/)
+    expect(trapGuardNote(19, "Fifi")).toMatch(/Fifi set guards the camp: .*DC 19.*9 damage/)
   })
 })
