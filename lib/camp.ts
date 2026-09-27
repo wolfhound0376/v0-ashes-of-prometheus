@@ -1289,9 +1289,13 @@ export const FULL_CASTER_SLOTS: Record<number, number[]> = {
 /** SRD: Ability Score Improvement at 4th, 8th, 12th, 16th, 19th (every class). */
 export const ASI_LEVELS = [4, 8, 12, 16, 19] as const
 
-/** SRD: the level each class picks its subclass. */
+/**
+ * The level each class picks its subclass. Sam, 2026-09-27: "2024 for
+ * subclass" — every class at 3rd level (the 2024 rules), including the
+ * Xanathar's subclasses whose 2014 text says 1st or 2nd.
+ */
 export const SUBCLASS_LEVEL: Record<string, number> = {
-  barbarian: 3, bard: 3, cleric: 1, druid: 2, fighter: 3, monk: 3, paladin: 3, ranger: 3, rogue: 3, sorcerer: 1, warlock: 1, wizard: 2,
+  barbarian: 3, bard: 3, cleric: 3, druid: 3, fighter: 3, monk: 3, paladin: 3, ranger: 3, rogue: 3, sorcerer: 3, warlock: 3, wizard: 3,
 }
 
 export interface LevelUpSheet {
@@ -1394,7 +1398,7 @@ export function levelUp(sheet: LevelUpSheet, opts: { method: "roll" | "average";
 
   const pendingChoices: PendingChoice[] = []
   if ((ASI_LEVELS as readonly number[]).includes(next)) pendingChoices.push({ kind: "asi", text: "Ability Score Improvement: +2 to one score or +1 to two (max 20).", source: "SRD 5.1, class table" })
-  if (SUBCLASS_LEVEL[cls] === next) pendingChoices.push({ kind: "subclass", text: `Choose a ${sheet.class} subclass.`, source: "SRD 5.1, class table" })
+  if (SUBCLASS_LEVEL[cls] === next) pendingChoices.push({ kind: "subclass", text: `Choose a ${sheet.class} subclass.`, source: "2024 timing, Sam 2026-09-27" })
   pendingChoices.push({ kind: "class_features", text: `Read the ${sheet.class ?? "class"} table for level ${next} features.`, source: "SRD 5.1, class table" })
   if ((FULL_CASTERS as readonly string[]).includes(cls) || cls === "warlock" || (HALF_CASTERS as readonly string[]).includes(cls)) {
     pendingChoices.push({ kind: "spells", text: "Spells known / prepared for the new level.", source: "SRD 5.1, class spellcasting" })

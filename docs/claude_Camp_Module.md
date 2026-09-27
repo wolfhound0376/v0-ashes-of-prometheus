@@ -446,11 +446,11 @@ One reply settles one dice action, as with forage and train.
 
 ### Left out, on purpose, until Sam says
 
-- **Three failures in a row lose the materials** (Kibbles). Nothing counts *consecutive* failures yet; `crafting_projects` has `attempts` and `successes` only. It needs one new column, which is a schema change. Say the word.
-- **Take 10** (Two-Parts): skip the roll, succeed automatically, take twice as long. Not built.
-- **Two copies of a consumable in the time of one** (Two-Parts' other option for consumables). Not built; halved time was used instead.
+- ~~**Three failures in a row lose the materials** (Kibbles).~~ **Dropped.** Sam, 2026-09-27: "If kibbles is homebrew forget it." It is (KibblesTasty's Crafting Compendium).
+- **Take 10** (Two-Parts): **BUILT 2026-09-27**, see §20.
+- **Two copies of a consumable** (Two-Parts): **BUILT 2026-09-27**, see §20.
 - **Named materials aren't consumed from the pack yet.** No live recipe names any.
-- **The items on those pages aren't in the catalog.** Fireburst Bomb, Silence Bomb, Hand Cannon, Repeating Crossbow and their shot come from the sources Sam shared, not from the catalog, and the AI may not invent items. They'd fill Alchemy, Artifice and Construct if Sam wants them added.
+- **The items on those pages aren't in the catalog, and stay out.** Sam, 2026-09-27: "Bomb hand cannons ONLY if it is NOT homebrew." They are homebrew: none of the Fireburst Bomb, Silence Bomb, Hand Cannon, Repeating Crossbow or their shot is in any official 5e book. Not added.
 
 ### Readings — Sam's to overrule
 
@@ -481,3 +481,57 @@ update public.items
        updated_at = now()
  where slug = 'antitoxin' and properties ? 'craft';
 ```
+
+---
+
+## 19. Tool uses timed to a rest (Sam, 2026-09-27)
+
+Xanathar's Guide ch. 2 gives several tools a special use that takes a rest. Sam ruled the rest length for each, and `lib/camp.ts` §19 makes them camp actions:
+
+| Action | Tool | Rest | Roll | What it makes | XGE |
+|---|---|---|---|---|---|
+| `disguise` | disguise kit | **long** | none | one disguise, a minute to don | p. 81, Create Disguise |
+| `forge` | forgery kit | **short** | INT + proficiency | a forged page; the total is the DC to spot it | p. 81, Quick Fake |
+| `compose` | a musical instrument | **long** | none | a new tune and lyrics | p. 83, Compose a Tune |
+| `paint` | painter's supplies | **long** | none | a simple work of art | p. 83, Painting and Drawing |
+| `set_trap` | thieves' tools | **short** | DEX + proficiency | a trap; the total is the DC to notice or disarm, and it deals half the total | p. 84, Set a Trap |
+
+- **"Long" needs a camp whose rations buy a full rest; "short" fits either.** Proficiency with the tool AND the tool in the pack are checked before anything is spent.
+- **The trap is a camp defence** (Sam: "GOOD"). When the passive roll brings someone who comes to fight, the visitor note tells Malachar a trap guards the camp, who set it, the Perception DC to spot it, and the damage.
+- **Nothing made goes in the pack.** A disguise, a page, a song or a sketch isn't a catalog item. Malachar narrates it.
+- **Readings — Sam's to overrule:**
+  - The trap check is **DEX**: thieves' tools' PHB ability. XGE names no ability.
+  - A trap springs on the **first hostile visitor** of the night.
+  - A forgery's DC is checked with **Intelligence (Investigation)**, which is XGE's wording for the spotter.
+
+## 20. Rulings of 2026-09-27 (evening) — built the same day
+
+- **"2024 for subclass."** Every class takes its subclass at **level 3** (`SUBCLASS_LEVEL`). That includes clerics, sorcerers and warlocks (2014: level 1) and druids and wizards (2014: level 2).
+  - Samson, Kenta, Fifi and Scott choose at 3.
+  - **Bastet (barbarian 5) has no path on her sheet.** Her player should record one.
+- **"Malachar can make up names; that's fine."** No generator. A spoken name is canon (`npc_encounters` keys faces and voices by name).
+- **"Beads of nourishment can go in the catalog and count towards rations."**
+  - **Catalog:** `bead-of-nourishment` added (XGE p. 136, `properties.rations = 1`). Data only; `supabase/migrations/20260927030000_bead_of_nourishment.sql`; APPLIED.
+  - **Counting:** every ration check at camp and at rest counts the pool **plus** every bead a player carries. A confiscated bead in the drow stash doesn't count.
+  - **Spending:** the pool is spent first, beads only once it's empty.
+  - **Limitation:** the dashboard's supplies number still shows the pool alone.
+- **"Dawn items charge at long rest."**
+  - When a long rest ends, the rest report names each carried item whose catalog row says it recharges at dawn, and how much, e.g. "Wand of Winter regains 1d6+1 charges".
+  - Malachar is told the rule: no dawn down here, refill only at the end of a long rest.
+  - **Limitation:** charges aren't counted per copy yet (there's no column), so the table keeps the count.
+- **"Take 10 and make two copies; build them."**
+  - **Take 10:** `[CAMP_ACTION: <name> | craft | <item> | take 10]`. No roll and sure progress, but it takes twice as long, so it spends **both of a full rest's camp actions** for one good hour. A partial rest can't take 10.
+  - **Two copies:** `… | two copies`, with the roll. Only for a consumable whose source doesn't print its own hours. It takes the full time (not halved) and pays both copies' materials, and two go in the pack.
+  - **SCHEMA CHANGE, said out loud:** `crafting_projects.copies smallint default 1` (`20260927040000_crafting_projects_copies.sql`, APPLIED).
+  - The Craft panel has **Take 10** and **Make two** buttons.
+  - The camp block now lists every project's progress each turn, so Malachar never guesses it.
+- **"If kibbles is homebrew forget it."** It is. The three-failures rule is dropped (§18).
+- **"Bomb hand cannons ONLY if it is NOT homebrew."** They are homebrew, so they aren't added (§18).
+- **"XP is shared across the active party except NPCs."**
+  - A defeated creature's XP is split evenly, rounded down, over the seated players (`in_party`, not archived) plus whoever landed the blow.
+  - NPC companions get nothing.
+  - With nobody seated, the actor keeps it all.
+  - Code: `xpShares`, and the `[NPC_LEAVE:]` handling in `/api/chat`.
+- **Tool uses at rest:** see §19.
+
+**Still waiting on Sam:** the Alchemical Crafting recipes (§18 SQL, not run).

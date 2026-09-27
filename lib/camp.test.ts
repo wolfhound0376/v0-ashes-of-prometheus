@@ -560,6 +560,10 @@ describe("level up", () => {
     const fourth = levelUp({ ...rogue, level: 3, sheet_hit_dice: "3d8" }, { method: "average" })
     expect(fourth.pendingChoices.map((p) => p.kind)).toEqual(["asi", "class_features"])
     expect(fourth.write?.proficiency_bonus).toBe(2)
+    // Sam, 2026-09-27: "2024 for subclass" — a cleric chooses at 3rd, not 1st or 2nd.
+    const cleric: LevelUpSheet = { ...kenta, name: "Samson", class: "Cleric", sheet_hit_dice: "1d8", level: 1, xp: 300, hit_dice_remaining: 1 }
+    expect(levelUp(cleric, { method: "average" }).pendingChoices.map((p) => p.kind)).not.toContain("subclass")
+    expect(levelUp({ ...cleric, level: 2, xp: 900, sheet_hit_dice: "2d8" }, { method: "average" }).pendingChoices.map((p) => p.kind)).toContain("subclass")
 
     expect(levelUpAllowedHere("camp", null)).toBe(true)
     expect(levelUpAllowedHere("exploration", { metadata: {} })).toBe(false)
