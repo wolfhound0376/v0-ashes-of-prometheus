@@ -4,7 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { SupabaseStatus } from '@/components/supabase-status'
 import { BuildWatch } from '@/components/build-watch'
 import ThemeAudio from '@/components/theme-audio'
-import { MarkupLayer } from '@/components/ui-notes/markup-layer'
+
 import './globals.css'
 
 const cinzel = Cinzel({ 
@@ -68,7 +68,6 @@ export default function RootLayout({
         <ThemeAudio />
         <SupabaseStatus />
         <BuildWatch />
-        <MarkupLayer />
         <Analytics />
       </body>
     </html>
