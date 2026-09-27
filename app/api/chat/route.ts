@@ -3527,7 +3527,7 @@ Rules:
           if (teacherName) {
             const { data: found } = await admin
               .from("characters")
-              .select("id, name, sheet_skill_proficiencies, skills")
+              .select("id, name, sheet_skill_proficiencies, skills, level, proficiency_bonus, str_score, dex_score, con_score, int_score, wis_score, cha_score")
               .is("archived_at", null)
               .ilike("name", `${teacherName.replace(/[%_]/g, "")}%`)
               .limit(5)
@@ -3565,15 +3565,15 @@ Rules:
           if (!d.spend) continue
           if (d.bank != null && student && teacher && skill) {
             // The ledger row first; the spend only once it is written.
-            // decideTraining has already proved the teacher has the skill
-            // (sheet map or stat-block line, lib/camp teacherProficiency);
-            // recordTraining reads a sheet map only, so the proven skill is
+            // decideTraining has already proved the teacher holds expertise
+            // (sheet map or stat-block maths, lib/camp teacherProficiency);
+            // recordTraining reads a sheet map only, so the proven level is
             // put on the slice it is handed. Nothing is invented.
             const teacherSlice = {
               ...(teacher as unknown as SheetSlice),
               id: teacher.id,
               name: teacher.name,
-              sheet_skill_proficiencies: { ...(teacher.sheet_skill_proficiencies ?? {}), [skill]: "proficient" },
+              sheet_skill_proficiencies: { ...(teacher.sheet_skill_proficiencies ?? {}), [skill]: "expertise" },
             }
             const banked = recordTraining(
               { characterId: student.id, skill, teacher: teacherSlice, hours: d.bank, campaignDay: clockAfter?.day ?? gameClock?.day ?? 1 },

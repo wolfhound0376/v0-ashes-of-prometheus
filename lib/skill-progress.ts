@@ -12,8 +12,8 @@
 //   practice   8 meaningful successes — DC >= 10 and a fresh stake (one success
 //              per stake_key per campaign day)
 //   talent     2 natural 20s on the kept die within 7 campaign days, any DC
-//   teaching   40 campaign hours with a teacher who has the proficiency, then
-//              one check at DC 12
+//   teaching   40 campaign hours with a teacher who has EXPERTISE in the
+//              skill (Sam, 2026-09-27), then one check at DC 12
 //
 // The numbers live in skill_progress_rules; DEFAULT_RULES mirrors the seeded
 // rows so the module can be tested without the table, and the route passes
@@ -113,7 +113,7 @@ export type SkipReason =
   | "stale_stake"
   | "teaching_hours_not_banked"
   | "teaching_dc_below_minimum"
-  | "teacher_not_proficient"
+  | "teacher_lacks_expertise"
   | "teacher_is_student"
   | "no_hours"
   | "not_a_natural_20"
@@ -221,9 +221,10 @@ export function recordTraining(
   if (skillProficiency(student, session.skill) !== "none") return { rows: [], skipped: ["already_proficient"] }
   if (mine.some((r) => r.kind === "award")) return { rows: [], skipped: ["already_awarded"] }
   // §7: the engine checks the teacher's sheet. Malachar cannot declare Buppido
-  // a master of Animal Handling.
+  // a master of Animal Handling. Sam, 2026-09-27: a trainer must have
+  // expertise - proficiency alone does not teach.
   if (session.teacher.id === session.characterId) return { rows: [], skipped: ["teacher_is_student"] }
-  if (skillProficiency(session.teacher, session.skill) === "none") return { rows: [], skipped: ["teacher_not_proficient"] }
+  if (skillProficiency(session.teacher, session.skill) !== "expertise") return { rows: [], skipped: ["teacher_lacks_expertise"] }
   if (!Number.isInteger(session.hours) || session.hours <= 0) return { rows: [], skipped: ["no_hours"] }
   return {
     rows: [
