@@ -338,12 +338,12 @@ const conditionColor: Record<string, string> = {
 // slot are orthogonal, so this keeps both. The slot exists because the
 // Interactive Log's filter row has no room for a control — six chips need
 // 314px in a 250px column — so panel-level controls live in the title bar.
-function Frame({ title, children, className, action, hideHeader = false }: { title?: string; children: React.ReactNode; className?: string; action?: React.ReactNode; hideHeader?: boolean }) {
+function Frame({ title, children, className, action, hideHeader = false, hideDecorativeControls = false }: { title?: string; children: React.ReactNode; className?: string; action?: React.ReactNode; hideHeader?: boolean; hideDecorativeControls?: boolean }) {
   return <section className={cn("aop-ornate-panel min-h-0 overflow-hidden", className)}>
     {!hideHeader ? <header className="aop-ornate-title flex h-8 items-center gap-2 px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
       {title ? <span className="truncate">{title}</span> : null}
       {action ? <span className="ml-auto shrink-0">{action}</span> : null}
-      <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span>
+      {!hideDecorativeControls ? <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span> : null}
     </header> : null}{children}
   </section>
 }
@@ -727,7 +727,7 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="mt-2 flex gap-1.5 text-[9px] text-[#aa9874]"><span className="rounded-full border border-[#4b3a19] px-2">◐ Dim Light</span><span className="rounded-full border border-[#4b3a19] px-2">◒ Stone Floor</span><span className="rounded-full border border-[#4b3a19] px-2">💧 Damp</span></div>
         </div>
       </Frame>
-      <Frame title="Interactive Log" className={cn("relative flex flex-[2_1_0%] flex-col transition-[min-height] duration-200", interactiveLogMinimized ? "min-h-0" : "min-h-[240px]")} action={<button type="button" onClick={() => setInteractiveLogMinimized((value) => !value)} aria-expanded={!interactiveLogMinimized} aria-label={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} title={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{interactiveLogMinimized ? "Expand" : "Minimize"} interactive log</span>{interactiveLogMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
+      <Frame title="Interactive Log" hideDecorativeControls className={cn("relative flex flex-[2_1_0%] flex-col rounded-none transition-[height,min-height] duration-200", interactiveLogMinimized ? "h-[10px] min-h-[10px] flex-none" : "min-h-[240px] flex-[2_1_0%]")} action={<button type="button" onClick={() => setInteractiveLogMinimized((value) => !value)} aria-expanded={!interactiveLogMinimized} aria-label={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} title={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{interactiveLogMinimized ? "Expand" : "Minimize"} interactive log</span>{interactiveLogMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
         {!interactiveLogMinimized ? <>
           <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
