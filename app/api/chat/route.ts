@@ -1038,6 +1038,14 @@ ${combatantRows
     stageContext = "CURRENT STAGE: Underdark Tunnels (Stage 5+). The party has fled Velkynvelve. Describe vast caverns, bioluminescent fungi, distant echoes. They are beginning their journey through the Underdark."
   }
 
+  // A talk by the fire is a conversation, not a new arrival. The slave-pen
+  // stage line tells Malachar to run the scavenging roll and introduce the
+  // prisoners, so every camp talk from the mini dashboard restarted the intro.
+  const campTalk = /\bcamp action\b.*\btalking\b/i.test(String(message ?? ""))
+  if (campingBefore || campTalk) {
+    stageContext = `CURRENT STAGE: At camp in ${currentLocation}. The introduction is OVER — do NOT ask for the scavenging roll, do NOT re-describe waking in the pen, do NOT re-introduce the prisoners. Play only the conversation the player started, in the voice of the one they sat down with.`
+  }
+
   // === CINEMATIC CUES (closed whitelist) ===
   // Build the canonical list of action cues that actually have film behind them
   // HERE, and inject it as a closed list. Malachar may only name a cue from it;

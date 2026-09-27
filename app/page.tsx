@@ -278,6 +278,9 @@ export default function DashboardPage() {
     window.localStorage.setItem("aop_view", next)
     setView(next)
   }, [])
+  // Who the player sat down with at camp. While set, the compact view steps
+  // aside and the dashboard shows only the NPC / DM window for the conversation.
+  const [campTalkWith, setCampTalkWith] = useState<string | null>(null)
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
@@ -1595,7 +1598,7 @@ if (error) {
         </div>
       </div>
 
-      {view === "compact" ? (
+      {view === "compact" && !campTalkWith ? (
         <div className="fixed inset-0 z-[56]">
           <CompactDashboard
             environment={{
@@ -1614,6 +1617,7 @@ if (error) {
             npcEncounters={npcEncounters.filter((n) => n.is_active)}
             isThinking={lichLoading}
             onExitCompact={() => switchView("full")}
+            onTalkStart={setCampTalkWith}
           />
         </div>
       ) : null}
@@ -1673,6 +1677,8 @@ if (error) {
         npcRoster={npcRoster}
         isThinking={lichLoading}
         claimLocked={claimLocked}
+        talkWith={campTalkWith}
+        onEndTalk={() => setCampTalkWith(null)}
       />
   )}
 
