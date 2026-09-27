@@ -33,6 +33,22 @@
 
 **Music:** a calm, unobtrusive camp track plays under the scene (ElevenLabs, per the stack; normalised — every ElevenLabs render arrives near −13 LUFS and must be two-pass normalised before it enters the library). Starts on the player's first click, never auto-plays with sound. The mock uses a synthesised drone and fire crackle as the placeholder.
 
+## 1c. Sub-windows: Explore, Craft, and the Alchemy module (Sam, 2026-09-26 evening)
+
+**Explore** and **Craft** are not actions; they are doors. Each opens a second window in the Camp Actions frame with its own tiles: Explore → *Forage / Hunt / Explore*; Craft → *Alchemy / Repair & Upgrade / Artifice*. Forage and Hunt share one icon and one rule — the SRD has no hunting rule; OotA-Enc p.25 foraging (Survival DC 15) covers both, and Sam confirmed after the rules check. Every tile carries one of Sam's painted icons, never a glyph.
+
+**Alchemy** (Sam's reference: "Alchemy — Alchemist's Supplies", 2026-09-26) is the first crafting module and the template for the other two. The window, as built in the mock:
+
+- **Left rail** — five category tabs: Potions, Poisons, Utility, Reagents, Recipes. The selected tab burns red-gold; the rest are navy with gold edging.
+- **Centre list** — search box ("Search recipes…"), a filter (All / Can brew / Locked), and the recipe rows: icon, name, one-line effect quoted from the SRD entry. Locked recipes are dimmed with a padlock. The *Reagents* tab lists what the character actually carries, with counts.
+- **Right parchment** — item art on an arcane blue disc, name, kind, italic flavour, then **✦ Ingredients** as icon cells with `have/need` (red when short), and four rows: **Output / Craft Time / Difficulty (DC + tool) / Cost** (half the catalog value in materials, per SRD Crafting).
+- **Crafting Ingredients** — four slots along the bottom, pre-filled from the recipe; empty ones read "Add Ingredient".
+- **Brew / Experiment / Back** — Brew is the crimson primary and is disabled (with the reason shown underneath) when the recipe is locked, the character lacks the tool proficiency, an ingredient is short, or the action budget is 0. Brewing spends one camp action (`brew`), consumes the materials, rolls d20 + proficiency against the DC; on a success the product lands in the pack, on a failure the materials are gone. The result line stays on screen until the player moves on. Experiment is a DM hand-off ("combine reagents with no recipe — the DM rules the result"); the engine invents nothing.
+
+**What is real and what is proposed.** Every row on both sides of the window is a catalog `items` row (potion-of-healing, antitoxin, acid-vial, alchemists-fire, basic-poison-vial, drow-poison, serpent-venom, truth-serum; reagents waterorb, ormu-moss, nightlight-fungus, fire-lichen, ripplebark, bluecap, spider-venom-gland, gray-ooze-residue, carrion-crawler-mucus, tainted-spores-pouch, lamp-oil). Tool proficiencies come from the sheet (Fifi: Alchemist's Supplies, Thieves' Tools — so she can brew Alchemist's Fire but not a Potion of Healing, which the mock keys to the Herbalism Kit). The tool requirement and the materials-cost rule are SRD 5.1; the 25 gp healing potion is XGE. **The DCs, craft times, and which reagents go into which recipe are proposed for Sam's yes** — they will live in `items.properties.craft` (Camp Module §6) once he rules, so the route reads them and never guesses. Two reagent icons (acid-vial has none in the catalog) fall back to a framed glyph until art is uploaded.
+
+**Repair & Upgrade** and **Artifice** reuse the same window with their own tabs and tools (Smith's / Leatherworker's for repair; artisan's tools plus a workplace for artifice — `items.properties.craft.requires`). Not built yet.
+
 ## 2. Three backdrops = three biomes
 
 Biome is a property of the node: `travel_nodes.metadata.biome` ∈ `tunnels | fungal | shore` (extendable). The same scene serves every camp; only the plate, palette and ambient particles change. This mirrors the encounter-table convention (`metadata.encounter_table`).
