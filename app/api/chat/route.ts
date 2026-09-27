@@ -44,7 +44,7 @@ import {
   // PR 4 — levelling at camp, and the one XP table.
   normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext,
   // §18 — the crafting roll.
-  craftMenu, craftSpec, craftModifier, keptD20, craftMaterialsGp, payFromPurse, settleCraftRoll, toolKey,
+  craftMenu, craftSpec, craftModifier, keptD20, craftMaterialsGp, payFromPurse, settleCraftRoll, toolKey, toolForCrafter,
   type CraftMenuRecipeRow, type CarriedItem,
   type LevelUpSheet,
 } from "@/lib/camp"
@@ -896,15 +896,19 @@ STRICT LIMITS ON USING THESE:
                 ? await timeAdmin.from("items").select("id, name, rarity, item_type, value, weight, description, properties").eq("id", project.item_id).maybeSingle()
                 : { data: null }
               const recipe = (item?.properties as { craft?: Parameters<typeof craftSpec>[1] } | null)?.craft
-              const spec = item && recipe ? craftSpec({ rarity: item.rarity as string | null, item_type: item.item_type as string | null }, recipe).spec : null
+              const { data: crafter } = await timeAdmin
+                .from("characters")
+                .select("str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, level, sheet_proficiencies")
+                .eq("id", playerCharacter.id)
+                .maybeSingle()
+              // The same tool the work began with: the first of the recipe's
+              // tools this crafter is proficient with.
+              const profTools = (crafter?.sheet_proficiencies as { tools?: unknown } | null)?.tools
+              const tool = recipe ? toolForCrafter(recipe, Array.isArray(profTools) ? profTools.filter((t): t is string => typeof t === "string") : []) : null
+              const spec = item && recipe && tool ? craftSpec({ rarity: item.rarity as string | null, item_type: item.item_type as string | null }, recipe, tool).spec : null
               if (!project || project.finished_at || !item || !spec || face == null) {
                 campResults.push(`${name}'s crafting roll could not be settled — nothing changed.`)
               } else {
-                const { data: crafter } = await timeAdmin
-                  .from("characters")
-                  .select("str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, level")
-                  .eq("id", playerCharacter.id)
-                  .maybeSingle()
                 const pb = Number(crafter?.proficiency_bonus ?? 0) || Math.floor((Math.max(1, Number(crafter?.level ?? 1)) - 1) / 4) + 2
                 const mod = craftModifier((crafter ?? {}) as Record<string, number | null>, spec.abilities, pb)
                 const out = settleCraftRoll({
@@ -3590,7 +3594,7 @@ Rules:
           if (!rollsD20) { refuse("needs their d20 crafting roll in the same reply."); continue }
           const [{ data: recipes }, { data: crafter }, { data: pack }, { data: open }] = await Promise.all([
             admin.from("items").select("id, slug, name, value, rarity, item_type, properties").not("properties->craft", "is", null),
-            admin.from("characters").select("id, sheet_proficiencies, sheet_currency").eq("id", row.id).maybeSingle(),
+            admin.from("characters").select("id, sheet_proficiencies, sheet_currency, sheet_skill_proficiencies").eq("id", row.id).maybeSingle(),
             admin.from("inventory_items").select("name, quantity, items(slug)").eq("character_id", row.id),
             admin.from("crafting_projects").select("id, item_id, successes").eq("character_id", row.id).is("finished_at", null),
           ])
@@ -3603,6 +3607,7 @@ Rules:
           const tools = (crafter.sheet_proficiencies as { tools?: unknown } | null)?.tools
           const option = Object.values(craftMenu({
             recipes: [target], carried, currency: crafter.sheet_currency, facilities,
+            skills: (crafter.sheet_skill_proficiencies ?? null) as Record<string, unknown> | null,
             proficiencies: Array.isArray(tools) ? tools.filter((t): t is string => typeof t === "string") : [],
             openProjects: (open ?? []) as { item_id: string; successes: number }[],
           })).flat()[0]
@@ -3638,7 +3643,7 @@ Rules:
           if (spendErr) { console.error("[camp] spend:", spendErr.message); continue }
           row.rest_actions_remaining = d.remaining
           campCheckPurpose = { purpose: `camp:artifice:${projectId}`, skill: "" }
-          console.log(`[camp] action: ${row.name} — crafting ${target.name} (DC ${option.dc}, ${option.checks} good hour${option.checks === 1 ? "" : "s"}); d20 to be rolled on the table.`)
+          console.log(`[camp] action: ${row.name} — crafting ${target.name} with ${option.tool} (DC ${option.dc}, ${option.checks} good hour${option.checks === 1 ? "" : "s"}${option.advantage ? `, advantage from ${option.advantage}` : ""}); d20 to be rolled on the table.`)
           continue
         }
 

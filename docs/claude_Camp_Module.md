@@ -457,3 +457,27 @@ One reply settles one dice action, as with forage and train.
 - **Herbalism Kit rolls INT or WIS.** Two-Parts' Tools table doesn't list it; INT/WIS matches its neighbours, Alchemist's Supplies and Poisoner's Kit.
 - **The engine takes the better of the two abilities.** The table lets the crafter choose; nobody would choose the worse one.
 - **An item with no rarity in the catalog is crafted as common.** It's flagged on the spec.
+
+### Xanathar's Guide, ch. 2 (pages Sam shared the same day)
+
+Notes on the whole chapter live in `docs/reference/xanathars-ch2-dm-tools-notes.md`. Two parts are already in the crafting code:
+
+- **Either tool makes the item.** A recipe may carry `alt_tools`. The crafter uses the first tool they're proficient with (and carry). The DC and the ability pair follow that tool, both at the start and when the roll is settled. Antitoxin is the case in point: the SRD's Herbalism Kit, or Xanathar's alchemist's supplies.
+- **Tools and skills together: advantage.** Xanathar's lets a check be made with advantage when the character is proficient with both the tool and the skill that applies. Only alchemist's supplies ties crafting to a skill (Alchemical Crafting names Arcana), so only that pair is in `CRAFT_ADVANTAGE_SKILL`. The menu shows "advantage (Arcana)". The player's line says so, and Malachar asks for the roll with advantage. The engine reads the kept d20 either way.
+
+**Alchemical Crafting recipes — shown, NOT run.** Xanathar's names what alchemist's supplies make: acid, alchemist's fire, antitoxin, oil, perfume and soap. The catalog has all of those except soap. This SQL would give Fifi, who is proficient with Alchemist's Supplies, a lit Alchemy tab the day she carries the supplies and the gold:
+
+```sql
+-- PROPOSAL — not applied. Run only after Sam says yes.
+update public.items
+   set properties = coalesce(properties, '{}'::jsonb)
+     || '{"craft": {"tools": "Alchemist''s Supplies", "source": "Xanathar''s Guide to Everything, Tool Proficiencies — Alchemical Crafting"}}'::jsonb,
+       updated_at = now()
+ where slug in ('acid-vial', 'alchemists-fire', 'lamp-oil', 'perfume-vial');
+
+-- Antitoxin keeps the SRD's Herbalism Kit and gains alchemist's supplies.
+update public.items
+   set properties = jsonb_set(properties, '{craft,alt_tools}', '["Alchemist''s Supplies"]'::jsonb),
+       updated_at = now()
+ where slug = 'antitoxin' and properties ? 'craft';
+```

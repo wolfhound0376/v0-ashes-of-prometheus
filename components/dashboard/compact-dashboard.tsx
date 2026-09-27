@@ -616,8 +616,9 @@ function CraftMenuPanel({
               <span className="shrink-0 text-xs text-stone-400">{o.materialsGp} gp materials</span>
             </div>
             <span className="text-xs text-stone-400">
-              {o.tools}
+              {o.available ? o.tool : o.tools}
               {o.dc != null && ` · DC ${o.dc}`}
+              {o.advantage && ` · advantage (${o.advantage})`}
               {o.checks != null && ` · ${o.checks} good hour${o.checks === 1 ? "" : "s"}`}
             </span>
             {o.progress && (
@@ -632,7 +633,12 @@ function CraftMenuPanel({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => onCraft(`I spend my camp action ${o.progress ? "working on" : "crafting"} ${o.name}.`)}
+                  onClick={() =>
+                    onCraft(
+                      `I spend my camp action ${o.progress ? "working on" : "crafting"} ${o.name} with my ${o.tool}.` +
+                        (o.advantage ? ` My ${o.advantage} training gives me advantage on the roll.` : ""),
+                    )
+                  }
                   className="mt-1 self-start rounded-sm bg-[#c9a868] px-3 py-1.5 font-serif text-xs text-[#0a0806] hover:bg-[#e2c98e] disabled:opacity-40"
                 >
                   {o.progress ? "Keep working" : "Craft"}

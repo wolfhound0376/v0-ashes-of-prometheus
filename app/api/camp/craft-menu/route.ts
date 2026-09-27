@@ -39,7 +39,7 @@ export async function GET(req: Request) {
 
   const { data: character, error: charError } = await admin
     .from("characters")
-    .select("id, sheet_proficiencies, sheet_currency")
+    .select("id, sheet_proficiencies, sheet_currency, sheet_skill_proficiencies")
     .eq("id", characterId)
     .is("archived_at", null)
     .maybeSingle()
@@ -77,6 +77,7 @@ export async function GET(req: Request) {
     currency: character.sheet_currency,
     facilities,
     openProjects: (open ?? []) as { item_id: string; successes: number }[],
+    skills: (character.sheet_skill_proficiencies ?? null) as Record<string, unknown> | null,
   })
   return Response.json({ menu })
 }

@@ -16,6 +16,9 @@ import {
   campPurpose,
   craftProgress,
   craftMenu,
+  recipeTools,
+  toolForCrafter,
+  craftAdvantage,
   craftSpec,
   craftModifier,
   keptD20,
@@ -1010,5 +1013,41 @@ describe("the crafting roll", () => {
     expect(fresh.missing).toEqual(["Needs 100 gp of materials (0 gp in the purse)."])
     const underway = craftMenu({ ...base, openProjects: [{ item_id: "i1", successes: 0 }] }).alchemy[0]
     expect(underway).toMatchObject({ available: true, progress: { successes: 0, checks: 1 }, missing: [] })
+  })
+})
+
+describe("either tool, and Xanathar's tool-and-skill advantage", () => {
+  const antitoxin = { tools: "Herbalism Kit", alt_tools: ["Alchemist's Supplies", "herbalism kit"] }
+
+  it("a recipe's tools are the main one then the alternatives, without repeats", () => {
+    expect(recipeTools(antitoxin)).toEqual(["Herbalism Kit", "Alchemist's Supplies"])
+    expect(toolForCrafter(antitoxin, ["Thieves' Tools", "Alchemist's Supplies"])).toBe("Alchemist's Supplies")
+    expect(toolForCrafter(antitoxin, ["Navigator's Tools"])).toBeNull()
+  })
+
+  it("an alchemist lights antitoxin with their own supplies, and Arcana gives advantage", () => {
+    const menu = craftMenu({
+      recipes: [{ id: "a", slug: "antitoxin", name: "Antitoxin (vial)", value: 50, rarity: "common", item_type: "consumable", properties: { craft: antitoxin } }],
+      proficiencies: ["Alchemist's Supplies"],
+      carried: [{ name: "Alchemist's Supplies", quantity: 1 }],
+      currency: { gp: 25 },
+      skills: { Arcana: "proficient" },
+    }).alchemy[0]
+    expect(menu).toMatchObject({ available: true, tool: "Alchemist's Supplies", tools: "Herbalism Kit or Alchemist's Supplies", advantage: "Arcana", dc: 12, checks: 1 })
+  })
+
+  it("with neither tool, the reason names both", () => {
+    const menu = craftMenu({
+      recipes: [{ id: "a", slug: "antitoxin", name: "Antitoxin (vial)", value: 50, rarity: "common", item_type: "consumable", properties: { craft: antitoxin } }],
+      proficiencies: [], carried: [], currency: { gp: 25 },
+    }).alchemy[0]
+    expect(menu.missing).toEqual(["Not proficient with Herbalism Kit or Alchemist's Supplies.", "No Herbalism Kit or Alchemist's Supplies carried."])
+    expect(menu.advantage).toBeNull()
+  })
+
+  it("advantage only where the book ties the craft to a skill, and only with that skill", () => {
+    expect(craftAdvantage("Alchemist's Supplies", { arcana: "expertise" })).toBe("Arcana")
+    expect(craftAdvantage("Alchemist's Supplies", { Nature: "proficient" })).toBeNull()
+    expect(craftAdvantage("Poisoner's Kit", { Arcana: "proficient" })).toBeNull()
   })
 })

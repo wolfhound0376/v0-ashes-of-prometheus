@@ -820,6 +820,12 @@ export const CRAFT_MATERIALS_FRACTION = 0.5
 /** The recipe convention on `items.properties.craft`. No block → not craftable. */
 export interface CraftRecipe {
   tools: string
+  /**
+   * Other tools that make the same item (Antitoxin: the SRD's Herbalism Kit,
+   * or Xanathar's alchemist's supplies). Proficiency with, and possession of,
+   * any one of them is enough.
+   */
+  alt_tools?: string[] | null
   /** Menu tab (§16). When absent, read from the tool (`TOOL_CATEGORY`). */
   category?: CraftCategory | null
   /** Where the recipe's tool comes from, e.g. "SRD 5.1 Equipment: Tools — Herbalism Kit". */
@@ -1373,7 +1379,7 @@ export function formatCampBlock(s: CampBlockState): string {
         `When a character spends one, emit [CAMP_ACTION: <name> | <action>] — the system counts it and refuses one past their count. ` +
         `Forage and hunt (Survival, DC 15 in the Underdark) and perform (Performance) are settled by the acting player's own dice: put the tag in the SAME reply as their roll request, e.g. [CAMP_ACTION: Kenta | forage] Roll Survival. [[1d20-1 | survival | DC 15]]. ` +
         `You will be told the result; never invent food or its amount.\n` +
-        `Craft (one hour of work per action): [CAMP_ACTION: <name> | craft | <catalog item>] in the SAME reply as their own crafting roll, a bare [[1d20+N]] where N is the better of the tool's two abilities plus proficiency. The system recomputes N, uses the DC for that item, charges the materials when work begins, and puts the finished item in their pack. Only items on their crafting list can be made; never invent one.\n` +
+        `Craft (one hour of work per action): [CAMP_ACTION: <name> | craft | <catalog item>] in the SAME reply as their own crafting roll, a bare [[1d20+N]] where N is the better of the tool's two abilities plus proficiency. The system recomputes N, uses the DC for that item, charges the materials when work begins, and puts the finished item in their pack. When the player says their skill gives advantage (alchemist's supplies with Arcana), ask for the roll with advantage. Only items on their crafting list can be made; never invent one.\n` +
         `Level up (one level, only when their XP has earned it): [CAMP_ACTION: <name> | level up]. For rolled hit points, put it in the same reply as their Hit Die roll, e.g. [[1d8]]; with no roll, the fixed value applies. The system writes the numbers; the choices land on their sheet for them to make at the fire.\n` +
         `Train (learn a skill from someone who has MASTERED it - a companion or an NPC at the fire with expertise in it): [CAMP_ACTION: <name> | train | <teacher> | <skill>], e.g. [CAMP_ACTION: Samson | train | Eldeth | animal handling]. The system checks the teacher's sheet for expertise, banks the evening's hours and moves the clock; you narrate the lesson. A merely competent teacher is refused. Never say how many hours are banked or how many remain.\n` +
         `Emit [TIME:break_camp] if they pack up without resting.`,
@@ -1816,6 +1822,10 @@ export interface CraftMenuOption {
   /** Why it is dimmed, one plain line each. Empty when lit. */
   missing: string[]
   source: string | null
+  /** §18 — the tool this crafter would use (proficient, and carried when possible). */
+  tool: string
+  /** §18 — the skill that gives the crafting check advantage (Xanathar's), or null. */
+  advantage: string | null
   /** §18 — the check's DC and the good hours it takes, when the sources give a way to roll it. */
   dc: number | null
   checks: number | null
@@ -1841,6 +1851,8 @@ export function craftMenu(input: {
   facilities?: string[] | null
   /** §18 — this crafter's open `crafting_projects` rows. */
   openProjects?: { item_id: string; successes: number }[] | null
+  /** §18 — `sheet_skill_proficiencies`, for Xanathar's tool-and-skill advantage. */
+  skills?: Record<string, unknown> | null
 }): CraftMenu {
   const menu: CraftMenu = { alchemy: [], construct: [], artifice: [] }
   const profs = new Set((input.proficiencies ?? []).map(toolKey))
@@ -1858,11 +1870,16 @@ export function craftMenu(input: {
     if (!category) continue
     const valueGp = Math.max(0, Number(row.value) || 0)
     const materialsGp = craftMaterialsGp(row.value, recipe)
-    const { spec, reason } = craftSpec({ rarity: row.rarity ?? null, item_type: row.item_type ?? null }, recipe)
+    // Any of the recipe's tools will do: the first one they are proficient
+    // with AND carry, else the first they are proficient with.
+    const tools = recipeTools(recipe)
+    const known = tools.filter((t) => profs.has(toolKey(t)))
+    const tool = known.find((t) => holding({ name: t }) >= 1) ?? known[0] ?? recipe.tools
+    const { spec, reason } = craftSpec({ rarity: row.rarity ?? null, item_type: row.item_type ?? null }, recipe, tool)
     const open = (input.openProjects ?? []).find((p) => p.item_id === row.id) ?? null
     const missing: string[] = []
-    if (!profs.has(toolKey(recipe.tools))) missing.push(`Not proficient with ${recipe.tools}.`)
-    if (holding({ name: recipe.tools }) < 1) missing.push(`No ${recipe.tools} carried.`)
+    if (!known.length) missing.push(`Not proficient with ${tools.join(" or ")}.`)
+    if (holding({ name: tool }) < 1) missing.push(`No ${known.length ? tool : tools.join(" or ")} carried.`)
     // An open project already paid for its materials; only the work remains.
     if (!open) {
       for (const m of recipe.materials ?? []) {
@@ -1876,7 +1893,8 @@ export function craftMenu(input: {
     if (recipe.requires && !here.has(toolKey(recipe.requires))) missing.push(`Needs a ${recipe.requires} nearby.`)
     if (!spec && reason) missing.push(reason)
     menu[category].push({
-      itemId: row.id, slug: row.slug, name: row.name, category, tools: recipe.tools,
+      itemId: row.id, slug: row.slug, name: row.name, category, tools: tools.join(" or "), tool,
+      advantage: craftAdvantage(tool, input.skills),
       valueGp, materialsGp, available: missing.length === 0, missing, source: recipe.source ?? null,
       dc: spec?.dc ?? null, checks: spec?.checks ?? null,
       progress: open && spec ? { successes: Math.max(0, open.successes), checks: spec.checks } : null,
@@ -2150,11 +2168,12 @@ export interface CraftSpec {
 export function craftSpec(
   item: { rarity: string | null; item_type: string | null },
   recipe: CraftRecipe,
+  tool: string = recipe.tools,
 ): { spec: CraftSpec | null; reason: string | null } {
   const flags: string[] = []
-  const abilities = CRAFT_TOOL_ABILITIES[toolKey(recipe.tools)]
-  if (!abilities) return { spec: null, reason: `No crafting abilities are listed for ${recipe.tools}.` }
-  if (toolKey(recipe.tools) === "herbalism kit") flags.push("Herbalism Kit rolls INT or WIS — Claude's reading; Two-Parts does not list it.")
+  const abilities = CRAFT_TOOL_ABILITIES[toolKey(tool)]
+  if (!abilities) return { spec: null, reason: `No crafting abilities are listed for ${tool}.` }
+  if (toolKey(tool) === "herbalism kit") flags.push("Herbalism Kit rolls INT or WIS — Claude's reading; Two-Parts does not list it.")
   const rarity = (item.rarity ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_")
   if (rarity === "artifact") return { spec: null, reason: "Artifacts are not crafted." }
   let row = CRAFT_BY_RARITY[rarity]
@@ -2248,4 +2267,38 @@ export function settleCraftRoll(input: {
       : `${input.crafter} makes good progress on the ${input.item} — ${left} more hour${left === 1 ? "" : "s"} of good work to go.`
     : `${input.crafter} spends the hour on the ${input.item} and it comes to nothing; the work already done still holds.`
   return { success, total, successes, attempts, done, note }
+}
+
+/** Every tool that makes this item: the main one, then any alternatives. */
+export function recipeTools(recipe: CraftRecipe): string[] {
+  const all = [recipe.tools, ...(recipe.alt_tools ?? [])].filter((t): t is string => typeof t === "string" && !!t.trim())
+  return all.filter((t, i) => all.findIndex((u) => toolKey(u) === toolKey(t)) === i)
+}
+
+/** The first of the recipe's tools this crafter is proficient with — the one their crafting checks use. */
+export function toolForCrafter(recipe: CraftRecipe, proficiencies: string[] | null | undefined): string | null {
+  const profs = new Set((proficiencies ?? []).map(toolKey))
+  return recipeTools(recipe).find((t) => profs.has(toolKey(t))) ?? null
+}
+
+/**
+ * Xanathar's Guide to Everything, Tool Proficiencies: "If the use of a tool and
+ * the use of a skill both apply to a check, and a character is proficient with
+ * both the tool and the skill, consider allowing the character to make the check
+ * with advantage." Only where the book ties crafting to a skill: alchemist's
+ * supplies (Alchemical Crafting — "make a check using the indicated skill with
+ * advantage"; the indicated skill is Arcana).
+ */
+export const CRAFT_ADVANTAGE_SKILL: Record<string, string> = {
+  "alchemists supplies": "arcana",
+}
+
+/** The skill that gives this tool's crafting check advantage, when the crafter is proficient in it. */
+export function craftAdvantage(tool: string, skills: Record<string, unknown> | null | undefined): string | null {
+  const skill = CRAFT_ADVANTAGE_SKILL[toolKey(tool)]
+  if (!skill) return null
+  const has = Object.entries(skills ?? {}).some(
+    ([k, v]) => k.trim().toLowerCase().replace(/[\s-]+/g, "_") === skill && /^(proficient|expertise|true|yes)$/i.test(String(v)),
+  )
+  return has ? skill.charAt(0).toUpperCase() + skill.slice(1) : null
 }
