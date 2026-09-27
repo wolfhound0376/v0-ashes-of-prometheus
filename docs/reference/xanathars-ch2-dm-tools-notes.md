@@ -60,9 +60,42 @@ Useful as sourced DCs when Malachar calls for a tool check.
 | Weaver's tools | repurpose cloth 10 · mend a hole 10 · tailor an outfit 15 |
 | Woodcarver's tools | small wooden figurine 10 · intricate pattern 15 |
 
-Every tool entry also lists the skills it pairs with (Arcana, History, Investigation and so on) and one special use. See the book for those.
+Every tool entry also lists the skills it pairs with (Arcana, History, Investigation and so on) and one special use.
+
+### Tool special uses not already in §2 (pp. 79–85)
+
+**Ones that happen during a rest** (candidates for camp actions, like those in §2):
+
+| Page | Tool | Special use |
+|---|---|---|
+| 81 | Disguise kit | **Create Disguise:** in a long rest, make one disguise that later takes a minute to put on. Carry one at a time unless you have a bag of holding or similar. It weighs 1 lb. |
+| 81 | Forgery kit | **Quick Fake:** a one-page forgery in a short rest, or up to four pages in a long rest. The INT check sets the DC to spot it. |
+| 83 | Musical instrument | **Compose a Tune:** a new tune and lyrics in a long rest, to impress a noble or spread a scandalous rumour. |
+| 83 | Painter's supplies | **Painting and Drawing:** a simple work of art in a short or long rest, capturing a scene or copying a piece of art. |
+| 84 | Thieves' tools | **Set a Trap:** in a short rest, a trap from items at hand. The check total becomes the DC to discover or disable it. It deals damage fitting its materials, or half the check total. **A camp defence.** |
+| 80 | Cobbler's tools | **Craft Hidden Compartment:** 8 hours of work adds a small hidden compartment to a pair of shoes. |
+
+**Ones used in the moment:**
+- **Tracking and mapping:** Craft a Map while travelling (cartographer's, p. 80); Decipher Treasure Map (calligrapher's, p. 79).
+- **Identifying things:** Identify Plants (herbalism, p. 82); Identify Gems (jeweler's, p. 82); Identify Hides (leatherworker's, p. 82); Reconstruction of broken pottery (potter's, p. 84).
+- **Breaking things:** Identify Weakness, where damage to glass struck at a weak spot is doubled (glassblower's, p. 82); Demolition, double damage to brick walls (mason's, p. 83).
+- **Other uses:**
+  - Fortify, a door harder to force by 5 (carpenter's, p. 80).
+  - Handle Poison safely (poisoner's, p. 83).
+  - Sighting, your position and the time of day from the stars (navigator's, p. 83). **It needs a sky, so it doesn't work in the Underdark.**
+  - Vehicle Handling (p. 82).
+
+**Tools and skills together (p. 78)** has three kinds of benefit: **advantage**, an **added benefit** on a success, and a **special use**. For example, mason's tools plus Perception finds the secret door and also reveals how it opens. Camp doc §18 uses only the advantage case.
 
 ## 4. Other DM tools in the chapter
+
+- **Simultaneous effects (p. 77).** When two things happen at once on a creature's turn, whoever controls that creature picks the order. That means the player on their character's turn, and the DM on a monster's.
+- **Falling (p. 77).**
+  - **Rate of falling:** a long fall drops **500 ft on the turn it starts**, then 500 ft at the end of each later turn, instead of landing at once. Damage is still 1d6 per 10 ft, max 20d6.
+  - **Flying creatures that fall:** subtract current flying speed from the distance before working out damage. A flier knocked prone can halt the fall by spending half its flying speed.
+  - Underdark chasms make both likely.
+- **Adamantine weapons (p. 78).** Any hit against an object is a critical hit. Costs +500 gp over the normal weapon, or over 10 pieces of ammunition. **Out of the Abyss's duergar and Gracklstugh smiths are where these would come from.** Any award still resolves against the catalog.
+- **Tying knots (p. 78).** The tier's INT (Sleight of Hand) check becomes the DC to untie it (INT (Sleight of Hand)) or slip out (DEX (Acrobatics)). **This matters for the Velkynvelve escape** and any captive the party ties up.
 
 - **Identifying a spell (p. 85).** A reaction (while it's cast) or an action (after, from its effect). INT (Arcana) against DC 15 + the spell's level, with advantage if it's a spell of the identifier's own class. Needs a perceptible casting.
 - **Perceiving a caster (p. 85).** Casting is noticed through its V, S or M components. With none (Subtle Spell, innate casting), it's imperceptible.
