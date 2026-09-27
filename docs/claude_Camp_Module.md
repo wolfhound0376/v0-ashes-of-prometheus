@@ -385,3 +385,21 @@ Named materials are left off. The catalog's "spider venom gland feeds drow poiso
   - **Artifice:** Tinker's Tools, Jeweler's Tools.
 
   A recipe's own `category` always overrides the grouping.
+
+## 17. PR 6 — train: the teaching path of earned proficiency (2026-09-27)
+
+Owned by `docs/claude_Earned_Proficiency.md` §1 path C and §4; the action lives here because hours accrue only at camp. Homebrew throughout.
+
+**The tag.** `[CAMP_ACTION: <name> | train | <teacher> | <skill>]`. The two extra fields are order-free (the one that is a skill is the skill). The teacher is looked up by name among every character at the table — companions and NPCs alike. **The engine checks the teacher's sheet**: a companion's `sheet_skill_proficiencies`, or an NPC's stat-block `skills` line ("Perception +2, Stealth +4" lists exactly the proficient skills). Buppido can teach Stealth; he cannot teach Animal Handling, whatever Malachar says.
+
+**Below the threshold** (40 hours, `skill_progress_rules.teaching`), an evening banks hours: one `skill_progress` row of `kind = training_hours` with the teacher's id, the action is spent, and a `training` row goes to `time_log` so the clock moves the same amount — honest downtime. Refusals (not camped, no skill named, no such teacher, teacher without the skill, teaching yourself, a student who already has or already earned the skill, no actions left) spend nothing.
+
+**At the threshold** the evening is the test. Malachar's CAMP section lists who is ready ("READY FOR THE TEST"), never the hours. The tag goes in the same reply as the student's own roll, `[[1d20+X | <skill> | DC 12]]`; the request is stamped `camp:train:<teacherId>`. The dice ledger records the accepted roll against the teaching stake (`lib/skill-progress-apply`, `stakeKeyFromPurpose`), `evaluate` awards on a pass, and Malachar gets pass/fail as a camp fact plus the PROFICIENCY EARNED line. A failure keeps the hours: another camp, another try. Like forage, only the student's own player can take the test, and one reply settles one dice action.
+
+**Dashboard.** The Camp tab's Train button picks the teacher (anyone at camp) then the skill, and sends "I spend my camp action training with Eldeth in animal handling."
+
+**House rules, needs Sam's yes** (flagged on every decision that banks hours):
+
+- **4 hours of lessons per camp evening.** SRD downtime counts 8 hours a day; a camp evening is not a day. Ten evenings to the test.
+- **The teacher's evening is free.** Teaching costs the student's action, not the teacher's.
+

@@ -114,7 +114,7 @@ Teaching hours are logged from camp: a camp action "train with `<teacher>` in `<
 2. **Tag PR** — `parseRollRequest` reads `| skill | DC n`; the resolve path reads them; Malachar's prompt asks for them. Backwards compatible.
 3. **Library PR** — `lib/skill-progress.ts`: `recordCheck`, `evaluate`, pure, vitest with a seeded ledger for each path and each guardrail.
 4. **Wiring PR** — resolve route and `resolveInteraction` call `recordCheck`; award writes the sheet; world-context line.
-5. **Camp PR** — training action in the camp module (`claude_Camp_Module.md` owns camp; add the action there).
+5. **Camp PR** — training action in the camp module (`claude_Camp_Module.md` owns camp; add the action there). **Shipped 2026-09-27** as `lib/camp.ts` §17 (`train`); see `claude_Camp_Module.md` §17 for the tag, the teacher check and the two house rules awaiting Sam's yes (4 hours per evening; the teacher's evening is free).
 6. **Dashboard PR** — the learning mark (approved, §6).
 
 PRs 1–4 are a day. 5 depends on the camp module's shape. Nothing touches `combat-board-3d.tsx`.

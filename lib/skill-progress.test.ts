@@ -9,6 +9,7 @@ import {
   recordCheck,
   recordTraining,
   skillsInProgress,
+  stakeKeyFromPurpose,
   type LedgerRow,
   type ResolvedCheck,
 } from "./skill-progress"
@@ -333,3 +334,16 @@ describe("The award — two writes, one truth, one line for Malachar", () => {
     expect(skillsInProgress(ledger, SAMSON)).toEqual(["perception"])
   })
 })
+
+describe("The roll request's purpose is the stake", () => {
+  it("a camp training test becomes the teaching stake; anything else is itself, settled or not", () => {
+    expect(stakeKeyFromPurpose("camp:train:00000000-0000-4000-8000-00000000000b")).toBe(`${TEACHING_STAKE_PREFIX}00000000-0000-4000-8000-00000000000b`)
+    expect(stakeKeyFromPurpose("camp:train:t-eldeth:done")).toBe(`${TEACHING_STAKE_PREFIX}t-eldeth`)
+    expect(stakeKeyFromPurpose("camp:forage")).toBe("camp:forage")
+    expect(stakeKeyFromPurpose("camp:forage:done")).toBe("camp:forage")
+    expect(stakeKeyFromPurpose("lock:pen-door")).toBe("lock:pen-door")
+    expect(stakeKeyFromPurpose(null)).toBeNull()
+    expect(stakeKeyFromPurpose("")).toBeNull()
+  })
+})
+

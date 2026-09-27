@@ -5,6 +5,7 @@ import {
   BookOpen,
   Compass,
   Flame,
+  GraduationCap,
   Hammer,
   HandCoins,
   Heart,
@@ -24,6 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import { CAMP_ACTIONS_NOT_YET, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABEL, type CampAction, type CraftCategory, type CraftMenu } from "@/lib/camp"
+import { SRD_SKILLS } from "@/lib/roll-requests"
 import { cn } from "@/lib/utils"
 import type { Character } from "@/lib/types/database"
 
@@ -66,6 +68,7 @@ const CAMP_MENU: { id: CampAction; label: string; icon: LucideIcon; hint: string
   { id: "mend", label: "Mend", icon: Wrench, hint: "Repair gear", line: "I spend my camp action mending my gear." },
   { id: "trade", label: "Trade", icon: HandCoins, hint: "Only if a merchant came", line: "I spend my camp action trading with the merchant at camp." },
   { id: "level_up", label: "Level up", icon: Shield, hint: "When you have the XP", line: "I spend my camp action to level up." },
+  { id: "train", label: "Train", icon: GraduationCap, hint: "Learn a skill from someone", line: "I spend my camp action training." },
   // One button for all three crafts; it opens the menu below (camp doc §16).
   { id: "artifice", label: "Craft", icon: Hammer, hint: "Alchemy, Construct, Artifice", line: "" },
 ]
@@ -110,6 +113,9 @@ export function CompactDashboard(props: CompactDashboardProps) {
   const { environment, dialogue, selectedCharacter: me, characters, isThinking } = props
   const [tab, setTab] = useState<Tab>("story")
   const [talkOpen, setTalkOpen] = useState(false)
+  // Train: pick the teacher, then the skill. Malachar's tag needs both.
+  const [trainOpen, setTrainOpen] = useState(false)
+  const [trainTeacher, setTrainTeacher] = useState<string | null>(null)
   const [craftOpen, setCraftOpen] = useState(false)
   const logEnd = useRef<HTMLDivElement>(null)
 
@@ -229,7 +235,15 @@ export function CompactDashboard(props: CompactDashboardProps) {
                       type="button"
                       disabled={!!notYet || isThinking}
                       title={notYet}
-                      onClick={() => (a.id === "talk" ? setTalkOpen(true) : a.id === "artifice" ? setCraftOpen(true) : send(a.line))}
+                      onClick={() =>
+                        a.id === "talk"
+                          ? setTalkOpen(true)
+                          : a.id === "train"
+                            ? (setTrainTeacher(null), setTrainOpen(true))
+                            : a.id === "artifice"
+                              ? setCraftOpen(true)
+                              : send(a.line)
+                      }
                       className={cn(
                         "flex items-start gap-2.5 rounded-sm border p-3 text-left transition-colors",
                         a.id === "talk"
@@ -396,6 +410,68 @@ export function CompactDashboard(props: CompactDashboardProps) {
           )
         })}
       </nav>
+
+      {trainOpen && (
+        <div className="fixed inset-0 z-[300] flex items-end bg-[#0a0806]/70" onClick={() => setTrainOpen(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="train-heading"
+            className="flex max-h-[70dvh] w-full flex-col gap-3 rounded-t-lg border-t border-[#7a5f33] bg-[#15110c] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 id="train-heading" className="font-serif text-sm uppercase tracking-[0.2em] text-[#e2c98e]">
+                {trainTeacher ? `Learn from ${trainTeacher}` : "Train with someone"}
+              </h2>
+              <button type="button" onClick={() => setTrainOpen(false)} aria-label="Close" className="text-stone-400 hover:text-stone-200">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm leading-relaxed text-stone-400">
+              {trainTeacher
+                ? "Which skill? They have to have it themselves — Malachar will say if they do not."
+                : "An evening of lessons. Enough evenings and the teacher will test you."}
+            </p>
+            {!trainTeacher ? (
+              <ul className="flex flex-col gap-2 overflow-y-auto">
+                {talkTargets.length === 0 && <li className="text-sm text-stone-500">Nobody else is at camp.</li>}
+                {talkTargets.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => setTrainTeacher(t.name)}
+                      className="flex w-full items-center gap-3 rounded-sm border border-[#3d3428] p-2.5 text-left hover:border-[#c9a868]"
+                    >
+                      <Avatar src={t.img} name={t.name} size="sm" />
+                      <span className="font-serif text-sm text-stone-200">{t.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 overflow-y-auto">
+                {SRD_SKILLS.map((skill) => {
+                  const label = skill.replace(/_/g, " ")
+                  return (
+                    <button
+                      key={skill}
+                      type="button"
+                      onClick={() => {
+                        setTrainOpen(false)
+                        send(`I spend my camp action training with ${trainTeacher} in ${label}.`)
+                      }}
+                      className="rounded-sm border border-[#3d3428] p-2.5 text-left font-serif text-sm capitalize text-stone-200 hover:border-[#c9a868]"
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {talkOpen && (
         <div className="fixed inset-0 z-[300] flex items-end bg-[#0a0806]/70" onClick={() => setTalkOpen(false)}>
