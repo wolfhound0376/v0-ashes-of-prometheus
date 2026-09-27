@@ -1307,7 +1307,21 @@ if (error) {
       // Only the first accepted resolution is returned to Malachar. A replay
       // cannot mutate the roll ledger a second time.
       if (dmMessage) {
-        const response = await dispatchToLich(dmMessage)
+        let response: Awaited<ReturnType<typeof dispatchToLich>>
+        try {
+          response = await dispatchToLich(dmMessage)
+        } catch (err) {
+          const e = err as { message?: string; playerFacing?: boolean }
+          setRollLifecycle("idle")
+          setDialogue(prev => mergeDialogue(prev, {
+            id: tempId(),
+            speaker: "System",
+            text: e?.playerFacing && e.message
+              ? e.message
+              : "Malachar did not answer the roll. Try again in a moment.",
+          }))
+          return
+        }
         if (response?.text) {
           if (response.rollRequest) captureRollRequest(response.rollRequest)
           else setRollLifecycle("idle")

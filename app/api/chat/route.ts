@@ -381,6 +381,19 @@ export async function POST(req: Request) {
   // production. Full bucket paths; unknown slugs are ignored downstream.
   const sfxCues: { type: "raw"; scope: "party"; key: string }[] = []
 
+  // Without the world database there is no canon to narrate against. Name the
+  // failure so the table sees why, instead of an opaque 500.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    console.error("[v0] chat: Supabase environment variables are not set; cannot run a turn.")
+    return Response.json(
+      {
+        error: "world_unavailable",
+        message: "Malachar cannot reach the world's memory — the Supabase connection is not configured for this environment.",
+      },
+      { status: 503 },
+    )
+  }
+
   const supabase = await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
 
