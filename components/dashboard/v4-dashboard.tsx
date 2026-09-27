@@ -10,6 +10,7 @@ import { shouldRedirectToBoard, shouldForgetDeliberateExit, type PriorCombat } f
 // (fantasy-icons no longer used here — equipment slots render Sam's uploaded PNG icons)
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
+import { useSkillMarks } from "@/lib/hooks/use-skill-marks"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
 import MapPanel from "@/components/map/map-panel"
 import { DmNarration } from "./dm-narration"
@@ -391,6 +392,10 @@ export function V4Dashboard(props: V4DashboardProps) {
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
   const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
+  // The learning mark (docs/claude_Earned_Proficiency.md §6): which skills have
+  // progress on the ledger. Re-read once per turn (the log grows), because a
+  // roll accepted this turn can put a mark on the sheet next turn.
+  const learningSkills = useSkillMarks(selected?.id, dialogue.length)
   const visibleParty = props.claimLocked && selected
     ? party.filter((member) => member.id === selected.id)
     : party
@@ -880,7 +885,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     <CharacterSheetSlideOver
       open={characterSheetOpen}
       onClose={() => setCharacterSheetOpen(false)}
-      character={{ ...toSheetCharacter(selected), ac: displayedAc, acBreakdown: acResult.text, initiative: displayedInitiative }}
+      character={{ ...toSheetCharacter(selected), ac: displayedAc, acBreakdown: acResult.text, initiative: displayedInitiative, learningSkills: [...learningSkills] }}
       inventory={props.inventory as any}
     />
     {inventoryOpen ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onDrop={props.onDropItem} onClose={() => setInventoryOpen(false)} /> : null}

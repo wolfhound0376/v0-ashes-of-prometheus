@@ -111,6 +111,9 @@ interface SheetCharacter {
   savingThrowProficiencies: AbilityKey[]
   skillProficiencies: string[]
   skillExpertises: string[]
+  /** Skills with progress on the earned-proficiency ledger and not yet awarded
+   *  (docs/claude_Earned_Proficiency.md §6). The learning mark: a presence, never a count. */
+  learningSkills?: string[]
   languages?: string[] | string | null
   armorProficiencies?: string[] | string | null
   weaponProficiencies?: string[] | string | null
@@ -424,10 +427,13 @@ export function CharacterSheetSlideOver({
     const prof = character.skillProficiencies.includes(key)
     return character.abilities[ab].modifier + (expert ? pb * 2 : prof ? pb : 0)
   }
-  const skillState = (name: string): "" | "p" | "e" => {
+  const skillState = (name: string): "" | "p" | "e" | "l" => {
     const key = toSkillKey(name)
     if (character.skillExpertises.includes(key)) return "e"
     if (character.skillProficiencies.includes(key)) return "p"
+    // The learning mark (§6): something is happening here. Only for a skill
+    // the character does not yet have - once awarded it is simply proficient.
+    if (character.learningSkills?.includes(key)) return "l"
     return ""
   }
   const saveBonus = (ab: AbilityKey) =>
@@ -675,7 +681,12 @@ export function CharacterSheetSlideOver({
                         <div>
                           <h4>Skills</h4>
                           {SKILLS.map(([name, ab]) => (
-                            <button key={name} className="hsk-row" onClick={() => doD20(name, skillBonus(name, ab))}>
+                            <button
+                              key={name}
+                              className="hsk-row"
+                              onClick={() => doD20(name, skillBonus(name, ab))}
+                              title={skillState(name) === "l" ? `${name} — learning` : undefined}
+                            >
                               <span className={cn("hdot", skillState(name))} />
                               <span className="truncate">{name}</span>
                               <b>{signed(skillBonus(name, ab))}</b>
