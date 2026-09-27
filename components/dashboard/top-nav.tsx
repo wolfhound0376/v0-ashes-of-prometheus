@@ -9,7 +9,7 @@
 // (or show a "coming in a later round" note) rather than dead-ending.
 
 import Link from "next/link"
-import { BookOpen, Flame, Map, ScrollText, Settings, Sparkles, Users } from "lucide-react"
+import { BookOpen, Flame, Map, ScrollText, Settings, Smartphone, Sparkles, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
@@ -24,6 +24,8 @@ interface TopNavProps {
    *  the full NPC roster — including unencountered NPCs and their stats — so it
    *  renders for the DM alone. Defaults to false, i.e. hidden for players. */
   isDM?: boolean
+  /** Switches the page to the compact phone / camp layout. */
+  onCompact?: () => void
 }
 
 const SECTIONS: { id: NavSection; label: string; icon: typeof BookOpen }[] = [
@@ -41,6 +43,7 @@ export function TopNav({
   onSection,
   activeSection = null,
   isDM = false,
+  onCompact,
 }: TopNavProps) {
   // The NPCs tab is DM-only: players must not reach the roster, since it reveals
   // unencountered NPCs and their stats.
@@ -94,6 +97,18 @@ export function TopNav({
             </button>
           )
         })}
+
+        {onCompact && (
+          <button
+            type="button"
+            onClick={onCompact}
+            aria-label="Switch to the compact phone view"
+            title="Compact view"
+            className="ml-1 rounded-[3px] border border-[#7a5f33]/50 bg-[#120e0a] p-2 text-stone-400 transition-colors hover:border-[#c9a868]/60 hover:text-[#e0cfa0]"
+          >
+            <Smartphone className="h-4 w-4" />
+          </button>
+        )}
 
         <button
           type="button"

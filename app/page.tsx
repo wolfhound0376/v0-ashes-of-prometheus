@@ -10,6 +10,7 @@ import { RightColumn } from "@/components/dashboard/right-column"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { DiceProvider, type DiceResult } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
+import { CompactDashboard } from "@/components/dashboard/compact-dashboard"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
@@ -250,6 +251,30 @@ export default function DashboardPage() {
 
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
+
+  // Full three-column dashboard or the compact phone / camp view. ?view= wins,
+  // then this device's last choice, then the screen width.
+  const [view, setView] = useState<"full" | "compact">("full")
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("view")
+    const saved = window.localStorage.getItem("aop_view")
+    const pick =
+      param === "compact" || param === "full"
+        ? param
+        : saved === "compact" || saved === "full"
+          ? saved
+          : window.matchMedia("(max-width: 767px)").matches
+            ? "compact"
+            : "full"
+    setView(pick)
+  }, [])
+  useEffect(() => {
+    document.documentElement.dataset.view = view
+  }, [view])
+  const switchView = useCallback((next: "full" | "compact") => {
+    window.localStorage.setItem("aop_view", next)
+    setView(next)
+  }, [])
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
@@ -1449,7 +1474,8 @@ if (error) {
     <DiceProvider onAnnounce={handleDiceAnnounce}>
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
       {/* Top command bar (v3.0 design) */}
-      <TopNav
+      {view === "full" && <TopNav
+        onCompact={() => switchView("compact")}
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
@@ -1478,7 +1504,7 @@ if (error) {
           }
           setWorldAIPanelOpen(true)
         }}
-      />
+      />}
 
       {rollLifecycle !== "idle" && (
         <div className="fixed left-1/2 top-14 z-[65] -translate-x-1/2 rounded border border-[#7a5f33] bg-[#15110c]/95 px-3 py-1.5 text-xs text-[#e2c98e] shadow-lg">
@@ -1530,6 +1556,29 @@ if (error) {
           />
         </div>
       </div>
+
+      {view === "compact" ? (
+        <div className="fixed inset-0 z-[56]">
+          <CompactDashboard
+            environment={{
+              name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
+              region: "The Underdark",
+              timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
+              imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
+            }}
+            dialogue={dialogue}
+            dialogueInput={dialogueInput}
+            setDialogueInput={setDialogueInput}
+            onDialogueSubmit={handleDialogueSubmit}
+            onQuickReply={(text) => void handleQuickReply(text)}
+            characters={players}
+            selectedCharacter={selectedCharacter}
+            npcEncounters={npcEncounters.filter((n) => n.is_active)}
+            isThinking={lichLoading}
+            onExitCompact={() => switchView("full")}
+          />
+        </div>
+      ) : null}
 
       <V4Dashboard
         environment={{
