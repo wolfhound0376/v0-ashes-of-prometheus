@@ -1,7 +1,7 @@
 # Xanathar's Guide to Everything, ch. 2 "Dungeon Master's Tools": notes for later
 
 **Status:** reference only. Nothing here is wired unless a doc says so.
-**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 77–92, 106–124). Summarised in Claude's words with page numbers; no prose is copied. Check the book before quoting a rule to players.
+**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 77–92, 106–145). Summarised in Claude's words with page numbers; no prose is copied. Check the book before quoting a rule to players.
 **Why it's here:** Sam, 2026-09-27: "More from the book we can store for info later." It isn't among the five books in `campaign_books`, so Malachar's retrieval can't see it. This file is the only copy in the project.
 
 ---
@@ -127,10 +127,129 @@ Every tool entry also lists the skills it pairs with (Arcana, History, Investiga
   - **Examples photographed:** Path of Blades (levels 1–4, dangerous: whirling blades, crushing pillars, a rune of fear); Sphere of Crushing Doom (5–10, deadly: a steel sphere through portals); Poisoned Tempest (11–16, deadly: locked doors, rising poison gas, a d6 tempest table).
 - **Why it matters here.** Malachar must not improvise trap numbers. With these tables in his prompt, or in a `traps` table the board can place, any trap he builds lands on the book's numbers: a level-1–4 "dangerous" dart is +8 to hit for 11 (2d10), full stop.
 
-## 7. Downtime Revisited: rivals (pp. 123–124, partly photographed)
+## 7. Downtime Revisited: rivals (pp. 123–125)
 
 - **Rivals are NPCs who oppose the characters during downtime,** not necessarily villains: a tax collector, a jealous priest, a rival adventuring party. The book suggests two or three at a time, each with a separate agenda.
 - **Building one:** goals (why they interfere), assets (money, followers, influence), and plans (three or four kinds of action, played out during downtime or described as happening off-screen). A d20 table of example rivals and a worked example (Marina Rodemus) follow.
 - **Why it matters here.** Camp is this campaign's downtime. A rival's plans advancing while the party rests would fit the camp module's passive roll and the six hidden relationship dimensions (§5), if Sam wants it.
+- **Worked example's plans (p. 125).** The example rival comes with two short d-tables: things that happen to the party because of her, and moves she makes against them. That's the pattern to copy for a campaign rival: a table of events and a table of actions, rolled between sessions.
 
-- **Why it matters here.** The Velkynvelve escape and the tunnels beyond would use exactly these, and Malachar must not improvise trap numbers. A `traps` table, or catalog-style rows the board can place, would be the canon home if Sam wants them live.
+## 8. Downtime activities (pp. 125–134)
+
+**The frame.** Downtime is counted in **workweeks of 5 days**. Each activity costs time and money, resolves with a check or two, and may bring a **complication**. The DM rolls or picks one from a short table, often a rival stepping in. The numbers:
+
+| Activity | Cost | The roll | What it yields |
+|---|---|---|---|
+| **Buying a magic item** | 1 workweek + 100 gp | CHA (Persuasion); +1 per extra workweek or extra 100 gp, max +10 | 1–5: 1d6 rolls on DMG Magic Item Table A · 6–10: 1d4 on B · 11–15: 1d4 on C · 16–20: 1d4 on D · 21–25: 1d4 on E · 26–30: 1d4 on F · 31–35: 1d4 on G · 36–40: 1d4 on H · 41+: 1d4 on I. You're shown what's for sale, not handed it. |
+| **Carousing** | 1 workweek; lower class 10 gp, middle 50 gp, upper 250 gp | CHA (Persuasion) | Contacts, from hostile to allied; a complication table per social class |
+| **Crafting an item** | Magic items: see below. Mundane: the PHB rule | — | — |
+| **Crime** | 1 workweek + 25 gp | Three checks (Stealth, a tool or Deception, Perception or Investigation) against a DC the player picks: 10 / 15 / 20 / 25 | 3 successes: 50 / 100 / 200 / 1,000 gp. Fewer successes mean less or nothing, and 0 means caught |
+| **Gambling** | 1 workweek + a stake of 10–1,000 gp | Three checks (Insight, Deception, Intimidation), each against DC 5 + 2d10 | 0 successes: lose the stake and owe it again · 1: lose half · 2: win 1½× · 3: win double |
+| **Pit fighting** | 1 workweek | Three checks (Athletics, Acrobatics, CON or an attack roll), each against DC 5 + 2d10 | 0 / 1 / 2 / 3 successes: 0 / 50 / 100 / 200 gp |
+| **Relaxation** | 1 workweek at a modest lifestyle or better | — | Advantage on saves against an ongoing disease or poison, or end one effect that stops hp recovery, or restore a reduced ability score |
+| **Religious service** | 1 workweek | INT (Religion) or CHA (Persuasion) | 1–10: nothing · 11–20: one favour · 21+: two favours |
+| **Research** | 1 workweek + 50 gp | INT; +1 per extra 100 gp, max +6 | 1–5: nothing · 6–10: one piece of lore · 11–20: two · 21+: three |
+| **Scribing a spell scroll** | See the next table | Arcana proficiency, and the spell prepared or known | A scroll of that spell |
+| **Selling a magic item** | 1 workweek + 25 gp | CHA (Persuasion) on the best offer | Offer as a share of base price. 1–10: 50% · 11–20: 100% · 21+: 150% |
+| **Training** (language or tool) | 10 workweeks − INT modifier, at 25 gp per workweek | — | The proficiency |
+| **Work** | 1 workweek | STR (Athletics), DEX (Acrobatics), INT with a tool, or CHA (Performance) with an instrument | 9 or less: a poor lifestyle for the week · 10–14: modest · 15–20: comfortable · 21+: comfortable plus 25 gp |
+
+**Magic item prices (buying).**
+
+| Rarity | Price |
+|---|---|
+| Common | (1d6 + 1) × 10 gp |
+| Uncommon | 1d6 × 100 gp |
+| Rare | 2d10 × 1,000 gp |
+| Very rare | (1d4 + 1) × 10,000 gp |
+| Legendary | 2d6 × 25,000 gp |
+
+Consumables are halved.
+
+**Base prices (selling).** Common 100 gp · uncommon 400 · rare 4,000 · very rare 40,000 · legendary 200,000.
+
+**Crafting a magic item.** The crafter needs a **formula** and an **exotic material**, often a part harvested from a monster. The monster's CR scales with rarity: common 1–3, uncommon 4–8, rare 9–12, very rare 13–18, legendary 19+.
+
+| Rarity | Time | Cost |
+|---|---|---|
+| Common | 1 workweek | 50 gp |
+| Uncommon | 2 workweeks | 200 gp |
+| Rare | 10 workweeks | 2,000 gp |
+| Very rare | 25 workweeks | 20,000 gp |
+| Legendary | 50 workweeks | 100,000 gp |
+
+Consumables take half the time and cost. There's a **10% complication chance per 5 workweeks**, rolled on a d6 table.
+
+**Brewing potions of healing** (herbalism kit):
+
+| Potion | Time | Cost |
+|---|---|---|
+| Healing | 1 day | 25 gp |
+| Greater healing | 1 workweek | 100 gp |
+| Superior healing | 3 workweeks | 1,000 gp |
+| Supreme healing | 4 workweeks | 10,000 gp |
+
+**Scroll costs.**
+
+| Spell level | Time | Cost |
+|---|---|---|
+| Cantrip | 1 day | 15 gp |
+| 1st | 1 day | 25 gp |
+| 2nd | 3 days | 250 gp |
+| 3rd | 1 workweek | 500 gp |
+| 4th | 2 workweeks | 2,500 gp |
+| 5th | 4 workweeks | 5,000 gp |
+| 6th | 8 workweeks | 15,000 gp |
+| 7th | 16 workweeks | 25,000 gp |
+| 8th | 32 workweeks | 50,000 gp |
+| 9th | 48 workweeks | 250,000 gp |
+
+**How this sits against what's already built.**
+
+- **Camp doc §18 is a different system on purpose.** Sam chose the Two-Parts roll: one camp action is one check, with rarity-scaled hours. Xanathar's counts whole workweeks. They agree where they meet: a potion of healing costs 25 gp here, and §18's "half the item's value" gives the same 25 gp from the catalog's 50 gp value. **Don't mix the two.** Pick one per item type.
+- **Most activities need a town.** Buying, selling, carousing, crime, gambling, pit fighting, religious service, research, and work all assume a settlement with buyers, temples, and libraries. In the Underdark that means Blingdenstone, Gracklstugh, Neverlight Grove or Sloobludop, not a camp. They'd fit a future "in town" menu beside the camp one.
+- **Research, relaxation, and training could run at camp.** Research needs a source, such as a book or an informant. Training is already §17's lane.
+
+## 9. Awarding magic items (pp. 135–136)
+
+The book gives a whole-campaign budget of **100 items**: 80 minor and 20 major. Most are handed out in tiers 1–2.
+
+| Tier (levels) | Minor | Major |
+|---|---|---|
+| 1–4 | 9 | 2 |
+| 5–10 | 28 | 6 |
+| 11–16 | 24 | 6 |
+| 17–20 | 19 | 6 |
+
+A second table splits each tier's items by rarity. Its numbers weren't copied here, so check the book before using it.
+
+**Why it matters here.** This is a ceiling Malachar can be held to. Levels 1–4 is **about 11 items for the whole tier**. Anything he awards still has to resolve against `items` (invariant 1). This table adds a count on top of that.
+
+## 10. Common magic items (pp. 136–140) and the item tables (pp. 140–145)
+
+**Common items.** The book adds about fifty. They are cosmetic or small-utility, mostly no attunement, and each is a paragraph long. The ones this campaign would actually use:
+
+| Item | What it does, briefly | In catalog? |
+|---|---|---|
+| **Bead of nourishment** | Dissolves on the tongue and counts as **a day's food**. | No |
+| **Bead of refreshment** | Purifies a pint of water. | No |
+| **Candle of the deep** | Its flame burns underwater. | Yes |
+| **Heward's handy spice pouch** | Charges that season a meal. | No |
+| **Orb of direction** | Tells the holder where north is. | Yes |
+| **Orb of time** | Tells morning, afternoon, evening or night, **outside only**. That makes it nearly useless underground. | Yes |
+| **Rope of mending** | Cut pieces knit back together on command. | No |
+| **Clothes of mending** | Traveller's clothes that repair their own daily wear. | No |
+| **Talking doll** | Says up to six phrases on set conditions. | No |
+| **Tankard of sobriety** | Nonmagical drink poured into it can't make you drunk. | No |
+| **Pot of awakening** | A shrub planted in it becomes an awakened shrub after 30 days. | No |
+
+- **Bead of nourishment is the one to decide on.** The camp module prices a rest in rations (20/30/40, per Sam). If beads went in the catalog, each would count as a ration. That means one line in the ration count and a catalog row, and **no schema change**.
+- **Catalog check** (live, 2026-09-27). The catalog has 243 items. Of the book's common list, 10 are in it: candle of the deep, clockwork amulet, dread helm, ersatz eye, orb of direction, orb of time, pole of collapsing, potion of healing, and spell scrolls (cantrip, 1st).
+
+**Magic Item Tables (pp. 140–145).** They sort every DMG and Xanathar's item into **minor or major**, then by rarity, with the type and whether it needs attunement. They run Minor Common → Uncommon → Rare → Very Rare → Legendary, then Major Uncommon → … → Legendary. The Minor Common list is the one above.
+
+- **Why it matters here.** The awarding budget in §9 counts minor and major separately, and these tables are how you tell which is which. A `minor_major` value per catalog row (in `items.properties`, **no schema change**) would let a rule enforce the budget.
+
+**"Recharging without a Dawn" (p. 144).** Many items regain charges "at dawn". The book says that where there is no dawn, the DM picks a fixed time every 24 hours, and may pick a different moment even where dawn exists.
+
+- **This one is live for us.** The campaign is in the Underdark, and several catalog items (wands, staffs) recharge at dawn. The natural anchor is **the end of a long rest**, which `time_log` already records. That's a ruling for Sam, then one line in the rest code.
