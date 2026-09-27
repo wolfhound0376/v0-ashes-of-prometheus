@@ -1057,7 +1057,11 @@ ${combatantRows
   // so "Velkynvelve (slave pen)" and "Scene_1_Velkynvelve (slave pen)" agree.
   let availableCinematicCues: string[] = []
   try {
-    const { data: cueSceneKey } = await supabase.rpc("scene_key", { p_name: currentLocation })
+    // No film is offered for a camp talk, so Malachar and the second look
+    // have nothing to cue while the player is mid-conversation.
+    const { data: cueSceneKey } = campTalk
+      ? { data: null }
+      : await supabase.rpc("scene_key", { p_name: currentLocation })
     if (cueSceneKey) {
       // Location-filed cues plus the 'generic' tier: a cue like a rogue being
       // overheard while sneaking is not tied to one room, lives at

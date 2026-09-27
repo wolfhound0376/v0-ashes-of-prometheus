@@ -365,6 +365,9 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
   const talkMode = Boolean(props.talkWith)
+  // Read from the realtime listener and the cue handler, which are bound once.
+  const talkModeRef = useRef(talkMode)
+  talkModeRef.current = talkMode
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   // Restart Campaign DOES clear the dialogue table — the reason it looked like
   // it had failed is right here. An empty feed fell straight back to the
@@ -631,7 +634,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       .channel("cinematic-broadcast")
       .on("broadcast", { event: "play" }, (message: { payload?: unknown }) => {
         const url = (message?.payload as { video_url?: string })?.video_url
-        if (url) setCinematicSrc(url)
+        if (url && !talkModeRef.current) setCinematicSrc(url)
       })
       .subscribe()
     return () => {
@@ -645,7 +648,8 @@ export function V4Dashboard(props: V4DashboardProps) {
   // answering in words, and a failed camera cue is not an error they should
   // ever perceive.
   const playSceneCinematic = async (cue?: { state: string }) => {
-    if (cinematicBusy) return
+    // A fireside talk is a conversation; film would cut across it.
+    if (cinematicBusy || talkModeRef.current) return
     setCinematicBusy(true)
     try {
       // DM Mode does not ask for the DM code, but dm_override without the
