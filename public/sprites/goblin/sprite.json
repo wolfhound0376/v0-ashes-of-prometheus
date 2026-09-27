@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "Swarm of Rats",
+  "name": "Goblin",
   "cell": [
     128,
     128
@@ -9,7 +9,7 @@
     64,
     126
   ],
-  "ppu": 126,
+  "ppu": 169,
   "animations": {
     "idle": {
       "sheet": "idle.png",
