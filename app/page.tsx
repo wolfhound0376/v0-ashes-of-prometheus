@@ -281,6 +281,17 @@ export default function DashboardPage() {
   // Who the player sat down with at camp. While set, the compact view steps
   // aside and the dashboard shows only the NPC / DM window for the conversation.
   const [campTalkWith, setCampTalkWith] = useState<string | null>(null)
+  // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
+  // straight into the talk mini-dashboard with that person, no intro screens.
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const talk = url.searchParams.get("talk")?.trim()
+    if (!talk) return
+    setCampTalkWith(talk.slice(0, 60))
+    // Drop it from the address so a refresh after "Back to camp" stays at camp.
+    url.searchParams.delete("talk")
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash)
+  }, [])
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
@@ -586,6 +597,10 @@ export default function DashboardPage() {
     if (!c || !k) {
       // Everyone passes through the intro once per browser session — claimed or
       // not. The intro page sets the flag; claim links skip the ceremony.
+      // Coming back from the camp scene is not a new arrival: the player is
+      // mid-session, so the intro ceremony is skipped (and stays skipped for
+      // this session). The claim checks below still run exactly as before.
+      if (params.get("from") === "camp") window.sessionStorage.setItem("aop_intro_seen", "1")
       if (!window.sessionStorage.getItem("aop_intro_seen")) {
         window.location.replace("/intro")
         return
