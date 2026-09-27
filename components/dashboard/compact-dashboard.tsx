@@ -23,7 +23,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { CAMP_ACTIONS_NOT_YET, type CampAction } from "@/lib/camp"
+import { CAMP_ACTIONS_NOT_YET, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABEL, type CampAction, type CraftCategory, type CraftMenu } from "@/lib/camp"
 import { cn } from "@/lib/utils"
 import type { Character } from "@/lib/types/database"
 
@@ -66,9 +66,11 @@ const CAMP_MENU: { id: CampAction; label: string; icon: LucideIcon; hint: string
   { id: "mend", label: "Mend", icon: Wrench, hint: "Repair gear", line: "I spend my camp action mending my gear." },
   { id: "trade", label: "Trade", icon: HandCoins, hint: "Only if a merchant came", line: "I spend my camp action trading with the merchant at camp." },
   { id: "level_up", label: "Level up", icon: Shield, hint: "When you have the XP", line: "I spend my camp action to level up." },
-  { id: "artifice", label: "Craft", icon: Hammer, hint: "Make an item", line: "I spend my camp action crafting." },
-  { id: "brew", label: "Brew", icon: Flame, hint: "Brew a potion", line: "I spend my camp action brewing a potion." },
+  // One button for all three crafts; it opens the menu below (camp doc §16).
+  { id: "artifice", label: "Craft", icon: Hammer, hint: "Alchemy, Construct, Artifice", line: "" },
 ]
+
+const CRAFT_ICON: Record<CraftCategory, LucideIcon> = { alchemy: Flame, construct: Hammer, artifice: Wrench }
 
 const ABILITIES = [
   ["STR", "str"],
@@ -108,6 +110,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
   const { environment, dialogue, selectedCharacter: me, characters, isThinking } = props
   const [tab, setTab] = useState<Tab>("story")
   const [talkOpen, setTalkOpen] = useState(false)
+  const [craftOpen, setCraftOpen] = useState(false)
   const logEnd = useRef<HTMLDivElement>(null)
 
   const recent = useMemo(() => dialogue.slice(-80), [dialogue])
@@ -218,7 +221,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {CAMP_MENU.map((a) => {
-                  const notYet = CAMP_ACTIONS_NOT_YET[a.id]
+                  const notYet = a.id === "artifice" ? undefined : CAMP_ACTIONS_NOT_YET[a.id]
                   const Icon = a.icon
                   return (
                     <button
@@ -226,7 +229,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
                       type="button"
                       disabled={!!notYet || isThinking}
                       title={notYet}
-                      onClick={() => (a.id === "talk" ? setTalkOpen(true) : send(a.line))}
+                      onClick={() => (a.id === "talk" ? setTalkOpen(true) : a.id === "artifice" ? setCraftOpen(true) : send(a.line))}
                       className={cn(
                         "flex items-start gap-2.5 rounded-sm border p-3 text-left transition-colors",
                         a.id === "talk"
@@ -245,6 +248,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
                 })}
               </div>
             </section>
+            {craftOpen && <CraftMenuPanel characterId={me?.id ?? null} onClose={() => setCraftOpen(false)} onCraft={send} busy={!!isThinking} />}
           </div>
         )}
 
@@ -433,5 +437,134 @@ export function CompactDashboard(props: CompactDashboardProps) {
         </div>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// The crafting menu (camp doc §16). Sam, 27 Sep 2026: "a list (Alchemy,
+// Construct, Artifice). Options available light up if you have the
+// proficiency and items." What lights an option is lib/camp `craftMenu`; this
+// only draws it. Until the crafting roll is wired, a lit option says so
+// rather than offering a button that would cost nothing and make nothing.
+// ---------------------------------------------------------------------------
+
+function CraftMenuPanel({
+  characterId,
+  onClose,
+  onCraft,
+  busy,
+}: {
+  characterId: string | null
+  onClose: () => void
+  onCraft: (line: string) => void
+  busy: boolean
+}) {
+  const [category, setCategory] = useState<CraftCategory>("alchemy")
+  const [menu, setMenu] = useState<CraftMenu | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const notYet = CAMP_ACTIONS_NOT_YET.artifice
+
+  useEffect(() => {
+    if (!characterId) return
+    let live = true
+    setError(null)
+    fetch(`/api/camp/craft-menu?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status))
+        const body = (await r.json()) as { menu?: CraftMenu }
+        if (live) setMenu(body.menu ?? null)
+      })
+      .catch(() => live && setError("The crafting list could not be read."))
+    return () => {
+      live = false
+    }
+  }, [characterId])
+
+  const options = menu?.[category] ?? []
+
+  return (
+    <section aria-labelledby="craft-menu-heading" className="flex flex-col gap-3 rounded-sm border border-[#7a5f33] bg-[#110e0a] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="craft-menu-heading" className="font-serif text-xs uppercase tracking-[0.2em] text-[#c9a868]">
+          Craft
+        </h2>
+        <button type="button" onClick={onClose} aria-label="Close the crafting list" className="rounded-sm p-1 text-stone-400 hover:text-[#e2c98e]">
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      <div role="tablist" aria-label="Kind of craft" className="grid grid-cols-3 gap-1">
+        {CRAFT_CATEGORIES.map((c) => {
+          const Icon = CRAFT_ICON[c]
+          const lit = menu?.[c].filter((o) => o.available).length ?? 0
+          return (
+            <button
+              key={c}
+              type="button"
+              role="tab"
+              aria-selected={category === c}
+              onClick={() => setCategory(c)}
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-sm border px-2 py-2 font-serif text-xs",
+                category === c ? "border-[#c9a868] bg-[#1d1812] text-[#e2c98e]" : "border-[#3d3428] text-stone-400 hover:border-[#7a5f33]",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {CRAFT_CATEGORY_LABEL[c]}
+              {lit > 0 && <span className="rounded-full bg-[#c9a868] px-1.5 text-[10px] leading-4 text-[#0a0806]">{lit}</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {!characterId && <p className="text-sm text-stone-400">Choose your character to see what you can make.</p>}
+      {error && <p className="text-sm text-[#e0651a]">{error}</p>}
+      {characterId && !menu && !error && <p className="text-sm text-stone-400">Reading your pack…</p>}
+      {menu && options.length === 0 && (
+        <p className="text-sm leading-relaxed text-stone-400">
+          No {CRAFT_CATEGORY_LABEL[category]} recipes in the catalog yet.
+        </p>
+      )}
+
+      <ul className="flex flex-col gap-2">
+        {options.map((o) => (
+          <li
+            key={o.itemId}
+            className={cn(
+              "flex flex-col gap-1 rounded-sm border p-3",
+              o.available ? "border-[#c9a868] bg-[#1d1812] shadow-[0_0_12px_rgba(201,168,104,0.25)]" : "border-[#3d3428] opacity-50",
+            )}
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className={cn("font-serif text-sm", o.available ? "text-[#e2c98e]" : "text-stone-300")}>{o.name}</span>
+              <span className="shrink-0 text-xs text-stone-400">{o.materialsGp} gp materials</span>
+            </div>
+            <span className="text-xs text-stone-400">{o.tools}</span>
+            {o.available ? (
+              notYet ? (
+                <span className="text-xs text-[#c9a868]">Ready — the crafting roll is coming soon.</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onCraft(`I spend my camp action crafting ${o.name}.`)}
+                  className="mt-1 self-start rounded-sm bg-[#c9a868] px-3 py-1.5 font-serif text-xs text-[#0a0806] hover:bg-[#e2c98e] disabled:opacity-40"
+                >
+                  Craft
+                </button>
+              )
+            ) : (
+              <ul className="flex flex-col gap-0.5">
+                {o.missing.map((m) => (
+                  <li key={m} className="text-xs text-stone-400">
+                    {m}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
