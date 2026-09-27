@@ -781,12 +781,12 @@ export function V4Dashboard(props: V4DashboardProps) {
               this strip buried a 3D scene under the stage's own chrome —
               Sam: "too cluttered and it's really dark". /battle gets the
               whole viewport. */}
-          <a
-            href="/battle"
-            className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1.5 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] hover:text-[#fff3cf]"
-          >
-            <Map className="h-3 w-3" />Open Battle Board{inCombat ? " · Live" : ""} ↗
-          </a>
+  {props.dmMode ? <a
+  href="/battle"
+  className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1.5 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] hover:text-[#fff3cf]"
+  >
+  <Map className="h-3 w-3" />Open Battle Board{inCombat ? " · Live" : ""} ↗
+  </a> : null}
         </>}
       </div>
       <div className="flex flex-col gap-1">
