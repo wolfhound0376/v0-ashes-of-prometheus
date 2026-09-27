@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import { BookOpen, ChevronDown, ChevronUp, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -243,6 +243,7 @@ type NpcEncounter = {
   /** Text in Postgres: "8", "0.5" and "1/4" all occur. Read it through
    *  parseChallengeRating/isCombatant rather than comparing it directly. */
   challenge_rating?: string | number | null
+  aliases?: string[] | null
   disposition?: string | null
   stage_scale?: number | string | null
   stage_offset_y?: number | string | null
@@ -414,14 +415,39 @@ export function V4Dashboard(props: V4DashboardProps) {
   // else. The speaker wins while they are talking; the scene's active NPC is
   // the resting state.
   const [speakingNpc, setSpeakingNpc] = useState<{ id: string; name: string } | null>(null)
-  const activeNpc = props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
-  const speakingRow = speakingNpc ? props.npcEncounters.find((npc) => npc.id === speakingNpc.id) : undefined
+  // Camp talk: whoever the player sat down with OWNS the window — their idle
+  // loop at rest, their talking loop and voice when they speak — no matter who
+  // else is active in the scene. Matched on name or alias against the FULL
+  // roster (they are usually not is_active at camp), then against the party.
+  // "Eldeth" finds "Eldeth Feldrun"; "Derendil" finds "Prince Derendil".
+  const npcPool = props.npcRoster?.length ? props.npcRoster : props.npcEncounters
+  const talkPartner = useMemo(() => {
+    const want = (props.talkWith ?? "").trim().toLowerCase()
+    if (!want) return null
+    const names = (n: { name: string; aliases?: string[] | null }) => [n.name, ...(n.aliases ?? [])].map((x) => x.toLowerCase())
+    const hit = (xs: string[]) => xs.some((x) => x === want || x.split(/\s+/).includes(want) || x.startsWith(want + " "))
+    const npc = npcPool.find((n) => names(n).includes(want)) ?? npcPool.find((n) => hit(names(n)))
+    if (npc) return { kind: "npc" as const, npc }
+    const pc = props.characters.find((c) => c.name.toLowerCase() === want) ?? props.characters.find((c) => hit([c.name.toLowerCase()]))
+    return pc ? { kind: "player" as const, player: pc as Character & { idle_url?: string | null; talking_url?: string | null } } : null
+  }, [props.talkWith, npcPool, props.characters])
+  const activeNpc = talkPartner?.kind === "npc"
+    ? talkPartner.npc
+    : talkMode && talkPartner?.kind === "player"
+      ? undefined
+      : props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
+  const speakingRowAny = speakingNpc ? npcPool.find((npc) => npc.id === speakingNpc.id) : undefined
+  // While talking by the fire, only the partner may take the window; anyone
+  // else Malachar voices is heard but does not replace the face.
+  const speakingRow = talkMode && talkPartner?.kind === "npc" ? (speakingRowAny?.id === talkPartner.npc.id ? speakingRowAny : undefined) : speakingRowAny
   // A speaking PLAYER takes the window too: when Player Voices reads a typed
   // line aloud, the speaker's face and talking loop hold the stage exactly the
   // way an NPC's does, then the window falls back to the active NPC.
-  const speakingPlayer = speakingNpc && !speakingRow
+  const speakingPlayerAny = speakingNpc && !speakingRowAny
     ? (props.characters.find((c) => c.id === speakingNpc.id && c.is_player) as (Character & { idle_url?: string | null; talking_url?: string | null }) | undefined)
     : undefined
+  const partnerPlayer = talkMode && talkPartner?.kind === "player" ? talkPartner.player : undefined
+  const speakingPlayer = talkMode && talkPartner ? (partnerPlayer && speakingPlayerAny?.id === partnerPlayer.id ? speakingPlayerAny : undefined) ?? partnerPlayer : speakingPlayerAny
   const shownNpc = speakingRow ?? activeNpc
   // EMPTY STAGE IS A REAL STATE, NOT A FAILURE.
   //
@@ -440,8 +466,9 @@ export function V4Dashboard(props: V4DashboardProps) {
   const npcName = speakingPlayer?.name ?? shownNpc?.name ?? "No one on stage"
   // A talking NPC gets talking_url when the row has one, so the animated head
   // switches to the speaking loop and back to idle on its own.
+  const playerTalking = Boolean(speakingPlayer && speakingNpc?.id === speakingPlayer.id)
   const npcPortrait = speakingPlayer
-    ? (speakingPlayer.talking_url || speakingPlayer.idle_url || speakingPlayer.portrait_image_url || speakingPlayer.avatar_image_url)
+    ? ((playerTalking ? speakingPlayer.talking_url : null) || speakingPlayer.idle_url || speakingPlayer.portrait_image_url || speakingPlayer.avatar_image_url)
     : speakingRow
     ? (speakingRow.talking_url || speakingRow.idle_url || speakingRow.face_url || speakingRow.portrait_url)
     : (shownNpc?.idle_url || shownNpc?.face_url || shownNpc?.portrait_url)

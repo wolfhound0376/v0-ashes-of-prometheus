@@ -1129,7 +1129,8 @@ if (error) {
           setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
 
           // Send to Lich, carrying THIS browser's character + claim token.
-          const response = await sendToLich(message, selectedCharacterId, claimToken)
+          // In the camp talk window, name the partner so Malachar answers as them.
+          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith } : undefined)
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1165,7 +1166,7 @@ if (error) {
             // Refresh character data to pick up any XP or items from the Lich
             await fetchCharacterData()
           }
-  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData])
+  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith])
 
   // Typed messages cannot impersonate the app. "[Dice Roll]" and the 🎲 prefix
   // are reserved for rolls the physics engine actually resolved; "[Reaction]"
