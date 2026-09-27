@@ -350,7 +350,7 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
   `idle` sheet (`ppu = figure_px × 5 / feet`), never left at the default. Humans (and
   half-elves) 5.5–6.5 ft, default 5.9 ft; a height on the character sheet
   (`sheet_appearance.height`) wins. Elves (drow included) 6 ft. Dwarves (duergar included)
-  4–4.5 ft, default 4.3 ft. Halflings just above gnomes: Freía 3.3 ft, deep gnome 3.0 ft.
+  4–4.5 ft, default 4.3 ft. Halflings just above gnomes: Freía 3.8 ft (Sam, 9/27: halflings 15% larger), deep gnome 3.0 ft.
   Creatures without a stated height stand at their 5e size: Tiny ~2 ft, Small ~3–3.5 ft,
   Large ~9–10 ft (wide ones measured across, to fill their 10-ft space); the ancient deep
   dragon is 40 ft across. `scripts/sprites/underdark-roster.json` holds every monster's
