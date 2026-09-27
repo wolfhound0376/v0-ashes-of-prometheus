@@ -223,6 +223,8 @@ interface CellsJson {
      * unwalkable either way. Default 1.35.
      */
     rock_height?: number
+    /** Grid line opacity for this map (default 0.13). Lower on busy painted plates. */
+    grid_opacity?: number
     /** Running water on the painted floor — see water-flow.ts. */
     water_fx?: WaterFx
     /** Fixed lights the painting implies: candles, glowing fungi, river glow. */
@@ -5192,10 +5194,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const gpts: THREE.Vector3[] = []
       for (let i = 0; i <= W; i++) gpts.push(new THREE.Vector3(i * SQ, 0.07, 0), new THREE.Vector3(i * SQ, 0.07, H * SQ))
       for (let j = 0; j <= H; j++) gpts.push(new THREE.Vector3(0, 0.07, j * SQ), new THREE.Vector3(W * SQ, 0.07, j * SQ))
-      boardGroup.add(new THREE.LineSegments(
-        new THREE.BufferGeometry().setFromPoints(gpts),
-        new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.13 }),
-      ))
+      // Kept as a handle so a map's cells JSON can soften it (render.grid_opacity):
+      // on a busy painted plate the default reads as a chessboard laid over the art.
+      const gridMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.13 })
+      boardGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(gpts), gridMat))
 
       // Cell geometry: rock, cage, doors — when the node declares them.
       if (meta.cells_url) {
@@ -5229,6 +5231,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const plainSide = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x39332c, roughness: 1, metalness: 0 })
           const ironMat = new THREE.MeshStandardMaterial({ map: rockTex, color: 0x2e2a26, roughness: 0.9, metalness: 0.25 })
           const wallH = typeof R.rock_height === "number" ? R.rock_height : 1.35
+          if (typeof R.grid_opacity === "number") gridMat.opacity = Math.max(0, Math.min(1, R.grid_opacity))
 
           if (R.water_fx && floorPlane) {
             waterFlow = applyWaterFlow(floorMat as THREE.MeshStandardMaterial, R.water_fx, W / H)
