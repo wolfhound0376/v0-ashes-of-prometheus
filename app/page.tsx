@@ -1660,7 +1660,11 @@ if (error) {
   audioSlot={
     <>
       {/* Combat music belongs to /battle only — see the note on the legacy mount above. */}
-      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} className="static bottom-auto right-auto z-auto" />
+      {/* Talking by the fire: the camp tab that opened this window is already
+          playing the camp music. Mounting the room's track here as well put
+          the slave pen's jail ambience under Camp Embers (Sam, 2026-09-27),
+          so the talk window plays nothing of its own. */}
+      {campTalkWith ? null : <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} className="static bottom-auto right-auto z-auto" />}
       <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
     </>
   }
