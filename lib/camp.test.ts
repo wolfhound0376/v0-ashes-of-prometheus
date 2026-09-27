@@ -1212,3 +1212,15 @@ describe("tool uses timed to a rest (§19, Sam 2026-09-27)", () => {
     expect(trapGuardNote(19, "Fifi")).toMatch(/Fifi set guards the camp: .*DC 19.*9 damage/)
   })
 })
+
+describe("a recipe cheaper than a gold piece (lamp oil, 1 sp)", () => {
+  it("prices materials from the recipe's cost_gp and pays them in copper", () => {
+    const oil = { tools: "Alchemist's Supplies", cost_gp: 0.05 }
+    const menu = craftMenu({
+      recipes: [{ id: "o", slug: "lamp-oil", name: "Flask of lamp oil", value: 0, rarity: "common", item_type: "consumable", properties: { craft: oil } }],
+      proficiencies: ["Alchemist's Supplies"], carried: [{ name: "Alchemist's Supplies", quantity: 1 }], currency: { sp: 1 },
+    })
+    expect(menu.alchemy[0]).toMatchObject({ materialsGp: 0.05, available: true, missing: [] })
+    expect(payFromPurse({ sp: 1 }, 0.05)).toEqual({ cp: 5, sp: 0, ep: 0, gp: 0, pp: 0 })
+  })
+})

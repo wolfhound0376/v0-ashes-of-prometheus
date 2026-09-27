@@ -260,7 +260,7 @@ async function readPartyRations(client: any): Promise<PartyRations> {
         .filter(([, n]) => n > 0),
     )
     if (per.size > 0) {
-      const { data: players } = await client.from("characters").select("id").eq("is_player", true)
+      const { data: players } = await client.from("characters").select("id").eq("is_player", true).is("archived_at", null)
       const ids = ((players ?? []) as { id: string }[]).map((c) => c.id)
       if (ids.length > 0) {
         const { data: carried } = await client
@@ -942,7 +942,7 @@ STRICT LIMITS ON USING THESE:
                 lifted = (count ?? 0) > 0
               }
               const rations = await readPartyRations(timeAdmin)
-              const { data: campers } = await timeAdmin.from("characters").select("id, rest_actions_remaining").eq("is_player", true)
+              const { data: campers } = await timeAdmin.from("characters").select("id, rest_actions_remaining").eq("is_player", true).is("archived_at", null)
               const kind = affordableRest(rations.total, (campers ?? []).length).kind
               const out = settlePerform(name, total, kind, lifted)
               if (out.lifts) {
@@ -1076,7 +1076,7 @@ STRICT LIMITS ON USING THESE:
       let supplies = 0
       if (campingBefore) {
         const { data: campers } = await timeAdmin
-          .from("characters").select("name, rest_actions_remaining").eq("is_player", true)
+          .from("characters").select("name, rest_actions_remaining").eq("is_player", true).is("archived_at", null)
         budgets = (campers ?? []).map((c: { name: string; rest_actions_remaining: number | null }) => ({
           name: String(c.name), remaining: Math.max(0, Number(c.rest_actions_remaining ?? 0)),
         }))
@@ -3588,11 +3588,11 @@ Rules:
     const setCampBudgets = async (value: number) => {
       const { error } = await admin.from("characters")
         .update({ rest_actions_remaining: value, updated_at: new Date().toISOString() })
-        .eq("is_player", true)
+        .eq("is_player", true).is("archived_at", null)
       if (error) console.error("[camp] rest_actions_remaining:", error.message)
     }
     const countPartyForCamp = async () => {
-      const { count } = await admin.from("characters").select("id", { count: "exact", head: true }).eq("is_player", true)
+      const { count } = await admin.from("characters").select("id", { count: "exact", head: true }).eq("is_player", true).is("archived_at", null)
       return count ?? 0
     }
     // The passive roll (camp doc §10–11). The party's node decides whether
@@ -3656,7 +3656,7 @@ Rules:
     const campTags = parseCampActions(rawText)
     if (campTags.length) {
       const { data: campers } = await admin
-        .from("characters").select("id, name, rest_actions_remaining").eq("is_player", true)
+        .from("characters").select("id, name, rest_actions_remaining").eq("is_player", true).is("archived_at", null)
       const rowsForCamp = (campers ?? []) as Array<{ id: string; name: string; rest_actions_remaining: number | null }>
       const low = (v: unknown) => String(v ?? "").trim().toLowerCase()
       const byName = (n: string) =>
@@ -4005,7 +4005,7 @@ Rules:
       const { data: party } = await timeAdmin
         .from("characters")
         .select("id,name,level,hp_current,hp_max,hit_dice_remaining,sheet_spellcasting,conditions,death_saves,con_score,exhaustion,unfed_rest_streak")
-        .eq("is_player", true)
+        .eq("is_player", true).is("archived_at", null)
 
       // === DID THEY EAT? ===
       //
@@ -4263,7 +4263,7 @@ Rules:
       const { data: party } = await timeAdmin
         .from("characters")
         .select("id,name,class,level,hp_current,hp_max,hit_dice_remaining,sheet_hit_dice,sheet_spellcasting,conditions,death_saves,con_score")
-        .eq("is_player", true)
+        .eq("is_player", true).is("archived_at", null)
       const rows = (party ?? []) as Array<Record<string, unknown>>
       const norm = (v: unknown) => String(v ?? "").trim().toLowerCase()
       // "Fifi" should find "Fifi of Copperas Cove": exact first, then prefix.

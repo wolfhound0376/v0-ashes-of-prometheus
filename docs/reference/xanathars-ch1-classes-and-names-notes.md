@@ -8,7 +8,7 @@
 >
 > What this means for the party (live `characters`, 2026-09-27):
 > - Samson (cleric 1), Kenta (sorcerer 1), Fifi (rogue 1) and Scott (bard 1) choose at level 3.
-> - **Bastet is a level-5 barbarian with no Primal Path on the sheet.** Under 2024 rules she should already have one. Her feature list also lacks Extra Attack and Reckless Attack, so the sheet looks incomplete rather than the choice unmade. Ask her player.
+> - Bastet (barbarian 5) was archived on 2026-09-27 (Sam: "We can remove Bastet's player"), so she has no seat in the party now.
 
 ## 0. The subclass list (p. 7)
 
