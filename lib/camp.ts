@@ -30,6 +30,7 @@
 // Where a rule is missing the function returns a `flags` entry, never a guess.
 
 import {
+  SKILL_ABILITY,
   abilityMod,
   normaliseSkill,
   proficiencyForLevel,
@@ -152,7 +153,7 @@ export const CAMP_ACTION_RULES: Record<CampAction, { resolves: string; source: s
   explore: { resolves: "dmScene() — the nearby area is the DM's to describe", source: "Sam, 2026-09-26" },
   perform: { resolves: "perform() — a band, and on a partial rest the bard's exception", source: "Sam, 2026-08-20 and 2026-09-26" },
   talk: { resolves: "weightRelationshipEvent()", source: "Sam's gravity system" },
-  train: { resolves: "decideTraining() — hours banked with a proficient teacher; the DC 12 test once 40 are banked", source: "Homebrew — docs/claude_Earned_Proficiency.md, Sam 2026-09-26" },
+  train: { resolves: "decideTraining() — hours banked with a teacher who has expertise; the DC 12 test once 40 are banked", source: "Homebrew — docs/claude_Earned_Proficiency.md, Sam 2026-09-26; expertise required, 4 h per evening, teacher free: Sam 2026-09-27" },
 }
 
 export interface SpendOutcome {
@@ -1362,7 +1363,7 @@ export function formatCampBlock(s: CampBlockState): string {
         `Forage and hunt (Survival, DC 15 in the Underdark) and perform (Performance) are settled by the acting player's own dice: put the tag in the SAME reply as their roll request, e.g. [CAMP_ACTION: Kenta | forage] Roll Survival. [[1d20-1 | survival | DC 15]]. ` +
         `You will be told the result; never invent food or its amount.\n` +
         `Level up (one level, only when their XP has earned it): [CAMP_ACTION: <name> | level up]. For rolled hit points, put it in the same reply as their Hit Die roll, e.g. [[1d8]]; with no roll, the fixed value applies. The system writes the numbers; the choices land on their sheet for them to make at the fire.\n` +
-        `Train (learn a skill from someone who has it - a companion or an NPC at the fire): [CAMP_ACTION: <name> | train | <teacher> | <skill>], e.g. [CAMP_ACTION: Samson | train | Eldeth | animal handling]. The system checks the teacher really has the skill, banks the evening's hours and moves the clock; you narrate the lesson. Never say how many hours are banked or how many remain.\n` +
+        `Train (learn a skill from someone who has MASTERED it - a companion or an NPC at the fire with expertise in it): [CAMP_ACTION: <name> | train | <teacher> | <skill>], e.g. [CAMP_ACTION: Samson | train | Eldeth | animal handling]. The system checks the teacher's sheet for expertise, banks the evening's hours and moves the clock; you narrate the lesson. A merely competent teacher is refused. Never say how many hours are banked or how many remain.\n` +
         `Emit [TIME:break_camp] if they pack up without resting.`,
     )
   }
@@ -1873,32 +1874,45 @@ export function craftMenu(input: {
 // `camp:train:<teacherId>`; the dice ledger records it as the teaching stake
 // and lib/skill-progress evaluate() awards. Malachar never sees the hours.
 //
-// HOUSE RULE, needs Sam's yes: an evening at the fire is 4 hours of lessons
-// (SRD downtime counts 8 hours a day; a camp evening is not a day). Ten
-// evenings to the test. Flagged on every decision that banks hours.
-//
-// HOUSE RULE, needs Sam's yes: the teacher's evening is free. Teaching costs
-// the student's action, not the teacher's - a companion teaching is still
-// resting. Flagged likewise.
+// Sam's rulings, 2026-09-27 (docs/claude_Camp_Module.md §17):
+//   - A trainer must have EXPERTISE in the skill. Proficiency is not enough
+//     to teach; mastery is. Malachar cannot declare anyone a master - the
+//     sheet or the stat block has to say so.
+//   - An evening at the fire is 4 hours of lessons (SRD downtime counts 8
+//     hours a day; a camp evening is not a day). Ten evenings to the test.
+//   - The teacher's evening is free. Teaching costs the student's action,
+//     not the teacher's - a companion teaching is still resting.
 
 export const TRAIN_HOURS_PER_ACTION = 4
-export const TRAIN_HOURS_FLAG = "HOUSE RULE — needs Sam's yes: 4 hours of lessons per camp evening"
-export const TRAIN_TEACHER_FREE_FLAG = "HOUSE RULE — needs Sam's yes: the teacher's evening costs them no camp action"
+/** The level a trainer must hold in the skill. Sam, 2026-09-27: "Trainer must have expertise." */
+export const TRAIN_TEACHER_LEVEL: ProficiencyLevel = "expertise"
 
-/** The teacher's side of the fire. A `characters` row: a companion's sheet or an NPC's stat-block line. */
+/** The teacher's side of the fire. A `characters` row: a companion's sheet or an NPC's stat block. */
 export interface TeacherRow {
   id: string
   name: string
   sheet_skill_proficiencies?: Record<string, string> | null
-  /** Stat-block skills: "Perception +2, Stealth +4". A listed skill is a proficient one. */
+  /** Stat-block skills: "Perception +2, Stealth +10". A listed skill is at least proficient. */
   skills?: string | null
+  /** With the scores and the bonus, a listed skill's number says whether it is doubled (expertise). */
+  str_score?: number | null
+  dex_score?: number | null
+  con_score?: number | null
+  int_score?: number | null
+  wis_score?: number | null
+  cha_score?: number | null
+  proficiency_bonus?: number | null
+  level?: number | null
 }
 
 /**
- * Whether a would-be teacher actually has the skill. A companion's sheet map
- * is read the way every check reads it; an NPC's stat-block line
- * ("Perception +2, Stealth +4") lists exactly the skills the creature is
- * proficient in, so a listed skill counts. Nothing else does - Malachar
+ * What a would-be teacher actually holds in the skill. A companion's sheet
+ * map is read the way every check reads it. An NPC's stat-block line
+ * ("Perception +4, Stealth +10") lists the skills the creature is proficient
+ * in; the number says whether the bonus is doubled - SRD 5.1 monsters have no
+ * "expertise" word, but a Drow Elite Warrior's Stealth +10 on DEX 18 and a
+ * +3 bonus is 4 + 2×3, which is the doubled bonus by any name. Without the
+ * scores the line can only prove proficiency. Nothing else counts - Malachar
  * cannot declare Buppido a master of Animal Handling.
  */
 export function teacherProficiency(teacher: TeacherRow, skill: Skill): ProficiencyLevel {
@@ -1908,8 +1922,16 @@ export function teacherProficiency(teacher: TeacherRow, skill: Skill): Proficien
   )
   if (fromSheet !== "none") return fromSheet
   for (const part of String(teacher.skills ?? "").split(",")) {
-    const name = part.trim().replace(/\s*[+-]\s*\d+\s*$/, "")
-    if (name && normaliseSkill(name) === skill) return "proficient"
+    const m = /^(.*?)\s*([+-]\s*\d+)?\s*$/.exec(part.trim())
+    const name = m?.[1]?.trim() ?? ""
+    if (!name || normaliseSkill(name) !== skill) continue
+    const listed = m?.[2] ? Number.parseInt(m[2].replace(/\s+/g, ""), 10) : null
+    const score = teacher[`${SKILL_ABILITY[skill]}_score` as const]
+    const pb = teacher.proficiency_bonus ?? (teacher.level != null ? proficiencyForLevel(teacher.level) : null)
+    if (listed != null && typeof score === "number" && typeof pb === "number" && pb > 0) {
+      return listed >= abilityMod(score) + 2 * pb ? "expertise" : "proficient"
+    }
+    return "proficient"
   }
   return "none"
 }
@@ -1983,8 +2005,13 @@ export function decideTraining(input: TrainingInput): TrainingDecision {
   if (!input.teacherName) return refuse("train: name the teacher — nothing spent.")
   if (!input.teacher) return refuse(`train: nobody called "${input.teacherName}" is known to the table — nothing spent.`)
   if (input.teacher.id === input.studentId) return refuse("cannot teach themself — nothing spent.")
-  if (teacherProficiency(input.teacher, input.skill) === "none") {
+  const held = teacherProficiency(input.teacher, input.skill)
+  if (held === "none") {
     return refuse(`${input.teacher.name} does not have ${skillName} and cannot teach it — nothing spent.`)
+  }
+  if (held !== TRAIN_TEACHER_LEVEL) {
+    // Sam, 2026-09-27: a trainer must have expertise. Knowing a thing is not the same as being able to teach it.
+    return refuse(`${input.teacher.name} has ${skillName} but not the mastery to teach it (expertise is required) — nothing spent.`)
   }
   if (have <= 0) return refuse(`no camp action left this rest (train refused).`)
 
@@ -1995,7 +2022,7 @@ export function decideTraining(input: TrainingInput): TrainingDecision {
       bank: TRAIN_HOURS_PER_ACTION,
       test: false,
       purpose: null,
-      flags: [TRAIN_HOURS_FLAG, TRAIN_TEACHER_FREE_FLAG],
+      flags: [],
       note: `${input.who} — an evening of ${skillName} with ${input.teacher.name}: ${have - 1} camp action${have - 1 === 1 ? "" : "s"} left this rest.`,
     }
   }

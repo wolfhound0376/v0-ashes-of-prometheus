@@ -68,7 +68,7 @@ const CAMP_MENU: { id: CampAction; label: string; icon: LucideIcon; hint: string
   { id: "mend", label: "Mend", icon: Wrench, hint: "Repair gear", line: "I spend my camp action mending my gear." },
   { id: "trade", label: "Trade", icon: HandCoins, hint: "Only if a merchant came", line: "I spend my camp action trading with the merchant at camp." },
   { id: "level_up", label: "Level up", icon: Shield, hint: "When you have the XP", line: "I spend my camp action to level up." },
-  { id: "train", label: "Train", icon: GraduationCap, hint: "Learn a skill from someone", line: "I spend my camp action training." },
+  { id: "train", label: "Train", icon: GraduationCap, hint: "Learn a skill from a master", line: "I spend my camp action training." },
   // One button for all three crafts; it opens the menu below (camp doc §16).
   { id: "artifice", label: "Craft", icon: Hammer, hint: "Alchemy, Construct, Artifice", line: "" },
 ]
@@ -430,7 +430,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
             </div>
             <p className="text-sm leading-relaxed text-stone-400">
               {trainTeacher
-                ? "Which skill? They have to have it themselves — Malachar will say if they do not."
+                ? "Which skill? They have to be a master of it — Malachar will say if they are not."
                 : "An evening of lessons. Enough evenings and the teacher will test you."}
             </p>
             {!trainTeacher ? (

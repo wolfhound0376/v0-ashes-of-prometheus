@@ -19,7 +19,7 @@ All three apply only to a skill the character is **not already proficient in**. 
 |---|---|---|
 | **A. Practice** | 8 meaningful successes on the skill | DC ≥ 10, and the check was a fresh stake — not a retry of the same lock, the same guard, the same beast within the same campaign day |
 | **B. Flash of talent** | 2 natural 20s on the skill within 7 campaign days | Any DC. The 20 must be on the kept die (advantage/disadvantage counts the kept face) |
-| **C. Teaching** | 40 campaign hours of instruction from a teacher who has the proficiency, then one check at DC 12 | Teacher is an NPC or PC with proficient/expertise in that skill; hours accrue only in camp context (Playable Layer §7: camp is where relationship deltas happen — teaching is one) |
+| **C. Teaching** | 40 campaign hours of instruction from a teacher who has **expertise** in the skill, then one check at DC 12 | Teacher is an NPC or PC with expertise in that skill (Sam, 2026-09-27: "Trainer must have expertise" — proficiency alone does not teach); hours accrue only in camp context (Playable Layer §7: camp is where relationship deltas happen — teaching is one) |
 
 Numbers approved as drafted (Sam, 2026-09-26), tunable in one table (§3). The thresholds are deliberately steep enough that a proficiency is a season's arc, not a session's.
 
@@ -104,7 +104,7 @@ Teaching hours are logged from camp: a camp action "train with `<teacher>` in `<
 - Practice successes need DC ≥ 10 — a DC 5 check teaches nothing.
 - Freshness: one success per `stake_key` per campaign day. Same lock, same guard, same beast: once.
 - Talent window is campaign days from `game_clock`, not wall-clock; a 7-day window is 7 in-game days.
-- Teaching needs a teacher who actually has it. The engine checks the teacher's sheet; Malachar cannot declare Buppido a master of Animal Handling.
+- Teaching needs a teacher who actually has it — with expertise (Sam, 2026-09-27). The engine checks the teacher's sheet; Malachar cannot declare Buppido a master of Animal Handling.
 - Nothing retroactive: rolls before the feature ships don't count. The ledger starts empty.
 - Multiclass note: an earned proficiency is a character fact, not a class feature. It survives structured multiclass when that lands.
 
@@ -114,7 +114,7 @@ Teaching hours are logged from camp: a camp action "train with `<teacher>` in `<
 2. **Tag PR** — `parseRollRequest` reads `| skill | DC n`; the resolve path reads them; Malachar's prompt asks for them. Backwards compatible.
 3. **Library PR** — `lib/skill-progress.ts`: `recordCheck`, `evaluate`, pure, vitest with a seeded ledger for each path and each guardrail.
 4. **Wiring PR** — resolve route and `resolveInteraction` call `recordCheck`; award writes the sheet; world-context line.
-5. **Camp PR** — training action in the camp module (`claude_Camp_Module.md` owns camp; add the action there). **Shipped 2026-09-27** as `lib/camp.ts` §17 (`train`); see `claude_Camp_Module.md` §17 for the tag, the teacher check and the two house rules awaiting Sam's yes (4 hours per evening; the teacher's evening is free).
+5. **Camp PR** — training action in the camp module (`claude_Camp_Module.md` owns camp; add the action there). **Shipped 2026-09-27** as `lib/camp.ts` §17 (`train`); see `claude_Camp_Module.md` §17 for the tag, the teacher check and Sam's three rulings of 2026-09-27 (expertise required to teach; 4 hours per evening; the teacher's evening is free).
 6. **Dashboard PR** — the learning mark (approved, §6).
 
 PRs 1–4 are a day. 5 depends on the camp module's shape. Nothing touches `combat-board-3d.tsx`.

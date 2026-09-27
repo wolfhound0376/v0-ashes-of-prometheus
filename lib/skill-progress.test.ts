@@ -173,18 +173,25 @@ describe("Path B — flash of talent", () => {
 })
 
 describe("Path C — teaching", () => {
+  // Sam, 2026-09-27: a trainer must have expertise.
   const eldeth = (): SheetSlice =>
-    sheet({ id: ELDETH, name: "Eldeth Feldrun", sheet_skill_proficiencies: { "Animal Handling": "proficient" } })
+    sheet({ id: ELDETH, name: "Eldeth Feldrun", sheet_skill_proficiencies: { "Animal Handling": "expertise", Survival: "proficient" } })
   const buppido = (): SheetSlice => sheet({ id: ELDETH, name: "Buppido", sheet_skill_proficiencies: { Deception: "expertise" } })
 
-  it("guardrail: the engine checks the teacher's sheet — Buppido cannot teach Animal Handling", () => {
+  it("guardrail: the engine checks the teacher's sheet — Buppido cannot teach Animal Handling, and proficiency alone does not teach", () => {
     const d = recordTraining(
       { characterId: SAMSON, skill: "animal_handling", teacher: buppido(), hours: 8, campaignDay: 1 },
       sheet(),
       [],
     )
     expect(d.rows).toHaveLength(0)
-    expect(d.skipped).toEqual(["teacher_not_proficient"])
+    expect(d.skipped).toEqual(["teacher_lacks_expertise"])
+    const merelyProficient = recordTraining(
+      { characterId: SAMSON, skill: "survival", teacher: eldeth(), hours: 8, campaignDay: 1 },
+      sheet(),
+      [],
+    )
+    expect(merelyProficient.skipped).toEqual(["teacher_lacks_expertise"])
   })
 
   it("guardrail: you cannot teach yourself, and zero hours bank nothing", () => {
@@ -233,7 +240,7 @@ describe("Path C — teaching", () => {
     expect(skipped[0]).toContain("teaching_dc_below_minimum")
   })
 
-  it("an expertise teacher counts as having the proficiency", () => {
+  it("an expertise teacher in another skill teaches that skill", () => {
     const d = recordTraining(
       { characterId: SAMSON, skill: "deception", teacher: buppido(), hours: 4, campaignDay: 1 },
       sheet(),
@@ -306,7 +313,7 @@ describe("The award — two writes, one truth, one line for Malachar", () => {
   })
 
   it("a teaching award carries the student's regard for the teacher; practice and talent have no second party", () => {
-    const eldeth = sheet({ id: ELDETH, name: "Eldeth", sheet_skill_proficiencies: { "Animal Handling": "proficient" } })
+    const eldeth = sheet({ id: ELDETH, name: "Eldeth", sheet_skill_proficiencies: { "Animal Handling": "expertise" } })
     const ledger: LedgerRow[] = []
     ledger.push(...recordTraining({ characterId: SAMSON, skill: "animal_handling", teacher: eldeth, hours: 40, campaignDay: 1 }, sheet(), ledger).rows)
     ledger.push(...recordCheck(check({ dc: 12, total: 13, campaignDay: 2, stakeKey: `${TEACHING_STAKE_PREFIX}${ELDETH}` }), sheet(), ledger).rows)

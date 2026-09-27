@@ -390,7 +390,7 @@ Named materials are left off. The catalog's "spider venom gland feeds drow poiso
 
 Owned by `docs/claude_Earned_Proficiency.md` §1 path C and §4; the action lives here because hours accrue only at camp. Homebrew throughout.
 
-**The tag.** `[CAMP_ACTION: <name> | train | <teacher> | <skill>]`. The two extra fields are order-free (the one that is a skill is the skill). The teacher is looked up by name among every character at the table — companions and NPCs alike. **The engine checks the teacher's sheet**: a companion's `sheet_skill_proficiencies`, or an NPC's stat-block `skills` line ("Perception +2, Stealth +4" lists exactly the proficient skills). Buppido can teach Stealth; he cannot teach Animal Handling, whatever Malachar says.
+**The tag.** `[CAMP_ACTION: <name> | train | <teacher> | <skill>]`. The two extra fields are order-free (the one that is a skill is the skill). The teacher is looked up by name among every character at the table — companions and NPCs alike. **The engine checks the teacher's sheet, and the trainer must have expertise** (Sam, 2026-09-27: "Trainer must have expertise"): a companion's `sheet_skill_proficiencies` says `expertise`, or an NPC's stat-block `skills` line carries the doubled bonus — the SRD has no "expertise" word for monsters, but a Drow Elite Warrior's Stealth +10 on DEX 18 with a +3 bonus is 4 + 2×3, which is the doubled bonus by any name (`teacherProficiency` does that arithmetic from the row's scores; without the scores a line can prove proficiency, never mastery). Buppido (Stealth +4 on DEX 15, +2) knows the tunnels; he cannot teach Stealth, and he cannot teach Animal Handling, whatever Malachar says. A merely proficient teacher is refused without spending.
 
 **Below the threshold** (40 hours, `skill_progress_rules.teaching`), an evening banks hours: one `skill_progress` row of `kind = training_hours` with the teacher's id, the action is spent, and a `training` row goes to `time_log` so the clock moves the same amount — honest downtime. Refusals (not camped, no skill named, no such teacher, teacher without the skill, teaching yourself, a student who already has or already earned the skill, no actions left) spend nothing.
 
@@ -398,8 +398,9 @@ Owned by `docs/claude_Earned_Proficiency.md` §1 path C and §4; the action live
 
 **Dashboard.** The Camp tab's Train button picks the teacher (anyone at camp) then the skill, and sends "I spend my camp action training with Eldeth in animal handling."
 
-**House rules, needs Sam's yes** (flagged on every decision that banks hours):
+**Rulings, Sam 2026-09-27** ("Trainer must have expertise. Implement both house rules."):
 
+- **A trainer must have expertise.** Proficiency alone does not teach.
 - **4 hours of lessons per camp evening.** SRD downtime counts 8 hours a day; a camp evening is not a day. Ten evenings to the test.
 - **The teacher's evening is free.** Teaching costs the student's action, not the teacher's.
 

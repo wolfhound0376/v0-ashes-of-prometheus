@@ -816,8 +816,11 @@ describe("the crafting menu", () => {
 // ---------------------------------------------------------------------------
 
 describe("§17 train — hours with a teacher, then the test", () => {
-  const eldeth = { id: "t-eldeth", name: "Eldeth Feldrun", sheet_skill_proficiencies: { "Animal Handling": "proficient" }, skills: null }
-  const buppido = { id: "t-buppido", name: "Buppido", sheet_skill_proficiencies: {}, skills: "Stealth +4" }
+  // Sam, 2026-09-27: a trainer must have expertise. Eldeth is a master; Buppido merely knows the tunnels.
+  const eldeth = { id: "t-eldeth", name: "Eldeth Feldrun", sheet_skill_proficiencies: { "Animal Handling": "expertise", Survival: "proficient" }, skills: null }
+  const buppido = { id: "t-buppido", name: "Buppido", sheet_skill_proficiencies: {}, skills: "Stealth +4", dex_score: 15, proficiency_bonus: 2 }
+  // SRD stat block: DEX 18 (+4), proficiency +3, Stealth +10 = 4 + 2×3 — the doubled bonus by any name.
+  const eliteWarrior = { id: "t-elite", name: "Drow Elite Warrior", skills: "Perception +4, Stealth +10", dex_score: 18, wis_score: 13, proficiency_bonus: 3 }
   const base = {
     who: "Samson",
     camping: true,
@@ -848,20 +851,32 @@ describe("§17 train — hours with a teacher, then the test", () => {
     expect(parseTrainingArgs([])).toEqual({ teacher: null, skill: null })
   })
 
-  it("a teacher has the skill by their sheet map or their stat-block line — nothing else counts", () => {
-    expect(teacherProficiency(eldeth, "animal_handling")).toBe("proficient")
+  it("a teacher's level comes from their sheet map or their stat-block maths — nothing else counts", () => {
+    expect(teacherProficiency(eldeth, "animal_handling")).toBe("expertise")
+    expect(teacherProficiency(eldeth, "survival")).toBe("proficient")
     expect(teacherProficiency(buppido, "stealth")).toBe("proficient")
     expect(teacherProficiency(buppido, "animal_handling")).toBe("none")
-    expect(teacherProficiency({ id: "x", name: "Drow Elite Warrior", skills: "Perception +4, Stealth +10" }, "perception")).toBe("proficient")
+    // Stealth +10 on DEX 18 with a +3 bonus is the doubled bonus; Perception +4 on WIS 13 is the plain one.
+    expect(teacherProficiency(eliteWarrior, "stealth")).toBe("expertise")
+    expect(teacherProficiency(eliteWarrior, "perception")).toBe("proficient")
+    // Without the scores a stat-block line can prove proficiency, never mastery.
+    expect(teacherProficiency({ id: "x", name: "Unknown", skills: "Stealth +10" }, "stealth")).toBe("proficient")
     expect(teacherProficiency({ id: "x", name: "Nobody" }, "arcana")).toBe("none")
     expect(teacherProficiency({ id: "x", name: "Expert", sheet_skill_proficiencies: { stealth: "expertise" } }, "stealth")).toBe("expertise")
   })
 
-  it("an evening below the threshold banks hours, spends the action, and flags the house rules", () => {
+  it("an evening below the threshold banks hours and spends the action — Sam's rulings, no flags", () => {
     const d = decideTraining(base)
-    expect(d).toMatchObject({ spend: true, remaining: 1, bank: TRAIN_HOURS_PER_ACTION, test: false, purpose: null })
-    expect(d.flags).toHaveLength(2)
+    expect(d).toMatchObject({ spend: true, remaining: 1, bank: TRAIN_HOURS_PER_ACTION, test: false, purpose: null, flags: [] })
+    expect(TRAIN_HOURS_PER_ACTION).toBe(4)
     expect(d.note).toMatch(/evening of animal handling with Eldeth Feldrun/)
+  })
+
+  it("Sam, 2026-09-27: a trainer must have expertise — a merely proficient teacher is refused without spending", () => {
+    expect(decideTraining({ ...base, skill: "survival", teacher: eldeth }).note).toMatch(/has survival but not the mastery to teach it/)
+    expect(decideTraining({ ...base, skill: "stealth", teacher: buppido })).toMatchObject({ spend: false, remaining: 2 })
+    expect(decideTraining({ ...base, skill: "stealth", teacher: eliteWarrior }).spend).toBe(true)
+    expect(decideTraining({ ...base, skill: "perception", teacher: eliteWarrior }).spend).toBe(false)
   })
 
   it("refusals never spend: not camped, no skill, no teacher, unknown teacher, self, a teacher without the skill, no actions", () => {
