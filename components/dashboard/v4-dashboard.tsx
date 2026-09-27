@@ -352,6 +352,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
   const [interactiveLogMinimized, setInteractiveLogMinimized] = useState(true)
+  const [partyMinimized, setPartyMinimized] = useState(true)
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
   const [diceOpen, setDiceOpen] = useState(false)
@@ -735,8 +736,8 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
       {/* Player-to-player chat — the `party` channel. Plain inserts only; never
           calls /api/chat and never enters the DM transcript above. */}
-      <Frame title="Party" className="flex min-h-[190px] flex-[1_1_0%] flex-col">
-        <PartyChat bare characterName={props.selectedCharacter?.name} className="min-h-0 flex-1" />
+      <Frame title="Party" className={cn("relative flex flex-col transition-[min-height] duration-200", partyMinimized ? "min-h-0" : "min-h-[190px] flex-[1_1_0%]")} action={<button type="button" onClick={() => setPartyMinimized((value) => !value)} aria-expanded={!partyMinimized} aria-label={partyMinimized ? "Expand party" : "Minimize party"} title={partyMinimized ? "Expand party" : "Minimize party"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{partyMinimized ? "Expand" : "Minimize"} party</span>{partyMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
+        {!partyMinimized ? <PartyChat bare characterName={props.selectedCharacter?.name} className="min-h-0 flex-1" /> : <p className="px-3 py-2 text-[10px] italic text-[#6d6450]">Party minimized</p>}
       </Frame>
     </div>
 
