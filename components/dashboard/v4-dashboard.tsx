@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { CSSProperties } from "react"
-import { BookOpen, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
+import { BookOpen, ChevronDown, ChevronUp, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
 import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -295,6 +295,7 @@ interface V4DashboardProps {
    *  invisible from the dashboard and left the badge and the toggle disagreeing
    *  about who was DM. */
   dmMode?: boolean
+  audioSlot?: React.ReactNode
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -338,19 +339,21 @@ const conditionColor: Record<string, string> = {
 // slot are orthogonal, so this keeps both. The slot exists because the
 // Interactive Log's filter row has no room for a control — six chips need
 // 314px in a 250px column — so panel-level controls live in the title bar.
-function Frame({ title, children, className, action }: { title: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
+function Frame({ title, children, className, action, hideHeader = false, hideDecorativeControls = false }: { title?: string; children: React.ReactNode; className?: string; action?: React.ReactNode; hideHeader?: boolean; hideDecorativeControls?: boolean }) {
   return <section className={cn("aop-ornate-panel min-h-0 overflow-hidden", className)}>
-    <header className="aop-ornate-title flex h-8 items-center gap-2 px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
-      <span className="truncate">{title}</span>
+    {!hideHeader ? <header className="aop-ornate-title flex h-8 items-center gap-2 px-3 font-serif text-[10px] font-semibold uppercase tracking-[.2em] text-[#e0b765]">
+      {title ? <span className="truncate">{title}</span> : null}
       {action ? <span className="ml-auto shrink-0">{action}</span> : null}
-      <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span>
-    </header>{children}
+      {!hideDecorativeControls ? <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span> : null}
+    </header> : null}{children}
   </section>
 }
 
 export function V4Dashboard(props: V4DashboardProps) {
   const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
+  const [interactiveLogMinimized, setInteractiveLogMinimized] = useState(true)
+  const [partyMinimized, setPartyMinimized] = useState(true)
   const [inventoryOpen, setInventoryOpen] = useState(false)
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
   const [diceOpen, setDiceOpen] = useState(false)
@@ -556,7 +559,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   //
   // These MUST stay class-neutral. They previously read as cleric lines
   // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
-  // player whose generation failed was handed Samson's options — the exact
+  // player whose generation failed was handed Samson's options ������������������ the exact
   // leak the per-player chips exist to prevent. No class, no skill tag, no
   // named party member: whatever sits here is shown to EVERY seat at once.
   // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
@@ -720,26 +723,27 @@ export function V4Dashboard(props: V4DashboardProps) {
           <p className="text-[10px] text-[#9b8b6b]">{props.environment.region} · {props.environment.timeOfDay}</p>
           <div className="relative mt-2 h-[202px] overflow-hidden rounded border border-[#4b3a19]">
             <img src={props.environment.imageUrl} alt={props.environment.name} className="h-full w-full object-cover" />
-            <div className="absolute left-2 top-2 rounded-sm border border-[#4b3a19] bg-[#0a0907]/90 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-[#cdb276]">{props.environment.name}</div>
+            <div className="absolute left-2 top-2 hidden rounded-sm border border-[#4b3a19] bg-[#0a0907]/90 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-[#cdb276]" aria-hidden="true">{props.environment.name}</div>
           </div>
           <div className="mt-2 flex gap-1.5 text-[9px] text-[#aa9874]"><span className="rounded-full border border-[#4b3a19] px-2">◐ Dim Light</span><span className="rounded-full border border-[#4b3a19] px-2">◒ Stone Floor</span><span className="rounded-full border border-[#4b3a19] px-2">💧 Damp</span></div>
         </div>
       </Frame>
-      <Frame title="Interactive Log" className="relative flex min-h-[240px] flex-[2_1_0%] flex-col">
-        <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
-        <button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-3 right-3" title="Open Dice Roller" aria-label="Open Dice Roller" />
+      <Frame title="Interactive Log" hideDecorativeControls className={cn("relative flex flex-[2_1_0%] flex-col rounded-none transition-[height,min-height] duration-200", interactiveLogMinimized ? "h-9 min-h-9 flex-none" : "min-h-[240px] flex-[2_1_0%]")} action={<button type="button" onClick={() => setInteractiveLogMinimized((value) => !value)} aria-expanded={!interactiveLogMinimized} aria-label={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} title={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{interactiveLogMinimized ? "Expand" : "Minimize"} interactive log</span>{interactiveLogMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
+        {!interactiveLogMinimized ? <>
+          <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+        </> : null}
       </Frame>
       {/* Player-to-player chat — the `party` channel. Plain inserts only; never
           calls /api/chat and never enters the DM transcript above. */}
-      <Frame title="Party" className="flex min-h-[190px] flex-[1_1_0%] flex-col">
-        <PartyChat bare characterName={props.selectedCharacter?.name} className="min-h-0 flex-1" />
+      <Frame title="Party" className={cn("relative flex flex-col transition-[min-height] duration-200", partyMinimized ? "min-h-0" : "min-h-[190px] flex-[1_1_0%]")} action={<button type="button" onClick={() => setPartyMinimized((value) => !value)} aria-expanded={!partyMinimized} aria-label={partyMinimized ? "Expand party" : "Minimize party"} title={partyMinimized ? "Expand party" : "Minimize party"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{partyMinimized ? "Expand" : "Minimize"} party</span>{partyMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
+        {!partyMinimized ? <PartyChat bare characterName={props.selectedCharacter?.name} className="min-h-0 flex-1" /> : <p className="px-3 py-2 text-[10px] italic text-[#6d6450]">Party minimized</p>}
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" action={<DmNarration dialogue={dialogue} npcs={props.npcRoster?.length ? props.npcRoster : props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
+    <Frame title="NPC / Dungeon Master Window" className="flex min-h-[690px] flex-col" hideHeader action={<DmNarration dialogue={dialogue} npcs={props.npcRoster?.length ? props.npcRoster : props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
       <div className="grid h-[235px] shrink-0 grid-cols-[190px_minmax(240px,1fr)] gap-4 overflow-hidden p-3 pb-4">
-        <div><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? shownNpc?.description || "Present in the scene" : "No one has stepped forward yet"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}</div>
+        <div className="relative"><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? shownNpc?.description || "Present in the scene" : "No one has stepped forward yet"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}<button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-0 left-0" title="Open Dice Roller" aria-label="Open Dice Roller" /></div>
         <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{props.environment.npcBackdropUrl ? (<><img src={props.environment.npcBackdropUrl} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" />{/* The backdrop is a lit room, so the figure needs somewhere dark to stand against. Vignette, not a flat scrim, or the art goes muddy. */}<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_80%,transparent_18%,#050403d9_80%)]" /></>) : null}{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : onStage ? <>Silent <span className="ml-2">▯▯▯▯</span></> : <>Awaiting an entrance</>}</div>
           {/* MERGE NOTE: Codex's redesign dropped the third column, which held
               disposition / CR / DM-only health. Those are real row data, not
@@ -777,12 +781,12 @@ export function V4Dashboard(props: V4DashboardProps) {
               this strip buried a 3D scene under the stage's own chrome —
               Sam: "too cluttered and it's really dark". /battle gets the
               whole viewport. */}
-          <a
-            href="/battle"
-            className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1.5 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] hover:text-[#fff3cf]"
-          >
-            <Map className="h-3 w-3" />Open Battle Board{inCombat ? " · Live" : ""} ↗
-          </a>
+  {props.dmMode ? <a
+  href="/battle"
+  className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1.5 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] hover:text-[#fff3cf]"
+  >
+  <Map className="h-3 w-3" />Open Battle Board{inCombat ? " · Live" : ""} ↗
+  </a> : null}
         </>}
       </div>
       <div className="flex flex-col gap-1">
@@ -802,16 +806,16 @@ export function V4Dashboard(props: V4DashboardProps) {
           }}
         />
       </div>
-      <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button><button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button></div>
-      <div className="border-t border-[#4b3a19] px-3 py-2"><h3 className="mb-3 text-center font-serif text-[10px] uppercase tracking-[.2em] text-[#cdb276]">Party Status</h3><div className="flex items-stretch gap-2">{visibleParty.slice(0,4).map((member) => { const active = member.id === props.selectedCharacterId || (!props.selectedCharacterId && member.name === "Sam"); const medallion = "portrait_image_url" in member ? member.portrait_image_url : null; const portrait = medallion || ("avatar_image_url" in member ? member.avatar_image_url : null); return <button key={member.id} onClick={() => livePlayers.length && props.onCharacterSelect?.(member.id)} className={cn("min-w-0 flex-1 rounded border bg-[#12100b] p-2 text-center", active ? "border-[#bd9143] shadow-[0_0_10px_#8b642744]" : "border-[#4b3a19]")}><div className="mx-auto h-11 w-11 overflow-hidden rounded-full border-2 border-[#8d6d35] bg-[#20180d]">{portrait ? <img src={portrait} alt={member.name} className={cn("h-full w-full object-cover", medallion ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center font-serif text-lg text-[#cdb276]">{member.name[0]}</div>}</div><div className="mt-1 truncate font-serif text-[10px] text-[#ddd2bc]">{member.name}</div><div className="text-[8px] text-[#8f8061]">{member.class} {member.level}</div><div className="mt-1 text-[8px] text-[#b9a986]">♥ {member.hp_current}/{member.hp_max}　⌾ {member.ac}　↟ +{member.initiative}</div><div className="mt-1 h-1 bg-[#281315]"><div className="h-full bg-[#b62d38]" style={{ width: `${Math.max(0, member.hp_current / member.hp_max * 100)}%` }} /></div></button>})}</div></div>
+      <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button>{props.dmMode ? <button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button> : null}</div>
+      <div className="sticky bottom-0 z-20 max-h-[34vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]"><div className="grid grid-cols-6 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
     </Frame>
 
     <div className="flex min-h-0 flex-col gap-2">
-      <Frame title="Character Stats" className="shrink-0">
-        <div className="p-2.5 text-[10px]">
-          <div className="flex items-center gap-2"><div className="h-12 w-12 overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-sm font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="truncate text-[9px] text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"} · {backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2 py-1 text-[#cdb276]">Level {selected?.level ?? 1}</span></div>
-          <div className="mt-2 flex justify-between text-[8px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-1 bg-[#251a12]"><div className="h-full w-[2%] bg-[#b62d38]" /></div>
-          <div className="mt-2 flex items-center gap-2"><b className="text-[#ddd2bc]">HP {selected?.hp_current ?? 10} / {selected?.hp_max ?? 10}</b><div className="h-2 flex-1 bg-[#281315]"><div className="h-full bg-[#bd3039]" style={{ width: `${((selected?.hp_current ?? 10)/(selected?.hp_max ?? 10))*100}%` }} /></div><button className="rounded border border-[#4b3a19] px-1.5 text-[8px]">HEAL</button><button className="rounded border border-[#4b3a19] px-1.5 text-[8px]">DMG</button></div>
+      <Frame className="shrink-0" hideHeader>
+        <div className="min-h-[470px] px-3.5 pt-3.5 pb-0 text-[10px]">
+          <div className="flex items-center gap-2.5 pt-3"><div className="h-[73px] w-[73px] overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-[17px] font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="text-[14px] leading-tight text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"}<br />{backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2.5 py-1.5 text-[11px] text-[#f5ff00] drop-shadow-[0_0_5px_#f5ff00]">Level {selected?.level ?? 1}</span></div>
+          <div className="mt-2 flex justify-between text-[12px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-[5px] bg-[#101a2d]"><div className="aop-arcane-progress h-full w-[2%]" /></div>
+          <div className="mt-5 flex flex-col gap-2"><div className="h-5 w-full bg-[#281315]"><div className="aop-hp-blood-fill h-full" style={{ width: `${((selected?.hp_current ?? 10)/(selected?.hp_max ?? 10))*100}%` }} /></div><b className="font-serif text-[30px] font-extrabold text-[#5b8ff0] [text-shadow:0_1px_2px_#000]">HP {selected?.hp_current ?? 10} / {selected?.hp_max ?? 10}</b></div>
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
           {hasSpellSlots ? (
             <div className="mt-2 space-y-1">
@@ -832,47 +836,16 @@ export function V4Dashboard(props: V4DashboardProps) {
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
-          <div className="mt-2 grid grid-cols-6 gap-1">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} />)}</div>
           {/* Saves, skills and passive Insight are DERIVED. They were previously
               transcribed from the v4.1 mock image, which meant every character —
               Fifi the Rogue included — showed Sam the Cleric's numbers and the
               literal legend "Cleric class skill". */}
-          <div className="mt-2 grid grid-cols-2 gap-3">
-            <div>
-              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Saving Throws</h3>
-              {rail.saves.map((save) => (
-                <div key={save.key} className="flex items-center gap-1.5 text-[#b6a685]">
-                  <span className={cn("h-1.5 w-1.5 rounded-full", save.proficient ? "bg-[#d9232e]" : "border border-[#6b5a35]")} />
-                  <span>{save.label}</span>
-                  <b className="ml-auto text-white">{formatSigned(save.bonus)}</b>
-                </div>
-              ))}
-              <h3 className="mt-2 font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Senses</h3>
-              <div className="flex justify-between text-[#b6a685]"><span>Passive Perception</span><b className="text-white">{rail.passivePerception}</b></div>
-              <div className="flex justify-between text-[#b6a685]"><span>Passive Insight</span><b className="text-white">{rail.passiveInsight}</b></div>
-            </div>
-            <div>
-              <h3 className="font-serif text-[9px] font-bold uppercase tracking-wider text-[#cdb276]">Skills</h3>
-              {rail.skills.length === 0 ? (
-                <p className="text-[9px] text-[#8f8061]">No skill proficiencies recorded for {selected?.name ?? "this character"}.</p>
-              ) : (
-                rail.skills.map((skill) => (
-                  <div key={skill.name} className={cn("flex items-center justify-between px-1 text-[#b6a685]", skill.fromClass && "border border-[#725c2f] bg-[#251c0d]")}>
-                    <span className="truncate">{skill.name}</span>
-                    <b className="ml-1 shrink-0 text-white">{formatSigned(skill.bonus)}</b>
-                  </div>
-                ))
-              )}
-              {rail.skills.some((skill) => skill.fromClass) && (
-                <p className="mt-1 text-[8px] text-[#8f8061]">□ {selected?.class ?? "Class"} class skill</p>
-              )}
-            </div>
-          </div>
           <button onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
+        <button onClick={() => setInventoryOpen(true)} className="flex h-9 shrink-0 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
       </Frame>
-      <button onClick={() => setInventoryOpen(true)} className="flex h-9 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
       {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300">{selected.class === "Cleric" || selected.class === "Monk" ? <><img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="mr-2 -my-1 h-10 w-10 shrink-0 object-contain motion-reduce:hidden" /><img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="mr-2 -my-1 hidden h-10 w-10 shrink-0 object-contain motion-reduce:block" /></> : <BookOpen className="mr-2 h-4 w-4" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"} <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
+      {props.audioSlot ? <div className="mt-auto flex min-h-14 items-center justify-center rounded border border-[#3d3428] bg-[#1a1614] px-2 py-1 shadow-lg shadow-black/50">{props.audioSlot}</div> : null}
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} acBreakdown={acResult.text} onClose={() => setStatDetail(null)} /> : null}
     {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
@@ -1291,7 +1264,7 @@ type StatKind = "ac" | "initiative" | "proficiency" | "speed"
 
 const abilityNames: Record<string, string> = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" }
 
-function AbilityScoreCard({ ability, onClick, sheet = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean }) {
+function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean; large?: boolean }) {
   const order = ["str", "dex", "con", "int", "wis", "cha"]
   const index = Math.max(0, order.indexOf(ability.key.toLowerCase()))
   const x = index === 0 ? "0%" : index === 5 ? "100%" : `${index * 20}%`
@@ -1301,14 +1274,11 @@ function AbilityScoreCard({ ability, onClick, sheet = false }: { ability: { key:
   // The rail shows the standard 5E abbreviation; the wide two-column sheet has
   // room for the full name. Either way the full name is on hover and in the
   // native tooltip, so nothing is lost.
-  const label = sheet ? name : ability.key.toUpperCase()
-  return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : "h-[132px] hover:scale-125 focus-visible:scale-125")} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
+  return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : large ? "hover:scale-105 focus-visible:scale-105" : "h-[132px] hover:scale-125 focus-visible:scale-125")} style={!sheet && large ? { height: "clamp(104px, 28vh, 190px)" } : undefined} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
     <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
-    <span className="absolute inset-x-0 top-2 z-10 bg-black/0 px-0.5 py-1 text-center font-serif text-[6px] font-bold uppercase tracking-[.04em] text-[#d3ae6b]/0 transition-[color,background-color,text-shadow] duration-200 delay-0 group-hover:bg-black/80 group-hover:text-[#ffe4a8] group-hover:[text-shadow:0_0_7px_#d79b3a] group-hover:delay-500">{name}</span>
     <span className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/92 to-transparent", sheet ? "h-11" : "h-[52px]")} />
-    <span className={cn("absolute inset-x-0 text-center font-serif leading-none text-[#f0d9aa] drop-shadow-[0_1px_2px_#000]", sheet ? "bottom-[19px] text-[15px]" : "bottom-[25px] text-[17px]")}>{ability.score}</span>
-    <span className={cn("absolute inset-x-0 text-center font-serif leading-none text-[#d7ab62]", sheet ? "bottom-[8px] text-[9px]" : "bottom-[13px] text-[10px]")}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
-    <span className={cn("absolute inset-x-0 truncate text-center font-bold uppercase text-[#bfa36d]", sheet ? "bottom-0 px-0.5 text-[5px] tracking-[.05em]" : "bottom-[3px] px-0.5 text-[7px] tracking-[.12em]")}>{label}</span>
+    <span className={cn("absolute inset-x-0 bg-gradient-to-b from-[#ffb0c0] via-[#e0115f] to-[#8b001f] bg-clip-text text-center font-serif font-extrabold leading-none text-transparent", sheet ? "bottom-[19px] text-[15px]" : "bottom-[25px] text-[17px]")} style={{ filter: "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 4px #e0115f99)" }}>{ability.score}</span>
+    <span className={cn("absolute inset-x-0 text-center font-serif font-bold leading-none text-[#ffffff] [text-shadow:0_0_2px_#000,0_1px_2px_#000]", sheet ? "bottom-[7px] text-[9px]" : "bottom-[11px] text-[10px]")}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
   </button>
 }
 
@@ -1319,12 +1289,12 @@ function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; 
     initiative: "66.666% 40%",
     proficiency: "100% 40%",
   }
-  return <button type="button" onClick={onClick} className="group relative flex h-[82px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`}>
-    <span className="absolute inset-x-1 top-0 h-[66px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
+  return <button type="button" onClick={onClick} className="group relative flex h-[144px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`}>
+    <span className="absolute inset-x-1 top-0 h-[115px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
       <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
     </span>
     <b className="absolute bottom-[14px] z-10 rounded-full border border-[#c49b4f] bg-[#080604]/90 px-1.5 py-0.5 font-serif text-[9px] leading-none text-[#f3dfb4] shadow-[0_1px_5px_#000]">{value}</b>
-    <span className="relative z-10 max-w-full truncate px-0.5 text-[6px] font-bold uppercase tracking-[.08em] text-[#cdb276]">{label}</span>
+    <span className="relative z-10 max-w-full truncate px-0.5 text-[8px] font-bold uppercase tracking-[.08em] text-[#cdb276]">{label}</span>
   </button>
 }
 

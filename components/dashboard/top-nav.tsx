@@ -8,8 +8,8 @@
 // destination yet call onSection so the dashboard can open the matching panel
 // (or show a "coming in a later round" note) rather than dead-ending.
 
-import Link from "next/link"
-import { BookOpen, Flame, Map, ScrollText, Settings, Sparkles, Users } from "lucide-react"
+import type { ReactNode } from "react"
+import { BookOpen, Flame, Settings, Shield, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
@@ -24,14 +24,17 @@ interface TopNavProps {
    *  the full NPC roster — including unencountered NPCs and their stats — so it
    *  renders for the DM alone. Defaults to false, i.e. hidden for players. */
   isDM?: boolean
+  /** Switches the page to the compact phone / camp layout. */
+  onCompact?: () => void
+  dmMode?: boolean
+  onToggleDmMode?: () => void
+  controlSlot?: ReactNode
 }
 
 const SECTIONS: { id: NavSection; label: string; icon: typeof BookOpen }[] = [
   { id: "journal", label: "Journal", icon: BookOpen },
   { id: "quests", label: "Quests", icon: Users },
-  { id: "maps", label: "Maps", icon: Map },
   { id: "npcs", label: "NPCs", icon: Users },
-  { id: "lore", label: "Lore", icon: ScrollText },
 ]
 
 export function TopNav({
@@ -41,6 +44,10 @@ export function TopNav({
   onSection,
   activeSection = null,
   isDM = false,
+  onCompact,
+  dmMode = false,
+  onToggleDmMode,
+  controlSlot,
 }: TopNavProps) {
   // The NPCs tab is DM-only: players must not reach the roster, since it reveals
   // unencountered NPCs and their stats.
@@ -65,16 +72,10 @@ export function TopNav({
         </div>
       </div>
 
+      {controlSlot ? <div className="ml-auto flex items-center gap-2 pr-2">{controlSlot}</div> : null}
+
       {/* Sections */}
       <nav className="flex items-center gap-1.5">
-        <Link
-          href="/forge"
-          className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          The Forge
-        </Link>
-
         {sections.map((s) => {
           const Icon = s.icon
           return (
@@ -94,6 +95,37 @@ export function TopNav({
             </button>
           )
         })}
+
+        {onToggleDmMode && (
+          <button
+            type="button"
+            onClick={onToggleDmMode}
+            aria-pressed={dmMode}
+            aria-label={dmMode ? "Disable DM mode" : "Enable DM mode"}
+            title={dmMode ? "DM mode enabled" : "Enable DM mode"}
+            className={cn(
+              "ml-1 flex items-center gap-1.5 rounded-[3px] border px-2.5 py-1.5 text-xs transition-colors",
+              dmMode
+                ? "border-[#c9a868]/80 bg-[#2a1d10] text-[#f0ce79] shadow-[0_0_10px_rgba(201,168,104,0.2)]"
+                : "border-[#7a5f33]/50 bg-[#120e0a] text-stone-400 hover:border-[#c9a868]/60 hover:text-[#e0cfa0]",
+            )}
+          >
+            <Shield className="h-3.5 w-3.5" />
+            <span>DM</span>
+          </button>
+        )}
+
+        {onCompact && (
+          <button
+            type="button"
+            onClick={onCompact}
+            aria-label="Switch to the compact phone view"
+            title="Compact view"
+            className="ml-1 rounded-[3px] border border-[#7a5f33]/50 bg-[#120e0a] p-2 text-stone-400 transition-colors hover:border-[#c9a868]/60 hover:text-[#e0cfa0]"
+          >
+            <Smartphone className="h-4 w-4" />
+          </button>
+        )}
 
         <button
           type="button"

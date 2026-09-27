@@ -10,9 +10,13 @@ import { RightColumn } from "@/components/dashboard/right-column"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { DiceProvider, type DiceResult } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
+import { CompactDashboard } from "@/components/dashboard/compact-dashboard"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
+
+// Rollback switch: set NEXT_PUBLIC_DASHBOARD=legacy and redeploy to restore the v3 dashboard.
+const USE_LEGACY_DASHBOARD = process.env.NEXT_PUBLIC_DASHBOARD === "legacy"
 import { DmAssetsPanel } from "@/components/dashboard/dm-assets-panel"
 import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
@@ -250,6 +254,30 @@ export default function DashboardPage() {
 
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
+
+  // Full three-column dashboard or the compact phone / camp view. ?view= wins,
+  // then this device's last choice, then the screen width.
+  const [view, setView] = useState<"full" | "compact">("full")
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("view")
+    const saved = window.localStorage.getItem("aop_view")
+    const pick =
+      param === "compact" || param === "full"
+        ? param
+        : saved === "compact" || saved === "full"
+          ? saved
+          : window.matchMedia("(max-width: 767px)").matches
+            ? "compact"
+            : "full"
+    setView(pick)
+  }, [])
+  useEffect(() => {
+    document.documentElement.dataset.view = view
+  }, [view])
+  const switchView = useCallback((next: "full" | "compact") => {
+    window.localStorage.setItem("aop_view", next)
+    setView(next)
+  }, [])
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
@@ -1282,7 +1310,21 @@ if (error) {
       // Only the first accepted resolution is returned to Malachar. A replay
       // cannot mutate the roll ledger a second time.
       if (dmMessage) {
-        const response = await dispatchToLich(dmMessage)
+        let response: Awaited<ReturnType<typeof dispatchToLich>>
+        try {
+          response = await dispatchToLich(dmMessage)
+        } catch (err) {
+          const e = err as { message?: string; playerFacing?: boolean }
+          setRollLifecycle("idle")
+          setDialogue(prev => mergeDialogue(prev, {
+            id: tempId(),
+            speaker: "System",
+            text: e?.playerFacing && e.message
+              ? e.message
+              : "Malachar did not answer the roll. Try again in a moment.",
+          }))
+          return
+        }
         if (response?.text) {
           if (response.rollRequest) captureRollRequest(response.rollRequest)
           else setRollLifecycle("idle")
@@ -1449,12 +1491,22 @@ if (error) {
     <DiceProvider onAnnounce={handleDiceAnnounce}>
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
       {/* Top command bar (v3.0 design) */}
-      <TopNav
+      {view === "full" && <TopNav
+        onCompact={() => switchView("compact")}
+        dmMode={dmMode && !claimLocked}
+        onToggleDmMode={() => {
+          if (dmMode) {
+            setDmMode(false)
+            return
+          }
+          if (ensureDmKey("enable DM mode")) setDmMode(true)
+        }}
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
         // NPCs tab is DM-only. A claimed player browser is never the DM.
         isDM={dmMode && !claimLocked}
+  controlSlot={dmMode && !claimLocked ? <GameClockPanel refreshSignal={clockRefresh} /> : null}
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // In DM Mode, the top-right NPCs button is the direct door to canon
@@ -1478,7 +1530,7 @@ if (error) {
           }
           setWorldAIPanelOpen(true)
         }}
-      />
+      />}
 
       {rollLifecycle !== "idle" && (
         <div className="fixed left-1/2 top-14 z-[65] -translate-x-1/2 rounded border border-[#7a5f33] bg-[#15110c]/95 px-3 py-1.5 text-xs text-[#e2c98e] shadow-lg">
@@ -1490,7 +1542,19 @@ if (error) {
       )}
 
       {campaignBook ? <CampaignBookModal section={campaignBook} inventory={characterInventory} characterId={claimRef.current.characterId} onClose={() => setCampaignBook(null)} /> : null}
-      {npcAssetsOpen && !claimLocked ? <DmAssetsPanel onClose={() => setNpcAssetsOpen(false)} /> : null}
+      {npcAssetsOpen && !claimLocked ? (
+        <DmAssetsPanel
+          onClose={() => setNpcAssetsOpen(false)}
+          onLore={() => {
+            setNpcAssetsOpen(false)
+            setCampaignBook("lore")
+          }}
+          onMaps={() => {
+            setNpcAssetsOpen(false)
+            setCampaignBook("maps")
+          }}
+        />
+      ) : null}
 
       {/* Save toast */}
       {saveMessage && (
@@ -1531,8 +1595,43 @@ if (error) {
         </div>
       </div>
 
-      <V4Dashboard
-        environment={{
+      {view === "compact" ? (
+        <div className="fixed inset-0 z-[56]">
+          <CompactDashboard
+            environment={{
+              name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
+              region: "The Underdark",
+              timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
+              imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
+            }}
+            dialogue={dialogue}
+            dialogueInput={dialogueInput}
+            setDialogueInput={setDialogueInput}
+            onDialogueSubmit={handleDialogueSubmit}
+            onQuickReply={(text) => void handleQuickReply(text)}
+            characters={players}
+            selectedCharacter={selectedCharacter}
+            npcEncounters={npcEncounters.filter((n) => n.is_active)}
+            isThinking={lichLoading}
+            onExitCompact={() => switchView("full")}
+          />
+        </div>
+      ) : null}
+
+  {USE_LEGACY_DASHBOARD ? (
+    <>
+      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} />
+      <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} />
+    </>
+  ) : (
+  <V4Dashboard
+  audioSlot={
+    <>
+      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} className="static bottom-auto right-auto z-auto" />
+      <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
+    </>
+  }
+  environment={{
           name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
           region: "The Underdark",
           timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
@@ -1575,10 +1674,12 @@ if (error) {
         isThinking={lichLoading}
         claimLocked={claimLocked}
       />
+  )}
 
-      {/* Legacy dashboard remains mounted out of view during the v4.1 migration
-          so its existing handlers can be compared without losing code. */}
-      <div className="hidden grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
+      {/* Retired v3 dashboard. Only mounted when NEXT_PUBLIC_DASHBOARD=legacy —
+          mounting it hidden would still run its TTS and NPC-audio effects. */}
+      {USE_LEGACY_DASHBOARD && (
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[330px_1fr_390px]">
 <LeftColumn
   environment={(() => {
     // dashboard_assets override for the environment scene (panel_type "left_column").
@@ -1713,6 +1814,7 @@ if (error) {
   }}
 />
       </div>
+      )}
 
       {/* Campaign Change Confirmation Dialog */}
       {showCampaignChangeDialog && pendingCampaignChange && (
@@ -1824,8 +1926,7 @@ if (error) {
         lastSavedAt={lastSavedAt}
         autoSave={autoSave}
         onToggleAutoSave={() => setAutoSave((v) => !v)}
-        dmMode={dmMode}
-        onToggleDmMode={() => setDmMode((v) => !v)}
+
         onExport={handleSaveCampaign}
         exporting={isSaving}
         // The restart flow was fully built — handler, confirmation dialog and
@@ -1833,22 +1934,9 @@ if (error) {
         // in. Same orphaning as the dice roller, Malachar's voice and the NPC
         // talking heads. DM only: a claimed player browser gets no control.
         onRestart={!claimLocked && dmMode ? handleRestartCampaign : undefined}
-        onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
-        centerSlot={
-          <>
-            {dmMode && !claimLocked && <GameClockPanel refreshSignal={clockRefresh} />}
-            <DynamicMusic
-              location={currentEnvironment?.name ?? CANONICAL_START_LOCATION}
-              inCombat={inCombat}
-              className="static bottom-auto right-auto z-auto"
-            />
-            <MusicPlayer
-              isTTSMuted={isTTSMuted}
-              onToggleTTSMute={toggleTTSMute}
-              className="static bottom-auto right-auto z-auto"
-            />
-          </>
-        }
+  onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
+  dmModeActive={dmMode && !claimLocked}
+
       />
     </div>
     </DiceProvider>

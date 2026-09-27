@@ -48,7 +48,7 @@ interface SuggestionChipsProps {
 }
 
 const CHIP_CLASS =
-  "rounded-full border border-[#695326] bg-[#171109] px-3.5 py-1.5 text-xs text-[#cdb276] hover:bg-[#251a0d] disabled:opacity-50"
+  "rounded-full border border-[#2f8f68] bg-[#08251c] px-3.5 py-1.5 text-xs bg-gradient-to-b from-[#fff4b0] via-[#f6c453] to-[#a96f08] bg-clip-text text-transparent drop-shadow-[0_1px_1px_rgba(255,255,255,0.35)] shadow-[0_0_8px_rgba(52,211,153,0.16)] hover:border-[#6ee7b7] hover:bg-[#0d3b2a] disabled:opacity-50"
 
 export function SuggestionChips(props: SuggestionChipsProps) {
   const { character, dialogue, inventory, location, fallback, disabled, onPick } = props

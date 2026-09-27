@@ -5,15 +5,13 @@
 // recent successful save.
 
 import { useEffect, useState, type ReactNode } from "react"
-import { Cloud, Download, Loader2, RotateCcw, Skull, Users } from "lucide-react"
+import { Cloud, Download, Loader2, RotateCcw, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface StatusBarProps {
   lastSavedAt: number | null
   autoSave: boolean
   onToggleAutoSave?: () => void
-  dmMode: boolean
-  onToggleDmMode?: () => void
   onExport?: () => void
   exporting?: boolean
   /** DM only. Omitted for a claimed player browser, so the control does not
@@ -22,6 +20,7 @@ interface StatusBarProps {
   restarting?: boolean
   /** DM only, like onRestart. */
   onManageParty?: () => void
+  dmModeActive?: boolean
   /** Docked into the middle of the bar. The ambient-music and TTS controls
    *  live here: as free-floating fixed-position widgets they landed on top of
    *  Export Campaign, and every other screen edge is already occupied by a
@@ -44,13 +43,12 @@ export function StatusBar({
   lastSavedAt,
   autoSave,
   onToggleAutoSave,
-  dmMode,
-  onToggleDmMode,
   onExport,
   exporting = false,
   onRestart,
   restarting = false,
   onManageParty,
+  dmModeActive = false,
   centerSlot,
 }: StatusBarProps) {
   // Re-render every 20s so the "2m ago" label stays honest.
@@ -60,9 +58,14 @@ export function StatusBar({
     return () => clearInterval(t)
   }, [])
 
+  if (!dmModeActive) return null
+
   return (
-    <footer className="flex items-center justify-between gap-3 border-t border-[#7a5f33]/50 bg-gradient-to-b from-[#0b0907] to-[#14100b] px-4 py-1.5 text-[11px]">
-      <div className="flex items-center gap-2">
+    <footer className={cn(
+      "group fixed inset-x-0 bottom-0 z-[58] flex items-center justify-between gap-3 border-t border-[#7a5f33]/50 bg-gradient-to-b from-[#0b0907] to-[#14100b] px-4 py-1.5 text-[11px] shadow-[0_-8px_24px_rgba(0,0,0,0.45)] transition-transform duration-300 ease-out",
+      dmModeActive ? "translate-y-[calc(100%-14px)] hover:translate-y-0 focus-within:translate-y-0" : "translate-y-0",
+    )}>
+      <div className={cn("flex items-center gap-2", dmModeActive && "hidden group-hover:flex group-focus-within:flex")}>
         <span className="flex items-center gap-1.5 rounded-[3px] border border-[#7a5f33]/45 bg-[#120e0a] px-2 py-1 text-stone-400">
           Last Saved: <span className="text-stone-300">{relativeTime(lastSavedAt, now)}</span>
           <span
@@ -82,20 +85,6 @@ export function StatusBar({
           <Cloud className="h-3 w-3" />
         </button>
 
-        <button
-          type="button"
-          onClick={onToggleDmMode}
-          className={cn(
-            "flex items-center gap-1.5 rounded-[3px] border px-2 py-1 transition-colors",
-            dmMode
-              ? "border-[#8a5fb0]/60 bg-[#1a1020] text-[#c9a0e8]"
-              : "border-[#7a5f33]/45 bg-[#120e0a] text-stone-500 hover:border-[#c9a868]/60 hover:text-[#e0cfa0]",
-          )}
-        >
-          <Skull className="h-3 w-3" />
-          DM Mode: <span className="font-medium">{dmMode ? "On" : "Off"}</span>
-        </button>
-
         {onRestart ? (
           <button
             type="button"
@@ -112,8 +101,9 @@ export function StatusBar({
 
       {centerSlot && <div className="flex min-w-0 items-center gap-2">{centerSlot}</div>}
 
-      {onManageParty ? (
-        <button
+<div className={cn("flex items-center gap-3", dmModeActive && "hidden group-hover:flex group-focus-within:flex")}>
+  {onManageParty ? (
+  <button
           type="button"
           onClick={onManageParty}
           title="Add or remove characters from the active party"
@@ -132,7 +122,8 @@ export function StatusBar({
       >
         {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
         {exporting ? "Exporting…" : "Export Campaign"}
-      </button>
-    </footer>
+  </button>
+  </div>
+  </footer>
   )
 }

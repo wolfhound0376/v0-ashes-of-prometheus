@@ -21,14 +21,16 @@
 // DM_ACCESS_CODE server-side.
 
 import { useEffect, useState } from "react"
-import { KeyRound, X } from "lucide-react"
+import Link from "next/link"
+import { Hammer, KeyRound, Map, ScrollText, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NpcAssetsTab } from "./npc-assets-panel"
 import { MediaTab, type MediaTabConfig } from "./dm-assets/media-tab"
 import { CinematicsTab } from "./dm-assets/cinematics-tab"
+import { HitPointsTab } from "./dm-assets/hit-points-tab"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 
-type TabId = "npcs" | "characters" | "scenes" | "overlays" | "items" | "library" | "cinematics"
+type TabId = "hp" | "npcs" | "characters" | "scenes" | "overlays" | "items" | "library" | "cinematics"
 
 const SCENES: MediaTabConfig = {
   table: "environments",
@@ -91,6 +93,7 @@ const CHARACTERS: MediaTabConfig = {
 }
 
 const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
+  { id: "hp", label: "Hit Points", blurb: "Heal or damage any player character. Damage drains temporary HP first; healing stops at max HP." },
   { id: "characters", label: "Characters", blurb: "Player-character idle and talking loops, how tall each figure stands on the scene stage, and each character's ElevenLabs voice for the Player Voices toggle." },
   { id: "npcs", label: "NPCs", blurb: "Canon face, idle and talking loops, and the ElevenLabs voice. Applies to every row sharing a name." },
   { id: "scenes", label: "Scenes", blurb: "Environment backgrounds. A looping MP4 works here — an animated cavern, drifting water." },
@@ -100,7 +103,7 @@ const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
   { id: "cinematics", label: "Cinematics", blurb: "Rendered clips for the trigger system — 5–8s loops and moments, tagged by location, variant state, scope and kind. Players never see this panel, only playback." },
 ]
 
-export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
+export function DmAssetsPanel({ onClose, onLore, onMaps }: { onClose: () => void; onLore: () => void; onMaps: () => void }) {
   const [tab, setTab] = useState<TabId>("npcs")
   const [keySet, setKeySet] = useState(true)
   const [keyDraft, setKeyDraft] = useState("")
@@ -137,6 +140,18 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
         <header className="shrink-0 border-b border-[#3d3428] px-5 py-3">
           <div className="flex items-center gap-3">
             <h2 className="font-serif text-lg tracking-wide text-[#c4a777]">DM Assets</h2>
+  <Link href="/forge" className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open The Forge">
+  <Hammer className="h-3.5 w-3.5" />
+  <span className="leading-none">The Forge</span>
+  </Link>
+  <button type="button" onClick={onLore} className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open Lore">
+  <ScrollText className="h-3.5 w-3.5" />
+  <span className="leading-none">Lore</span>
+  </button>
+  <button type="button" onClick={onMaps} className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open Maps">
+  <Map className="h-3.5 w-3.5" />
+  <span className="leading-none">Maps</span>
+  </button>
             <button
               onClick={onClose}
               aria-label="Close DM Assets"
@@ -224,6 +239,7 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col">
+          {tab === "hp" && <HitPointsTab />}
           {tab === "npcs" && <NpcAssetsTab />}
           {tab === "characters" && <MediaTab key="characters" config={CHARACTERS} />}
           {tab === "scenes" && <MediaTab key="scenes" config={SCENES} />}
