@@ -1639,14 +1639,27 @@ if (error) {
 
   {USE_LEGACY_DASHBOARD ? (
     <>
-      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} />
+      {/*
+        The dashboard is not the combat HUD — /battle is. Sam's rule
+        (2026-09-27): combat music stops once we leave the combat HUD. So this
+        player never asks for `combat`, even while a fight is live on the
+        board; a hostile NPC in the room gets the pool's `tense` track, which
+        keeps the dread without pretending initiative has been rolled.
+
+        `inCombat` above still drives the pacing nudges and the stage's "Live"
+        badge — only the AUDIO is scoped to the board. If the tactical stage
+        window ever becomes somewhere fights are actually run, passing
+        `inCombat={inCombat}` here again is the one-line way back.
+      */}
+      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} />
       <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} />
     </>
   ) : (
   <V4Dashboard
   audioSlot={
     <>
-      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={inCombat} className="static bottom-auto right-auto z-auto" />
+      {/* Combat music belongs to /battle only — see the note on the legacy mount above. */}
+      <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} className="static bottom-auto right-auto z-auto" />
       <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
     </>
   }
