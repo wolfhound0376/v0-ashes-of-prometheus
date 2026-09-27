@@ -17,5 +17,11 @@
       "fps": 5,
       "loop": true
     }
+  },
+  "disguise": {
+    "sheet": "disguise.png",
+    "frames": 1,
+    "fps": 5,
+    "loop": true
   }
 }

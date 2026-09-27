@@ -3437,6 +3437,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         })
         g.add(rig.object)
         g.userData.spriteRig = rig
+        // FOUND OUT. A figure drawn with a disguise (a shrieker's plain
+        // mushroom, a mimic's chest) wears it while untouched, and shows what
+        // it is from the first point of damage. Read off HP rather than kept
+        // as a flag: every seat sees the same HP, so every seat unmasks it on
+        // the same blow, and a reload cannot put the mask back on. Before the
+        // death below, so a body felled in one blow falls as itself.
+        rig.setDisguised(row.hp_current != null && row.hp_max != null && row.hp_current >= row.hp_max)
         const fresh = freshSpriteDeaths.delete(row.id)
         if (isDowned(row)) {
           if (rig.current !== "dead") rig.play("dead", {}, !fresh)

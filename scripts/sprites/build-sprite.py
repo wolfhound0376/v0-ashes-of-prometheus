@@ -103,6 +103,12 @@ def main() -> None:
         "a character carries more than one animation for it (an old one kept for comparison). "
         "Without it the first animation matching the state wins",
     )
+    ap.add_argument(
+        "--disguise", metavar="SOURCE",
+        help="PixelLab character id (or .zip) of what the creature LOOKS like until it is found "
+        "out - a shrieker's plain mushroom, a mimic's chest. Its still rotations become "
+        "disguise.png, worn in place of idle until the creature takes damage",
+    )
     args = ap.parse_args()
     chosen = dict(u.split("=", 1) for u in args.use)
 
@@ -186,6 +192,25 @@ def main() -> None:
         sheet.save(out / name, optimize=True)
         manifest["animations"][state] = {"sheet": name, "frames": n, **PLAYBACK[state]}
         print(f"  {state}: {n} frames -> {name}")
+
+    if args.disguise:
+        # A SECOND CHARACTER'S STILL ROTATIONS, worn until the creature is
+        # found out (lib/sprite-token.ts, SpriteRig.setDisguised). Same cell,
+        # same pivot, same ppu: it stands on the same square as the same size.
+        dz = open_zip(args.disguise)
+        dframes = json.loads(dz.read("metadata.json"))["states"][0]["frames"]
+        sheet = Image.new("RGBA", (cw, ch * len(DIRECTIONS)), (0, 0, 0, 0))
+        for row, d in enumerate(DIRECTIONS):
+            p = dframes.get("rotations", {}).get(d)
+            if not p:
+                sys.exit(f"disguise has no '{d}' rotation")
+            im = Image.open(io.BytesIO(dz.read(p))).convert("RGBA")
+            if im.size != (cw, ch):
+                sys.exit(f"disguise is {im.size[0]}x{im.size[1]}, the creature is {cw}x{ch}; they must match")
+            sheet.alpha_composite(im, (0, row * ch))
+        sheet.save(out / "disguise.png", optimize=True)
+        manifest["disguise"] = {"sheet": "disguise.png", "frames": 1, **PLAYBACK["idle"]}
+        print("  disguise: 1 frame -> disguise.png")
 
     (out / "sprite.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"wrote {out / 'sprite.json'}")
