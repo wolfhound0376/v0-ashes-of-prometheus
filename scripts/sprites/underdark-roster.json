@@ -483,6 +483,13 @@
     "target_ft": 3.0
   },
   {
+    "slug": "deep-gnome-woman",
+    "name": "Deep Gnome Woman",
+    "pixellab_character_id": "4a65a45a-24e0-49c0-93c8-467c38f2ea62",
+    "size_by": "height",
+    "target_ft": 3.0
+  },
+  {
     "slug": "hag",
     "name": "Hag (true form)",
     "pixellab_character_id": "c4e6024e-b6ea-491c-83a9-a5c165e54962",
@@ -594,6 +601,14 @@
     "size_by": "height",
     "target_ft": 5.0,
     "note": "measured to the head, not the spear tip"
+  },
+  {
+    "slug": "kuo-toa-chief",
+    "name": "Kuo-toa Chief",
+    "pixellab_character_id": "da59c435-4b0a-46d0-9fa4-0bfc586ba799",
+    "size_by": "height",
+    "target_ft": 5.0,
+    "note": "measured to the skull, not the coral crown or claw staff"
   },
   {
     "slug": "mimic",
