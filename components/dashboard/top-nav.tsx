@@ -9,7 +9,7 @@
 // (or show a "coming in a later round" note) rather than dead-ending.
 
 import type { ReactNode } from "react"
-import { BookOpen, Flame, Map, ScrollText, Settings, Shield, Smartphone, Users } from "lucide-react"
+import { BookOpen, Flame, Settings, Shield, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
@@ -34,9 +34,7 @@ interface TopNavProps {
 const SECTIONS: { id: NavSection; label: string; icon: typeof BookOpen }[] = [
   { id: "journal", label: "Journal", icon: BookOpen },
   { id: "quests", label: "Quests", icon: Users },
-  { id: "maps", label: "Maps", icon: Map },
   { id: "npcs", label: "NPCs", icon: Users },
-  { id: "lore", label: "Lore", icon: ScrollText },
 ]
 
 export function TopNav({

@@ -1532,6 +1532,10 @@ if (error) {
             setNpcAssetsOpen(false)
             setCampaignBook("lore")
           }}
+          onMaps={() => {
+            setNpcAssetsOpen(false)
+            setCampaignBook("maps")
+          }}
         />
       ) : null}
 

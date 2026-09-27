@@ -22,7 +22,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Hammer, KeyRound, ScrollText, X } from "lucide-react"
+import { Hammer, KeyRound, Map, ScrollText, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NpcAssetsTab } from "./npc-assets-panel"
 import { MediaTab, type MediaTabConfig } from "./dm-assets/media-tab"
@@ -103,7 +103,7 @@ const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
   { id: "cinematics", label: "Cinematics", blurb: "Rendered clips for the trigger system — 5–8s loops and moments, tagged by location, variant state, scope and kind. Players never see this panel, only playback." },
 ]
 
-export function DmAssetsPanel({ onClose, onLore }: { onClose: () => void; onLore: () => void }) {
+export function DmAssetsPanel({ onClose, onLore, onMaps }: { onClose: () => void; onLore: () => void; onMaps: () => void }) {
   const [tab, setTab] = useState<TabId>("npcs")
   const [keySet, setKeySet] = useState(true)
   const [keyDraft, setKeyDraft] = useState("")
@@ -147,6 +147,10 @@ export function DmAssetsPanel({ onClose, onLore }: { onClose: () => void; onLore
   <button type="button" onClick={onLore} className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open Lore">
   <ScrollText className="h-3.5 w-3.5" />
   <span className="leading-none">Lore</span>
+  </button>
+  <button type="button" onClick={onMaps} className="flex items-center gap-1.5 rounded-[3px] border border-[#c9a868]/70 bg-gradient-to-b from-[#241a10] to-[#160f09] px-3 py-1.5 text-xs text-[#e0cfa0] shadow-[0_0_12px_rgba(201,168,104,0.18)] transition-colors hover:border-[#e0cfa0] hover:text-white" aria-label="Open Maps">
+  <Map className="h-3.5 w-3.5" />
+  <span className="leading-none">Maps</span>
   </button>
             <button
               onClick={onClose}
