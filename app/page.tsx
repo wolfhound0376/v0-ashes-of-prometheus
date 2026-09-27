@@ -1883,8 +1883,9 @@ if (error) {
         // in. Same orphaning as the dice roller, Malachar's voice and the NPC
         // talking heads. DM only: a claimed player browser gets no control.
         onRestart={!claimLocked && dmMode ? handleRestartCampaign : undefined}
-        onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
-        centerSlot={
+  onManageParty={claimLocked ? undefined : () => setShowPartyManager(true)}
+  dmModeActive={dmMode && !claimLocked}
+  centerSlot={
           <>
             {dmMode && !claimLocked && <GameClockPanel refreshSignal={clockRefresh} />}
             <DynamicMusic
