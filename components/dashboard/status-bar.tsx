@@ -5,15 +5,13 @@
 // recent successful save.
 
 import { useEffect, useState, type ReactNode } from "react"
-import { Cloud, Download, Loader2, RotateCcw, Skull, Users } from "lucide-react"
+import { Cloud, Download, Loader2, RotateCcw, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface StatusBarProps {
   lastSavedAt: number | null
   autoSave: boolean
   onToggleAutoSave?: () => void
-  dmMode: boolean
-  onToggleDmMode?: () => void
   onExport?: () => void
   exporting?: boolean
   /** DM only. Omitted for a claimed player browser, so the control does not
@@ -44,8 +42,6 @@ export function StatusBar({
   lastSavedAt,
   autoSave,
   onToggleAutoSave,
-  dmMode,
-  onToggleDmMode,
   onExport,
   exporting = false,
   onRestart,
@@ -80,20 +76,6 @@ export function StatusBar({
         >
           Auto-Save: <span className={autoSave ? "text-emerald-300" : "text-stone-500"}>{autoSave ? "On" : "Off"}</span>
           <Cloud className="h-3 w-3" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onToggleDmMode}
-          className={cn(
-            "flex items-center gap-1.5 rounded-[3px] border px-2 py-1 transition-colors",
-            dmMode
-              ? "border-[#8a5fb0]/60 bg-[#1a1020] text-[#c9a0e8]"
-              : "border-[#7a5f33]/45 bg-[#120e0a] text-stone-500 hover:border-[#c9a868]/60 hover:text-[#e0cfa0]",
-          )}
-        >
-          <Skull className="h-3 w-3" />
-          DM Mode: <span className="font-medium">{dmMode ? "On" : "Off"}</span>
         </button>
 
         {onRestart ? (

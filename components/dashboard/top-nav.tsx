@@ -8,7 +8,7 @@
 // destination yet call onSection so the dashboard can open the matching panel
 // (or show a "coming in a later round" note) rather than dead-ending.
 
-import { BookOpen, Flame, Map, ScrollText, Settings, Smartphone, Users } from "lucide-react"
+import { BookOpen, Flame, Map, ScrollText, Settings, Skull, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
@@ -25,6 +25,8 @@ interface TopNavProps {
   isDM?: boolean
   /** Switches the page to the compact phone / camp layout. */
   onCompact?: () => void
+  dmMode?: boolean
+  onToggleDmMode?: () => void
 }
 
 const SECTIONS: { id: NavSection; label: string; icon: typeof BookOpen }[] = [
@@ -43,6 +45,8 @@ export function TopNav({
   activeSection = null,
   isDM = false,
   onCompact,
+  dmMode = false,
+  onToggleDmMode,
 }: TopNavProps) {
   // The NPCs tab is DM-only: players must not reach the roster, since it reveals
   // unencountered NPCs and their stats.
@@ -66,6 +70,24 @@ export function TopNav({
           </div>
         </div>
       </div>
+
+      {onToggleDmMode ? (
+        <button
+          type="button"
+          onClick={onToggleDmMode}
+          aria-pressed={dmMode}
+          aria-label="Toggle DM Mode"
+          className={cn(
+            "absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-[3px] border px-3 py-1.5 text-xs transition-colors",
+            dmMode
+              ? "border-[#8a5fb0]/70 bg-[#1a1020] text-[#c9a0e8]"
+              : "border-[#7a5f33]/50 bg-[#120e0a] text-stone-500 hover:border-[#c9a868]/60 hover:text-[#e0cfa0]",
+          )}
+        >
+          <Skull className="h-3.5 w-3.5" />
+          DM Mode: {dmMode ? "On" : "Off"}
+        </button>
+      ) : null}
 
       {/* Sections */}
       <nav className="flex items-center gap-1.5">

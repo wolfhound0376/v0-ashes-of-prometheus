@@ -1476,6 +1476,8 @@ if (error) {
       {/* Top command bar (v3.0 design) */}
       {view === "full" && <TopNav
         onCompact={() => switchView("compact")}
+        dmMode={dmMode && !claimLocked}
+        onToggleDmMode={() => setDmMode((value) => !value)}
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
@@ -1873,8 +1875,7 @@ if (error) {
         lastSavedAt={lastSavedAt}
         autoSave={autoSave}
         onToggleAutoSave={() => setAutoSave((v) => !v)}
-        dmMode={dmMode}
-        onToggleDmMode={() => setDmMode((v) => !v)}
+
         onExport={handleSaveCampaign}
         exporting={isSaving}
         // The restart flow was fully built — handler, confirmation dialog and
