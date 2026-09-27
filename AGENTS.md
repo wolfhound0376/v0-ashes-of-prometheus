@@ -362,6 +362,18 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
   `public/item-pixels/<slug>.png`) for items lying on the floor, falling back to the 3D
   proxy. Sam lifted the no-AI rule for these pixel board icons only (2026-09-26); painted
   inventory icons are still uploaded, never generated.
+  **The two styles stay split — that is the decision, not a gap** (Sam, 2026-09-27, asked
+  directly). Painted art in the bag, pixel art on the floor. Do not "converge" them.
+- **Item pixel scale ladder (Sam's ruling, 2026-09-27)**: board icons are sized against
+  each other, not each drawn to fill the canvas. Pixel density is held CONSTANT and only
+  the canvas changes, so a dagger is literally fewer pixels than a spear; each icon is
+  generated at its own canvas size and padded to 48x48, so the renderer still draws one
+  quad per item. Measured extents: gold-coin 16, dart 20, dagger 23, shortsword 28,
+  battleaxe 32, pike 46, spear 47. Ammunition and thrown weapons 16-24, knives 24,
+  one-handed 32, two-handed and long blades 40, polearms/staves/bows 48 corner-to-corner.
+  A new weapon icon that fills the canvas is a bug — the first pass drew darts as long as
+  pikes. PixelLab canvases must be multiples of 4, and a style reference must be <= the
+  target canvas (crop an existing icon, never downscale one).
 - **Don't build empty pages.** A nav item with an honest "soon" badge beats a dead page.
 
 ---
