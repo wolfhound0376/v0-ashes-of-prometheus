@@ -69,7 +69,16 @@ export interface SpriteManifest {
    */
   hover?: number
   animations: Partial<Record<SpriteState, SpriteAnimation>>
+  /**
+   * What the creature LOOKS like until it is found out - a shrieker's plain
+   * mushroom, a mimic's chest. Worn in place of the idle while the board
+   * says so (SpriteRig.setDisguised); everything else it does is its own.
+   */
+  disguise?: SpriteAnimation
 }
+
+/** A sheet the figure can wear: one per state, plus the disguise. */
+type SheetKey = SpriteState | "disguise"
 
 /**
  * How far the flat figure leans back toward the camera, as a fraction of the
@@ -216,7 +225,7 @@ export class SpriteRig {
   private feet: THREE.Mesh | null = null
   private material: THREE.MeshStandardMaterial | null = null
   private depthMaterial: THREE.MeshDepthMaterial | null = null
-  private textures = new Map<SpriteState, THREE.Texture>()
+  private textures = new Map<SheetKey, THREE.Texture>()
   private state: SpriteState = "idle"
   private t = 0
   private readonly phase: number
@@ -232,7 +241,9 @@ export class SpriteRig {
   private onHit: (() => void) | null = null
   private hitAt = Infinity
   /** Per-state card scale so every animation stands as tall as the idle (see drawnHeight). */
-  private heightScale = new Map<SpriteState, number>()
+  private heightScale = new Map<SheetKey, number>()
+  /** Standing on the disguise sheet rather than the idle (setDisguised). */
+  private disguised = false
   private disposed = false
   private readonly fwd = new THREE.Vector3()
 
@@ -255,6 +266,18 @@ export class SpriteRig {
   /** The figure has a drawing for this state (without falling back). */
   has(state: SpriteState): boolean {
     return Boolean(this.manifest?.animations[state])
+  }
+
+  /**
+   * Wear the disguise (the manifest's `disguise` sheet) in place of the
+   * idle, or take it off. Only the standing pose changes: a disguised
+   * creature that acts shows what it is for as long as it acts. A manifest
+   * with no disguise ignores this.
+   */
+  setDisguised(on: boolean): void {
+    if (on === this.disguised) return
+    this.disguised = on
+    if (this.mesh && !this.fallen) this.bindSheet(this.state)
   }
 
   /** Whether the manifest has arrived yet. */
@@ -342,7 +365,7 @@ export class SpriteRig {
     if (this.t >= this.hitAt) this.fireHit()
     // Fallen or prone: the same flat card, from the idle sheet's first frame.
     const flat = this.fallen || this.prone
-    let anim = flat ? m.animations.idle : m.animations[this.state]
+    let anim = flat ? m.animations.idle : this.animFor(this.state)
     if (!anim) return
     if (!flat && !anim.loop && this.t >= anim.frames / anim.fps && this.state !== "dead") {
       // A swing or a flinch is over: the blow has landed (if it never found
@@ -350,7 +373,7 @@ export class SpriteRig {
       // alone holds its last frame.
       this.fireHit()
       this.play("idle")
-      anim = m.animations[this.state]
+      anim = this.animFor(this.state)
       if (!anim) return
     }
     const dur = anim.frames / anim.fps
@@ -372,7 +395,7 @@ export class SpriteRig {
     const dir = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8
 
     // ---- the same height whatever it is doing (feet are the origin, so they stay put)
-    const k = flat ? 1 : this.scaleFor(this.state)
+    const k = flat ? 1 : this.scaleFor(this.sheetFor(this.state))
     mesh.scale.set(k, k, 1)
 
     // ---- stand the card up facing the camera, whatever the body is doing
@@ -430,8 +453,18 @@ export class SpriteRig {
     return null
   }
 
-  /** Card scale that brings this state's drawing to the idle's height; 1 until both sheets have loaded. */
-  private scaleFor(state: SpriteState): number {
+  /** The sheet this state is drawn from: the disguise stands in for the idle while worn. */
+  private sheetFor(state: SpriteState): SheetKey {
+    return state === "idle" && this.disguised && this.textures.has("disguise") ? "disguise" : state
+  }
+
+  private animFor(state: SpriteState): SpriteAnimation | undefined {
+    const key = this.sheetFor(state)
+    return key === "disguise" ? this.manifest?.disguise : this.manifest?.animations[key]
+  }
+
+  /** Card scale that brings this sheet's drawing to the idle's height; 1 until both sheets have loaded. */
+  private scaleFor(state: SheetKey): number {
     const known = this.heightScale.get(state)
     if (known !== undefined) return known
     const m = this.manifest
@@ -512,7 +545,9 @@ export class SpriteRig {
     }
 
     const base = this.url.replace(/[^/]*$/, "")
-    for (const [state, anim] of Object.entries(m.animations) as [SpriteState, SpriteAnimation][]) {
+    const sheets = Object.entries(m.animations) as [SheetKey, SpriteAnimation][]
+    if (m.disguise) sheets.push(["disguise", m.disguise])
+    for (const [state, anim] of sheets) {
       const t = sheetTexture(new URL(anim.sheet, new URL(base, window.location.href)).href).clone()
       t.repeat.set(1 / anim.frames, 1 / SPRITE_DIRECTIONS.length)
       this.textures.set(state, t)
@@ -535,7 +570,7 @@ export class SpriteRig {
   }
 
   private bindSheet(state: SpriteState): void {
-    const t = this.textures.get(state)
+    const t = this.textures.get(this.sheetFor(state))
     const mat = this.liveMaterial()
     if (!t || !mat || !this.depthMaterial) return
     mat.map = t
