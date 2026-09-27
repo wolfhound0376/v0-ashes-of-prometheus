@@ -1274,14 +1274,11 @@ function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { 
   // The rail shows the standard 5E abbreviation; the wide two-column sheet has
   // room for the full name. Either way the full name is on hover and in the
   // native tooltip, so nothing is lost.
-  const label = sheet || large ? name : ability.key.toUpperCase()
   return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : large ? "h-[190px] hover:scale-105 focus-visible:scale-105" : "h-[132px] hover:scale-125 focus-visible:scale-125")} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
     <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
-    <span className="absolute inset-x-0 top-2 z-10 bg-black/0 px-0.5 py-1 text-center font-serif text-[6px] font-bold uppercase tracking-[.04em] text-[#d3ae6b]/0 transition-[color,background-color,text-shadow] duration-200 delay-0 group-hover:bg-black/80 group-hover:text-[#ffe4a8] group-hover:[text-shadow:0_0_7px_#d79b3a] group-hover:delay-500">{name}</span>
     <span className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/92 to-transparent", sheet ? "h-11" : "h-[52px]")} />
     <span className={cn("absolute inset-x-0 text-center font-serif font-extrabold leading-none text-[#ffffff] [text-shadow:1px_0_0_#000,-1px_0_0_#000,0_1px_0_#000,0_-1px_0_#000]", sheet ? "bottom-[19px] text-[15px]" : "bottom-[25px] text-[17px]")}>{ability.score}</span>
-    <span className={cn("absolute inset-x-0 text-center font-serif font-bold leading-none text-[#ffd27a] [text-shadow:0_0_2px_#000,0_1px_2px_#000]", sheet ? "bottom-[8px] text-[9px]" : "bottom-[13px] text-[10px]")}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
-    <span className={cn("absolute inset-x-0 truncate text-center font-bold uppercase text-[#bfa36d]", sheet ? "bottom-0 px-0.5 text-[5px] tracking-[.05em]" : "bottom-[3px] px-0.5 text-[7px] tracking-[.12em]")}>{label}</span>
+    <span className={cn("absolute inset-x-0 text-center font-serif font-bold leading-none text-[#ffffff] [text-shadow:0_0_2px_#000,0_1px_2px_#000]", sheet ? "bottom-[7px] text-[9px]" : "bottom-[11px] text-[10px]")}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
   </button>
 }
 
