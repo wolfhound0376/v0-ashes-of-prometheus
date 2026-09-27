@@ -27,9 +27,10 @@ import { cn } from "@/lib/utils"
 import { NpcAssetsTab } from "./npc-assets-panel"
 import { MediaTab, type MediaTabConfig } from "./dm-assets/media-tab"
 import { CinematicsTab } from "./dm-assets/cinematics-tab"
+import { HitPointsTab } from "./dm-assets/hit-points-tab"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 
-type TabId = "npcs" | "characters" | "scenes" | "overlays" | "items" | "library" | "cinematics"
+type TabId = "hp" | "npcs" | "characters" | "scenes" | "overlays" | "items" | "library" | "cinematics"
 
 const SCENES: MediaTabConfig = {
   table: "environments",
@@ -92,6 +93,7 @@ const CHARACTERS: MediaTabConfig = {
 }
 
 const TABS: Array<{ id: TabId; label: string; blurb: string }> = [
+  { id: "hp", label: "Hit Points", blurb: "Heal or damage any player character. Damage drains temporary HP first; healing stops at max HP." },
   { id: "characters", label: "Characters", blurb: "Player-character idle and talking loops, how tall each figure stands on the scene stage, and each character's ElevenLabs voice for the Player Voices toggle." },
   { id: "npcs", label: "NPCs", blurb: "Canon face, idle and talking loops, and the ElevenLabs voice. Applies to every row sharing a name." },
   { id: "scenes", label: "Scenes", blurb: "Environment backgrounds. A looping MP4 works here — an animated cavern, drifting water." },
@@ -229,6 +231,7 @@ export function DmAssetsPanel({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="flex min-h-0 flex-1 flex-col">
+          {tab === "hp" && <HitPointsTab />}
           {tab === "npcs" && <NpcAssetsTab />}
           {tab === "characters" && <MediaTab key="characters" config={CHARACTERS} />}
           {tab === "scenes" && <MediaTab key="scenes" config={SCENES} />}
