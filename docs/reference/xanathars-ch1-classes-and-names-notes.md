@@ -1,14 +1,59 @@
 # Xanathar's Guide to Everything: class options (ch. 1) and Character Names (Appendix B), notes for later
 
 **Status:** reference only. Nothing here is wired.
-**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 12–30, 37–60, 175–180; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
+**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 7–60, 175–180, except pp. 26 and 36; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
 **Companion:** `docs/reference/xanathars-ch2-dm-tools-notes.md` (ch. 2, DM's tools).
 
-> **Edition check, read first.** Xanathar's is a **2014-rules** book. The party's sheets look built on the **2024** rules: Kenta has *Innate Sorcery* and Fifi has *Weapon Mastery*, both 2024-only features. The difference matters for timing.
-> - In 2014, a cleric picks a domain and a sorcerer an origin **at level 1**.
-> - In 2024, every class picks its subclass **at level 3**.
+> **Edition ruling (Sam, 2026-09-27): "2024 for subclass."** Every class takes its subclass **at level 3**, including the Xanathar's ones below, whatever level the book prints. The book's own table (p. 7) gives 2014 timing: cleric, sorcerer and warlock at 1; druid and wizard at 2; everyone else at 3. **Ignore those levels here.**
 >
-> So using these subclasses with these characters is **Sam's ruling to make**, and the level they come in at follows whichever edition he picks. The sheets' feature lists also look incomplete: Bastet is a level-5 barbarian with no path, Extra Attack or Reckless Attack listed. So a missing feature on a sheet is not proof it was never chosen.
+> What this means for the party (live `characters`, 2026-09-27):
+> - Samson (cleric 1), Kenta (sorcerer 1), Fifi (rogue 1) and Scott (bard 1) choose at level 3.
+> - **Bastet is a level-5 barbarian with no Primal Path on the sheet.** Under 2024 rules she should already have one. Her feature list also lacks Extra Attack and Reckless Attack, so the sheet looks incomplete rather than the choice unmade. Ask her player.
+
+## 0. The subclass list (p. 7)
+
+The chapter adds 31 subclasses:
+- **Barbarian:** Ancestral Guardian, Storm Herald, Zealot.
+- **Bard:** Glamour, Swords, Whispers.
+- **Cleric:** Forge, Grave.
+- **Druid:** Dreams, Shepherd.
+- **Fighter:** Arcane Archer, Cavalier, Samurai.
+- **Monk:** Drunken Master, Kensei, Sun Soul.
+- **Paladin:** Conquest, Redemption.
+- **Ranger:** Gloom Stalker, Horizon Walker, Monster Slayer.
+- **Rogue:** Inquisitive, Mastermind, Scout, Swashbuckler.
+- **Sorcerer:** Divine Soul, Shadow Magic, Storm Sorcery.
+- **Warlock:** Celestial, Hexblade.
+- **Wizard:** War Magic.
+
+Each class section opens with d6 flavour tables. The chapter then goes on to "This Is Your Life" (backstory tables) and racial feats, which haven't been photographed yet.
+
+## 0a. Barbarian (ch. 1, pp. 8–11)
+
+**Who this is for.** **Bastet**, a level-5 half-elf barbarian. She isn't seated in the party (`in_party` is false) as of 2026-09-27.
+
+- **Character flavour:** d6 tables for personal totem, tattoos and superstitions. One superstition is "dwarves have lost their spirits and are almost like the undead", which gives a barbarian something to say about duergar.
+- **Path of the Ancestral Guardian.**
+  - Level 3: **Ancestral Protectors**. While raging, the first creature she hits each turn has disadvantage on attacks against anyone but her, and anyone else it hits takes half damage (resistance).
+  - Level 6: **Spirit Shield**, a reaction that cuts damage to an ally within 30 ft by 2d6, rising to 3d6 at 10 and 4d6 at 14.
+  - Level 10: Consult the Spirits (*augury* or *clairvoyance*, once per short rest).
+  - Level 14: Vengeful Ancestors.
+- **Path of the Storm Herald.**
+  - Level 3: **Storm Aura** while raging, 10 ft, with one environment chosen:
+    - desert: fire damage to everyone nearby;
+    - sea: lightning to one target, DEX save;
+    - tundra: temporary hp to allies.
+  - Level 6: Storm Soul (resistance plus a utility, such as breathing underwater for sea).
+  - Level 10: Shielding Storm (allies in the aura share the resistance).
+  - Level 14: Raging Storm.
+- **Path of the Zealot.**
+  - Level 3: **Divine Fury**, +1d6 + half barbarian level (necrotic or radiant) on the first hit each turn while raging. **Warrior of the Gods:** a spell that only restores her to life needs no material components.
+  - Level 6: Fanatical Focus (reroll a failed save once per rage).
+  - Level 10: Zealous Presence (advantage for up to ten allies, once per long rest).
+  - Level 14: **Rage beyond Death**, which keeps her standing at 0 hp until the rage ends.
+
+**Why it matters here.** A **Zealot's Divine Fury** and an **Ancestral Guardian's Spirit Shield** both change damage math. `/api/combat` and the `[DAMAGE:]` handling would need to know her path before either could be honoured automatically. **Rage beyond Death** is the same kind of 0-hp exception as Strength of the Grave (§8).
+
 
 ---
 
@@ -49,9 +94,7 @@
 ## 2. Cleric (ch. 1, pp. 16–20)
 
 **Who this is for.** The party's cleric is **Samson**, a level-1 human, per the live `characters` table on 2026-09-27. His sheet records no Divine Domain: `sheet_features` lists Spellcasting and the Acolyte background only.
-- Under 2014 rules, he'd need one now.
-- Under the 2024 rules his sheet appears to follow, he picks at level 3.
-- See the edition check at the top.
+**Sam ruled 2024 timing, so he chooses at level 3.** See the note at the top.
 
 **Character flavour (pp. 16–17), three d6 tables:**
 - **Temple:** where they trained.
@@ -105,7 +148,7 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
 - **Circle of the Shepherd:** speech with beasts and fey. Spirit Totem (bear, hawk or unicorn) buffs allies in an area. Later features strengthen summoned creatures.
 - **Learning Beast Shapes (pp. 24–25):** Wild Shape options sorted by environment, with CR and fly/swim notes. The later photo adds Forest, Grassland, Hill, Mountain, Swamp, **Underdark** and Underwater, but it's too low-resolution to read the Underdark rows. Re-photograph that page if a druid ever joins.
 
-## 4. Fighter (ch. 1, pp. 27–30)
+## 4. Fighter (ch. 1, pp. 27–31)
 
 **No fighter in the party** as of 2026-09-27.
 
@@ -120,13 +163,44 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
   - Level 7: Warding Maneuver, a reaction that adds 1d8 to an ally's AC.
   - Level 10: Hold the Line, where opportunity attacks stop movement.
   - Levels 15 and 18: Ferocious Charger and Vigilant Defender.
-- **Samurai:** not photographed.
+- **Samurai (p. 31).**
+  - Level 3: one of History, Insight, Performance or Persuasion (or a language). **Fighting Spirit:** a bonus action for advantage on weapon attacks this turn and temporary hp (5, then 10 at 10th, 15 at 15th), three times per long rest.
+  - Level 7: Elegant Courtier (WIS added to Persuasion, and WIS save proficiency).
+  - Level 10: Tireless Spirit.
+  - Level 15: Rapid Strike.
+  - Level 18: **Strength before Death**, a free turn at 0 hp.
+- **Cavalier's high levels (p. 31):**
+  - Level 15: Ferocious Charger, a prone-shove after a 10-ft charge.
+  - Level 18: Vigilant Defender, a special opportunity attack on every creature's turn.
 
-## 5. Paladin (ch. 1, pp. 37–39)
+## 4a. Monk (ch. 1, pp. 32–35)
+
+**No monk in the party.**
+
+- **Character flavour:** d6 tables for monastery, monastic icon and master. One monastery was **founded by gnomes as an underground labyrinth**, which suits a monk from Blingdenstone.
+- **Way of the Drunken Master.**
+  - Level 3: Performance and brewer's supplies proficiency. **Drunken Technique:** Flurry of Blows also grants Disengage and +10 ft speed.
+  - Level 6: Tipsy Sway (stand up for 5 ft; redirect a missed attack for 1 ki).
+  - Level 11: Drunkard's Luck (2 ki cancels disadvantage).
+  - Level 17: Intoxicated Frenzy.
+- **Way of the Kensei.**
+  - Level 3: Path of the Kensei, with two kensei weapons (a melee and a ranged, the longbow allowed); Agile Parry (+2 AC); Kensei's Shot (+1d4 at range); Way of the Brush (calligrapher's or painter's supplies).
+  - Level 6: One with the Blade (magical attacks; Deft Strike for 1 ki).
+  - Level 11: Sharpen the Blade.
+  - Level 17: Unerring Accuracy.
+- **Way of the Sun Soul.**
+  - Level 3: **Radiant Sun Bolt**, a 30-ft ranged radiant attack using the martial arts die.
+  - Level 6: Searing Arc Strike (*burning hands* for ki).
+  - Level 11: Searing Sunburst.
+  - Level 17: Sun Shield (bright light, and radiant damage back at melee attackers).
+
+A Kensei's **Way of the Brush** grants painter's supplies, which opens the `paint` camp action (§19 of the camp doc).
+
+## 5. Paladin (ch. 1, pp. 35–39)
 
 **No paladin in the party.**
 
-- **Character flavour:** d6 tables for nemesis and temptation (fury, pride, lust, envy, despair, greed).
+- **Character flavour:** d6 tables for personal goal (peace, revenge, duty, leadership, faith, glory), symbol, nemesis and temptation (fury, pride, lust, envy, despair, greed).
 - **Oath of Conquest.**
   - Tenets: douse the flame of hope, rule with an iron fist, strength above all.
   - Level 3: Channel Divinity **Conquering Presence** (frighten creatures within 30 ft) or **Guided Strike** (+10 to one attack).
@@ -199,7 +273,7 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
 
 ## 8. Sorcerer (ch. 1, pp. 48–52)
 
-**Who this is for.** **Kenta** is a level-1 half-elf sorcerer. His sheet shows *Innate Sorcery* (2024) and no origin: in 2014 that choice comes at level 1, in 2024 at level 3. See the edition check at the top.
+**Who this is for.** **Kenta** is a level-1 half-elf sorcerer. His sheet shows *Innate Sorcery* (2024) and no origin yet. **Under Sam's 2024 ruling he chooses at level 3.**
 
 - **Character flavour:** d6 tables for arcane origin (a bloodline, a reincarnation, a prophecy, "made in a vat by an alchemist"), how people reacted, supernatural mark and **sign of sorcery** (what visibly happens when you cast).
 - **Divine Soul.**
@@ -258,7 +332,7 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
   - Level 6: Power Surge, stored energy for extra force damage.
   - Level 10: Durable Magic, +2 AC and saves while concentrating.
   - Level 14: Deflecting Shroud.
-- **Edition note.** The subclass comes at level 2 in 2014 and level 3 in 2024. The same goes for the warlock: level 1 in 2014, level 3 in 2024.
+- **Timing.** Level 3, per Sam's 2024 ruling; the book says level 2. The warlock's patron is also level 3, not the book's level 1.
 
 ## 11. Character names (Appendix B, pp. 175–180)
 
@@ -288,7 +362,6 @@ Human names grouped by real-world culture follow after p. 180; they weren't phot
 
 1. **Unnamed NPCs get improvised names.** Names are flavour and so Malachar's to choose (invariant 2). But **once spoken, a name is canon**: `npc_encounters` keys faces, voices and conditions by name (the Jimjar bug, AGENTS.md §8). A name picked from a consistent list reads better than an ad-lib.
 2. **Any name generator must avoid names already in `npc_encounters`.** Otherwise a new stranger inherits an old NPC's face and voice.
-3. **The tables aren't copied into this repo.** At about 1,150 names they're a substantial piece of the book. If Sam wants a generator, the options are:
-   - Malachar is told the naming *style* of each people (say, dwarf clan names are compound words about stone, fire and metal), and invents in that style;
-   - Sam enters lists he's happy to have in the database;
-   - we write our own lists.
+3. **The tables aren't copied into this repo.** At about 1,150 names they're a substantial piece of the book.
+
+**Sam's ruling (2026-09-27): "Malachar can make up names; that's fine."** No generator and no lists. Names stay Malachar's flavour (invariant 2). Point 2 above still holds: once he has spoken a name, it's canon.

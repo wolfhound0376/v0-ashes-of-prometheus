@@ -94,6 +94,180 @@ export function affordableRest(supplies: number | null | undefined, partySize: n
   return { kind: null, cost: 0, suppliesAfter: have, flags, note: `No rest: ${have} rations on hand and a partial rest needs ${partial}. The party goes hungry — see lib/exhaustion.` }
 }
 
+/**
+ * Food carried in a pack that counts as rations — a catalog item whose
+ * `properties.rations` is set. Sam, 2026-09-27: "Beads of nourishment can go
+ * in the catalog and count towards rations" (XGE p. 136: one bead is a day's
+ * food). `per` is rations per unit.
+ */
+export interface PackRation { id: string; quantity: number; per: number }
+
+/** Every ration the party has: the pool plus what the players carry. */
+export function rationsOnHand(pool: number | null | undefined, packs: PackRation[]): number {
+  const base = Math.max(0, Math.trunc(Number(pool) || 0))
+  return base + packs.reduce((n, p) => n + Math.max(0, Math.trunc(p.quantity)) * Math.max(0, Math.trunc(p.per)), 0)
+}
+
+/**
+ * Charge `cost` rations: the pool first (it's the common larder), then the
+ * packs, whole units at a time. Returns the new pool and the pack rows whose
+ * quantity changed (0 means the row is used up). Never charges more than is
+ * on hand — the caller has already decided the party can afford it.
+ */
+export function spendRations(
+  pool: number | null | undefined,
+  packs: PackRation[],
+  cost: number,
+): { poolAfter: number; packs: { id: string; quantity: number }[]; spent: number } {
+  let owed = Math.max(0, Math.trunc(Number(cost) || 0))
+  const base = Math.max(0, Math.trunc(Number(pool) || 0))
+  const fromPool = Math.min(base, owed)
+  owed -= fromPool
+  const changed: { id: string; quantity: number }[] = []
+  let spent = fromPool
+  for (const p of packs) {
+    if (owed <= 0) break
+    const per = Math.max(1, Math.trunc(p.per))
+    const have = Math.max(0, Math.trunc(p.quantity))
+    const use = Math.min(have, Math.ceil(owed / per))
+    if (use <= 0) continue
+    changed.push({ id: p.id, quantity: have - use })
+    owed -= use * per
+    spent += use * per
+  }
+  return { poolAfter: base - fromPool, packs: changed, spent }
+}
+
+/**
+ * Sam, 2026-09-27: "Dawn items charge at long rest." There is no dawn in the
+ * Underdark (XGE p. 144 lets the DM pick the moment), so an item that regains
+ * charges "at dawn" regains them when a long rest ends. Charges are not
+ * tracked per copy yet, so this names what recharges and how much — Malachar
+ * and the table keep the count. Only items whose catalog row SAYS they recharge
+ * at dawn are listed; a ring of three wishes never refills.
+ */
+export function dawnRecharges(
+  carried: { owner: string; name: string; recharge?: unknown; description?: string | null }[],
+): string[] {
+  const out: string[] = []
+  for (const c of carried) {
+    const text = typeof c.recharge === "string" ? c.recharge : ""
+    const says = /dawn/i.test(text) || /\bat dawn\b|daily at dawn/i.test(c.description ?? "")
+    if (!says) continue
+    const how = text ? text.replace(/\s*(daily\s+)?at dawn/i, "").trim() : ""
+    out.push(`${c.owner}'s ${c.name} regains ${how ? `${how} charges` : "its charges"} (dawn comes with the long rest).`)
+  }
+  return out
+}
+
+
+// ============================================================================
+// §19 TOOL USES TIMED TO A REST (Sam, 2026-09-27)
+// ============================================================================
+//
+// Xanathar's Guide, ch. 2, tool special uses that take a rest. Sam ruled the
+// rest length for each: disguise — long; forgery — short; compose — long;
+// painting — long; set a trap — short, as a camp defence. A "long" one needs
+// a camp whose rations buy a FULL rest; a "short" one fits in either.
+// Each needs proficiency with the tool AND the tool in the pack.
+//
+//   disguise  (disguise kit, p. 81)   no roll. One disguise, a minute to don.
+//   forge     (forgery kit, p. 81)    INT check; the total is the DC to spot it.
+//   compose   (an instrument, p. 83)  no roll. A new tune and lyrics.
+//   paint     (painter's, p. 83)      no roll. A simple work of art.
+//   set_trap  (thieves' tools, p. 84) DEX check (thieves' tools, the PHB
+//             ability — Claude's reading, XGE names no ability); the total is
+//             the DC to notice or disarm it, and it deals half the total, or
+//             damage fitting its materials (the DM's call).
+//
+// What they make is not a catalog item: a disguise, a page, a song, a
+// sketch. Malachar narrates it; nothing is put in the pack.
+
+export type CampToolAction = "disguise" | "forge" | "compose" | "paint" | "set_trap"
+
+/** PHB musical instruments. A proficiency in any one of these is an instrument. */
+export const MUSICAL_INSTRUMENTS = [
+  "bagpipes", "drum", "dulcimer", "flute", "lute", "lyre", "horn", "pan flute", "shawm", "viol",
+] as const
+
+export const CAMP_TOOL_ACTIONS: Record<CampToolAction, { tools: readonly string[]; rest: "long" | "short"; roll: Ability | null; label: string; source: string }> = {
+  disguise: { tools: ["disguise kit"], rest: "long", roll: null, label: "make a disguise", source: "XGE p. 81, Create Disguise" },
+  forge: { tools: ["forgery kit"], rest: "short", roll: "int", label: "forge a document", source: "XGE p. 81, Quick Fake" },
+  compose: { tools: MUSICAL_INSTRUMENTS, rest: "long", roll: null, label: "compose a tune", source: "XGE p. 83, Compose a Tune" },
+  paint: { tools: ["painters supplies"], rest: "long", roll: null, label: "paint or sketch", source: "XGE p. 83, Painting and Drawing" },
+  set_trap: { tools: ["thieves tools"], rest: "short", roll: "dex", label: "set a trap", source: "XGE p. 84, Set a Trap" },
+}
+
+export function isCampToolAction(a: CampAction | null): a is CampToolAction {
+  return !!a && a in CAMP_TOOL_ACTIONS
+}
+
+export interface CampToolDecision {
+  spend: boolean
+  remaining: number
+  /** The tool used, when allowed. */
+  tool: string | null
+  /** For the roll request when the dice settle it: `camp:forge` / `camp:set_trap`. */
+  purpose: string | null
+  note: string
+}
+
+/** One [CAMP_ACTION: who | disguise|forge|compose|paint|set_trap]. Refusals never spend. */
+export function decideCampTool(input: {
+  action: CampToolAction
+  who: string
+  camping: boolean
+  /** What tonight's rations buy: a long use needs "full". */
+  restKind: RestKind | null
+  remaining: number | null | undefined
+  /** `sheet_proficiencies.tools`. */
+  proficiencies: string[] | null | undefined
+  carried: CarriedItem[]
+  /** Only the acting player's own dice settle a check. */
+  isSpeaker: boolean
+  /** A bare d20 of theirs is in the reply, unclaimed. */
+  rollsD20: boolean
+}): CampToolDecision {
+  const rule = CAMP_TOOL_ACTIONS[input.action]
+  const have = Math.max(0, Math.trunc(Number(input.remaining) || 0))
+  const refuse = (why: string): CampToolDecision => ({ spend: false, remaining: have, tool: null, purpose: null, note: `${input.who} — ${rule.label}: ${why} Nothing spent.` })
+  if (!input.camping) return refuse("the party is not camped.")
+  if (rule.rest === "long" && input.restKind !== "full") return refuse("it takes a long rest, and tonight's rations only buy a partial one.")
+  if (input.restKind == null) return refuse("no rest tonight — the rations do not stretch to one.")
+  const profs = (input.proficiencies ?? []).map(toolKey)
+  const known = rule.tools.filter((t) => profs.some((p) => p === toolKey(t) || (input.action === "compose" && p.includes(toolKey(t)))))
+  if (!known.length) return refuse(`needs proficiency with ${input.action === "compose" ? "a musical instrument" : rule.tools[0]}.`)
+  const carriedKeys = input.carried.filter((c) => Number(c.quantity ?? 1) > 0).map((c) => toolKey(c.name))
+  const tool = known.find((t) => carriedKeys.some((k) => k === toolKey(t) || k.includes(toolKey(t)))) ?? null
+  if (!tool) return refuse(`needs the ${known[0]} in their pack.`)
+  if (have <= 0) return refuse("no camp action left this rest.")
+  if (rule.roll) {
+    if (!input.isSpeaker) return refuse("it is settled by their own roll, so only their own player can take it.")
+    if (!input.rollsD20) return refuse("needs their d20 check in the same reply.")
+  }
+  return {
+    spend: true,
+    remaining: have - 1,
+    tool,
+    purpose: rule.roll ? campPurpose(input.action) : null,
+    note: `${input.who} — ${rule.label} with their ${tool}: ${have - 1} camp action${have - 1 === 1 ? "" : "s"} left this rest.`,
+  }
+}
+
+/** Settle a forgery or a trap from the table's d20 and the sheet's modifier. */
+export function settleCampTool(action: "forge" | "set_trap", name: string, face: number, modifier: number): { dc: number; note: string } {
+  const dc = Math.max(1, face + modifier)
+  if (action === "forge") {
+    return { dc, note: `${name}'s forgery is done: anyone who studies it needs an Intelligence (Investigation) check of DC ${dc} to see it is fake.` }
+  }
+  return { dc, note: `${name} sets a trap around the camp: DC ${dc} to notice or disarm it; whoever springs it takes ${Math.floor(dc / 2)} damage (or damage fitting its materials, the DM's call).` }
+}
+
+/** The trap's line for a hostile visitor's arrival. */
+export function trapGuardNote(dc: number, setter: string | null): string {
+  return ` A trap ${setter ? `${setter} set ` : ""}guards the camp: the first of them to blunder in makes a Wisdom (Perception) check against DC ${dc}; on a failure it springs for ${Math.floor(dc / 2)} damage and the camp is warned.`
+}
+
 // ============================================================================
 // §2 THE MENU — camp actions per character per rest
 // ============================================================================
@@ -113,6 +287,8 @@ export const CAMP_ACTIONS = [
   "pray", "level_up", "trade", "hunt", "explore", "perform", "talk",
   // docs/claude_Earned_Proficiency.md §4 — the teaching path lives at camp (§17).
   "train",
+  // §19 — tool uses Xanathar's times to a rest (Sam, 2026-09-27).
+  "disguise", "forge", "compose", "paint", "set_trap",
 ] as const
 export type CampAction = (typeof CAMP_ACTIONS)[number]
 
@@ -155,6 +331,11 @@ export const CAMP_ACTION_RULES: Record<CampAction, { resolves: string; source: s
   perform: { resolves: "perform() — a band, and on a partial rest the bard's exception", source: "Sam, 2026-08-20 and 2026-09-26" },
   talk: { resolves: "weightRelationshipEvent()", source: "Sam's gravity system" },
   train: { resolves: "decideTraining() — hours banked with a teacher who has expertise; the DC 12 test once 40 are banked", source: "Homebrew — docs/claude_Earned_Proficiency.md, Sam 2026-09-26; expertise required, 4 h per evening, teacher free: Sam 2026-09-27" },
+  disguise: { resolves: "decideCampTool() — disguise kit, long rest, no roll", source: "XGE p. 81, Create Disguise; long rest: Sam 2026-09-27" },
+  forge: { resolves: "decideCampTool() + settleCampTool() — forgery kit, short rest, INT check sets the DC", source: "XGE p. 81, Quick Fake; short rest: Sam 2026-09-27" },
+  compose: { resolves: "decideCampTool() — a musical instrument, long rest, no roll", source: "XGE p. 83, Compose a Tune; long rest: Sam 2026-09-27" },
+  paint: { resolves: "decideCampTool() — painter's supplies, long rest, no roll", source: "XGE p. 83, Painting and Drawing; long rest: Sam 2026-09-27" },
+  set_trap: { resolves: "decideCampTool() + settleCampTool() — thieves' tools, short rest, DEX check sets the DC; guards the camp against visitors", source: "XGE p. 84, Set a Trap; short rest, camp defence: Sam 2026-09-27" },
 }
 
 export interface SpendOutcome {
@@ -1043,6 +1224,35 @@ export function xpToNext(level: number): number | null {
   return l >= MAX_LEVEL ? null : XP_TABLE[l + 1]
 }
 
+/** The slice of a `characters` row the XP share reads. */
+export interface XpShareRow {
+  id: string
+  is_player?: boolean | null
+  character_type?: string | null
+  in_party?: boolean | null
+  archived_at?: string | null
+}
+
+/**
+ * Sam, 2026-09-27: "XP is shared across the active party except NPCs."
+ *
+ * The active party is who the DM has SEATED (`in_party`, not archived — the
+ * same test the dashboard uses), plus whoever landed the blow, because acting
+ * in the fight makes you active. NPC companions never get a share. The award
+ * is split evenly and rounded down (SRD: XP is divided among the party).
+ * With nobody seated, the whole award goes to the actor, as before.
+ */
+export function xpShares(total: number, rows: XpShareRow[], actorId: string): { id: string; xp: number }[] {
+  const award = Math.max(0, Math.trunc(Number(total) || 0))
+  if (award === 0) return []
+  const isPlayer = (r: XpShareRow) => r.is_player === true || r.character_type === "player"
+  const ids = new Set<string>([actorId])
+  for (const r of rows) if (isPlayer(r) && r.in_party === true && !r.archived_at) ids.add(r.id)
+  const share = Math.floor(award / ids.size)
+  if (share === 0) return []
+  return [...ids].map((id) => ({ id, xp: share }))
+}
+
 /** The slice of a `travel_nodes` row the gate reads. */
 export interface LevelUpSite {
   metadata?: { allows_level_up?: boolean; [k: string]: unknown } | null
@@ -1079,9 +1289,13 @@ export const FULL_CASTER_SLOTS: Record<number, number[]> = {
 /** SRD: Ability Score Improvement at 4th, 8th, 12th, 16th, 19th (every class). */
 export const ASI_LEVELS = [4, 8, 12, 16, 19] as const
 
-/** SRD: the level each class picks its subclass. */
+/**
+ * The level each class picks its subclass. Sam, 2026-09-27: "2024 for
+ * subclass" — every class at 3rd level (the 2024 rules), including the
+ * Xanathar's subclasses whose 2014 text says 1st or 2nd.
+ */
 export const SUBCLASS_LEVEL: Record<string, number> = {
-  barbarian: 3, bard: 3, cleric: 1, druid: 2, fighter: 3, monk: 3, paladin: 3, ranger: 3, rogue: 3, sorcerer: 1, warlock: 1, wizard: 2,
+  barbarian: 3, bard: 3, cleric: 3, druid: 3, fighter: 3, monk: 3, paladin: 3, ranger: 3, rogue: 3, sorcerer: 3, warlock: 3, wizard: 3,
 }
 
 export interface LevelUpSheet {
@@ -1184,7 +1398,7 @@ export function levelUp(sheet: LevelUpSheet, opts: { method: "roll" | "average";
 
   const pendingChoices: PendingChoice[] = []
   if ((ASI_LEVELS as readonly number[]).includes(next)) pendingChoices.push({ kind: "asi", text: "Ability Score Improvement: +2 to one score or +1 to two (max 20).", source: "SRD 5.1, class table" })
-  if (SUBCLASS_LEVEL[cls] === next) pendingChoices.push({ kind: "subclass", text: `Choose a ${sheet.class} subclass.`, source: "SRD 5.1, class table" })
+  if (SUBCLASS_LEVEL[cls] === next) pendingChoices.push({ kind: "subclass", text: `Choose a ${sheet.class} subclass.`, source: "2024 timing, Sam 2026-09-27" })
   pendingChoices.push({ kind: "class_features", text: `Read the ${sheet.class ?? "class"} table for level ${next} features.`, source: "SRD 5.1, class table" })
   if ((FULL_CASTERS as readonly string[]).includes(cls) || cls === "warlock" || (HALF_CASTERS as readonly string[]).includes(cls)) {
     pendingChoices.push({ kind: "spells", text: "Spells known / prepared for the new level.", source: "SRD 5.1, class spellcasting" })
@@ -1346,6 +1560,8 @@ export interface CampBlockState {
   results?: string[]
   /** Students whose hours are banked and whose teaching test is the next step (§17). Never the hours. */
   testsReady?: { name: string; teacher: string; skill: string; dc: number }[]
+  /** Crafting under way or finished since the camp was made — facts, so progress is never guessed (§18). */
+  crafting?: string[]
 }
 
 /**
@@ -1379,7 +1595,9 @@ export function formatCampBlock(s: CampBlockState): string {
         `When a character spends one, emit [CAMP_ACTION: <name> | <action>] — the system counts it and refuses one past their count. ` +
         `Forage and hunt (Survival, DC 15 in the Underdark) and perform (Performance) are settled by the acting player's own dice: put the tag in the SAME reply as their roll request, e.g. [CAMP_ACTION: Kenta | forage] Roll Survival. [[1d20-1 | survival | DC 15]]. ` +
         `You will be told the result; never invent food or its amount.\n` +
-        `Craft (one hour of work per action): [CAMP_ACTION: <name> | craft | <catalog item>] in the SAME reply as their own crafting roll, a bare [[1d20+N]] where N is the better of the tool's two abilities plus proficiency. The system recomputes N, uses the DC for that item, charges the materials when work begins, and puts the finished item in their pack. When the player says their skill gives advantage (alchemist's supplies with Arcana), ask for the roll with advantage. Only items on their crafting list can be made; never invent one.\n` +
+        `Craft (one hour of work per action): [CAMP_ACTION: <name> | craft | <catalog item>] in the SAME reply as their own crafting roll, a bare [[1d20+N]] where N is the better of the tool's two abilities plus proficiency. The system recomputes N, uses the DC for that item, charges the materials when work begins, and puts the finished item in their pack. When the player says their skill gives advantage (alchemist's supplies with Arcana), ask for the roll with advantage. Only items on their crafting list can be made; never invent one. ` +
+        `Two options go after the item. "take 10": [CAMP_ACTION: <name> | craft | <item> | take 10] with NO roll — sure progress, but it takes twice as long, so it spends both of a full rest's camp actions. "two copies": [CAMP_ACTION: <name> | craft | <item> | two copies] with their roll — a consumable made two at a time, the full time and both copies' materials. The CRAFTING lines below say where every project stands.\n` +
+        `Tool uses (Xanathar's; each needs proficiency with the tool AND the tool in their pack): make a disguise (disguise kit), compose a tune (an instrument) and paint (painter's supplies) need a FULL rest and no roll — [CAMP_ACTION: <name> | disguise|compose|paint]. Forge a document (forgery kit) and set a trap (thieves' tools) fit any rest and are settled by their own roll: [CAMP_ACTION: <name> | forge] or [CAMP_ACTION: <name> | set trap] in the SAME reply as a bare [[1d20+N]] (INT for the forgery, DEX for the trap, plus proficiency). The total becomes the DC to spot the fake or find the trap; a trap meets anyone who comes to fight in the night. None of these makes a catalog item — narrate what they made.\n` +
         `Level up (one level, only when their XP has earned it): [CAMP_ACTION: <name> | level up]. For rolled hit points, put it in the same reply as their Hit Die roll, e.g. [[1d8]]; with no roll, the fixed value applies. The system writes the numbers; the choices land on their sheet for them to make at the fire.\n` +
         `Train (learn a skill from someone who has MASTERED it - a companion or an NPC at the fire with expertise in it): [CAMP_ACTION: <name> | train | <teacher> | <skill>], e.g. [CAMP_ACTION: Samson | train | Eldeth | animal handling]. The system checks the teacher's sheet for expertise, banks the evening's hours and moves the clock; you narrate the lesson. A merely competent teacher is refused. Never say how many hours are banked or how many remain.\n` +
         `Emit [TIME:break_camp] if they pack up without resting.`,
@@ -1406,6 +1624,9 @@ export function formatCampBlock(s: CampBlockState): string {
     line += ` Open your next narration with their arrival.`
     parts.push(line)
   }
+  if (s.crafting?.length) {
+    parts.push(`CRAFTING (where each project stands — the system's count, not yours):\n${s.crafting.map((c) => `- ${c}`).join("\n")}`)
+  }
   if (s.results?.length) {
     parts.push(`SETTLED BY THE DICE this turn (facts — narrate them, never the numbers):\n${s.results.map((r) => `- ${r}`).join("\n")}`)
   }
@@ -1414,6 +1635,15 @@ export function formatCampBlock(s: CampBlockState): string {
 CAMP (facts from the system — never reveal numbers or rolls to players)
 ════════════════════════════════════════════════════════════════════
 ${parts.join("\n\n")}`
+}
+
+
+/** One CRAFTING line for the camp block. */
+export function craftingLine(p: { crafter: string; item: string; successes: number; checks: number; copies: number; finished: boolean }): string {
+  const what = p.copies > 1 ? `${p.copies} ${p.item}s` : p.item
+  return p.finished
+    ? `${p.crafter} finished ${what} this camp — in their pack.`
+    : `${p.crafter} is making ${what}: ${p.successes} of ${p.checks} good hour${p.checks === 1 ? "" : "s"} done.`
 }
 
 // ============================================================================
@@ -1472,6 +1702,11 @@ const ACTION_ALIASES: Record<string, CampAction> = {
   explore: "explore", exploring: "explore", scout: "explore",
   perform: "perform", performance: "perform", music: "perform", play_music: "perform", entertain: "perform", entertaining: "perform",
   talk: "talk",
+  disguise: "disguise", create_disguise: "disguise", make_disguise: "disguise",
+  forge: "forge", forgery: "forge", quick_fake: "forge", forge_document: "forge", fake: "forge",
+  compose: "compose", compose_a_tune: "compose", compose_tune: "compose", write_song: "compose", song: "compose",
+  paint: "paint", painting: "paint", draw: "paint", drawing: "paint", sketch: "paint",
+  set_trap: "set_trap", set_a_trap: "set_trap", trap: "set_trap",
   train: "train", training: "train", teach: "train", teaching: "train", learn: "train", learning: "train", lesson: "train", lessons: "train", study: "train", practice: "train", practise: "train",
 }
 
@@ -1830,7 +2065,9 @@ export interface CraftMenuOption {
   dc: number | null
   checks: number | null
   /** §18 — an open project: materials already paid, work banked. */
-  progress: { successes: number; checks: number } | null
+  progress: { successes: number; checks: number; copies: number } | null
+  /** Two-Parts — a consumable may be made two at a time: the full time, both copies' materials. Null when not offered. */
+  twoCopies: { checks: number; materialsGp: number; available: boolean } | null
 }
 
 export type CraftMenu = Record<CraftCategory, CraftMenuOption[]>
@@ -1850,7 +2087,7 @@ export function craftMenu(input: {
   /** The node's facilities, e.g. `travel_nodes.metadata.facilities`. */
   facilities?: string[] | null
   /** §18 — this crafter's open `crafting_projects` rows. */
-  openProjects?: { item_id: string; successes: number }[] | null
+  openProjects?: { item_id: string; successes: number; copies?: number | null }[] | null
   /** §18 — `sheet_skill_proficiencies`, for Xanathar's tool-and-skill advantage. */
   skills?: Record<string, unknown> | null
 }): CraftMenu {
@@ -1875,8 +2112,10 @@ export function craftMenu(input: {
     const tools = recipeTools(recipe)
     const known = tools.filter((t) => profs.has(toolKey(t)))
     const tool = known.find((t) => holding({ name: t }) >= 1) ?? known[0] ?? recipe.tools
-    const { spec, reason } = craftSpec({ rarity: row.rarity ?? null, item_type: row.item_type ?? null }, recipe, tool)
     const open = (input.openProjects ?? []).find((p) => p.item_id === row.id) ?? null
+    const openCopies = Math.max(1, Math.trunc(Number(open?.copies ?? 1)))
+    const itemKind = { rarity: row.rarity ?? null, item_type: row.item_type ?? null }
+    const { spec, reason } = craftSpec(itemKind, recipe, tool, { copies: openCopies })
     const missing: string[] = []
     if (!known.length) missing.push(`Not proficient with ${tools.join(" or ")}.`)
     if (holding({ name: tool }) < 1) missing.push(`No ${known.length ? tool : tools.join(" or ")} carried.`)
@@ -1897,7 +2136,13 @@ export function craftMenu(input: {
       advantage: craftAdvantage(tool, input.skills),
       valueGp, materialsGp, available: missing.length === 0, missing, source: recipe.source ?? null,
       dc: spec?.dc ?? null, checks: spec?.checks ?? null,
-      progress: open && spec ? { successes: Math.max(0, open.successes), checks: spec.checks } : null,
+      progress: open && spec ? { successes: Math.max(0, open.successes), checks: spec.checks, copies: openCopies } : null,
+      twoCopies: !open && twoCopiesAllowed(itemKind, recipe)
+        ? (() => {
+            const two = craftSpec(itemKind, recipe, tool, { copies: 2 }).spec
+            return two ? { checks: two.checks, materialsGp: materialsGp * 2, available: missing.length === 0 && gold >= materialsGp * 2 } : null
+          })()
+        : null,
     })
   }
   for (const c of CRAFT_CATEGORIES) {
@@ -2169,6 +2414,7 @@ export function craftSpec(
   item: { rarity: string | null; item_type: string | null },
   recipe: CraftRecipe,
   tool: string = recipe.tools,
+  opts: { copies?: number } = {},
 ): { spec: CraftSpec | null; reason: string | null } {
   const flags: string[] = []
   const abilities = CRAFT_TOOL_ABILITIES[toolKey(tool)]
@@ -2185,7 +2431,8 @@ export function craftSpec(
   let hours = Math.max(1, Number(recipe.hours ?? row.hours))
   // Consumables take half the time, minimum one hour — unless the recipe's
   // own source already printed the hours for this very item.
-  if (recipe.hours == null && (item.item_type ?? "").toLowerCase() === "consumable") hours = Math.max(1, hours / 2)
+  // Two copies (Two-Parts, Sam 2026-09-27): the full time instead, for two.
+  if (recipe.hours == null && (item.item_type ?? "").toLowerCase() === "consumable" && (opts.copies ?? 1) < 2) hours = Math.max(1, hours / 2)
   return { spec: { dc, hours, checks: Math.ceil(hours), abilities, flags }, reason: null }
 }
 
@@ -2267,6 +2514,56 @@ export function settleCraftRoll(input: {
       : `${input.crafter} makes good progress on the ${input.item} — ${left} more hour${left === 1 ? "" : "s"} of good work to go.`
     : `${input.crafter} spends the hour on the ${input.item} and it comes to nothing; the work already done still holds.`
   return { success, total, successes, attempts, done, note }
+}
+
+
+// ---------------------------------------------------------------------------
+// Take 10 and two copies (Two-Parts Crafting; Sam, 2026-09-27: "build them")
+// ---------------------------------------------------------------------------
+//
+// TAKE 10: skip the roll and succeed, but the work takes twice as long. One
+//   camp action is one hour, so taking 10 spends TWO actions — a full rest's
+//   whole evening — for one hour of banked progress. A partial rest (one
+//   action) cannot take 10.
+// TWO COPIES: a consumable normally takes half the time for one copy. The
+//   crafter may instead spend the full time and make two, paying materials
+//   for both. Not for an item whose source prints its own hours — that time
+//   is already the item's own. Chosen when the project starts; an open
+//   project keeps the choice it began with.
+
+export const CRAFT_TAKE10_ACTIONS = 2
+
+/** The extra words after the item in `[CAMP_ACTION: who | craft | item | …]`. */
+export function parseCraftOptions(args: readonly string[]): { take10: boolean; copies: 1 | 2 } {
+  const words = args.map((a) => a.trim().toLowerCase())
+  const take10 = words.some((w) => /^take\s*-?\s*10$|^take\s+ten$/.test(w))
+  const copies = words.some((w) => /^(two|2)\s*(copies|copy)$|^x\s*2$|^double$/.test(w)) ? 2 : 1
+  return { take10, copies }
+}
+
+/** Whether this item may be made two at a time. */
+export function twoCopiesAllowed(item: { item_type: string | null }, recipe: CraftRecipe): boolean {
+  return (item.item_type ?? "").toLowerCase() === "consumable" && recipe.hours == null
+}
+
+/** Taking 10: no roll, one hour banked, two camp actions spent. */
+export function settleTake10(input: {
+  crafter: string
+  item: string
+  spec: CraftSpec
+  successes: number
+  attempts: number
+  copies?: number
+}): CraftRollOutcome {
+  const successes = Math.max(0, input.successes) + 1
+  const attempts = Math.max(0, input.attempts) + 1
+  const done = successes >= input.spec.checks
+  const left = input.spec.checks - successes
+  const made = (input.copies ?? 1) > 1 ? `${input.copies} ${input.item}s` : `the ${input.item}`
+  const note = done
+    ? `${input.crafter} takes it slow and sure, and finishes ${made}. In their pack.`
+    : `${input.crafter} takes it slow and sure — no roll, a whole evening for one hour's sound work on ${made}; ${left} more hour${left === 1 ? "" : "s"} to go.`
+  return { success: true, total: 10, successes, attempts, done, note }
 }
 
 /** Every tool that makes this item: the main one, then any alternatives. */

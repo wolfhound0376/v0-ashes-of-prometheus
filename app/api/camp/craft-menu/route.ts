@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     admin.from("inventory_items").select("name, quantity, items(slug)").eq("character_id", characterId),
     admin.from("party_position").select("node_id").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
     // Open projects (§18): materials already paid, only the work remains.
-    admin.from("crafting_projects").select("item_id, successes").eq("character_id", characterId).is("finished_at", null),
+    admin.from("crafting_projects").select("item_id, successes, copies").eq("character_id", characterId).is("finished_at", null),
   ])
 
   let facilities: string[] = []
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
     carried,
     currency: character.sheet_currency,
     facilities,
-    openProjects: (open ?? []) as { item_id: string; successes: number }[],
+    openProjects: (open ?? []) as { item_id: string; successes: number; copies: number | null }[],
     skills: (character.sheet_skill_proficiencies ?? null) as Record<string, unknown> | null,
   })
   return Response.json({ menu })
