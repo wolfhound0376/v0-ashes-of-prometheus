@@ -1,7 +1,7 @@
 # Xanathar's Guide to Everything: class options (ch. 1) and Character Names (Appendix B), notes for later
 
 **Status:** reference only. Nothing here is wired.
-**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 12–30, 37–50, 175–180; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
+**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 12–30, 37–60, 175–180; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
 **Companion:** `docs/reference/xanathars-ch2-dm-tools-notes.md` (ch. 2, DM's tools).
 
 > **Edition check, read first.** Xanathar's is a **2014-rules** book. The party's sheets look built on the **2024** rules: Kenta has *Innate Sorcery* and Fifi has *Weapon Mastery*, both 2024-only features. The difference matters for timing.
@@ -197,7 +197,7 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
 - **Mastermind** adds a disguise kit and a forgery kit, which the crafting menu would count as tools.
 - Both come through the existing proficiency lists, with no new wiring.
 
-## 8. Sorcerer (ch. 1, pp. 48–50)
+## 8. Sorcerer (ch. 1, pp. 48–52)
 
 **Who this is for.** **Kenta** is a level-1 half-elf sorcerer. His sheet shows *Innate Sorcery* (2024) and no origin: in 2014 that choice comes at level 1, in 2024 at level 3. See the edition check at the top.
 
@@ -207,12 +207,60 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
   - Level 6: Empowered Healing.
   - Level 14: Otherworldly Wings.
   - Level 18: Unearthly Recovery.
-- **Shadow Magic:** only the opening was photographed. It includes the d6 table of shadow-sorcerer quirks (cold to the touch, a heartbeat once a minute…); the features are on the next page.
-- **Storm Sorcery:** not photographed.
+- **Shadow Magic.** It comes with a d6 table of quirks (cold to the touch, a heartbeat once a minute…).
+  - Level 1: **Eyes of the Dark**, darkvision 120 ft; from level 3, *darkness* for 2 sorcery points, and the sorcerer sees through it. **Strength of the Grave:** when damage would drop the sorcerer to 0 hp, a CHA save (DC 5 + the damage) leaves them at 1 hp instead. It doesn't work against radiant damage or a critical hit, and once it succeeds it's gone until a long rest.
+  - Level 6: Hound of Ill Omen, 3 sorcery points for a shadow hound that hunts one target.
+  - Level 14: **Shadow Walk**, a bonus-action teleport of up to 120 ft from dim light or darkness to dim light or darkness.
+  - Level 18: Umbral Form.
+- **Storm Sorcery.**
+  - Level 1: Wind Speaker (Primordial and its dialects); Tempestuous Magic, a free 10-ft flight around casting a 1st-level-or-higher spell.
+  - Level 6: Heart of the Storm (resistance, and a burst of lightning or thunder when casting those spells); Storm Guide (stop rain or steer wind).
+  - Level 14: Storm's Fury.
+  - Level 18: Wind Soul.
+  - Weather rarely applies underground.
 
-**Why it matters here.** A **sign of sorcery** is exactly the kind of detail Malachar should repeat every time Kenta casts. It's flavour, so it's his to voice, but only if it's written on the sheet (`sheet_appearance` or `sheet_backstory`), where the prompt can see it.
+**Why it matters here.**
+- A **sign of sorcery** is exactly the kind of detail Malachar should repeat every time Kenta casts. It's flavour, so it's his to voice, but only if it's written on the sheet (`sheet_appearance` or `sheet_backstory`), where the prompt can see it.
+- **Shadow Magic is the Underdark origin.** Nearly everywhere counts as darkness, so Shadow Walk works almost anywhere.
+- If Kenta takes Shadow Magic, **Strength of the Grave has to be honoured where `/api/chat` applies `[DAMAGE:]`**. That code would need to know the feature, whether it's been used since the last long rest, and whether the hit was radiant or a critical. **That's a code change, not a prompt line.**
 
-## 9. Character names (Appendix B, pp. 175–180)
+## 9. Warlock (ch. 1, pp. 53–58)
+
+**No warlock in the party.**
+
+- **Character flavour:** d6 tables for the patron's attitude, special terms of the pact (abstain from alcohol, never wear the same outfit twice…) and **binding mark** (an eye that matches the patron's, a vestigial tail, a nose that glows in the dark…).
+- **The Celestial.**
+  - Level 1: expanded spells; *light* and *sacred flame* as bonus cantrips; **Healing Light**, a pool of d6s (1 + warlock level) spent as a bonus action to heal at 60 ft, up to CHA-mod dice at a time.
+  - Level 6: Radiant Soul.
+  - Level 10: **Celestial Resilience**, temporary hp for the warlock and up to five others **at the end of every short or long rest**.
+  - Level 14: Searing Vengeance.
+- **The Hexblade.**
+  - Level 1: expanded spells; **Hexblade's Curse** (bonus action, one target for a minute: + proficiency to damage, crits on 19–20, hp back if it dies); **Hex Warrior** (medium armour, shields, martial weapons, and CHA for attacks with one weapon).
+  - Level 6: Accursed Specter.
+  - Level 10: Armor of Hexes.
+  - Level 14: Master of Hexes.
+- **New eldritch invocations (pp. 56–57):**
+  - **Aspect of the Moon:** no sleep needed, and eight hours of light activity **such as keeping watch** counts as a long rest.
+  - Cloak of Flies, Eldritch Smite, Ghostly Gaze, Gift of the Depths, Gift of the Ever-Living Ones, Grasp of Hadar, Improved Pact Weapon, Lance of Lethargy, Maddening Hex, Relentless Hex, Shroud of Shadow, Tomb of Levistus, Trickster's Escape.
+
+**Why it matters here.**
+- **Aspect of the Moon** lets a warlock take every watch without losing the long rest (camp doc §3).
+- **Celestial Resilience** is a rest-end effect. It would sit where the rest code already hands out rest results.
+- Neither needs building until someone plays a warlock.
+
+## 10. Wizard (ch. 1, pp. 58–60)
+
+**No wizard in the party.**
+
+- **Character flavour:** d6 tables for spellbook (metal sheets etched with acid, inscribed stones in a bag, black pages readable only in dim light or darkness…), ambition and eccentricity.
+- **War Magic.**
+  - Level 2: **Arcane Deflection** (a reaction for +2 AC or +4 to a save, then only cantrips until the end of the next turn); **Tactical Wit** (INT added to initiative).
+  - Level 6: Power Surge, stored energy for extra force damage.
+  - Level 10: Durable Magic, +2 AC and saves while concentrating.
+  - Level 14: Deflecting Shroud.
+- **Edition note.** The subclass comes at level 2 in 2014 and level 3 in 2024. The same goes for the warlock: level 1 in 2014, level 3 in 2024.
+
+## 11. Character names (Appendix B, pp. 175–180)
 
 **What it is.** A set of **d100 tables of names**, each with 50 names, two numbers per name. They're sorted by people and by kind of name:
 
