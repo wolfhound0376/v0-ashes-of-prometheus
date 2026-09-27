@@ -239,6 +239,8 @@ interface CellsJson {
   cells: {
     floor: { sq: [number, number]; water?: boolean; island?: boolean }[]
     water?: { sq: [number, number]; water?: boolean; island?: boolean }[]
+    /** Difficult terrain: walkable at double cost (SRD 5.1, Combat: Difficult Terrain). */
+    difficult?: { sq: [number, number]; water?: boolean; island?: boolean }[]
     doors?: { sq: [number, number]; dir?: [number, number]; type?: string; locked?: boolean; initially_open?: boolean; texture?: string; lock_dc?: number; lock_note?: string }[]
   }
   exits?: { type?: string; cells: [number, number][] }[]
@@ -706,6 +708,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   // rather than a guess from the map's name.
   const waterRef = useRef<Set<string>>(new Set())
   const bridgeRef = useRef<Set<string>>(new Set())
+  // Difficult terrain (cells.difficult): walkable, but each square costs two.
+  const difficultRef = useRef<Set<string>>(new Set())
   const reachRef = useRef<{
     tokenId: string
     /** cost is PATH length in squares (around walls), not straight-line. */
@@ -4106,7 +4110,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const mx = (pts[i - 1].x + pts[i].x) / 2
           const mz = (pts[i - 1].z + pts[i].z) / 2
           const k = Math.floor(mx / SQ) + "," + Math.floor(mz / SQ)
-          hop.push(!wades && waterRef.current.has(k) && !bridgeRef.current.has(k))
+          // Rapids declared difficult are forded on foot, at double cost - a wade, not a leap.
+          hop.push(!wades && waterRef.current.has(k) && !bridgeRef.current.has(k) && !difficultRef.current.has(k))
         }
       }
       entry.obj.userData.glide = { pts, seg, total: seg[seg.length - 1], s: 0, hop }
@@ -4794,28 +4799,34 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         blockStop.add(k)
         if (!row.character_id) blockPass.add(k)
       })
-      // 8-way BFS, one square = 5 ft, diagonals flat (PHB 5-5-5 — the same
-      // arithmetic the server's Chebyshev floor assumes).
+      // 8-way, one square = 5 ft, diagonals flat (PHB 5-5-5 — the same
+      // arithmetic the server's Chebyshev floor assumes). A difficult square
+      // costs 2 to enter (SRD 5.1, Combat: Difficult Terrain), so this is a
+      // bucket Dijkstra; with no difficult terrain it is exactly the old BFS.
+      // The cost sent to the server is this one, so the rapids are paid for.
       const start = tok.row.grid_x + "," + tok.row.grid_y
       const dist = new Map<string, number>([[start, 0]])
       reachParents = new Map()
-      const queue: string[] = [start]
-      while (queue.length) {
-        const cur = queue.shift()!
-        const d = dist.get(cur)!
-        if (d >= dashBudget) continue
-        const [cx, cy] = cur.split(",").map(Number)
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (!dx && !dy) continue
-            const nx = cx + dx
-            const ny = cy + dy
-            if (nx < 0 || ny < 0 || nx >= m.grid_width || ny >= m.grid_height) continue
-            const nk = nx + "," + ny
-            if (dist.has(nk) || !passable(nk) || blockPass.has(nk)) continue
-            dist.set(nk, d + 1)
-            reachParents.set(nk, cur)
-            queue.push(nk)
+      const buckets: string[][] = [[start]]
+      for (let d = 0; d < buckets.length && d < dashBudget; d++) {
+        for (const cur of buckets[d] ?? []) {
+          if (dist.get(cur) !== d) continue
+          const [cx, cy] = cur.split(",").map(Number)
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (!dx && !dy) continue
+              const nx = cx + dx
+              const ny = cy + dy
+              if (nx < 0 || ny < 0 || nx >= m.grid_width || ny >= m.grid_height) continue
+              const nk = nx + "," + ny
+              if (!passable(nk) || blockPass.has(nk)) continue
+              const nd = d + (difficultRef.current.has(nk) ? 2 : 1)
+              if (nd > dashBudget) continue
+              if (dist.has(nk) && dist.get(nk)! <= nd) continue
+              dist.set(nk, nd)
+              reachParents.set(nk, cur)
+              ;(buckets[nd] ??= []).push(nk)
+            }
           }
         }
       }
@@ -5231,7 +5242,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           const R = cells.render ?? {}
           const walk = new Set<string>()
           const islandSet = new Set<string>()
-          for (const c of [...cells.cells.floor, ...(cells.cells.water ?? [])]) {
+          for (const c of [...cells.cells.floor, ...(cells.cells.water ?? []), ...(cells.cells.difficult ?? [])]) {
             const k = c.sq.join(",")
             if (c.island) islandSet.add(k)
             else walk.add(k)
@@ -5240,6 +5251,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // exporter writes cells.water and leaves floor[].water unset, which
           // is why this reads the array rather than the flag.
           waterRef.current = new Set((cells.cells.water ?? []).map((c) => c.sq.join(",")))
+          difficultRef.current = new Set((cells.cells.difficult ?? []).map((c) => c.sq.join(",")))
           // A walkway exit is the rope bridge between two nodes. The type has
           // been declared on this shape all along; nothing read it until now.
           bridgeRef.current = new Set(
