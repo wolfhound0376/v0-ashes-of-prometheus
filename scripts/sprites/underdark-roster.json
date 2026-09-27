@@ -345,5 +345,27 @@
     "pixellab_character_id": "4e296261-58b9-4b0e-9d73-00f3446ace09",
     "size_by": "height",
     "target_ft": 5.9
+  },
+  {
+    "slug": "bugbear",
+    "name": "Bugbear",
+    "pixellab_character_id": "1244b4bd-f3d4-48ba-bd42-ffb408bc3cef",
+    "size_by": "height",
+    "target_ft": 7.0,
+    "note": "measured to the top of the head, not the spear tips on its back"
+  },
+  {
+    "slug": "bandit-captain",
+    "name": "Bandit Captain",
+    "pixellab_character_id": "af03631c-1963-48d4-adab-007de5fcf8fb",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "cult-fanatic",
+    "name": "Cult Fanatic",
+    "pixellab_character_id": "92c98338-8a20-4cd4-a134-6ee55718576b",
+    "size_by": "height",
+    "target_ft": 5.9
   }
 ]
