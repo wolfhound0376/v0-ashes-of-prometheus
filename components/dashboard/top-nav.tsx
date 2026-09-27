@@ -9,7 +9,7 @@
 // (or show a "coming in a later round" note) rather than dead-ending.
 
 import type { ReactNode } from "react"
-import { BookOpen, Flame, Map, ScrollText, Settings, Skull, Smartphone, Users } from "lucide-react"
+import { BookOpen, Flame, Map, ScrollText, Settings, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
@@ -73,24 +73,6 @@ export function TopNav({
           </div>
         </div>
       </div>
-
-      {onToggleDmMode ? (
-        <button
-          type="button"
-          onClick={onToggleDmMode}
-          aria-pressed={dmMode}
-          aria-label="Toggle DM Mode"
-          className={cn(
-            "absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-[3px] border px-3 py-1.5 text-xs transition-colors",
-            dmMode
-              ? "border-[#8a5fb0]/70 bg-[#1a1020] text-[#c9a0e8]"
-              : "border-[#7a5f33]/50 bg-[#120e0a] text-stone-500 hover:border-[#c9a868]/60 hover:text-[#e0cfa0]",
-          )}
-        >
-          <Skull className="h-3.5 w-3.5" />
-          DM Mode: {dmMode ? "On" : "Off"}
-        </button>
-      ) : null}
 
       {controlSlot ? <div className="ml-auto flex items-center gap-2 pr-2">{controlSlot}</div> : null}
 
