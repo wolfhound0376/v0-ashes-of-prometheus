@@ -507,23 +507,10 @@ export function V4Dashboard(props: V4DashboardProps) {
   // falls below the panel and the feet meet the ground line. Both default to
   // the previous behaviour (1 / 0), so untuned characters are unchanged.
   const stageFrame = characterStageStyle(selected as (Character & StageFramingRow) | undefined)
-  // Talking by the fire: the big scene is the camp, and the figure standing in
-  // it is the person you sat down with, not your own point of view (Sam,
-  // 2026-09-27 — "the first image character should be the character I chose
-  // to talk to"). Their idle loop at rest, their talking loop as they speak.
-  const partnerNpc = talkPartner?.kind === "npc" ? talkPartner.npc : undefined
-  const partnerStageMedia = talkMode
-    ? partnerPlayer
-      ? ((playerTalking ? partnerPlayer.talking_url : null) || partnerPlayer.idle_url || partnerPlayer.portrait_image_url || partnerPlayer.avatar_image_url)
-      : partnerNpc
-        ? ((speakingNpc?.id === partnerNpc.id ? partnerNpc.talking_url : null) || partnerNpc.idle_url || partnerNpc.portrait_url || partnerNpc.face_url)
-        : null
-    : null
-  const sceneMedia = talkMode ? partnerStageMedia : characterStageMedia
-  const sceneName = talkMode ? (partnerPlayer?.name ?? partnerNpc?.name ?? props.talkWith ?? "") : (selected?.name ?? "Active character")
-  const sceneFrame = talkMode
-    ? characterStageStyle((partnerPlayer ?? partnerNpc) as StageFramingRow | undefined)
-    : stageFrame
+  // Talking by the fire: the big scene is the camp plate, and the figure in it
+  // is still YOUR character (Sam, 2026-09-27: "bottom portrait window should
+  // be the character playing") — the person you sat with owns the head window
+  // above. Caption says where you are rather than which room.
   const sceneImage = talkPlate ?? props.environment.imageUrl
   const inCombat = props.npcEncounters.some((npc) => npc.is_active && isCombatant(npc.challenge_rating))
   // A fight breaking out sends this browser to the board — once per fight,
@@ -854,11 +841,11 @@ export function V4Dashboard(props: V4DashboardProps) {
         </div>
         {stageMode === "scene" ? <>
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
-          {sceneMedia ? (isVideoUrl(sceneMedia)
-            ? <video key={sceneMedia} src={sceneMedia} autoPlay loop muted playsInline aria-hidden="true" style={sceneFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
-            : <img src={sceneMedia} alt={sceneName} style={sceneFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+          {characterStageMedia ? (isVideoUrl(characterStageMedia)
+            ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+            : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
-          <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">{talkMode ? "By the fire" : "Point of view"}</span><b className="font-serif text-[10px] text-[#e1d0a8]">{sceneName} · {talkBiome ? CAMP_BIOME_LABEL[talkBiome] : props.environment.name}</b></div>
+          <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">{talkMode ? "By the fire" : "Point of view"}</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {talkBiome ? CAMP_BIOME_LABEL[talkBiome] : props.environment.name}</b></div>
         </> : <>
           <MapPanel initial="location" onBack={() => setStageMode("scene")} />
           {/* The battle board is a PLACE, not a panel. Rendering it inside
