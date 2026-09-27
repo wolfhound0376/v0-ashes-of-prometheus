@@ -1,8 +1,14 @@
 # Xanathar's Guide to Everything: class options (ch. 1) and Character Names (Appendix B), notes for later
 
 **Status:** reference only. Nothing here is wired.
-**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 12–30, 37–40, 175–180; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
+**Source:** pages Sam photographed from his copy, 2026-09-27 (pp. 12–30, 37–50, 175–180; several ch. 1 photos are low-resolution, so those features are given in outline only). They're summarised in Claude's words with page numbers, and the name tables are described, not copied. Check the book before quoting a rule to players.
 **Companion:** `docs/reference/xanathars-ch2-dm-tools-notes.md` (ch. 2, DM's tools).
+
+> **Edition check, read first.** Xanathar's is a **2014-rules** book. The party's sheets look built on the **2024** rules: Kenta has *Innate Sorcery* and Fifi has *Weapon Mastery*, both 2024-only features. The difference matters for timing.
+> - In 2014, a cleric picks a domain and a sorcerer an origin **at level 1**.
+> - In 2024, every class picks its subclass **at level 3**.
+>
+> So using these subclasses with these characters is **Sam's ruling to make**, and the level they come in at follows whichever edition he picks. The sheets' feature lists also look incomplete: Bastet is a level-5 barbarian with no path, Extra Attack or Reckless Attack listed. So a missing feature on a sheet is not proof it was never chosen.
 
 ---
 
@@ -42,7 +48,10 @@
 
 ## 2. Cleric (ch. 1, pp. 16–20)
 
-**Who this is for.** The party's cleric is **Samson**, a level-1 human, per the live `characters` table on 2026-09-27. **His sheet records no Divine Domain.** `sheet_features` lists Spellcasting and the Acolyte background only. A 5e cleric picks a domain at level 1, so **Samson's player needs to choose one**. The choices are the Player's Handbook domains, or these two.
+**Who this is for.** The party's cleric is **Samson**, a level-1 human, per the live `characters` table on 2026-09-27. His sheet records no Divine Domain: `sheet_features` lists Spellcasting and the Acolyte background only.
+- Under 2014 rules, he'd need one now.
+- Under the 2024 rules his sheet appears to follow, he picks at level 3.
+- See the edition check at the top.
 
 **Character flavour (pp. 16–17), three d6 tables:**
 - **Temple:** where they trained.
@@ -134,14 +143,76 @@ Domain spells: *bane, false life · gentle repose, ray of enfeeblement · revivi
 
 **Why it matters here.** Both oaths make good **NPC templates**. A Conquest paladin is the natural shape for a demon-hunting zealot in *Out of the Abyss*, and a Redemption paladin for someone trying to talk a drow patrol down. Stat blocks for any such NPC still come from the bestiary or the campaign book, never from these class features (AGENTS.md §8, "no silent default").
 
-## 6. Ranger (ch. 1, p. 40, first page only)
+## 6. Ranger (ch. 1, pp. 40–43)
 
 **No ranger in the party.**
 
-- **Character flavour:** d6 tables for view of the world (towns and cities, from "necessary" to "breeds weakness") and **homeland**. One homeland is **the Underdark**, a childhood spent learning to fight its creatures, which suits a character built for this campaign.
-- The archetypes follow on later pages, which weren't photographed.
+- **Character flavour:** d6 tables for view of the world, **homeland** and sworn enemy. One homeland is **the Underdark**, a childhood spent learning to fight its creatures.
+- **Gloom Stalker, the Underdark archetype.** The book says they're often found there.
+  - Level 3: extra spells (*disguise self, rope trick, fear, greater invisibility, seeming*). **Dread Ambusher:** WIS added to initiative, and on the first turn of combat +10 ft speed and an extra attack that deals +1d8. **Umbral Sight:** darkvision 60 ft (or +30 ft), and **invisible in darkness to anything relying on darkvision**, which covers most of the Underdark, drow included.
+  - Level 7: Iron Mind, WIS save proficiency.
+  - Level 11: Stalker's Flurry.
+  - Level 15: Shadowy Dodge.
+- **Horizon Walker.**
+  - Level 3: extra spells; Detect Portal (within 1 mile); Planar Warrior (a hit becomes force damage, +1d8, later 2d8).
+  - Level 7: Ethereal Step.
+  - Level 11: Distant Strike.
+  - Level 15: Spectral Defense.
+- **Monster Slayer.**
+  - Level 3: extra spells; Hunter's Sense (learn a creature's immunities, resistances and vulnerabilities); Slayer's Prey (+1d6 once per turn against one marked foe).
+  - Level 7: Supernatural Defense.
+  - Level 11: Magic-User's Nemesis.
+  - Level 15: Slayer's Counter.
 
-## 7. Character names (Appendix B, pp. 175–180)
+**Why it matters here.** Umbral Sight is the one to know even without a ranger. A Gloom Stalker NPC or rival is **invisible to the drow of Velkynvelve in the dark**. If Malachar runs one, that's the rule, not a flourish.
+
+## 7. Rogue (ch. 1, pp. 44–47)
+
+**Who this is for.** **Fifi of Copperas Cove** is a level-1 human rogue. Rogues pick an archetype at level 3 in both editions.
+
+- **Character flavour:** d6 tables for guilty pleasure, adversary (a pirate captain, a spymaster, a thieves' guild master…) and benefactor (a smuggler, the Beggar King, a dragon who didn't eat you…).
+- **Inquisitive.**
+  - Level 3: **Ear for Deceit** (an Insight roll of 7 or lower counts as 8); **Eye for Detail** (Perception or Investigation as a bonus action); **Insightful Fighting** (a bonus-action Insight contest that allows Sneak Attack without advantage for a minute).
+  - Level 9: Steady Eye.
+  - Level 13: Unerring Eye (sense illusions and shapechangers).
+  - Level 17: Eye for Weakness.
+- **Mastermind.**
+  - Level 3: **Master of Intrigue** (disguise kit, forgery kit, a gaming set, two languages, and mimicking speech); **Master of Tactics** (Help as a bonus action, at 30 ft).
+  - Level 9: Insightful Manipulator.
+  - Level 13: Misdirection.
+  - Level 17: Soul of Deceit.
+- **Scout.**
+  - Level 3: **Skirmisher** (a reaction move away when an enemy ends its turn next to you); **Survivalist** (Nature and Survival with **doubled proficiency**).
+  - Level 9: Superior Mobility.
+  - Level 13: Ambush Master.
+  - Level 17: Sudden Strike.
+- **Swashbuckler.**
+  - Level 3: **Fancy Footwork** (no opportunity attacks from someone you've attacked); **Rakish Audacity** (CHA added to initiative, and Sneak Attack when you and the target are alone in melee).
+  - Level 9: Panache (charm or taunt with Persuasion).
+  - Level 13: Elegant Maneuver.
+  - Level 17: Master Duelist.
+
+**Why it matters here.**
+- **Scout** doubles Survival, the skill the `forage`/`hunt` camp actions roll. That makes a Scout the party's best forager.
+- **Mastermind** adds a disguise kit and a forgery kit, which the crafting menu would count as tools.
+- Both come through the existing proficiency lists, with no new wiring.
+
+## 8. Sorcerer (ch. 1, pp. 48–50)
+
+**Who this is for.** **Kenta** is a level-1 half-elf sorcerer. His sheet shows *Innate Sorcery* (2024) and no origin: in 2014 that choice comes at level 1, in 2024 at level 3. See the edition check at the top.
+
+- **Character flavour:** d6 tables for arcane origin (a bloodline, a reincarnation, a prophecy, "made in a vat by an alchemist"), how people reacted, supernatural mark and **sign of sorcery** (what visibly happens when you cast).
+- **Divine Soul.**
+  - Level 1: **Divine Magic**, which lets you learn spells from the cleric list, plus one bonus spell by affinity: good *cure wounds*, evil *inflict wounds*, law *bless*, chaos *bane*, neutrality *protection from evil and good*. **Favored by the Gods:** add 2d4 to a failed save or missed attack, once per short rest.
+  - Level 6: Empowered Healing.
+  - Level 14: Otherworldly Wings.
+  - Level 18: Unearthly Recovery.
+- **Shadow Magic:** only the opening was photographed. It includes the d6 table of shadow-sorcerer quirks (cold to the touch, a heartbeat once a minute…); the features are on the next page.
+- **Storm Sorcery:** not photographed.
+
+**Why it matters here.** A **sign of sorcery** is exactly the kind of detail Malachar should repeat every time Kenta casts. It's flavour, so it's his to voice, but only if it's written on the sheet (`sheet_appearance` or `sheet_backstory`), where the prompt can see it.
+
+## 9. Character names (Appendix B, pp. 175–180)
 
 **What it is.** A set of **d100 tables of names**, each with 50 names, two numbers per name. They're sorted by people and by kind of name:
 
