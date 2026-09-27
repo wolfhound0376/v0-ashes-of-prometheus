@@ -352,12 +352,14 @@ A **dimmed** option lists what's missing in plain words ("No Poisoner's Kit carr
 
 **Until the crafting roll is wired**, a lit option reads "Ready — the crafting roll is coming soon" instead of a button that would cost nothing and make nothing. Two answers still wire it: which ability the roll uses, and what one success buys (§14).
 
-### The recipes — SRD-sourced, shown, NOT run
+### The recipes — SRD-sourced, APPLIED 2026-09-27
 
-The catalog has **0 recipes** today, so every tab would say "No recipes in the catalog yet". Four catalog items have a tool the SRD names outright. This is the SQL to give them recipes. **It has not been run.**
+Sam: "run the recipes." Applied to Supabase on 2026-09-27 and verified. Exactly these four items carry `properties.craft`, and every property they already had was kept. The file of record is `supabase/migrations/20260927020000_craft_recipes_srd.sql`.
+
+Checked against live data the same day: all four appear on **Alchemy** for every character, **all dimmed**. Nobody is proficient with a Herbalism or Poisoner's Kit, nobody carries one, and the purses run 0–50 gp. Fifi's Alchemist's Supplies proficiency lights nothing yet, because no recipe uses those supplies. That's correct for escaped prisoners.
 
 ```sql
--- PROPOSAL — not applied. Run in the Supabase SQL editor only after Sam says yes.
+-- APPLIED 2026-09-27 (Sam: "run the recipes").
 -- SRD 5.1 Equipment: Tools — "proficiency with this kit is required to create
 -- antitoxin and potions of healing" (Herbalism Kit); "the creation of poisons"
 -- (Poisoner's Kit). Tab: Alchemy (read from the tool).
@@ -378,7 +380,6 @@ Named materials are left off. The catalog's "spider venom gland feeds drow poiso
 
 ### Needs Sam's yes
 
-- **Run the recipe SQL above?**
 - **Which tools sit on which tab.** Claude's grouping of the SRD's tools under Sam's three names, in `TOOL_CATEGORY`:
   - **Alchemy:** Alchemist's Supplies, Herbalism Kit, Poisoner's Kit, Brewer's Supplies.
   - **Construct:** Building Hammer, and the smith's, carpenter's, mason's, leatherworker's, woodcarver's, weaver's, cobbler's, potter's and glassblower's tools.
