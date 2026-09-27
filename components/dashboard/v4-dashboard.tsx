@@ -558,7 +558,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   //
   // These MUST stay class-neutral. They previously read as cleric lines
   // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
-  // player whose generation failed was handed Samson's options ��������� the exact
+  // player whose generation failed was handed Samson's options ���������� the exact
   // leak the per-player chips exist to prevent. No class, no skill tag, no
   // named party member: whatever sits here is shown to EVERY seat at once.
   // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
@@ -1277,7 +1277,7 @@ function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { 
     <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
     <span className="absolute inset-x-0 top-2 z-10 bg-black/0 px-0.5 py-1 text-center font-serif text-[6px] font-bold uppercase tracking-[.04em] text-[#d3ae6b]/0 transition-[color,background-color,text-shadow] duration-200 delay-0 group-hover:bg-black/80 group-hover:text-[#ffe4a8] group-hover:[text-shadow:0_0_7px_#d79b3a] group-hover:delay-500">{name}</span>
     <span className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/92 to-transparent", sheet ? "h-11" : "h-[52px]")} />
-    <span className={cn("absolute inset-x-0 text-center font-serif font-extrabold leading-none text-[#fff6dc] [text-shadow:0_0_2px_#000,0_1px_3px_#000,0_0_8px_#e3a94a]", sheet ? "bottom-[19px] text-[15px]" : "bottom-[25px] text-[17px]")}>{ability.score}</span>
+    <span className={cn("absolute inset-x-0 text-center font-serif font-extrabold leading-none text-[#ffffff] [text-shadow:0_0_2px_#000,0_1px_3px_#000,0_0_8px_#ffffff]", sheet ? "bottom-[19px] text-[15px]" : "bottom-[25px] text-[17px]")}>{ability.score}</span>
     <span className={cn("absolute inset-x-0 text-center font-serif font-bold leading-none text-[#ffd27a] [text-shadow:0_0_2px_#000,0_1px_2px_#000]", sheet ? "bottom-[8px] text-[9px]" : "bottom-[13px] text-[10px]")}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
     <span className={cn("absolute inset-x-0 truncate text-center font-bold uppercase text-[#bfa36d]", sheet ? "bottom-0 px-0.5 text-[5px] tracking-[.05em]" : "bottom-[3px] px-0.5 text-[7px] tracking-[.12em]")}>{label}</span>
   </button>
