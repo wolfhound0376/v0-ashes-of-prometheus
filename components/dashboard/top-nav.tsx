@@ -9,7 +9,7 @@
 // (or show a "coming in a later round" note) rather than dead-ending.
 
 import type { ReactNode } from "react"
-import { BookOpen, Flame, Map, ScrollText, Settings, Smartphone, Users } from "lucide-react"
+import { BookOpen, Flame, Map, ScrollText, Settings, Shield, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
@@ -97,6 +97,25 @@ export function TopNav({
             </button>
           )
         })}
+
+        {onToggleDmMode && (
+          <button
+            type="button"
+            onClick={onToggleDmMode}
+            aria-pressed={dmMode}
+            aria-label={dmMode ? "Disable DM mode" : "Enable DM mode"}
+            title={dmMode ? "DM mode enabled" : "Enable DM mode"}
+            className={cn(
+              "ml-1 flex items-center gap-1.5 rounded-[3px] border px-2.5 py-1.5 text-xs transition-colors",
+              dmMode
+                ? "border-[#c9a868]/80 bg-[#2a1d10] text-[#f0ce79] shadow-[0_0_10px_rgba(201,168,104,0.2)]"
+                : "border-[#7a5f33]/50 bg-[#120e0a] text-stone-400 hover:border-[#c9a868]/60 hover:text-[#e0cfa0]",
+            )}
+          >
+            <Shield className="h-3.5 w-3.5" />
+            <span>DM</span>
+          </button>
+        )}
 
         {onCompact && (
           <button

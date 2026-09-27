@@ -1477,7 +1477,13 @@ if (error) {
       {view === "full" && <TopNav
         onCompact={() => switchView("compact")}
         dmMode={dmMode && !claimLocked}
-        onToggleDmMode={() => setDmMode((value) => !value)}
+        onToggleDmMode={() => {
+          if (dmMode) {
+            setDmMode(false)
+            return
+          }
+          if (ensureDmKey("enable DM mode")) setDmMode(true)
+        }}
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
