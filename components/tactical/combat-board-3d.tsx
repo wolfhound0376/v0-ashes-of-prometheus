@@ -146,6 +146,13 @@ const TILE_BASE =
 // 1 world unit = one 5-ft square, exactly as the local viewer had it.
 const SQ = 1.0
 
+// EVERY PIXEL FIGURE, A LITTLE BIGGER. A sprite's manifest ppu stands it at
+// its real height (AGENTS.md, the sprite height rule); on the board that read
+// too small next to the room (Sam, 9/27). One factor for all of them, so the
+// ratios between figures stay the book's and nobody has to bump model_scale
+// token by token.
+const SPRITE_BASE_SCALE = 1.15
+
 interface MapRow {
   id: string
   name: string
@@ -3451,6 +3458,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // No manifest: fall back to the disc rather than an empty square.
           if (!disposed && tokensRef.current.get(row.id)?.obj === g) buildPawn()
         })
+        rig.object.scale.setScalar(SPRITE_BASE_SCALE)
         g.add(rig.object)
         g.userData.spriteRig = rig
         // FOUND OUT. A figure drawn with a disguise (a shrieker's plain
