@@ -64,6 +64,8 @@ import {
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, kitVfxTypeFor, kitSplashFor, prewarmKit, loadSheet, Flip, type CastHandle, type DamageType } from "./spell-vfx-kit"
+import { createHitJuice, weightForHit, type HitWeight } from "@/lib/hit-juice"
+import { martialArtFor } from "@/lib/martial-arts"
 import { splashOnVictims } from "./spell-splash"
 import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
@@ -1111,9 +1113,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     let classic = DEFAULT_CLASSIC_CAM
     let orthoZoom = 1
     const activeCam = () => (classic ? orthoCam : camera)
-    const sizeOrtho = () => {
+    const sizeOrtho = (punch = 1) => {
       const aspect = mount.clientWidth / Math.max(1, mount.clientHeight)
-      const half = 9 / orthoZoom            // world units of visible half-height
+      const half = 9 / (orthoZoom * punch)  // world units of visible half-height
       orthoCam.left = -half * aspect
       orthoCam.right = half * aspect
       orthoCam.top = half
@@ -1139,6 +1141,25 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     mount.appendChild(renderer.domElement)
+
+    // ---- hit juice: the Street Fighter layer (lib/hit-juice) -------------
+    //
+    // The timing lives in that module and is unit-tested there; this is only
+    // the three places the board has to touch it: the flash needs somewhere to
+    // draw, the impact needs to report, and the loop needs to ask.
+    //
+    // The flash is a DOM overlay rather than a scene quad on purpose. It has
+    // to cover the WHOLE view including the bloom and vignette passes, and a
+    // quad inside the scene would be graded by them instead of sitting on top.
+    // pointer-events none so it never eats a click on the board beneath it.
+    const flashEl = document.createElement("div")
+    flashEl.style.cssText =
+      "position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;" +
+      "mix-blend-mode:screen;will-change:opacity"
+    if (getComputedStyle(mount).position === "static") mount.style.position = "relative"
+    mount.appendChild(flashEl)
+    const juice = createHitJuice()
+    let juiceWasActive = false
 
     // ---- the HD-2D grade: render -> bloom -> tone -> vignette ----
     // Half-float buffers so bloom can tell a torch (brighter than white) from
@@ -1217,22 +1238,38 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     let az = HD2D.yaw0                     // where the camera is now, mid-glide
     const azGoal = () => HD2D.yaw0 + azStep * (Math.PI / 2) + azFree
     let dist = 22
-    const applyCamera = () => {
+    /**
+     * `kick` is the hit-juice offset for this frame (lib/hit-juice): a shake
+     * in board units and a zoom fraction. It is a PARAMETER rather than state
+     * the camera accumulates, because a shake added to camera.position each
+     * frame would drift — applyCamera is not called every frame, so there is
+     * nothing to reset it. Passing it means every call recomputes the true
+     * position first and the offset can never build up; when the shake ends,
+     * one ordinary applyCamera() puts the camera back exactly.
+     */
+    const applyCamera = (kick?: { shakeX: number; shakeY: number; zoom: number }) => {
+      const sx = kick?.shakeX ?? 0
+      const sy = kick?.shakeY ?? 0
+      const z = kick?.zoom ?? 0
+      // Zoom punches in by shortening the boom, which is what a dolly-in is.
+      const d = dist * (1 - z)
       camera.position.set(
-        target.x + dist * Math.cos(el) * Math.cos(az),
-        target.y + dist * Math.sin(el),
-        target.z + dist * Math.cos(el) * Math.sin(az),
+        target.x + d * Math.cos(el) * Math.cos(az) + sx,
+        target.y + d * Math.sin(el) + sy,
+        target.z + d * Math.cos(el) * Math.sin(az),
       )
       camera.lookAt(target)
       // The ortho camera keeps its classic elevation but turns with the
       // quarter steps, so rotating works in either mode.
       orthoCam.position.set(
-        target.x + 60 * Math.cos(CLASSIC_EL) * Math.cos(az),
-        target.y + 60 * Math.sin(CLASSIC_EL),
+        target.x + 60 * Math.cos(CLASSIC_EL) * Math.cos(az) + sx,
+        target.y + 60 * Math.sin(CLASSIC_EL) + sy,
         target.z + 60 * Math.cos(CLASSIC_EL) * Math.sin(az),
       )
       orthoCam.lookAt(target)
-      sizeOrtho()
+      // An orthographic camera gets no closer by moving, so its punch is a
+      // frustum change instead. Same fraction, same feel in either mode.
+      sizeOrtho(1 + z)
       // The haze follows the zoom: the ground under the camera's gaze stays
       // clear and the far side of the board fades, at any distance. Measured
       // from whichever camera is drawing, so the ortho view (parked 60 units
@@ -6173,7 +6210,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     let raf = 0
     const tick = () => {
       raf = requestAnimationFrame(tick)
-      const dt = Math.min(clock.getDelta(), 0.1)
+      // HITSTOP. `dt` is the GAME clock and the juice may hold it at zero for
+      // a few frames on impact; everything below this line reads it, so the
+      // sim, the glides and the sprite flipbooks all stop together — which is
+      // the entire point, a freeze that only some of the board obeys reads as
+      // a stutter. The juice's own envelopes ran on real time inside step(),
+      // so the shake and the flash keep moving while the game does not.
+      const rawDt = Math.min(clock.getDelta(), 0.1)
+      const stepped = juice.step(rawDt)
+      const dt = stepped.dt
+      const kick = stepped.juice
+      if (kick.flash > 0 || juiceWasActive) flashEl.style.opacity = String(kick.flash)
+      if (kick.shakeX !== 0 || kick.shakeY !== 0 || kick.zoom !== 0) {
+        applyCamera(kick)
+        juiceWasActive = true
+      } else if (juiceWasActive) {
+        // One clean call with no kick puts the camera exactly back.
+        applyCamera()
+        flashEl.style.opacity = "0"
+        juiceWasActive = false
+      }
       // The rings under the floor items breathe, so a dark shard on dark
       // stone can be found by eye.
       groundItems?.tick(clock.elapsedTime)
@@ -6398,6 +6454,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         let cast: CastHandle | null = null
         const flinch = () => {
           p.onLand?.()          // the bang, on the same frame as the flash
+          // THE BOARD KICKS (lib/hit-juice). Same frame as the bang and the
+          // flash, before the damage below lands, so the freeze covers the
+          // number appearing and the body dropping rather than following them.
+          //
+          // Weight comes from the FRACTION of the target's bar, not the raw
+          // number: twelve points is a scratch on a dragon and a hammer blow
+          // on a goblin, and the camera should agree with the health bar. A
+          // miss or a save kicks nothing — a whiff that shakes the screen
+          // reads as a hit, which is worse than no juice at all.
+          {
+            const amount = p.damage?.amount ?? 0
+            const landed = amount > 0 && !p.damage?.heals && p.damage?.word === null
+            if (landed) {
+              const tok = p.victimId ? tokensRef.current.get(p.victimId) : undefined
+              const maxHp = tok?.row.hp_max ?? 0
+              const killing = tok ? amount >= (tok.row.hp_current ?? 0) : false
+              // critRef is how this board already knows a crit from an
+              // ordinary hit — hit points alone cannot tell them apart.
+              const w: HitWeight = weightForHit(amount, maxHp, {
+                crit: critRef.current.has(p.victimId ?? ""),
+                killing,
+              })
+              // Seeded off the victim so every seat kicks the same way.
+              juice.hit(w, (p.victimId ?? "").charCodeAt(0) || 1)
+            }
+          }
           // THE WIRE IS BELIEVED AGAIN FROM HERE. Released before the damage
           // is applied below, so the glideToken those calls make is the one
           // that draws the number and drops the body — this frame, on the
@@ -6542,6 +6624,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               // at the same drow do not both swing wide the same way while a
               // replay on another seat picks differently.
               seed: (p.victimId ?? "").charCodeAt(0) || 0,
+              onImpact: flinch,
+            }))
+            continue
+          }
+          // THE SCHOOL OF MARTIAL ARTS LANDS HERE (lib/martial-arts).
+          //
+          // An ordinary weapon swing still spawns nothing — the contact frame
+          // is the impact, as it always was. But a punch, a kick, a sneak
+          // attack and a class-feature strike are four different things to a
+          // player and ONE body animation to a sprite, so what tells them
+          // apart has to be what LANDS. Those four shared impact sheets have
+          // existed since #541 and nothing has ever drawn them, because this
+          // branch returned before any effect was made.
+          //
+          // martialArtFor returns null for a longsword, so a sword swing is
+          // untouched and this costs nothing on the common path.
+          if (martialArtFor(p.spell) && p.target && kitType) {
+            vfx.push(castSpellKitVfx({
+              parent: scene,
+              anchor: bone,
+              type: kitType,
+              target: p.target,
+              camera,
+              spell: p.spell,
+              seed: (p.victimId ?? "").charCodeAt(0) || 0,
+              outcome: "hit",
               onImpact: flinch,
             }))
             continue
@@ -6813,6 +6921,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       cancelAnimationFrame(raf)
       ro.disconnect()
       cleanupRealtime?.()
+      // The flash overlay is a DOM child of the mount, so React will not
+      // clean it up — without this a remounted board stacks a second white
+      // sheet over the first and every hit flashes twice as bright.
+      flashEl.remove()
       // Let go of every held body. The scene is going away, so no impact
       // frame is ever going to arrive to release them, and a rebuilt board
       // must start believing the wire immediately.
