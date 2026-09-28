@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ALL_SCHOOL_RUNES, SCHOOL_RUNE, schoolOf, schoolRuneFor } from "./spell-school"
+import { ALL_SCHOOL_RUNES, SCHOOL_COLOR, SCHOOL_RUNE, schoolColorFor, schoolOf, schoolRuneFor } from "./spell-school"
 import { SPELL_SCHOOL_CODES } from "./spell-school-data"
 
 describe("schoolOf", () => {
@@ -82,5 +82,42 @@ describe("the generated data", () => {
   it("every school reachable from real spell names", () => {
     const seen = new Set(Object.keys(SPELL_SCHOOL_CODES).map((n) => schoolOf(n)))
     expect(seen.size).toBe(8)
+  })
+})
+
+describe("SCHOOL_COLOR", () => {
+  it("gives every school its own colour", () => {
+    const vals = Object.values(SCHOOL_COLOR)
+    expect(new Set(vals).size).toBe(8)
+    for (const v of vals) expect(v).toBeGreaterThanOrEqual(0)
+    for (const v of vals) expect(v).toBeLessThanOrEqual(0xffffff)
+  })
+
+  it("keeps the two confusable pairs genuinely apart", () => {
+    const rgb = (h: number) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]
+    const lum = (h: number) => { const [r, g, b] = rgb(h); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+    // abjuration vs illusion: both blue, separated by VALUE.
+    expect(Math.abs(lum(SCHOOL_COLOR.illusion) - lum(SCHOOL_COLOR.abjuration))).toBeGreaterThan(60)
+    // divination vs necromancy: both violet, separated by red-vs-blue lean.
+    const lean = (h: number) => { const [r, , b] = rgb(h); return r - b }
+    expect(lean(SCHOOL_COLOR.necromancy)).toBeGreaterThan(lean(SCHOOL_COLOR.divination) + 40)
+  })
+
+  it("is bright enough to survive being a 64px tint rather than reading as grey", () => {
+    const sat = (h: number) => {
+      const c = [(h >> 16) & 255, (h >> 8) & 255, h & 255]
+      return Math.max(...c) - Math.min(...c)
+    }
+    for (const [name, v] of Object.entries(SCHOOL_COLOR)) {
+      expect(sat(v), `${name} is too desaturated to read as a colour`).toBeGreaterThan(70)
+    }
+  })
+
+  it("falls back to null for anything not in the dataset, so the kit keeps its own tint", () => {
+    expect(schoolColorFor("Withering Gaze of Malachar")).toBeNull()
+    expect(schoolColorFor(null)).toBeNull()
+    expect(schoolColorFor("Fireball")).toBe(SCHOOL_COLOR.evocation)
+    expect(schoolColorFor("Shield")).toBe(SCHOOL_COLOR.abjuration)
+    expect(schoolColorFor("Spirit Guardians")).toBe(SCHOOL_COLOR.conjuration)
   })
 })

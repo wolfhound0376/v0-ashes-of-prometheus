@@ -54,6 +54,51 @@ export const SCHOOL_RUNE: Record<MagicSchool, string> = {
 }
 
 /**
+ * THE SCHOOL PALETTE (Sam, 2026-09-28, from his eight-emblem reference sheet).
+ *
+ * Until now every DamageType in the kit carried `tint: 0xffffff`, so the disc
+ * that spins up off the caster's hand rendered WHITE whatever the school was.
+ * Eight distinct runes, one colour between them. The school owns this, not the
+ * damage type: Spirit Guardians is conjuration whatever it does to you, and it
+ * should read green off the hand.
+ *
+ * Read off the reference, with two separations made deliberately because the
+ * pairs sit close on the sheet and must never be confused at a glance across
+ * a battle map:
+ *
+ *   abjuration vs illusion    both blue on the sheet. Abjuration is the deep
+ *                             cobalt of the shield; illusion is the pale
+ *                             silvered ice of the crescent. Value, not hue,
+ *                             is what separates them at distance.
+ *   divination vs necromancy  both violet. Divination leans BLUE (the eye in
+ *                             the triangle); necromancy leans RED (the skull).
+ *
+ * These are the sheets' glow colours, not their linework — the runes are baked
+ * white and tinted here, so one bright saturated value per school is what the
+ * tint wants. A muted version just reads as grey once it is 64px and moving.
+ */
+export const SCHOOL_COLOR: Record<MagicSchool, number> = {
+  abjuration:    0x3d7bff, // cobalt blue      — warding shield, silver star
+  conjuration:   0x35d66b, // emerald green    — the summoning spiral
+  divination:    0x7a4dff, // indigo violet    — eye in the triangle
+  enchantment:   0xff4fb8, // hot magenta      — the charmed heart
+  evocation:     0xff7a1a, // fire orange      — the sunburst
+  illusion:      0x9fd8ff, // pale ice blue    — the crescent moon
+  necromancy:    0xa855f7, // bright purple    — the violet-eyed skull
+  transmutation: 0xffb627, // gold amber       — gears and triquetra
+}
+
+/**
+ * The colour a spell's rune should glow, or null when the school is unknown —
+ * in which case the caller keeps the damage type's own tint and nothing about
+ * the effect changes.
+ */
+export function schoolColorFor(spellName: string | null | undefined): number | null {
+  const school = schoolOf(spellName)
+  return school ? SCHOOL_COLOR[school] : null
+}
+
+/**
  * The school of a spell, or null when the name is not one of the 556 in
  * lib/data/spells.json.
  *
