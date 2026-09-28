@@ -4,6 +4,7 @@ import {
   type RingMotion,
 } from "./spell-school-vfx"
 import { SCHOOL_RUNE } from "./spell-school"
+import { SCHOOL_RAMP } from "./spell-school"
 
 const CHARGE = 0.8
 
@@ -63,24 +64,80 @@ describe("the table", () => {
     expect(new Set(motions).size).toBe(8)
   })
 
-  it("separates the seven coloured schools by at least 30 degrees of hue", () => {
-    // Hue, not luminance, is the axis this palette is designed on, and the one
-    // that survives red-green colour blindness. The first draft failed here:
-    // conjuration and necromancy were two greens 16 degrees apart.
-    const chromatic = ALL_SCHOOLS.filter((s) => s !== "divination")
-    const hues = chromatic.map((s) => hueOf(SCHOOL_VFX[s].tint)).sort((a, b) => a - b)
-    for (let i = 0; i < hues.length; i++) {
-      const next = i === hues.length - 1 ? hues[0] + 360 : hues[i + 1]
-      expect(next - hues[i], `${hues[i].toFixed(0)}deg has a neighbour too close`).toBeGreaterThan(30)
+  it("distinguishes any two schools close in hue by their MOTION", () => {
+    // This replaces a "every pair at least 30 degrees apart" assertion, and
+    // the replacement is a real loosening rather than a tidy-up, so it is
+    // worth saying why. That rule described a palette chosen to be a legend.
+    // The colours now come from Sam's reference sheet (SCHOOL_RAMP), which was
+    // drawn to look good, and it does NOT space eight hues evenly: abjuration
+    // and illusion are both blue, five degrees apart.
+    //
+    // What a player actually needs is to tell two schools apart, and hue was
+    // only ever one way of providing that. This file has always given each
+    // school its own motion — see the test above. So the guarantee is now
+    // stated directly: schools that look alike must not MOVE alike.
+    const chromatic = ALL_SCHOOLS.filter((s) => satOf(SCHOOL_VFX[s].tint) >= 0.15)
+    for (let i = 0; i < chromatic.length; i++) {
+      for (let j = i + 1; j < chromatic.length; j++) {
+        const a = chromatic[i], b = chromatic[j]
+        const ha = hueOf(SCHOOL_VFX[a].tint), hb = hueOf(SCHOOL_VFX[b].tint)
+        const gap = Math.min(Math.abs(ha - hb), 360 - Math.abs(ha - hb))
+        if (gap < 30) {
+          expect(SCHOOL_VFX[a].motion, `${a} and ${b} are ${gap.toFixed(0)}deg apart and must not share a motion`)
+            .not.toBe(SCHOOL_VFX[b].motion)
+        }
+      }
     }
   })
 
-  it("keeps divination achromatic — it is the one school identified by having no colour", () => {
-    expect(satOf(SCHOOL_VFX.divination.tint)).toBeLessThan(0.15)
-    for (const s of ALL_SCHOOLS) {
-      if (s === "divination") continue
-      expect(satOf(SCHOOL_VFX[s].tint), s).toBeGreaterThan(0.5)
+  it("separates every pair by hue, by value, or by motion — never by none of the three", () => {
+    // The weakened-but-true colour guarantee, and the reason it is weakened:
+    // the reference sheet draws divination as a violet eye and necromancy as
+    // a violet skull, and sampled they land 12 degrees and ONE point of
+    // luminance apart. On the ring those two are the same colour. Their
+    // emblems differ; their glows do not.
+    //
+    // This is a finding about the sheet, not a slack test. Each emblem's own
+    // hue distribution does lean apart — divination peaks near 255, necromancy
+    // near 275 — so a future resample could separate them honestly without
+    // inventing a colour. Until then, "still" versus "sink" is what tells them
+    // apart, and that is asserted rather than assumed.
+    const lum = (h: number) => 0.2126 * ((h >> 16) & 255) + 0.7152 * ((h >> 8) & 255) + 0.0722 * (h & 255)
+    const byColourOnly: string[] = []
+    for (let i = 0; i < ALL_SCHOOLS.length; i++) {
+      for (let j = i + 1; j < ALL_SCHOOLS.length; j++) {
+        const A = ALL_SCHOOLS[i], B = ALL_SCHOOLS[j]
+        const a = SCHOOL_VFX[A], b = SCHOOL_VFX[B]
+        const ha = hueOf(a.tint), hb = hueOf(b.tint)
+        const gap = Math.min(Math.abs(ha - hb), 360 - Math.abs(ha - hb))
+        const dv = Math.abs(lum(a.tint) - lum(b.tint))
+        const colourSeparated = gap > 20 || dv > 25
+        if (!colourSeparated) byColourOnly.push(`${A}/${B}`)
+        expect(colourSeparated || a.motion !== b.motion,
+          `${A} and ${B} are ${gap.toFixed(0)}deg and ${dv.toFixed(0)} value apart AND share a motion`).toBe(true)
+      }
     }
+    // Pinned, so a resample that fixes it makes this fail loudly and someone
+    // deletes the exemption rather than it rotting here unnoticed.
+    expect(byColourOnly).toEqual(["divination/necromancy"])
+  })
+
+  it("takes its colours from SCHOOL_RAMP, so there is only ever one palette", () => {
+    // The whole point of this change. A second table of school colours is how
+    // the codebase already got three different things called "school".
+    for (const s of ALL_SCHOOLS) {
+      expect(SCHOOL_VFX[s].tint, s).toBe(SCHOOL_RAMP[s].glow)
+      expect(SCHOOL_VFX[s].release, s).toBe(SCHOOL_RAMP[s].core)
+    }
+  })
+
+  it("divination is no longer achromatic — the reference draws it violet", () => {
+    // Recorded rather than dropped: the old design made divination the one
+    // school identified by having NO colour ("clear sight is clear light").
+    // Sam's sheet draws it as a violet eye in a triangle, so that idea does
+    // not survive the reference. Its motion, "still", is now what marks it out.
+    expect(satOf(SCHOOL_VFX.divination.tint)).toBeGreaterThan(0.3)
+    expect(SCHOOL_VFX.divination.motion).toBe("still")
   })
 
   it("keeps every ring small enough to sit on a forearm, not on the square", () => {

@@ -49,7 +49,7 @@
 // not a thing you squint at on a board.
 // ============================================================================
 
-import type { MagicSchool } from "./spell-school"
+import { SCHOOL_RAMP, type MagicSchool } from "./spell-school"
 
 /** How a school's ring behaves while the spell charges. Homebrew. */
 export type RingMotion =
@@ -79,39 +79,52 @@ export interface SchoolVfx {
 }
 
 /**
- * HOMEBREW — Sam's call, not the SRD.
+ * COLOUR COMES FROM SAM'S REFERENCE SHEET, MOTION IS OURS.
  *
- * Seven of the eight are placed around the hue wheel with at least 30 degrees
- * between any two neighbours; the eighth, divination, is deliberately
- * achromatic. The first draft put conjuration at a sea-green 163 degrees and
- * necromancy at a leaf-green 95, and the test below caught them reading as one
- * colour. They are now 83 degrees apart — a blue-green gate and a yellow-green
- * rot — which also survives red-green colour blindness, because that pair
- * separates on the blue-yellow axis a deuteranope still has.
+ * This table used to carry its own eight tints, chosen to sit at least 30
+ * degrees apart on the hue wheel with divination deliberately achromatic. That
+ * was sound reasoning and it is why the motions below exist — but Sam has
+ * since supplied an eight-emblem reference sheet and signed off on the colours
+ * sampled from it ("colors look spot on", 2026-09-28). Two palettes for one
+ * concept is how this codebase already ended up with three different things
+ * called a spell's "school", so there is now exactly one: SCHOOL_RAMP in
+ * lib/spell-school.ts, measured off that sheet.
  *
- * The tightest remaining neighbours are evocation (14 degrees) and
- * transmutation (45), and they differ in value as well as hue: a hot red-orange
- * against a pale gold.
+ *   tint     <- SCHOOL_RAMP[school].glow, the emblem's neon linework, which is
+ *               what the eye reads while the ring charges.
+ *   release  <- SCHOOL_RAMP[school].core, the emblem's hot centre. The release
+ *               frame is exactly the moment the ring should flash to it, so
+ *               this is a better fit than the hand-picked pales it replaces.
  *
- * These deliberately do NOT dodge the damage-type burst tints in
- * spell-vfx-kit.ts, and they do not need to: the rune plays during the CHARGE,
- * at the caster's arm, and the burst plays on IMPACT, at the target. They are
- * separated in both time and space and never share a frame. What matters is
- * that the eight are distinct FROM EACH OTHER, because those are what a player
- * learns to read.
+ * WHAT THIS COSTS, STATED PLAINLY. The reference does not separate eight hues
+ * evenly, because it was drawn to look good rather than to be a legend:
+ *
+ *   - abjuration and illusion are both blue, five degrees apart. The old table
+ *     had them 58 apart.
+ *   - divination is no longer achromatic. On the sheet it is a violet eye in a
+ *     triangle, so the "clear sight is clear light" idea does not survive.
+ *   - conjuration and necromancy are 30-odd apart rather than 83, and they no
+ *     longer separate on the blue-yellow axis, so the deuteranope argument for
+ *     that specific pair is weaker.
+ *
+ * MOTION IS WHAT NOW CARRIES DISTINCTNESS, which this file was already built
+ * for — "gives every school its own motion, colour alone is not enough" was a
+ * test here before this change. Abjuration CONTRACTS and illusion DOUBLES;
+ * those read differently at a glance even in the same blue. The test below
+ * asserts that directly: any two schools close in hue must differ in motion.
+ * If a pair ever reads as one school in play, the fix is the motion or the
+ * reference, not a quietly divergent second palette.
  */
 export const SCHOOL_VFX: Record<MagicSchool, SchoolVfx> = {
-  //            tint      hue    release    motion
-  evocation:     { tint: 0xff4a12, release: 0xfff1d0, motion: "flare",    glyphs: 6, radius: 0.34, spin:  2.6, reads: "power winding up" },
-  transmutation: { tint: 0xffd24a, release: 0xfff4c8, motion: "morph",    glyphs: 6, radius: 0.37, spin:  0.0, reads: "one thing becoming another" },
-  necromancy:    { tint: 0x9fcf3a, release: 0xe4ffab, motion: "sink",     glyphs: 6, radius: 0.36, spin: -1.0, reads: "something guttering" },
-  conjuration:   { tint: 0x22d3a0, release: 0xc8ffe6, motion: "arrive",   glyphs: 5, radius: 0.36, spin:  1.6, reads: "something arriving" },
-  abjuration:    { tint: 0x4ea8ff, release: 0xd6ecff, motion: "contract", glyphs: 6, radius: 0.40, spin:  2.1, reads: "a barrier closing" },
-  illusion:      { tint: 0xb37dff, release: 0xe8d6ff, motion: "double",   glyphs: 5, radius: 0.38, spin: -1.4, reads: "not quite there" },
-  enchantment:   { tint: 0xff6fb5, release: 0xffd4ea, motion: "sway",     glyphs: 5, radius: 0.37, spin:  1.1, reads: "a slow persuasion" },
-  // The achromatic one on purpose: divination is the school with no colour
-  // of its own and no movement either. Clear sight looks like clear light.
-  divination:    { tint: 0xe8f2ff, release: 0xffffff, motion: "still",    glyphs: 7, radius: 0.38, spin:  0.0, reads: "a thing being read" },
+  //                          tint / release from SCHOOL_RAMP     motion
+  evocation:     { tint: SCHOOL_RAMP.evocation.glow,     release: SCHOOL_RAMP.evocation.core,     motion: "flare",    glyphs: 6, radius: 0.34, spin:  2.6, reads: "power winding up" },
+  transmutation: { tint: SCHOOL_RAMP.transmutation.glow, release: SCHOOL_RAMP.transmutation.core, motion: "morph",    glyphs: 6, radius: 0.37, spin:  0.0, reads: "one thing becoming another" },
+  necromancy:    { tint: SCHOOL_RAMP.necromancy.glow,    release: SCHOOL_RAMP.necromancy.core,    motion: "sink",     glyphs: 6, radius: 0.36, spin: -1.0, reads: "something guttering" },
+  conjuration:   { tint: SCHOOL_RAMP.conjuration.glow,   release: SCHOOL_RAMP.conjuration.core,   motion: "arrive",   glyphs: 5, radius: 0.36, spin:  1.6, reads: "something arriving" },
+  abjuration:    { tint: SCHOOL_RAMP.abjuration.glow,    release: SCHOOL_RAMP.abjuration.core,    motion: "contract", glyphs: 6, radius: 0.40, spin:  2.1, reads: "a barrier closing" },
+  illusion:      { tint: SCHOOL_RAMP.illusion.glow,      release: SCHOOL_RAMP.illusion.core,      motion: "double",   glyphs: 5, radius: 0.38, spin: -1.4, reads: "not quite there" },
+  enchantment:   { tint: SCHOOL_RAMP.enchantment.glow,   release: SCHOOL_RAMP.enchantment.core,   motion: "sway",     glyphs: 5, radius: 0.37, spin:  1.1, reads: "a slow persuasion" },
+  divination:    { tint: SCHOOL_RAMP.divination.glow,    release: SCHOOL_RAMP.divination.core,    motion: "still",    glyphs: 7, radius: 0.38, spin:  0.0, reads: "a thing being read" },
 }
 
 /** Every school, in the SRD's own order. For the preview page and for tests. */
