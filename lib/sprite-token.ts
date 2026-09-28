@@ -40,6 +40,9 @@ export type SpriteState =
   // the creature is off the floor. Burrow sinks into the ground, emerge
   // climbs back out.
   | "fly" | "burrow" | "emerge"
+  // Camp poses (Sam, 2026-09-27), drawn facing south only — every row of the
+  // sheet repeats the front view. Built by scripts/sprites/add-camp-poses.py.
+  | "sit" | "eat" | "sleep"
 
 export interface SpriteAnimation {
   /** Sheet PNG, relative to the manifest. Rows = SPRITE_DIRECTIONS, columns = frames. */
@@ -118,6 +121,9 @@ const FEET_BAND = 0.14
 /** Draws after every floor layer (the highest is the active glow at 7), before damage numbers (999). */
 const FEET_ORDER = 8
 
+/** Poses only the camp scene draws; the battle board never loads their sheets. */
+const CAMP_POSES = new Set<SpriteState>(["sit", "eat", "sleep"])
+
 /** What to show when the asked-for state was never drawn. */
 const FALLBACK: Record<SpriteState, SpriteState[]> = {
   idle: [],
@@ -134,6 +140,11 @@ const FALLBACK: Record<SpriteState, SpriteState[]> = {
   fly: ["walk", "idle"],
   burrow: [],
   emerge: [],
+  // Eating is sitting with a bowl; a sitter with no bowl drawn still sits.
+  // Nothing stands in for sit or sleep: a standing figure is not a seated one.
+  sit: [],
+  eat: ["sit"],
+  sleep: [],
 }
 
 const manifestCache = new Map<string, Promise<SpriteManifest>>()
@@ -297,7 +308,7 @@ export class SpriteRig {
 
   /** The figure has a drawing for this state (without falling back). */
   has(state: SpriteState): boolean {
-    return Boolean(this.manifest?.animations[state])
+    return !CAMP_POSES.has(state) && Boolean(this.manifest?.animations[state])
   }
 
   /**
@@ -603,7 +614,9 @@ export class SpriteRig {
     }
 
     const base = this.base.replace(/[^/]*$/, "")
-    const sheets = Object.entries(m.animations) as [SheetKey, SpriteAnimation][]
+    // The camp poses are for the camp scene, which loads its own. Fetching
+    // them here would add three sheets per party member to every fight.
+    const sheets = (Object.entries(m.animations) as [SheetKey, SpriteAnimation][]).filter(([s]) => !CAMP_POSES.has(s as SpriteState))
     if (m.disguise) sheets.push(["disguise", m.disguise])
     for (const [state, anim] of sheets) {
       const t = sheetTexture(new URL(anim.sheet, new URL(base, window.location.href)).href).clone()
