@@ -16,10 +16,13 @@ export function UiClickSound() {
       const control = target?.closest?.(CLICKABLE)
       if (!control || control.closest("[data-no-tick]")) return
       if (control.matches(":disabled, [aria-disabled='true']")) return
-      if (control.closest('[data-tick="key"]')) uiKeyTap()
-      else if (control.matches('[data-tick="click"]')) uiTick("firm")
+      // Sam, 2026-09-28: "an audible click like that from an Apple phone for
+      // pressing buttons" — the iPhone key tap is now every button's sound.
+      // The opt-outs stay: data-tick="click" keeps the dry tick (ability
+      // cards), and window openers keep the chime.
+      if (control.matches('[data-tick="click"]')) uiTick("firm")
       else if (control.matches(WINDOW_OPENER)) uiChime()
-      else uiTick("firm")
+      else uiKeyTap()
     }
     document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true })
     return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true })
