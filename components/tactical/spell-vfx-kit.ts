@@ -25,7 +25,7 @@ import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
 import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
-import { schoolColorFor, schoolRuneFor } from "@/lib/spell-school"
+import { schoolRampFor, schoolRuneFor } from "@/lib/spell-school"
 import { MARTIAL_SCALE, martialArtFor, martialImpactFor } from "@/lib/martial-arts"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
 import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
@@ -749,7 +749,8 @@ export function castSpellKitVfx(opts: {
     // 64px, spinning, across a battle map. Falls back to the type's tint
     // whenever the school is unknown, so nothing unwritten changes.
     const runeKey = schoolRuneFor(opts.spell) ?? spec.rune
-    const runeTint = schoolColorFor(opts.spell) ?? spec.tint
+    const ramp = schoolRampFor(opts.spell)
+    const runeTint = ramp?.glow ?? spec.tint
     if (runeKey) {
       void loadSheet(runeKey).then((s) => {
         if (disposed || castGone) return
@@ -864,7 +865,12 @@ export function castSpellKitVfx(opts: {
     }
 
     // One non-shadowing light, matching the board's stated budget.
-    light = new THREE.PointLight(spec.tint === 0xffffff ? 0xfff0d0 : spec.tint, 0, 9, 1.6)
+    // The light carries the school's CORE, which is what turns a flat tint
+    // into shading: the disc reads as `glow`, and the hot centre the light
+    // throws blooms toward `core` through the board's existing bloom pass.
+    // Falls back to the old warm white whenever the school is unknown.
+    light = new THREE.PointLight(
+      ramp?.core ?? (spec.tint === 0xffffff ? 0xfff0d0 : spec.tint), 0, 9, 1.6)
     light.castShadow = false
     group.add(light)
   }
