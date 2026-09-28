@@ -515,6 +515,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const pickUpRef = useRef<(row: GroundItemRow) => Promise<void>>(async () => {})
   /** Every pile within arm's reach of the character this browser drives. */
   const nearbyRef = useRef<() => GroundItemRow[]>(() => [])
+  /**
+   * Catalogue id → rarity, and → item_type. Read once with the pixel icons.
+   *
+   * Refs rather than state because the only readers are the Three.js draw
+   * path and the hover read-out, neither of which wants a React render when
+   * the catalogue lands; `redraw()` is what makes the change visible.
+   */
+  const groundRarityRef = useRef<Map<string, string>>(new Map())
+  const groundTypeRef = useRef<Map<string, string>>(new Map())
 
   type PackRow = { id: string; name: string; quantity: number; weight: number | null }
   const [packPicker, setPackPicker] = useState(false)
@@ -1758,10 +1767,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
                 : near
                   ? "click to take it"
                   : "out of reach — move next to it"
+            // The ring colour already says "this one is special" from across
+            // the board; the word says WHICH special, which a colour alone
+            // cannot once there are six tiers. Commons say nothing — naming
+            // every ration "common" is noise, not information.
+            const rarity = groundRarityRef.current.get(pile.item_id)
+            const tier = rarity && rarity.toLowerCase() !== "common"
+              ? ` · ${rarity.replace(/_/g, " ")}`
+              : ""
             setHoverRead({
               x: ev.clientX - rect.left,
               y: ev.clientY - rect.top,
-              label: pile.quantity > 1 ? `${pile.name} ×${pile.quantity}` : pile.name,
+              label: (pile.quantity > 1 ? `${pile.name} ×${pile.quantity}` : pile.name) + tier,
               line,
               ok: Boolean(mine && near),
             })
@@ -2326,6 +2343,35 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           return
         }
         if (data?.line) say(data.line as string)
+        // THE SOUND OF TAKING IT.
+        //
+        // ui/item_pickup and ui/coin_purse were both recorded in the 93-clip
+        // pass and neither was ever referenced from code, so the floor has
+        // been silent since it was built. Coins get the purse; everything
+        // else gets the pickup.
+        //
+        // Rare and above also ring the table, not just the seat that bent
+        // down — scope "party" per lib/sfx-cues, where self is UI feedback
+        // and party is "things the whole table is watching happen". A
+        // legendary coming off the floor is the second kind.
+        //
+        // ui/loot_rare has no file yet. That is deliberate and safe: an
+        // unknown slug is ignored by design ("cues are allowed to be wired
+        // ahead of the audio existing"), so this stays quiet until the clip
+        // is uploaded, with no code change then.
+        try {
+          const rarity = (groundRarityRef.current.get(row.item_id) ?? "common").toLowerCase()
+          const grand = rarity !== "common" && rarity !== "uncommon"
+          const base = groundTypeRef.current.get(row.item_id) === "currency"
+            ? "ui/coin_purse"
+            : "ui/item_pickup"
+          playCues([
+            { type: "raw", key: base, scope: "self" },
+            ...(grand ? [{ type: "raw", key: "ui/loot_rare", scope: "party" }] : []),
+          ])
+        } catch {
+          /* a sound may never cost someone the item they just picked up */
+        }
       } catch {
         say("The board could not reach the server.")
       }
@@ -5192,14 +5238,26 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         cellToWorld: (x, y) => sqCentre(x, y),
         squareSize: SQ,
         iconFor: (row) => pixelIcons.get(row.item_id),
+        rarityOf: (row) => groundRarityRef.current.get(row.item_id),
       })
+      // Icon AND rarity in the one read: both are per-catalogue-item, both are
+      // wanted before the first pile is drawn, and a second round trip for a
+      // single extra column would just be a second chance to arrive late.
       void supabase
         .from("items")
-        .select("id,pixel_icon_url")
-        .not("pixel_icon_url", "is", null)
+        .select("id,pixel_icon_url,rarity,item_type")
         .then(({ data }: { data: unknown }) => {
-          for (const r of (data ?? []) as { id: string; pixel_icon_url: string }[]) pixelIcons.set(r.id, r.pixel_icon_url)
-          if (!disposed && pixelIcons.size) groundItems?.redraw()
+          if (disposed) return
+          for (const r of (data ?? []) as {
+            id: string; pixel_icon_url: string | null; rarity: string | null; item_type: string | null
+          }[]) {
+            if (r.pixel_icon_url) pixelIcons.set(r.id, r.pixel_icon_url)
+            if (r.rarity) groundRarityRef.current.set(r.id, r.rarity)
+            if (r.item_type) groundTypeRef.current.set(r.id, r.item_type)
+          }
+          // Piles drawn before this landed carry the default gold ring and no
+          // tint; redraw so they get the colour they earned.
+          if (pixelIcons.size || groundRarityRef.current.size) groundItems?.redraw()
         })
       void supabase
         .from("vtt_ground_items")
