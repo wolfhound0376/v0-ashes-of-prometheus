@@ -320,6 +320,27 @@
   .aop-lich-input::placeholder { color: #a8916a; }
   .aop-lich-input:focus { border-color: #f7dc8f; box-shadow: inset 0 1px 10px #000, 0 0 0 1px rgba(247, 220, 143, 0.35), 0 0 14px rgba(247, 220, 143, 0.4); }
 
+/* Registered so the light position on ability orbs eases back when the pointer leaves. */
+@property --orb-lx { syntax: "<percentage>"; inherits: true; initial-value: 36%; }
+@property --orb-ly { syntax: "<percentage>"; inherits: true; initial-value: 28%; }
+@property --orb-rx { syntax: "<angle>"; inherits: true; initial-value: 0deg; }
+@property --orb-ry { syntax: "<angle>"; inherits: true; initial-value: 0deg; }
+
+.aop-orb {
+  background: radial-gradient(circle at var(--orb-lx) var(--orb-ly), var(--orb-light) 0%, var(--orb-core) 42%, var(--orb-deep) 100%);
+  transform: perspective(160px) rotateX(var(--orb-rx)) rotateY(var(--orb-ry));
+  transition: --orb-lx 0.6s ease-out, --orb-ly 0.6s ease-out, --orb-rx 0.6s ease-out, --orb-ry 0.6s ease-out, box-shadow 0.3s;
+}
+[data-orb-hot] .aop-orb { transition-duration: 0.12s, 0.12s, 0.12s, 0.12s, 0.3s; }
+.aop-orb-spec {
+  left: calc(var(--orb-lx) - 26%);
+  top: calc(var(--orb-ly) - 20%);
+}
+.group:hover .aop-orb { box-shadow: 0 5px 14px #000, 0 0 22px var(--gem), inset 0 -5px 10px #000a, inset 0 3px 6px #fff7; }
+@media (prefers-reduced-motion: reduce) {
+  .aop-orb { transform: none; transition: none; }
+}
+
 .aop-dice-modal {
   border-color: #936329;
   box-shadow: inset 0 0 0 2px #090604, inset 0 0 0 4px rgba(128, 74, 18, 0.38), 0 24px 90px #000, 0 0 28px rgba(125, 22, 15, 0.18);

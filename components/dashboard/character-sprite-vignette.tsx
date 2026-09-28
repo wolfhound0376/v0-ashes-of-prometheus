@@ -28,8 +28,9 @@ function buildActions(manifest: SpriteManifest, base: string): SpriteAction[] {
     const ib = ACTION_ORDER.indexOf(b)
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
   })
-  return names.map((name) => {
-    const anim = manifest.animations[name]
+  return names.flatMap((name) => {
+    const anim = (manifest.animations as Record<string, SpriteAction["anim"] | undefined>)[name]
+    if (!anim) return []
     const playMs = (anim.frames / Math.max(anim.fps, 1)) * 1000
     const durationMs = anim.loop
       ? Math.max(LOOP_SHOWCASE_MS, playMs)

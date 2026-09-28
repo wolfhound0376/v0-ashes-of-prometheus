@@ -1,9 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { CSSProperties } from "react"
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
 import { BookOpen, ChevronDown, ChevronUp, Compass, Crown, Dumbbell, Feather, ImagePlus, Map, Mic, Shield, TreeDeciduous, X, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ItemIcon } from "@/lib/item-icons"
 import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { shouldRedirectToBoard, shouldForgetDeliberateExit, type PriorCombat } from "@/lib/board-exit"
@@ -786,6 +787,9 @@ export function V4Dashboard(props: V4DashboardProps) {
     key,
     score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
     mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
+    proficiencyBonus: ((selected as unknown as Record<string, unknown> | null)?.proficiency_bonus as number | undefined) ?? 2,
+    saveProficient: (((selected as unknown as Record<string, unknown> | null)?.sheet_save_proficiencies as string[] | undefined) ?? [])
+      .some((s) => String(s).toLowerCase().startsWith(key)),
   }))
   // MERGE NOTE: both branches independently fixed Roll Initiative. Codex's
   // version is kept because it also sends the result to Malachar so he reacts
@@ -1022,7 +1026,7 @@ function CharacterSheetModal({ character, abilities, inventory, equipment, displ
       </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(390px,1fr)_250px]">
-        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif text-xs uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-2 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet onClick={() => abilityRoll(ability)} />)}</div><p className="mt-2 text-center text-[8px] text-[#75674d]">Click an ability to roll a check</p></section>
+        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif text-xs uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-2 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet onClick={() => abilityRoll(ability)} />)}</div><p className="mt-2 text-center text-[8px] text-[#75674d]">Click an ability for its breakdown and to roll a check</p></section>
 
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-2"><SheetCoreStat label="Armor Class" value={String(displayedAc)} /><button disabled={busy} onClick={initiativeRoll}><SheetCoreStat label="Initiative · Roll" value={signed(displayedInitiative)} /></button><SheetCoreStat label="Speed" value={speed} /></div>
@@ -1389,19 +1393,95 @@ const abilityGem: Record<string, [string, string, string]> = {
 const goldText = "bg-gradient-to-b from-[#fff8d6] via-[#f5c542] to-[#a8701a] bg-clip-text text-transparent"
 const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 6px #000)"
 
-export function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean; large?: boolean }) {
+const abilitySkillList: Record<string, string[]> = {
+  str: ["Athletics"],
+  dex: ["Acrobatics", "Sleight of Hand", "Stealth"],
+  con: [],
+  int: ["Arcana", "History", "Investigation", "Nature", "Religion"],
+  wis: ["Animal Handling", "Insight", "Medicine", "Perception", "Survival"],
+  cha: ["Deception", "Intimidation", "Performance", "Persuasion"],
+}
+
+function trackOrbLight(event: ReactPointerEvent<HTMLElement>) {
+  const el = event.currentTarget
+  const box = el.getBoundingClientRect()
+  const x = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width))
+  const y = Math.min(1, Math.max(0, (event.clientY - box.top) / box.height))
+  el.style.setProperty("--orb-lx", `${18 + x * 64}%`)
+  el.style.setProperty("--orb-ly", `${14 + y * 52}%`)
+  el.style.setProperty("--orb-ry", `${(x - 0.5) * 36}deg`)
+  el.style.setProperty("--orb-rx", `${(0.5 - y) * 30}deg`)
+  el.dataset.orbHot = "true"
+}
+
+function resetOrbLight(event: ReactPointerEvent<HTMLElement>) {
+  const el = event.currentTarget
+  for (const prop of ["--orb-lx", "--orb-ly", "--orb-rx", "--orb-ry"]) el.style.removeProperty(prop)
+  delete el.dataset.orbHot
+}
+
+type AbilityCardData = { key: string; score: number; mod: number; proficiencyBonus?: number; saveProficient?: boolean }
+
+function AbilityBreakdown({ ability, name, onRoll }: { ability: AbilityCardData; name: string; onRoll?: () => void }) {
+  const key = ability.key.toLowerCase()
+  const half = (ability.score - 10) / 2
+  const base = Math.floor(half)
+  const extra = ability.mod - base
+  const prof = ability.proficiencyBonus ?? 2
+  const save = ability.mod + (ability.saveProficient ? prof : 0)
+  const skills = abilitySkillList[key] ?? []
+  const row = "flex items-baseline justify-between gap-3"
+
+  return <div className="flex flex-col gap-3 font-sans text-[13px] leading-relaxed text-[#e8dcc0]">
+    <div className="flex items-baseline justify-between border-b border-[#4f3c1d] pb-2">
+      <h4 className="font-serif text-sm font-bold uppercase tracking-[.12em] text-[#f6e3b0]">{name}</h4>
+      <span className="font-serif text-xs text-[#a8916a]">Score {ability.score}</span>
+    </div>
+
+    <section className="flex flex-col gap-1">
+      <h5 className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Ability modifier</h5>
+      <p className="text-[#b9a883]">Subtract 10 from the score, halve it, round down.</p>
+      <p className="rounded border border-[#3a2c14] bg-black/40 px-2 py-1.5 font-mono text-[12px] text-[#f6e3b0]">
+        {`(${ability.score} − 10) ÷ 2 = ${half} → ${formatSigned(base)}`}
+      </p>
+      {extra !== 0 && <div className={row}><span className="text-[#b9a883]">Equipment and effects</span><span className="font-serif font-bold">{formatSigned(extra)}</span></div>}
+      <div className={cn(row, "border-t border-[#3a2c14] pt-1")}><span>Modifier</span><span className={cn("font-serif text-base font-extrabold", goldText)}>{formatSigned(ability.mod)}</span></div>
+    </section>
+
+    <section className="flex flex-col gap-1">
+      <h5 className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Saving throw</h5>
+      <div className={row}><span className="text-[#b9a883]">Modifier</span><span className="font-serif">{formatSigned(ability.mod)}</span></div>
+      <div className={row}>
+        <span className="text-[#b9a883]">Proficiency bonus{ability.saveProficient ? "" : " (not proficient)"}</span>
+        <span className="font-serif">{ability.saveProficient ? formatSigned(prof) : "+0"}</span>
+      </div>
+      <div className={cn(row, "border-t border-[#3a2c14] pt-1")}><span>{name} save</span><span className={cn("font-serif text-base font-extrabold", goldText)}>{formatSigned(save)}</span></div>
+      <p className="text-[11px] text-[#8f7e5c]">Proficiency bonus is set by character level: +2 at levels 1–4, rising by 1 every four levels to +6.</p>
+    </section>
+
+    {skills.length > 0 && <p className="text-[12px] text-[#b9a883]"><span className="text-[#d7b56f]">Skills: </span>{skills.join(", ")}</p>}
+
+    {onRoll && <button type="button" onClick={onRoll} className="rounded border border-[#b8893a] bg-[linear-gradient(180deg,#2a1d0a,#120c05)] px-3 py-1.5 font-serif text-xs font-bold uppercase tracking-[.12em] text-[#f6e3b0] transition-colors hover:border-[#f7dc8f] hover:text-[#fff8d6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]">
+      {`Roll ${name} check`}
+    </button>}
+  </div>
+}
+
+export function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: AbilityCardData; onClick?: () => void; sheet?: boolean; large?: boolean }) {
   const key = ability.key.toLowerCase()
   const name = abilityNames[key] ?? ability.key
   const modifier = `${ability.mod >= 0 ? "+" : ""}${ability.mod}`
   const rail = large && !sheet
   const [gemLight, gemCore, gemDeep] = abilityGem[key] ?? abilityGem.str
-  const gemFill = `radial-gradient(circle at 36% 28%, ${gemLight} 0%, ${gemCore} 42%, ${gemDeep} 100%)`
+  const [open, setOpen] = useState(false)
 
-  return <button
+  return <Popover open={open} onOpenChange={setOpen}>
+  <PopoverTrigger asChild>
+  <button
     type="button"
-    onClick={onClick}
-    aria-label={`${name} ${ability.score}, modifier ${modifier}`}
-    title={`${name}: ${ability.score} (${modifier})`}
+    onPointerMove={trackOrbLight}
+    onPointerLeave={resetOrbLight}
+    aria-label={`${name} ${ability.score}, modifier ${modifier}. Show how it is calculated`}
     className={cn(
       "group relative isolate flex min-w-0 flex-col rounded-md p-[2px] text-left shadow-[0_8px_18px_#000] transition-[transform,box-shadow] duration-200 hover:z-20 hover:-translate-y-1 hover:shadow-[0_14px_30px_#000,0_0_20px_var(--gem)] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]",
       "bg-[linear-gradient(160deg,#fbe7a6_0%,#c9962f_22%,#6d4812_48%,#d9a846_72%,#fff0b8_100%)]",
@@ -1429,12 +1509,14 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
 
       <span className="relative z-10 flex flex-col items-center justify-center pb-2.5 pt-1.5">
         <span
-          className={cn("relative flex items-center justify-center rounded-full border-[3px] border-[#e9c46a] shadow-[0_3px_10px_#000,0_0_14px_var(--gem),inset_0_-4px_8px_#0009,inset_0_3px_5px_#fff5]", rail ? "size-[clamp(44px,7vh,56px)]" : "size-[52px]")}
-          style={{ background: gemFill }}
+          className={cn("aop-orb relative flex items-center justify-center rounded-full border-[3px] border-[#e9c46a] shadow-[0_3px_10px_#000,0_0_14px_var(--gem),inset_0_-4px_8px_#0009,inset_0_3px_5px_#fff5]", rail ? "size-[clamp(44px,7vh,56px)]" : "size-[52px]")}
+          style={{ ["--orb-light" as string]: gemLight, ["--orb-core" as string]: gemCore, ["--orb-deep" as string]: gemDeep }}
         >
           <span aria-hidden className="absolute -inset-[5px] rounded-full border border-[#8a6320]" />
           <span aria-hidden className="absolute inset-[2px] rounded-full border border-[#fff0c2]/35" />
-          <span aria-hidden className="absolute left-[20%] top-[8%] h-[30%] w-[50%] rounded-full bg-gradient-to-b from-[#ffffff]/50 to-transparent" />
+          <span aria-hidden className="absolute inset-0 overflow-hidden rounded-full">
+            <span className="aop-orb-spec absolute h-[36%] w-[52%] rounded-full bg-[radial-gradient(ellipse_at_center,#ffffffb0_0%,#ffffff40_45%,transparent_75%)] opacity-80 transition-opacity duration-300 group-hover:opacity-100" />
+          </span>
           <span className={cn("relative font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(22px,3.6vh,30px)]" : "text-[28px]")} style={{ filter: scoreGlow }}>{ability.score}</span>
         </span>
       </span>
@@ -1447,6 +1529,11 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
       <span className={cn("block font-serif text-[12px] font-extrabold leading-none", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
     </span>
   </button>
+  </PopoverTrigger>
+  <PopoverContent side="top" sideOffset={10} collisionPadding={12} className="w-72 border-[#b8893a] bg-[#0f0b07] p-3 shadow-[0_12px_30px_#000,0_0_18px_var(--gem)]" style={{ ["--gem" as string]: `${gemCore}66` }}>
+    <AbilityBreakdown ability={ability} name={name} onRoll={onClick ? () => { setOpen(false); onClick() } : undefined} />
+  </PopoverContent>
+  </Popover>
 }
 
 export function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; label: string; value: string; onClick: () => void; tooltip?: string }) {
