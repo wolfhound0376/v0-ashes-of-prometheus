@@ -509,6 +509,38 @@
     "frames": 16,
     "fps": 14
   },
+  "strikeKick": {
+    "file": "strikeKick.webp",
+    "bytes": 16166,
+    "cols": 5,
+    "rows": 4,
+    "frames": 20,
+    "fps": 24
+  },
+  "strikePunch": {
+    "file": "strikePunch.webp",
+    "bytes": 25756,
+    "cols": 5,
+    "rows": 4,
+    "frames": 20,
+    "fps": 24
+  },
+  "strikeSneak": {
+    "file": "strikeSneak.webp",
+    "bytes": 33288,
+    "cols": 5,
+    "rows": 4,
+    "frames": 20,
+    "fps": 24
+  },
+  "strikeSpecial": {
+    "file": "strikeSpecial.webp",
+    "bytes": 46870,
+    "cols": 5,
+    "rows": 4,
+    "frames": 20,
+    "fps": 24
+  },
   "thunderGust": {
     "bytes": 6684,
     "cols": 5,

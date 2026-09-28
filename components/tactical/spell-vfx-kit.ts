@@ -26,6 +26,7 @@ import type { VfxHandle } from "./spell-vfx"
 import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
 import { schoolRuneFor } from "@/lib/spell-school"
+import { MARTIAL_SCALE, martialArtFor, martialImpactFor } from "@/lib/martial-arts"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
 import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
 
@@ -366,13 +367,26 @@ export function loadSheet(key: string): Promise<Sheet> {
  * Warm the sheets a spell will need. Call this when the cast is *pressed*, so
  * the textures have arrived by the release frame and the first cast of a type
  * looks like every later one.
+ *
+ * `move` is the spell, weapon or feature name, the same string the cast itself
+ * is given. Pass it and the warm-up resolves the school rune and the martial
+ * impact exactly as castSpellKitVfx will, so a Shield or a flurry of kicks is
+ * warm on its FIRST use rather than on its second. Leave it out and this warms
+ * the damage-type sheets alone, which is what both existing callers do.
+ *
+ * The two resolutions below are deliberately spelled the same way as the cast
+ * path (`?? spec.rune`, `?? spec.impact`): if they ever drift, the wrong sheet
+ * arrives warm and the right one arrives late, which reads as a stutter on
+ * exactly one frame and is miserable to track down.
  */
-export function prewarmKit(type: DamageType): void {
+export function prewarmKit(type: DamageType, move?: string | null): void {
   const spec = TYPES[type]
   if (!spec) return
-  if (spec.rune) void loadSheet(spec.rune).catch(() => {})
+  const runeKey = schoolRuneFor(move) ?? spec.rune
+  if (runeKey) void loadSheet(runeKey).catch(() => {})
   if (spec.travel) void loadSheet(spec.travel).catch(() => {})
-  if (spec.impact) void loadSheet(spec.impact).catch(() => {})
+  const impactKey = martialImpactFor(move) ?? spec.impact
+  if (impactKey) void loadSheet(impactKey).catch(() => {})
   if (spec.decal) void loadSheet(spec.decal).catch(() => {})
   if (spec.burst) {
     for (const key of Object.values(BURST_SHEETS)) void loadSheet(key).catch(() => {})
@@ -756,10 +770,23 @@ export function castSpellKitVfx(opts: {
       }).catch(() => {})
     }
 
-    if (spec.impact) {
-      void loadSheet(spec.impact).then((s) => {
+    // THE SCHOOL OF MARTIAL ARTS (Sam, 2026-09-28).
+    //
+    // The same trade as the rune above, on the other half of the fight. A
+    // punch, a kick, a sneak attack and a class-feature strike are four
+    // different things to a player and ONE body animation to a sprite; what
+    // tells them apart at this camera distance is what lands, not the windup.
+    // So the four live here as shared impact sheets, attached to whichever
+    // sprite throws them, and no character needs four new attack animations.
+    //
+    // Null for an ordinary weapon swing, so a longsword still blooms with
+    // physicalImpact exactly as it always has.
+    const martial = martialArtFor(opts.spell)
+    const impactKey = martialImpactFor(opts.spell) ?? spec.impact
+    if (impactKey) {
+      void loadSheet(impactKey).then((s) => {
         if (disposed || castGone) return
-        const k = (spec.impactScale ?? 1.6) * areaScale
+        const k = (martial ? MARTIAL_SCALE[martial] : (spec.impactScale ?? 1.6)) * areaScale
         impact = new Flip(s, spec.tint, 2.0 * k, 2.0 * k)
         impact.opacity = 0
         group.add(impact.mesh)
