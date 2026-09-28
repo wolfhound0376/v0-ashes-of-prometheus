@@ -87,6 +87,9 @@ export const FUNGI: readonly Fungus[] = [
   { slug: "timmask", name: "Timmask", w: { tunnels: 2, fungal: 3, shore: 1 } },
   { slug: "zurkhwood", name: "Zurkhwood", w: { tunnels: 1, fungal: 3, shore: 1 } },
   { slug: "waterorb", name: "Waterorb", w: { tunnels: 0, fungal: 0, shore: 4 } },
+  // Added to the catalog 2026-09-28 from Sam's seed file (OotA p.28).
+  { slug: "torchstalk", name: "Torchstalk", w: { tunnels: 2, fungal: 3, shore: 1 } },
+  { slug: "nilhoggs-nose", name: "Nilhogg's nose", w: { tunnels: 1, fungal: 2, shore: 1 } },
   { slug: "tongue-of-madness", name: "Tongue of madness", w: { tunnels: 0.4, fungal: 0.6, shore: 0.3 }, rare: true },
 ]
 
@@ -558,11 +561,11 @@ export const ROAMERS: readonly { slug: string; name: string; w: Record<FieldBiom
   { slug: "giant-bat", name: "Giant bat", w: { tunnels: 1, fungal: 1, shore: 2 } },
 ]
 
-/** 0–2 roamers in a room (PROPOSED), seeded by room so a room keeps its vermin. None in camp. */
+/** 0–3 roamers in a room, usually some (PROPOSED), seeded by room so a room keeps its vermin. None in camp. */
 export function roomRoamers(seed: string | number, biome: FieldBiome, isCamp: boolean): string[] {
   if (isCamp) return []
   const rng = seededRng(`${seed}:roam`)
-  const n = Math.floor(rng() * 3)
+  const n = rng() < 0.2 ? 0 : 1 + Math.floor(rng() * 3)
   const out: string[] = []
   for (let i = 0; i < n; i++) out.push(weighted(ROAMERS.map((r) => ({ r, w: r.w[biome] })), rng).r.slug)
   return out
