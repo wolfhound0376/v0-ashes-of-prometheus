@@ -1,6 +1,7 @@
 "use client"
 
 import { AbilityScoreCard } from "@/components/dashboard/v4-dashboard"
+import { CharacterSpriteVignette } from "@/components/dashboard/character-sprite-vignette"
 
 const sample = [
   { key: "str", score: 11, mod: 0 },
@@ -30,6 +31,12 @@ export default function AbilityPreviewPage() {
         <h2 className="font-serif text-sm uppercase tracking-[.2em] text-[#ecd08f]">Character sheet</h2>
         <div className="grid w-full max-w-[900px] grid-cols-3 gap-3 md:grid-cols-6">
           {sample.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet />)}
+        </div>
+      </section>
+      <section className="flex flex-col gap-3">
+        <h2 className="font-serif text-sm uppercase tracking-[.2em] text-[#ecd08f]">Character sprite (right column)</h2>
+        <div className="flex h-[220px] w-[310px] flex-col">
+          <CharacterSpriteVignette characterId="preview" name="Samson" />
         </div>
       </section>
     </main>
