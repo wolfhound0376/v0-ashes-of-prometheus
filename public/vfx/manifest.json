@@ -365,6 +365,14 @@
     "frames": 20,
     "rows": 4
   },
+  "runeAbjuration": {
+    "file": "runeAbjuration.webp",
+    "bytes": 8958,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
+  },
   "runeAcid": {
     "bytes": 9176,
     "cols": 4,
@@ -373,6 +381,22 @@
     "frames": 16,
     "rows": 4
   },
+  "runeConjuration": {
+    "file": "runeConjuration.webp",
+    "bytes": 21166,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
+  },
+  "runeDivination": {
+    "file": "runeDivination.webp",
+    "bytes": 29088,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
+  },
   "runeEldritch": {
     "bytes": 15012,
     "cols": 4,
@@ -380,6 +404,22 @@
     "fps": 14,
     "frames": 16,
     "rows": 4
+  },
+  "runeEnchantment": {
+    "file": "runeEnchantment.webp",
+    "bytes": 12664,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
+  },
+  "runeEvocation": {
+    "file": "runeEvocation.webp",
+    "bytes": 26852,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
   },
   "runeFire": {
     "bytes": 15162,
@@ -413,6 +453,22 @@
     "frames": 16,
     "rows": 4
   },
+  "runeIllusion": {
+    "file": "runeIllusion.webp",
+    "bytes": 27886,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
+  },
+  "runeNecromancy": {
+    "file": "runeNecromancy.webp",
+    "bytes": 10720,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
+  },
   "runeNecrotic": {
     "bytes": 8344,
     "cols": 4,
@@ -444,6 +500,14 @@
     "fps": 16,
     "frames": 16,
     "rows": 4
+  },
+  "runeTransmutation": {
+    "file": "runeTransmutation.webp",
+    "bytes": 38064,
+    "cols": 4,
+    "rows": 4,
+    "frames": 16,
+    "fps": 14
   },
   "thunderGust": {
     "bytes": 6684,
