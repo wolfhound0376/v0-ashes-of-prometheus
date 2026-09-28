@@ -1344,7 +1344,7 @@ const abilityArt: Record<string, string> = {
   cha: "/images/ui/abilities/charisma.png",
 }
 
-const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 6px #e0115f88)"
+const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 8px #000) drop-shadow(0 0 10px #ffffff40)"
 
 export function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean; large?: boolean }) {
   const key = ability.key.toLowerCase()
@@ -1375,7 +1375,7 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
     <span className={cn("relative flex h-full flex-col", rail ? "justify-between px-2 py-2" : "items-center justify-end gap-1 px-2 pb-3 text-center")}>
       <span className={cn("block truncate font-serif font-semibold uppercase leading-none text-[#ecd08f] [text-shadow:0_1px_3px_#000,0_0_8px_#000]", rail ? "text-[10px] tracking-normal" : "text-[11px] tracking-[.1em]")}>{name}</span>
       <span className={cn("flex items-end gap-2", !rail && "flex-col items-center gap-1")}>
-        <span className={cn("bg-gradient-to-b from-[#ffc2cf] via-[#e0115f] to-[#8b001f] bg-clip-text font-serif font-extrabold leading-none text-transparent", rail ? "text-[clamp(30px,5.5vh,44px)]" : "text-4xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
+        <span className={cn("font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(30px,5.5vh,44px)]" : "text-4xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
         <span className={cn("rounded-full border border-[#c9a45a]/70 bg-black/75 px-2 py-0.5 font-serif text-xs font-bold leading-none text-[#f6e6c2] shadow-[0_1px_4px_#000]", rail && "mb-1")}>{modifier}</span>
       </span>
     </span>
