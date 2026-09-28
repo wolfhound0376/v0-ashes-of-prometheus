@@ -60,7 +60,7 @@ describe("sigilPoseAt — the three acts", () => {
         const p = sigilPoseAt(t, PLAN, outcome, PEAK)
         expect(p.opacity, `${outcome} @${t.toFixed(2)}`).toBeGreaterThanOrEqual(0)
         expect(p.opacity, `${outcome} @${t.toFixed(2)}`).toBeLessThanOrEqual(1)
-        for (const v of [p.frame, p.opacity, p.scale, p.spin, p.radiate, p.permeate]) {
+        for (const v of [p.frame, p.opacity, p.scale, p.spin, p.radiate, p.permeate, p.flame]) {
           expect(Number.isFinite(v)).toBe(true)
         }
       }
@@ -158,10 +158,37 @@ describe("sigilPoseAt — taken and warded are opposite motions", () => {
     expect(sigilPoseAt(t, PLAN, "taken", PEAK).radiate).toBeLessThan(1)
   })
 
+  it("shows NO FLAME at all on a save — Sam's ruling; the ring still turns", () => {
+    for (let t = 0; t <= sigilDuration(PLAN) + 0.3; t += 0.01) {
+      const p = sigilPoseAt(t, PLAN, "warded", PEAK)
+      expect(p.flame, `flame @${t.toFixed(2)}`).toBe(0)
+    }
+    // ...and the sigil itself is emphatically still there and still turning.
+    const mid = sigilPoseAt(PLAN.form + PLAN.hold / 2, PLAN, "warded", PEAK)
+    expect(mid.opacity).toBe(1)
+    expect(sigilPoseAt(0.5, PLAN, "warded", PEAK).spin)
+      .toBeLessThan(sigilPoseAt(0.2, PLAN, "warded", PEAK).spin)
+  })
+
+  it("lights the flame when it takes them", () => {
+    expect(sigilPoseAt(PLAN.form + PLAN.hold / 2, PLAN, "taken", PEAK).flame).toBe(1)
+    expect(sigilPoseAt(PLAN.form * 0.9, PLAN, "taken", PEAK).flame).toBeGreaterThan(0.5)
+  })
+
+  it("keeps flame within 0..1 throughout, both outcomes", () => {
+    for (const o of ["taken", "warded"] as const) {
+      for (let t = 0; t <= sigilDuration(PLAN) + 0.3; t += 0.01) {
+        const f = sigilPoseAt(t, PLAN, o, PEAK).flame
+        expect(f).toBeGreaterThanOrEqual(0)
+        expect(f).toBeLessThanOrEqual(1)
+      }
+    }
+  })
+
   it("PERMEATES the body only when it takes them", () => {
     const t = PLAN.form + PLAN.hold + PLAN.resolve * 0.9
     expect(sigilPoseAt(t, PLAN, "taken", PEAK).permeate).toBeGreaterThan(0.9)
-    expect(sigilPoseAt(t, PLAN, "warded", PEAK).permeate).toBeLessThan(0.15)
+    expect(sigilPoseAt(t, PLAN, "warded", PEAK).permeate).toBe(0)
   })
 
   it("keeps radiate and permeate finite and sane for the whole effect", () => {

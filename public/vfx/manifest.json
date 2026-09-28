@@ -510,7 +510,7 @@
   "rows": 4
  },
  "sigilNecroticPlume": {
-  "bytes": 142346,
+  "bytes": 194660,
   "cols": 4,
   "file": "sigilNecroticPlume.webp",
   "fps": 12,
@@ -520,7 +520,7 @@
   "rows": 3
  },
  "sigilNecroticRing": {
-  "bytes": 258650,
+  "bytes": 217994,
   "cols": 4,
   "file": "sigilNecroticRing.webp",
   "fps": 12,

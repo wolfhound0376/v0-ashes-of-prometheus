@@ -46,11 +46,23 @@ import {
 /** Ring diameter on the floor, in board units. A square is 1.0. */
 const RING = 2.6
 
-/** Plume quad size. */
-const PLUME = 2.2
-
-/** How high the plume quad's centre sits above the feet. */
-const PLUME_Y = 1.15
+/**
+ * The flame's footprint and height, in board units.
+ *
+ * Sam, 2026-09-28: "make the flame of necrotic magic flush with the base of
+ * the sigil and the magic should look twice as long."
+ *
+ * FLUSH is geometry, not a nudge: the sheet is cropped to end exactly at the
+ * floor plane and the quad is positioned by its BOTTOM edge, so the base of
+ * the fire is the base of the sigil however the effect is scaled. Centring the
+ * quad — what the first version did — floats the fire above its own ring.
+ *
+ * TWICE AS LONG is the 1:2 ratio here against a cell cropped from roughly a
+ * square of source. The stretch lands on smoke and fire, which tolerate it;
+ * the ring's glyphs are on their own sheet and are not stretched.
+ */
+const FLAME_W = 2.4
+const FLAME_H = 4.8
 
 /** Just above the floor, under the spell decals at 0.025 but over blood at 0.018. */
 const FLOOR_Y = 0.022
@@ -97,7 +109,7 @@ export function targetSigilVfx(opts: {
   void loadSheet(plan.art.plume).then((sheet) => {
     if (disposed) return
     readPeak(sheet)
-    plume = new Flip(sheet, 0xffffff, PLUME, PLUME)
+    plume = new Flip(sheet, 0xffffff, FLAME_W, FLAME_H)
     plume.opacity = 0
     group.add(plume.mesh)
     glow = new THREE.PointLight(0x9a5bd6, 0, 6, 1.8)
@@ -138,13 +150,25 @@ export function targetSigilVfx(opts: {
       }
 
       if (plume) {
-        plume.mesh.position.set(at.x, at.y + PLUME_Y, at.z)
-        if (opts.camera) plume.mesh.quaternion.copy(opts.camera.quaternion)
-        // Radiate: the plume spreads wider than the ring as the magic pushes
-        // out, and narrows as it is driven back into them.
-        plume.mesh.scale.set(pose.radiate, pose.radiate, pose.radiate)
-        plume.setProgress(pose.frame)
-        plume.opacity = pose.opacity
+        // NO FLAME ON A SAVE. pose.flame is zero for the whole warded effect,
+        // so the quad simply never shows; the ring above still forms, turns
+        // and resolves.
+        const lit = pose.opacity * pose.flame
+        plume.mesh.visible = lit > 0.004
+        if (plume.mesh.visible) {
+          if (opts.camera) plume.mesh.quaternion.copy(opts.camera.quaternion)
+          // Radiate widens the fire; height follows at a fraction of it, or a
+          // spreading flame would also shoot to the ceiling.
+          const sx = pose.radiate
+          const sy = 1 + (pose.radiate - 1) * 0.45
+          plume.mesh.scale.set(sx, sy, 1)
+          // BASE-FLUSH. The quad is centred geometry, so lifting it by half
+          // its SCALED height puts its bottom edge on the floor plane and
+          // keeps it there as the fire grows.
+          plume.mesh.position.set(at.x, at.y + (FLAME_H * sy) / 2, at.z)
+          plume.setProgress(pose.frame)
+          plume.opacity = lit
+        }
       }
 
       if (glow) {

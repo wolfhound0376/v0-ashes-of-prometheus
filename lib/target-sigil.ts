@@ -144,6 +144,16 @@ export interface SigilPose {
   radiate: number
   /** 0..1 — how much the magic has soaked into the body. Drives the inner glow. */
   permeate: number
+  /**
+   * 0..1 — the FLAME's own visibility, separate from the ring's opacity.
+   *
+   * Sam, 2026-09-28: "Making the save means the sigil rotates but no flames of
+   * magic." So on a warded cast this is zero for the whole effect: the sigil
+   * still forms, still turns, still resolves — the necrotic fire simply never
+   * catches. The ring's `opacity` is untouched by this, which is what keeps
+   * the two results reading as the same spell with different endings.
+   */
+  flame: number
   /** True once the damage and the flinch should land. */
   struck: boolean
 }
@@ -214,6 +224,7 @@ export function sigilPoseAt(
       // The plume is still gathering: it rises but has not spread yet.
       radiate: 0.55 + 0.45 * ease(p),
       permeate: 0,
+      flame: outcome === "taken" ? ease(p) : 0,
       struck: false,
     }
   }
@@ -228,7 +239,8 @@ export function sigilPoseAt(
       spin: -(formSweep(form, 1) + holdSweep(hold, p)),
       // Breathing outward and soaking in while they roll.
       radiate: 1 + 0.10 * Math.sin(p * TAU),
-      permeate: 0.35 + 0.15 * Math.sin(p * TAU * 1.5),
+      permeate: outcome === "taken" ? 0.35 + 0.15 * Math.sin(p * TAU * 1.5) : 0,
+      flame: outcome === "taken" ? 1 : 0,
       struck: false,
     }
   }
@@ -245,7 +257,8 @@ export function sigilPoseAt(
       spin: -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, p, taken)),
       // TAKEN drives inward and through them; WARDED blows outward off them.
       radiate: taken ? 1 - 0.35 * ease(p) : 1 + 1.5 * ease(p),
-      permeate: taken ? Math.min(1, 0.5 + ease(p)) : 0.5 * (1 - ease(p)),
+      permeate: taken ? Math.min(1, 0.5 + ease(p)) : 0,
+      flame: taken ? Math.min(1, 1.3 - p) : 0,
       struck: true,
     }
   }
@@ -258,6 +271,7 @@ export function sigilPoseAt(
     spin: -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, 1, taken)),
     radiate: taken ? 0.65 : 2.5,
     permeate: taken ? 1 : 0,
+    flame: 0,
     struck: true,
   }
 }
