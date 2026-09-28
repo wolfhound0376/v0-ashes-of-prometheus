@@ -1367,16 +1367,19 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
       className={cn("absolute inset-0 -z-10 bg-cover bg-no-repeat transition-transform duration-500 group-hover:scale-110", rail ? "bg-[position:78%_center]" : "bg-[position:75%_center]")}
       style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')` }}
     />
-    <span aria-hidden className={cn("absolute inset-0 -z-10", rail ? "bg-gradient-to-r from-black via-black/70 to-transparent" : "bg-gradient-to-t from-black via-black/60 to-black/10")} />
+    <span aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-b from-black/80 via-transparent to-black" />
+    <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-3/5 bg-gradient-to-t from-black via-black/70 to-transparent" />
     <span aria-hidden className="pointer-events-none absolute inset-[3px] rounded-[4px] border border-[#c9a45a]/35 shadow-[inset_0_0_14px_#000]" />
     <span aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-px w-2/3 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#f1cf85] to-transparent" />
     <span aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 h-px w-2/3 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#f1cf85]/70 to-transparent" />
 
-    <span className={cn("relative flex h-full flex-col", rail ? "justify-between px-2 py-2" : "items-center justify-end gap-1 px-2 pb-3 text-center")}>
-      <span className={cn("block truncate font-serif font-semibold uppercase leading-none text-[#ecd08f] [text-shadow:0_1px_3px_#000,0_0_8px_#000]", rail ? "text-[10px] tracking-normal" : "text-[11px] tracking-[.1em]")}>{name}</span>
-      <span className={cn("flex items-end gap-2", !rail && "flex-col items-center gap-1")}>
-        <span className={cn("font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(30px,5.5vh,44px)]" : "text-4xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
-        <span className={cn("rounded-full border border-[#c9a45a]/70 bg-black/75 px-2 py-0.5 font-serif text-xs font-bold leading-none text-[#f6e6c2] shadow-[0_1px_4px_#000]", rail && "mb-1")}>{modifier}</span>
+    <span className={cn("relative flex h-full flex-col items-center justify-between text-center", rail ? "px-1.5 pb-1.5 pt-2" : "px-2 pb-3 pt-3")}>
+      <span className={cn("block max-w-full truncate font-serif font-semibold uppercase leading-none text-[#ecd08f] [text-shadow:0_1px_3px_#000,0_0_8px_#000]", sheet ? "text-[11px] tracking-[.1em]" : "text-[10px] tracking-normal")}>{name}</span>
+      <span className="flex flex-col items-center gap-1">
+        <span className={cn("font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(28px,5vh,40px)]" : "text-4xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
+        <span className="rounded-full border border-[#f1cf85]/80 bg-black/80 px-2 py-0.5 shadow-[0_1px_4px_#000,inset_0_0_6px_#c9953f55]">
+          <span className="block bg-gradient-to-b from-[#fff4c7] via-[#f5c542] to-[#b8801f] bg-clip-text font-serif text-xs font-extrabold leading-none text-transparent" style={{ filter: "drop-shadow(0 0 4px #f5c54299)" }}>{modifier}</span>
+        </span>
       </span>
     </span>
   </button>
