@@ -1344,13 +1344,35 @@ const abilityArt: Record<string, string> = {
   cha: "/images/ui/abilities/charisma.png",
 }
 
-const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 8px #000) drop-shadow(0 0 10px #ffffff40)"
+const abilityArtPosition: Record<string, string> = {
+  str: "78% center",
+  dex: "78% center",
+  con: "center 25%",
+  int: "center 35%",
+  wis: "center 30%",
+  cha: "center 40%",
+}
+
+// Gem tones sampled from the reference card set: light / core / deep.
+const abilityGem: Record<string, [string, string, string]> = {
+  str: ["#ff8a7a", "#c81e24", "#4a0507"],
+  dex: ["#9cf08a", "#2f9a34", "#0b3a0e"],
+  con: ["#ffc07a", "#c8611c", "#4a1e04"],
+  int: ["#e2a6ff", "#8b35d6", "#2c0752"],
+  wis: ["#9cc4ff", "#2a62d0", "#0a1d52"],
+  cha: ["#ff8fae", "#c01446", "#4a0418"],
+}
+
+const goldText = "bg-gradient-to-b from-[#fff8d6] via-[#f5c542] to-[#a8701a] bg-clip-text text-transparent"
+const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 6px #000)"
 
 export function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean; large?: boolean }) {
   const key = ability.key.toLowerCase()
   const name = abilityNames[key] ?? ability.key
   const modifier = `${ability.mod >= 0 ? "+" : ""}${ability.mod}`
   const rail = large && !sheet
+  const [gemLight, gemCore, gemDeep] = abilityGem[key] ?? abilityGem.str
+  const medallion = rail ? "size-[clamp(30px,5.2vh,42px)]" : sheet ? "size-14" : "size-11"
 
   return <button
     type="button"
@@ -1358,28 +1380,48 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
     aria-label={`${name} ${ability.score}, modifier ${modifier}`}
     title={`${name}: ${ability.score} (${modifier})`}
     className={cn(
-      "group relative isolate min-w-0 overflow-hidden rounded-md border border-[#6b5224] bg-[#090807] p-0 text-left shadow-[0_4px_12px_#000] transition-[transform,border-color,box-shadow] duration-200 hover:z-20 hover:border-[#e0bb6a] hover:shadow-[0_10px_28px_#000,0_0_18px_#c9953f55] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b369]",
-      rail ? "h-[clamp(96px,16vh,132px)] w-full hover:-translate-y-0.5" : sheet ? "h-[190px] hover:scale-[1.04]" : "h-[132px] hover:scale-105",
+      "group relative isolate min-w-0 overflow-hidden rounded-lg border-2 border-[#b8893a] bg-[#0a0806] p-0 text-left shadow-[0_6px_16px_#000,inset_0_0_0_1px_#3a2a10] transition-[transform,border-color,box-shadow] duration-200 hover:z-20 hover:border-[#f1cf85] hover:shadow-[0_12px_30px_#000,0_0_22px_var(--gem)] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f1cf85]",
+      rail ? "h-[clamp(104px,17vh,140px)] w-full hover:-translate-y-0.5" : sheet ? "h-[200px] hover:scale-[1.04]" : "h-[140px] hover:scale-105",
     )}
+    style={{ ["--gem" as string]: `${gemCore}88` }}
   >
     <span
       aria-hidden
-      className={cn("absolute inset-0 -z-10 bg-cover bg-no-repeat transition-transform duration-500 group-hover:scale-110", rail ? "bg-[position:78%_center]" : "bg-[position:75%_center]")}
-      style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')` }}
+      className="absolute inset-0 -z-10 bg-cover bg-no-repeat saturate-[1.15] contrast-[1.08] transition-transform duration-500 group-hover:scale-110"
+      style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')`, backgroundPosition: abilityArtPosition[key] ?? "center" }}
     />
-    <span aria-hidden className="absolute inset-0 -z-10 bg-gradient-to-b from-black/80 via-transparent to-black" />
-    <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-3/5 bg-gradient-to-t from-black via-black/70 to-transparent" />
-    <span aria-hidden className="pointer-events-none absolute inset-[3px] rounded-[4px] border border-[#c9a45a]/35 shadow-[inset_0_0_14px_#000]" />
-    <span aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-px w-2/3 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#f1cf85] to-transparent" />
-    <span aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 h-px w-2/3 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#f1cf85]/70 to-transparent" />
+    <span aria-hidden className="absolute inset-x-0 top-0 -z-10 h-1/4 bg-gradient-to-b from-black/60 to-transparent" />
+    <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-[62%] bg-gradient-to-t from-[#050403] via-[#050403]/85 to-transparent" />
+    <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-1/2 opacity-40" style={{ background: `radial-gradient(ellipse at 50% 85%, ${gemCore}, transparent 70%)` }} />
 
-    <span className={cn("relative flex h-full flex-col items-center justify-between text-center", rail ? "px-1.5 pb-1.5 pt-2" : "px-2 pb-3 pt-3")}>
-      <span className={cn("block max-w-full truncate font-serif font-semibold uppercase leading-none text-[#ecd08f] [text-shadow:0_1px_3px_#000,0_0_8px_#000]", sheet ? "text-[11px] tracking-[.1em]" : "text-[10px] tracking-normal")}>{name}</span>
-      <span className="flex flex-col items-center gap-1">
-        <span className={cn("font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(28px,5vh,40px)]" : "text-4xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
-        <span className="rounded-full border border-[#f1cf85]/80 bg-black/80 px-2 py-0.5 shadow-[0_1px_4px_#000,inset_0_0_6px_#c9953f55]">
-          <span className="block bg-gradient-to-b from-[#fff4c7] via-[#f5c542] to-[#b8801f] bg-clip-text font-serif text-xs font-extrabold leading-none text-transparent" style={{ filter: "drop-shadow(0 0 4px #f5c54299)" }}>{modifier}</span>
+    <span aria-hidden className="pointer-events-none absolute inset-[3px] rounded-[5px] border border-[#f1cf85]/45 shadow-[inset_0_0_12px_#000]" />
+    <span aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-px w-3/4 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#fff0c2] to-transparent" />
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-1/2 top-[2px] size-2.5 -translate-x-1/2 rotate-45 border border-[#f1cf85] shadow-[0_0_6px_var(--gem),0_1px_2px_#000]"
+      style={{ background: `radial-gradient(circle at 35% 30%, ${gemLight}, ${gemCore} 55%, ${gemDeep})` }}
+    />
+
+    <span className={cn("relative flex h-full flex-col items-center justify-end text-center", rail ? "gap-0.5 px-1 pb-1" : "gap-1 px-1.5 pb-2")}>
+      <span className="w-full border-y border-[#b8893a]/70 bg-gradient-to-r from-transparent via-[#0a0806]/90 to-transparent py-0.5">
+        <span className={cn("block max-w-full truncate font-serif font-bold uppercase leading-none text-[#f6e6bd] [text-shadow:0_1px_2px_#000,0_0_6px_#000]", sheet ? "text-[11px] tracking-[.1em]" : "text-[9px] tracking-normal")}>{name}</span>
+      </span>
+
+      <span className="relative flex w-full items-center justify-center">
+        <span aria-hidden className="absolute inset-x-0 top-1/2 h-[55%] -translate-y-1/2 [clip-path:polygon(0_0,100%_0,90%_50%,100%_100%,0_100%,10%_50%)]" style={{ background: `linear-gradient(180deg, ${gemCore}, ${gemDeep})` }} />
+        <span aria-hidden className="absolute inset-x-[6%] top-1/2 h-px -translate-y-[calc(50%+0.6em)] bg-[#f1cf85]/60" />
+        <span
+          className={cn("relative flex items-center justify-center rounded-full border-2 border-[#f1cf85] shadow-[0_2px_8px_#000,0_0_12px_var(--gem),inset_0_-3px_6px_#0008,inset_0_2px_4px_#fff6]", medallion)}
+          style={{ background: `radial-gradient(circle at 38% 28%, ${gemLight} 0%, ${gemCore} 45%, ${gemDeep} 100%)` }}
+        >
+          <span aria-hidden className="absolute inset-[2px] rounded-full border border-[#fff0c2]/40" />
+          <span aria-hidden className="absolute left-[22%] top-[10%] h-[28%] w-[45%] rounded-full bg-gradient-to-b from-[#ffffff]/55 to-transparent" />
+          <span className={cn("relative font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(17px,2.9vh,24px)]" : sheet ? "text-3xl" : "text-2xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
         </span>
+      </span>
+
+      <span className="rounded-full border border-[#f1cf85] bg-gradient-to-b from-[#2a1f10] to-[#050403] px-2 py-0.5 shadow-[0_1px_4px_#000,inset_0_0_5px_#f5c54244]">
+        <span className={cn("block font-serif font-extrabold leading-none", goldText, rail ? "text-[10px]" : "text-xs")} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
       </span>
     </span>
   </button>
