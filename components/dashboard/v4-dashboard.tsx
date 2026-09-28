@@ -878,7 +878,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         />
       </div>
       <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button>{props.dmMode ? <button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button> : null}</div>
-      <div className={cn("sticky bottom-0 z-20 max-h-[34vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]", talkMode && "hidden")}><div className="flex justify-center gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
+      <div className={cn("sticky bottom-0 z-20 max-h-[34vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]", talkMode && "hidden")}><div className="grid w-full grid-cols-3 gap-2 py-1 sm:grid-cols-6">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
     </Frame>
 
     <div className={cn("flex min-h-0 flex-col gap-2", talkMode && "hidden")}>
@@ -1335,21 +1335,50 @@ type StatKind = "ac" | "initiative" | "proficiency" | "speed"
 
 const abilityNames: Record<string, string> = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" }
 
+const abilityArt: Record<string, string> = {
+  str: "/images/ui/abilities/strength.png",
+  dex: "/images/ui/abilities/dexterity.png",
+  con: "/images/ui/abilities/constitution.png",
+  int: "/images/ui/abilities/intelligence.png",
+  wis: "/images/ui/abilities/wisdom.png",
+  cha: "/images/ui/abilities/charisma.png",
+}
+
+const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 6px #e0115f88)"
+
 function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean; large?: boolean }) {
-  const order = ["str", "dex", "con", "int", "wis", "cha"]
-  const index = Math.max(0, order.indexOf(ability.key.toLowerCase()))
-  const x = index === 0 ? "0%" : index === 5 ? "100%" : `${index * 20}%`
-  const name = abilityNames[ability.key.toLowerCase()] ?? ability.key
-  // In the six-up rail each card is only ~45px wide, so the full ability name
-  // cannot fit and was being cut mid-word ("CONSTITUTE", "INTELLIGENC").
-  // The rail shows the standard 5E abbreviation; the wide two-column sheet has
-  // room for the full name. Either way the full name is on hover and in the
-  // native tooltip, so nothing is lost.
-  return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : large ? "hover:scale-105 focus-visible:scale-105" : "h-[132px] hover:scale-125 focus-visible:scale-125")} style={!sheet && large ? { height: "clamp(96px, 16vh, 132px)", aspectRatio: "3 / 7" } : undefined} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
-    <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
-    <span className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/92 to-transparent", sheet ? "h-11" : large ? "" : "h-[52px]")} style={!sheet && large ? { height: 38 } : undefined} />
-    <span className={cn("absolute inset-x-0 bg-gradient-to-b from-[#ffb0c0] via-[#e0115f] to-[#8b001f] bg-clip-text text-center font-serif font-extrabold leading-none text-transparent", sheet ? "bottom-[19px] text-[15px]" : large ? "" : "bottom-[25px] text-[17px]")} style={{ ...(!sheet && large ? { bottom: 17, fontSize: 14 } : {}), filter: "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 4px #e0115f99)" }}>{ability.score}</span>
-    <span className={cn("absolute inset-x-0 text-center font-serif font-bold leading-none text-[#ffffff] [text-shadow:0_0_2px_#000,0_1px_2px_#000]", sheet ? "bottom-[7px] text-[9px]" : large ? "" : "bottom-[11px] text-[10px]")} style={!sheet && large ? { bottom: 5, fontSize: 9 } : undefined}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
+  const key = ability.key.toLowerCase()
+  const name = abilityNames[key] ?? ability.key
+  const modifier = `${ability.mod >= 0 ? "+" : ""}${ability.mod}`
+  const rail = large && !sheet
+
+  return <button
+    type="button"
+    onClick={onClick}
+    aria-label={`${name} ${ability.score}, modifier ${modifier}`}
+    title={`${name}: ${ability.score} (${modifier})`}
+    className={cn(
+      "group relative isolate min-w-0 overflow-hidden rounded-md border border-[#6b5224] bg-[#090807] p-0 text-left shadow-[0_4px_12px_#000] transition-[transform,border-color,box-shadow] duration-200 hover:z-20 hover:border-[#e0bb6a] hover:shadow-[0_10px_28px_#000,0_0_18px_#c9953f55] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b369]",
+      rail ? "h-[clamp(96px,16vh,132px)] w-full hover:-translate-y-0.5" : sheet ? "h-[190px] hover:scale-[1.04]" : "h-[132px] hover:scale-105",
+    )}
+  >
+    <span
+      aria-hidden
+      className={cn("absolute inset-0 -z-10 bg-cover bg-no-repeat transition-transform duration-500 group-hover:scale-110", rail ? "bg-[position:78%_center]" : "bg-[position:75%_center]")}
+      style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')` }}
+    />
+    <span aria-hidden className={cn("absolute inset-0 -z-10", rail ? "bg-gradient-to-r from-black via-black/70 to-transparent" : "bg-gradient-to-t from-black via-black/60 to-black/10")} />
+    <span aria-hidden className="pointer-events-none absolute inset-[3px] rounded-[4px] border border-[#c9a45a]/35 shadow-[inset_0_0_14px_#000]" />
+    <span aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-px w-2/3 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#f1cf85] to-transparent" />
+    <span aria-hidden className="pointer-events-none absolute bottom-0 left-1/2 h-px w-2/3 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#f1cf85]/70 to-transparent" />
+
+    <span className={cn("relative flex h-full flex-col", rail ? "justify-between px-3 py-2" : "items-center justify-end gap-1 px-2 pb-3 text-center")}>
+      <span className={cn("block truncate font-serif font-semibold uppercase leading-none tracking-[.14em] text-[#ecd08f] [text-shadow:0_1px_3px_#000,0_0_8px_#000]", rail ? "text-[11px] sm:text-xs" : "text-[11px]")}>{name}</span>
+      <span className={cn("flex items-end gap-2", !rail && "flex-col items-center gap-1")}>
+        <span className={cn("bg-gradient-to-b from-[#ffc2cf] via-[#e0115f] to-[#8b001f] bg-clip-text font-serif font-extrabold leading-none text-transparent", rail ? "text-[clamp(30px,5.5vh,44px)]" : "text-4xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
+        <span className={cn("rounded-full border border-[#c9a45a]/70 bg-black/75 px-2 py-0.5 font-serif text-xs font-bold leading-none text-[#f6e6c2] shadow-[0_1px_4px_#000]", rail && "mb-1")}>{modifier}</span>
+      </span>
+    </span>
   </button>
 }
 
