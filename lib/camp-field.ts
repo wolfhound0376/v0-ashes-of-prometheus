@@ -267,12 +267,22 @@ export function huntDanger(rows: readonly EncounterTableRow[], noise: number, rn
   }
 }
 
-/** Passive Perception from a bestiary row: 10 + WIS mod, or its listed Perception bonus. */
-export function passivePerception(b: { wis?: number | null; skills?: Record<string, number> | null; senses?: string | null }): number {
+/**
+ * Passive Perception from a bestiary row: the senses line when it lists one,
+ * else 10 + its Perception bonus (skills may be "Perception +4" text or an
+ * object), else 10 + WIS modifier. Null when the row has no stats at all —
+ * several OotA creatures are still stubs, and a guessed number would be an
+ * invented stat block.
+ */
+export function passivePerception(b: { wis?: number | null; skills?: Record<string, number> | string | null; senses?: string | null }): number | null {
   const listed = /passive perception\s*(\d+)/i.exec(b.senses ?? "")
   if (listed) return Number(listed[1])
-  const perc = b.skills && typeof b.skills === "object" ? (b.skills as Record<string, number>).Perception ?? (b.skills as Record<string, number>).perception : undefined
-  return 10 + (typeof perc === "number" ? perc : Math.floor(((b.wis ?? 10) - 10) / 2))
+  let perc: number | undefined
+  if (typeof b.skills === "string") { const m = /perception\s*([+-]\d+)/i.exec(b.skills); if (m) perc = Number(m[1]) }
+  else if (b.skills && typeof b.skills === "object") perc = b.skills.Perception ?? b.skills.perception
+  if (typeof perc === "number") return 10 + perc
+  if (typeof b.wis === "number") return 10 + Math.floor((b.wis - 10) / 2)
+  return null
 }
 
 /**
@@ -280,7 +290,8 @@ export function passivePerception(b: { wis?: number | null; skills?: Record<stri
  * Perception. Beat it and the hunter slips back to camp with the kill; fail
  * and they are caught — the fight starts where they stand.
  */
-export function slipAway(hunter: string, stealthTotal: number, creature: { name: string; passive: number }): { caught: boolean; note: string } {
+export function slipAway(hunter: string, stealthTotal: number, creature: { name: string; passive: number | null }): { caught: boolean | null; note: string } {
+  if (creature.passive == null) return { caught: null, note: `${creature.name} has no stat block yet — the DM rules whether ${hunter} is seen (Stealth ${stealthTotal}).` }
   const caught = Math.trunc(stealthTotal) < creature.passive
   return {
     caught,
@@ -467,8 +478,7 @@ export function searchRoom(opts: { who: string; total: number; dc?: number; cata
     return { ...base, face, deadEnd: false, result: row.result, items: [{ slug: it.slug, name: it.name, quantity: 1 }], note: `${opts.who} strips ${it.name.toLowerCase()} from a corpse that no longer needs it.` }
   }
   if (detail.dmg_table) {
-    const gems = detail.value_gp ? ` and ${rollCount("2d6", opts.rng)} gems of ${detail.value_gp} gp` : ""
-    return { ...base, face, deadEnd: false, result: row.result, dmPicks: `DMG Table ${detail.dmg_table} magic item${gems}`, flags: [...flags, "Magic items are the DM's pick from the catalog — nothing is auto-awarded"], note: `${opts.who} finds something that hums. The DM decides what it is.` }
+    return { ...base, face, deadEnd: false, result: row.result, dmPicks: row.result, flags: [...flags, "Magic items are the DM's pick from the catalog — nothing is auto-awarded"], note: `${opts.who} finds something that hums. The DM decides what it is.` }
   }
   if (detail.value_gp) {
     const count = rollCount(detail.count ?? 1, opts.rng)

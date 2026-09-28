@@ -104,6 +104,10 @@ describe("hunt", () => {
     expect(passivePerception({ wis: 11, senses: "darkvision 60 ft., passive Perception 10" })).toBe(10)
     expect(slipAway("Fifi", 11, { name: "Orog", passive: 10 }).caught).toBe(false)
     expect(slipAway("Fifi", 9, { name: "Orog", passive: 10 }).caught).toBe(true)
+    // Real rows: skills as text; stub rows with no stats get no number.
+    expect(passivePerception({ wis: 11, skills: "Perception +4" })).toBe(14)
+    expect(passivePerception({ wis: null, skills: null, senses: null })).toBeNull()
+    expect(slipAway("Fifi", 20, { name: "Umber hulk", passive: null }).caught).toBeNull()
   })
 })
 
