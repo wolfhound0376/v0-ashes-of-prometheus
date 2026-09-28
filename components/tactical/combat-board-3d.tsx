@@ -72,6 +72,10 @@ import { allocate, allocated, projectileCount, type Allocation } from "@/lib/vol
 import { STABILIZE, STABILIZE_ENTRY } from "@/lib/stabilize"
 import { normaliseSummon, type SummonOnBoard, type HandUse } from "@/lib/summons"
 import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
+// The scenery: 191 pixel props scattered or hand-placed on the floor. Which
+// square each one stands on is decided in lib/map-props; this only draws.
+import { layMapProps, type PropDecorHandle } from "./map-prop-decor"
+import type { MapProp, PropPlacement } from "@/lib/map-props"
 import { layGroundItems, type GroundItemHandle } from "./ground-item-props"
 import { withinReach, type GroundItemRow } from "@/lib/ground-items"
 import { defenceMotion } from "./defence-motion"
@@ -2282,6 +2286,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // Blood on the tiles. Laid by the route into vtt_maps.meta.marks; this
     // only paints what the row says, at load and again on every change.
     let blood: BloodDecalHandle | null = null
+    // The scenery standing and lying about the room. Rows in
+    // map_prop_placements, art in vtt-assets/props; neither is owned here.
+    let props: PropDecorHandle | null = null
     // Things lying on the floor (vtt_ground_items). Same arrangement as the
     // blood: the route owns the rows, Realtime carries them, this only draws
     // — and, unlike the blood, they can be clicked.
@@ -5184,6 +5191,32 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // reload does not mop the floor.
       blood = layBloodDecals({ parent: boardGroup, cellToWorld: (x, y) => sqCentre(x, y), squareSize: SQ })
       blood.sync(meta.marks)
+      // THE SCENERY. Mushrooms, stalagmites, webs, cages, corpses — placed
+      // rows, not a per-client roll, so every seat at the table draws the same
+      // room. Overhead props (stalactites) are left out: both of this board's
+      // cameras look down, so ceiling art would hang between the players and
+      // the squares they are reading. See map-prop-decor for the whole note.
+      props = layMapProps({ parent: boardGroup, cellToWorld: (x, y) => sqCentre(x, y), squareSize: SQ })
+      // Two small reads, once, at build. A room's scenery does not change
+      // mid-fight, so there is no channel on it: a DM who re-scatters a map
+      // is re-rendering it anyway.
+      void (async () => {
+        const [placed, catalog] = await Promise.all([
+          supabase
+            .from("map_prop_placements")
+            .select("prop_slug,grid_x,grid_y,rotation,flip_x,placed_by,seed")
+            .eq("map_kind", "vtt")
+            .eq("map_id", map.id),
+          supabase
+            .from("map_props")
+            .select("slug,render_class,footprint_w,footprint_h,biomes,blocks_movement,difficult_terrain,spawn_weight,max_per_map,min_spacing")
+            .eq("status", "wired"),
+        ])
+        // A map with no scenery is the normal case today — nothing has been
+        // scattered yet — so a missing row set is silence, not an error.
+        if (disposed || !placed.data?.length || !catalog.data?.length) return
+        props?.sync(placed.data as unknown as PropPlacement[], catalog.data as unknown as MapProp[])
+      })()
       // What is lying about. Read once here; kept live by the channel below.
       // Pixel icons by catalogue id; piles drawn before these arrive are redrawn once they do.
       const pixelIcons = new Map<string, string>()
@@ -6496,6 +6529,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         vfx.splice(i, 1)
       }
 
+      // The standing scenery turns with the camera, the same quarter-turn the
+      // pixel figures answer. Yaw only: a mushroom that tipped back at the
+      // camera's pitch would read as a sticker laid on the floor.
+      props?.update(activeCam())
+
       tokensRef.current.forEach((entry) => {
         // A floating thing floats: a slow bob and a lazy turn, from its own
         // phase so two hands do not move in lockstep.
@@ -6699,6 +6737,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       PLATE.dispose()
       activeGlow.geometry.dispose()
       blood?.dispose()
+      props?.dispose()
       groundItems?.dispose()
       pmrem.dispose()
       // The grade's buffers and shaders; also disposes its passes and effects.
