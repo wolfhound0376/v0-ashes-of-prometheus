@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { uiChime, uiTick } from "@/lib/ui-tick"
+import { uiChime, uiKeyTap, uiTick } from "@/lib/ui-tick"
 
 const WINDOW_OPENER = '[data-tick="window"], [aria-haspopup="dialog"], [aria-haspopup="true"], [aria-haspopup="menu"]'
 
@@ -16,7 +16,8 @@ export function UiClickSound() {
       const control = target?.closest?.(CLICKABLE)
       if (!control || control.closest("[data-no-tick]")) return
       if (control.matches(":disabled, [aria-disabled='true']")) return
-      if (control.matches(WINDOW_OPENER)) uiChime()
+      if (control.closest('[data-tick="key"]')) uiKeyTap()
+      else if (control.matches(WINDOW_OPENER)) uiChime()
       else uiTick("firm")
     }
     document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true })

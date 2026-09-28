@@ -70,6 +70,61 @@ export function uiChime(): void {
   playChime(ac)
 }
 
+/**
+ * The iPhone keyboard tap: a crisp, woody "tock" — a very short band-limited
+ * noise click with a tiny tonal body, over in about 15ms. Used by the top nav.
+ */
+export function uiKeyTap(): void {
+  const ac = audio()
+  if (!ac) return
+  if (ac.state !== "running") {
+    ac.resume().then(() => playKeyTap(ac)).catch(() => {})
+    return
+  }
+  playKeyTap(ac)
+}
+
+function playKeyTap(ac: AudioContext): void {
+  try {
+    const now = ac.currentTime + 0.001
+
+    const out = ac.createGain()
+    out.gain.value = 0.16
+    out.connect(ac.destination)
+
+    const dur = 0.014
+    const frames = Math.max(1, Math.floor(ac.sampleRate * dur))
+    const buf = ac.createBuffer(1, frames, ac.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / frames, 5)
+    const noise = ac.createBufferSource()
+    noise.buffer = buf
+    const band = ac.createBiquadFilter()
+    band.type = "bandpass"
+    band.frequency.value = 3200
+    band.Q.value = 1.1
+    const ng = ac.createGain()
+    ng.gain.value = 0.9
+    noise.connect(band).connect(ng).connect(out)
+    noise.start(now)
+    noise.stop(now + dur + 0.005)
+
+    const body = ac.createOscillator()
+    body.type = "sine"
+    body.frequency.setValueAtTime(1750, now)
+    body.frequency.exponentialRampToValueAtTime(1200, now + 0.012)
+    const bg = ac.createGain()
+    bg.gain.setValueAtTime(0.0001, now)
+    bg.gain.exponentialRampToValueAtTime(0.35, now + 0.0015)
+    bg.gain.exponentialRampToValueAtTime(0.0001, now + 0.013)
+    body.connect(bg).connect(out)
+    body.start(now)
+    body.stop(now + 0.02)
+  } catch {
+    // Silence is fine.
+  }
+}
+
 function playChime(ac: AudioContext): void {
   try {
     const now = ac.currentTime + 0.001

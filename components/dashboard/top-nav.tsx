@@ -75,7 +75,7 @@ export function TopNav({
       {controlSlot ? <div className="ml-auto flex items-center gap-2 pr-2">{controlSlot}</div> : null}
 
       {/* Sections */}
-      <nav className="flex items-center gap-1.5">
+      <nav data-tick="key" className="flex items-center gap-1.5">
         {sections.map((s) => {
           const Icon = s.icon
           return (
