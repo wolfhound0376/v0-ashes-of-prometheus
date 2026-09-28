@@ -26,6 +26,7 @@ import type { VfxHandle } from "./spell-vfx"
 import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
 import { schoolRuneFor } from "@/lib/spell-school"
+import { MARTIAL_SCALE, martialArtFor, martialImpactFor } from "@/lib/martial-arts"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
 import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
 
@@ -756,10 +757,23 @@ export function castSpellKitVfx(opts: {
       }).catch(() => {})
     }
 
-    if (spec.impact) {
-      void loadSheet(spec.impact).then((s) => {
+    // THE SCHOOL OF MARTIAL ARTS (Sam, 2026-09-28).
+    //
+    // The same trade as the rune above, on the other half of the fight. A
+    // punch, a kick, a sneak attack and a class-feature strike are four
+    // different things to a player and ONE body animation to a sprite; what
+    // tells them apart at this camera distance is what lands, not the windup.
+    // So the four live here as shared impact sheets, attached to whichever
+    // sprite throws them, and no character needs four new attack animations.
+    //
+    // Null for an ordinary weapon swing, so a longsword still blooms with
+    // physicalImpact exactly as it always has.
+    const martial = martialArtFor(opts.spell)
+    const impactKey = martialImpactFor(opts.spell) ?? spec.impact
+    if (impactKey) {
+      void loadSheet(impactKey).then((s) => {
         if (disposed || castGone) return
-        const k = (spec.impactScale ?? 1.6) * areaScale
+        const k = (martial ? MARTIAL_SCALE[martial] : (spec.impactScale ?? 1.6)) * areaScale
         impact = new Flip(s, spec.tint, 2.0 * k, 2.0 * k)
         impact.opacity = 0
         group.add(impact.mesh)
