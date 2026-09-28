@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Roper",
+  "cell": [
+    160,
+    160
+  ],
+  "pivot": [
+    80,
+    158
+  ],
+  "ppu": 87,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 9,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}

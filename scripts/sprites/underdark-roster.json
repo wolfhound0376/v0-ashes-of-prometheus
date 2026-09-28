@@ -698,5 +698,159 @@
       "vampire-female"
     ],
     "note": "hand-written manifest: each Vampire token is a man or a woman at random (by token id), and disguises as a townsperson of that gender (Sam, 9/27)"
+  },
+  {
+    "slug": "specter",
+    "name": "Specter",
+    "pixellab_character_id": "8dc038e7-ecae-44be-9ac1-9cc94a4b8f9e",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "wight",
+    "name": "Wight",
+    "pixellab_character_id": "f6d6e445-b760-494c-b5ac-22bd80121378",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "phase-spider",
+    "name": "Phase Spider",
+    "pixellab_character_id": "a4233133-3e97-4a9b-a99a-ba3400bc815e",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "roper",
+    "name": "Roper",
+    "pixellab_character_id": "ab918ecf-051d-4851-abc1-ccb20db889d0",
+    "size_by": "height",
+    "target_ft": 9.0
+  },
+  {
+    "slug": "vampire-spawn",
+    "name": "Vampire Spawn",
+    "pixellab_character_id": "0cfc4bac-90a5-4f77-9db4-a1705af51d2b",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "drider",
+    "name": "Drider",
+    "pixellab_character_id": "91239627-dc38-4f13-b122-cb09a892c4b8",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "water-elemental",
+    "name": "Water Elemental",
+    "pixellab_character_id": "abe7171d-6062-4101-aaea-3704c67f5e96",
+    "size_by": "height",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "fire-elemental",
+    "name": "Fire Elemental",
+    "pixellab_character_id": "5688f021-2129-4a59-8978-bc608ce30fa7",
+    "size_by": "height",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "mage",
+    "name": "Mage",
+    "pixellab_character_id": "9ac412ae-b854-4360-a846-8413d1663688",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "chuul",
+    "name": "Chuul",
+    "pixellab_character_id": "3d144948-9f1c-41da-87c9-5e959643afa0",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "ochre-jelly",
+    "name": "Ochre Jelly",
+    "pixellab_character_id": "58bb6e20-d069-4a40-b460-961d38514ebf",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "giant-fire-beetle",
+    "name": "Giant Fire Beetle",
+    "pixellab_character_id": "fc8b67da-241e-442f-8f4c-fd8f068b35a6",
+    "size_by": "width",
+    "target_ft": 3.0
+  },
+  {
+    "slug": "troglodyte",
+    "name": "Troglodyte",
+    "pixellab_character_id": "e2c2b771-4607-4bdf-947f-5b620efb9510",
+    "size_by": "height",
+    "target_ft": 5.5
+  },
+  {
+    "slug": "carrion-crawler",
+    "name": "Carrion Crawler",
+    "pixellab_character_id": "d38c7547-2b36-4c15-b7f5-30e269b3c8e3",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "grell",
+    "name": "Grell",
+    "pixellab_character_id": "60cf007f-c7fc-461b-82ed-fa2011406d05",
+    "size_by": "height",
+    "target_ft": 5.0
+  },
+  {
+    "slug": "deep-rothe",
+    "name": "Deep Rothé",
+    "pixellab_character_id": "4722230b-3fe4-4bc7-9997-8b66a865e02c",
+    "size_by": "width",
+    "target_ft": 5.0
+  },
+  {
+    "slug": "umber-hulk",
+    "name": "Umber Hulk",
+    "pixellab_character_id": "a50b4f67-f078-4b04-96ee-c24ae76fa885",
+    "size_by": "height",
+    "target_ft": 8.0
+  },
+  {
+    "slug": "intellect-devourer",
+    "name": "Intellect Devourer",
+    "pixellab_character_id": "cfb47ef1-8569-410f-886d-9f43bd5a102e",
+    "size_by": "height",
+    "target_ft": 2.0
+  },
+  {
+    "slug": "poltergeist",
+    "name": "Poltergeist",
+    "pixellab_character_id": "836e25cf-d64b-4b34-bc10-ed5a3f43b8ec",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "death-knight",
+    "name": "Death Knight",
+    "pixellab_character_id": "029ebc6d-4311-4189-8eb1-ec0c60e9dd3f",
+    "size_by": "height",
+    "target_ft": 5.9
+  },
+  {
+    "slug": "beholder",
+    "name": "Beholder",
+    "pixellab_character_id": "619813bc-8345-4216-afbc-f5f7ed0360c7",
+    "size_by": "width",
+    "target_ft": 10.0
+  },
+  {
+    "slug": "piercer",
+    "name": "Piercer",
+    "pixellab_character_id": "70f373b2-274c-46f0-9661-8bc813b7bfe5",
+    "size_by": "height",
+    "target_ft": 5.0
   }
 ]
