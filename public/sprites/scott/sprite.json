@@ -66,6 +66,12 @@
       "frames": 5,
       "fps": 3,
       "loop": true
+    },
+    "perform": {
+      "sheet": "perform.png",
+      "frames": 9,
+      "fps": 8,
+      "loop": true
     }
   }
 }
