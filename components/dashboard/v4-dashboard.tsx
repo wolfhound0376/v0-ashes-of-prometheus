@@ -1466,7 +1466,7 @@ export function StatShield({ kind, label, value, onClick, tooltip }: { kind: Sta
       <span className={cn("block font-serif font-extrabold leading-none", mainValue.length > 2 ? "text-[10px]" : "text-[13px]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
       {unitMatch && <span className={cn("mt-px block font-serif text-[7px] font-bold uppercase leading-none tracking-[.06em]", goldText)}>ft</span>}
     </span>
-    <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif text-[10px] font-extrabold uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
+    <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif font-extrabold", kind === "ac" ? "text-[12px]" : "text-[10px]", " uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
   </button>
 }
 

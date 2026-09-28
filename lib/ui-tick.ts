@@ -47,39 +47,57 @@ function audio(): AudioContext | null {
 export function uiTick(strength: "soft" | "firm" = "firm"): void {
   const ac = audio()
   if (!ac) return
+  // Scheduling against a suspended context silently drops the sound on the
+  // first click of a session, so wait for resume before playing.
+  if (ac.state !== "running") {
+    ac.resume().then(() => playTick(ac, strength)).catch(() => {})
+    return
+  }
+  playTick(ac, strength)
+}
+
+function playTick(ac: AudioContext, strength: "soft" | "firm"): void {
   try {
     const firm = strength === "firm"
-    const dur = firm ? 0.035 : 0.022
+    const now = ac.currentTime + 0.001
+    const dur = firm ? 0.045 : 0.03
 
-    // Filtered noise rather than a tone: a pure sine reads as a beep, and a
-    // beep belongs to a machine. Noise through a tight band-pass is what a
-    // physical key sounds like.
+    const out = ac.createGain()
+    out.gain.value = firm ? 0.9 : 0.45
+    out.connect(ac.destination)
+
+    // Transient: a short, broad noise snap for the "tick".
     const frames = Math.max(1, Math.floor(ac.sampleRate * dur))
     const buf = ac.createBuffer(1, frames, ac.sampleRate)
     const data = buf.getChannelData(0)
     for (let i = 0; i < frames; i++) {
-      // Decaying noise — the tail is gone almost before it starts.
-      const t = i / frames
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 6)
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / frames, 8)
     }
+    const noise = ac.createBufferSource()
+    noise.buffer = buf
+    const hp = ac.createBiquadFilter()
+    hp.type = "highpass"
+    hp.frequency.value = 1500
+    const noiseGain = ac.createGain()
+    noiseGain.gain.setValueAtTime(0.6, now)
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + dur)
+    noise.connect(hp).connect(noiseGain).connect(out)
+    noise.start(now)
+    noise.stop(now + dur + 0.01)
 
-    const src = ac.createBufferSource()
-    src.buffer = buf
-
-    const band = ac.createBiquadFilter()
-    band.type = "bandpass"
-    band.frequency.value = firm ? 2600 : 3400
-    band.Q.value = firm ? 1.6 : 2.4
-
-    const gain = ac.createGain()
-    const peak = firm ? 0.16 : 0.07
-    gain.gain.setValueAtTime(0.0001, ac.currentTime)
-    gain.gain.exponentialRampToValueAtTime(peak, ac.currentTime + 0.003)
-    gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur)
-
-    src.connect(band).connect(gain).connect(ac.destination)
-    src.start()
-    src.stop(ac.currentTime + dur + 0.01)
+    // Body: a fast pitch-dropping tone that gives the click weight so it is
+    // audible on laptop speakers, not just headphones.
+    const tone = ac.createOscillator()
+    tone.type = "triangle"
+    tone.frequency.setValueAtTime(firm ? 1800 : 2400, now)
+    tone.frequency.exponentialRampToValueAtTime(firm ? 700 : 1100, now + 0.025)
+    const toneGain = ac.createGain()
+    toneGain.gain.setValueAtTime(0.0001, now)
+    toneGain.gain.exponentialRampToValueAtTime(0.5, now + 0.002)
+    toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03)
+    tone.connect(toneGain).connect(out)
+    tone.start(now)
+    tone.stop(now + 0.04)
   } catch {
     // A click that cannot play is not worth an error. Silence is fine.
   }
