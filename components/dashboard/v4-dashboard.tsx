@@ -928,9 +928,9 @@ export function V4Dashboard(props: V4DashboardProps) {
               })}
             </div>
           ) : null}
-          <div className="mt-2 grid grid-cols-3 gap-2">
-              <StatShield kind="ac" label="AC" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
+          <div className="mt-2 grid grid-cols-[1fr_1.15fr_1fr] items-end gap-2">
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
+            <StatShield kind="ac" label="AC" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
           {/* Saves, skills and passive Insight are DERIVED. They were previously
@@ -1546,15 +1546,16 @@ export function StatShield({ kind, label, value, onClick, tooltip }: { kind: Sta
   }
   const unitMatch = value.match(/^\s*(\d+)\s*(ft\.?|feet)\s*$/i)
   const mainValue = unitMatch ? unitMatch[1] : value
-  return <button type="button" onClick={onClick} className="group relative flex h-[144px] min-w-0 flex-col items-center rounded border border-transparent pb-1 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`} aria-label={`${label} ${value}`}>
-    <span aria-hidden className="relative h-[100px] w-full shrink-0 overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
+  const featured = kind === "ac"
+  return <button type="button" onClick={onClick} className={cn("group relative flex min-w-0 flex-col items-center rounded border border-transparent pb-1 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", featured ? "h-[166px]" : "h-[144px]")} title={tooltip ?? `Open ${label} details`} aria-label={`${label} ${value}`}>
+    <span aria-hidden className={cn("relative w-full shrink-0 overflow-hidden drop-shadow-[0_4px_5px_#000]", featured ? "h-[115px]" : "h-[100px]")} style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
       <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
     </span>
-    <span aria-hidden className="relative z-10 -mt-3 flex size-[32px] shrink-0 flex-col items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_#f5c54255,inset_0_0_5px_#f5c54255]">
-      <span className={cn("block font-serif font-extrabold leading-none", mainValue.length > 2 ? "text-[10px]" : "text-[13px]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
-      {unitMatch && <span className={cn("mt-px block font-serif text-[7px] font-bold uppercase leading-none tracking-[.06em]", goldText)}>ft</span>}
+    <span aria-hidden className={cn("relative z-10 flex shrink-0 flex-col items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_#f5c54255,inset_0_0_5px_#f5c54255]", featured ? "-mt-3.5 size-[37px]" : "-mt-3 size-[32px]")}>
+  <span className={cn("block font-serif font-extrabold leading-none", unitMatch && "-translate-y-[2px]", featured ? (mainValue.length > 2 ? "text-[12px]" : "text-[15px]") : (mainValue.length > 2 ? "text-[10px]" : "text-[13px]"), goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
+  {unitMatch && <span className={cn("-mt-[2px] block -translate-y-[3px] font-serif text-[7.5px] font-extrabold uppercase leading-none tracking-[.08em]", goldText)} style={{ filter: "drop-shadow(0 0 2px #f5c542cc) drop-shadow(0 1px 0 #000)" }}>ft</span>}
     </span>
-    <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif font-extrabold", kind === "ac" ? "text-[12px]" : "text-[10px]", " uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
+    <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif font-extrabold", featured ? "text-[14px]" : "text-[10px]", " uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
   </button>
 }
 

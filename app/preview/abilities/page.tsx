@@ -36,8 +36,8 @@ export default function AbilityPreviewPage() {
       <section className="flex flex-col gap-3">
         <h2 className="font-serif text-sm uppercase tracking-[.2em] text-[#ecd08f]">Stat shields (right column)</h2>
         <div className="grid w-[310px] grid-cols-3 gap-2">
-          <StatShield kind="ac" label="AC" value="10" onClick={() => {}} />
-          <StatShield kind="proficiency" label="Proficiency" value="+2" onClick={() => {}} />
+            <StatShield kind="proficiency" label="Proficiency" value="+2" onClick={() => {}} />
+            <StatShield kind="ac" label="AC" value="10" onClick={() => {}} />
           <StatShield kind="speed" label="Speed" value="30 ft." onClick={() => {}} />
         </div>
       </section>
