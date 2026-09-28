@@ -43,6 +43,8 @@ export type SpriteState =
   // Camp poses (Sam, 2026-09-27), drawn facing south only — every row of the
   // sheet repeats the front view. Built by scripts/sprites/add-camp-poses.py.
   | "sit" | "eat" | "sleep"
+  // A bard playing at the fire (Sam, 2026-09-28) — the instrument is drawn in.
+  | "perform"
 
 export interface SpriteAnimation {
   /** Sheet PNG, relative to the manifest. Rows = SPRITE_DIRECTIONS, columns = frames. */
@@ -122,7 +124,7 @@ const FEET_BAND = 0.14
 const FEET_ORDER = 8
 
 /** Poses only the camp scene draws; the battle board never loads their sheets. */
-const CAMP_POSES = new Set<SpriteState>(["sit", "eat", "sleep"])
+const CAMP_POSES = new Set<SpriteState>(["sit", "eat", "sleep", "perform"])
 
 /** What to show when the asked-for state was never drawn. */
 const FALLBACK: Record<SpriteState, SpriteState[]> = {
@@ -145,6 +147,8 @@ const FALLBACK: Record<SpriteState, SpriteState[]> = {
   sit: [],
   eat: ["sit"],
   sleep: [],
+  // No instrument drawn: they sit by the fire and the song is only in the log.
+  perform: ["sit"],
 }
 
 const manifestCache = new Map<string, Promise<SpriteManifest>>()

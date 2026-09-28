@@ -5,7 +5,7 @@ Add the camp poses — sit, eat, sleep — to an existing battle sprite.
     python scripts/sprites/add-camp-poses.py <slug> <frames-dir>
 
 <frames-dir> holds PixelLab v3 animation frames named <pose>_<n>.png
-(sit_0.png … eat_6.png …), south facing only. Writes
+(sit_0.png … eat_6.png …, and perform_*.png for a bard with an instrument), south facing only. Writes
 public/sprites/<slug>/{sit,eat,sleep}.png and adds the three animations to
 sprite.json. Sam, 2026-09-27: "make pixellab tokens for sitting, eating, and
 sleeping."
@@ -41,7 +41,9 @@ from scipy import ndimage
 ROOT = Path(__file__).resolve().parents[2]
 ROWS = 8  # lib/sprite-token.ts SPRITE_DIRECTIONS
 SEATED_OF_STANDING = 0.66
-PLAYBACK = {"sit": {"fps": 4, "loop": True}, "eat": {"fps": 6, "loop": True}, "sleep": {"fps": 3, "loop": True}}
+PLAYBACK = {"sit": {"fps": 4, "loop": True}, "eat": {"fps": 6, "loop": True}, "sleep": {"fps": 3, "loop": True},
+            # A bard playing at the fire (Sam, 2026-09-28): the instrument is in the art.
+            "perform": {"fps": 8, "loop": True}}
 
 
 def clean(im: Image.Image) -> Image.Image:
