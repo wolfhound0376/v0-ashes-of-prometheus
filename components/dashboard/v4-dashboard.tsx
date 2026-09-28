@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties } from "react"
-import { BookOpen, ChevronDown, ChevronUp, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
+import { BookOpen, ChevronDown, ChevronUp, Compass, Crown, Dumbbell, Feather, ImagePlus, Map, Mic, Shield, TreeDeciduous, X, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ItemIcon } from "@/lib/item-icons"
 import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
@@ -1363,6 +1363,8 @@ const abilityGem: Record<string, [string, string, string]> = {
   cha: ["#ff8fae", "#c01446", "#4a0418"],
 }
 
+const abilityIcon: Record<string, LucideIcon> = { str: Dumbbell, dex: Feather, con: Shield, int: BookOpen, wis: TreeDeciduous, cha: Crown }
+
 const goldText = "bg-gradient-to-b from-[#fff8d6] via-[#f5c542] to-[#a8701a] bg-clip-text text-transparent"
 const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 6px #000)"
 
@@ -1372,7 +1374,9 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
   const modifier = `${ability.mod >= 0 ? "+" : ""}${ability.mod}`
   const rail = large && !sheet
   const [gemLight, gemCore, gemDeep] = abilityGem[key] ?? abilityGem.str
-  const medallion = rail ? "size-[clamp(30px,5.2vh,42px)]" : sheet ? "size-14" : "size-11"
+  const Icon = abilityIcon[key] ?? Dumbbell
+  const gemFill = `radial-gradient(circle at 36% 28%, ${gemLight} 0%, ${gemCore} 42%, ${gemDeep} 100%)`
+  const ribbonFill = `linear-gradient(180deg, ${gemCore} 0%, ${gemDeep} 100%)`
 
   return <button
     type="button"
@@ -1380,50 +1384,62 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
     aria-label={`${name} ${ability.score}, modifier ${modifier}`}
     title={`${name}: ${ability.score} (${modifier})`}
     className={cn(
-      "group relative isolate min-w-0 overflow-hidden rounded-lg border-2 border-[#b8893a] bg-[#0a0806] p-0 text-left shadow-[0_6px_16px_#000,inset_0_0_0_1px_#3a2a10] transition-[transform,border-color,box-shadow] duration-200 hover:z-20 hover:border-[#f1cf85] hover:shadow-[0_12px_30px_#000,0_0_22px_var(--gem)] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f1cf85]",
-      rail ? "h-[clamp(104px,17vh,140px)] w-full hover:-translate-y-0.5" : sheet ? "h-[200px] hover:scale-[1.04]" : "h-[140px] hover:scale-105",
+      "group relative isolate flex min-w-0 flex-col rounded-md p-[2px] text-left shadow-[0_8px_18px_#000] transition-[transform,box-shadow] duration-200 hover:z-20 hover:-translate-y-1 hover:shadow-[0_14px_30px_#000,0_0_20px_var(--gem)] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]",
+      "bg-[linear-gradient(160deg,#fbe7a6_0%,#c9962f_22%,#6d4812_48%,#d9a846_72%,#fff0b8_100%)]",
+      rail ? "h-[clamp(200px,30vh,250px)] w-full" : sheet ? "h-[240px]" : "h-[220px]",
     )}
-    style={{ ["--gem" as string]: `${gemCore}88` }}
+    style={{ ["--gem" as string]: `${gemCore}aa` }}
   >
-    <span
-      aria-hidden
-      className="absolute inset-0 -z-10 bg-cover bg-no-repeat saturate-[1.15] contrast-[1.08] transition-transform duration-500 group-hover:scale-110"
-      style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')`, backgroundPosition: abilityArtPosition[key] ?? "center" }}
-    />
-    <span aria-hidden className="absolute inset-x-0 top-0 -z-10 h-1/4 bg-gradient-to-b from-black/60 to-transparent" />
-    <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-[62%] bg-gradient-to-t from-[#050403] via-[#050403]/85 to-transparent" />
-    <span aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-1/2 opacity-40" style={{ background: `radial-gradient(ellipse at 50% 85%, ${gemCore}, transparent 70%)` }} />
-
-    <span aria-hidden className="pointer-events-none absolute inset-[3px] rounded-[5px] border border-[#f1cf85]/45 shadow-[inset_0_0_12px_#000]" />
-    <span aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-px w-3/4 -translate-x-1/2 bg-gradient-to-r from-transparent via-[#fff0c2] to-transparent" />
-    <span
-      aria-hidden
-      className="pointer-events-none absolute left-1/2 top-[2px] size-2.5 -translate-x-1/2 rotate-45 border border-[#f1cf85] shadow-[0_0_6px_var(--gem),0_1px_2px_#000]"
-      style={{ background: `radial-gradient(circle at 35% 30%, ${gemLight}, ${gemCore} 55%, ${gemDeep})` }}
-    />
-
-    <span className={cn("relative flex h-full flex-col items-center justify-end text-center", rail ? "gap-0.5 px-1 pb-1" : "gap-1 px-1.5 pb-2")}>
-      <span className="w-full border-y border-[#b8893a]/70 bg-gradient-to-r from-transparent via-[#0a0806]/90 to-transparent py-0.5">
-        <span className={cn("block max-w-full truncate font-serif font-bold uppercase leading-none text-[#f6e6bd] [text-shadow:0_1px_2px_#000,0_0_6px_#000]", sheet ? "text-[11px] tracking-[.1em]" : "text-[9px] tracking-normal")}>{name}</span>
+    <span className="relative flex h-full flex-col overflow-hidden rounded-[4px] bg-[#0b0806] shadow-[inset_0_0_0_1px_#2a1c08]">
+      <span className="relative min-h-0 flex-[1.35] overflow-hidden border-b-2 border-[#d9a846]">
+        <span
+          aria-hidden
+          className="absolute inset-0 bg-cover bg-no-repeat saturate-[1.2] contrast-[1.1] brightness-[1.08] transition-transform duration-500 group-hover:scale-110"
+          style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')`, backgroundPosition: abilityArtPosition[key] ?? "center" }}
+        />
+        <span aria-hidden className="absolute inset-0 shadow-[inset_0_0_14px_#000c]" />
+        <span aria-hidden className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-[#0b0806]/80 to-transparent" />
       </span>
 
-      <span className="relative flex w-full items-center justify-center">
-        <span aria-hidden className="absolute inset-x-0 top-1/2 h-[55%] -translate-y-1/2 [clip-path:polygon(0_0,100%_0,90%_50%,100%_100%,0_100%,10%_50%)]" style={{ background: `linear-gradient(180deg, ${gemCore}, ${gemDeep})` }} />
-        <span aria-hidden className="absolute inset-x-[6%] top-1/2 h-px -translate-y-[calc(50%+0.6em)] bg-[#f1cf85]/60" />
+      <span className="relative z-10 flex flex-col items-center">
         <span
-          className={cn("relative flex items-center justify-center rounded-full border-2 border-[#f1cf85] shadow-[0_2px_8px_#000,0_0_12px_var(--gem),inset_0_-3px_6px_#0008,inset_0_2px_4px_#fff6]", medallion)}
-          style={{ background: `radial-gradient(circle at 38% 28%, ${gemLight} 0%, ${gemCore} 45%, ${gemDeep} 100%)` }}
+          aria-hidden
+          className="-mt-[13px] flex size-[26px] items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,inset_0_0_4px_#f5c54255]"
         >
-          <span aria-hidden className="absolute inset-[2px] rounded-full border border-[#fff0c2]/40" />
-          <span aria-hidden className="absolute left-[22%] top-[10%] h-[28%] w-[45%] rounded-full bg-gradient-to-b from-[#ffffff]/55 to-transparent" />
-          <span className={cn("relative font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(17px,2.9vh,24px)]" : sheet ? "text-3xl" : "text-2xl")} style={{ filter: scoreGlow }}>{ability.score}</span>
+          <Icon className="size-3.5 text-[#f5d27a]" strokeWidth={2.2} />
+        </span>
+        <span className="mt-0.5 w-full border-y border-[#b8893a] bg-[linear-gradient(90deg,#0b0806,#23180a_50%,#0b0806)] py-[3px] text-center">
+          <span className={cn("block truncate px-1 font-serif font-bold uppercase leading-none tracking-[.06em] text-[#f6e3b0] [text-shadow:0_1px_2px_#000]", sheet ? "text-[11px]" : "text-[10px]")}>{name}</span>
         </span>
       </span>
 
-      <span className="rounded-full border border-[#f1cf85] bg-gradient-to-b from-[#2a1f10] to-[#050403] px-2 py-0.5 shadow-[0_1px_4px_#000,inset_0_0_5px_#f5c54244]">
-        <span className={cn("block font-serif font-extrabold leading-none", goldText, rail ? "text-[10px]" : "text-xs")} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
+      <span className="relative flex flex-1 flex-col items-center justify-center pb-[18px]" style={{ background: `radial-gradient(ellipse at 50% 45%, ${gemCore}33, transparent 70%)` }}>
+        <span aria-hidden className="absolute left-[7%] top-0 h-[78%] w-[20%] shadow-[0_2px_4px_#000] [clip-path:polygon(0_0,100%_0,100%_100%,50%_84%,0_100%)]" style={{ background: ribbonFill }} />
+        <span aria-hidden className="absolute right-[7%] top-0 h-[78%] w-[20%] shadow-[0_2px_4px_#000] [clip-path:polygon(0_0,100%_0,100%_100%,50%_84%,0_100%)]" style={{ background: ribbonFill }} />
+        <span aria-hidden className="absolute left-[7%] top-0 h-[70%] w-px bg-[#f1cf85]/60" />
+        <span aria-hidden className="absolute right-[7%] top-0 h-[70%] w-px bg-[#f1cf85]/60" />
+
+        <span
+          className={cn("relative flex items-center justify-center rounded-full border-[3px] border-[#e9c46a] shadow-[0_3px_10px_#000,0_0_14px_var(--gem),inset_0_-4px_8px_#0009,inset_0_3px_5px_#fff5]", rail ? "size-[clamp(44px,7vh,56px)]" : "size-[52px]")}
+          style={{ background: gemFill }}
+        >
+          <span aria-hidden className="absolute -inset-[5px] rounded-full border border-[#8a6320]" />
+          <span aria-hidden className="absolute inset-[2px] rounded-full border border-[#fff0c2]/35" />
+          <span aria-hidden className="absolute left-[20%] top-[8%] h-[30%] w-[50%] rounded-full bg-gradient-to-b from-[#ffffff]/50 to-transparent" />
+          <span className={cn("relative font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(22px,3.6vh,30px)]" : "text-[28px]")} style={{ filter: scoreGlow }}>{ability.score}</span>
+        </span>
+      </span>
+
+      <span className="absolute bottom-[3px] left-1/2 z-10 flex h-[22px] min-w-[30px] -translate-x-1/2 items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#050403_75%)] px-1.5 shadow-[0_2px_6px_#000,inset_0_0_5px_#f5c54255]">
+        <span className={cn("block font-serif text-[11px] font-extrabold leading-none", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
       </span>
     </span>
+
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-1/2 top-[-5px] z-20 size-3 -translate-x-1/2 rotate-45 border border-[#f7dc8f] shadow-[0_0_8px_var(--gem),0_1px_2px_#000]"
+      style={{ background: `radial-gradient(circle at 35% 30%, ${gemLight}, ${gemCore} 55%, ${gemDeep})` }}
+    />
   </button>
 }
 
