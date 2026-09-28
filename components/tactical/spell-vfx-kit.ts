@@ -25,6 +25,7 @@ import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
 import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
+import { schoolRuneFor } from "@/lib/spell-school"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
 import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
 
@@ -713,8 +714,22 @@ export function castSpellKitVfx(opts: {
   // lands, and the effect simply starts from wherever it has got to — a cast
   // never blocks on IO.
   if (spec) {
-    if (spec.rune) {
-      void loadSheet(spec.rune).then((s) => {
+    // THE RUNE IS THE SCHOOL, NOT THE DAMAGE TYPE.
+    //
+    // Everything else in this effect — the route, the impact sheet, the floor
+    // decal — is chosen by damage type, and should be: a Fireball and a
+    // Scorching Ray both fly and both burn. But the disc that spins up off the
+    // hand is the spell's SIGNATURE, and what a player reads there is the
+    // school. Spirit Guardians deals necrotic damage and is conjuration; under
+    // the old rule it wore a necrotic rune, which said the wrong thing about
+    // it. lib/spell-school reads the real school out of lib/data/spells.json.
+    //
+    // Falls back to the damage-type rune whenever the name is not one of the
+    // 556 in that dataset — a monster's innate ability, a homebrew, a typo —
+    // so anything unwritten looks exactly as it did before.
+    const runeKey = schoolRuneFor(opts.spell) ?? spec.rune
+    if (runeKey) {
+      void loadSheet(runeKey).then((s) => {
         if (disposed || castGone) return
         disc = new Flip(s, spec.tint, 1.1, 1.1)
         group.add(disc.mesh)
