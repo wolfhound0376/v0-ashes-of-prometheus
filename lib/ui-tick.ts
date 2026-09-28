@@ -126,11 +126,15 @@ function playTick(ac: AudioContext, strength: "soft" | "firm"): void {
   try {
     const firm = strength === "firm"
     const now = ac.currentTime + 0.001
-    const dur = firm ? 0.045 : 0.03
+    const dur = firm ? 0.035 : 0.025
 
     const out = ac.createGain()
-    out.gain.value = firm ? 0.9 : 0.45
-    out.connect(ac.destination)
+    out.gain.value = firm ? 0.32 : 0.16
+    // Rounds off the harsh top end so the tick sits under the music, not on it.
+    const soften = ac.createBiquadFilter()
+    soften.type = "lowpass"
+    soften.frequency.value = 6000
+    out.connect(soften).connect(ac.destination)
 
     // Transient: a short, broad noise snap for the "tick".
     const frames = Math.max(1, Math.floor(ac.sampleRate * dur))
@@ -145,7 +149,7 @@ function playTick(ac: AudioContext, strength: "soft" | "firm"): void {
     hp.type = "highpass"
     hp.frequency.value = 1500
     const noiseGain = ac.createGain()
-    noiseGain.gain.setValueAtTime(0.6, now)
+    noiseGain.gain.setValueAtTime(0.4, now)
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + dur)
     noise.connect(hp).connect(noiseGain).connect(out)
     noise.start(now)
@@ -159,8 +163,8 @@ function playTick(ac: AudioContext, strength: "soft" | "firm"): void {
     tone.frequency.exponentialRampToValueAtTime(firm ? 700 : 1100, now + 0.025)
     const toneGain = ac.createGain()
     toneGain.gain.setValueAtTime(0.0001, now)
-    toneGain.gain.exponentialRampToValueAtTime(0.5, now + 0.002)
-    toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03)
+    toneGain.gain.exponentialRampToValueAtTime(0.3, now + 0.002)
+    toneGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025)
     tone.connect(toneGain).connect(out)
     tone.start(now)
     tone.stop(now + 0.04)
