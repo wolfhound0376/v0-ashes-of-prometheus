@@ -309,16 +309,16 @@
 }
 
 .aop-lich-input {
-  border: 1px solid #62421d;
+  border: 1px solid #c9962f;
   border-radius: 2px;
   background: linear-gradient(180deg, #080807, #0d0907);
-  color: #e0cda7;
+  color: #f6e3b0;
   outline: none;
-  box-shadow: inset 0 1px 10px #000;
-}
-
-.aop-lich-input::placeholder { color: #6e6049; }
-.aop-lich-input:focus { border-color: #b88336; box-shadow: inset 0 1px 10px #000, 0 0 8px rgba(184, 131, 54, 0.18); }
+  box-shadow: inset 0 1px 10px #000, 0 0 0 1px rgba(233, 196, 106, 0.18), 0 0 10px rgba(233, 196, 106, 0.22);
+  }
+  
+  .aop-lich-input::placeholder { color: #a8916a; }
+  .aop-lich-input:focus { border-color: #f7dc8f; box-shadow: inset 0 1px 10px #000, 0 0 0 1px rgba(247, 220, 143, 0.35), 0 0 14px rgba(247, 220, 143, 0.4); }
 
 .aop-dice-modal {
   border-color: #936329;

@@ -1399,13 +1399,7 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
       <span className="min-h-0 flex-1" />
 
       <span className="relative z-10 flex flex-col items-center">
-        <span
-          aria-hidden
-          className="-mt-[15px] flex size-[30px] items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,inset_0_0_5px_#f5c54255]"
-        >
-          <span className={cn("block font-serif text-[12px] font-extrabold leading-none", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
-        </span>
-        <span className="mt-0.5 w-full border-y border-[#b8893a] bg-[linear-gradient(90deg,#0b0806,#23180a_50%,#0b0806)] py-[3px] text-center">
+        <span className="w-full border-y border-[#b8893a] bg-[linear-gradient(90deg,#0b0806,#23180a_50%,#0b0806)] py-[3px] text-center">
           <span className={cn("block truncate px-1 font-serif font-bold uppercase leading-none tracking-[.06em] text-[#f6e3b0] [text-shadow:0_1px_2px_#000]", sheet ? "text-[11px]" : "text-[10px]")}>{name}</span>
         </span>
       </span>
@@ -1425,9 +1419,10 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
 
     <span
       aria-hidden
-      className="pointer-events-none absolute left-1/2 top-[-5px] z-20 size-3 -translate-x-1/2 rotate-45 border border-[#f7dc8f] shadow-[0_0_8px_var(--gem),0_1px_2px_#000]"
-      style={{ background: `radial-gradient(circle at 35% 30%, ${gemLight}, ${gemCore} 55%, ${gemDeep})` }}
-    />
+      className="pointer-events-none absolute left-1/2 top-0 z-20 flex size-[28px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_var(--gem),inset_0_0_5px_#f5c54255]"
+    >
+      <span className={cn("block font-serif text-[12px] font-extrabold leading-none", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
+    </span>
   </button>
 }
 
