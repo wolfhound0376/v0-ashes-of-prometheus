@@ -1552,8 +1552,8 @@ export function StatShield({ kind, label, value, onClick, tooltip }: { kind: Sta
       <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
     </span>
     <span aria-hidden className={cn("relative z-10 flex shrink-0 flex-col items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_#f5c54255,inset_0_0_5px_#f5c54255]", featured ? "-mt-3.5 size-[37px]" : "-mt-3 size-[32px]")}>
-      <span className={cn("block font-serif font-extrabold leading-none", featured ? (mainValue.length > 2 ? "text-[12px]" : "text-[15px]") : (mainValue.length > 2 ? "text-[10px]" : "text-[13px]"), goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
-      {unitMatch && <span className={cn("mt-px block font-serif text-[7px] font-bold uppercase leading-none tracking-[.06em]", goldText)}>ft</span>}
+  <span className={cn("block font-serif font-extrabold leading-none", unitMatch && "-translate-y-[2px]", featured ? (mainValue.length > 2 ? "text-[12px]" : "text-[15px]") : (mainValue.length > 2 ? "text-[10px]" : "text-[13px]"), goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
+  {unitMatch && <span className={cn("-mt-[2px] block -translate-y-[3px] font-serif text-[7.5px] font-extrabold uppercase leading-none tracking-[.08em]", goldText)} style={{ filter: "drop-shadow(0 0 2px #f5c542cc) drop-shadow(0 1px 0 #000)" }}>ft</span>}
     </span>
     <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif font-extrabold", featured ? "text-[14px]" : "text-[10px]", " uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
   </button>
