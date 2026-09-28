@@ -358,6 +358,23 @@ function Frame({ title, children, className, action, hideHeader = false, hideDec
   </section>
 }
 
+function PortraitCycler({ canCycle, nextName, onCycle, children }: { canCycle: boolean; nextName?: string; onCycle: () => void; children: React.ReactNode }) {
+  const frame = "relative h-[73px] w-[73px] shrink-0 overflow-hidden rounded border border-[#a88745] bg-[#241b0e]"
+  if (!canCycle) return <div className={frame}>{children}</div>
+  return (
+    <button
+      type="button"
+      onClick={onCycle}
+      title={nextName ? `Switch to ${nextName}` : "Switch player"}
+      aria-label={nextName ? `Switch to ${nextName}` : "Switch player"}
+      className={cn(frame, "group cursor-pointer transition hover:border-[#f4e0a8] hover:shadow-[0_0_10px_#f0cd7a66] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f0cd7a]")}
+    >
+      {children}
+      <span aria-hidden="true" className="absolute inset-x-0 bottom-0 bg-[#080705]/80 py-0.5 text-center font-serif text-[8px] uppercase tracking-wider text-[#f0cd7a] opacity-80 transition group-hover:opacity-100">Next ›</span>
+    </button>
+  )
+}
+
 export function V4Dashboard(props: V4DashboardProps) {
   const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
@@ -406,6 +423,10 @@ export function V4Dashboard(props: V4DashboardProps) {
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
   const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
+  const canCyclePlayers = !!props.dmMode && !!props.onCharacterSelect && livePlayers.length > 1
+  const selectedPlayerIndex = livePlayers.findIndex((character) => character.id === selected?.id)
+  const nextPlayer = canCyclePlayers ? livePlayers[(selectedPlayerIndex + 1) % livePlayers.length] : undefined
+  const cyclePlayer = () => { if (nextPlayer) props.onCharacterSelect?.(nextPlayer.id) }
   // The learning mark (docs/claude_Earned_Proficiency.md §6): which skills have
   // progress on the ledger. Re-read once per turn (the log grows), because a
   // roll accepted this turn can put a mark on the sheet next turn.
@@ -885,7 +906,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     <div className={cn("flex min-h-0 flex-col gap-2", talkMode && "hidden")}>
       <Frame className="shrink-0" hideHeader>
         <div className="min-h-[470px] px-3.5 pt-3.5 pb-0 text-[10px]">
-          <div className="flex items-center gap-2.5 pt-3"><div className="h-[73px] w-[73px] overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-[17px] font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="text-[14px] leading-tight text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"}<br />{backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2.5 py-1.5 text-[11px] text-[#f5ff00] drop-shadow-[0_0_5px_#f5ff00]">Level {selected?.level ?? 1}</span></div>
+          <div className="flex items-center gap-2.5 pt-3"><PortraitCycler canCycle={canCyclePlayers} nextName={nextPlayer?.name} onCycle={cyclePlayer}>{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</PortraitCycler><div className="min-w-0"><h2 className="font-serif text-[17px] font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="text-[14px] leading-tight text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"}<br />{backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2.5 py-1.5 text-[11px] text-[#f5ff00] drop-shadow-[0_0_5px_#f5ff00]">Level {selected?.level ?? 1}</span></div>
           <div className="mt-2 flex justify-between text-[12px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-[5px] bg-[#101a2d]"><div className="aop-arcane-progress h-full w-[2%]" /></div>
           <div className="mt-5 flex flex-col gap-2"><div className="h-5 w-full bg-[#281315]"><div className="aop-hp-blood-fill h-full" style={{ width: `${((selected?.hp_current ?? 10)/(selected?.hp_max ?? 10))*100}%` }} /></div><b className="font-serif text-[30px] font-extrabold text-[#5b8ff0] [text-shadow:0_1px_2px_#000]">HP {selected?.hp_current ?? 10} / {selected?.hp_max ?? 10}</b></div>
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
@@ -904,7 +925,7 @@ export function V4Dashboard(props: V4DashboardProps) {
             </div>
           ) : null}
           <div className="mt-2 grid grid-cols-3 gap-2">
-              <StatShield kind="ac" label="Armor Class" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
+              <StatShield kind="ac" label="AC" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
