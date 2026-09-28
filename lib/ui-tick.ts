@@ -75,21 +75,21 @@ function playChime(ac: AudioContext): void {
     const now = ac.currentTime + 0.001
 
     const out = ac.createGain()
-    out.gain.value = 0.22
-    const lp = ac.createBiquadFilter()
-    lp.type = "lowpass"
-    lp.frequency.value = 9000
+  out.gain.value = 0.11
+  const lp = ac.createBiquadFilter()
+  lp.type = "lowpass"
+  lp.frequency.value = 5500
     out.connect(lp).connect(ac.destination)
 
     // Inharmonic partials (bell/struck-metal ratios) give the metallic ring;
     // the higher ones die off faster so the tail settles to a soft, pure tone.
     const partials: Array<[ratio: number, level: number, decay: number]> = [
-      [1, 0.55, 0.42],
-      [2.76, 0.28, 0.22],
-      [5.4, 0.12, 0.12],
-      [8.93, 0.05, 0.06],
-    ]
-    const base = 2350
+  [1, 0.55, 0.36],
+  [2.76, 0.2, 0.18],
+  [5.4, 0.07, 0.09],
+  [8.93, 0.025, 0.05],
+  ]
+  const base = 1400
     for (const [ratio, level, decay] of partials) {
       const osc = ac.createOscillator()
       osc.type = "sine"
@@ -112,9 +112,9 @@ function playChime(ac: AudioContext): void {
     noise.buffer = buf
     const hp = ac.createBiquadFilter()
     hp.type = "highpass"
-    hp.frequency.value = 6000
-    const ng = ac.createGain()
-    ng.gain.value = 0.18
+  hp.frequency.value = 4000
+  const ng = ac.createGain()
+  ng.gain.value = 0.07
     noise.connect(hp).connect(ng).connect(out)
     noise.start(now)
   } catch {
