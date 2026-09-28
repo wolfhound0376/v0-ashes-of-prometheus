@@ -1376,7 +1376,6 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
   const [gemLight, gemCore, gemDeep] = abilityGem[key] ?? abilityGem.str
   const Icon = abilityIcon[key] ?? Dumbbell
   const gemFill = `radial-gradient(circle at 36% 28%, ${gemLight} 0%, ${gemCore} 42%, ${gemDeep} 100%)`
-  const ribbonFill = `linear-gradient(180deg, ${gemCore} 0%, ${gemDeep} 100%)`
 
   return <button
     type="button"
@@ -1386,20 +1385,21 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
     className={cn(
       "group relative isolate flex min-w-0 flex-col rounded-md p-[2px] text-left shadow-[0_8px_18px_#000] transition-[transform,box-shadow] duration-200 hover:z-20 hover:-translate-y-1 hover:shadow-[0_14px_30px_#000,0_0_20px_var(--gem)] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]",
       "bg-[linear-gradient(160deg,#fbe7a6_0%,#c9962f_22%,#6d4812_48%,#d9a846_72%,#fff0b8_100%)]",
-      rail ? "h-[clamp(200px,30vh,250px)] w-full" : sheet ? "h-[240px]" : "h-[220px]",
+      rail ? "h-[clamp(240px,36vh,300px)] w-full" : sheet ? "h-[280px]" : "h-[260px]",
     )}
     style={{ ["--gem" as string]: `${gemCore}aa` }}
   >
     <span className="relative flex h-full flex-col overflow-hidden rounded-[4px] bg-[#0b0806] shadow-[inset_0_0_0_1px_#2a1c08]">
-      <span className="relative min-h-0 flex-[1.35] overflow-hidden border-b-2 border-[#d9a846]">
+      <span aria-hidden className="absolute inset-0 overflow-hidden">
         <span
-          aria-hidden
           className="absolute inset-0 bg-cover bg-no-repeat saturate-[1.2] contrast-[1.1] brightness-[1.08] transition-transform duration-500 group-hover:scale-110"
           style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')`, backgroundPosition: abilityArtPosition[key] ?? "center" }}
         />
-        <span aria-hidden className="absolute inset-0 shadow-[inset_0_0_14px_#000c]" />
-        <span aria-hidden className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-[#0b0806]/80 to-transparent" />
+        <span className="absolute inset-0 shadow-[inset_0_0_14px_#000c]" />
+        <span className="absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-[#0b0806] via-[#0b0806]/85 to-transparent" />
       </span>
+
+      <span className="min-h-0 flex-1" />
 
       <span className="relative z-10 flex flex-col items-center">
         <span
@@ -1413,12 +1413,7 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
         </span>
       </span>
 
-      <span className="relative flex flex-1 flex-col items-center justify-center pb-[18px]" style={{ background: `radial-gradient(ellipse at 50% 45%, ${gemCore}33, transparent 70%)` }}>
-        <span aria-hidden className="absolute left-[7%] top-0 h-[78%] w-[20%] shadow-[0_2px_4px_#000] [clip-path:polygon(0_0,100%_0,100%_100%,50%_84%,0_100%)]" style={{ background: ribbonFill }} />
-        <span aria-hidden className="absolute right-[7%] top-0 h-[78%] w-[20%] shadow-[0_2px_4px_#000] [clip-path:polygon(0_0,100%_0,100%_100%,50%_84%,0_100%)]" style={{ background: ribbonFill }} />
-        <span aria-hidden className="absolute left-[7%] top-0 h-[70%] w-px bg-[#f1cf85]/60" />
-        <span aria-hidden className="absolute right-[7%] top-0 h-[70%] w-px bg-[#f1cf85]/60" />
-
+      <span className="relative z-10 flex flex-col items-center justify-center pb-[30px] pt-2">
         <span
           className={cn("relative flex items-center justify-center rounded-full border-[3px] border-[#e9c46a] shadow-[0_3px_10px_#000,0_0_14px_var(--gem),inset_0_-4px_8px_#0009,inset_0_3px_5px_#fff5]", rail ? "size-[clamp(44px,7vh,56px)]" : "size-[52px]")}
           style={{ background: gemFill }}
