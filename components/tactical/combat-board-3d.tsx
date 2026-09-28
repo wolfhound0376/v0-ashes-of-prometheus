@@ -6494,6 +6494,36 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           flinch()
           continue
         }
+        // THE TARGET SIGIL IS DECIDED BEFORE THE DAMAGE TYPE, not inside it.
+        //
+        // The first version of this sat inside the `else if (kitType)` branch,
+        // which was invisible until enchantment arrived: `kitVfxTypeFor`
+        // returns null for a spell with no damage and no healing, so Hold
+        // Person, Charm Person and Command — 45 of the 57 enchantment spells
+        // call for a save and most deal nothing — never reached it at all. A
+        // sigil belongs to the SAVE, not to the damage.
+        const sigilEntry = spellEntry(p.spell)
+        const sigilPlan = targetSigilFor({
+          resolve: sigilEntry?.resolve ?? null,
+          school: schoolOf(p.spell),
+          damage: kitType,
+          spellName: p.spell,
+          isArea: Boolean(sigilEntry?.area),
+        })
+        const sigilOutcome = p.damage?.word === "saved" ? "warded" : "taken"
+        const layTargetSigil = () => {
+          if (!sigilPlan || !p.target) return false
+          vfx.push(targetSigilVfx({
+            parent: scene,
+            camera,
+            at: p.target.clone().setY(0),
+            plan: sigilPlan,
+            outcome: sigilOutcome,
+            onStrike: flinch,
+          }))
+          return true
+        }
+
         if (kitType && p.volley && p.volley.count > 1) {
           // A VOLLEY: one effect per projectile, each on its own seed so the
           // darts fan out (lib/projectile-motion "seek"), each a beat behind
@@ -6530,31 +6560,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             })
           }
         } else if (kitType) {
-          // A SAVE-BASED NECROMANCY SPELL LANDS A SIGIL ON THE VICTIM
-          // (Sam, 2026-09-28, with the art).
-          //
-          // Everything else on this board resolves on contact: the bolt
-          // arrives and the answer is already known. A save spell has a beat
-          // in between — the magic is on them and they have not rolled yet —
-          // and nothing has ever drawn it. Toll the Dead simply blinked a
-          // number onto a drow.
-          //
-          // So the cast still charges off the hand and the SIGIL carries the
-          // rest: it blooms onto the target, holds at its brightest while the
-          // save is rolled, then either closes on them or is thrown off. The
-          // hit points ride the sigil's strike frame rather than the cast's
-          // arrival, because the strike is the end of the hold, which is the
-          // moment the spell actually takes.
-          const sigilEntry = spellEntry(p.spell)
-          const sigilPlan = targetSigilFor({
-            resolve: sigilEntry?.resolve ?? null,
-            school: schoolOf(p.spell),
-            damage: kitType,
-            isArea: Boolean(sigilEntry?.area),
-          })
           if (sigilPlan && p.target) {
-            // The cast keeps its charge and its delivery; only the resolution
-            // moves onto the sigil, so `onImpact` is deliberately not flinch.
+            // The cast keeps its charge and delivery; the sigil carries the
+            // resolution, so `onImpact` is deliberately not flinch.
             cast = castSpellKitVfx({
               parent: scene,
               anchor: bone,
@@ -6562,17 +6570,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               target: p.target,
               camera,
               spell: p.spell,
-              outcome: p.damage?.word === "saved" ? "saved" : "hit",
+              outcome: sigilOutcome === "warded" ? "saved" : "hit",
             })
             vfx.push(cast)
-            vfx.push(targetSigilVfx({
-              parent: scene,
-              camera,
-              at: p.target.clone().setY(0),
-              plan: sigilPlan,
-              outcome: p.damage?.word === "saved" ? "warded" : "taken",
-              onStrike: flinch,
-            }))
+            layTargetSigil()
           } else {
             cast = castSpellKitVfx({
               parent: scene,
@@ -6585,6 +6586,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             })
             vfx.push(cast)
           }
+        } else if (layTargetSigil()) {
+          // A SAVE SPELL THAT IS MADE OF NOTHING THE KIT DRAWS — the whole of
+          // enchantment, and most of what a charm or a compulsion is. There is
+          // no bolt and no damage type, so the old path threw generic sparks
+          // and called it a Hold Person. The sigil IS the spell here, and it
+          // carries the flinch on its own strike frame.
         } else {
           vfx.push(castSpellVfx({
             parent: scene,

@@ -34,6 +34,7 @@
 // ============================================================================
 
 import type { MagicSchool } from "./spell-school"
+import { SPELL_SAVE_ABILITY } from "./spell-save-data"
 
 /** How the target fared. Mirrors the kit's own `outcome`. */
 export type SigilOutcome = "taken" | "warded"
@@ -46,7 +47,8 @@ export type SigilAct = "form" | "hold" | "resolve" | "done"
  * new logic.
  */
 export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
-  necromancy: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume" },
+  necromancy:  { ring: "sigilNecroticRing",    plume: "sigilNecroticPlume" },
+  enchantment: { ring: "sigilEnchantmentRing", plume: "sigilEnchantmentPlume" },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
@@ -90,6 +92,32 @@ export interface SigilPlan {
 export const DEFAULT_PLAN = { form: 0.45, hold: 0.40, resolve: 0.55 } as const
 
 /**
+ * Does this spell call for a saving throw?
+ *
+ * lib/spellbook.ts hand-writes about sixty spells and carries `resolve` for
+ * them, and that was enough while only DAMAGING spells were drawn. Enchantment
+ * broke it: 45 of the 57 enchantment spells call for a save, most deal no
+ * damage at all, and the spellbook has never heard of Hold Person, Charm
+ * Person or Command. Asking it alone would silently draw nothing for the
+ * majority of the school.
+ *
+ * So the spellbook is consulted first — it is hand-checked and it knows about
+ * homebrew — and lib/spell-save-data.ts (generated from all 556 spells in
+ * lib/data/spells.json) answers for everything else.
+ */
+export function callsForSave(opts: {
+  resolve?: string | null
+  spellName?: string | null
+}): boolean {
+  if (opts.resolve === "save") return true
+  // An explicit non-save resolution from the spellbook WINS over the dataset:
+  // a spell hand-written as an attack roll is an attack roll.
+  if (opts.resolve && opts.resolve !== "save") return false
+  const key = opts.spellName?.trim().toLowerCase()
+  return key ? key in SPELL_SAVE_ABILITY : false
+}
+
+/**
  * Whether this spell draws a target sigil, and which sheet.
  *
  * Three things must all hold, and each one is load-bearing:
@@ -108,10 +136,12 @@ export function targetSigilFor(opts: {
   resolve?: string | null
   school?: MagicSchool | null
   damage?: string | null
+  /** The spell's name, so the save can be looked up for spells the spellbook lacks. */
+  spellName?: string | null
   /** True when the spell covers ground rather than naming a creature. */
   isArea?: boolean
 }): SigilPlan | null {
-  if (opts.resolve !== "save") return null
+  if (!callsForSave({ resolve: opts.resolve, spellName: opts.spellName })) return null
   if (opts.isArea) return null
   const art =
     (opts.school ? SCHOOL_SIGIL[opts.school] : undefined) ??

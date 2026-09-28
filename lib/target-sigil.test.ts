@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  DEFAULT_PLAN, SCHOOL_SIGIL, sigilDuration, sigilPoseAt, sigilStrikeAt,
+  DEFAULT_PLAN, SCHOOL_SIGIL, callsForSave, sigilDuration, sigilPoseAt, sigilStrikeAt,
   targetSigilFor, type SigilPlan,
 } from "./target-sigil"
 
@@ -35,14 +35,64 @@ describe("targetSigilFor", () => {
       .toBeNull()
   })
 
-  it("draws nothing for a save spell of another school", () => {
+  it("draws nothing for a save spell of a school with no sigil yet", () => {
+    // Updated when enchantment landed: this used to name enchantment as the
+    // negative case. A school with art registered must draw; only the six
+    // still without art stay silent.
     expect(targetSigilFor({ resolve: "save", school: "evocation", damage: "radiant" })).toBeNull()
-    expect(targetSigilFor({ resolve: "save", school: "enchantment", damage: null })).toBeNull()
+    expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
+    expect(targetSigilFor({ resolve: "save", school: "illusion", damage: null })).toBeNull()
   })
 
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
     expect(SCHOOL_SIGIL.necromancy?.ring).toBe("sigilNecroticRing")
-    expect(Object.keys(SCHOOL_SIGIL)).toHaveLength(1)
+    expect(SCHOOL_SIGIL.enchantment?.ring).toBe("sigilEnchantmentRing")
+  })
+
+  it("draws the enchantment sigil for a save spell that deals NO damage", () => {
+    // The case that exposed two wiring bugs at once. Hold Person is not in
+    // lib/spellbook.ts at all and has no damage type, so both the old trigger
+    // and the old board branch skipped it silently.
+    const plan = targetSigilFor({
+      resolve: null, school: "enchantment", damage: null, spellName: "Hold Person",
+    })
+    expect(plan?.art.ring).toBe("sigilEnchantmentRing")
+  })
+
+  it("draws it for the rest of the school the spellbook has never heard of", () => {
+    for (const name of ["Charm Person", "Command", "Tasha's Hideous Laughter", "Bane"]) {
+      expect(targetSigilFor({ school: "enchantment", spellName: name }), name).not.toBeNull()
+    }
+  })
+})
+
+describe("callsForSave", () => {
+  it("believes the spellbook when it has an opinion", () => {
+    expect(callsForSave({ resolve: "save", spellName: "anything" })).toBe(true)
+  })
+
+  it("lets an explicit non-save resolution WIN over the dataset", () => {
+    // Chill Touch is an attack roll in the spellbook. The dataset must not
+    // promote a hand-checked attack spell into a save.
+    expect(callsForSave({ resolve: "attack", spellName: "Chill Touch" })).toBe(false)
+    expect(callsForSave({ resolve: "auto", spellName: "Magic Missile" })).toBe(false)
+  })
+
+  it("falls back to the 556-spell dataset when the spellbook is silent", () => {
+    expect(callsForSave({ spellName: "Hold Person" })).toBe(true)
+    expect(callsForSave({ spellName: "Charm Person" })).toBe(true)
+    expect(callsForSave({ spellName: "Command" })).toBe(true)
+  })
+
+  it("says no for a spell that calls for no save in either source", () => {
+    expect(callsForSave({ spellName: "Fire Bolt" })).toBe(false)
+    expect(callsForSave({ spellName: "Magic Missile" })).toBe(false)
+    expect(callsForSave({ spellName: "Malachar's Little Joke" })).toBe(false)
+    expect(callsForSave({})).toBe(false)
+  })
+
+  it("does not care about case or stray whitespace", () => {
+    expect(callsForSave({ spellName: "  hOlD pErSoN  " })).toBe(true)
   })
 })
 
