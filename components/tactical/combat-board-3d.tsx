@@ -65,6 +65,9 @@ import {
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
 import { castSpellKitVfx, kitVfxTypeFor, kitSplashFor, prewarmKit, loadSheet, Flip, type CastHandle, type DamageType } from "./spell-vfx-kit"
 import { splashOnVictims } from "./spell-splash"
+import { targetSigilVfx } from "./target-sigil"
+import { targetSigilFor } from "@/lib/target-sigil"
+import { schoolOf } from "@/lib/spell-school"
 import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { StatusVfx, type StatusBody } from "./status-vfx"
@@ -6527,16 +6530,61 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             })
           }
         } else if (kitType) {
-          cast = castSpellKitVfx({
-            parent: scene,
-            anchor: bone,
-            type: kitType,
-            target: p.target,
-            camera,
-            spell: p.spell,   // an attack-roll spell flies, whatever its type
-            onImpact: flinch,
+          // A SAVE-BASED NECROMANCY SPELL LANDS A SIGIL ON THE VICTIM
+          // (Sam, 2026-09-28, with the art).
+          //
+          // Everything else on this board resolves on contact: the bolt
+          // arrives and the answer is already known. A save spell has a beat
+          // in between — the magic is on them and they have not rolled yet —
+          // and nothing has ever drawn it. Toll the Dead simply blinked a
+          // number onto a drow.
+          //
+          // So the cast still charges off the hand and the SIGIL carries the
+          // rest: it blooms onto the target, holds at its brightest while the
+          // save is rolled, then either closes on them or is thrown off. The
+          // hit points ride the sigil's strike frame rather than the cast's
+          // arrival, because the strike is the end of the hold, which is the
+          // moment the spell actually takes.
+          const sigilEntry = spellEntry(p.spell)
+          const sigilPlan = targetSigilFor({
+            resolve: sigilEntry?.resolve ?? null,
+            school: schoolOf(p.spell),
+            damage: kitType,
+            isArea: Boolean(sigilEntry?.area),
           })
-          vfx.push(cast)
+          if (sigilPlan && p.target) {
+            // The cast keeps its charge and its delivery; only the resolution
+            // moves onto the sigil, so `onImpact` is deliberately not flinch.
+            cast = castSpellKitVfx({
+              parent: scene,
+              anchor: bone,
+              type: kitType,
+              target: p.target,
+              camera,
+              spell: p.spell,
+              outcome: p.damage?.word === "saved" ? "saved" : "hit",
+            })
+            vfx.push(cast)
+            vfx.push(targetSigilVfx({
+              parent: scene,
+              camera,
+              at: p.target.clone().setY(0),
+              plan: sigilPlan,
+              outcome: p.damage?.word === "saved" ? "warded" : "taken",
+              onStrike: flinch,
+            }))
+          } else {
+            cast = castSpellKitVfx({
+              parent: scene,
+              anchor: bone,
+              type: kitType,
+              target: p.target,
+              camera,
+              spell: p.spell,   // an attack-roll spell flies, whatever its type
+              onImpact: flinch,
+            })
+            vfx.push(cast)
+          }
         } else {
           vfx.push(castSpellVfx({
             parent: scene,
