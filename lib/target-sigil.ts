@@ -45,17 +45,40 @@ export type SigilAct = "form" | "hold" | "resolve" | "done"
  * giving abjuration or enchantment its own sigil later is one line and no
  * new logic.
  */
-export const SCHOOL_SIGIL: Partial<Record<MagicSchool, string>> = {
-  necromancy: "sigilNecrotic",
+export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
+  necromancy: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume" },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
-export const DAMAGE_SIGIL: Record<string, string> = {
-  necrotic: "sigilNecrotic",
+export const DAMAGE_SIGIL: Record<string, SigilArt> = {
+  necrotic: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume" },
+}
+
+/**
+ * TWO LAYERS, because Sam's direction requires it (2026-09-28): "the ring
+ * should stay horizontal and the magic should radiate and permeate while the
+ * ring rotates clockwise."
+ *
+ * A billboarded quad cannot rotate about the vertical axis — turn it and the
+ * whole plate visibly tips over. A ring that lies flat and spins has to be a
+ * real horizontal plane in the world, and the rising plume cannot be on that
+ * same plane or it would be painted onto the floor. So the source art is split
+ * along the ring band:
+ *
+ *   ring    the sigil circle, laid FLAT on the ground and turning clockwise.
+ *           Baked UN-SQUASHED: Sam drew it as a 2.04:1 ellipse because that is
+ *           what the board's dimetric camera does to a circle, so the bake
+ *           stretches it back and the camera puts the ellipse back itself.
+ *   plume   the rising energy, standing upright and facing the camera, growing
+ *           outward and through the body.
+ */
+export interface SigilArt {
+  ring: string
+  plume: string
 }
 
 export interface SigilPlan {
-  sheet: string
+  art: SigilArt
   /** Seconds for the bloom. */
   form: number
   /** Seconds parked at the peak while the save is rolled. */
@@ -90,11 +113,11 @@ export function targetSigilFor(opts: {
 }): SigilPlan | null {
   if (opts.resolve !== "save") return null
   if (opts.isArea) return null
-  const sheet =
+  const art =
     (opts.school ? SCHOOL_SIGIL[opts.school] : undefined) ??
     (opts.damage ? DAMAGE_SIGIL[opts.damage] : undefined)
-  if (!sheet) return null
-  return { sheet, ...DEFAULT_PLAN }
+  if (!art) return null
+  return { art, ...DEFAULT_PLAN }
 }
 
 export interface SigilPose {
@@ -106,21 +129,54 @@ export interface SigilPose {
   /** Multiplier on the sigil's resting size. */
   scale: number
   /**
-   * Radians of SCREEN-SPACE roll — a small torque, not a spin.
+   * Cumulative rotation of the FLAT ring about the vertical axis, radians.
    *
-   * The sigil cannot spin about its own vertical axis: the 2.04:1 ellipse is
-   * baked into Sam's art rather than produced by the camera, so the quad is
-   * billboarded and a vertical-axis rotation has nowhere to happen. Rolling a
-   * billboard far would read as the whole plate tipping over. So these stay
-   * small, and what they buy is a sense of torque — the ring wrenching one way
-   * as it closes, the other as it is thrown off.
+   * Always NEGATIVE and always decreasing: negative is clockwise seen from
+   * above in three.js's right-handed frame, and Sam's direction is that the
+   * ring turns clockwise throughout. The two outcomes differ in SPEED, not in
+   * direction — taken accelerates as it closes, warded stalls as it breaks.
    */
   spin: number
+  /**
+   * Scale of the upright PLUME — the magic radiating outward. Grows past 1 as
+   * it spreads, independently of the ring's own scale.
+   */
+  radiate: number
+  /** 0..1 — how much the magic has soaked into the body. Drives the inner glow. */
+  permeate: number
   /** True once the damage and the flinch should land. */
   struck: boolean
 }
 
 const TAU = Math.PI * 2
+
+/**
+ * Turn rate of the ring in radians per second, per act. Integrated below so
+ * the angle is continuous — a rate that jumps is fine, an ANGLE that jumps
+ * makes the glyphs visibly teleport.
+ */
+const RATE = {
+  formStart: 3.4, formEnd: 1.25,
+  hold: 1.25,
+  takenEnd: 4.2,      // winds up as it closes on them
+  wardedEnd: 0.15,    // stalls as it is thrown off
+} as const
+
+/** Angle swept during the form act, up to `p` of the way through it. */
+function formSweep(form: number, p: number): number {
+  const k = clamp01(p)
+  return form * k * (RATE.formStart + (RATE.formEnd - RATE.formStart) * k / 2)
+}
+
+function holdSweep(hold: number, p: number): number {
+  return hold * clamp01(p) * RATE.hold
+}
+
+function resolveSweep(resolve: number, p: number, taken: boolean): number {
+  const k = clamp01(p)
+  const end = taken ? RATE.takenEnd : RATE.wardedEnd
+  return resolve * k * (RATE.hold + (end - RATE.hold) * k / 2)
+}
 
 function clamp01(v: number): number { return v < 0 ? 0 : v > 1 ? 1 : v }
 function ease(p: number): number { const k = clamp01(p); return k * k * (3 - 2 * k) }
@@ -154,7 +210,10 @@ export function sigilPoseAt(
       // Drops onto them from slightly large, which reads as landing rather
       // than as growing out of the floor.
       scale: 1.35 - 0.35 * ease(p),
-      spin: TAU * 0.06 * (1 - ease(p)),
+      spin: -formSweep(form, p),
+      // The plume is still gathering: it rises but has not spread yet.
+      radiate: 0.55 + 0.45 * ease(p),
+      permeate: 0,
       struck: false,
     }
   }
@@ -166,7 +225,10 @@ export function sigilPoseAt(
       opacity: 1,
       // A slow breath so the hold is alive rather than a freeze-frame.
       scale: 1 + 0.03 * Math.sin(p * TAU * 1.5),
-      spin: 0,
+      spin: -(formSweep(form, 1) + holdSweep(hold, p)),
+      // Breathing outward and soaking in while they roll.
+      radiate: 1 + 0.10 * Math.sin(p * TAU),
+      permeate: 0.35 + 0.15 * Math.sin(p * TAU * 1.5),
       struck: false,
     }
   }
@@ -180,15 +242,24 @@ export function sigilPoseAt(
       // Taken flares before it fades; warded just thins out.
       opacity: taken ? Math.min(1, 1.25 - p) : 1 - ease(p),
       scale: taken ? 1 - 0.30 * ease(p) : 1 + 0.85 * ease(p),
-      spin: taken ? -TAU * 0.05 * ease(p) : TAU * 0.03 * ease(p),
+      spin: -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, p, taken)),
+      // TAKEN drives inward and through them; WARDED blows outward off them.
+      radiate: taken ? 1 - 0.35 * ease(p) : 1 + 1.5 * ease(p),
+      permeate: taken ? Math.min(1, 0.5 + ease(p)) : 0.5 * (1 - ease(p)),
       struck: true,
     }
   }
-  return { act: "done", frame: 1, opacity: 0, scale: taken_scale(outcome), spin: 0, struck: true }
-}
-
-function taken_scale(outcome: SigilOutcome): number {
-  return outcome === "taken" ? 0.70 : 1.85
+  const taken = outcome === "taken"
+  return {
+    act: "done",
+    frame: 1,
+    opacity: 0,
+    scale: taken ? 0.70 : 1.85,
+    spin: -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, 1, taken)),
+    radiate: taken ? 0.65 : 2.5,
+    permeate: taken ? 1 : 0,
+    struck: true,
+  }
 }
 
 /** Total seconds the sigil occupies, for the caller's lifetime bookkeeping. */
