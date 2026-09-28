@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ALL_SCHOOL_RUNES, SCHOOL_COLOR, SCHOOL_RUNE, schoolColorFor, schoolOf, schoolRuneFor } from "./spell-school"
+import { ALL_SCHOOL_RUNES, SCHOOL_COLOR, SCHOOL_RAMP, SCHOOL_RUNE, schoolColorFor, schoolOf, schoolRampFor, schoolRuneFor } from "./spell-school"
 import { SPELL_SCHOOL_CODES } from "./spell-school-data"
 
 describe("schoolOf", () => {
@@ -85,39 +85,59 @@ describe("the generated data", () => {
   })
 })
 
-describe("SCHOOL_COLOR", () => {
-  it("gives every school its own colour", () => {
-    const vals = Object.values(SCHOOL_COLOR)
-    expect(new Set(vals).size).toBe(8)
-    for (const v of vals) expect(v).toBeGreaterThanOrEqual(0)
-    for (const v of vals) expect(v).toBeLessThanOrEqual(0xffffff)
+describe("SCHOOL_RAMP — sampled off Sam's reference sheet", () => {
+  const rgb = (h: number) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]
+  const lum = (h: number) => { const [r, g, b] = rgb(h); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+  const sat = (h: number) => { const c = rgb(h); return Math.max(...c) - Math.min(...c) }
+
+  it("gives every school its own three-stop ramp", () => {
+    const all = Object.values(SCHOOL_RAMP)
+    expect(all).toHaveLength(8)
+    expect(new Set(all.map((r) => r.glow)).size).toBe(8)
+    for (const r of all) for (const v of [r.deep, r.glow, r.core]) {
+      expect(v).toBeGreaterThanOrEqual(0)
+      expect(v).toBeLessThanOrEqual(0xffffff)
+    }
   })
 
-  it("keeps the two confusable pairs genuinely apart", () => {
-    const rgb = (h: number) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]
-    const lum = (h: number) => { const [r, g, b] = rgb(h); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+  it("shades in the right order — deep darker than glow darker than core", () => {
+    for (const [name, r] of Object.entries(SCHOOL_RAMP)) {
+      expect(lum(r.deep), `${name} deep`).toBeLessThan(lum(r.glow))
+      expect(lum(r.glow), `${name} glow`).toBeLessThan(lum(r.core))
+    }
+  })
+
+  it("keeps the two confusable pairs apart — at the separation the SHEET actually has", () => {
+    // These thresholds are deliberately lower than the hand-picked palette
+    // they replaced. On Sam's reference abjuration and illusion are both
+    // blue and divination and necromancy are both violet, so the honest
+    // separation is modest. Asserting the old, wider numbers would have
+    // meant quietly diverging from the sheet he asked to match exactly.
     // abjuration vs illusion: both blue, separated by VALUE.
-    expect(Math.abs(lum(SCHOOL_COLOR.illusion) - lum(SCHOOL_COLOR.abjuration))).toBeGreaterThan(60)
+    expect(lum(SCHOOL_RAMP.illusion.glow) - lum(SCHOOL_RAMP.abjuration.glow)).toBeGreaterThan(20)
     // divination vs necromancy: both violet, separated by red-vs-blue lean.
     const lean = (h: number) => { const [r, , b] = rgb(h); return r - b }
-    expect(lean(SCHOOL_COLOR.necromancy)).toBeGreaterThan(lean(SCHOOL_COLOR.divination) + 40)
+    expect(lean(SCHOOL_RAMP.necromancy.glow)).toBeGreaterThan(lean(SCHOOL_RAMP.divination.glow) + 15)
   })
 
-  it("is bright enough to survive being a 64px tint rather than reading as grey", () => {
-    const sat = (h: number) => {
-      const c = [(h >> 16) & 255, (h >> 8) & 255, h & 255]
-      return Math.max(...c) - Math.min(...c)
+  it("every glow is saturated enough to read as a colour at 64px, not as grey", () => {
+    for (const [name, r] of Object.entries(SCHOOL_RAMP)) {
+      expect(sat(r.glow), `${name} glow is too desaturated`).toBeGreaterThan(70)
     }
-    for (const [name, v] of Object.entries(SCHOOL_COLOR)) {
-      expect(sat(v), `${name} is too desaturated to read as a colour`).toBeGreaterThan(70)
+  })
+
+  it("SCHOOL_COLOR stays the glow stop, so nothing that used it changes", () => {
+    for (const k of Object.keys(SCHOOL_RAMP) as (keyof typeof SCHOOL_RAMP)[]) {
+      expect(SCHOOL_COLOR[k]).toBe(SCHOOL_RAMP[k].glow)
     }
   })
 
   it("falls back to null for anything not in the dataset, so the kit keeps its own tint", () => {
     expect(schoolColorFor("Withering Gaze of Malachar")).toBeNull()
+    expect(schoolRampFor("Withering Gaze of Malachar")).toBeNull()
     expect(schoolColorFor(null)).toBeNull()
-    expect(schoolColorFor("Fireball")).toBe(SCHOOL_COLOR.evocation)
-    expect(schoolColorFor("Shield")).toBe(SCHOOL_COLOR.abjuration)
-    expect(schoolColorFor("Spirit Guardians")).toBe(SCHOOL_COLOR.conjuration)
+    expect(schoolColorFor("Fireball")).toBe(SCHOOL_RAMP.evocation.glow)
+    expect(schoolColorFor("Shield")).toBe(SCHOOL_RAMP.abjuration.glow)
+    expect(schoolRampFor("Spirit Guardians")).toBe(SCHOOL_RAMP.conjuration)
   })
 })
