@@ -25,7 +25,7 @@ import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
 import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
-import { schoolRuneFor } from "@/lib/spell-school"
+import { schoolRampFor, schoolRuneFor } from "@/lib/spell-school"
 import { MARTIAL_SCALE, martialArtFor, martialImpactFor } from "@/lib/martial-arts"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
 import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
@@ -741,11 +741,20 @@ export function castSpellKitVfx(opts: {
     // Falls back to the damage-type rune whenever the name is not one of the
     // 556 in that dataset — a monster's innate ability, a homebrew, a typo —
     // so anything unwritten looks exactly as it did before.
+    //
+    // And the school owns the disc's COLOUR too (Sam's reference sheet,
+    // 2026-09-28). Every DamageType in the table above carries a white tint,
+    // so before this the eight runes all glowed the same white and the only
+    // thing telling abjuration from necromancy was the sigil itself — at
+    // 64px, spinning, across a battle map. Falls back to the type's tint
+    // whenever the school is unknown, so nothing unwritten changes.
     const runeKey = schoolRuneFor(opts.spell) ?? spec.rune
+    const ramp = schoolRampFor(opts.spell)
+    const runeTint = ramp?.glow ?? spec.tint
     if (runeKey) {
       void loadSheet(runeKey).then((s) => {
         if (disposed || castGone) return
-        disc = new Flip(s, spec.tint, 1.1, 1.1)
+        disc = new Flip(s, runeTint, 1.1, 1.1)
         group.add(disc.mesh)
       }).catch(() => {})
     }
@@ -856,7 +865,12 @@ export function castSpellKitVfx(opts: {
     }
 
     // One non-shadowing light, matching the board's stated budget.
-    light = new THREE.PointLight(spec.tint === 0xffffff ? 0xfff0d0 : spec.tint, 0, 9, 1.6)
+    // The light carries the school's CORE, which is what turns a flat tint
+    // into shading: the disc reads as `glow`, and the hot centre the light
+    // throws blooms toward `core` through the board's existing bloom pass.
+    // Falls back to the old warm white whenever the school is unknown.
+    light = new THREE.PointLight(
+      ramp?.core ?? (spec.tint === 0xffffff ? 0xfff0d0 : spec.tint), 0, 9, 1.6)
     light.castShadow = false
     group.add(light)
   }
