@@ -17,6 +17,7 @@ export function UiClickSound() {
       if (!control || control.closest("[data-no-tick]")) return
       if (control.matches(":disabled, [aria-disabled='true']")) return
       if (control.closest('[data-tick="key"]')) uiKeyTap()
+      else if (control.matches('[data-tick="click"]')) uiTick("firm")
       else if (control.matches(WINDOW_OPENER)) uiChime()
       else uiTick("firm")
     }

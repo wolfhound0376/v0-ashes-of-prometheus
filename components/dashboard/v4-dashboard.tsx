@@ -1478,8 +1478,9 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
   return <Popover open={open} onOpenChange={setOpen}>
   <PopoverTrigger asChild>
   <button
-    type="button"
-    onPointerMove={trackOrbLight}
+  type="button"
+  data-tick="click"
+  onPointerMove={trackOrbLight}
     onPointerLeave={resetOrbLight}
     aria-label={`${name} ${ability.score}, modifier ${modifier}. Show how it is calculated`}
     className={cn(
