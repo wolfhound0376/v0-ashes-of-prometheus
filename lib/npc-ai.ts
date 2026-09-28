@@ -146,6 +146,18 @@ export const key = (x: number, y: number) => `${x},${y}`
 export const chebyshev = (a: Cell, b: Cell) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
 
 /**
+ * The walkable set, carrying which of its squares are DIFFICULT TERRAIN.
+ *
+ * A Set subclass rather than a second parameter, so every caller that already
+ * threads `walkable` through (decideTurn, stepToward, stepToEdge, the shove
+ * check) prices difficult squares correctly without a signature change. A
+ * plain Set still works everywhere and simply has no difficult terrain.
+ */
+export class TerrainSet extends Set<string> {
+  difficult = new Set<string>()
+}
+
+/**
  * Walkable squares from a V5 node tile's cell geometry.
  *
  * The tile JSON lists `cells.floor` as the honest walkable set — rock is
@@ -153,15 +165,32 @@ export const chebyshev = (a: Cell, b: Cell) => Math.max(Math.abs(a.x - b.x), Mat
  * excluded here: a fleeing myconid does not swim, and node 9→14 being a
  * vertical water descent is exactly the kind of thing that should NOT be
  * solved by a pathfinder that thinks water is a floor tile.
+ *
+ * THE EXCEPTION IS `cells.difficult`: squares a map declares as difficult
+ * terrain are fordable — walkable, at double cost (SRD 5.1, Combat: Difficult Terrain —
+ * "Every foot of movement in difficult terrain costs 1 extra foot."). The
+ * river cave's rapids are the first; Sam's ruling, 2026-09-27.
  */
-export function walkableFrom(cells: unknown): Set<string> {
-  const set = new Set<string>()
-  const floor = (cells as { floor?: { sq?: [number, number] }[] })?.floor ?? []
-  for (const c of floor) {
+export function walkableFrom(cells: unknown): TerrainSet {
+  const set = new TerrainSet()
+  const c0 = cells as { floor?: { sq?: [number, number] }[]; difficult?: { sq?: [number, number] }[] } | null
+  for (const c of c0?.floor ?? []) {
     const sq = c?.sq
     if (Array.isArray(sq) && sq.length === 2) set.add(key(sq[0], sq[1]))
   }
+  for (const c of c0?.difficult ?? []) {
+    const sq = c?.sq
+    if (Array.isArray(sq) && sq.length === 2) {
+      set.add(key(sq[0], sq[1]))
+      set.difficult.add(key(sq[0], sq[1]))
+    }
+  }
   return set
+}
+
+/** What entering a square costs, in squares: 2 in difficult terrain, else 1. */
+export function stepCost(walkable: Set<string>, k: string): number {
+  return (walkable as TerrainSet).difficult?.has(k) ? 2 : 1
 }
 
 const NEIGHBOURS = [
@@ -170,28 +199,34 @@ const NEIGHBOURS = [
 ]
 
 /**
- * Breadth-first step count from `from` to every reachable square, walking
+ * Movement cost, in squares, from `from` to every reachable square, walking
  * 8-way over walkable cells and refusing to pass THROUGH occupied ones.
+ * Entering a difficult square costs 2 (see stepCost); everything else 1, so
+ * on a map with no difficult terrain this is exactly the old step count.
  *
  * Occupied squares are still recorded at their own distance, so "how far is
  * that enemy" stays answerable even though you cannot stand on them.
  */
 export function reach(from: Cell, walkable: Set<string>, blocked: Set<string>): Map<string, number> {
   const dist = new Map<string, number>([[key(from.x, from.y), 0]])
-  const queue: Cell[] = [from]
-  while (queue.length) {
-    const cur = queue.shift()!
-    const curKey = key(cur.x, cur.y)
-    const step = dist.get(curKey)!
-    // You may reach an occupied square (to measure it) but never move past it.
-    if (step > 0 && blocked.has(curKey)) continue
-    for (const [dx, dy] of NEIGHBOURS) {
-      const nx = cur.x + dx
-      const ny = cur.y + dy
-      const k = key(nx, ny)
-      if (!walkable.has(k) || dist.has(k)) continue
-      dist.set(k, step + 1)
-      queue.push({ x: nx, y: ny })
+  // Costs are 1 or 2, so a bucket queue is an exact Dijkstra.
+  const buckets: Cell[][] = [[from]]
+  for (let d = 0; d < buckets.length; d++) {
+    for (const cur of buckets[d] ?? []) {
+      const curKey = key(cur.x, cur.y)
+      if (dist.get(curKey) !== d) continue // a cheaper route already settled it
+      // You may reach an occupied square (to measure it) but never move past it.
+      if (d > 0 && blocked.has(curKey)) continue
+      for (const [dx, dy] of NEIGHBOURS) {
+        const nx = cur.x + dx
+        const ny = cur.y + dy
+        const k = key(nx, ny)
+        if (!walkable.has(k)) continue
+        const nd = d + stepCost(walkable, k)
+        if (dist.has(k) && dist.get(k)! <= nd) continue
+        dist.set(k, nd)
+        ;(buckets[nd] ??= []).push({ x: nx, y: ny })
+      }
     }
   }
   return dist
