@@ -1428,19 +1428,24 @@ export function AbilityScoreCard({ ability, onClick, sheet = false, large = fals
   </button>
 }
 
-function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; label: string; value: string; onClick: () => void; tooltip?: string }) {
+export function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; label: string; value: string; onClick: () => void; tooltip?: string }) {
   const spritePosition: Record<StatKind, string> = {
     ac: "0% 40%",
     speed: "33.333% 40%",
     initiative: "66.666% 40%",
     proficiency: "100% 40%",
   }
-  return <button type="button" onClick={onClick} className="group relative flex h-[144px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`}>
-    <span className="absolute inset-x-1 top-0 h-[115px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
+  const unitMatch = value.match(/^\s*(\d+)\s*(ft\.?|feet)\s*$/i)
+  const mainValue = unitMatch ? unitMatch[1] : value
+  return <button type="button" onClick={onClick} className="group relative flex h-[144px] min-w-0 flex-col items-center rounded border border-transparent pb-1 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`} aria-label={`${label} ${value}`}>
+    <span aria-hidden className="relative h-[100px] w-full shrink-0 overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
       <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
     </span>
-    <b className="absolute bottom-[14px] z-10 rounded-full border border-[#c49b4f] bg-[#080604]/90 px-1.5 py-0.5 font-serif text-[9px] leading-none text-[#f3dfb4] shadow-[0_1px_5px_#000]">{value}</b>
-    <span className="relative z-10 max-w-full truncate px-0.5 text-[8px] font-bold uppercase tracking-[.08em] text-[#cdb276]">{label}</span>
+    <span aria-hidden className="relative z-10 -mt-3 flex size-[32px] shrink-0 flex-col items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_#f5c54255,inset_0_0_5px_#f5c54255]">
+      <span className={cn("block font-serif font-extrabold leading-none", mainValue.length > 2 ? "text-[10px]" : "text-[13px]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
+      {unitMatch && <span className={cn("mt-px block font-serif text-[7px] font-bold uppercase leading-none tracking-[.06em]", goldText)}>ft</span>}
+    </span>
+    <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif text-[10px] font-extrabold uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
   </button>
 }
 

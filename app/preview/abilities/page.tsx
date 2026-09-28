@@ -1,6 +1,6 @@
 "use client"
 
-import { AbilityScoreCard } from "@/components/dashboard/v4-dashboard"
+import { AbilityScoreCard, StatShield } from "@/components/dashboard/v4-dashboard"
 import { CharacterSpriteVignette } from "@/components/dashboard/character-sprite-vignette"
 
 const sample = [
@@ -31,6 +31,14 @@ export default function AbilityPreviewPage() {
         <h2 className="font-serif text-sm uppercase tracking-[.2em] text-[#ecd08f]">Character sheet</h2>
         <div className="grid w-full max-w-[900px] grid-cols-3 gap-3 md:grid-cols-6">
           {sample.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet />)}
+        </div>
+      </section>
+      <section className="flex flex-col gap-3">
+        <h2 className="font-serif text-sm uppercase tracking-[.2em] text-[#ecd08f]">Stat shields (right column)</h2>
+        <div className="grid w-[310px] grid-cols-3 gap-2">
+          <StatShield kind="ac" label="Armor Class" value="10" onClick={() => {}} />
+          <StatShield kind="proficiency" label="Proficiency" value="+2" onClick={() => {}} />
+          <StatShield kind="speed" label="Speed" value="30 ft." onClick={() => {}} />
         </div>
       </section>
       <section className="flex flex-col gap-3">
