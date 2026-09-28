@@ -63,7 +63,8 @@ import {
   type TokenState,
 } from "@/lib/token-animation"
 import { castSpellVfx, paletteForSpell, type VfxHandle } from "./spell-vfx"
-import { castSpellKitVfx, kitVfxTypeFor, prewarmKit, loadSheet, Flip, type CastHandle, type DamageType } from "./spell-vfx-kit"
+import { castSpellKitVfx, kitVfxTypeFor, kitSplashFor, prewarmKit, loadSheet, Flip, type CastHandle, type DamageType } from "./spell-vfx-kit"
+import { splashOnVictims } from "./spell-splash"
 import { vitalityOf } from "@/lib/death-saves"
 import { layAreaDecal, type AreaDecalHandle } from "./aoe-decal"
 import { StatusVfx, type StatusBody } from "./status-vfx"
@@ -6382,6 +6383,54 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               if (body) glideToken({ ...body.row, grid_x: v.pushed.to.x, grid_y: v.pushed.to.y })
             }
           }
+          // THE BLAST LANDING ON THE BODIES IN IT (Sam, 2026-09-28).
+          //
+          // Everything above this point was already right and still drew
+          // nothing on anyone: the shape bloomed at the aim point, the floor
+          // decal went down, and each body in the loop above took its hit
+          // points and its reaction. The fire itself never touched them. So a
+          // Fireball dropped into four drow was one bloom in the middle and
+          // four damage numbers, with no visible connection between them.
+          //
+          // The splash arrives body by body, timed by how long the front
+          // actually takes to reach each square (lib/splash-timing), so the
+          // blast reads as expanding rather than as four simultaneous poofs.
+          // A body that made its save takes a smaller, cooler, sparkless
+          // flare — the blast reached them and they turned it, which is a
+          // different picture from a full hit and from a miss alike.
+          if (kitType && p.victims?.length && p.centre) {
+            const splashArt = kitSplashFor(kitType, p.spell)
+            if (splashArt) {
+              const bodies = p.victims.flatMap((v) => {
+                const body = tokensRef.current.get(v.id)
+                if (!body) return []
+                const gx = body.row.grid_x ?? 0
+                const gy = body.row.grid_y ?? 0
+                const c = sqCentre(gx, gy)
+                return [{
+                  id: v.id,
+                  x: gx,
+                  y: gy,
+                  at: new THREE.Vector3(c.x, 0, c.z),
+                  amount: v.amount,
+                  heals: v.heals,
+                  word: v.word,
+                }]
+              })
+              const splash = splashOnVictims({
+                parent: scene,
+                camera,
+                type: kitType,
+                impactSheet: splashArt.impactSheet,
+                tint: splashArt.tint,
+                centre: p.centre,
+                victims: bodies,
+                feetPerSquare: FEET_PER_SQUARE,
+              })
+              if (splash) vfx.push(splash)
+            }
+          }
+
           // THE MARK IT LEAVES, on the same frame the shape resolves.
           //
           // Not on release, and not when the realtime rows land: on impact.
