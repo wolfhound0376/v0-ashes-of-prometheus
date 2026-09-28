@@ -24,7 +24,18 @@
  * Pin them to a location pool (as `village` pins "burning-village") when there
  * is an actual dragon.
  */
-export const COMBAT_ROTATION = ["steel-in-the-dark", "the-drow-descend", "the-pen-erupts"] as const
+export const COMBAT_ROTATION = [
+  // Commissioned, already in the bucket.
+  "steel-in-the-dark",
+  "the-drow-descend",
+  "the-pen-erupts",
+  // Generated 2026-09-27 (ElevenLabs), levelled to -27.5 LUFS and loop-trimmed.
+  // Seven tracks puts a repeat seven fights away instead of three.
+  "the-hunt",
+  "weight-of-stone",
+  "nothing-left",
+  "wrong-shapes",
+] as const
 
 /**
  * The id every location pool references as its shared battle track, and what a
