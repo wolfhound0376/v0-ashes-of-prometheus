@@ -1,7 +1,9 @@
 "use client"
 
 import { useEffect } from "react"
-import { uiTick } from "@/lib/ui-tick"
+import { uiChime, uiTick } from "@/lib/ui-tick"
+
+const WINDOW_OPENER = '[data-tick="window"], [aria-haspopup="dialog"], [aria-haspopup="true"], [aria-haspopup="menu"]'
 
 const CLICKABLE = 'button, a[href], [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="switch"], [role="checkbox"], summary, label[for], input[type="checkbox"], input[type="radio"], input[type="button"], input[type="submit"], select'
 
@@ -14,7 +16,8 @@ export function UiClickSound() {
       const control = target?.closest?.(CLICKABLE)
       if (!control || control.closest("[data-no-tick]")) return
       if (control.matches(":disabled, [aria-disabled='true']")) return
-      uiTick("firm")
+      if (control.matches(WINDOW_OPENER)) uiChime()
+      else uiTick("firm")
     }
     document.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true })
     return () => document.removeEventListener("pointerdown", onPointerDown, { capture: true })

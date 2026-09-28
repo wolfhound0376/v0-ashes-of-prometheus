@@ -56,6 +56,72 @@ export function uiTick(strength: "soft" | "firm" = "firm"): void {
   playTick(ac, strength)
 }
 
+/**
+ * Opening a window gets a small, bright metallic "ting" instead of the dry tick,
+ * so the ear can tell "a panel is opening" from "a control was pressed".
+ */
+export function uiChime(): void {
+  const ac = audio()
+  if (!ac) return
+  if (ac.state !== "running") {
+    ac.resume().then(() => playChime(ac)).catch(() => {})
+    return
+  }
+  playChime(ac)
+}
+
+function playChime(ac: AudioContext): void {
+  try {
+    const now = ac.currentTime + 0.001
+
+    const out = ac.createGain()
+    out.gain.value = 0.22
+    const lp = ac.createBiquadFilter()
+    lp.type = "lowpass"
+    lp.frequency.value = 9000
+    out.connect(lp).connect(ac.destination)
+
+    // Inharmonic partials (bell/struck-metal ratios) give the metallic ring;
+    // the higher ones die off faster so the tail settles to a soft, pure tone.
+    const partials: Array<[ratio: number, level: number, decay: number]> = [
+      [1, 0.55, 0.42],
+      [2.76, 0.28, 0.22],
+      [5.4, 0.12, 0.12],
+      [8.93, 0.05, 0.06],
+    ]
+    const base = 2350
+    for (const [ratio, level, decay] of partials) {
+      const osc = ac.createOscillator()
+      osc.type = "sine"
+      osc.frequency.value = base * ratio
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.0001, now)
+      g.gain.exponentialRampToValueAtTime(level, now + 0.003)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + decay)
+      osc.connect(g).connect(out)
+      osc.start(now)
+      osc.stop(now + decay + 0.02)
+    }
+
+    // A tiny high noise strike so it reads as "struck", not a synth beep.
+    const frames = Math.max(1, Math.floor(ac.sampleRate * 0.012))
+    const buf = ac.createBuffer(1, frames, ac.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / frames, 6)
+    const noise = ac.createBufferSource()
+    noise.buffer = buf
+    const hp = ac.createBiquadFilter()
+    hp.type = "highpass"
+    hp.frequency.value = 6000
+    const ng = ac.createGain()
+    ng.gain.value = 0.18
+    noise.connect(hp).connect(ng).connect(out)
+    noise.start(now)
+  } catch {
+    // Silence is fine.
+  }
+}
+
 function playTick(ac: AudioContext, strength: "soft" | "firm"): void {
   try {
     const firm = strength === "firm"
