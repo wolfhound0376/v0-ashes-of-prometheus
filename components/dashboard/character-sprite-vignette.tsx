@@ -5,10 +5,37 @@ import useSWR from "swr"
 import { createClient } from "@/lib/supabase/client"
 import { isSpriteManifestUrl, type SpriteAnimation, type SpriteManifest } from "@/lib/sprite-token"
 
+interface SpriteAction {
+  name: string
+  anim: SpriteAnimation
+  sheetUrl: string
+  durationMs: number
+}
+
 interface ResolvedSprite {
   manifest: SpriteManifest
-  sheetUrl: string
-  anim: SpriteAnimation
+  actions: SpriteAction[]
+}
+
+const ACTION_ORDER = ["idle", "walk", "attack", "cast", "hurt", "dead"]
+const LOOP_SHOWCASE_MS = 2400
+const ONE_SHOT_HOLD_MS = 500
+const DEAD_HOLD_MS = 1400
+
+function buildActions(manifest: SpriteManifest, base: string): SpriteAction[] {
+  const names = Object.keys(manifest.animations).sort((a, b) => {
+    const ia = ACTION_ORDER.indexOf(a)
+    const ib = ACTION_ORDER.indexOf(b)
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+  })
+  return names.map((name) => {
+    const anim = manifest.animations[name]
+    const playMs = (anim.frames / Math.max(anim.fps, 1)) * 1000
+    const durationMs = anim.loop
+      ? Math.max(LOOP_SHOWCASE_MS, playMs)
+      : playMs + (name === "dead" ? DEAD_HOLD_MS : ONE_SHOT_HOLD_MS)
+    return { name, anim, durationMs, sheetUrl: new URL(anim.sheet, base).href }
+  })
 }
 
 const slugOf = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
@@ -49,9 +76,9 @@ async function resolveSprite([, characterId, name]: [string, string, string]): P
   for (const url of candidates) {
     const found = await fetchManifest(url).catch(() => null)
     if (!found) continue
-    const anim = found.manifest.animations.idle ?? found.manifest.animations.walk
-    if (!anim) continue
-    return { manifest: found.manifest, anim, sheetUrl: new URL(anim.sheet, found.base).href }
+    const actions = buildActions(found.manifest, found.base)
+    if (!actions.length) continue
+    return { manifest: found.manifest, actions }
   }
   return null
 }
@@ -63,19 +90,40 @@ export function CharacterSpriteVignette({ characterId, name }: { characterId?: s
     { revalidateOnFocus: false },
   )
   const figureRef = useRef<HTMLDivElement>(null)
+  const labelRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
     const el = figureRef.current
     if (!sprite || !el) return
-    const { anim } = sprite
-    if (anim.frames <= 1) return
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    if (reduce) return
+    const { actions } = sprite
+    for (const a of actions) {
+      const img = new Image()
+      img.src = a.sheetUrl
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+
     let raf = 0
-    const start = performance.now()
+    let index = -1
+    let actionStart = 0
+    const show = (i: number, now: number) => {
+      index = i
+      actionStart = now
+      const { anim, sheetUrl, name: actionName } = actions[i]
+      el.style.backgroundImage = `url(${sheetUrl})`
+      el.style.backgroundSize = `${anim.frames * 100}% 800%`
+      if (labelRef.current) labelRef.current.textContent = actionName
+    }
     const tick = (now: number) => {
-      const frame = Math.floor(((now - start) / 1000) * anim.fps) % anim.frames
-      el.style.backgroundPositionX = `${(frame / (anim.frames - 1)) * 100}%`
+      if (index === -1) show(0, now)
+      let action = actions[index]
+      if (now - actionStart >= action.durationMs) {
+        show((index + 1) % actions.length, now)
+        action = actions[index]
+      }
+      const { anim } = action
+      const raw = Math.floor(((now - actionStart) / 1000) * anim.fps)
+      const frame = anim.loop ? raw % anim.frames : Math.min(raw, anim.frames - 1)
+      el.style.backgroundPositionX = anim.frames > 1 ? `${(frame / (anim.frames - 1)) * 100}%` : "0%"
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -83,7 +131,7 @@ export function CharacterSpriteVignette({ characterId, name }: { characterId?: s
   }, [sprite])
 
   if (!sprite) return null
-  const { anim, sheetUrl } = sprite
+  const { anim, sheetUrl, name: firstAction } = sprite.actions[0]
 
   return (
     <figure className="relative flex min-h-[150px] flex-1 items-end justify-center overflow-hidden rounded border border-[#4b3a19] bg-[radial-gradient(ellipse_at_50%_85%,#2a1f10,#0a0806_70%)]">
@@ -100,7 +148,12 @@ export function CharacterSpriteVignette({ characterId, name }: { characterId?: s
           backgroundPositionY: "0%",
         }}
       />
-      <figcaption className="absolute left-2 top-1.5 font-serif text-[9px] uppercase tracking-[.16em] text-[#8f8061]">{name}</figcaption>
+      <figcaption className="absolute inset-x-2 top-1.5 flex items-center justify-between font-serif text-[9px] uppercase tracking-[.16em] text-[#8f8061]">
+        <span>{name}</span>
+        <span ref={labelRef} aria-live="off" className="text-[#c9a24a]">
+          {firstAction}
+        </span>
+      </figcaption>
     </figure>
   )
 }
