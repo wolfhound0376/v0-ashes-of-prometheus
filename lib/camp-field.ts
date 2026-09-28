@@ -449,13 +449,15 @@ export interface RoomFind {
  *   gems          → only if the catalog holds a gem of that value; else DM,
  *   magic item    → always the DM's pick from the catalog (DMG tables B and C).
  */
-export function searchRoom(opts: { who: string; total: number; dc?: number; catalog: readonly CatalogItem[]; discoveryRows: readonly EncounterTableRow[]; rng: Rng }): RoomFind {
+export function searchRoom(opts: { who: string; total: number; dc?: number; catalog: readonly CatalogItem[]; discoveryRows: readonly EncounterTableRow[]; rng: Rng; advantage?: boolean }): RoomFind {
   const dc = Math.max(1, Math.trunc(opts.dc ?? SEARCH_DC))
   const flags = [`Search DC ${dc} is PROPOSED (SRD Typical DCs, medium)`]
   const total = Math.trunc(opts.total)
   const base = { total, dc, searched: true, items: [] as RoomFind["items"], dmPicks: null as string | null, flags }
   if (total < dc) return { ...base, face: null, deadEnd: true, result: "Nothing", note: `${opts.who} searches and finds nothing but rock. A dead end.` }
-  const face = d(20, opts.rng)
+  // A cleared or sneaked-past ambusher lair is what the table is written for; searching one rolls twice, keeps the higher (PROPOSED).
+  const face = opts.advantage ? Math.max(d(20, opts.rng), d(20, opts.rng)) : d(20, opts.rng)
+  if (opts.advantage) flags.push("Advantage on the lair's discovery roll is PROPOSED")
   const row = opts.discoveryRows.find((r) => r.table_key === "underdark_discovery" && face >= r.roll_min && face <= r.roll_max)
   if (!row || face <= 10) return { ...base, face, deadEnd: true, result: row?.result ?? "Nothing", note: `${opts.who} searches carefully. There is nothing here — a dead end.` }
   const common = (types: string[], prefer?: RegExp) => {
@@ -496,4 +498,108 @@ export function searchRoom(opts: { who: string; total: number; dc?: number; cata
 export const EXPLORE_ENCOUNTER_EVERY = 3
 export function exploreEncounterDue(roomsEntered: number): boolean {
   return roomsEntered > 0 && roomsEntered % EXPLORE_ENCOUNTER_EVERY === 0
+}
+
+// ============================================================================
+// THE ZELDA LAYER — hearts, a lantern, things that bite, and a lair (Sam, 9/28:
+// "make this game more challenging and fun like a zelda game")
+// ============================================================================
+//
+// Every bite and every swing is a real attack roll: the creature's to-hit and
+// damage come from its bestiary row, the hero's from sheet_attacks, AC from the
+// sheet. Hit points lost here are hit points lost. What is house rule is how
+// the scene is paced (the lantern, the roamers, the lair) and it is flagged.
+
+export interface Striker { name: string; toHit: number; damage: string }
+
+/** "1d4+3", "1d6-1", "2d6", "2" → dice. Null when there is nothing to roll. */
+export function parseDice(expr: string | null | undefined): { n: number; d: number; mod: number } | null {
+  const t = String(expr ?? "").replace(/\s+/g, "")
+  const m = /(\d+)d(\d+)([+-]\d+)?/i.exec(t)
+  if (m) return { n: Number(m[1]), d: Number(m[2]), mod: Number(m[3] ?? 0) }
+  const flat = /^([+-]?\d+)/.exec(t)
+  return flat ? { n: 0, d: 0, mod: Number(flat[1]) } : null
+}
+
+/** A bestiary action row → a striker. The damage is the dice in brackets: "Hit: 4 (1d4+2) piercing." */
+export function strikerFromBestiary(row: { name: string; actions?: { name?: string; to_hit?: string | number; desc?: string }[] | null }): Striker | null {
+  const a = (row.actions ?? []).find((x) => x && x.to_hit != null && /\(\s*\d+d\d+/.test(x.desc ?? ""))
+  if (!a) return null
+  const dice = /\(\s*(\d+d\d+\s*[+-]?\s*\d*)\s*\)/.exec(a.desc ?? "")
+  return { name: `${row.name} — ${a.name ?? "attack"}`, toHit: Number(String(a.to_hit).replace("+", "")) || 0, damage: (dice?.[1] ?? "").replace(/\s+/g, "") }
+}
+
+/** A sheet_attacks row ({hit:"+5", damage:"1d4+3 piercing"}) → a striker. */
+export function strikerFromSheet(att: { name: string; hit: string | number; damage: string }): Striker {
+  return { name: att.name, toHit: Number(String(att.hit).replace("+", "")) || 0, damage: String(att.damage).split(/\s/)[0] }
+}
+
+export interface AttackRoll { face: number; total: number; hit: boolean; crit: boolean; damage: number; note: string }
+
+/** SRD: d20 + to-hit against AC; a 20 always hits and doubles the dice, a 1 always misses. Damage never below 1 on a hit... unless the dice say 0. */
+export function rollAttack(a: Striker, targetAC: number, rng: Rng): AttackRoll {
+  const face = d(20, rng)
+  const total = face + a.toHit
+  const crit = face === 20
+  const hit = face !== 1 && (crit || total >= targetAC)
+  let damage = 0
+  const dice = parseDice(a.damage)
+  if (hit && dice) {
+    for (let i = 0; i < dice.n * (crit ? 2 : 1); i++) damage += d(dice.d, rng)
+    damage = Math.max(0, damage + dice.mod)
+  }
+  return { face, total, hit, crit, damage, note: hit ? `${a.name}: ${total} vs AC ${targetAC} — ${crit ? "critical, " : ""}${damage} damage` : `${a.name}: ${total} vs AC ${targetAC} — miss` }
+}
+
+/** Vermin that roam the tunnels near camp. Bestiary slugs; PROPOSED weights. */
+export const ROAMERS: readonly { slug: string; name: string; w: Record<FieldBiome, number> }[] = [
+  { slug: "giant-rat", name: "Giant rat", w: { tunnels: 4, fungal: 2, shore: 3 } },
+  { slug: "giant-fire-beetle", name: "Giant fire beetle", w: { tunnels: 2, fungal: 4, shore: 1 } },
+  { slug: "giant-bat", name: "Giant bat", w: { tunnels: 1, fungal: 1, shore: 2 } },
+]
+
+/** 0–2 roamers in a room (PROPOSED), seeded by room so a room keeps its vermin. None in camp. */
+export function roomRoamers(seed: string | number, biome: FieldBiome, isCamp: boolean): string[] {
+  if (isCamp) return []
+  const rng = seededRng(`${seed}:roam`)
+  const n = Math.floor(rng() * 3)
+  const out: string[] = []
+  for (let i = 0; i < n; i++) out.push(weighted(ROAMERS.map((r) => ({ r, w: r.w[biome] })), rng).r.slug)
+  return out
+}
+
+/** Lantern oil for one evening's walk, in seconds of play. PROPOSED. */
+export const LANTERN_SECONDS = 150
+
+/**
+ * The lair — the room farthest from camp (by doors walked, then by seed). Its
+ * occupant is rolled on OotA's Ambushers table; the Ambush Lair Discovery
+ * table is literally written for searching it.
+ */
+export function lairRoom(map: ExploreMap): { x: number; y: number } {
+  const key = (x: number, y: number) => `${x},${y}`
+  const dist = new Map<string, number>([[key(map.camp.x, map.camp.y), 0]])
+  const q = [map.camp]
+  let far = map.camp
+  while (q.length) {
+    const c = q.shift()!
+    const r = map.rooms[c.y * map.w + c.x]
+    const next = [r.doors.n && { x: c.x, y: c.y - 1 }, r.doors.e && { x: c.x + 1, y: c.y }, r.doors.s && { x: c.x, y: c.y + 1 }, r.doors.w && { x: c.x - 1, y: c.y }].filter(Boolean) as { x: number; y: number }[]
+    for (const n of next) {
+      if (dist.has(key(n.x, n.y))) continue
+      dist.set(key(n.x, n.y), dist.get(key(c.x, c.y))! + 1)
+      q.push(n)
+      if (dist.get(key(n.x, n.y))! > dist.get(key(far.x, far.y))!) far = n
+    }
+  }
+  return far
+}
+
+/** Who lurks in the lair: OotA-Enc p.32 Ambushers, from the database rows. */
+export function lairOccupant(rows: readonly EncounterTableRow[], rng: Rng): { result: string; bestiary: string | null; count: number; face: number } | null {
+  const face = d(20, rng)
+  const row = rows.find((r) => r.table_key === "underdark_ambush" && face >= r.roll_min && face <= r.roll_max)
+  if (!row) return null
+  const det = (row.detail ?? {}) as { bestiary?: string; count?: number | string }
+  return { result: row.result, bestiary: det.bestiary ?? null, count: rollCount(det.count ?? 1, rng), face }
 }
