@@ -4,10 +4,12 @@ import { describe, it, expect } from "vitest"
 import {
   nextCombatTrackId,
   COMBAT_ROTATION,
+  DEFAULT_COMBAT_TRACK,
   COMBAT_BAG_KEY,
   COMBAT_LAST_KEY,
   type BagStore,
 } from "../combat-music-rotation"
+import { MUSIC_LIBRARY, getTrackById } from "../music-library"
 
 /** A localStorage stand-in, so the bag's persistence is what's under test. */
 function fakeStore(initial: Record<string, string> = {}): BagStore & { data: Record<string, string> } {
@@ -25,6 +27,41 @@ function fakeStore(initial: Record<string, string> = {}): BagStore & { data: Rec
 function deal(n: number, pool: readonly string[] = COMBAT_ROTATION, store = fakeStore()): string[] {
   return Array.from({ length: n }, () => nextCombatTrackId(pool, store))
 }
+
+describe("COMBAT_ROTATION wiring", () => {
+  it("every id resolves to a real track — a typo would silently play something else", () => {
+    // selectMusic falls back to the pool base on an unknown id, so a misspelled
+    // entry here does not throw. It just quietly never plays, and the variety
+    // this whole file exists for goes missing with no error anywhere.
+    for (const id of COMBAT_ROTATION) {
+      expect(getTrackById(id), `${id} is not in MUSIC_LIBRARY`).toBeDefined()
+    }
+  })
+
+  it("every rotation track is in the combat category", () => {
+    for (const id of COMBAT_ROTATION) {
+      expect(getTrackById(id)!.category, `${id} is not category combat`).toBe("combat")
+    }
+  })
+
+  it("the shared default is itself in the rotation", () => {
+    expect(COMBAT_ROTATION).toContain(DEFAULT_COMBAT_TRACK)
+  })
+
+  it("holds no duplicates, which would skew the bag", () => {
+    expect(new Set(COMBAT_ROTATION).size).toBe(COMBAT_ROTATION.length)
+  })
+
+  it("keeps the boss-only themes out of general rotation", () => {
+    // there-be-dragons and ice-dragon are category combat but were never
+    // levelled to this library's -27.5 LUFS, and are written for a specific
+    // fight. Pin them to a pool when there is an actual dragon.
+    for (const id of ["there-be-dragons", "ice-dragon"]) {
+      expect(MUSIC_LIBRARY.find((t) => t.id === id), `${id} should still exist`).toBeDefined()
+      expect(COMBAT_ROTATION).not.toContain(id)
+    }
+  })
+})
 
 describe("nextCombatTrackId", () => {
   it("always returns a track from the rotation", () => {

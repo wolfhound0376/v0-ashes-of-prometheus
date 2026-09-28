@@ -63,6 +63,52 @@ export const MUSIC_LIBRARY: MusicTrack[] = [
     mood: ["intense", "driving", "underdark"],
     description: "Commissioned battle theme. Loops under combat.",
   },
+  // The four ElevenLabs combat themes, generated 2026-09-27 to take the shared
+  // rotation from three tracks to seven. Each was written to a distinct job so
+  // the rotation varies in kind, not just in melody: a chase, a slugging match,
+  // a losing fight, and something inhuman.
+  //
+  // Every one arrived far too loud — between -11.6 and -16.6 LUFS, the same
+  // trap the-pen-erupts fell into at -13 — and was normalised to -27.5 LUFS to
+  // sit with the rest of the library.
+  //
+  // They also all arrived with fades the prompt had explicitly ruled out: a
+  // 4.6-8.4s fade-out on every take, plus a 12s fade-in on nothing-left. Under
+  // <audio loop> that is a dip to near-silence on every wrap, so each file is
+  // trimmed to its sustained region with 20ms edge fades to kill the click.
+  // Verified instrumental by transcription (scribe returned empty on all four).
+  {
+    id: "the-hunt",
+    name: "The Hunt",
+    url: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/music/combat/the-hunt.mp3",
+    category: "combat",
+    mood: ["relentless", "pursuit", "underdark"],
+    description: "Drow pursuit — skittering strings, frame drums. Flattest track in the set (LRA 2.5), so it sits under dialogue well.",
+  },
+  {
+    id: "weight-of-stone",
+    name: "Weight of Stone",
+    url: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/music/combat/weight-of-stone.mp3",
+    category: "combat",
+    mood: ["brutal", "heavy", "underdark"],
+    description: "Toe-to-toe melee — low brass, war drums, anvil hits on a stomping pulse.",
+  },
+  {
+    id: "nothing-left",
+    name: "Nothing Left",
+    url: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/music/combat/nothing-left.mp3",
+    category: "combat",
+    mood: ["desperate", "tense", "underdark"],
+    description: "The fight you are losing — tremolo strings and a timpani heartbeat that never resolves. Most dynamic of the four (LRA 8.4).",
+  },
+  {
+    id: "wrong-shapes",
+    name: "Wrong Shapes",
+    url: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/music/combat/wrong-shapes.mp3",
+    category: "combat",
+    mood: ["alien", "dread", "aberration"],
+    description: "Aberrations and the deep dark — microtonal scraping, bowed metal, no tonal centre. Tightest loop seam in the set.",
+  },
   {
     id: "there-be-dragons",
     name: "There Be Dragons",
