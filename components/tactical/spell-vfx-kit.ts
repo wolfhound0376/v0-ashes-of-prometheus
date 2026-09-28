@@ -25,7 +25,8 @@ import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
 import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
-import { schoolRampFor, schoolRuneFor } from "@/lib/spell-school"
+import { schoolOf, schoolRampFor, schoolRuneFor } from "@/lib/spell-school"
+import { RuneRing } from "./rune-ring"
 import { MARTIAL_SCALE, martialArtFor, martialImpactFor } from "@/lib/martial-arts"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
 import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
@@ -217,6 +218,29 @@ const FLOURISH_SHEETS: Record<Flourish, { sheet: string; tint: number; life: num
 
 export function hasKitEffect(type: DamageType): boolean {
   return type in TYPES
+}
+
+/**
+ * The impact art and colour for a type, for anything that needs to draw this
+ * damage type's hit somewhere the cast itself is not — the splash landing on
+ * each body inside an area shape (components/tactical/spell-splash.ts).
+ *
+ * Reads through `routeFor` so a spell whose route differs from its type's
+ * default (an attack-roll radiant bolt, say) still splashes with the sheet it
+ * actually arrives as. Null when the type has no impact art at all, which is
+ * the caller's cue to draw nothing rather than to substitute something.
+ *
+ * The colour is the BURST tint, not `spec.tint`: every entry's `spec.tint` is
+ * white, because the sheets are baked with their own colour and the type's
+ * actual hue lives on the burst that reads it.
+ */
+export function kitSplashFor(
+  type: DamageType,
+  spellName?: string,
+): { impactSheet: string; tint: number } | null {
+  const spec = routeFor(type, spellName)
+  if (!spec?.impact) return null
+  return { impactSheet: spec.impact, tint: spec.burst?.tint ?? 0xffffff }
 }
 
 /**
@@ -672,6 +696,7 @@ export function castSpellKitVfx(opts: {
   parent.add(group)
 
   let disc: Flip | null = null
+  let ring2: RuneRing | null = null
   let travel: Flip | null = null
   let impact: Flip | null = null
   let light: THREE.PointLight | null = null
@@ -741,21 +766,32 @@ export function castSpellKitVfx(opts: {
     // Falls back to the damage-type rune whenever the name is not one of the
     // 556 in that dataset — a monster's innate ability, a homebrew, a typo —
     // so anything unwritten looks exactly as it did before.
+    // AND THE SCHOOL IS A RING AROUND THE ARM, NOT A DISC ON THE PALM
+    // (Sam, 2026-09-28).
     //
-    // And the school owns the disc's COLOUR too (Sam's reference sheet,
-    // 2026-09-28). Every DamageType in the table above carries a white tint,
-    // so before this the eight runes all glowed the same white and the only
-    // thing telling abjuration from necromancy was the sigil itself — at
-    // 64px, spinning, across a battle map. Falls back to the type's tint
-    // whenever the school is unknown, so nothing unwritten changes.
+    // When the spell's school is known, the rune becomes five to seven small
+    // glyphs orbiting the caster's FOREARM in that school's colour and moving
+    // in that school's own way — see lib/spell-school-vfx, whose colours come
+    // from SCHOOL_RAMP, sampled off Sam's reference sheet. When it is not
+    // known (a monster's innate ability, a homebrew, a typo) there is no
+    // school to colour or to move, so the old single disc is drawn exactly as
+    // it always was, carrying the damage type's own tint. Nothing that looked
+    // right before changes.
+    const school = schoolOf(opts.spell)
     const runeKey = schoolRuneFor(opts.spell) ?? spec.rune
     const ramp = schoolRampFor(opts.spell)
     const runeTint = ramp?.glow ?? spec.tint
     if (runeKey) {
       void loadSheet(runeKey).then((s) => {
         if (disposed || castGone) return
-        disc = new Flip(s, runeTint, 1.1, 1.1)
-        group.add(disc.mesh)
+        if (school) {
+          ring2 = new RuneRing(group, s, school, seed)
+        } else {
+          // runeTint is the damage type's tint whenever the school is unknown,
+          // which is exactly when this branch runs — so this is spec.tint.
+          disc = new Flip(s, runeTint, 1.1, 1.1)
+          group.add(disc.mesh)
+        }
       }).catch(() => {})
     }
 
@@ -891,6 +927,7 @@ export function castSpellKitVfx(opts: {
       f.dispose()
     }
     disc = travel = impact = flash = ring = swirl = null
+    if (ring2) { ring2.dispose(); ring2 = null }
     ghosts.length = 0
     flourishQuads.length = 0
     if (sparks) { sparks.dispose(); sparks = null }
@@ -966,7 +1003,19 @@ export function castSpellKitVfx(opts: {
       // null they fall through.
       if (t >= lifetime) disposeCast()
 
-      // ── 1. the disc spins up off the hand ──────────────────────────────
+      // ── 1a. the school's ring turns around the forearm ─────────────────
+      if (ring2) {
+        if (t <= charge) {
+          ring2.update({ anchor, t, charge, camera: opts.camera, aim: target })
+          if (light) light.intensity = 6 * Math.min(1, t / charge)
+        } else {
+          const u = t - charge
+          ring2.release(u)
+          ring2.expandFrom(hand, u)
+        }
+      }
+
+      // ── 1b. or, with no school to read, the disc spins up off the hand ──
       if (disc) {
         const p = Math.min(1, t / charge)
         if (t <= charge) {
