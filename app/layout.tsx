@@ -4,6 +4,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { SupabaseStatus } from '@/components/supabase-status'
 import { BuildWatch } from '@/components/build-watch'
 import ThemeAudio from '@/components/theme-audio'
+import { UiClickSound } from '@/components/ui-click-sound'
 
 import './globals.css'
 
@@ -66,6 +67,8 @@ export default function RootLayout({
       <body className={`${cinzel.variable} ${cinzelDecorative.variable} ${crimsonText.variable} font-sans antialiased`}>
         {children}
         <ThemeAudio />
+        <UiClickSound />
+
         <SupabaseStatus />
         <BuildWatch />
         <Analytics />

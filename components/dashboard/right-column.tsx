@@ -652,7 +652,7 @@ age: (selectedCharacter as any).age,
             {/* Core Stats Row */}
             <div className="grid grid-cols-5 gap-2 text-center">
               <button
-                onClick={() => setAcModalOpen(true)}
+                data-tick="window" onClick={() => setAcModalOpen(true)}
                 title={character.acBreakdown ? `${character.acBreakdown} — click for full breakdown` : "View Armor Class breakdown"}
                 className="bg-[#1a1614]/60 rounded p-2 border border-[#3d3428]/30 hover:border-amber-600/60 transition-colors"
               >
@@ -822,7 +822,7 @@ age: (selectedCharacter as any).age,
 
             {/* View Full Character Sheet — opens the slide-over across the centre. */}
             <button
-              onClick={() => setSheetOpen(true)}
+              data-tick="window" onClick={() => setSheetOpen(true)}
               className="mt-2 w-full rounded-[3px] border border-[#7a5f33]/60 bg-gradient-to-b from-[#1d1710] to-[#120e0a] py-1.5 text-[11px] text-stone-300 transition-colors hover:border-[#c9a868] hover:text-[#e0cfa0]"
             >
               View Full Character Sheet
@@ -832,7 +832,7 @@ age: (selectedCharacter as any).age,
           {/* Full-screen paper-doll equipment editor (the inline bar below the
               inventory is the quick view; this opens the large editor). */}
           <button
-            onClick={() => setEquippedItemsOpen(true)}
+            data-tick="window" onClick={() => setEquippedItemsOpen(true)}
             className="w-full p-3 border-b border-[#3d3428]/40 flex items-center justify-between hover:bg-[#2a2420]/40 transition-colors group"
           >
             <div className="flex items-center gap-2">
@@ -845,7 +845,7 @@ age: (selectedCharacter as any).age,
           {/* Window Toggle Buttons */}
           <div className="p-3 flex flex-col gap-2">
             <button
-              onClick={() => setInventoryOpen(true)}
+              data-tick="window" onClick={() => setInventoryOpen(true)}
               className="w-full flex items-center gap-3 px-3 py-2 rounded border border-[#3d3428]/60 bg-[#1a1614]/40 hover:bg-[#2a2420]/60 hover:border-[#5d5448] transition-all text-left"
             >
               <Package className="w-4 h-4 text-[#c9a868]" />
@@ -854,7 +854,7 @@ age: (selectedCharacter as any).age,
             </button>
             
             <button
-              onClick={() => setAttacksOpen(true)}
+              data-tick="window" onClick={() => setAttacksOpen(true)}
               className="w-full flex items-center gap-3 px-3 py-2 rounded border border-[#3d3428]/60 bg-[#1a1614]/40 hover:bg-[#2a2420]/60 hover:border-[#5d5448] transition-all text-left"
             >
               <Swords className="w-4 h-4 text-red-400" />
@@ -862,7 +862,7 @@ age: (selectedCharacter as any).age,
             </button>
             
             <button
-              onClick={() => setProficienciesOpen(true)}
+              data-tick="window" onClick={() => setProficienciesOpen(true)}
               className="w-full flex items-center gap-3 px-3 py-2 rounded border border-[#3d3428]/60 bg-[#1a1614]/40 hover:bg-[#2a2420]/60 hover:border-[#5d5448] transition-all text-left"
             >
               <BookOpen className="w-4 h-4 text-[#7aa8c8]" />
@@ -870,7 +870,7 @@ age: (selectedCharacter as any).age,
             </button>
             
             <button
-              onClick={() => setStatsOpen(true)}
+              data-tick="window" onClick={() => setStatsOpen(true)}
               className="w-full flex items-center gap-3 px-3 py-2 rounded border border-[#3d3428]/60 bg-[#1a1614]/40 hover:bg-[#2a2420]/60 hover:border-[#5d5448] transition-all text-left"
             >
               <User2 className="w-4 h-4 text-purple-400" />

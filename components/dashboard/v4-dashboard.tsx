@@ -1,9 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { CSSProperties } from "react"
-import { BookOpen, ChevronDown, ChevronUp, Compass, ImagePlus, Map, Mic, X } from "lucide-react"
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
+import { BookOpen, ChevronDown, ChevronUp, Compass, Crown, Dumbbell, Feather, ImagePlus, Map, Mic, Shield, TreeDeciduous, X, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ItemIcon } from "@/lib/item-icons"
 import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { shouldRedirectToBoard, shouldForgetDeliberateExit, type PriorCombat } from "@/lib/board-exit"
@@ -19,6 +20,7 @@ import { SuggestionChips } from "./suggestion-chips"
 import type { Suggestion } from "@/lib/suggestions"
 import { CinematicOverlay } from "./cinematic-overlay"
 import { createClient } from "@/lib/supabase/client"
+import { CharacterSpriteVignette } from "@/components/dashboard/character-sprite-vignette"
 import { onCinematicCue } from "@/lib/cinematic-cue"
 import { triggerFor, shouldPlay, readPlayed, rememberPlayed } from "@/lib/cinematic-replay"
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
@@ -357,6 +359,23 @@ function Frame({ title, children, className, action, hideHeader = false, hideDec
   </section>
 }
 
+function PortraitCycler({ canCycle, nextName, onCycle, children }: { canCycle: boolean; nextName?: string; onCycle: () => void; children: React.ReactNode }) {
+  const frame = "relative h-[73px] w-[73px] shrink-0 overflow-hidden rounded border border-[#a88745] bg-[#241b0e]"
+  if (!canCycle) return <div className={frame}>{children}</div>
+  return (
+    <button
+      type="button"
+      onClick={onCycle}
+      title={nextName ? `Switch to ${nextName}` : "Switch player"}
+      aria-label={nextName ? `Switch to ${nextName}` : "Switch player"}
+      className={cn(frame, "group cursor-pointer transition hover:border-[#f4e0a8] hover:shadow-[0_0_10px_#f0cd7a66] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f0cd7a]")}
+    >
+      {children}
+      <span aria-hidden="true" className="absolute inset-x-0 bottom-0 bg-[#080705]/80 py-0.5 text-center font-serif text-[8px] uppercase tracking-wider text-[#f0cd7a] opacity-80 transition group-hover:opacity-100">Next ›</span>
+    </button>
+  )
+}
+
 export function V4Dashboard(props: V4DashboardProps) {
   const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
@@ -405,6 +424,10 @@ export function V4Dashboard(props: V4DashboardProps) {
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
   const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
+  const canCyclePlayers = !!props.dmMode && !!props.onCharacterSelect && livePlayers.length > 1
+  const selectedPlayerIndex = livePlayers.findIndex((character) => character.id === selected?.id)
+  const nextPlayer = canCyclePlayers ? livePlayers[(selectedPlayerIndex + 1) % livePlayers.length] : undefined
+  const cyclePlayer = () => { if (nextPlayer) props.onCharacterSelect?.(nextPlayer.id) }
   // The learning mark (docs/claude_Earned_Proficiency.md §6): which skills have
   // progress on the ledger. Re-read once per turn (the log grows), because a
   // roll accepted this turn can put a mark on the sheet next turn.
@@ -764,6 +787,9 @@ export function V4Dashboard(props: V4DashboardProps) {
     key,
     score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
     mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
+    proficiencyBonus: ((selected as unknown as Record<string, unknown> | null)?.proficiency_bonus as number | undefined) ?? 2,
+    saveProficient: (((selected as unknown as Record<string, unknown> | null)?.sheet_save_proficiencies as string[] | undefined) ?? [])
+      .some((s) => String(s).toLowerCase().startsWith(key)),
   }))
   // MERGE NOTE: both branches independently fixed Roll Initiative. Codex's
   // version is kept because it also sends the result to Malachar so he reacts
@@ -878,13 +904,13 @@ export function V4Dashboard(props: V4DashboardProps) {
         />
       </div>
       <div className="flex items-center gap-2 px-3 py-2"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-8 min-w-0 flex-1 px-3 text-[11px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button>{props.dmMode ? <button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button> : null}</div>
-      <div className={cn("sticky bottom-0 z-20 max-h-[34vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]", talkMode && "hidden")}><div className="flex justify-center gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
+      <div className={cn("sticky bottom-0 z-20 max-h-[34vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]", talkMode && "hidden")}><div className="grid w-full grid-cols-3 gap-2 py-1 sm:grid-cols-6">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
     </Frame>
 
     <div className={cn("flex min-h-0 flex-col gap-2", talkMode && "hidden")}>
       <Frame className="shrink-0" hideHeader>
         <div className="min-h-[470px] px-3.5 pt-3.5 pb-0 text-[10px]">
-          <div className="flex items-center gap-2.5 pt-3"><div className="h-[73px] w-[73px] overflow-hidden rounded border border-[#a88745] bg-[#241b0e]">{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</div><div className="min-w-0"><h2 className="font-serif text-[17px] font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="text-[14px] leading-tight text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"}<br />{backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2.5 py-1.5 text-[11px] text-[#f5ff00] drop-shadow-[0_0_5px_#f5ff00]">Level {selected?.level ?? 1}</span></div>
+          <div className="flex items-center gap-2.5 pt-3"><PortraitCycler canCycle={canCyclePlayers} nextName={nextPlayer?.name} onCycle={cyclePlayer}>{(selected?.portrait_image_url || selected?.avatar_image_url) ? <img src={selected.portrait_image_url || selected.avatar_image_url!} alt={selected.name} className={cn("h-full w-full object-cover", selected?.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center text-xl text-[#cdb276]">{selected?.name?.[0] ?? "S"}</div>}</PortraitCycler><div className="min-w-0"><h2 className="font-serif text-[17px] font-bold text-white">{selected?.name ?? "Sam"}</h2><p className="text-[14px] leading-tight text-[#a4916d]">{speciesLabel} {selected?.class ?? "Cleric"}<br />{backgroundLabel}</p></div><span className="ml-auto rounded border border-[#695326] px-2.5 py-1.5 text-[11px] text-[#f5ff00] drop-shadow-[0_0_5px_#f5ff00]">Level {selected?.level ?? 1}</span></div>
           <div className="mt-2 flex justify-between text-[12px] text-[#8f8061]"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div><div className="mt-1 h-[5px] bg-[#101a2d]"><div className="aop-arcane-progress h-full w-[2%]" /></div>
           <div className="mt-5 flex flex-col gap-2"><div className="h-5 w-full bg-[#281315]"><div className="aop-hp-blood-fill h-full" style={{ width: `${((selected?.hp_current ?? 10)/(selected?.hp_max ?? 10))*100}%` }} /></div><b className="font-serif text-[30px] font-extrabold text-[#5b8ff0] [text-shadow:0_1px_2px_#000]">HP {selected?.hp_current ?? 10} / {selected?.hp_max ?? 10}</b></div>
           <div className="mt-1 flex gap-1">{conditions.map((condition) => { const key = condition.toLowerCase().split(" ")[0]; return <span key={condition} className={cn("rounded-full border px-2 py-0.5 text-[8px]", conditionColor[key] ?? "border-[#4b3a19] text-[#a4916d]")}>{condition}</span>})}<span className="rounded-full border border-dashed border-[#4b3a19] px-2 text-[#8f8061]">+</span></div>
@@ -903,7 +929,7 @@ export function V4Dashboard(props: V4DashboardProps) {
             </div>
           ) : null}
           <div className="mt-2 grid grid-cols-3 gap-2">
-              <StatShield kind="ac" label="Armor Class" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
+              <StatShield kind="ac" label="AC" value={String(displayedAc)} tooltip={acResult.text} onClick={() => setStatDetail("ac")} />
             <StatShield kind="proficiency" label="Proficiency" value={`+${selected?.proficiency_bonus ?? 2}`} onClick={() => setStatDetail("proficiency")} />
             <StatShield kind="speed" label="Speed" value={selected?.speed || "30 ft"} onClick={() => setStatDetail("speed")} />
           </div>
@@ -911,11 +937,12 @@ export function V4Dashboard(props: V4DashboardProps) {
               transcribed from the v4.1 mock image, which meant every character —
               Fifi the Rogue included — showed Sam the Cleric's numbers and the
               literal legend "Cleric class skill". */}
-          <button onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
+          <button data-tick="window" onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
-        <button onClick={() => setInventoryOpen(true)} className="flex h-9 shrink-0 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
+        <button data-tick="window" onClick={() => setInventoryOpen(true)} className="flex h-9 shrink-0 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
       </Frame>
-      {isMagicUser ? <button onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300">{selected.class === "Cleric" || selected.class === "Monk" ? <><img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="mr-2 -my-1 h-10 w-10 shrink-0 object-contain motion-reduce:hidden" /><img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="mr-2 -my-1 hidden h-10 w-10 shrink-0 object-contain motion-reduce:block" /></> : <BookOpen className="mr-2 h-4 w-4" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"} <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
+      {isMagicUser ? <button data-tick="window" onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300">{selected.class === "Cleric" || selected.class === "Monk" ? <><img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="mr-2 -my-1 h-10 w-10 shrink-0 object-contain motion-reduce:hidden" /><img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="mr-2 -my-1 hidden h-10 w-10 shrink-0 object-contain motion-reduce:block" /></> : <BookOpen className="mr-2 h-4 w-4" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"} <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
+      <CharacterSpriteVignette characterId={selected?.id} name={selected?.name} />
       {props.audioSlot ? <div className="mt-auto flex min-h-14 items-center justify-center rounded border border-[#3d3428] bg-[#1a1614] px-2 py-1 shadow-lg shadow-black/50">{props.audioSlot}</div> : null}
     </div>
     {statDetail ? <StatDetailModal kind={statDetail} character={selected} acBreakdown={acResult.text} onClose={() => setStatDetail(null)} /> : null}
@@ -999,7 +1026,7 @@ function CharacterSheetModal({ character, abilities, inventory, equipment, displ
       </section>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(390px,1fr)_250px]">
-        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif text-xs uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-2 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet onClick={() => abilityRoll(ability)} />)}</div><p className="mt-2 text-center text-[8px] text-[#75674d]">Click an ability to roll a check</p></section>
+        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif text-xs uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-2 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet onClick={() => abilityRoll(ability)} />)}</div><p className="mt-2 text-center text-[8px] text-[#75674d]">Click an ability for its breakdown and to roll a check</p></section>
 
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-2"><SheetCoreStat label="Armor Class" value={String(displayedAc)} /><button disabled={busy} onClick={initiativeRoll}><SheetCoreStat label="Initiative · Roll" value={signed(displayedInitiative)} /></button><SheetCoreStat label="Speed" value={speed} /></div>
@@ -1277,7 +1304,7 @@ function SpellbookModal({ character, onClose }: { character: Character; onClose:
 
   return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s ${bookTitle}`} onMouseDown={(event) => { if (event.target !== event.currentTarget) return; if (showAttract) setOpened(true); else requestClose() }}>
     {showAttract ? (
-      <button type="button" onClick={() => setOpened(true)} className="group flex flex-col items-center gap-6 focus:outline-none" aria-label={`Open ${bookTitle}`}>
+      <button type="button" data-tick="window" onClick={() => setOpened(true)} className="group flex flex-col items-center gap-6 focus:outline-none" aria-label={`Open ${bookTitle}`}>
         <img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="h-[400px] w-[400px] max-w-[80vw] max-h-[70vh] object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.85)] motion-reduce:hidden" />
         <img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="hidden h-[400px] w-[400px] max-w-[80vw] max-h-[70vh] object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.85)] motion-reduce:block" />
         <span className="animate-pulse font-serif text-sm uppercase tracking-[.3em] text-[#d3ae6b]/70 transition-colors group-hover:text-[#f0d9aa] motion-reduce:animate-none">Open the book</span>
@@ -1335,37 +1362,199 @@ type StatKind = "ac" | "initiative" | "proficiency" | "speed"
 
 const abilityNames: Record<string, string> = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" }
 
-function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: { key: string; score: number; mod: number }; onClick?: () => void; sheet?: boolean; large?: boolean }) {
-  const order = ["str", "dex", "con", "int", "wis", "cha"]
-  const index = Math.max(0, order.indexOf(ability.key.toLowerCase()))
-  const x = index === 0 ? "0%" : index === 5 ? "100%" : `${index * 20}%`
-  const name = abilityNames[ability.key.toLowerCase()] ?? ability.key
-  // In the six-up rail each card is only ~45px wide, so the full ability name
-  // cannot fit and was being cut mid-word ("CONSTITUTE", "INTELLIGENC").
-  // The rail shows the standard 5E abbreviation; the wide two-column sheet has
-  // room for the full name. Either way the full name is on hover and in the
-  // native tooltip, so nothing is lost.
-  return <button type="button" onClick={onClick} className={cn("group relative min-w-0 overflow-hidden rounded-sm border border-[#5e481f] bg-[#090807] shadow-[0_3px_7px_#000] transition-[transform,border-color,box-shadow] duration-200 delay-0 hover:z-20 hover:border-[#d8ad5c] hover:shadow-[0_8px_24px_#000,0_0_14px_#b7833844] hover:delay-500 focus-visible:z-20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", sheet ? "h-[190px] hover:scale-110 focus-visible:scale-110" : large ? "hover:scale-105 focus-visible:scale-105" : "h-[132px] hover:scale-125 focus-visible:scale-125")} style={!sheet && large ? { height: "clamp(96px, 16vh, 132px)", aspectRatio: "3 / 7" } : undefined} title={`${name}: ${ability.score} (${ability.mod >= 0 ? "+" : ""}${ability.mod})`}>
-    <span className="absolute inset-0 block bg-[url('/images/ui/ability-score-icons.png')] bg-[length:600%_auto] bg-no-repeat" style={{ backgroundPosition: `${x} 3%` }} />
-    <span className={cn("absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/92 to-transparent", sheet ? "h-11" : large ? "" : "h-[52px]")} style={!sheet && large ? { height: 38 } : undefined} />
-    <span className={cn("absolute inset-x-0 bg-gradient-to-b from-[#ffb0c0] via-[#e0115f] to-[#8b001f] bg-clip-text text-center font-serif font-extrabold leading-none text-transparent", sheet ? "bottom-[19px] text-[15px]" : large ? "" : "bottom-[25px] text-[17px]")} style={{ ...(!sheet && large ? { bottom: 17, fontSize: 14 } : {}), filter: "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 4px #e0115f99)" }}>{ability.score}</span>
-    <span className={cn("absolute inset-x-0 text-center font-serif font-bold leading-none text-[#ffffff] [text-shadow:0_0_2px_#000,0_1px_2px_#000]", sheet ? "bottom-[7px] text-[9px]" : large ? "" : "bottom-[11px] text-[10px]")} style={!sheet && large ? { bottom: 5, fontSize: 9 } : undefined}>{ability.mod >= 0 ? "+" : ""}{ability.mod}</span>
-  </button>
+const abilityArt: Record<string, string> = {
+  str: "/images/ui/abilities/strength.png",
+  dex: "/images/ui/abilities/dexterity.png",
+  con: "/images/ui/abilities/constitution.png",
+  int: "/images/ui/abilities/intelligence.png",
+  wis: "/images/ui/abilities/wisdom.png",
+  cha: "/images/ui/abilities/charisma.png",
 }
 
-function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; label: string; value: string; onClick: () => void; tooltip?: string }) {
+const abilityArtPosition: Record<string, string> = {
+  str: "78% center",
+  dex: "78% center",
+  con: "center 25%",
+  int: "center 35%",
+  wis: "center 30%",
+  cha: "center 40%",
+}
+
+// Gem tones sampled from the reference card set: light / core / deep.
+const abilityGem: Record<string, [string, string, string]> = {
+  str: ["#ff8a7a", "#c81e24", "#4a0507"],
+  dex: ["#9cf08a", "#2f9a34", "#0b3a0e"],
+  con: ["#ffc07a", "#c8611c", "#4a1e04"],
+  int: ["#e2a6ff", "#8b35d6", "#2c0752"],
+  wis: ["#9cc4ff", "#2a62d0", "#0a1d52"],
+  cha: ["#ff8fae", "#c01446", "#4a0418"],
+}
+
+const goldText = "bg-gradient-to-b from-[#fff8d6] via-[#f5c542] to-[#a8701a] bg-clip-text text-transparent"
+const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 6px #000)"
+
+const abilitySkillList: Record<string, string[]> = {
+  str: ["Athletics"],
+  dex: ["Acrobatics", "Sleight of Hand", "Stealth"],
+  con: [],
+  int: ["Arcana", "History", "Investigation", "Nature", "Religion"],
+  wis: ["Animal Handling", "Insight", "Medicine", "Perception", "Survival"],
+  cha: ["Deception", "Intimidation", "Performance", "Persuasion"],
+}
+
+function trackOrbLight(event: ReactPointerEvent<HTMLElement>) {
+  const el = event.currentTarget
+  const box = el.getBoundingClientRect()
+  const x = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width))
+  const y = Math.min(1, Math.max(0, (event.clientY - box.top) / box.height))
+  el.style.setProperty("--orb-lx", `${18 + x * 64}%`)
+  el.style.setProperty("--orb-ly", `${14 + y * 52}%`)
+  el.style.setProperty("--orb-ry", `${(x - 0.5) * 36}deg`)
+  el.style.setProperty("--orb-rx", `${(0.5 - y) * 30}deg`)
+  el.dataset.orbHot = "true"
+}
+
+function resetOrbLight(event: ReactPointerEvent<HTMLElement>) {
+  const el = event.currentTarget
+  for (const prop of ["--orb-lx", "--orb-ly", "--orb-rx", "--orb-ry"]) el.style.removeProperty(prop)
+  delete el.dataset.orbHot
+}
+
+type AbilityCardData = { key: string; score: number; mod: number; proficiencyBonus?: number; saveProficient?: boolean }
+
+function AbilityBreakdown({ ability, name, onRoll }: { ability: AbilityCardData; name: string; onRoll?: () => void }) {
+  const key = ability.key.toLowerCase()
+  const half = (ability.score - 10) / 2
+  const base = Math.floor(half)
+  const extra = ability.mod - base
+  const prof = ability.proficiencyBonus ?? 2
+  const save = ability.mod + (ability.saveProficient ? prof : 0)
+  const skills = abilitySkillList[key] ?? []
+  const row = "flex items-baseline justify-between gap-3"
+
+  return <div className="flex flex-col gap-3 font-sans text-[13px] leading-relaxed text-[#e8dcc0]">
+    <div className="flex items-baseline justify-between border-b border-[#4f3c1d] pb-2">
+      <h4 className="font-serif text-sm font-bold uppercase tracking-[.12em] text-[#f6e3b0]">{name}</h4>
+      <span className="font-serif text-xs text-[#a8916a]">Score {ability.score}</span>
+    </div>
+
+    <section className="flex flex-col gap-1">
+      <h5 className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Ability modifier</h5>
+      <p className="text-[#b9a883]">Subtract 10 from the score, halve it, round down.</p>
+      <p className="rounded border border-[#3a2c14] bg-black/40 px-2 py-1.5 font-mono text-[12px] text-[#f6e3b0]">
+        {`(${ability.score} − 10) ÷ 2 = ${half} → ${formatSigned(base)}`}
+      </p>
+      {extra !== 0 && <div className={row}><span className="text-[#b9a883]">Equipment and effects</span><span className="font-serif font-bold">{formatSigned(extra)}</span></div>}
+      <div className={cn(row, "border-t border-[#3a2c14] pt-1")}><span>Modifier</span><span className={cn("font-serif text-base font-extrabold", goldText)}>{formatSigned(ability.mod)}</span></div>
+    </section>
+
+    <section className="flex flex-col gap-1">
+      <h5 className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Saving throw</h5>
+      <div className={row}><span className="text-[#b9a883]">Modifier</span><span className="font-serif">{formatSigned(ability.mod)}</span></div>
+      <div className={row}>
+        <span className="text-[#b9a883]">Proficiency bonus{ability.saveProficient ? "" : " (not proficient)"}</span>
+        <span className="font-serif">{ability.saveProficient ? formatSigned(prof) : "+0"}</span>
+      </div>
+      <div className={cn(row, "border-t border-[#3a2c14] pt-1")}><span>{name} save</span><span className={cn("font-serif text-base font-extrabold", goldText)}>{formatSigned(save)}</span></div>
+      <p className="text-[11px] text-[#8f7e5c]">Proficiency bonus is set by character level: +2 at levels 1–4, rising by 1 every four levels to +6.</p>
+    </section>
+
+    {skills.length > 0 && <p className="text-[12px] text-[#b9a883]"><span className="text-[#d7b56f]">Skills: </span>{skills.join(", ")}</p>}
+
+    {onRoll && <button type="button" onClick={onRoll} className="rounded border border-[#b8893a] bg-[linear-gradient(180deg,#2a1d0a,#120c05)] px-3 py-1.5 font-serif text-xs font-bold uppercase tracking-[.12em] text-[#f6e3b0] transition-colors hover:border-[#f7dc8f] hover:text-[#fff8d6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]">
+      {`Roll ${name} check`}
+    </button>}
+  </div>
+}
+
+export function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: AbilityCardData; onClick?: () => void; sheet?: boolean; large?: boolean }) {
+  const key = ability.key.toLowerCase()
+  const name = abilityNames[key] ?? ability.key
+  const modifier = `${ability.mod >= 0 ? "+" : ""}${ability.mod}`
+  const rail = large && !sheet
+  const [gemLight, gemCore, gemDeep] = abilityGem[key] ?? abilityGem.str
+  const [open, setOpen] = useState(false)
+
+  return <Popover open={open} onOpenChange={setOpen}>
+  <PopoverTrigger asChild>
+  <button
+  type="button"
+  data-tick="click"
+  onPointerMove={trackOrbLight}
+    onPointerLeave={resetOrbLight}
+    aria-label={`${name} ${ability.score}, modifier ${modifier}. Show how it is calculated`}
+    className={cn(
+      "group relative isolate flex min-w-0 flex-col rounded-md p-[2px] text-left shadow-[0_8px_18px_#000] transition-[transform,box-shadow] duration-200 hover:z-20 hover:-translate-y-1 hover:shadow-[0_14px_30px_#000,0_0_20px_var(--gem)] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]",
+      "bg-[linear-gradient(160deg,#fbe7a6_0%,#c9962f_22%,#6d4812_48%,#d9a846_72%,#fff0b8_100%)]",
+      rail ? "h-[clamp(168px,25vh,210px)] w-full" : sheet ? "h-[196px]" : "h-[182px]",
+    )}
+    style={{ ["--gem" as string]: `${gemCore}aa` }}
+  >
+    <span className="relative flex h-full flex-col overflow-hidden rounded-[4px] bg-[#0b0806] shadow-[inset_0_0_0_1px_#2a1c08]">
+      <span aria-hidden className="absolute inset-0 overflow-hidden">
+        <span
+          className="absolute inset-0 bg-cover bg-no-repeat saturate-[1.2] contrast-[1.1] brightness-[1.08] transition-transform duration-500 group-hover:scale-110"
+          style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')`, backgroundPosition: abilityArtPosition[key] ?? "center" }}
+        />
+        <span className="absolute inset-0 shadow-[inset_0_0_14px_#000c]" />
+        <span className="absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-[#0b0806] via-[#0b0806]/85 to-transparent" />
+      </span>
+
+      <span className="min-h-0 flex-1" />
+
+      <span className="relative z-10 flex flex-col items-center">
+        <span className="w-full border-y border-[#b8893a] bg-[linear-gradient(90deg,#0b0806,#23180a_50%,#0b0806)] py-[3px] text-center">
+          <span className={cn("block truncate px-1 font-serif font-bold uppercase leading-none tracking-[.06em] text-[#f6e3b0] [text-shadow:0_1px_2px_#000]", sheet ? "text-[11px]" : "text-[10px]")}>{name}</span>
+        </span>
+      </span>
+
+      <span className="relative z-10 flex flex-col items-center justify-center pb-2.5 pt-1.5">
+        <span
+          className={cn("aop-orb relative flex items-center justify-center rounded-full border-[3px] border-[#e9c46a] shadow-[0_3px_10px_#000,0_0_14px_var(--gem),inset_0_-4px_8px_#0009,inset_0_3px_5px_#fff5]", rail ? "size-[clamp(44px,7vh,56px)]" : "size-[52px]")}
+          style={{ ["--orb-light" as string]: gemLight, ["--orb-core" as string]: gemCore, ["--orb-deep" as string]: gemDeep }}
+        >
+          <span aria-hidden className="absolute -inset-[5px] rounded-full border border-[#8a6320]" />
+          <span aria-hidden className="absolute inset-[2px] rounded-full border border-[#fff0c2]/35" />
+          <span aria-hidden className="absolute inset-0 overflow-hidden rounded-full">
+            <span className="aop-orb-spec absolute h-[36%] w-[52%] rounded-full bg-[radial-gradient(ellipse_at_center,#ffffffb0_0%,#ffffff40_45%,transparent_75%)] opacity-80 transition-opacity duration-300 group-hover:opacity-100" />
+          </span>
+          <span className={cn("relative font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(22px,3.6vh,30px)]" : "text-[28px]")} style={{ filter: scoreGlow }}>{ability.score}</span>
+        </span>
+      </span>
+    </span>
+
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-1/2 top-0 z-20 flex size-[28px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_var(--gem),inset_0_0_5px_#f5c54255]"
+    >
+      <span className={cn("block font-serif text-[12px] font-extrabold leading-none", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
+    </span>
+  </button>
+  </PopoverTrigger>
+  <PopoverContent side="top" sideOffset={10} collisionPadding={12} className="w-72 border-[#b8893a] bg-[#0f0b07] p-3 shadow-[0_12px_30px_#000,0_0_18px_var(--gem)]" style={{ ["--gem" as string]: `${gemCore}66` }}>
+    <AbilityBreakdown ability={ability} name={name} onRoll={onClick ? () => { setOpen(false); onClick() } : undefined} />
+  </PopoverContent>
+  </Popover>
+}
+
+export function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; label: string; value: string; onClick: () => void; tooltip?: string }) {
   const spritePosition: Record<StatKind, string> = {
     ac: "0% 40%",
     speed: "33.333% 40%",
     initiative: "66.666% 40%",
     proficiency: "100% 40%",
   }
-  return <button type="button" onClick={onClick} className="group relative flex h-[144px] min-w-0 flex-col items-center justify-end rounded border border-transparent pb-0.5 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`}>
-    <span className="absolute inset-x-1 top-0 h-[115px] overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
+  const unitMatch = value.match(/^\s*(\d+)\s*(ft\.?|feet)\s*$/i)
+  const mainValue = unitMatch ? unitMatch[1] : value
+  return <button type="button" onClick={onClick} className="group relative flex h-[144px] min-w-0 flex-col items-center rounded border border-transparent pb-1 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]" title={tooltip ?? `Open ${label} details`} aria-label={`${label} ${value}`}>
+    <span aria-hidden className="relative h-[100px] w-full shrink-0 overflow-hidden drop-shadow-[0_4px_5px_#000]" style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
       <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
     </span>
-    <b className="absolute bottom-[14px] z-10 rounded-full border border-[#c49b4f] bg-[#080604]/90 px-1.5 py-0.5 font-serif text-[9px] leading-none text-[#f3dfb4] shadow-[0_1px_5px_#000]">{value}</b>
-    <span className="relative z-10 max-w-full truncate px-0.5 text-[8px] font-bold uppercase tracking-[.08em] text-[#cdb276]">{label}</span>
+    <span aria-hidden className="relative z-10 -mt-3 flex size-[32px] shrink-0 flex-col items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_#f5c54255,inset_0_0_5px_#f5c54255]">
+      <span className={cn("block font-serif font-extrabold leading-none", mainValue.length > 2 ? "text-[10px]" : "text-[13px]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
+      {unitMatch && <span className={cn("mt-px block font-serif text-[7px] font-bold uppercase leading-none tracking-[.06em]", goldText)}>ft</span>}
+    </span>
+    <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif font-extrabold", kind === "ac" ? "text-[12px]" : "text-[10px]", " uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
   </button>
 }
 
