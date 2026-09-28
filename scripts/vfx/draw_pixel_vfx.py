@@ -27,6 +27,7 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxIce        64x64  4f loop   rime left on the floor after a frost hit, drawn flat
   pxGlow       64x64  8f loop   healing luminescence around a target, motes rising
   pxSwirl      48x48  8f loop   the dizzy spiral over a mocked head, violet and blue
+  pxPlumeMotes 48x96  8f loop   embers rising through a target sigil's plume, white
   pxFlame      32x48  8f loop   a tongue of fire riding a burning creature
   pxArc        24x24  6f        a lightning crackle around a charged creature
   pxWebWrap    48x64  1f        strands wrapped around a webbed creature
@@ -422,6 +423,71 @@ def glow(f, n):
     return cell
 
 
+def plumemotes(f, n):
+    """Embers rising through a target sigil's plume.
+
+    Sam, 2026-09-28: "add pixels to enhance the plumes." The sigil sheets are
+    painted art; everything else the kit draws is pixel art, and the plume was
+    the one place the two met with nothing to bridge them. These are drawn the
+    way the rest of public/vfx/px* are drawn — hard alpha, a white tone ramp,
+    seeded so a re-run is byte-identical — and the renderer tints them with the
+    school's own colour, so one sheet serves every sigil.
+
+    The cell is 1:2 to match the plume quad it rides, and the motes rise
+    through the WHOLE height and die at the top rather than looping mid-air:
+    the plume is a one-shot, so a mote that wraps would be the only thing on
+    screen admitting the effect is a loop."""
+    cell = Cell(48, 96)
+    ph = f / n
+    # Two ranks so the column reads as having depth: the far rank is dimmer,
+    # smaller and slower, the near rank brighter, larger and faster.
+    #
+    # The first pass used 16 single pixels and read as dust rather than fire —
+    # at the size this rides on the board a one-pixel mote is invisible. These
+    # are short vertical EMBERS, two to four pixels tall, which is what makes a
+    # rising column read as rising.
+    for rank, (count, speed, dim, spread) in enumerate(
+            ((16, 0.70, True, 18), (13, 1.0, False, 13))):
+        for k in range(count):
+            mp = (ph * speed + k / count + rank * 0.37) % 1
+            my = 96 - mp * 104          # from below the base to off the top
+            wob = math.sin(mp * 3.4 + k * 1.9 + rank) * spread * (0.30 + 0.70 * mp)
+            mx = 24 + wob
+            # Fades in fast, dies over the top third.
+            life = 1.0 if mp < 0.55 else max(0.0, (1 - mp) / 0.45)
+            if life <= 0.05:
+                continue
+            hot  = WHITE[2] if dim else WHITE[4]
+            warm = WHITE[1] if dim else WHITE[3]
+            cool = WHITE[0] if dim else WHITE[1]
+            # An ember is a short vertical bar: bright head, warm body, cool
+            # tail. Taller on the near rank and taller again low down, where
+            # it is moving fastest out of the ring.
+            tall = (3 if dim else 4) + (1 if mp < 0.35 else 0)
+            for i in range(tall):
+                c = hot if i == 0 else warm if i < tall - 1 else cool
+                cell.put(mx, my + i, c if life > 0.45 else cool)
+            if not dim:
+                # A second column of pixels on the brightest few, so the near
+                # rank has embers with actual body rather than hairlines.
+                if k % 3 == 0 and life > 0.55:
+                    for i in range(max(1, tall - 1)):
+                        cell.put(mx + 1, my + i, warm if i == 0 else cool)
+                if k % 5 == 2 and life > 0.7:
+                    cell.put(mx - 1, my, warm)
+    # Sparks near the base, so the foot of the plume is alive while the embers
+    # are high in the cell.
+    for k in range(10):
+        sp = (ph * 2 + k / 10) % 1
+        if sp > 0.6:
+            continue
+        sx = 24 + int(math.sin(k * 2.7) * 16)
+        sy = 90 - int(abs(math.cos(k * 1.3)) * 14)
+        cell.put(sx, sy, WHITE[4] if sp < 0.2 else WHITE[2])
+        cell.put(sx, sy + 1, WHITE[1])
+    return cell
+
+
 def swirl(f, n):
     """The dizzy spiral over a mocked head — the reference has a violet and
     blue whorl with sparks in it. Two arms, turning, drawn flat in its own
@@ -573,6 +639,7 @@ SHEETS = [
     ("pxIce",      ice,       4, 4, 6,  True),
     ("pxGlow",     glow,      8, 4, 10, True),
     ("pxSwirl",    swirl,     8, 4, 12, True),
+    ("pxPlumeMotes", plumemotes, 8, 4, 12, True),
     ("pxFlame",    flame,     8, 4, 12, True),
     ("pxArc",      arc,       6, 6, 12, True),
     ("pxWebWrap",  webwrap,   1, 1, 1,  False),

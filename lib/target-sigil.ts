@@ -36,6 +36,9 @@
 import type { MagicSchool } from "./spell-school"
 import { SPELL_SAVE_ABILITY } from "./spell-save-data"
 
+/** The one shared mote sheet, drawn white and tinted per school. */
+const MOTES = "pxPlumeMotes"
+
 /** How the target fared. Mirrors the kit's own `outcome`. */
 export type SigilOutcome = "taken" | "warded"
 
@@ -47,13 +50,16 @@ export type SigilAct = "form" | "hold" | "resolve" | "done"
  * new logic.
  */
 export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
-  necromancy:  { ring: "sigilNecroticRing",    plume: "sigilNecroticPlume" },
-  enchantment: { ring: "sigilEnchantmentRing", plume: "sigilEnchantmentPlume" },
+  necromancy:  { ring: "sigilNecroticRing",    plume: "sigilNecroticPlume",
+                 motes: MOTES, tint: 0x853cb1 },
+  enchantment: { ring: "sigilEnchantmentRing", plume: "sigilEnchantmentPlume",
+                 motes: MOTES, tint: 0xd0407c },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
 export const DAMAGE_SIGIL: Record<string, SigilArt> = {
-  necrotic: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume" },
+  necrotic: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume",
+              motes: MOTES, tint: 0x853cb1 },
 }
 
 /**
@@ -77,6 +83,28 @@ export const DAMAGE_SIGIL: Record<string, SigilArt> = {
 export interface SigilArt {
   ring: string
   plume: string
+  /**
+   * Drawn pixel embers rising through the plume. Sam, 2026-09-28: "add pixels
+   * to enhance the plumes."
+   *
+   * The sigil sheets are painted art and everything else the kit draws is
+   * pixel art; the plume was the one place the two met with nothing between
+   * them. One shared white sheet (public/vfx/pxPlumeMotes) serves every
+   * school, tinted below — the same trick pxFlash, pxRing and pxGlow already
+   * use, so a new sigil costs no new mote art.
+   */
+  motes?: string
+  /**
+   * The colour the motes are tinted, from Sam's own palette sheet rather than
+   * from invention. These are the "glow" values of school-verify.png.
+   *
+   * Deliberately NOT read from lib/spell-school-vfx.ts: that table is the
+   * caster's arm ring, its necromancy entry is still a green that Sam's sheet
+   * contradicts, and the palette question is open. Keeping the sigil's colour
+   * here means the two can be reconciled later without this guessing in the
+   * meantime.
+   */
+  tint?: number
 }
 
 export interface SigilPlan {

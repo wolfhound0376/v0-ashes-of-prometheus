@@ -83,6 +83,7 @@ export function targetSigilVfx(opts: {
 
   let ring: Flip | null = null
   let plume: Flip | null = null
+  let motes: Flip | null = null
   let glow: THREE.PointLight | null = null
   let peakP = 0.5
   let disposed = false
@@ -117,15 +118,28 @@ export function targetSigilVfx(opts: {
     group.add(glow)
   }).catch(() => {})
 
+  // EMBERS RISING THROUGH THE FIRE (Sam, 2026-09-28: "add pixels to enhance
+  // the plumes"). One shared white sheet, tinted with the school's own colour,
+  // riding the same quad geometry as the plume so it is rooted and stretched
+  // identically. Skipped entirely for a sigil that registers no mote art.
+  if (plan.art.motes) {
+    void loadSheet(plan.art.motes).then((sheet) => {
+      if (disposed) return
+      motes = new Flip(sheet, plan.art.tint ?? 0xffffff, FLAME_W, FLAME_H)
+      motes.opacity = 0
+      group.add(motes.mesh)
+    }).catch(() => {})
+  }
+
   const dispose = () => {
     if (disposed) return
     disposed = true
-    for (const f of [ring, plume]) {
+    for (const f of [ring, plume, motes]) {
       if (!f) continue
       group.remove(f.mesh)
       f.dispose()
     }
-    ring = plume = null
+    ring = plume = motes = null
     if (glow) { group.remove(glow); glow = null }
     group.parent?.remove(group)
   }
@@ -168,6 +182,27 @@ export function targetSigilVfx(opts: {
           plume.mesh.position.set(at.x, at.y + (FLAME_H * sy) / 2, at.z)
           plume.setProgress(pose.frame)
           plume.opacity = lit
+        }
+      }
+
+      if (motes) {
+        // Same root, same stretch, same gating as the fire: the embers are
+        // part of the flame, so they never outlive it and never show on a save.
+        const lit = pose.opacity * pose.flame
+        motes.mesh.visible = lit > 0.004
+        if (motes.mesh.visible) {
+          if (opts.camera) motes.mesh.quaternion.copy(opts.camera.quaternion)
+          const sx = pose.radiate
+          const sy = 1 + (pose.radiate - 1) * 0.45
+          motes.mesh.scale.set(sx, sy, 1)
+          motes.mesh.position.set(at.x, at.y + (FLAME_H * sy) / 2, at.z)
+          // Driven by the CLOCK rather than by the sigil's progress: the motes
+          // loop at their own drawn rate while the one-shot plume plays
+          // through once beneath them.
+          motes.clock(t)
+          // Under the painted fire, so they read as embers inside it rather
+          // than as confetti in front of it.
+          motes.opacity = lit * 0.85
         }
       }
 

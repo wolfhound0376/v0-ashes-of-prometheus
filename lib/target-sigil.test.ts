@@ -44,6 +44,17 @@ describe("targetSigilFor", () => {
     expect(targetSigilFor({ resolve: "save", school: "illusion", damage: null })).toBeNull()
   })
 
+  it("gives every registered sigil mote art and a tint from Sam's palette", () => {
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      expect(art?.motes, school).toBe("pxPlumeMotes")
+      expect(typeof art?.tint, school).toBe("number")
+    }
+    // One shared white sheet serves them all, so a new sigil costs no new
+    // mote art — only a tint.
+    const tints = Object.values(SCHOOL_SIGIL).map((a) => a?.tint)
+    expect(new Set(tints).size).toBe(tints.length)
+  })
+
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
     expect(SCHOOL_SIGIL.necromancy?.ring).toBe("sigilNecroticRing")
     expect(SCHOOL_SIGIL.enchantment?.ring).toBe("sigilEnchantmentRing")

@@ -1,608 +1,617 @@
 {
- "acidImpact": {
-  "bytes": 7504,
-  "cols": 5,
-  "file": "acidImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "aoeFire": {
-  "bytes": 85974,
-  "cols": 6,
-  "file": "aoeFire.webp",
-  "fps": 18,
-  "frames": 36,
-  "loop": true,
-  "rows": 6
- },
- "aoeFog": {
-  "bytes": 194616,
-  "cols": 6,
-  "file": "aoeFog.webp",
-  "fps": 18,
-  "frames": 36,
-  "loop": true,
-  "rows": 6
- },
- "aoeFrost": {
-  "bytes": 136466,
-  "cols": 6,
-  "file": "aoeFrost.webp",
-  "fps": 18,
-  "frames": 36,
-  "loop": true,
-  "rows": 6
- },
- "aoeHoly": {
-  "bytes": 144060,
-  "cols": 6,
-  "file": "aoeHoly.webp",
-  "fps": 18,
-  "frames": 36,
-  "loop": true,
-  "rows": 6
- },
- "eldBeam": {
-  "bytes": 6700,
-  "cols": 4,
-  "file": "eldBeam.webp",
-  "fps": 22,
-  "frames": 16,
-  "rows": 4
- },
- "eldImpact": {
-  "bytes": 14606,
-  "cols": 5,
-  "file": "eldImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "fireImpact": {
-  "bytes": 6444,
-  "cols": 5,
-  "file": "fireImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "fireball": {
-  "bytes": 27186,
-  "cols": 8,
-  "file": "fireball.webp",
-  "fps": 24,
-  "frames": 32,
-  "rows": 4
- },
- "forceHit": {
-  "bytes": 9656,
-  "cols": 5,
-  "file": "forceHit.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "frostBeam": {
-  "bytes": 3232,
-  "cols": 4,
-  "file": "frostBeam.webp",
-  "fps": 20,
-  "frames": 16,
-  "rows": 4
- },
- "frostImpact": {
-  "bytes": 24018,
-  "cols": 5,
-  "file": "frostImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "groundAcid": {
-  "bytes": 7668,
-  "cols": 4,
-  "file": "groundAcid.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "groundArcane": {
-  "bytes": 8674,
-  "cols": 4,
-  "file": "groundArcane.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "groundFrost": {
-  "bytes": 10332,
-  "cols": 4,
-  "file": "groundFrost.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "groundGloom": {
-  "bytes": 7790,
-  "cols": 4,
-  "file": "groundGloom.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "groundHallowed": {
-  "bytes": 4418,
-  "cols": 4,
-  "file": "groundHallowed.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "groundMiasma": {
-  "bytes": 21388,
-  "cols": 5,
-  "file": "groundMiasma.webp",
-  "fps": 20,
-  "frames": 20,
-  "rows": 4
- },
- "groundScorch": {
-  "bytes": 7510,
-  "cols": 4,
-  "file": "groundScorch.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "groundShock": {
-  "bytes": 6826,
-  "cols": 4,
-  "file": "groundShock.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "groundWeb": {
-  "bytes": 4956,
-  "cols": 4,
-  "file": "groundWeb.webp",
-  "fps": 18,
-  "frames": 16,
-  "rows": 4
- },
- "healingShimmer": {
-  "bytes": 4430,
-  "cols": 5,
-  "file": "healingShimmer.webp",
-  "fps": 18,
-  "frames": 20,
-  "rows": 4
- },
- "lightningStrike": {
-  "bytes": 9116,
-  "cols": 5,
-  "file": "lightningStrike.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "necroBeam": {
-  "bytes": 4748,
-  "cols": 4,
-  "file": "necroBeam.webp",
-  "fps": 20,
-  "frames": 16,
-  "rows": 4
- },
- "necroImpact": {
-  "bytes": 10006,
-  "cols": 5,
-  "file": "necroImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "physicalImpact": {
-  "bytes": 7472,
-  "cols": 5,
-  "file": "physicalImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "poisonCloud": {
-  "bytes": 5396,
-  "cols": 6,
-  "file": "poisonCloud.webp",
-  "fps": 20,
-  "frames": 24,
-  "rows": 4
- },
- "psychicImpact": {
-  "bytes": 8606,
-  "cols": 5,
-  "file": "psychicImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "pxArc": {
-  "bytes": 314,
-  "cols": 6,
-  "file": "pxArc.webp",
-  "fps": 12,
-  "frames": 6,
-  "loop": true,
-  "rows": 1
- },
- "pxFireball": {
-  "bytes": 932,
-  "cols": 4,
-  "file": "pxFireball.webp",
-  "fps": 12,
-  "frames": 8,
-  "loop": true,
-  "rows": 2
- },
- "pxFlame": {
-  "bytes": 968,
-  "cols": 4,
-  "file": "pxFlame.webp",
-  "fps": 12,
-  "frames": 8,
-  "loop": true,
-  "rows": 2
- },
- "pxFlash": {
-  "bytes": 564,
-  "cols": 6,
-  "file": "pxFlash.webp",
-  "fps": 24,
-  "frames": 6,
-  "rows": 1
- },
- "pxGhost": {
-  "bytes": 1528,
-  "cols": 1,
-  "file": "pxGhost.webp",
-  "fps": 8,
-  "frames": 1,
-  "loop": true,
-  "rows": 1
- },
- "pxGlow": {
-  "bytes": 2712,
-  "cols": 4,
-  "file": "pxGlow.webp",
-  "fps": 10,
-  "frames": 8,
-  "loop": true,
-  "rows": 2
- },
- "pxIce": {
-  "bytes": 578,
-  "cols": 4,
-  "file": "pxIce.webp",
-  "fps": 6,
-  "frames": 4,
-  "loop": true,
-  "rows": 1
- },
- "pxMissile": {
-  "bytes": 278,
-  "cols": 4,
-  "file": "pxMissile.webp",
-  "fps": 14,
-  "frames": 8,
-  "loop": true,
-  "rows": 2
- },
- "pxPoison": {
-  "bytes": 756,
-  "cols": 4,
-  "file": "pxPoison.webp",
-  "fps": 10,
-  "frames": 8,
-  "loop": true,
-  "rows": 2
- },
- "pxPsychic": {
-  "bytes": 430,
-  "cols": 4,
-  "file": "pxPsychic.webp",
-  "fps": 12,
-  "frames": 8,
-  "loop": true,
-  "rows": 2
- },
- "pxRing": {
-  "bytes": 906,
-  "cols": 4,
-  "file": "pxRing.webp",
-  "fps": 20,
-  "frames": 8,
-  "rows": 2
- },
- "pxSpark": {
-  "bytes": 56,
-  "cols": 1,
-  "file": "pxSpark.webp",
-  "fps": 1,
-  "frames": 1,
-  "rows": 1
- },
- "pxSwirl": {
-  "bytes": 754,
-  "cols": 4,
-  "file": "pxSwirl.webp",
-  "fps": 12,
-  "frames": 8,
-  "loop": true,
-  "rows": 2
- },
- "pxWebFloor": {
-  "bytes": 452,
-  "cols": 1,
-  "file": "pxWebFloor.webp",
-  "fps": 1,
-  "frames": 1,
-  "rows": 1
- },
- "pxWebWrap": {
-  "bytes": 342,
-  "cols": 1,
-  "file": "pxWebWrap.webp",
-  "fps": 1,
-  "frames": 1,
-  "rows": 1
- },
- "radiantColumn": {
-  "bytes": 22500,
-  "cols": 5,
-  "file": "radiantColumn.webp",
-  "fps": 22,
-  "frames": 20,
-  "rows": 4
- },
- "runeAbjuration": {
-  "bytes": 8958,
-  "cols": 4,
-  "file": "runeAbjuration.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeAcid": {
-  "bytes": 9176,
-  "cols": 4,
-  "file": "runeAcid.webp",
-  "fps": 13,
-  "frames": 16,
-  "rows": 4
- },
- "runeConjuration": {
-  "bytes": 21166,
-  "cols": 4,
-  "file": "runeConjuration.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeDivination": {
-  "bytes": 29088,
-  "cols": 4,
-  "file": "runeDivination.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeEldritch": {
-  "bytes": 15012,
-  "cols": 4,
-  "file": "runeEldritch.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeEnchantment": {
-  "bytes": 12664,
-  "cols": 4,
-  "file": "runeEnchantment.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeEvocation": {
-  "bytes": 26852,
-  "cols": 4,
-  "file": "runeEvocation.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeFire": {
-  "bytes": 15162,
-  "cols": 4,
-  "file": "runeFire.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeForce": {
-  "bytes": 9666,
-  "cols": 4,
-  "file": "runeForce.webp",
-  "fps": 15,
-  "frames": 16,
-  "rows": 4
- },
- "runeFrost": {
-  "bytes": 10726,
-  "cols": 4,
-  "file": "runeFrost.webp",
-  "fps": 13,
-  "frames": 16,
-  "rows": 4
- },
- "runeHealing": {
-  "bytes": 12944,
-  "cols": 4,
-  "file": "runeHealing.webp",
-  "fps": 12,
-  "frames": 16,
-  "rows": 4
- },
- "runeIllusion": {
-  "bytes": 27886,
-  "cols": 4,
-  "file": "runeIllusion.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeNecromancy": {
-  "bytes": 10720,
-  "cols": 4,
-  "file": "runeNecromancy.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "runeNecrotic": {
-  "bytes": 8344,
-  "cols": 4,
-  "file": "runeNecrotic.webp",
-  "fps": 12,
-  "frames": 16,
-  "rows": 4
- },
- "runePsychic": {
-  "bytes": 8708,
-  "cols": 4,
-  "file": "runePsychic.webp",
-  "fps": 12,
-  "frames": 16,
-  "rows": 4
- },
- "runeRadiant": {
-  "bytes": 12990,
-  "cols": 4,
-  "file": "runeRadiant.webp",
-  "fps": 15,
-  "frames": 16,
-  "rows": 4
- },
- "runeStorm": {
-  "bytes": 13360,
-  "cols": 4,
-  "file": "runeStorm.webp",
-  "fps": 16,
-  "frames": 16,
-  "rows": 4
- },
- "runeTransmutation": {
-  "bytes": 38064,
-  "cols": 4,
-  "file": "runeTransmutation.webp",
-  "fps": 14,
-  "frames": 16,
-  "rows": 4
- },
- "sigilEnchantmentPlume": {
-  "bytes": 180156,
-  "cols": 4,
-  "file": "sigilEnchantmentPlume.webp",
-  "fps": 12,
-  "frames": 12,
-  "loop": false,
-  "peak": 9,
-  "rows": 3
- },
- "sigilEnchantmentRing": {
-  "bytes": 267226,
-  "cols": 4,
-  "file": "sigilEnchantmentRing.webp",
-  "fps": 12,
-  "frames": 12,
-  "loop": false,
-  "peak": 9,
-  "rows": 3
- },
- "sigilNecroticPlume": {
-  "bytes": 194660,
-  "cols": 4,
-  "file": "sigilNecroticPlume.webp",
-  "fps": 12,
-  "frames": 12,
-  "loop": false,
-  "peak": 6,
-  "rows": 3
- },
- "sigilNecroticRing": {
-  "bytes": 217994,
-  "cols": 4,
-  "file": "sigilNecroticRing.webp",
-  "fps": 12,
-  "frames": 12,
-  "loop": false,
-  "peak": 6,
-  "rows": 3
- },
- "strikeKick": {
-  "bytes": 16166,
-  "cols": 5,
-  "file": "strikeKick.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "strikePunch": {
-  "bytes": 25756,
-  "cols": 5,
-  "file": "strikePunch.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "strikeSneak": {
-  "bytes": 33288,
-  "cols": 5,
-  "file": "strikeSneak.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "strikeSpecial": {
-  "bytes": 46870,
-  "cols": 5,
-  "file": "strikeSpecial.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "thunderGust": {
-  "bytes": 6684,
-  "cols": 5,
-  "file": "thunderGust.webp",
-  "fps": 22,
-  "frames": 20,
-  "rows": 4
- },
- "thunderImpact": {
-  "bytes": 10950,
-  "cols": 5,
-  "file": "thunderImpact.webp",
-  "fps": 24,
-  "frames": 20,
-  "rows": 4
- },
- "thunderWave": {
-  "bytes": 5264,
-  "cols": 5,
-  "file": "thunderWave.webp",
-  "fps": 24,
-  "frames": 18,
-  "rows": 4
- }
+  "acidImpact": {
+    "bytes": 7504,
+    "cols": 5,
+    "file": "acidImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "aoeFire": {
+    "bytes": 85974,
+    "cols": 6,
+    "file": "aoeFire.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
+  "aoeFog": {
+    "bytes": 194616,
+    "cols": 6,
+    "file": "aoeFog.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
+  "aoeFrost": {
+    "bytes": 136466,
+    "cols": 6,
+    "file": "aoeFrost.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
+  "aoeHoly": {
+    "bytes": 144060,
+    "cols": 6,
+    "file": "aoeHoly.webp",
+    "fps": 18,
+    "frames": 36,
+    "loop": true,
+    "rows": 6
+  },
+  "eldBeam": {
+    "bytes": 6700,
+    "cols": 4,
+    "file": "eldBeam.webp",
+    "fps": 22,
+    "frames": 16,
+    "rows": 4
+  },
+  "eldImpact": {
+    "bytes": 14606,
+    "cols": 5,
+    "file": "eldImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "fireImpact": {
+    "bytes": 6444,
+    "cols": 5,
+    "file": "fireImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "fireball": {
+    "bytes": 27186,
+    "cols": 8,
+    "file": "fireball.webp",
+    "fps": 24,
+    "frames": 32,
+    "rows": 4
+  },
+  "forceHit": {
+    "bytes": 9656,
+    "cols": 5,
+    "file": "forceHit.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "frostBeam": {
+    "bytes": 3232,
+    "cols": 4,
+    "file": "frostBeam.webp",
+    "fps": 20,
+    "frames": 16,
+    "rows": 4
+  },
+  "frostImpact": {
+    "bytes": 24018,
+    "cols": 5,
+    "file": "frostImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "groundAcid": {
+    "bytes": 7668,
+    "cols": 4,
+    "file": "groundAcid.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundArcane": {
+    "bytes": 8674,
+    "cols": 4,
+    "file": "groundArcane.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundFrost": {
+    "bytes": 10332,
+    "cols": 4,
+    "file": "groundFrost.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundGloom": {
+    "bytes": 7790,
+    "cols": 4,
+    "file": "groundGloom.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundHallowed": {
+    "bytes": 4418,
+    "cols": 4,
+    "file": "groundHallowed.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundMiasma": {
+    "bytes": 21388,
+    "cols": 5,
+    "file": "groundMiasma.webp",
+    "fps": 20,
+    "frames": 20,
+    "rows": 4
+  },
+  "groundScorch": {
+    "bytes": 7510,
+    "cols": 4,
+    "file": "groundScorch.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundShock": {
+    "bytes": 6826,
+    "cols": 4,
+    "file": "groundShock.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "groundWeb": {
+    "bytes": 4956,
+    "cols": 4,
+    "file": "groundWeb.webp",
+    "fps": 18,
+    "frames": 16,
+    "rows": 4
+  },
+  "healingShimmer": {
+    "bytes": 4430,
+    "cols": 5,
+    "file": "healingShimmer.webp",
+    "fps": 18,
+    "frames": 20,
+    "rows": 4
+  },
+  "lightningStrike": {
+    "bytes": 9116,
+    "cols": 5,
+    "file": "lightningStrike.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "necroBeam": {
+    "bytes": 4748,
+    "cols": 4,
+    "file": "necroBeam.webp",
+    "fps": 20,
+    "frames": 16,
+    "rows": 4
+  },
+  "necroImpact": {
+    "bytes": 10006,
+    "cols": 5,
+    "file": "necroImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "physicalImpact": {
+    "bytes": 7472,
+    "cols": 5,
+    "file": "physicalImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "poisonCloud": {
+    "bytes": 5396,
+    "cols": 6,
+    "file": "poisonCloud.webp",
+    "fps": 20,
+    "frames": 24,
+    "rows": 4
+  },
+  "psychicImpact": {
+    "bytes": 8606,
+    "cols": 5,
+    "file": "psychicImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "pxArc": {
+    "bytes": 314,
+    "cols": 6,
+    "file": "pxArc.webp",
+    "fps": 12,
+    "frames": 6,
+    "loop": true,
+    "rows": 1
+  },
+  "pxFireball": {
+    "bytes": 932,
+    "cols": 4,
+    "file": "pxFireball.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxFlame": {
+    "bytes": 968,
+    "cols": 4,
+    "file": "pxFlame.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxFlash": {
+    "bytes": 564,
+    "cols": 6,
+    "file": "pxFlash.webp",
+    "fps": 24,
+    "frames": 6,
+    "rows": 1
+  },
+  "pxGhost": {
+    "bytes": 1528,
+    "cols": 1,
+    "file": "pxGhost.webp",
+    "fps": 8,
+    "frames": 1,
+    "loop": true,
+    "rows": 1
+  },
+  "pxGlow": {
+    "bytes": 2712,
+    "cols": 4,
+    "file": "pxGlow.webp",
+    "fps": 10,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxIce": {
+    "bytes": 578,
+    "cols": 4,
+    "file": "pxIce.webp",
+    "fps": 6,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "pxMissile": {
+    "bytes": 278,
+    "cols": 4,
+    "file": "pxMissile.webp",
+    "fps": 14,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxPlumeMotes": {
+    "bytes": 1340,
+    "cols": 4,
+    "file": "pxPlumeMotes.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxPoison": {
+    "bytes": 756,
+    "cols": 4,
+    "file": "pxPoison.webp",
+    "fps": 10,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxPsychic": {
+    "bytes": 430,
+    "cols": 4,
+    "file": "pxPsychic.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxRing": {
+    "bytes": 906,
+    "cols": 4,
+    "file": "pxRing.webp",
+    "fps": 20,
+    "frames": 8,
+    "rows": 2
+  },
+  "pxSpark": {
+    "bytes": 56,
+    "cols": 1,
+    "file": "pxSpark.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
+  },
+  "pxSwirl": {
+    "bytes": 754,
+    "cols": 4,
+    "file": "pxSwirl.webp",
+    "fps": 12,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "pxWebFloor": {
+    "bytes": 452,
+    "cols": 1,
+    "file": "pxWebFloor.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
+  },
+  "pxWebWrap": {
+    "bytes": 342,
+    "cols": 1,
+    "file": "pxWebWrap.webp",
+    "fps": 1,
+    "frames": 1,
+    "rows": 1
+  },
+  "radiantColumn": {
+    "bytes": 22500,
+    "cols": 5,
+    "file": "radiantColumn.webp",
+    "fps": 22,
+    "frames": 20,
+    "rows": 4
+  },
+  "runeAbjuration": {
+    "bytes": 8958,
+    "cols": 4,
+    "file": "runeAbjuration.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeAcid": {
+    "bytes": 9176,
+    "cols": 4,
+    "file": "runeAcid.webp",
+    "fps": 13,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeConjuration": {
+    "bytes": 21166,
+    "cols": 4,
+    "file": "runeConjuration.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeDivination": {
+    "bytes": 29088,
+    "cols": 4,
+    "file": "runeDivination.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeEldritch": {
+    "bytes": 15012,
+    "cols": 4,
+    "file": "runeEldritch.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeEnchantment": {
+    "bytes": 12664,
+    "cols": 4,
+    "file": "runeEnchantment.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeEvocation": {
+    "bytes": 26852,
+    "cols": 4,
+    "file": "runeEvocation.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeFire": {
+    "bytes": 15162,
+    "cols": 4,
+    "file": "runeFire.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeForce": {
+    "bytes": 9666,
+    "cols": 4,
+    "file": "runeForce.webp",
+    "fps": 15,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeFrost": {
+    "bytes": 10726,
+    "cols": 4,
+    "file": "runeFrost.webp",
+    "fps": 13,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeHealing": {
+    "bytes": 12944,
+    "cols": 4,
+    "file": "runeHealing.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeIllusion": {
+    "bytes": 27886,
+    "cols": 4,
+    "file": "runeIllusion.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeNecromancy": {
+    "bytes": 10720,
+    "cols": 4,
+    "file": "runeNecromancy.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeNecrotic": {
+    "bytes": 8344,
+    "cols": 4,
+    "file": "runeNecrotic.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 4
+  },
+  "runePsychic": {
+    "bytes": 8708,
+    "cols": 4,
+    "file": "runePsychic.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeRadiant": {
+    "bytes": 12990,
+    "cols": 4,
+    "file": "runeRadiant.webp",
+    "fps": 15,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeStorm": {
+    "bytes": 13360,
+    "cols": 4,
+    "file": "runeStorm.webp",
+    "fps": 16,
+    "frames": 16,
+    "rows": 4
+  },
+  "runeTransmutation": {
+    "bytes": 38064,
+    "cols": 4,
+    "file": "runeTransmutation.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
+  "sigilEnchantmentPlume": {
+    "bytes": 369380,
+    "cols": 4,
+    "file": "sigilEnchantmentPlume.webp",
+    "fps": 12,
+    "frames": 12,
+    "loop": false,
+    "peak": 9,
+    "rows": 3
+  },
+  "sigilEnchantmentRing": {
+    "bytes": 267226,
+    "cols": 4,
+    "file": "sigilEnchantmentRing.webp",
+    "fps": 12,
+    "frames": 12,
+    "loop": false,
+    "peak": 9,
+    "rows": 3
+  },
+  "sigilNecroticPlume": {
+    "bytes": 287028,
+    "cols": 4,
+    "file": "sigilNecroticPlume.webp",
+    "fps": 12,
+    "frames": 12,
+    "loop": false,
+    "peak": 6,
+    "rows": 3
+  },
+  "sigilNecroticRing": {
+    "bytes": 217994,
+    "cols": 4,
+    "file": "sigilNecroticRing.webp",
+    "fps": 12,
+    "frames": 12,
+    "loop": false,
+    "peak": 6,
+    "rows": 3
+  },
+  "strikeKick": {
+    "bytes": 16166,
+    "cols": 5,
+    "file": "strikeKick.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "strikePunch": {
+    "bytes": 25756,
+    "cols": 5,
+    "file": "strikePunch.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "strikeSneak": {
+    "bytes": 33288,
+    "cols": 5,
+    "file": "strikeSneak.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "strikeSpecial": {
+    "bytes": 46870,
+    "cols": 5,
+    "file": "strikeSpecial.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "thunderGust": {
+    "bytes": 6684,
+    "cols": 5,
+    "file": "thunderGust.webp",
+    "fps": 22,
+    "frames": 20,
+    "rows": 4
+  },
+  "thunderImpact": {
+    "bytes": 10950,
+    "cols": 5,
+    "file": "thunderImpact.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "thunderWave": {
+    "bytes": 5264,
+    "cols": 5,
+    "file": "thunderWave.webp",
+    "fps": 24,
+    "frames": 18,
+    "rows": 4
+  }
 }
