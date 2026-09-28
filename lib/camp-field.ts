@@ -1,0 +1,489 @@
+// Camp field trips — the FORAGE, HUNT and EXPLORE tiles at the fire.
+//
+// Sam, 2026-09-27:
+//   "Explore, forage and hunt should have different icons. Forage should be a
+//    cute mini-game of your character foraging. Hunt is similar but there is a
+//    risk of being caught by a monster. Explore should open a map the size of a
+//    Zelda map if the node permits, with rolls for finds or dead ends."
+//
+// The mini-games are presentation. The RULES are here, and they are the book's
+// wherever the book has one:
+//
+//   FORAGE   OotA-Enc p.25 — WIS (Survival), DC 15 in the Underdark, 10 beside
+//            an underground stream (terrain table row 18), never above 20.
+//            DMG p.111 — success yields 1d6 + WIS modifier days of food
+//            (lib/camp settleForage owns that; this file only lays the field).
+//            What grows: OotA's Underdark fungi, every one a catalog row.
+//   HUNT     The same foraging rule (DMG p.111; there is no separate hunting
+//            rule). Prey is drawn from bestiary beasts that live in the wilds.
+//            The danger is OotA-Enc p.30: the Random Encounters d20, and a
+//            creature on it is rolled on Creature Encounters p.32. A hunter who
+//            meets one hides or is caught — SRD Hiding: Stealth against the
+//            creature's passive Perception.
+//   EXPLORE  A room-by-room map, seeded from the node so it is the same map for
+//            everyone. Each room's ground is OotA's Terrain Encounters table
+//            (p.30); what a search turns up is Ambush Lair Discovery (p.32).
+//            1–10 on that table is "Nothing" — the dead end.
+//
+// Nothing is invented. A find names a catalog row or it names no item and says
+// the DM must choose one ("a 50 gp gem": the catalog has none, so it is flagged,
+// not conjured). Every house rule is PROPOSED and surfaces in `flags`.
+//
+// Pure: rows and rolls in, words and grids out. Every draw takes an `Rng`.
+
+import type { EncounterTableRow } from "./camp"
+
+export type Rng = () => number
+export type FieldBiome = "tunnels" | "fungal" | "shore"
+
+const d = (n: number, rng: Rng) => 1 + Math.floor(rng() * n)
+const pick = <T>(xs: readonly T[], rng: Rng): T => xs[Math.min(xs.length - 1, Math.floor(rng() * xs.length))]
+function weighted<T extends { w: number }>(xs: readonly T[], rng: Rng): T {
+  const total = xs.reduce((a, b) => a + b.w, 0)
+  let r = rng() * total
+  for (const x of xs) if ((r -= x.w) < 0) return x
+  return xs[xs.length - 1]
+}
+/** "1d4" → a roll; 3 → 3. */
+export function rollCount(spec: number | string | null | undefined, rng: Rng): number {
+  if (typeof spec === "number") return Math.max(1, Math.trunc(spec))
+  const m = /^(\d*)d(\d+)$/i.exec(String(spec ?? "").trim())
+  if (!m) return 1
+  let t = 0
+  for (let i = 0; i < Math.max(1, Number(m[1] || 1)); i++) t += d(Number(m[2]), rng)
+  return t
+}
+
+// ============================================================================
+// FORAGE — the patch field
+// ============================================================================
+
+/** OotA-Enc p.25. The stream row of the terrain table drops it to 10. */
+export const FORAGE_DC = { underdark: 15, stream: 10, max: 20 } as const
+
+export interface Fungus {
+  /** items.slug — every entry resolves against the catalog. */
+  slug: string
+  name: string
+  /** How often it turns up in each camp biome. PROPOSED weights. */
+  w: Record<FieldBiome, number>
+  /** Only Tongue of Madness is rare (Sam, 2026-09-28, answering). */
+  rare?: boolean
+}
+
+/**
+ * The Underdark fungi OotA names (ch.2, "Fungi of the Underdark") that exist in
+ * the catalog. Waterorb grows only in water; zurkhwood and ripplebark are the
+ * big growths of the fungus forests. Weights are PROPOSED.
+ */
+export const FUNGI: readonly Fungus[] = [
+  { slug: "trillimac", name: "Trillimac", w: { tunnels: 4, fungal: 5, shore: 3 } },
+  { slug: "bluecap", name: "Bluecap", w: { tunnels: 3, fungal: 4, shore: 2 } },
+  { slug: "barrelstalk", name: "Barrelstalk", w: { tunnels: 2, fungal: 4, shore: 2 } },
+  { slug: "fire-lichen", name: "Fire lichen", w: { tunnels: 3, fungal: 2, shore: 1 } },
+  { slug: "nightlight-fungus", name: "Nightlight", w: { tunnels: 2, fungal: 3, shore: 1 } },
+  { slug: "ormu-moss", name: "Ormu", w: { tunnels: 3, fungal: 2, shore: 2 } },
+  { slug: "ripplebark", name: "Ripplebark", w: { tunnels: 1, fungal: 3, shore: 1 } },
+  { slug: "timmask", name: "Timmask", w: { tunnels: 2, fungal: 3, shore: 1 } },
+  { slug: "zurkhwood", name: "Zurkhwood", w: { tunnels: 1, fungal: 3, shore: 1 } },
+  { slug: "waterorb", name: "Waterorb", w: { tunnels: 0, fungal: 0, shore: 4 } },
+  { slug: "tongue-of-madness", name: "Tongue of madness", w: { tunnels: 0.4, fungal: 0.6, shore: 0.3 }, rare: true },
+]
+
+export interface Patch {
+  /** Position in the field, 0..1 each way, for the mini-game to draw. */
+  x: number
+  y: number
+  kind: "food" | "reagent"
+  /** Food patches are one day of food each; a reagent patch is one catalog item. */
+  slug: string | null
+  name: string
+}
+
+export interface ForageField {
+  dc: number
+  patches: Patch[]
+  /** Seconds the mini-game allows. PROPOSED. */
+  seconds: number
+  flags: string[]
+  note: string
+}
+
+/**
+ * Lay out what is growing, from a settled forage (lib/camp settleForage).
+ * The roll decides what is out there; the mini-game decides what makes it back.
+ *   • one food patch per day of food the roll earned (DMG p.111), and
+ *   • on a success, 1d4 fungus patches drawn from the biome (PROPOSED count).
+ * A failed roll still draws a field — every patch in it is inedible scrub, so
+ * the walk is honest about the miss instead of skipping the scene.
+ */
+export function forageField(opts: {
+  success: boolean
+  supplies: number
+  biome: FieldBiome
+  rng: Rng
+  /** Catalog slugs that exist. A fungus missing from it is left out and flagged. */
+  catalog?: ReadonlySet<string>
+  stream?: boolean
+}): ForageField {
+  const { rng, biome } = opts
+  const flags = [
+    "Fungus patches (1d4 on a success) and their biome weights are PROPOSED",
+    "Only what the character reaches in the mini-game is carried home — PROPOSED",
+  ]
+  const at = () => ({ x: 0.08 + rng() * 0.84, y: 0.22 + rng() * 0.66 })
+  const patches: Patch[] = []
+  if (!opts.success) {
+    const n = 3 + d(3, rng)
+    for (let i = 0; i < n; i++) patches.push({ ...at(), kind: "food", slug: null, name: "Scrub — nothing edible" })
+    return { dc: opts.stream ? FORAGE_DC.stream : FORAGE_DC.underdark, patches, seconds: 20, flags, note: "The ground is bare. Nothing here will feed anyone." }
+  }
+  for (let i = 0; i < Math.max(0, opts.supplies); i++) patches.push({ ...at(), kind: "food", slug: "edible-mushrooms", name: "A day of food" })
+  const pool = FUNGI.filter((f) => f.w[biome] > 0 && (!opts.catalog || opts.catalog.has(f.slug)))
+  if (opts.catalog) for (const f of FUNGI) if (!opts.catalog.has(f.slug)) flags.push(`${f.name} is not in the catalog — left out`)
+  const reagents = pool.length ? d(4, rng) : 0
+  for (let i = 0; i < reagents; i++) {
+    const f = weighted(pool.map((p) => ({ p, w: p.w[biome] })), rng).p
+    patches.push({ ...at(), kind: "reagent", slug: f.slug, name: f.name })
+  }
+  const found = patches.filter((p) => p.kind === "reagent").map((p) => p.name)
+  return {
+    dc: opts.stream ? FORAGE_DC.stream : FORAGE_DC.underdark,
+    patches,
+    seconds: 30,
+    flags,
+    note: `${opts.supplies} day${opts.supplies === 1 ? "" : "s"} of food out there${found.length ? `, and ${found.join(", ")}` : ""}.`,
+  }
+}
+
+/** What the forager carried home: the patches they reached, as ledger lines. */
+export function forageHaul(field: ForageField, picked: number[]): { supplies: number; items: { slug: string; quantity: number }[]; missed: number; note: string } {
+  const got = new Set(picked.filter((i) => i >= 0 && i < field.patches.length))
+  let supplies = 0
+  const items = new Map<string, number>()
+  for (const i of got) {
+    const p = field.patches[i]
+    if (p.kind === "food" && p.slug) supplies += 1
+    else if (p.kind === "reagent" && p.slug) items.set(p.slug, (items.get(p.slug) ?? 0) + 1)
+  }
+  const worth = field.patches.filter((p) => p.slug).length
+  const missed = worth - [...got].filter((i) => field.patches[i].slug).length
+  const list = [...items].map(([s, q]) => `${q}× ${FUNGI.find((f) => f.slug === s)?.name ?? s}`)
+  return {
+    supplies,
+    items: [...items].map(([slug, quantity]) => ({ slug, quantity })),
+    missed,
+    note: worth === 0
+      ? "Nothing worth carrying."
+      : `${supplies} day${supplies === 1 ? "" : "s"} of food${list.length ? ` and ${list.join(", ")}` : ""}${missed ? `; ${missed} left behind` : ""}.`,
+  }
+}
+
+// ============================================================================
+// HUNT — prey, the stalk, and what else is out there
+// ============================================================================
+
+export interface Prey {
+  /** bestiary.slug */
+  slug: string
+  name: string
+  w: Record<FieldBiome, number>
+  /** A catalog item the carcass gives besides the meat, when there is one. */
+  byproduct?: string
+}
+
+/**
+ * Bestiary beasts whose habitat includes the Underdark wilds and that a hunter
+ * would eat. Deep rothé yields its leather (catalog: deep-rothe-leather).
+ * Weights PROPOSED.
+ */
+export const PREY: readonly Prey[] = [
+  { slug: "giant-rat", name: "Giant rat", w: { tunnels: 4, fungal: 2, shore: 2 } },
+  { slug: "giant-fire-beetle", name: "Giant fire beetle", w: { tunnels: 3, fungal: 4, shore: 1 } },
+  { slug: "giant-bat", name: "Giant bat", w: { tunnels: 2, fungal: 1, shore: 2 } },
+  { slug: "deep-rothe", name: "Deep rothé", w: { tunnels: 1, fungal: 3, shore: 2 }, byproduct: "deep-rothe-leather" },
+]
+
+export function choosePrey(biome: FieldBiome, rng: Rng, bestiary?: ReadonlySet<string>): { prey: Prey | null; flags: string[] } {
+  const pool = PREY.filter((p) => !bestiary || bestiary.has(p.slug))
+  const flags = ["Prey list and weights are PROPOSED"]
+  if (!pool.length) return { prey: null, flags: [...flags, "No prey in the bestiary — the DM describes the hunt"] }
+  return { prey: weighted(pool.map((p) => ({ p, w: p.w[biome] })), rng).p, flags }
+}
+
+/**
+ * Noise from the stalk. Every time the prey catches the hunter moving it raises
+ * the noise by one. PROPOSED: each point of noise widens the danger roll by one
+ * (the book's encounter band is 16–20 for creatures; 3 noise makes it 13–20).
+ */
+export const MAX_NOISE = 4
+
+export interface HuntDanger {
+  /** The d20 on OotA's Random Encounters table, before and after noise. */
+  roll: number
+  adjusted: number
+  /** Null when nothing comes. */
+  creature: null | {
+    result: string
+    /** bestiary name, when the row names one — else the DM's to describe. */
+    bestiary: string | null
+    count: number
+    via: string[]
+  }
+  flags: string[]
+  note: string
+}
+
+/**
+ * Does anything find the hunter? OotA-Enc p.30: 16–20 on the d20 brings
+ * creatures (14–15 is terrain only, not a threat to a lone hunter). A creature
+ * result rolls on Creature Encounters (p.32); "Ambushers" rolls again on the
+ * ambush table. Rows come from the database (encounter_table_rows) so the book
+ * is the one in Supabase, not a copy here.
+ */
+export function huntDanger(rows: readonly EncounterTableRow[], noise: number, rng: Rng): HuntDanger {
+  const flags = ["Noise widening the encounter band is PROPOSED"]
+  const n = Math.max(0, Math.min(MAX_NOISE, Math.trunc(noise)))
+  const roll = d(20, rng)
+  const adjusted = Math.min(20, roll + n)
+  const threshold = 16
+  if (adjusted < threshold) return { roll, adjusted, creature: null, flags, note: "Nothing else is hunting tonight." }
+  const via = ["underdark_random"]
+  const lookup = (key: string, r: number) => rows.find((x) => x.table_key === key && r >= x.roll_min && r <= x.roll_max)
+  let row = lookup("underdark_creature", d(20, rng))
+  via.push("underdark_creature")
+  if (row && ((row.detail ?? {}) as { rolls?: string[] }).rolls?.includes("underdark_ambush")) {
+    row = lookup("underdark_ambush", d(20, rng))
+    via.push("underdark_ambush")
+  }
+  if (!row) return { roll, adjusted, creature: null, flags: [...flags, "Encounter rows missing — the DM decides"], note: "Something moves out there. The DM decides what." }
+  const detail = (row.detail ?? {}) as { bestiary?: string; count?: number | string }
+  const count = rollCount(detail.count ?? 1, rng)
+  const bestiary = detail.bestiary ?? null
+  if (!bestiary) flags.push(`"${row.result}" names no stat block — the DM stages it`)
+  return {
+    roll, adjusted, creature: { result: row.result, bestiary, count, via }, flags,
+    note: `The hunter is not alone: ${row.result}${bestiary && count > 1 ? ` (${count})` : ""}.`,
+  }
+}
+
+/** Passive Perception from a bestiary row: 10 + WIS mod, or its listed Perception bonus. */
+export function passivePerception(b: { wis?: number | null; skills?: Record<string, number> | null; senses?: string | null }): number {
+  const listed = /passive perception\s*(\d+)/i.exec(b.senses ?? "")
+  if (listed) return Number(listed[1])
+  const perc = b.skills && typeof b.skills === "object" ? (b.skills as Record<string, number>).Perception ?? (b.skills as Record<string, number>).perception : undefined
+  return 10 + (typeof perc === "number" ? perc : Math.floor(((b.wis ?? 10) - 10) / 2))
+}
+
+/**
+ * SRD Hiding: the hunter's Stealth total against the creature's passive
+ * Perception. Beat it and the hunter slips back to camp with the kill; fail
+ * and they are caught — the fight starts where they stand.
+ */
+export function slipAway(hunter: string, stealthTotal: number, creature: { name: string; passive: number }): { caught: boolean; note: string } {
+  const caught = Math.trunc(stealthTotal) < creature.passive
+  return {
+    caught,
+    note: caught
+      ? `${hunter} is caught — ${creature.name} saw them (Stealth ${stealthTotal} vs passive Perception ${creature.passive}).`
+      : `${hunter} slips away from the ${creature.name.toLowerCase()} (Stealth ${stealthTotal} vs passive Perception ${creature.passive}).`,
+  }
+}
+
+// ============================================================================
+// EXPLORE — a room map, seeded from the node
+// ============================================================================
+
+export interface ExploreNode {
+  node_type: string
+  name?: string | null
+  metadata?: { explorable?: boolean; seed?: string | number | null } | null
+}
+
+/**
+ * Whether the fire sits somewhere with ground to explore. PROPOSED rule, no
+ * migration: the wild tunnels between places (waypoints) can be explored; a
+ * settlement or a tactical map is the DM's scene; `metadata.explorable`
+ * overrides either way.
+ */
+export function explorePermit(node: ExploreNode | null | undefined): { ok: boolean; reason: string } {
+  if (!node) return { ok: false, reason: "The party is nowhere the map knows — the DM describes the surroundings." }
+  const override = node.metadata?.explorable
+  if (override === true) return { ok: true, reason: "The DM opened this place for exploring." }
+  if (override === false) return { ok: false, reason: "The DM has closed this place to exploring." }
+  if (node.node_type === "waypoint") return { ok: true, reason: "Wild tunnels — there is ground to explore." }
+  return { ok: false, reason: `${node.name ?? "This place"} is somewhere people live or a mapped battleground; exploring it is the DM's scene.` }
+}
+
+/** A small seeded generator, so a node always explores the same way. */
+export function seededRng(seed: string | number): Rng {
+  let h = 2166136261
+  for (const c of String(seed)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619) }
+  return () => {
+    h += 0x6d2b79f5
+    let t = h
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+export interface Room {
+  x: number
+  y: number
+  /** Doors: north, east, south, west. */
+  doors: { n: boolean; e: boolean; s: boolean; w: boolean }
+  /** OotA Terrain Encounters row for this room, when it has a feature. */
+  terrain: string | null
+  terrainNote: string | null
+  isCamp: boolean
+}
+
+export interface ExploreMap {
+  w: number
+  h: number
+  rooms: Room[]
+  camp: { x: number; y: number }
+  flags: string[]
+}
+
+/** The size of the classic Zelda overworld is 16×8 screens; a night's walk is a corner of that. PROPOSED. */
+export const EXPLORE_SIZE = { w: 5, h: 4 } as const
+/** Share of rooms that carry a terrain feature. PROPOSED. */
+export const TERRAIN_SHARE = 0.4
+
+/**
+ * Build the map: a maze of rooms (every room reachable, a few loops), the camp
+ * in the middle of the bottom row, and roughly 40% of rooms carrying a row of
+ * OotA's Terrain Encounters table. Same seed, same map.
+ */
+export function buildExploreMap(seed: string | number, terrainRows: readonly EncounterTableRow[], size: { w: number; h: number } = EXPLORE_SIZE): ExploreMap {
+  const rng = seededRng(seed)
+  const { w, h } = size
+  const at = (x: number, y: number) => y * w + x
+  const rooms: Room[] = []
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) rooms.push({ x, y, doors: { n: false, e: false, s: false, w: false }, terrain: null, terrainNote: null, isCamp: false })
+  const camp = { x: Math.floor(w / 2), y: h - 1 }
+  rooms[at(camp.x, camp.y)].isCamp = true
+  // Randomised depth-first carve from the camp: every room reachable.
+  const seen = new Set<number>([at(camp.x, camp.y)])
+  const stack = [camp]
+  const link = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const A = rooms[at(a.x, a.y)], B = rooms[at(b.x, b.y)]
+    if (b.x > a.x) { A.doors.e = true; B.doors.w = true } else if (b.x < a.x) { A.doors.w = true; B.doors.e = true }
+    else if (b.y > a.y) { A.doors.s = true; B.doors.n = true } else { A.doors.n = true; B.doors.s = true }
+  }
+  const nbrs = (p: { x: number; y: number }) => [
+    { x: p.x, y: p.y - 1 }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y },
+  ].filter((q) => q.x >= 0 && q.y >= 0 && q.x < w && q.y < h)
+  while (stack.length) {
+    const cur = stack[stack.length - 1]
+    const open = nbrs(cur).filter((q) => !seen.has(at(q.x, q.y)))
+    if (!open.length) { stack.pop(); continue }
+    const nx = pick(open, rng)
+    link(cur, nx)
+    seen.add(at(nx.x, nx.y))
+    stack.push(nx)
+  }
+  // A few loops so it is not a single corridor.
+  for (let i = 0; i < Math.round((w * h) / 6); i++) {
+    const a = { x: Math.floor(rng() * w), y: Math.floor(rng() * h) }
+    const b = pick(nbrs(a), rng)
+    link(a, b)
+  }
+  const terrain = terrainRows.filter((r) => r.table_key === "underdark_terrain")
+  for (const r of rooms) {
+    if (r.isCamp || !terrain.length || rng() >= TERRAIN_SHARE) continue
+    const face = d(20, rng)
+    const row = terrain.find((t) => face >= t.roll_min && face <= t.roll_max)
+    if (row) { r.terrain = row.result; r.terrainNote = ((row.detail ?? {}) as { note?: string }).note ?? null }
+  }
+  const flags = [
+    `Map size (${w}×${h} rooms), loops and the ${Math.round(TERRAIN_SHARE * 100)}% terrain share are PROPOSED`,
+    "Room ground is OotA-Enc p.30 Terrain Encounters; searches roll Ambush Lair Discovery (p.32)",
+  ]
+  if (!terrain.length) flags.push("No terrain rows supplied — rooms are bare tunnel")
+  return { w, h, rooms, camp, flags }
+}
+
+/** Search DC for a room. PROPOSED: SRD Typical DCs, medium. */
+export const SEARCH_DC = 15
+
+export interface CatalogItem { slug: string; name: string; item_type: string; rarity?: string | null; value?: number | null }
+
+export interface RoomFind {
+  /** The check. */
+  total: number
+  dc: number
+  searched: boolean
+  /** The d20 on Ambush Lair Discovery, when the search succeeded. */
+  face: number | null
+  deadEnd: boolean
+  result: string
+  /** Catalog rows the find resolves to. Empty when the DM must choose. */
+  items: { slug: string; name: string; quantity: number }[]
+  /** Set when the book's find has no catalog row — the DM picks, nothing is auto-awarded. */
+  dmPicks: string | null
+  flags: string[]
+  note: string
+}
+
+/**
+ * Search a room: WIS (Perception) or INT (Investigation) against SEARCH_DC.
+ * A miss, or a 1–10 on Ambush Lair Discovery, is a dead end. Everything found
+ * resolves against the catalog the caller passes in:
+ *   weapon corpse → a common nonmagical weapon row (the rusted ones first —
+ *                   it has lain there a while; that preference is PROPOSED),
+ *   armour corpse → a common armour row,
+ *   gems          → only if the catalog holds a gem of that value; else DM,
+ *   magic item    → always the DM's pick from the catalog (DMG tables B and C).
+ */
+export function searchRoom(opts: { who: string; total: number; dc?: number; catalog: readonly CatalogItem[]; discoveryRows: readonly EncounterTableRow[]; rng: Rng }): RoomFind {
+  const dc = Math.max(1, Math.trunc(opts.dc ?? SEARCH_DC))
+  const flags = [`Search DC ${dc} is PROPOSED (SRD Typical DCs, medium)`]
+  const total = Math.trunc(opts.total)
+  const base = { total, dc, searched: true, items: [] as RoomFind["items"], dmPicks: null as string | null, flags }
+  if (total < dc) return { ...base, face: null, deadEnd: true, result: "Nothing", note: `${opts.who} searches and finds nothing but rock. A dead end.` }
+  const face = d(20, opts.rng)
+  const row = opts.discoveryRows.find((r) => r.table_key === "underdark_discovery" && face >= r.roll_min && face <= r.roll_max)
+  if (!row || face <= 10) return { ...base, face, deadEnd: true, result: row?.result ?? "Nothing", note: `${opts.who} searches carefully. There is nothing here — a dead end.` }
+  const common = (types: string[], prefer?: RegExp) => {
+    const pool = opts.catalog.filter((c) => types.includes(c.item_type) && (c.rarity ?? "common") === "common")
+    const preferred = prefer ? pool.filter((c) => prefer.test(c.slug)) : []
+    return (preferred.length ? preferred : pool)
+  }
+  const detail = (row.detail ?? {}) as { count?: string | number; value_gp?: number; dmg_table?: string }
+  if (/weapon/i.test(row.result)) {
+    const pool = common(["weapon"], /^rusted-/)
+    if (!pool.length) return { ...base, face, deadEnd: false, result: row.result, dmPicks: "a nonmagical weapon", note: `${opts.who} finds a corpse still gripping a weapon. The DM names it.` }
+    const it = pick(pool, opts.rng)
+    flags.push("Preferring the rusted weapons for a corpse's blade is PROPOSED")
+    return { ...base, face, deadEnd: false, result: row.result, items: [{ slug: it.slug, name: it.name, quantity: 1 }], note: `${opts.who} prises a ${it.name.toLowerCase()} from a dead hand.` }
+  }
+  if (/armou?r/i.test(row.result)) {
+    const pool = common(["armor"]).filter((c) => c.slug !== "rags")
+    if (!pool.length) return { ...base, face, deadEnd: false, result: row.result, dmPicks: "a suit of nonmagical armour", note: `${opts.who} finds a corpse in armour. The DM names it.` }
+    const it = pick(pool, opts.rng)
+    return { ...base, face, deadEnd: false, result: row.result, items: [{ slug: it.slug, name: it.name, quantity: 1 }], note: `${opts.who} strips ${it.name.toLowerCase()} from a corpse that no longer needs it.` }
+  }
+  if (detail.dmg_table) {
+    const gems = detail.value_gp ? ` and ${rollCount("2d6", opts.rng)} gems of ${detail.value_gp} gp` : ""
+    return { ...base, face, deadEnd: false, result: row.result, dmPicks: `DMG Table ${detail.dmg_table} magic item${gems}`, flags: [...flags, "Magic items are the DM's pick from the catalog — nothing is auto-awarded"], note: `${opts.who} finds something that hums. The DM decides what it is.` }
+  }
+  if (detail.value_gp) {
+    const count = rollCount(detail.count ?? 1, opts.rng)
+    const gem = opts.catalog.find((c) => /gem/.test(c.slug) && c.value === detail.value_gp)
+    if (!gem) return { ...base, face, deadEnd: false, result: row.result, dmPicks: `${count} gem${count === 1 ? "" : "s"} worth ${detail.value_gp} gp each (no such gem in the catalog)`, flags: [...flags, `The catalog has no ${detail.value_gp} gp gem — the DM adds one or picks another`], note: `${opts.who} finds ${count} gem${count === 1 ? "" : "s"} in the dust.` }
+    return { ...base, face, deadEnd: false, result: row.result, items: [{ slug: gem.slug, name: gem.name, quantity: count }], note: `${opts.who} finds ${count} ${gem.name.toLowerCase()}${count === 1 ? "" : "s"} in the dust.` }
+  }
+  return { ...base, face, deadEnd: false, result: row.result, dmPicks: row.result, note: `${opts.who} finds: ${row.result.toLowerCase()}. The DM describes it.` }
+}
+
+/**
+ * The walk itself is not free. PROPOSED: every third new room entered, the
+ * explorer rolls OotA's Random Encounters (the hunt's danger roll, no noise).
+ */
+export const EXPLORE_ENCOUNTER_EVERY = 3
+export function exploreEncounterDue(roomsEntered: number): boolean {
+  return roomsEntered > 0 && roomsEntered % EXPLORE_ENCOUNTER_EVERY === 0
+}
