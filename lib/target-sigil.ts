@@ -80,6 +80,12 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // no second layer hiding in it. Sam asked for "a whirlwind of rocks and
   // wind" instead of fire, which suits the school better anyway: matter
   // lifted and turned rather than burned.
+  // Conjuration TURNS, unlike transmutation: its ring is a portal spiral, and
+  // a spiral that holds still stops reading as a gateway. The plume carries
+  // its own scattered rubble, which lands over the ring as debris thrown up
+  // by whatever is arriving.
+  conjuration: { ring: "sigilConjurationRing",   plume: "sigilConjurationPlume",
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.conjuration.glow },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
                  still: true },

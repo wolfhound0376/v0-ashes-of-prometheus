@@ -156,8 +156,14 @@ def bake_ring(clean: np.ndarray, top: int, centre: int, ratio: float, cell: int,
     im = Image.fromarray(np.dstack([a8, al.astype(np.uint8)]), "RGBA")
     half = centre - top + 40
     band = im.crop((0, max(0, centre - half), im.width, min(im.height, centre + half)))
-    circle = band.resize((band.width, int(round(band.height * ratio))), Image.LANCZOS)
-    return circle.resize((cell, cell), Image.LANCZOS)
+    # PIXEL ART UPSCALES WITH NEAREST. A 128px sigil into a 224px cell is an
+    # upscale, and Lanczos turns hand-placed pixels into a blur — the same
+    # rule the plume path follows. Painted sources are far larger than the
+    # cell and are being DOWNscaled, where Lanczos is right.
+    up = band.width < cell
+    flt = Image.NEAREST if up else Image.LANCZOS
+    circle = band.resize((band.width, int(round(band.height * ratio))), flt)
+    return circle.resize((cell, cell), flt)
 
 
 def glow_ring(ring: Image.Image, count: int, cols: int, lift: float) -> Image.Image:
@@ -523,6 +529,18 @@ def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
     for i in range(n):
         im.seek(i)
         src_frames.append(np.asarray(im.convert("RGBA")).astype(np.float32))
+
+    # KEY IT IF IT DOES NOT CARRY ITS OWN ALPHA. Pixel art arrives both ways:
+    # the whirlwind was a cut-out, this one is drawn on black inside a P-mode
+    # GIF, where convert("RGBA") hands back alpha 255 everywhere. Composited
+    # as-is that is a black rectangle standing on the board.
+    opaque = float((src_frames[0][..., 3] > 250).mean())
+    if opaque > 0.98:
+        for f in src_frames:
+            l = luma(f[..., :3])
+            # Hard alpha at a low floor: pixel art has no soft fringe, and the
+            # darkest lines of the art are still meant to be drawn.
+            f[..., 3] = np.where(l > 18, 255, 0)
 
     if recolor:
         lo, hi = pal[0], pal[-1]

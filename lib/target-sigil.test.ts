@@ -54,14 +54,15 @@ describe("targetSigilFor", () => {
     // Updated when enchantment landed, and again when EVOCATION landed: this
     // has now named enchantment and then evocation as the negative case, and
     // each time the school got art the test had to move on. A school with art
-    // registered must draw; only the three still without it stay silent —
-    // abjuration, conjuration and divination. Transmutation joined the list
-    // with art when its ring was baked and its plume drawn.
-    expect(targetSigilFor({ resolve: "save", school: "conjuration", damage: "radiant" })).toBeNull()
+    // registered must draw; only abjuration and divination stay silent now.
+    // This test has moved every time a school got art — enchantment, then
+    // evocation, then transmutation, now conjuration — which is the point of
+    // it: the list is not allowed to drift without someone noticing.
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: "radiant" })).toBeNull()
     expect(targetSigilFor({ resolve: "save", school: "divination", damage: "radiant" })).toBeNull()
-    // and the five that DO have art must not be silent
-    for (const s of ["necromancy", "enchantment", "illusion", "evocation", "transmutation"] as const) {
+    // and the six that DO have art must not be silent
+    for (const s of ["necromancy", "enchantment", "illusion", "evocation", "transmutation",
+                     "conjuration"] as const) {
       expect(targetSigilFor({ resolve: "save", school: s, damage: "radiant" }), s).not.toBeNull()
     }
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
@@ -366,7 +367,7 @@ describe("a still sigil — transmutation's ring does not turn", () => {
 
   it("is registered still, and the turning schools are not", () => {
     expect(SCHOOL_SIGIL.transmutation?.still).toBe(true)
-    for (const s of ["necromancy", "enchantment", "illusion", "evocation"] as const) {
+    for (const s of ["necromancy", "enchantment", "illusion", "evocation", "conjuration"] as const) {
       expect(SCHOOL_SIGIL[s]?.still, s).toBeFalsy()
     }
   })
