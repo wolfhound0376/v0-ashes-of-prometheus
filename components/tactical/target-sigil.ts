@@ -96,6 +96,15 @@ export function targetSigilVfx(opts: {
   let motes: Flip | null = null
   let burst: Flip | null = null
   let glow: THREE.PointLight | null = null
+  // The plume quad, in board squares. Defaults to the tall column every
+  // flame-shaped school uses; a school whose art is a different shape says so
+  // (see SigilArt.plumeSize) rather than being stretched to fit this one.
+  const [PW, PH] = plan.art.plumeSize ?? [FLAME_W, FLAME_H]
+
+  // The frame the effect PARKS on while the save is rolled, as a fraction of
+  // the sheet. Read from whichever sheet declares a `peak`. A ringless school
+  // has only its plume to ask, and a LOOPING plume declares none — it has no
+  // single climax frame — so it keeps this midpoint default and simply cycles.
   let peakP = 0.5
   let disposed = false
   let struck = false
@@ -124,7 +133,7 @@ export function targetSigilVfx(opts: {
   void loadSheet(plan.art.plume).then((sheet) => {
     if (disposed) return
     readPeak(sheet)
-    plume = new Flip(sheet, 0xffffff, FLAME_W, FLAME_H)
+    plume = new Flip(sheet, 0xffffff, PW, PH)
     plume.opacity = 0
     group.add(plume.mesh)
     glow = new THREE.PointLight(0x9a5bd6, 0, 6, 1.8)
@@ -139,7 +148,7 @@ export function targetSigilVfx(opts: {
   if (plan.art.motes) {
     void loadSheet(plan.art.motes).then((sheet) => {
       if (disposed) return
-      motes = new Flip(sheet, plan.art.tint ?? 0xffffff, FLAME_W, FLAME_H)
+      motes = new Flip(sheet, plan.art.tint ?? 0xffffff, PW, PH)
       motes.opacity = 0
       group.add(motes.mesh)
     }).catch(() => {})
@@ -204,11 +213,8 @@ export function targetSigilVfx(opts: {
           plume.mesh.scale.set(sx, sy, 1)
           // BASE-FLUSH. The quad is centred geometry, so lifting it by half
           // its SCALED height puts its bottom edge on the floor plane and
-          // keeps it there as the fire grows.
-          // BASE-FLUSH: the quad's BOTTOM sits on the floor plane at `at`,
-          // not its centre, so the effect grows upward out of the ground
-          // however it is scaled.
-          plume.mesh.position.set(at.x, at.y + (FLAME_H * sy) / 2, at.z)
+          // keeps it there as the effect grows.
+          plume.mesh.position.set(at.x, at.y + (PH * sy) / 2, at.z)
           plume.setProgress(pose.frame)
           plume.opacity = lit
         }
@@ -224,9 +230,8 @@ export function targetSigilVfx(opts: {
           const sx = pose.radiate
           const sy = 1 + (pose.radiate - 1) * 0.45
           motes.mesh.scale.set(sx, sy, 1)
-          // The embers ride the plume, so they take the same drop.
-          motes.mesh.position.set(
-            at.x, at.y + (FLAME_H * sy) / 2, at.z)
+          // The embers ride the plume, so they share its root.
+          motes.mesh.position.set(at.x, at.y + (PH * sy) / 2, at.z)
           // Driven by the CLOCK rather than by the sigil's progress: the motes
           // loop at their own drawn rate while the one-shot plume plays
           // through once beneath them.

@@ -545,6 +545,15 @@
   "loop": false,
   "peak": 7
  },
+ "sigilDivinationPlume": {
+  "file": "sigilDivinationPlume.webp",
+  "bytes": 137556,
+  "cols": 3,
+  "rows": 3,
+  "frames": 9,
+  "fps": 12,
+  "loop": true
+ },
  "sigilEnchantmentPlume": {
   "bytes": 369380,
   "cols": 4,

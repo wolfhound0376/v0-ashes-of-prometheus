@@ -51,22 +51,17 @@ describe("targetSigilFor", () => {
   })
 
   it("draws nothing for a save spell of a school with no sigil yet", () => {
-    // Updated when enchantment landed, and again when EVOCATION landed: this
-    // has now named enchantment and then evocation as the negative case, and
-    // each time the school got art the test had to move on. A school with art
-    // registered must draw; only abjuration and divination stay silent now.
     // This test has moved every time a school got art — enchantment, then
-    // evocation, then transmutation, now conjuration — which is the point of
-    // it: the list is not allowed to drift without someone noticing.
+    // evocation, then transmutation, then conjuration, now divination — which
+    // is the point of it: the list is not allowed to drift without someone
+    // noticing. ABJURATION is the last school with none.
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: "radiant" })).toBeNull()
-    expect(targetSigilFor({ resolve: "save", school: "divination", damage: "radiant" })).toBeNull()
-    // and the six that DO have art must not be silent
+    expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
+    // and the seven that DO have art must not be silent
     for (const s of ["necromancy", "enchantment", "illusion", "evocation", "transmutation",
-                     "conjuration"] as const) {
+                     "conjuration", "divination"] as const) {
       expect(targetSigilFor({ resolve: "save", school: s, damage: "radiant" }), s).not.toBeNull()
     }
-    expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
-    expect(targetSigilFor({ resolve: "save", school: "divination", damage: null })).toBeNull()
   })
 
   it("gives every registered sigil mote art and a tint from Sam's palette", () => {
@@ -80,21 +75,48 @@ describe("targetSigilFor", () => {
     expect(new Set(tints).size).toBe(tints.length)
   })
 
-  it("lets a school have NO ring, and conjuration is the one that does", () => {
-    // Sam, 2026-09-29: "just remove the sigil". The tentacles stand on their
-    // own with nothing drawn on the floor under them. Every other registered
-    // school still has a ring — this is a deliberate exception, not the
-    // beginning of a drift, so the negative half is asserted too.
-    expect(SCHOOL_SIGIL.conjuration?.ring).toBeUndefined()
-    expect(SCHOOL_SIGIL.conjuration?.plume).toBe("sigilConjurationPlume")
+  it("lets a school have NO ring, and names the two that do without one", () => {
+    // Conjuration first (Sam, 2026-09-29: "just remove the sigil"), then
+    // divination, whose art never had a ring in it — a seer ringed by scrying
+    // eyes, with the figure cut out so the caster's sprite stands in the hole.
+    //
+    // Asserted as a SET, not as one exception, and the negative half is
+    // asserted too: a school losing its ring should be a decision someone
+    // made, not something that drifted in.
+    const RINGLESS = new Set(["conjuration", "divination"])
     for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
-      if (school === "conjuration") continue
-      expect(art?.ring, school).toBeTruthy()
+      if (RINGLESS.has(school)) expect(art?.ring, school).toBeUndefined()
+      else expect(art?.ring, school).toBeTruthy()
     }
     // Whatever it has or lacks, EVERY sigil has a plume: that is the layer
     // the effect actually reads from.
     for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
       expect(art?.plume, school).toBeTruthy()
+    }
+  })
+
+  it("sizes the plume quad from the art, and only divination overrides it", () => {
+    // Divination's art is square; the default quad is 1:2. Shipping it
+    // unsized stretched every eye to twice its height.
+    expect(SCHOOL_SIGIL.divination?.plumeSize).toEqual([3.2, 3.2])
+    const [w, h] = SCHOOL_SIGIL.divination!.plumeSize!
+    expect(w / h, "square art needs a square quad").toBe(1)
+    // 3.2 squares clears a one-square sprite standing in the middle.
+    expect(w).toBeGreaterThan(1)
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      if (school !== "divination") expect(art?.plumeSize, school).toBeUndefined()
+    }
+  })
+
+  it("anchors on the target by default, and on the CASTER only for divination", () => {
+    // Sam, 2026-09-29: "this is our divination sfx for spell casters". The
+    // eyes open around whoever is scrying, not around whoever is scried.
+    // Every other school marks the creature the spell was thrown at, and an
+    // absent `anchor` must keep meaning "target" — the board reads it as
+    // `=== "caster"`, so a typo silently falls back to the safe side.
+    expect(SCHOOL_SIGIL.divination?.anchor).toBe("caster")
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      if (school !== "divination") expect(art?.anchor, school).toBeUndefined()
     }
   })
 

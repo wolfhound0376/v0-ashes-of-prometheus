@@ -88,6 +88,20 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // The ring sheet stays baked in public/vfx; it is just not referenced.
   conjuration: { plume: "sigilConjurationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.conjuration.glow },
+  // Divination has NO RING either, and for a different reason from
+  // conjuration: there was never a ring in the art. Sam sent a hooded seer
+  // ringed by scrying eyes and asked for the figure cut out of the middle
+  // (2026-09-29: "remove the character from the middle of this GIF and
+  // replace it with whatever pixel art character is using the magic") — so
+  // the hole IS the effect, and whoever is standing there fills it.
+  //
+  // SQUARE, not the default tall column: the eyes surround a figure rather
+  // than rising out of a circle. 3.2 squares clears a one-square sprite on
+  // every side. Kept in its own blues rather than remapped to the school's
+  // purple, the way transmutation keeps its whirlwind's colours.
+  divination:  { plume: "sigilDivinationPlume", plumeSize: [3.2, 3.2],
+                 anchor: "caster",
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.divination.glow },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
                  still: true },
@@ -174,6 +188,35 @@ export interface SigilArt {
    * Defaults to turning, because that is what every other school does.
    */
   still?: boolean
+  /**
+   * Override the plume quad's size in board squares, when the school's art is
+   * not the tall 1:2 column the default FLAME_W x FLAME_H assumes.
+   *
+   * Divination's art is SQUARE — a ring of scrying eyes that surrounds the
+   * caster rather than a flame that rises out of a circle — so forcing it
+   * into the default frame stretches every eye to twice its height. The
+   * quad's aspect has to follow the art, not the other way round.
+   *
+   * Given in squares so it reads against the board's own grid: [2.4, 4.8] is
+   * the default, and divination's [3.2, 3.2] is a square that comfortably
+   * clears a one-square sprite standing in the middle of it.
+   */
+  plumeSize?: readonly [w: number, h: number]
+  /**
+   * WHOSE square the effect is drawn on. Defaults to the target, because a
+   * sigil is the mark a spell leaves on the creature it is thrown at.
+   *
+   * Divination is the exception (Sam, 2026-09-29: "this is our divination sfx
+   * for spell CASTERS"): its eyes open around the person doing the scrying,
+   * not around whoever is being scried. The art was cut for exactly that —
+   * the hole in the middle is where the caster's own sprite stands.
+   *
+   * Only the POSITION changes. The timing is still the save's: the eyes open
+   * as the spell goes out, hold while the save is rolled, and resolve on the
+   * answer — and the flinch still lands on the target, because that is a
+   * separate callback and belongs to whoever was hit.
+   */
+  anchor?: "target" | "caster"
 }
 
 export interface SigilPlan {

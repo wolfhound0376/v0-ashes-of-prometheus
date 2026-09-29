@@ -636,6 +636,11 @@ def main() -> None:
                     help="fraction of the cell the art fills; below 1 shortens the plume")
     ap.add_argument("--plume-sink", type=float, default=0.0, metavar="0..0.3",
                     help="push the plume's roots below the floor plane, as a fraction of the cell")
+    ap.add_argument("--no-ring", action="store_true",
+                    help="bake the PLUME only. Some schools have no floor ring at all "
+                         "(Sam, 2026-09-29, of conjuration: \"just remove the sigil\"), and "
+                         "for those a baked ring is dead weight that reads as real art "
+                         "to the next person who opens public/vfx.")
     ap.add_argument("--recolor", action="store_true",
                     help="remap the art's wind hue onto the school ramp, leaving stone alone")
     ap.add_argument("--dry-run", action="store_true", help="measure and report, write nothing")
@@ -666,10 +671,13 @@ def main() -> None:
         probe = np.asarray(Image.open(a.source).convert("RGBA"))[..., 3]
         if float((probe < 250).mean()) > 0.02:
             own_alpha = probe.astype(np.float32)
-    ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain, own_alpha)
-    ring_sheet = (glow_ring(ring, a.glow, a.cols, a.chase_lift) if a.glow > 1
-                  else ring if a.chase <= 1
-                  else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
+    if a.no_ring:
+        ring = ring_sheet = None
+    else:
+        ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain, own_alpha)
+        ring_sheet = (glow_ring(ring, a.glow, a.cols, a.chase_lift) if a.glow > 1
+                      else ring if a.chase <= 1
+                      else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
     plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor,
                             a.plume_sink, a.plume_scale)
              if a.plume_art else
@@ -687,9 +695,12 @@ def main() -> None:
         print(f"  NOTE the art is drawn at a different angle from the board's camera, so the")
         print(f"       ring will read {'rounder' if ratio > BOARD_RATIO else 'flatter'} on the board than in the source.")
     print("  flame ramp    " + " ".join("#%02X%02X%02X" % tuple(int(v) for v in c) for c in pal))
-    print(f"  ring          coverage {coverage(ring_sheet):4.1f}%"
-          + (f"   glow-up {a.glow} frames" if a.glow > 1 else "" if a.chase <= 1 else
-             f"   chase {a.chase} frames, glyph band r={glyph_band(ring)[0]:.2f}-{glyph_band(ring)[1]:.2f}"))
+    if ring_sheet is None:
+        print("  ring          none — plume only (--no-ring)")
+    else:
+        print(f"  ring          coverage {coverage(ring_sheet):4.1f}%"
+              + (f"   glow-up {a.glow} frames" if a.glow > 1 else "" if a.chase <= 1 else
+                 f"   chase {a.chase} frames, glyph band r={glyph_band(ring)[0]:.2f}-{glyph_band(ring)[1]:.2f}"))
     print(f"  plume         coverage {coverage(plume):4.1f}%   ({a.plume_w // a.px}x{a.plume_h // a.px} px art)")
     if burst is not None:
         print(f"  burst         coverage {coverage(burst):4.1f}%   ({a.burst_frames} frames, {a.sparks} seeded sparks)")
@@ -698,7 +709,8 @@ def main() -> None:
     # and a painted circle lying on the floor is MEANT to be solid — firing
     # there is a false positive, and a warning that cries wolf gets ignored
     # the one time it is real.
-    for name, im in ((("ring", ring_sheet),) if own_alpha is None else ()) + (("plume", plume),):
+    for name, im in ((("ring", ring_sheet),) if own_alpha is None and ring_sheet is not None
+                     else ()) + (("plume", plume),):
         if coverage(im) > 70:
             print(f"  WARNING {name} keys at >70% — it will render as an opaque plate, not as light.")
 
@@ -722,13 +734,14 @@ def main() -> None:
         return
 
     entries = {}
-    for suffix, im, meta in (
-        ("Ring", ring_sheet,
-         {"cols": a.cols, "rows": (a.glow + a.cols - 1) // a.cols, "frames": a.glow,
-          "fps": 12, "loop": False, "peak": a.glow - 1} if a.glow > 1 else
-         {"cols": 1, "rows": 1, "frames": 1, "fps": 1, "loop": False, "peak": 0} if a.chase <= 1 else
-         {"cols": a.cols, "rows": (a.chase + a.cols - 1) // a.cols, "frames": a.chase,
-          "fps": 12, "loop": True}),
+    ring_meta = (
+        {"cols": a.cols, "rows": (a.glow + a.cols - 1) // a.cols, "frames": a.glow,
+         "fps": 12, "loop": False, "peak": a.glow - 1} if a.glow > 1 else
+        {"cols": 1, "rows": 1, "frames": 1, "fps": 1, "loop": False, "peak": 0} if a.chase <= 1 else
+        {"cols": a.cols, "rows": (a.chase + a.cols - 1) // a.cols, "frames": a.chase,
+         "fps": 12, "loop": True})
+    ring_entry = () if ring_sheet is None else (("Ring", ring_sheet, ring_meta),)
+    for suffix, im, meta in ring_entry + (
         ("Plume", plume, {"cols": a.cols, "rows": (a.frames + a.cols - 1) // a.cols,
                           "frames": a.frames, "fps": 12, "loop": True}),
     ) + ((("Burst", burst, {"cols": a.cols, "rows": (a.burst_frames + a.cols - 1) // a.cols,

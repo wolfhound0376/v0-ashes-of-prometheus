@@ -6882,10 +6882,18 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const sigilOutcome = p.damage?.word === "saved" ? "warded" : "taken"
         const layTargetSigil = () => {
           if (!sigilPlan || !p.target) return false
+          // WHOSE SQUARE. Almost every sigil marks the creature the spell was
+          // thrown at; divination's scrying eyes open around the CASTER
+          // instead (SigilArt.anchor). Only the position moves — the timing
+          // is still the save's, and `onStrike` still flinches the target,
+          // because the flinch belongs to whoever was hit.
+          const at = sigilPlan.art.anchor === "caster"
+            ? p.obj.getWorldPosition(new THREE.Vector3()).setY(0)
+            : p.target.clone().setY(0)
           vfx.push(targetSigilVfx({
             parent: scene,
             camera,
-            at: p.target.clone().setY(0),
+            at,
             plan: sigilPlan,
             outcome: sigilOutcome,
             onStrike: flinch,
