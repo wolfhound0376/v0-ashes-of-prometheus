@@ -62,6 +62,13 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.enchantment.glow },
   illusion:    { ring: "sigilIllusionRing",    plume: "sigilIllusionPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.illusion.glow },
+  // Evocation's plume is PIXEL art where the other three are painted (Sam,
+  // 2026-09-28: "add pixels for flames ... paint it the same way with
+  // pixels"). The ring stays painted, so the two layers sit at different
+  // levels of detail on purpose. scripts/vfx/bake_school_sigil.py builds both
+  // from one source and samples the flame ramp out of that source's own fire.
+  evocation:   { ring: "sigilEvocationRing",   plume: "sigilEvocationPlume",
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.evocation.glow },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */

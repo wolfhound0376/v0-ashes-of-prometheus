@@ -51,10 +51,17 @@ describe("targetSigilFor", () => {
   })
 
   it("draws nothing for a save spell of a school with no sigil yet", () => {
-    // Updated when enchantment landed: this used to name enchantment as the
-    // negative case. A school with art registered must draw; only the six
-    // still without art stay silent.
-    expect(targetSigilFor({ resolve: "save", school: "evocation", damage: "radiant" })).toBeNull()
+    // Updated when enchantment landed, and again when EVOCATION landed: this
+    // has now named enchantment and then evocation as the negative case, and
+    // each time the school got art the test had to move on. A school with art
+    // registered must draw; only the four still without it stay silent —
+    // abjuration, conjuration, divination and transmutation.
+    expect(targetSigilFor({ resolve: "save", school: "transmutation", damage: "radiant" })).toBeNull()
+    expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: "radiant" })).toBeNull()
+    // and the four that DO have art must not be silent
+    for (const s of ["necromancy", "enchantment", "illusion", "evocation"] as const) {
+      expect(targetSigilFor({ resolve: "save", school: s, damage: "radiant" }), s).not.toBeNull()
+    }
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
     expect(targetSigilFor({ resolve: "save", school: "divination", damage: null })).toBeNull()
   })
