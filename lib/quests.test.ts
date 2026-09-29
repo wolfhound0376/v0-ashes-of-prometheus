@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest"
 import {
+  DEFAULT_QUEST_SCOPE,
   QUEST_EXAMPLE,
+  QUEST_PERSONAL_EXAMPLE,
+  QUEST_SCOPES,
   QUEST_STATES,
   QUEST_TAG_RULES,
   RESOLVED_STATES,
   decideQuest,
   formatQuestBlock,
+  normaliseQuestScope,
   normaliseQuestState,
   openQuests,
+  questRecipients,
   parseQuestTags,
   questKey,
   questLog,
@@ -19,7 +24,7 @@ const BROTHER = questKey("Find Sarith's brother")
 const ESCAPE = questKey("Escape Velkynvelve")
 
 function page(key: string, state: string, at: string, title = key): QuestPage {
-  return { section: "quests", title, tags: { kind: "quest", key, state, title }, created_at: at }
+  return { section: "quests", title, tags: { kind: "quest", key, state, title, scope: "party" }, created_at: at }
 }
 
 // ---------------------------------------------------------------------------
@@ -30,13 +35,13 @@ describe("the quest tag", () => {
   it("lifts state, title and note out of the prose", () => {
     const raw = "Sarith looks at the floor.\n[QUEST: accept | Find Sarith's brother | He was taken east.]"
     expect(parseQuestTags(raw)).toEqual([
-      { state: "accept", title: "Find Sarith's brother", note: "He was taken east." },
+      { state: "accept", scope: null, title: "Find Sarith's brother", note: "He was taken east." },
     ])
   })
 
   it("takes a tag with no note", () => {
     expect(parseQuestTags("[QUEST: complete | Find Sarith's brother]")).toEqual([
-      { state: "complete", title: "Find Sarith's brother", note: null },
+      { state: "complete", scope: null, title: "Find Sarith's brother", note: null },
     ])
   })
 
@@ -106,40 +111,41 @@ describe("the quest key", () => {
 
 describe("filing a quest", () => {
   it("files an accepted quest with no prompt", () => {
-    const d = decideQuest({ tag: { state: "accept", title: "Find Sarith's brother", note: "He was taken east." } })
+    const d = decideQuest({ tag: { state: "accept", scope: null, title: "Find Sarith's brother", note: "He was taken east." } })
     expect(d.file).not.toBeNull()
     expect(d.file?.section).toBe("quests")
     expect(d.file?.author).toBe("malachar")
     expect(d.file?.visibility).toBe("private")
     expect(d.file?.body).toBe("He was taken east.")
     expect(d.file?.tags.state).toBe("accepted")
-    expect(d.flags).toEqual([])
+    expect(d.scope).toBe("party")
+    expect(d.flags.join(" ")).toContain("no scope marked")
   })
 
   it("writes something sensible when he gives a bare tag", () => {
-    const d = decideQuest({ tag: { state: "accept", title: "Escape Velkynvelve", note: null } })
+    const d = decideQuest({ tag: { state: "accept", scope: null, title: "Escape Velkynvelve", note: null } })
     expect(d.file?.body).toContain("Escape Velkynvelve")
   })
 
   it("refuses a state it does not know", () => {
-    const d = decideQuest({ tag: { state: "pondered", title: "A thing", note: null } })
+    const d = decideQuest({ tag: { state: "pondered", scope: null, title: "A thing", note: null } })
     expect(d.file).toBeNull()
     expect(d.note).toContain("not a quest state")
   })
 
   it("refuses a quest with no title, because nothing could track it", () => {
-    expect(decideQuest({ tag: { state: "accept", title: "", note: "x" } }).file).toBeNull()
-    expect(decideQuest({ tag: { state: "accept", title: "   ", note: "x" } }).file).toBeNull()
-    expect(decideQuest({ tag: { state: "accept", title: "!!!", note: "x" } }).file).toBeNull()
+    expect(decideQuest({ tag: { state: "accept", scope: null, title: "", note: "x" } }).file).toBeNull()
+    expect(decideQuest({ tag: { state: "accept", scope: null, title: "   ", note: "x" } }).file).toBeNull()
+    expect(decideQuest({ tag: { state: "accept", scope: null, title: "!!!", note: "x" } }).file).toBeNull()
   })
 
   it("files a short or oddly worded title rather than dropping the quest", () => {
-    expect(decideQuest({ tag: { state: "accept", title: "The End", note: "x" } }).file).not.toBeNull()
+    expect(decideQuest({ tag: { state: "accept", scope: null, title: "The End", note: "x" } }).file).not.toBeNull()
   })
 
   it("does not accept the same quest twice", () => {
     const open = questLog([page(questKey("Find Sarith's brother"), "accepted", "2026-09-01T00:00:00Z", "Find Sarith's brother")])
-    const d = decideQuest({ tag: { state: "accept", title: "find the brother of Sarith", note: null }, open })
+    const d = decideQuest({ tag: { state: "accept", scope: null, title: "find the brother of Sarith", note: null }, open })
     expect(d.file).toBeNull()
     expect(d.note).toContain("already open")
   })
@@ -149,7 +155,7 @@ describe("filing a quest", () => {
       page(BROTHER, "accepted", "2026-09-01T00:00:00Z", "Find Sarith's brother"),
       page(BROTHER, "completed", "2026-09-09T00:00:00Z", "Find Sarith's brother"),
     ])
-    const d = decideQuest({ tag: { state: "complete", title: "Find Sarith's brother", note: null }, open })
+    const d = decideQuest({ tag: { state: "complete", scope: null, title: "Find Sarith's brother", note: null }, open })
     expect(d.file).toBeNull()
     expect(d.note).toContain("already completed")
   })
@@ -159,20 +165,20 @@ describe("filing a quest", () => {
       page(BROTHER, "accepted", "2026-09-01T00:00:00Z"),
       page(BROTHER, "failed", "2026-09-09T00:00:00Z"),
     ])
-    const d = decideQuest({ tag: { state: "accept", title: "Find Sarith's brother", note: null }, open })
+    const d = decideQuest({ tag: { state: "accept", scope: null, title: "Find Sarith's brother", note: null }, open })
     expect(d.file).not.toBeNull()
   })
 
   // Losing the event entirely would be worse than filing an orphan.
   it("files a resolution for a quest never accepted, and says so", () => {
-    const d = decideQuest({ tag: { state: "complete", title: "Something offscreen", note: null }, open: [] })
+    const d = decideQuest({ tag: { state: "complete", scope: null, title: "Something offscreen", note: null }, open: [] })
     expect(d.file).not.toBeNull()
     expect(d.flags.join(" ")).toContain("no accepted page")
   })
 
   it("flags every state except accepted as still needing Sam's yes", () => {
-    expect(decideQuest({ tag: { state: "accept", title: "A", note: null } }).flags).toEqual([])
-    expect(decideQuest({ tag: { state: "fail", title: "A", note: null } }).flags.join(" ")).toContain("need his yes")
+    expect(decideQuest({ tag: { state: "accept", scope: "party", title: "A", note: null } }).flags).toEqual([])
+    expect(decideQuest({ tag: { state: "fail", scope: "party", title: "A", note: null } }).flags.join(" ")).toContain("need his yes")
   })
 })
 
@@ -288,5 +294,83 @@ describe("the quest block", () => {
   it("tells him it files itself, so he never asks", () => {
     expect(QUEST_TAG_RULES).toContain("files itself")
     expect(QUEST_TAG_RULES).toContain("never ask")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// §6 Scope — Sam, 2026-09-29: "Party quests go to everyone.
+//    Individual ones are individual by nature."
+// ---------------------------------------------------------------------------
+
+describe("quest scope", () => {
+  it("reads the scope when he marks one", () => {
+    expect(parseQuestTags("[QUEST: accept | party | Escape Velkynvelve | note]")[0].scope).toBe("party")
+    expect(parseQuestTags("[QUEST: accept | personal | Find the traitor | note]")[0].scope).toBe("personal")
+    expect(parseQuestTags("[QUEST: accept | solo | Find the traitor | note]")[0].scope).toBe("personal")
+  })
+
+  // The three-segment form is already in the prompt Malachar is reading, so it
+  // must keep working exactly as before.
+  it("still parses the old three-segment form as title and note", () => {
+    const t = parseQuestTags("[QUEST: accept | Escape Velkynvelve | We go tonight.]")[0]
+    expect(t.scope).toBeNull()
+    expect(t.title).toBe("Escape Velkynvelve")
+    expect(t.note).toBe("We go tonight.")
+  })
+
+  it("does not mistake a title for a scope", () => {
+    const t = parseQuestTags("[QUEST: accept | Party like it is 1399 | note]")[0]
+    expect(t.title).toBe("Party like it is 1399")
+    expect(t.scope).toBeNull()
+  })
+
+  it("keeps a note containing a pipe in one piece", () => {
+    expect(parseQuestTags("[QUEST: accept | party | A thing | he said go | then he left]")[0].note)
+      .toBe("he said go | then he left")
+  })
+
+  it("defaults to party and says it guessed", () => {
+    expect(DEFAULT_QUEST_SCOPE).toBe("party")
+    expect([...QUEST_SCOPES]).toEqual(["party", "personal"])
+    const d = decideQuest({ tag: { state: "accept", scope: null, title: "A thing", note: null } })
+    expect(d.scope).toBe("party")
+    expect(d.flags.join(" ")).toContain("no scope marked")
+  })
+
+  it("refuses a word that is not a scope", () => {
+    expect(normaliseQuestScope("loud")).toBeNull()
+    expect(normaliseQuestScope("")).toBeNull()
+  })
+
+  it("sends a party quest to every character", () => {
+    expect(questRecipients({ scope: "party", actorId: "a", party: ["a", "b", "c"] })).toEqual(["a", "b", "c"])
+  })
+
+  it("sends a personal quest only to the character who took it", () => {
+    expect(questRecipients({ scope: "personal", actorId: "a", party: ["a", "b", "c"] })).toEqual(["a"])
+  })
+
+  it("includes an actor who is somehow not listed in the party", () => {
+    expect(questRecipients({ scope: "party", actorId: "z", party: ["a", "b"] })).toEqual(["a", "b", "z"])
+  })
+
+  it("falls back to the actor when the party is unknown", () => {
+    expect(questRecipients({ scope: "party", actorId: "a", party: [] })).toEqual(["a"])
+  })
+
+  it("sends a personal quest nowhere when nobody is acting", () => {
+    expect(questRecipients({ scope: "personal", actorId: null, party: ["a", "b"] })).toEqual([])
+  })
+
+  it("records the scope on the page, so a stolen book shows whose business it was", () => {
+    const d = decideQuest({ tag: { state: "accept", scope: "personal", title: "Find the traitor", note: null } })
+    expect(d.file?.tags.scope).toBe("personal")
+  })
+
+  it("ships both worked examples, and the parser reads them", () => {
+    expect(QUEST_TAG_RULES).toContain(QUEST_PERSONAL_EXAMPLE)
+    expect(parseQuestTags(QUEST_EXAMPLE)[0].scope).toBe("party")
+    expect(parseQuestTags(QUEST_PERSONAL_EXAMPLE)[0].scope).toBe("personal")
+    expect(parseQuestTags(QUEST_PERSONAL_EXAMPLE)[0].title).toBe("Learn who sold us out")
   })
 })

@@ -45,11 +45,20 @@ import type { JournalSection } from "./journal-sections"
 // §1 THE TAG
 // ============================================================================
 //
-// `[QUEST: <state> | <title> | <the note>]`, matching the pipe form
-// `[CAMP_ACTION: who | action | args]` already uses. The note is optional on a
-// resolution: "complete | Find Sarith's brother" is a whole sentence.
+// `[QUEST: <state> | <scope?> | <title> | <note?>]`, matching the pipe form
+// `[CAMP_ACTION: who | action | args]` already uses.
+//
+// SCOPE IS OPTIONAL AND THE TAG STAYS BACKWARD COMPATIBLE. Sam, 2026-09-29:
+// "Party quests go to everyone. Individual ones are individual by nature." So
+// the second segment is a scope word when it IS one, and the title otherwise —
+// `[QUEST: accept | Escape Velkynvelve]` still parses exactly as it did before
+// this change, which matters because that three-segment form is already in the
+// prompt Malachar is reading.
+//
+// The note is optional on a resolution: "complete | Find Sarith's brother" is
+// a whole sentence.
 
-export const QUEST_TAG_RE = /\[QUEST:\s*([^\]|]+?)\s*\|\s*([^\]|]+?)\s*(?:\|\s*([^\]]*?))?\s*\]/gi
+export const QUEST_TAG_RE = /\[QUEST:\s*([^\]]*?)\s*\]/gi
 
 /** Every tag stripped from player-facing text and speech. */
 export const QUEST_STRIP_RE = /\[QUEST:[^\]]*\]/gi
@@ -80,22 +89,99 @@ export function normaliseQuestState(raw: string): QuestState | null {
   return STATE_ALIASES[key] ?? ((QUEST_STATES as readonly string[]).includes(key) ? (key as QuestState) : null)
 }
 
+/**
+ * Who a quest belongs to.
+ *
+ * Sam, 2026-09-29: "Party quests go to everyone. Individual ones are individual
+ * by nature." So scope is a property of the quest, which means Malachar judges
+ * it — the system cannot tell from the words alone whether agreeing to find
+ * someone's brother was the party's promise or one character's.
+ */
+export const QUEST_SCOPES = ["party", "personal"] as const
+export type QuestScope = (typeof QUEST_SCOPES)[number]
+
+/**
+ * The default when he marks nothing.
+ *
+ * Party, because a quest tag fires at the moment of a public agreement in a
+ * shared scene, and a party promise sitting in only one book is the failure
+ * players would actually notice. The opposite default would quietly copy a
+ * character's private business into three other journals, which the disclosure
+ * rules exist to prevent. Every defaulted quest is flagged at runtime so the
+ * guess is visible rather than silent.
+ */
+export const DEFAULT_QUEST_SCOPE: QuestScope = "party"
+
+const SCOPE_ALIASES: Record<string, QuestScope> = {
+  party: "party", group: "party", everyone: "party", all: "party", shared: "party", company: "party",
+  personal: "personal", individual: "personal", solo: "personal", private: "personal", own: "personal", mine: "personal", self: "personal",
+}
+
+/** "solo" / "Everyone" / "individual" → the scope, or null when it is not a scope word at all. */
+export function normaliseQuestScope(raw: string): QuestScope | null {
+  const key = (raw ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_")
+  return SCOPE_ALIASES[key] ?? null
+}
+
 export interface QuestTag {
   state: string
+  /** Null when he marked none — the caller applies DEFAULT_QUEST_SCOPE and flags it. */
+  scope: QuestScope | null
   title: string
   note: string | null
 }
 
-/** Every [QUEST: …] in a reply, in order, at most eight. */
+/**
+ * Every [QUEST: …] in a reply, in order, at most eight.
+ *
+ * Segments are split rather than matched positionally, because the scope is
+ * optional and a positional regex would have to guess. The second segment is
+ * the scope only when it IS a scope word; otherwise it is the title and the
+ * three-segment form is preserved exactly.
+ */
 export function parseQuestTags(text: string): QuestTag[] {
   const re = new RegExp(QUEST_TAG_RE.source, "gi")
   const out: QuestTag[] = []
   for (const m of (text ?? "").matchAll(re)) {
-    const note = (m[3] ?? "").trim()
-    out.push({ state: m[1].trim(), title: m[2].trim(), note: note || null })
+    const parts = (m[1] ?? "").split("|").map((x) => x.trim())
+    const state = parts[0] ?? ""
+    let scope: QuestScope | null = null
+    let rest = parts.slice(1)
+    if (rest.length > 1) {
+      const maybe = normaliseQuestScope(rest[0])
+      if (maybe) {
+        scope = maybe
+        rest = rest.slice(1)
+      }
+    }
+    const title = rest[0] ?? ""
+    const note = rest.slice(1).join(" | ").trim()
+    if (!state && !title) continue
+    out.push({ state, scope, title, note: note || null })
     if (out.length >= 8) break
   }
   return out
+}
+
+/**
+ * Whose journals this quest lands in.
+ *
+ * A party quest writes one page per character, all sharing the same quest key,
+ * so each book folds it independently — and four journals that agree today can
+ * disagree tomorrow when one of them is stolen and its pages read. That is the
+ * point, not a defect.
+ */
+export function questRecipients(input: {
+  scope: QuestScope
+  actorId: string | null
+  /** Every player character currently in the party. */
+  party: readonly string[]
+}): string[] {
+  if (input.scope === "personal") return input.actorId ? [input.actorId] : []
+  const all = input.party.filter(Boolean)
+  if (!all.length) return input.actorId ? [input.actorId] : []
+  if (input.actorId && !all.includes(input.actorId)) return [...all, input.actorId]
+  return [...all]
 }
 
 export function stripQuestTags(text: string): string {
@@ -153,6 +239,7 @@ export interface QuestTags {
   key: string
   state: QuestState
   title: string
+  scope: QuestScope
 }
 
 export interface QuestFiling {
@@ -166,6 +253,8 @@ export interface QuestFiling {
 
 export interface QuestDecision {
   file: QuestFiling | null
+  /** Resolved scope, even on a refusal, so the caller can log what was meant. */
+  scope: QuestScope
   flags: string[]
   note: string
 }
@@ -189,18 +278,22 @@ export function decideQuest(input: {
   const state = normaliseQuestState(input.tag.state)
   const title = (input.tag.title ?? "").trim()
   const key = questKey(title)
+  const scope = input.tag.scope ?? DEFAULT_QUEST_SCOPE
 
-  if (!state) return { file: null, flags: [], note: `"${input.tag.state}" is not a quest state — nothing filed.` }
-  if (!title || !key) return { file: null, flags: [], note: "a quest with no title cannot be tracked — nothing filed." }
+  if (!state) return { file: null, scope, flags: [], note: `"${input.tag.state}" is not a quest state — nothing filed.` }
+  if (!title || !key) return { file: null, scope, flags: [], note: "a quest with no title cannot be tracked — nothing filed." }
 
   const flags: string[] = []
+  if (!input.tag.scope) {
+    flags.push(`no scope marked — treated as ${DEFAULT_QUEST_SCOPE}`)
+  }
   if (state !== "accepted") {
     flags.push("only 'accepted' is Sam's ruling; completed/failed/abandoned are proposed and need his yes")
   }
 
   const existing = (input.open ?? []).find((q) => q.key === key)
   if (state === "accepted" && existing && !existing.resolved) {
-    return { file: null, flags, note: `"${existing.title}" is already open — not filed twice.` }
+    return { file: null, scope, flags, note: `"${existing.title}" is already open — not filed twice.` }
   }
   if (state !== "accepted" && !existing) {
     // Resolving something never accepted. File it anyway: the page is the
@@ -208,7 +301,7 @@ export function decideQuest(input: {
     flags.push(`no accepted page for "${title}" — filing the resolution anyway so the event is not lost`)
   }
   if (state !== "accepted" && existing?.resolved) {
-    return { file: null, flags, note: `"${existing.title}" was already ${existing.state} — not filed twice.` }
+    return { file: null, scope, flags, note: `"${existing.title}" was already ${existing.state} — not filed twice.` }
   }
 
   const body = input.tag.note?.trim() || defaultBody(state, title)
@@ -220,10 +313,11 @@ export function decideQuest(input: {
       visibility: DEFAULT_VISIBILITY,
       title,
       body,
-      tags: { kind: "quest", key, state, title },
+      tags: { kind: "quest", key, state, title, scope },
     },
+    scope,
     flags,
-    note: `${title} — ${state}`,
+    note: `${title} — ${state} (${scope})`,
   }
 }
 
@@ -272,7 +366,8 @@ function readQuestTags(v: unknown): QuestTags | null {
   const state = typeof t.state === "string" ? normaliseQuestState(t.state) : null
   const key = typeof t.key === "string" ? t.key : ""
   if (!state || !key) return null
-  return { kind: "quest", key, state, title: typeof t.title === "string" ? t.title : "" }
+  const scope = typeof t.scope === "string" ? normaliseQuestScope(t.scope) : null
+  return { kind: "quest", key, state, title: typeof t.title === "string" ? t.title : "", scope: scope ?? DEFAULT_QUEST_SCOPE }
 }
 
 /**
@@ -337,18 +432,23 @@ export function openQuests(pages: readonly QuestPage[]): QuestSummary[] {
 // §5 THE PROMPT
 // ============================================================================
 
-export const QUEST_EXAMPLE = "[QUEST: accept | Find Sarith's brother | Sarith says his brother was taken east, past the fungi. He did not say why he thinks he is alive.]"
+export const QUEST_EXAMPLE = "[QUEST: accept | party | Find Sarith's brother | Sarith says his brother was taken east, past the fungi. He did not say why he thinks he is alive.]"
+
+/** A quest one character took on alone. */
+export const QUEST_PERSONAL_EXAMPLE = "[QUEST: accept | personal | Learn who sold us out | Somebody told them which tunnel. I am going to find out who, and I am not telling the others until I know.]"
 
 /** The entry for the STRUCTURED TAGS catalogue. */
 export const QUEST_TAG_RULES = `QUESTS:
-- [QUEST: <state> | <title> | <the note>] — when a quest is taken on, finished, lost or let go
+- [QUEST: <state> | <scope> | <title> | <the note>] — when a quest is taken on, finished, lost or let go
   - States: accept, complete, fail, abandon. The note is optional on anything but accept.
+  - SCOPE is "party" or "personal", and it decides whose journals this lands in. Party is the whole company's business and goes in every book; personal is one character's own, and goes only in theirs. Mark personal when a character takes something on alone, keeps it from the others, or sets themselves a private goal. If you mark nothing it is treated as party.
   - Emit ACCEPT the moment a character agrees to do something for someone, or sets themselves a goal out loud. An offer nobody accepted is not a quest.
   - The TITLE is how everyone will refer to it forever, so keep it short and concrete: "Find Sarith's brother", not "The Matter of the Missing Kin".
   - Use the SAME title when you close it as when you opened it.
   - The note is the character's own record of what was asked and what they made of it — first person, a few lines, the way they would write it down.
   - It files itself. Never mention the tag, never tell them their journal updated, and never ask whether they want it recorded.
-  - Example: ${QUEST_EXAMPLE}`
+  - Example: ${QUEST_EXAMPLE}
+  - Personal example: ${QUEST_PERSONAL_EXAMPLE}`
 
 export interface QuestBlockState {
   open: QuestSummary[]
