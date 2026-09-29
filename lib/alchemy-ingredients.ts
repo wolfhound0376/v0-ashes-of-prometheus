@@ -34,7 +34,12 @@
 //
 // Nothing here invents an ingredient, a price or a use.
 
-import { SPELL_COMPONENTS, SUBSTANCE_SPELLS, type SpellComponent } from "./spell-component-data"
+import {
+  CREATURE_SOURCED_SPELLS,
+  SPELL_COMPONENTS,
+  SUBSTANCE_SPELLS,
+  type SpellComponent,
+} from "./spell-component-data"
 import { REGISTERED_INGREDIENTS, type RegisteredIngredient } from "./ingredient-registry-data"
 
 export type { RegisteredIngredient, SpellComponent }
@@ -358,4 +363,38 @@ export function appraiseOffer(
   if (gouging.length) parts.push(`Overpriced against the book: ${gouging.map((l) => `${l.offered} (×${l.markup})`).join(", ")}.`)
 
   return { lines, verified, needsRuling, unknown, summary: parts.join(" ") }
+}
+
+/** How directly a component comes off a creature. null is neither. */
+export type CreatureSourcing = "creature" | "worked" | null
+
+/**
+ * Spells whose material component comes off a creature — the harvest demand
+ * side of alchemy, and the reason the bestiary and the spell list are the same
+ * economy. `tier` filters: "creature" for raw material off a body, "worked" for
+ * creature-derived but processed (silk, vellum, a gilded skull).
+ *
+ * Sam ruled on 2026-09-29 that worked material counts, so the default returns
+ * both. Pass "creature" to get only what a body yields fresh.
+ *
+ * `includeUA` is off by default: three of these are Unearthed Arcana and are
+ * not published rules.
+ */
+export function creatureSourcedSpells(
+  tier: CreatureSourcing | "all" = "all",
+  includeUA = false,
+): SpellComponent[] {
+  return SPELL_COMPONENTS.filter((c) => {
+    if (!c.creatureSourced) return false
+    if (!includeUA && c.spell.includes("(UA)")) return false
+    return tier === "all" || c.creatureSourced === tier
+  })
+}
+
+/** Is this spell's component taken off a creature, and how directly? */
+export function creatureSourcingOf(spellName: string): CreatureSourcing {
+  const key = Object.keys(CREATURE_SOURCED_SPELLS).find(
+    (k) => k.toLowerCase() === spellName.trim().toLowerCase(),
+  )
+  return key ? CREATURE_SOURCED_SPELLS[key] : null
 }
