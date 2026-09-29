@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { hasPlayableStats, NEEDS_STATS_MESSAGE } from "@/lib/bestiary-stats"
 import { walkableFrom, key as cellKey } from "@/lib/npc-ai"
 import {
   spawnPayload, freeSquare, squaresFor, sideForRole, type SpawnSource, type Allegiance,
@@ -78,7 +79,7 @@ export async function GET() {
   // and it is read on every open, so it is one round trip, not four.
   const [creatures, players, npcs, chars, envs, tokens] = await Promise.all([
     db.from("bestiary")
-      .select("id,name,slug,size,cr,hp,ac,role,model_url,model_scale")
+      .select("id,name,slug,size,cr,hp,ac,role,model_url,model_scale,stats_status")
       .order("name"),
     // THE PARTY IS NOT A MONSTER.
     //
@@ -120,8 +121,10 @@ export async function GET() {
     },
     // Filtered here rather than in the drawer: a client-only fence is not a
     // fence, and the spawn verb below reads the same list.
+    // A placeholder row with no stat block is not offered either — see
+    // lib/bestiary-stats.ts. The spawn verb refuses it on its own.
     bestiary: (creatures.data ?? []).filter(
-      (b) => !partyNames.has(String(b.name ?? "").trim().toLowerCase()),
+      (b) => !partyNames.has(String(b.name ?? "").trim().toLowerCase()) && hasPlayableStats(b),
     ),
     npcs: npcs.data ?? [],
     characters: chars.data ?? [],
@@ -449,7 +452,10 @@ export async function POST(req: NextRequest) {
 
   if (kind === "bestiary") {
     const { data } = await db.from("bestiary")
-      .select("id,name,size,hp,role,model_scale").eq("id", sourceId).maybeSingle()
+      .select("id,name,size,hp,role,model_scale,stats_status").eq("id", sourceId).maybeSingle()
+    if (data && !hasPlayableStats(data)) {
+      return NextResponse.json({ error: `${data.name}: ${NEEDS_STATS_MESSAGE}` }, { status: 409 })
+    }
     if (data) {
       src = {
         kind: "bestiary", id: data.id, label: data.name, size: data.size, hpMax: data.hp,

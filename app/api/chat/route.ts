@@ -3,6 +3,7 @@ import { addressedNpc, type RosterNpc } from "@/lib/addressed-npc"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
 import { evaluate as evaluateSkillProgress, recordTraining, skillTitle, TEACHING_STAKE_PREFIX, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
@@ -147,11 +148,14 @@ async function resolveNpcStats(
   // (a) Bestiary — authoritative Monster Manual stats.
   const { data: beast } = await supabase
     .from("bestiary")
-    .select("ac, hp, cr, xp, creature_type")
+    .select("ac, hp, cr, xp, creature_type, stats_status")
     .ilike("name", name)
     .limit(1)
     .maybeSingle()
-  if (beast) {
+  // A placeholder row (stats_status 'needs_stats', every stat NULL) is not a
+  // stat block. Passing it through as source "bestiary" would present blanks as
+  // authoritative; falling through lands on (c), which is flagged improvised.
+  if (beast && hasPlayableStats(beast)) {
     const crNum = typeof beast.cr === "string" ? parseFloat(beast.cr) : beast.cr
     return {
       ac: beast.ac ?? null,
