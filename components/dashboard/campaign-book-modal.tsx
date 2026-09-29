@@ -15,7 +15,7 @@ const sectionCopy: Record<CampaignBookSection, { title: string; subtitle: string
   },
   quests: {
     title: "Quest Ledger",
-    subtitle: "Accepted and completed missions",
+    subtitle: "Kept in the pages of the journal",
     empty: "No accepted or completed quests are recorded for this character.",
   },
   maps: {
@@ -25,7 +25,7 @@ const sectionCopy: Record<CampaignBookSection, { title: string; subtitle: string
   },
   lore: {
     title: "Recovered Lore",
-    subtitle: "Knowledge earned through successful checks",
+    subtitle: "Kept in the pages of the journal",
     empty: "No lore has been unlocked by a successful Arcana or History check.",
   },
 }
@@ -33,7 +33,14 @@ const sectionCopy: Record<CampaignBookSection, { title: string; subtitle: string
 export function CampaignBookModal({ section, inventory, characterId = null, onClose }: { section: CampaignBookSection; inventory: InventoryItem[]; characterId?: string | null; onClose: () => void }) {
   const copy = sectionCopy[section]
   const journals = inventory.filter((item) => /journal|diary|notebook/i.test(item.name))
-  const journalLocked = section === "journal" && journals.length === 0
+  // Quests and Lore are not separate ledgers — they are the same journal,
+  // opened at a different tab (Sam, 2026-09-29). Which means they are locked
+  // behind the same physical book: lose it and you lose the quest log with
+  // it. That is the design, not a side effect.
+  const bookSections: CampaignBookSection[] = ["journal", "quests", "lore"]
+  const isBook = bookSections.includes(section)
+  const journalLocked = isBook && journals.length === 0
+  const openAt = section === "quests" ? "quests" : section === "lore" ? "lore" : "pages"
   const Icon = section === "maps" ? Map : section === "lore" || section === "quests" ? ScrollText : BookOpen
 
   // Maps is the one section with something real to show, and a parchment book
@@ -65,11 +72,11 @@ export function CampaignBookModal({ section, inventory, characterId = null, onCl
             <div className="mx-auto max-w-sm text-center text-[#4e3422]">
               <LockKeyhole className="mx-auto h-9 w-9" />
               <h3 className="mt-3 font-serif text-xl">Journal not in inventory</h3>
-              <p className="mt-3 text-sm leading-relaxed">Personal pages can only be opened by the character carrying their physical journal. A character may possess no more than two journals.</p>
+              <p className="mt-3 text-sm leading-relaxed">Quests, lore and personal pages all live in the one physical book. They can only be opened by the character carrying it. A character may possess no more than two journals.</p>
             </div>
-          ) : section === "journal" ? (
+          ) : isBook ? (
             <div className="mx-auto flex h-[calc(100%-220px)] max-w-md flex-col px-2">
-              <JournalPages characterId={characterId} />
+              <JournalPages characterId={characterId} initialSection={openAt} />
               <p className="mt-2 text-center text-[10px] uppercase tracking-wider text-[#83582e]">Carried: {journals.map((journal) => journal.name).join(", ")}</p>
             </div>
           ) : (
@@ -81,9 +88,7 @@ export function CampaignBookModal({ section, inventory, characterId = null, onCl
         <div className="aop-book-page aop-book-page-right">
           <h3 className="mt-8 border-b border-[#92704a]/45 pb-3 text-center font-serif text-xl text-[#4b2d19]">Campaign Record</h3>
           <div className="mt-7 space-y-5 font-serif text-[#583a25]">
-            {section === "quests" && <><BookLine label="Active missions" value="None recorded" /><BookLine label="Completed missions" value="None recorded" /></>}
-            {section === "lore" && <><BookLine label="Arcana discoveries" value="None recorded" /><BookLine label="Historical discoveries" value="None recorded" /></>}
-            {section === "journal" && <><BookLine label="Owned journals" value={String(journals.length)} /><BookLine label="Maximum allowed" value="2" /></>}
+            {isBook && <><BookLine label="Owned journals" value={String(journals.length)} /><BookLine label="Maximum allowed" value="2" /></>}
           </div>
           <p className="absolute bottom-10 left-10 right-10 border-t border-[#92704a]/35 pt-4 text-center text-xs italic leading-relaxed text-[#795a3c]">
             Only campaign state actually recorded for this character appears here. Unknown entries remain hidden.
