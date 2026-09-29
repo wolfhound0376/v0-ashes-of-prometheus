@@ -317,6 +317,21 @@ def main() -> None:
         if coverage(im) > 70:
             print(f"  WARNING {name} keys at >70% — it will render as an opaque plate, not as light.")
 
+    # A SOURCE WITH NO IGNITE HAS NO PLUME, and the failure is silent without
+    # this. The whole split rests on frame 0 being the ring BEFORE the fire:
+    # a source that simply loops — steady mean luminance, only a shimmer
+    # between frames — leaves `frame - frame0` as noise, so the plume bakes
+    # near-empty and the flame ramp is quantised from dither speckle rather
+    # than from any real fire. Both sheets still write, the manifest still
+    # looks right, and nothing shows up until someone casts the spell.
+    if coverage(plume) < 3.0:
+        print(f"  ERROR the plume is empty ({coverage(plume):.1f}% coverage).")
+        print("        This source never ignites — its frames differ only by a shimmer, so")
+        print("        there is no fire to separate from the ring. The ring above is fine.")
+        print("        Bake the ring from this source and take the plume from art that has")
+        print("        one, or give the school a plume of its own; SigilArt requires both.")
+        raise SystemExit(2)
+
     if a.dry_run:
         print("  dry run — nothing written")
         return
