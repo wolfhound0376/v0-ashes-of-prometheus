@@ -789,7 +789,7 @@ export const CACHE_COUNT = 7
  * Encounters roll. Caught out when the oil runs dry, the explorer stumbles
  * back and takes a level of exhaustion (SRD). All PROPOSED.
  */
-export const LANTERN_WORLD_SECONDS = 300
+export const LANTERN_WORLD_SECONDS = 240 // Sam, 9/29: "drops a little faster" (was 300) — PROPOSED
 export const HOUR_SECONDS = 60
 export function lostInTheDark(name: string): { exhaustion: 1; note: string; flag: string } {
   return { exhaustion: 1, note: `${name}'s lantern dies far from the fire. Feeling along cold rock for hours, ${name} stumbles back at last — one level of Exhaustion.`, flag: "Lost in the dark costs one level of Exhaustion (SRD condition) — PROPOSED" }
@@ -1033,4 +1033,47 @@ export function fieldFoe(row: { name: string; ac?: number | null; hp?: number | 
   if (!strikes.length) return null
   const sp = String(row.speed ?? "30 ft.")
   return { name: row.name, ac: row.ac, hp: row.hp, speedFt: Number(/(\d+)\s*ft/.exec(sp)?.[1] ?? 30), fly: /\bfly\b/i.test(sp), strikes, chainIfHit, flags: [...new Set(flags)] }
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// Light (Sam, 9/29): "to forage, hunt or explore you need oil or a light source in your party". Catalog slugs only —
+// the hooded lantern, a flask of lamp oil, or a torchstalk (OotA p.28: burns a day, but 1 in 6 goes off when lit).
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface LightCheck { ok: boolean; source: "lantern" | "oil" | "torchstalk" | null; name: string; note: string }
+
+export function lightFor(packs: readonly Record<string, number>[]): LightCheck {
+  const has = (slug: string) => packs.some((p) => (p[slug] ?? 0) > 0)
+  if (has("hooded-lantern") && has("lamp-oil")) return { ok: true, source: "lantern", name: "Hooded lantern", note: "A hooded lantern and oil to burn in it." }
+  if (has("lamp-oil")) return { ok: true, source: "oil", name: "Flask of lamp oil", note: "Lamp oil and a rag wick — enough light to go out by." }
+  if (has("hooded-lantern")) return { ok: false, source: null, name: "Hooded lantern", note: "There's a lantern, but no oil to burn in it." }
+  if (has("torchstalk")) return { ok: true, source: "torchstalk", name: "Torchstalk", note: "A torchstalk to light — it burns a full day, if it doesn't go off in your hand (1 in 6)." }
+  return { ok: false, source: null, name: "", note: "No one in the party has oil or anything to light. Nobody goes into the Underdark dark." }
+}
+
+/** OotA p.28: a lit torchstalk explodes on a 1 in 6 — creatures within 10 ft take 3 (1d6) fire damage. */
+export function lightTorchstalk(rng: Rng): { exploded: boolean; damage: number; note: string } {
+  if (d(6, rng) !== 1) return { exploded: false, damage: 0, note: "The torchstalk catches and burns steady." }
+  const damage = d(6, rng)
+  return { exploded: true, damage, note: `The torchstalk goes off in a burst of sparks — ${damage} fire damage.` }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Morale (Sam, 9/29: "sometimes attacking creatures frightens them and they run"). The DMG's optional morale rule:
+// a creature that is hit hard — bloodied (at half its HP or less) or crit — makes a DC 10 Wisdom save or flees.
+// Any other hit has a small flat chance to break its nerve (PROPOSED 10%). Mindless things (oozes) never flee.
+// ---------------------------------------------------------------------------------------------------------------
+
+export const MORALE_DC = 10
+export const MORALE_FLAT = 0.1
+
+export function moraleBreaks(o: { hp: number; max: number; crit?: boolean; wisMod?: number; mindless?: boolean; alreadyTested?: boolean }, rng: Rng): { flees: boolean; note: string } {
+  if (o.mindless || o.hp <= 0) return { flees: false, note: "" }
+  const bloodied = o.hp <= o.max / 2
+  if ((bloodied && !o.alreadyTested) || o.crit) {
+    const save = d(20, rng) + (o.wisMod ?? 0)
+    return save < MORALE_DC ? { flees: true, note: `Wisdom save ${save} vs DC ${MORALE_DC} — its nerve breaks and it runs` } : { flees: false, note: `Wisdom save ${save} vs DC ${MORALE_DC} — it holds` }
+  }
+  return rng() < MORALE_FLAT ? { flees: true, note: "the blow spooks it and it bolts" } : { flees: false, note: "" }
 }
