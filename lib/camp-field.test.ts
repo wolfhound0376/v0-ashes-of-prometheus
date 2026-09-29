@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
+  T, passable, slowFactor, tileAt, buildExploreWorld, CACHE_COUNT, lostInTheDark,
+  lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
 } from "./camp-field"
@@ -164,5 +166,92 @@ describe("explore", () => {
   it("every third new room rolls for encounters", () => {
     expect([1, 2, 3, 4, 5, 6].map(exploreEncounterDue)).toEqual([false, false, true, false, false, true])
     expect(rollCount("2d6", frac(0.34, 0.5))).toBe(7)
+  })
+})
+
+describe("the zelda layer", () => {
+  it("reads dice from bestiary text and sheet rows", () => {
+    expect(parseDice("1d4+3")).toEqual({ n: 1, d: 4, mod: 3 })
+    expect(parseDice("1d6-1")).toEqual({ n: 1, d: 6, mod: -1 })
+    expect(parseDice("2")).toEqual({ n: 0, d: 0, mod: 2 })
+    // Real rows, 2026-09-28
+    expect(strikerFromBestiary({ name: "Giant Rat", actions: [{ desc: "Hit: 4 (1d4+2) piercing.", name: "Bite", to_hit: "+4" }] })).toEqual({ name: "Giant Rat — Bite", toHit: 4, damage: "1d4+2" })
+    expect(strikerFromBestiary({ name: "Deep Rothé", actions: [] })).toBeNull()
+    expect(strikerFromSheet({ name: "Dagger", hit: "+5", damage: "1d4+3 piercing" })).toEqual({ name: "Dagger", toHit: 5, damage: "1d4+3" })
+  })
+  it("attack rolls follow the SRD: 20 crits and doubles dice, 1 misses", () => {
+    const dagger = { name: "Dagger", toHit: 5, damage: "1d4+3" }
+    const crit = rollAttack(dagger, 30, frac(0.99, 0.99, 0.99))
+    expect(crit.crit && crit.hit).toBe(true)
+    expect(crit.damage).toBe(4 + 4 + 3)
+    expect(rollAttack(dagger, 2, frac(0.001)).hit).toBe(false)
+    const plain = rollAttack(dagger, 12, frac(0.35, 0.5))
+    expect(plain.total).toBe(8 + 5)
+    expect(plain.damage).toBe(3 + 3)
+  })
+  it("rooms keep their vermin; camp has none", () => {
+    expect(roomRoamers("2,1", "tunnels", false)).toEqual(roomRoamers("2,1", "tunnels", false))
+    expect(roomRoamers("2,1", "tunnels", true)).toEqual([])
+  })
+  it("the lair is the room farthest from camp", () => {
+    const m = buildExploreMap("wp-17", ROWS)
+    const lair = lairRoom(m)
+    expect(`${lair.x},${lair.y}`).not.toBe(`${m.camp.x},${m.camp.y}`)
+    const occ = lairOccupant(ROWS, seq(12, 2))
+    expect(occ?.bestiary).toBe("Orog")
+  })
+  it("a lair search rolls the discovery table with advantage", () => {
+    const f = searchRoom({ who: "Kenta", total: 18, catalog: CATALOG, discoveryRows: ROWS, rng: seq(3, 11, 1), advantage: true })
+    expect(f.face).toBe(11)
+    expect(f.flags.some((x) => /Advantage/.test(x))).toBe(true)
+  })
+})
+
+describe("the overworld", () => {
+  const W = buildExploreWorld("wp-17", ROWS)
+  const reach = () => {
+    const seen = new Set<string>([`${W.camp.x},${W.camp.y}`]), q = [W.camp]
+    while (q.length) { const c = q.shift()!; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = c.x + dx, y = c.y + dy; if (!passable(tileAt(W, x, y)) || seen.has(`${x},${y}`)) continue; seen.add(`${x},${y}`); q.push({ x, y }) } }
+    return seen
+  }
+  it("is big: 8×6 screens of 15×9", () => {
+    expect(W.cols).toBe(121)
+    expect(W.rows).toBe(55)
+  })
+  it("same seed, same world", () => {
+    expect(buildExploreWorld("wp-17", ROWS).grid.join("")).toBe(W.grid.join(""))
+  })
+  it("every searchable spot and the lair can be walked to from camp", () => {
+    const seen = reach()
+    for (const p of W.pois) expect(seen.has(`${p.x},${p.y}`)).toBe(true)
+    // and no ground is shown that cannot be reached
+    // Unreachable ground only ever shows as a far bank you can see across the water or the chasm.
+    for (let i = 0; i < W.grid.length; i++) if (passable(W.grid[i]) && !seen.has(`${i % W.cols},${Math.floor(i / W.cols)}`)) {
+      const x = i % W.cols, y = Math.floor(i / W.cols); let wet = false
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tileAt(W, x + dx, y + dy); if (t === T.DEEP || t === T.CHASM) wet = true }
+      expect(wet).toBe(true)
+    }
+  })
+  it("has rivers you cannot wade except at fords, and a chasm with bridges", () => {
+    const n = (t: number) => W.grid.filter((x) => x === t).length
+    expect(n(T.DEEP)).toBeGreaterThan(50)
+    expect(n(T.FORD)).toBeGreaterThan(0)
+    expect(n(T.CHASM)).toBeGreaterThan(20)
+    expect(n(T.BRIDGE)).toBeGreaterThan(0)
+    expect(passable(T.DEEP)).toBe(false)
+    expect(slowFactor(T.FORD)).toBeLessThan(1)
+  })
+  it("rock never touches water or the chasm", () => {
+    for (let y = 1; y < W.rows - 1; y++) for (let x = 1; x < W.cols - 1; x++) {
+      const t = tileAt(W, x, y); if (t !== T.DEEP && t !== T.FORD && t !== T.CHASM && t !== T.BRIDGE) continue
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) expect(tileAt(W, x + dx, y + dy)).not.toBe(T.WALL)
+    }
+  })
+  it("few places are worth searching, and they are spread out", () => {
+    expect(W.pois.filter((p) => p.kind === "cache").length).toBeLessThanOrEqual(CACHE_COUNT)
+    expect(W.pois.filter((p) => p.kind === "lair")).toHaveLength(1)
+  })
+  it("the lantern running out costs a level of exhaustion", () => {
+    expect(lostInTheDark("Fifi").exhaustion).toBe(1)
   })
 })
