@@ -27,6 +27,8 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxIce        64x64  4f loop   rime left on the floor after a frost hit, drawn flat
   pxGlow       64x64  8f loop   healing luminescence around a target, motes rising
   pxSwirl      48x48  8f loop   the dizzy spiral over a mocked head, violet and blue
+  pxPlumeMotes 48x96  8f loop   embers rising through a target sigil's plume, white
+  pxSigilBurst 96x96  6f        fighting-game hit spark for the frame a spell takes, white
   pxFlame      32x48  8f loop   a tongue of fire riding a burning creature
   pxArc        24x24  6f        a lightning crackle around a charged creature
   pxWebWrap    48x64  1f        strands wrapped around a webbed creature
@@ -422,6 +424,174 @@ def glow(f, n):
     return cell
 
 
+def sigilburst(f, n):
+    """A fighting-game hit spark, for the frame a save-based spell TAKES.
+
+    Sam, 2026-09-28: "the sprites should look like the explosions from Street
+    Fighter." Original art in that idiom, drawn here from scratch like every
+    other sheet in this file — no traced or copied frames.
+
+    What actually makes a 2D fighter's spark read, and what this reproduces:
+
+      MASS, NOT LINES.  The spikes are a STAR BOUNDARY — the radius is a
+                        function of the angle and everything inside it is
+                        filled — so each spike is a solid wedge. Rays drawn as
+                        lines look like a sparkler; wedges look like an impact.
+      A WHITE-HOT CORE. Tone steps by distance from the centre, hard, never
+                        blended: white core, bright body, dim rim.
+      IT POPS.          Six frames over a quarter second. It is at full size by
+                        frame 2 and spends the rest breaking up, which is the
+                        opposite of a plume's slow bloom.
+      IT HOLLOWS.       The core burns out and the burst becomes a ragged ring
+                        before it fragments, so the eye reads an expanding
+                        shell rather than a shrinking blob.
+
+    Drawn WHITE so the kit tints it with the school's colour, the same as
+    pxFlash, pxRing and pxGlow."""
+    cell = Cell(96, 96)
+    cx = cy = 48
+    W = WHITE
+    p = f / max(1, n - 1)
+
+    # Out fast, then hold: a spark is all in its first third.
+    grow = 1 - (1 - min(1.0, p * 1.75)) ** 3
+    R = 9 + 36 * grow
+
+    # THE SPIKES, fixed for the whole burst so the six frames read as ONE
+    # thing expanding rather than six unrelated stars.
+    #
+    # The first attempt used a smooth |cos(k*a)| boundary and drew a FLOWER:
+    # twelve identical rounded petals, evenly spaced. A hit spark is the
+    # opposite of that — a few NARROW, SHARP, IRREGULARLY placed needles of
+    # very different lengths coming off a small hot body. So the spikes are
+    # explicit and seeded: four dominant ones, five lesser, none of them evenly
+    # spaced and none the same length.
+    spikes = []
+    for k in range(9):
+        jitter = (vnoise(k * 2.7, 0.4, 61) - 0.5) * 0.85
+        ang = k * (2 * math.pi / 9) + jitter
+        big = k % 2 == 0
+        ln = (0.80 + 0.20 * vnoise(k * 1.3, 1.9, 23)) if big else \
+             (0.38 + 0.22 * vnoise(k * 3.1, 2.7, 37))
+        wd = (0.20 + 0.09 * vnoise(k * 0.9, 3.3, 43)) if big else \
+             (0.11 + 0.06 * vnoise(k * 1.7, 4.1, 47))
+        spikes.append((ang, ln, wd))
+
+    BODY = 0.26          # the solid hot centre every spike grows out of
+
+    def bound(a):
+        b = R * BODY
+        for sa, sl, sw in spikes:
+            da = abs(((a - sa + math.pi) % (2 * math.pi)) - math.pi)
+            if da < sw:
+                # Full length at the spike's own angle, tapering hard to the
+                # body at its edges. The exponent is what makes it a needle
+                # rather than a petal.
+                t = (1 - da / sw) ** 1.7
+                b = max(b, R * (BODY + (sl - BODY) * t))
+        return b
+
+    # The core burns out from frame 3, leaving a shell.
+    inner = 0.0 if f < 3 else R * (0.30 + 0.26 * (f - 3))
+
+    for y in range(96):
+        for x in range(96):
+            dx, dy = x - cx, y - cy
+            d = math.hypot(dx, dy)
+            if d > R * 1.25:
+                continue
+            b = bound(math.atan2(dy, dx))
+            if d > b or d < inner:
+                continue
+            h = 1 - d / max(1e-6, b)          # 1 at the centre, 0 at the tip
+            # Hard steps. The late frames lose the white core entirely.
+            if f >= 4:
+                c = W[2] if h > 0.45 else W[1]
+            elif f == 3:
+                c = W[3] if h > 0.55 else W[2] if h > 0.2 else W[1]
+            else:
+                c = W[4] if h > 0.62 else W[3] if h > 0.36 else W[2] if h > 0.12 else W[1]
+            cell.put(x, y, c)
+
+    # Fragments thrown clear of the shell on the last two frames — the bits
+    # that keep going after the spark itself is spent.
+    if f >= 3:
+        for k in range(14):
+            a = k * math.pi / 7 + 0.31
+            fr = R * (1.02 + 0.20 * vnoise(k * 1.7, 2.0, 55)) + (f - 3) * 7
+            fx, fy = cx + math.cos(a) * fr, cy + math.sin(a) * fr
+            col = W[3] if f == 3 else W[1]
+            cell.put(fx, fy, col)
+            if k % 2 == 0:
+                cell.put(fx + (1 if math.cos(a) > 0 else -1), fy, W[1])
+    return cell
+
+
+def plumemotes(f, n):
+    """Embers rising through a target sigil's plume.
+
+    Sam, 2026-09-28: "add pixels to enhance the plumes." The sigil sheets are
+    painted art; everything else the kit draws is pixel art, and the plume was
+    the one place the two met with nothing to bridge them. These are drawn the
+    way the rest of public/vfx/px* are drawn — hard alpha, a white tone ramp,
+    seeded so a re-run is byte-identical — and the renderer tints them with the
+    school's own colour, so one sheet serves every sigil.
+
+    The cell is 1:2 to match the plume quad it rides, and the motes rise
+    through the WHOLE height and die at the top rather than looping mid-air:
+    the plume is a one-shot, so a mote that wraps would be the only thing on
+    screen admitting the effect is a loop."""
+    cell = Cell(48, 96)
+    ph = f / n
+    # Two ranks so the column reads as having depth: the far rank is dimmer,
+    # smaller and slower, the near rank brighter, larger and faster.
+    #
+    # The first pass used 16 single pixels and read as dust rather than fire —
+    # at the size this rides on the board a one-pixel mote is invisible. These
+    # are short vertical EMBERS, two to four pixels tall, which is what makes a
+    # rising column read as rising.
+    for rank, (count, speed, dim, spread) in enumerate(
+            ((16, 0.70, True, 18), (13, 1.0, False, 13))):
+        for k in range(count):
+            mp = (ph * speed + k / count + rank * 0.37) % 1
+            my = 96 - mp * 104          # from below the base to off the top
+            wob = math.sin(mp * 3.4 + k * 1.9 + rank) * spread * (0.30 + 0.70 * mp)
+            mx = 24 + wob
+            # Fades in fast, dies over the top third.
+            life = 1.0 if mp < 0.55 else max(0.0, (1 - mp) / 0.45)
+            if life <= 0.05:
+                continue
+            hot  = WHITE[2] if dim else WHITE[4]
+            warm = WHITE[1] if dim else WHITE[3]
+            cool = WHITE[0] if dim else WHITE[1]
+            # An ember is a short vertical bar: bright head, warm body, cool
+            # tail. Taller on the near rank and taller again low down, where
+            # it is moving fastest out of the ring.
+            tall = (3 if dim else 4) + (1 if mp < 0.35 else 0)
+            for i in range(tall):
+                c = hot if i == 0 else warm if i < tall - 1 else cool
+                cell.put(mx, my + i, c if life > 0.45 else cool)
+            if not dim:
+                # A second column of pixels on the brightest few, so the near
+                # rank has embers with actual body rather than hairlines.
+                if k % 3 == 0 and life > 0.55:
+                    for i in range(max(1, tall - 1)):
+                        cell.put(mx + 1, my + i, warm if i == 0 else cool)
+                if k % 5 == 2 and life > 0.7:
+                    cell.put(mx - 1, my, warm)
+    # Sparks near the base, so the foot of the plume is alive while the embers
+    # are high in the cell.
+    for k in range(10):
+        sp = (ph * 2 + k / 10) % 1
+        if sp > 0.6:
+            continue
+        sx = 24 + int(math.sin(k * 2.7) * 16)
+        sy = 90 - int(abs(math.cos(k * 1.3)) * 14)
+        cell.put(sx, sy, WHITE[4] if sp < 0.2 else WHITE[2])
+        cell.put(sx, sy + 1, WHITE[1])
+    return cell
+
+
 def swirl(f, n):
     """The dizzy spiral over a mocked head — the reference has a violet and
     blue whorl with sparks in it. Two arms, turning, drawn flat in its own
@@ -573,6 +743,8 @@ SHEETS = [
     ("pxIce",      ice,       4, 4, 6,  True),
     ("pxGlow",     glow,      8, 4, 10, True),
     ("pxSwirl",    swirl,     8, 4, 12, True),
+    ("pxPlumeMotes", plumemotes, 8, 4, 12, True),
+    ("pxSigilBurst", sigilburst, 6, 6, 20, False),
     ("pxFlame",    flame,     8, 4, 12, True),
     ("pxArc",      arc,       6, 6, 12, True),
     ("pxWebWrap",  webwrap,   1, 1, 1,  False),

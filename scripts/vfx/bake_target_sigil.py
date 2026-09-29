@@ -32,11 +32,25 @@ ALPHA is keyed from luminance, as everywhere else in public/vfx: the sources
 are drawn on black, the sheets draw additively, and a hard black fill would
 otherwise sit on the board as an opaque plate occluding the squares under it.
 
-GEOMETRY is left alone. Sam's sigil is a 2.04:1 ellipse because it is drawn
-with the board's own 2:1 dimetric foreshortening already in it, so it is
-BILLBOARDED at the target rather than laid flat — laying it on the ground
-plane would foreshorten it a second time into a 4:1 smear. Nothing here
-squares it up.
+TWO LAYERS, because the ring has to turn (Sam, 2026-09-28): "the ring should
+stay horizontal and the magic should radiate and permeate while the ring
+rotates clockwise." A billboarded quad cannot rotate about the vertical axis —
+turn it and the whole plate visibly tips over — so the ring must be a real
+horizontal plane, and the rising plume cannot share that plane or it would be
+painted onto the floor. The source is therefore split along the ring band:
+
+  <key>Ring    the sigil circle, UN-SQUASHED. Sam drew it as a 2.04:1 ellipse
+              because that is what the board's dimetric camera does to a
+              circle; laid flat as drawn the camera would squash it again into
+              roughly 4:1. Stretched back here, the camera restores exactly
+              the ellipse he drew — and it can now spin without wobbling.
+  <key>Plume   the rising energy, left alone and billboarded upright.
+
+MASK SHAPE IS LOAD-BEARING. The vertical masks must be (H, 1, 1), never
+(H, 1): numpy aligns trailing axes, so an (H, 1) mask multiplied into an
+(H, W, 3) frame is applied across COLUMNS and wipes the left half of every
+frame instead of banding it by row. That bug shipped a half-ring through two
+rebakes before a column-profile measurement caught it.
 """
 from __future__ import annotations
 import argparse, json
