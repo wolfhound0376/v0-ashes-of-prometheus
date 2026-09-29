@@ -114,7 +114,19 @@ def flame_palette(frames: list[np.ndarray], clean: np.ndarray, colors: int) -> n
         if m.any():
             lit.append(d[m])
     if not lit:
-        raise SystemExit("no flame pixels found — is frame 0 really the clean ring?")
+        # No ignite to diff — a still image, or a loop that only shimmers. The
+        # ramp is still wanted downstream (burst sparks, the whirlwind's lit
+        # edges, --recolor), so take it from the art's OWN warm pixels instead
+        # of failing. Only the plume separation truly needs the ignite, and
+        # that has its own guard further down.
+        base = frames[0]
+        warm = (base[..., 0] > base[..., 2] * 1.1) & (luma(base) > 55)
+        if not warm.any():
+            warm = luma(base) > 55
+        if not warm.any():
+            raise SystemExit("nothing lit enough to sample a palette from")
+        lit = [base[warm]]
+        print("  palette        no ignite to diff — sampled from the art's own colours")
     px = np.concatenate(lit, 0)
     rng = np.random.default_rng(7)          # deterministic: same art, same ramp
     px = px[rng.choice(len(px), size=min(200_000, len(px)), replace=False)]
@@ -130,13 +142,28 @@ def key_alpha(rgb: np.ndarray, floor: float, gain: float) -> np.ndarray:
 
 
 def bake_ring(clean: np.ndarray, top: int, centre: int, ratio: float, cell: int,
-              floor: float, gain: float) -> Image.Image:
-    """The painted ring, flame-free, stretched back into a true circle."""
-    im = Image.fromarray(np.dstack([clean.astype(np.uint8), key_alpha(clean, floor, gain)]), "RGBA")
+              floor: float, gain: float, alpha: np.ndarray | None = None) -> Image.Image:
+    """
+    The painted ring, flame-free, stretched back into a true circle.
+
+    `alpha` preserves a source's OWN transparency. Keying from luminance is
+    right for art drawn on black, and wrong for a cut-out PNG: the dark parts
+    of the artwork are opaque there, and re-keying them punches holes through
+    the piece.
+    """
+    a8 = clean.astype(np.uint8)
+    al = alpha if alpha is not None else key_alpha(clean, floor, gain)
+    im = Image.fromarray(np.dstack([a8, al.astype(np.uint8)]), "RGBA")
     half = centre - top + 40
     band = im.crop((0, max(0, centre - half), im.width, min(im.height, centre + half)))
-    circle = band.resize((band.width, int(round(band.height * ratio))), Image.LANCZOS)
-    return circle.resize((cell, cell), Image.LANCZOS)
+    # PIXEL ART UPSCALES WITH NEAREST. A 128px sigil into a 224px cell is an
+    # upscale, and Lanczos turns hand-placed pixels into a blur — the same
+    # rule the plume path follows. Painted sources are far larger than the
+    # cell and are being DOWNscaled, where Lanczos is right.
+    up = band.width < cell
+    flt = Image.NEAREST if up else Image.LANCZOS
+    circle = band.resize((band.width, int(round(band.height * ratio))), flt)
+    return circle.resize((cell, cell), flt)
 
 
 def glow_ring(ring: Image.Image, count: int, cols: int, lift: float) -> Image.Image:
@@ -473,7 +500,8 @@ def whirlwind(pal: np.ndarray, cw: int, ch: int, px: int, cols: int, count: int,
 
 
 def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
-                   count: int, recolor: bool) -> Image.Image:
+                   count: int, recolor: bool, sink: float = 0.0,
+                   scale: float = 1.0) -> Image.Image:
     """
     Use a ready-made pixel animation as the plume, instead of drawing one.
 
@@ -503,6 +531,18 @@ def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
         im.seek(i)
         src_frames.append(np.asarray(im.convert("RGBA")).astype(np.float32))
 
+    # KEY IT IF IT DOES NOT CARRY ITS OWN ALPHA. Pixel art arrives both ways:
+    # the whirlwind was a cut-out, this one is drawn on black inside a P-mode
+    # GIF, where convert("RGBA") hands back alpha 255 everywhere. Composited
+    # as-is that is a black rectangle standing on the board.
+    opaque = float((src_frames[0][..., 3] > 250).mean())
+    if opaque > 0.98:
+        for f in src_frames:
+            l = luma(f[..., :3])
+            # Hard alpha at a low floor: pixel art has no soft fringe, and the
+            # darkest lines of the art are still meant to be drawn.
+            f[..., 3] = np.where(l > 18, 255, 0)
+
     if recolor:
         lo, hi = pal[0], pal[-1]
         out = []
@@ -525,12 +565,31 @@ def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
     for i in range(count):
         f = src_frames[int(i * len(src_frames) / count)]      # held, never blended
         quad = Image.fromarray(f.clip(0, 255).astype(np.uint8), "RGBA")
-        # Fit the art into the cell without stretching it out of proportion.
-        scale = min(cw / quad.width, ch / quad.height)
-        w, h = max(1, int(quad.width * scale)), max(1, int(quad.height * scale))
+        # Fit the art into the cell without stretching it out of proportion,
+        # then shrink it by `scale`.
+        #
+        # HEIGHT IS SET HERE, NOT IN THE RENDERER. The plume quad is
+        # FLAME_W 2.4 x FLAME_H 4.8 against a RING of 2.6 — nearly twice the
+        # ring's diameter in height — and those constants are shared by every
+        # school. Art that fills its cell therefore towers over its own ring
+        # (Sam, 2026-09-29: "the plume is way too high"). Filling less of the
+        # cell shortens this school's plume without touching the schools whose
+        # proportions are already right.
+        fit = min(cw / quad.width, ch / quad.height) * max(0.05, scale)
+        w, h = max(1, int(quad.width * fit)), max(1, int(quad.height * fit))
         quad = quad.resize((w, h), Image.NEAREST)
         cellim = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        cellim.alpha_composite(quad, ((cw - w) // 2, ch - h))  # base-flush
+        # SINK. The renderer sets the quad's bottom edge on the floor plane,
+        # which on a flat ellipse is its CENTRELINE — so art that is flush to
+        # the bottom of its cell appears to erupt on top of the ring rather
+        # than out of it (Sam, 2026-09-29: "the plume is too high, it should
+        # start from a more inferior position").
+        #
+        # Pushing the art down inside the cell moves its roots below that line
+        # and clips whatever falls off the bottom. For art that carries its own
+        # base that is two fixes at once: the effect sits into the ring, and
+        # the duplicated base stops stacking on top of the real one.
+        cellim.alpha_composite(quad, ((cw - w) // 2, ch - h + int(ch * sink)))
         sheet.paste(cellim, ((i % cols) * cw, (i // cols) * ch))
     return sheet
 
@@ -573,25 +632,46 @@ def main() -> None:
     ap.add_argument("--rocks", type=int, default=62)
     ap.add_argument("--plume-art", type=Path, default=None,
                     help="ready-made pixel animation to use as the plume")
+    ap.add_argument("--plume-scale", type=float, default=1.0, metavar="0..1",
+                    help="fraction of the cell the art fills; below 1 shortens the plume")
+    ap.add_argument("--plume-sink", type=float, default=0.0, metavar="0..0.3",
+                    help="push the plume's roots below the floor plane, as a fraction of the cell")
     ap.add_argument("--recolor", action="store_true",
                     help="remap the art's wind hue onto the school ramp, leaving stone alone")
     ap.add_argument("--dry-run", action="store_true", help="measure and report, write nothing")
     a = ap.parse_args()
 
     frames = frames_of(a.source)
-    if len(frames) < 4:
-        raise SystemExit(f"{a.source} has {len(frames)} frames; this needs the animated source")
+    if len(frames) < 4 and not (a.plume_art or a.plume_synth):
+        raise SystemExit(f"{a.source} has {len(frames)} frames; separating a plume out of it "
+                         f"needs the animated source, or pass --plume-art / --plume-synth")
     clean = frames[0]
     top, centre, ratio = ring_band(clean)
+    # DRAWN FACE-ON, OR DRAWN IN PERSPECTIVE? Every source so far was an
+    # ellipse between 2.04:1 and 2.49:1, because it was drawn as the board's
+    # camera would see a circle. Art drawn as a true circle, face-on, measures
+    # near 1:1 and must NOT be stretched — the camera supplies the whole
+    # squash. Stretching it anyway makes a circle the board then squashes
+    # twice. Below 1.4 nothing is close enough to a drawn ellipse to be one.
+    flat = ratio < 1.4
+    if flat:
+        ratio = 1.0
     pal = flame_palette(frames, clean, a.colors)
 
     burst = (bake_burst(a.burst, pal, a.burst_cell, a.cols, a.burst_frames, a.sparks, a.seed)
              if a.burst else None)
-    ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
+    # A cut-out PNG carries its own alpha; art drawn on black does not.
+    own_alpha = None
+    if Image.open(a.source).mode in ("RGBA", "LA", "P"):
+        probe = np.asarray(Image.open(a.source).convert("RGBA"))[..., 3]
+        if float((probe < 250).mean()) > 0.02:
+            own_alpha = probe.astype(np.float32)
+    ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain, own_alpha)
     ring_sheet = (glow_ring(ring, a.glow, a.cols, a.chase_lift) if a.glow > 1
                   else ring if a.chase <= 1
                   else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
-    plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor)
+    plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor,
+                            a.plume_sink, a.plume_scale)
              if a.plume_art else
              whirlwind(pal, a.plume_w, a.plume_h, a.px, a.cols, a.frames, a.rocks, a.seed)
              if a.plume_synth == "whirlwind" else
@@ -599,8 +679,11 @@ def main() -> None:
                         a.flame_width))
 
     print(f"  source        {len(frames)} frames, ring band top={top} centre={centre}")
-    print(f"  drawn ellipse {ratio:.2f}:1   (board camera is {BOARD_RATIO:.2f}:1)")
-    if abs(ratio - BOARD_RATIO) > 0.25:
+    if flat:
+        print(f"  drawn FACE-ON (near 1:1) — no un-squash; the camera supplies all of it")
+    else:
+        print(f"  drawn ellipse {ratio:.2f}:1   (board camera is {BOARD_RATIO:.2f}:1)")
+    if not flat and abs(ratio - BOARD_RATIO) > 0.25:
         print(f"  NOTE the art is drawn at a different angle from the board's camera, so the")
         print(f"       ring will read {'rounder' if ratio > BOARD_RATIO else 'flatter'} on the board than in the source.")
     print("  flame ramp    " + " ".join("#%02X%02X%02X" % tuple(int(v) for v in c) for c in pal))
@@ -610,7 +693,12 @@ def main() -> None:
     print(f"  plume         coverage {coverage(plume):4.1f}%   ({a.plume_w // a.px}x{a.plume_h // a.px} px art)")
     if burst is not None:
         print(f"  burst         coverage {coverage(burst):4.1f}%   ({a.burst_frames} frames, {a.sparks} seeded sparks)")
-    for name, im in (("ring", ring_sheet), ("plume", plume)):
+    # The >70% warning is about a luminance KEY that failed to cut anything,
+    # not about coverage as such. Cut-out art carries the artist's own alpha,
+    # and a painted circle lying on the floor is MEANT to be solid — firing
+    # there is a false positive, and a warning that cries wolf gets ignored
+    # the one time it is real.
+    for name, im in ((("ring", ring_sheet),) if own_alpha is None else ()) + (("plume", plume),):
         if coverage(im) > 70:
             print(f"  WARNING {name} keys at >70% — it will render as an opaque plate, not as light.")
 

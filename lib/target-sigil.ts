@@ -80,6 +80,14 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // no second layer hiding in it. Sam asked for "a whirlwind of rocks and
   // wind" instead of fire, which suits the school better anyway: matter
   // lifted and turned rather than burned.
+  // Conjuration has NO RING (Sam, 2026-09-29: "just remove the sigil"). Every
+  // attempt to seat the tentacles on their spiral read as a sticker on the
+  // floor with something pasted over it, whatever the plume sat at — the two
+  // pieces of art never agreed on where the ground was. What arrives simply
+  // arrives, with nothing drawn under it, which is what conjuration is.
+  // The ring sheet stays baked in public/vfx; it is just not referenced.
+  conjuration: { plume: "sigilConjurationPlume",
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.conjuration.glow },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
                  still: true },
@@ -110,7 +118,14 @@ export const DAMAGE_SIGIL: Record<string, SigilArt> = {
  *           outward and through the body.
  */
 export interface SigilArt {
-  ring: string
+  /**
+   * The flat turning circle. OPTIONAL: a school may have none, and then
+   * nothing is drawn on the floor and the plume stands on its own (Sam,
+   * 2026-09-29, of conjuration: "just remove the sigil"). The renderer skips
+   * the load entirely rather than drawing an empty quad, so a ringless school
+   * costs one fetch less, and `peak` is then read off the plume.
+   */
+  ring?: string
   plume: string
   /**
    * Drawn pixel embers rising through the plume. Sam, 2026-09-28: "add pixels

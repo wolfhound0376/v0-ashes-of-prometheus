@@ -108,7 +108,10 @@ export function targetSigilVfx(opts: {
     if (typeof meta.peak === "number" && meta.frames > 0) peakP = meta.peak / meta.frames
   }
 
-  void loadSheet(plan.art.ring).then((sheet) => {
+  // A school may have no ring at all (see SigilArt.ring). Skip the load
+  // rather than drawing an empty quad: `ring` simply stays null and every
+  // block below is already guarded on it.
+  if (plan.art.ring) void loadSheet(plan.art.ring).then((sheet) => {
     if (disposed) return
     readPeak(sheet)
     ring = new Flip(sheet, 0xffffff, RING, RING)
@@ -202,6 +205,9 @@ export function targetSigilVfx(opts: {
           // BASE-FLUSH. The quad is centred geometry, so lifting it by half
           // its SCALED height puts its bottom edge on the floor plane and
           // keeps it there as the fire grows.
+          // BASE-FLUSH: the quad's BOTTOM sits on the floor plane at `at`,
+          // not its centre, so the effect grows upward out of the ground
+          // however it is scaled.
           plume.mesh.position.set(at.x, at.y + (FLAME_H * sy) / 2, at.z)
           plume.setProgress(pose.frame)
           plume.opacity = lit
@@ -218,7 +224,9 @@ export function targetSigilVfx(opts: {
           const sx = pose.radiate
           const sy = 1 + (pose.radiate - 1) * 0.45
           motes.mesh.scale.set(sx, sy, 1)
-          motes.mesh.position.set(at.x, at.y + (FLAME_H * sy) / 2, at.z)
+          // The embers ride the plume, so they take the same drop.
+          motes.mesh.position.set(
+            at.x, at.y + (FLAME_H * sy) / 2, at.z)
           // Driven by the CLOCK rather than by the sigil's progress: the motes
           // loop at their own drawn rate while the one-shot plume plays
           // through once beneath them.

@@ -54,14 +54,15 @@ describe("targetSigilFor", () => {
     // Updated when enchantment landed, and again when EVOCATION landed: this
     // has now named enchantment and then evocation as the negative case, and
     // each time the school got art the test had to move on. A school with art
-    // registered must draw; only the three still without it stay silent —
-    // abjuration, conjuration and divination. Transmutation joined the list
-    // with art when its ring was baked and its plume drawn.
-    expect(targetSigilFor({ resolve: "save", school: "conjuration", damage: "radiant" })).toBeNull()
+    // registered must draw; only abjuration and divination stay silent now.
+    // This test has moved every time a school got art — enchantment, then
+    // evocation, then transmutation, now conjuration — which is the point of
+    // it: the list is not allowed to drift without someone noticing.
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: "radiant" })).toBeNull()
     expect(targetSigilFor({ resolve: "save", school: "divination", damage: "radiant" })).toBeNull()
-    // and the five that DO have art must not be silent
-    for (const s of ["necromancy", "enchantment", "illusion", "evocation", "transmutation"] as const) {
+    // and the six that DO have art must not be silent
+    for (const s of ["necromancy", "enchantment", "illusion", "evocation", "transmutation",
+                     "conjuration"] as const) {
       expect(targetSigilFor({ resolve: "save", school: s, damage: "radiant" }), s).not.toBeNull()
     }
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
@@ -77,6 +78,24 @@ describe("targetSigilFor", () => {
     // mote art — only a tint.
     const tints = Object.values(SCHOOL_SIGIL).map((a) => a?.tint)
     expect(new Set(tints).size).toBe(tints.length)
+  })
+
+  it("lets a school have NO ring, and conjuration is the one that does", () => {
+    // Sam, 2026-09-29: "just remove the sigil". The tentacles stand on their
+    // own with nothing drawn on the floor under them. Every other registered
+    // school still has a ring — this is a deliberate exception, not the
+    // beginning of a drift, so the negative half is asserted too.
+    expect(SCHOOL_SIGIL.conjuration?.ring).toBeUndefined()
+    expect(SCHOOL_SIGIL.conjuration?.plume).toBe("sigilConjurationPlume")
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      if (school === "conjuration") continue
+      expect(art?.ring, school).toBeTruthy()
+    }
+    // Whatever it has or lacks, EVERY sigil has a plume: that is the layer
+    // the effect actually reads from.
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      expect(art?.plume, school).toBeTruthy()
+    }
   })
 
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
@@ -366,7 +385,7 @@ describe("a still sigil — transmutation's ring does not turn", () => {
 
   it("is registered still, and the turning schools are not", () => {
     expect(SCHOOL_SIGIL.transmutation?.still).toBe(true)
-    for (const s of ["necromancy", "enchantment", "illusion", "evocation"] as const) {
+    for (const s of ["necromancy", "enchantment", "illusion", "evocation", "conjuration"] as const) {
       expect(SCHOOL_SIGIL[s]?.still, s).toBeFalsy()
     }
   })
