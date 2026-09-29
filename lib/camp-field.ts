@@ -1139,3 +1139,85 @@ export function wildForage(o: { conMod: number; biome: FieldBiome; catalog?: Rea
   const effect = (["confused", "poisoned", "frightened", "blinded"] as const)[d(4, rng) - 1]
   return { found: null, save, effect, note: `Constitution save ${save} vs DC ${WILD_SAVE_DC} — failed: ${WILD_EFFECTS[effect].text}.` }
 }
+
+// ============================================================================
+// CARCASSES — what a kill leaves behind (Sam, 2026-09-29)
+// ============================================================================
+// "When a monster falls a corpse with arrow or blood should be on the ground. You then can forage to see if any
+// meat or rations can be salvaged. This should be a hard roll… Having nature/wilderness skills should help.
+// After harvesting, only bones are left. If you don't forage their bodies within a little time their bodies become
+// bones. Between bones and bodies there's a stage when flies are around the meat… likely to get spoiled meat…
+// which may poison you." Neither the SRD nor the DMG has a butchering rule; every number here is PROPOSED.
+
+export type CarcassStage = "fresh" | "flies" | "bones"
+
+/** Field seconds (the lantern clock) a body stays fresh, and when it is only bones. PROPOSED. */
+export const CARCASS_FRESH_SECONDS = 45
+export const CARCASS_BONES_SECONDS = 120
+
+export function carcassStage(ageSeconds: number, harvested = false): CarcassStage {
+  if (harvested || ageSeconds >= CARCASS_BONES_SECONDS) return "bones"
+  return ageSeconds >= CARCASS_FRESH_SECONDS ? "flies" : "fresh"
+}
+
+/** Days of food a clean butchering gives, by the creature's size. PROPOSED. */
+export const MEAT_BY_SIZE: Readonly<Record<string, number>> = { Tiny: 0, Small: 1, Medium: 1, Large: 2, Huge: 4, Gargantuan: 8 }
+
+/** Creature types nobody eats: nothing to salvage but bones. Humanoids included — the party does not butcher people. */
+export const INEDIBLE_TYPES = ["ooze", "undead", "construct", "elemental", "fiend", "celestial", "humanoid", "plant"] as const
+
+/** A hard roll (Sam). Stranger flesh — monstrosities and aberrations — is harder still. PROPOSED. */
+export const BUTCHER_DC = 17
+export const BUTCHER_STRANGE_DC = 19
+/** On a fly-blown body any meat is probably spoiled; spoiled meat calls for a Con save or poisoned. PROPOSED. */
+export const SPOILED_CHANCE = 0.6
+export const SPOILED_SAVE_DC = 10
+
+export function isEdible(creatureType: string | null | undefined): boolean {
+  const t = (creatureType || "").toLowerCase()
+  return !INEDIBLE_TYPES.some((x) => t.startsWith(x))
+}
+
+export interface ButcherResult {
+  stage: CarcassStage
+  /** "survival" or "nature" — whichever the character is better at. */
+  skill: "survival" | "nature" | null
+  check: { rolls: number[]; bonus: number; total: number; dc: number; success: boolean } | null
+  food: number
+  spoiled: boolean
+  poisonSave: { roll: number; total: number; dc: number; success: boolean } | null
+  poisoned: boolean
+  note: string
+}
+
+/**
+ * Butcher a carcass. The roll is Wisdom (Survival) or Intelligence (Nature), whichever bonus is higher, so training
+ * and expertise count. A fresh body gives meat by size; a fly-blown one gives the same on a success but it is
+ * probably spoiled, and handling spoiled meat is a Con save or poisoned. Bones give nothing.
+ */
+export function butcher(o: {
+  stage: CarcassStage; size: string; creatureType?: string | null; name: string
+  survival: number; nature: number; conMod: number; advantage?: boolean
+}, rng: Rng): ButcherResult {
+  const none = (note: string): ButcherResult => ({ stage: o.stage, skill: null, check: null, food: 0, spoiled: false, poisonSave: null, poisoned: false, note })
+  if (o.stage === "bones") return none(`Only bones are left of the ${o.name.toLowerCase()}.`)
+  if (!isEdible(o.creatureType)) return none(`Nothing on the ${o.name.toLowerCase()} anyone would eat.`)
+  const meat = MEAT_BY_SIZE[o.size] ?? 1
+  if (meat <= 0) return none(`The ${o.name.toLowerCase()} is too small to be worth the knife.`)
+  const skill: "survival" | "nature" = o.nature > o.survival ? "nature" : "survival"
+  const bonus = Math.max(o.survival, o.nature)
+  const t = (o.creatureType || "").toLowerCase()
+  const dc = t.startsWith("monstrosity") || t.startsWith("aberration") ? BUTCHER_STRANGE_DC : BUTCHER_DC
+  const rolls = o.advantage ? [d(20, rng), d(20, rng)] : [d(20, rng)]
+  const total = Math.max(...rolls) + bonus
+  const check = { rolls, bonus, total, dc, success: total >= dc }
+  const label = skill === "nature" ? "Intelligence (Nature)" : "Wisdom (Survival)"
+  if (!check.success) return { ...none(`${label} ${total} vs DC ${dc} — the ${o.name.toLowerCase()} is hacked apart for nothing worth keeping.`), skill, check }
+  if (o.stage === "fresh") return { stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — ${meat} day${meat === 1 ? "" : "s"} of meat cut from the ${o.name.toLowerCase()}.` }
+  const spoiled = rng() < SPOILED_CHANCE
+  if (!spoiled) return { stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — under the flies, ${meat} day${meat === 1 ? "" : "s"} of meat still good.` }
+  const roll = d(20, rng), save = roll + o.conMod
+  const poisonSave = { roll, total: save, dc: SPOILED_SAVE_DC, success: save >= SPOILED_SAVE_DC }
+  return { stage: o.stage, skill, check, food: 0, spoiled: true, poisonSave, poisoned: !poisonSave.success,
+    note: `${label} ${total} vs DC ${dc} — the meat is spoiled. Constitution save ${save} vs DC ${SPOILED_SAVE_DC}${poisonSave.success ? " — the stench, nothing worse" : " — failed: poisoned"}.` }
+}

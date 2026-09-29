@@ -428,3 +428,33 @@ describe("rare prey (Sam, 2026-09-29)", () => {
     expect(preyFood(PREY.find((p) => p.slug === "giant-rat")!, 5)).toBe(5)
   })
 })
+
+describe("carcasses (Sam, 2026-09-29)", () => {
+  it("ages fresh → flies → bones, and a butchered body is bones at once", async () => {
+    const { carcassStage, CARCASS_FRESH_SECONDS, CARCASS_BONES_SECONDS } = await import("./camp-field")
+    expect(carcassStage(0)).toBe("fresh")
+    expect(carcassStage(CARCASS_FRESH_SECONDS)).toBe("flies")
+    expect(carcassStage(CARCASS_BONES_SECONDS)).toBe("bones")
+    expect(carcassStage(1, true)).toBe("bones")
+  })
+  it("uses the better of Survival and Nature, and a hard DC", async () => {
+    const { butcher, BUTCHER_DC } = await import("./camp-field")
+    const r = butcher({ stage: "fresh", size: "Large", creatureType: "beast", name: "Giant lizard", survival: 1, nature: 6, conMod: 0 }, seededRng(3))
+    expect(r.skill).toBe("nature"); expect(r.check!.bonus).toBe(6); expect(r.check!.dc).toBe(BUTCHER_DC)
+    if (r.check!.success) expect(r.food).toBe(2)
+  })
+  it("expertise matters: a +9 butcher succeeds far more often than a +1", async () => {
+    const { butcher } = await import("./camp-field")
+    const rate = (b: number) => { let ok = 0; const rng = seededRng(11); for (let i = 0; i < 4000; i++) if (butcher({ stage: "fresh", size: "Medium", creatureType: "beast", name: "Deep rothé", survival: b, nature: 0, conMod: 0 }, rng).check!.success) ok++; return ok / 4000 }
+    expect(rate(1)).toBeLessThan(0.3); expect(rate(9)).toBeGreaterThan(0.6)
+  })
+  it("fly-blown meat is usually spoiled and can poison; bones and inedible things give nothing", async () => {
+    const { butcher } = await import("./camp-field")
+    let spoiled = 0, poisoned = 0, n = 0; const rng = seededRng(5)
+    for (let i = 0; i < 4000; i++) { const r = butcher({ stage: "flies", size: "Large", creatureType: "beast", name: "Giant bat", survival: 20, nature: 0, conMod: 0 }, rng); n++; if (r.spoiled) spoiled++; if (r.poisoned) poisoned++; if (r.spoiled) expect(r.food).toBe(0) }
+    expect(spoiled / n).toBeGreaterThan(0.5); expect(poisoned).toBeGreaterThan(0)
+    expect(butcher({ stage: "bones", size: "Large", creatureType: "beast", name: "x", survival: 20, nature: 0, conMod: 0 }, rng).food).toBe(0)
+    expect(butcher({ stage: "fresh", size: "Large", creatureType: "ooze", name: "Ochre jelly", survival: 20, nature: 0, conMod: 0 }, rng).check).toBeNull()
+    expect(butcher({ stage: "fresh", size: "Medium", creatureType: "humanoid (orc)", name: "Orog", survival: 20, nature: 0, conMod: 0 }, rng).check).toBeNull()
+  })
+})
