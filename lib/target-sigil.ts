@@ -100,6 +100,7 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // every side. Kept in its own blues rather than remapped to the school's
   // purple, the way transmutation keeps its whirlwind's colours.
   divination:  { plume: "sigilDivinationPlume", plumeSize: [3.2, 3.2],
+                 anchor: "caster",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.divination.glow },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
@@ -201,6 +202,21 @@ export interface SigilArt {
    * clears a one-square sprite standing in the middle of it.
    */
   plumeSize?: readonly [w: number, h: number]
+  /**
+   * WHOSE square the effect is drawn on. Defaults to the target, because a
+   * sigil is the mark a spell leaves on the creature it is thrown at.
+   *
+   * Divination is the exception (Sam, 2026-09-29: "this is our divination sfx
+   * for spell CASTERS"): its eyes open around the person doing the scrying,
+   * not around whoever is being scried. The art was cut for exactly that —
+   * the hole in the middle is where the caster's own sprite stands.
+   *
+   * Only the POSITION changes. The timing is still the save's: the eyes open
+   * as the spell goes out, hold while the save is rolled, and resolve on the
+   * answer — and the flinch still lands on the target, because that is a
+   * separate callback and belongs to whoever was hit.
+   */
+  anchor?: "target" | "caster"
 }
 
 export interface SigilPlan {
