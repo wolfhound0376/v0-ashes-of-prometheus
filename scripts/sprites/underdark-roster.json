@@ -852,5 +852,13 @@
     "pixellab_character_id": "70f373b2-274c-46f0-9661-8bc813b7bfe5",
     "size_by": "height",
     "target_ft": 5.0
+  },
+  {
+    "slug": "grick",
+    "name": "Grick",
+    "pixellab_character_id": "21382abd-f0b7-4c88-83ee-c4391e714ac1",
+    "size_by": "height",
+    "target_ft": 5.0,
+    "note": "PixelLab's south rotation had an opaque white box behind the figure; built from a cleaned south.png (flood-fill of edge-connected white plus the enclosed pocket at x 77-86, y 43-68; sha256 of pixels 555fc153...0366). The other 7 rotations are untouched"
   }
 ]
