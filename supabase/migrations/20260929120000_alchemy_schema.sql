@@ -8,6 +8,9 @@
 -- MIGRATIONS DO NOT RUN ON DEPLOY in this project. Paste this into the
 -- Supabase SQL editor by hand, in this order, then the seed file.
 --
+-- APPLIED to project ppadxmvvvxmnnejeaoer on 2026-09-29, as migrations
+-- alchemy_schema / alchemy_rls / alchemy_seed. Re-running is safe.
+--
 -- Everything here is additive. No existing column changes type, no
 -- existing row is touched, and every new column is nullable, so the
 -- live dashboard keeps working untouched until code reads them.
@@ -46,21 +49,35 @@ comment on table alchemy_effects is
 alter table items
   add column if not exists alchemy_effects jsonb;
 
+-- Postgres FORBIDS subqueries in a CHECK constraint ("cannot use subquery in
+-- check constraint", SQLSTATE 0A000). The first version of this file inlined
+-- the distinctness test and failed on apply. The test therefore lives in an
+-- IMMUTABLE function, which a CHECK is allowed to call.
+create or replace function alchemy_grid_is_valid(v jsonb)
+returns boolean
+language sql
+immutable
+as $fn$
+  select v is null
+      or (
+        jsonb_typeof(v) = 'array'
+        and jsonb_array_length(v) = 4
+        -- all four distinct
+        and (select count(distinct e) from jsonb_array_elements_text(v) e) = 4
+        -- all four are non-empty strings
+        and not exists (
+          select 1 from jsonb_array_elements(v) x
+          where jsonb_typeof(x) <> 'string' or length(x #>> '{}') = 0
+        )
+      )
+$fn$;
+
+comment on function alchemy_grid_is_valid(jsonb) is
+  'True when the value is null or an array of exactly 4 distinct non-empty strings. Used by items_alchemy_effects_shape.';
+
 alter table items drop constraint if exists items_alchemy_effects_shape;
-alter table items add constraint items_alchemy_effects_shape check (
-  alchemy_effects is null
-  or (
-    jsonb_typeof(alchemy_effects) = 'array'
-    and jsonb_array_length(alchemy_effects) = 4
-    -- all four distinct
-    and (select count(distinct e) from jsonb_array_elements_text(alchemy_effects) e) = 4
-    -- all four are non-empty strings
-    and not exists (
-      select 1 from jsonb_array_elements(alchemy_effects) x
-      where jsonb_typeof(x) <> 'string' or length(x #>> '{}') = 0
-    )
-  )
-);
+alter table items add constraint items_alchemy_effects_shape
+  check (alchemy_grid_is_valid(alchemy_effects));
 
 comment on column items.alchemy_effects is
   'Ordered array of exactly 4 distinct alchemy_effects.slug. Index 0 is '

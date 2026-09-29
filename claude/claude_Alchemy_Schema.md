@@ -2,7 +2,11 @@
 
 Migration notes for `supabase/migrations/20260929120000_alchemy_schema.sql` and `…120100_alchemy_seed.sql`.
 
-**Status: drafted, NOT applied.** Migrations do not run on deploy in this project — Sam pastes them into the Supabase SQL editor by hand. Nothing below has touched the live database.
+**Status: APPLIED 2026-09-29** to project `ppadxmvvvxmnnejeaoer`, as migrations `alchemy_schema`, `alchemy_rls` and `alchemy_seed`.
+
+Verified after: 22 effects in the vocabulary, 28 ingredients carrying a grid, 0 grid effects missing from the vocabulary, 0 unreachable effects, RLS on all three new tables, 3 read policies, 0 write policies.
+
+> **Merging a migration does not apply it.** Nothing in this repo runs `supabase/migrations/` on deploy. The file landing on `main` and the database changing are two separate events.
 
 ---
 
@@ -27,6 +31,18 @@ Migration notes for `supabase/migrations/20260929120000_alchemy_schema.sql` and 
 **3. Recipes get no table.** The Poisoned Cookbook's recipes are catalog items with a `reliability` value in the existing `items.properties` jsonb. That keeps the standing rule intact — everything the party can hold resolves against `items` — and a `sabotaged` recipe stays a physical object someone can steal, burn or plant.
 
 **4. No anon write policies, deliberately.** Read is public, matching `items`. Writes go through a service-role route. That is the same conclusion the `cinematic_views` telemetry problem reached: an anon INSERT policy is not the fix, a service-role route is.
+
+## The bug this file had, and how it was caught
+
+The first version inlined the distinctness test directly in the `CHECK`:
+
+```sql
+and (select count(distinct e) from jsonb_array_elements_text(alchemy_effects) e) = 4
+```
+
+**Postgres forbids subqueries in a CHECK constraint** — `cannot use subquery in check constraint`, SQLSTATE `0A000`. The whole DDL block aborted on the first apply. It would have failed exactly the same way pasted into the SQL editor by hand, mid-transaction, with the tables half-created.
+
+The fix is an `IMMUTABLE` function the constraint calls, which is allowed. The lesson is narrower than "test your SQL": **a migration that has never been executed is a draft, no matter how carefully it was reviewed.** This one was reviewed and merged before anyone ran it.
 
 ## The RLS trap this file avoids
 
