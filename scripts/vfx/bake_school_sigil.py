@@ -139,6 +139,41 @@ def bake_ring(clean: np.ndarray, top: int, centre: int, ratio: float, cell: int,
     return circle.resize((cell, cell), Image.LANCZOS)
 
 
+def glow_ring(ring: Image.Image, count: int, cols: int, lift: float) -> Image.Image:
+    """
+    The ring simply comes up and glows, with no travelling head (Sam,
+    2026-09-29: "no spinning arcane sigil").
+
+    The alternative to --chase, for a school whose sigil holds still. The
+    renderer already fades opacity in across the form act; this is the second
+    half of that entrance — the art itself heating up from dim to full — so
+    the ring arrives rather than merely appearing.
+
+    Blends toward hot rather than scaling RGB, for the same reason the chase
+    does: multiplying clips the red channel first on a warm palette and slides
+    the whole thing yellow-green.
+
+    Only LIT pixels lift. The alpha is keyed off luminance, so raising the
+    black field would gain coverage and start occluding the board.
+    """
+    w, h = ring.size
+    a = np.asarray(ring).astype(np.float32)
+    hot = np.array([255.0, 233.0, 176.0])
+    rows = (count + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * w, rows * h), (0, 0, 0, 0))
+    for i in range(count):
+        k = i / max(1, count - 1)
+        # Ease in, so the last frames hold near full glow instead of the whole
+        # ramp being over in the first third.
+        e = k * k * (3 - 2 * k)
+        rgbf = a[..., :3]
+        frame = a.copy()
+        frame[..., :3] = np.clip(rgbf * (0.55 + 0.45 * e)
+                                 + (hot - rgbf) * (lift * e * 0.45), 0, 255)
+        sheet.paste(Image.fromarray(frame.astype(np.uint8), "RGBA"), ((i % cols) * w, (i // cols) * h))
+    return sheet
+
+
 def glyph_band(ring: Image.Image) -> tuple[float, float]:
     """
     Radii (as a fraction of the half-cell) of the annulus the glyphs sit in.
@@ -517,6 +552,8 @@ def main() -> None:
     ap.add_argument("--frames", type=int, default=12)
     ap.add_argument("--cols", type=int, default=4)
     ap.add_argument("--colors", type=int, default=8, help="flame ramp steps")
+    ap.add_argument("--glow", type=int, default=0, metavar="N",
+                    help="ring frames that fade up and glow instead of chasing; for a still sigil")
     ap.add_argument("--chase", type=int, default=12, metavar="N",
                     help="ring frames with a travelling glow; 1 = a static ring")
     ap.add_argument("--chase-lift", type=float, default=0.75, metavar="0..1",
@@ -551,7 +588,9 @@ def main() -> None:
     burst = (bake_burst(a.burst, pal, a.burst_cell, a.cols, a.burst_frames, a.sparks, a.seed)
              if a.burst else None)
     ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
-    ring_sheet = ring if a.chase <= 1 else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc)
+    ring_sheet = (glow_ring(ring, a.glow, a.cols, a.chase_lift) if a.glow > 1
+                  else ring if a.chase <= 1
+                  else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
     plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor)
              if a.plume_art else
              whirlwind(pal, a.plume_w, a.plume_h, a.px, a.cols, a.frames, a.rocks, a.seed)
@@ -566,7 +605,7 @@ def main() -> None:
         print(f"       ring will read {'rounder' if ratio > BOARD_RATIO else 'flatter'} on the board than in the source.")
     print("  flame ramp    " + " ".join("#%02X%02X%02X" % tuple(int(v) for v in c) for c in pal))
     print(f"  ring          coverage {coverage(ring_sheet):4.1f}%"
-          + ("" if a.chase <= 1 else
+          + (f"   glow-up {a.glow} frames" if a.glow > 1 else "" if a.chase <= 1 else
              f"   chase {a.chase} frames, glyph band r={glyph_band(ring)[0]:.2f}-{glyph_band(ring)[1]:.2f}"))
     print(f"  plume         coverage {coverage(plume):4.1f}%   ({a.plume_w // a.px}x{a.plume_h // a.px} px art)")
     if burst is not None:
@@ -597,6 +636,8 @@ def main() -> None:
     entries = {}
     for suffix, im, meta in (
         ("Ring", ring_sheet,
+         {"cols": a.cols, "rows": (a.glow + a.cols - 1) // a.cols, "frames": a.glow,
+          "fps": 12, "loop": False, "peak": a.glow - 1} if a.glow > 1 else
          {"cols": 1, "rows": 1, "frames": 1, "fps": 1, "loop": False, "peak": 0} if a.chase <= 1 else
          {"cols": a.cols, "rows": (a.chase + a.cols - 1) // a.cols, "frames": a.chase,
           "fps": 12, "loop": True}),

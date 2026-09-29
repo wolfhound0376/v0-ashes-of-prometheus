@@ -81,7 +81,8 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // wind" instead of fire, which suits the school better anyway: matter
   // lifted and turned rather than burned.
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow },
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
+                 still: true },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
@@ -143,6 +144,21 @@ export interface SigilArt {
    * thing to forget to update.
    */
   tint?: number
+  /**
+   * The ring does NOT turn: it fades up, glows, and holds still while the
+   * plume rises out of it (Sam, 2026-09-29, of transmutation: "it just goes
+   * from being transparent to slowly visible and glowing and then the
+   * whirlwind shows. No spinning arcane sigil").
+   *
+   * Two things follow, and both are in sigilPoseAt rather than the renderer:
+   * the spin is held at zero, and the plume is held back until the ring is
+   * lit, so the two read as a sequence rather than arriving together. Without
+   * the delay the whirlwind rises through a ring that is still fading in, and
+   * the ring never gets its moment.
+   *
+   * Defaults to turning, because that is what every other school does.
+   */
+  still?: boolean
 }
 
 export interface SigilPlan {
@@ -323,15 +339,22 @@ export function sigilPoseAt(
     return {
       act: "form",
       frame: peakP * p,
-      opacity: ease(clamp01(t / (form * 0.45))),
+      // A still sigil takes the WHOLE form act to come up, instead of being
+      // there by the 45% mark: with no rotation to watch, the fade IS the
+      // entrance, so it gets the full beat.
+      opacity: ease(clamp01(plan.art.still ? p : t / (form * 0.45))),
       // Drops onto them from slightly large, which reads as landing rather
       // than as growing out of the floor.
       scale: 1.35 - 0.35 * ease(p),
-      spin: -formSweep(form, p),
+      spin: plan.art.still ? 0 : -formSweep(form, p),
       // The plume is still gathering: it rises but has not spread yet.
       radiate: 0.55 + 0.45 * ease(p),
       permeate: 0,
-      flame: outcome === "taken" ? ease(p) : 0,
+      // The plume waits for a still ring: nothing until the ring is most of
+      // the way up, then it climbs through the rest of the act.
+      flame: outcome === "taken"
+        ? ease(plan.art.still ? clamp01((p - 0.6) / 0.4) : p)
+        : 0,
       burst: -1,
       struck: false,
     }
@@ -344,7 +367,7 @@ export function sigilPoseAt(
       opacity: 1,
       // A slow breath so the hold is alive rather than a freeze-frame.
       scale: 1 + 0.03 * Math.sin(p * TAU * 1.5),
-      spin: -(formSweep(form, 1) + holdSweep(hold, p)),
+      spin: plan.art.still ? 0 : -(formSweep(form, 1) + holdSweep(hold, p)),
       // Breathing outward and soaking in while they roll.
       radiate: 1 + 0.10 * Math.sin(p * TAU),
       permeate: outcome === "taken" ? 0.35 + 0.15 * Math.sin(p * TAU * 1.5) : 0,
@@ -363,7 +386,7 @@ export function sigilPoseAt(
       // Taken flares before it fades; warded just thins out.
       opacity: taken ? Math.min(1, 1.25 - p) : 1 - ease(p),
       scale: taken ? 1 - 0.30 * ease(p) : 1 + 0.85 * ease(p),
-      spin: -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, p, taken)),
+      spin: plan.art.still ? 0 : -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, p, taken)),
       // TAKEN drives inward and through them; WARDED blows outward off them.
       radiate: taken ? 1 - 0.35 * ease(p) : 1 + 1.5 * ease(p),
       permeate: taken ? Math.min(1, 0.5 + ease(p)) : 0,
@@ -379,7 +402,7 @@ export function sigilPoseAt(
     frame: 1,
     opacity: 0,
     scale: taken ? 0.70 : 1.85,
-    spin: -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, 1, taken)),
+    spin: plan.art.still ? 0 : -(formSweep(form, 1) + holdSweep(hold, 1) + resolveSweep(resolve, 1, taken)),
     radiate: taken ? 0.65 : 2.5,
     permeate: taken ? 1 : 0,
     flame: 0,
