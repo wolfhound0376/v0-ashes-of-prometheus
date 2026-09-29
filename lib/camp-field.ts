@@ -1339,16 +1339,24 @@ export function isRareFungus(slug: string | null | undefined): boolean {
  * Rothé milk and cheese are delicacies — "a druid or someone able to talk to animals may be awarded it."
  * Speak with Animals is on the bard, druid and ranger lists (SRD); a druid always has it to prepare.
  */
-export function canSpeakWithAnimals(o: { cls?: string | null; spells?: readonly string[] | null }): boolean {
+export function canSpeakWithAnimals(o: { cls?: string | null; spells?: readonly string[] | null; effects?: readonly string[] | null }): boolean {
   if ((o.cls || "").toLowerCase() === "druid") return true
+  // "If you've consumed a speak to animals ability or somehow can speak to animals" — a potion, a cast spell, a charm
+  if ((o.effects ?? []).some((e) => /speak.with.animals/i.test(e))) return true
   return (o.spells ?? []).some((s) => /speak with animals/i.test(s))
 }
-/** What a calm rothé gives someone it will talk to: a skin of milk, and now and then cheese. Odds PROPOSED. */
+/**
+ * What a calm rothé gives someone it will talk to. "It's still a roll if they even have milk to offer" (Sam):
+ * a d20 of ROTHE_MILK_DC or more and it has milk; then, now and then, cheese. Odds PROPOSED.
+ */
+export const ROTHE_MILK_DC = 11
 export const ROTHE_CHEESE_CHANCE = 0.25
-export function rotheGift(rng: Rng): { items: { slug: string; name: string; quantity: number }[]; note: string } {
+export function rotheGift(rng: Rng): { roll: number; hasMilk: boolean; items: { slug: string; name: string; quantity: number }[]; note: string } {
+  const roll = d(20, rng)
+  if (roll < ROTHE_MILK_DC) return { roll, hasMilk: false, items: [], note: "The rothé listens, but it has no milk to give." }
   const items: { slug: string; name: string; quantity: number }[] = [{ slug: "deep-rothe-milk", name: "Deep Rothé Milk (skin)", quantity: 1 }]
   if (rng() < ROTHE_CHEESE_CHANCE) items.push({ slug: "rothe-cheese", name: "Rothé Cheese", quantity: 1 })
-  return { items, note: items.length > 1 ? "The rothé lets you milk it — and shows you where the herders left a wheel of cheese." : "The rothé stands still and lets you milk it." }
+  return { roll, hasMilk: true, items, note: items.length > 1 ? "The rothé lets you milk it — and shows you where the herders left a wheel of cheese." : "The rothé stands still and lets you milk it." }
 }
 
 /**
