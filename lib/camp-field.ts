@@ -850,7 +850,7 @@ export interface FieldKit {
   cls: string
   /** Walking speed multiplier. */
   moveMul: number
-  melee: { can: boolean; cooldown: number; mul: number; unarmedOnly?: boolean }
+  melee: { can: boolean; cooldown: number; mul: number; unarmedOnly?: boolean; weapon?: { name: string; slug: string; toHit: number; damage: string }; reachMul?: number }
   ranged: null | { name: string; toHit: number; damage: string; cooldown: number; kind: "fire" | "frost" | "necrotic" | "force" | "arrow"; halve?: boolean; knockback?: boolean }
   heal: null | { name: string; uses: number; dice: string }
   special: null | { kind: "music" | "entangle" | "aura"; name: string; uses?: number; cooldown?: number; seconds?: number; mul?: number; radius?: number }
@@ -876,6 +876,8 @@ export const RANGED_CANTRIPS: readonly { name: string; damage: string; kind: "fi
 export function fieldKit(c: {
   class?: string | null; str?: number | null; dex?: number | null; wis?: number | null; cha?: number | null; int?: number | null
   prof?: number | null; cantrips?: string[] | null; prepared?: string[] | null; spellAbility?: string | null
+  /** Carrying a weapon at all (Sam, 9/28: fighters and paladins take a longsword "if armed"). Defaults to true. */
+  armed?: boolean | null
 }): FieldKit {
   const cls = (c.class ?? "").trim().toLowerCase()
   const prof = c.prof ?? 2
@@ -884,7 +886,12 @@ export function fieldKit(c: {
   const castMod = ab.startsWith("int") ? mod(c.int) : ab.startsWith("wis") ? mod(c.wis) : ab.startsWith("cha") ? mod(c.cha) : cls === "wizard" ? mod(c.int) : cls === "cleric" || cls === "druid" ? mod(c.wis) : mod(c.cha)
   const knows = (n: string) => (c.cantrips ?? []).some((x) => x.toLowerCase() === n.toLowerCase())
   const kit: FieldKit = { cls, moveMul: 1, melee: { can: true, cooldown: 0.45, mul: 1 }, ranged: null, heal: null, special: null, lightBonus: 0, knockbackOnMiss: false, beastCalm: 0, regen: null, notes }
-  if (cls === "rogue") { kit.moveMul = 1.3; kit.melee.cooldown = 0.25 }
+  const armed = c.armed !== false
+  // Big weapons swing further (Sam, 9/28 — a house rule: the SRD gives longsword and greataxe no reach property).
+  const big = (name: string, slug: string, dice: string, reachMul: number) => { kit.melee.weapon = { name, slug, toHit: prof + mod(c.str), damage: `${dice}${mod(c.str) >= 0 ? "+" : ""}${mod(c.str)}` }; kit.melee.reachMul = reachMul }
+  // Bows: SRD shortbow 1d6, longbow 1d8, both + DEX.
+  const bow = (name: string, dice: string, cooldown: number) => ({ name, toHit: prof + mod(c.dex), damage: `${dice}+${Math.max(0, mod(c.dex))}`, cooldown, kind: "arrow" as const })
+  if (cls === "rogue") { kit.moveMul = 1.3; kit.melee.cooldown = 0.25; kit.ranged = bow("Shortbow", "1d6", 0.6) }
   if (cls === "wizard" || cls === "sorcerer") {
     kit.melee.can = false
     const known = RANGED_CANTRIPS.filter((r) => r.name !== "Eldritch Blast").find((r) => knows(r.name))
@@ -894,9 +901,12 @@ export function fieldKit(c: {
   }
   if (cls === "warlock") kit.ranged = { name: "Eldritch Blast", toHit: prof + castMod, damage: "1d10", cooldown: 0.35, kind: "force", halve: true, knockback: true }
   if (cls === "fighter" || cls === "barbarian") { kit.melee.mul = 2; kit.knockbackOnMiss = true }
+  if (armed && (cls === "fighter" || cls === "paladin")) big("Longsword", "longsword", "1d8", 1.35)
+  if (armed && cls === "barbarian") { big("Greataxe", "greataxe", "1d12", 1.6); kit.melee.cooldown = 0.6 }
   if (cls === "cleric") { /* SRD 5.1 Healing Word at 1st level: 1d4 + spellcasting modifier */ kit.heal = { name: "Healing Word", uses: 3, dice: `1d4+${Math.max(0, castMod)}` }; kit.lightBonus = 170 }
   if (cls === "bard") kit.special = { kind: "music", name: "Song of sleep", uses: 3, radius: 280 }
-  if (cls === "ranger") kit.ranged = { name: "Arrows", toHit: prof + mod(c.dex), damage: `1d6+${Math.max(0, mod(c.dex))}`, cooldown: 0.6, kind: "arrow" }
+  // Rangers loose twice as fast as a rogue's bow, and beasts leave them be like a druid (Sam, 9/28).
+  if (cls === "ranger") { kit.ranged = bow("Longbow", "1d8", 0.3); kit.beastCalm = 0.75 }
   if (cls === "monk") { kit.melee = { can: true, cooldown: 0.35, mul: 1.5, unarmedOnly: true }; kit.regen = { hp: 1, every: 3, whileStill: true } }
   if (cls === "druid") { kit.beastCalm = 0.75; kit.special = { kind: "entangle", name: "Entangle", cooldown: 10, seconds: 6 } }
   if (cls === "paladin") kit.special = { kind: "aura", name: "Radiant aura", seconds: 5, cooldown: 20, mul: 3 }
