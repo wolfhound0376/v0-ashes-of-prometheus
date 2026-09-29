@@ -519,8 +519,9 @@ describe("fishing gear, regrowth, rothé, parts (Sam, 2026-09-29)", () => {
     expect(canSpeakWithAnimals({ cls: "Druid" })).toBe(true)
     expect(canSpeakWithAnimals({ cls: "Bard", spells: ["Speak with Animals"] })).toBe(true)
     expect(canSpeakWithAnimals({ cls: "Rogue" })).toBe(false)
-    let cheese = 0; const rng = seededRng(4); for (let i = 0; i < 1000; i++) { const g = rotheGift(rng); expect(g.items[0].slug).toBe("deep-rothe-milk"); if (g.items.length > 1) cheese++ }
-    expect(cheese).toBeGreaterThan(180); expect(cheese).toBeLessThan(320)
+    expect(canSpeakWithAnimals({ cls: "Rogue", effects: ["speak-with-animals"] })).toBe(true)
+    let milk = 0, cheese = 0; const rng = seededRng(4); for (let i = 0; i < 2000; i++) { const g = rotheGift(rng); if (g.hasMilk) { milk++; expect(g.items[0].slug).toBe("deep-rothe-milk"); if (g.items.length > 1) cheese++ } else expect(g.items).toEqual([]) }
+    expect(milk / 2000).toBeGreaterThan(0.44); expect(milk / 2000).toBeLessThan(0.56); expect(cheese / milk).toBeGreaterThan(0.18); expect(cheese / milk).toBeLessThan(0.32)
   })
   it("parts come off even creatures nobody eats, on a success", async () => {
     const { butcher } = await import("./camp-field")
