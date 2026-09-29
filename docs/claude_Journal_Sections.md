@@ -31,11 +31,14 @@ Fourteen, from Sam's list. `section` is a new column on `journal_entries` (§9),
 | `quests` | Quests | **Automatic** on accepting a quest — no prompt | — |
 | `songs` | Songs & Ballads | Transcribed (proficient) or noted down (not) | see §4 |
 | `lore` | Lore | Bard only — stories with value | **bard** |
-| `visions` | Visions & Whispers | Nightmares, visions, things overheard, cultural insight | — |
+| `witness` | Witness | Nightmares, visions, things overheard, cultural insight | — |
 | `autopsy` | Autopsy | Examining a corpse for weaknesses | **Medicine** |
-| `drawings` | Drawings | The player draws something seen or imagined | — |
 
-**Naming I chose and Sam should overrule if he dislikes it:** `visions` / "Visions & Whispers" for his item 10. His list — nightmares, visions, things overheard, cultural insights — is wider than "visions" alone, and "Whispers" carries the overheard half without needing a second section.
+**Thirteen, not fourteen. Sam cut `drawings` on 2026-09-29.**
+
+**`witness` is the name, chosen 2026-09-29** after Sam rejected `visions`. His item 10 covers four things — nightmares, visions, things overheard, cultural insight — and only one of them is a vision. *Witness* is what all four have in common: it is the section for what you saw, heard, dreamt or understood, with no claim about which. It also reads as the character's own word for the book's most personal pages, which is the right register for the one section nobody else should be reading.
+
+Runners-up, if Sam wants a different flavour: **Things Seen and Heard** (plainest, covers it exactly, but long for a tab) and **Omens** (best atmosphere, but it promises prophecy and half these entries are just a conversation overheard in a corridor).
 
 **One section per entry.** A page is filed once. A recipe found *in* a vision is a recipe; the vision is its own page. Two pages, two sections, cross-referenced by `tags`, never one page in two places.
 
@@ -107,9 +110,9 @@ Three ways knowledge leaves the book, and they are the visibility values already
 | Arcane / runes | Arcane spellcasting, or Arcana proficiency plus a taught mark. **Divine is not arcane.** | Alchemy spec §3, Sam's earlier ruling |
 | Recipes | None to transcribe. Brewing needs the relevant tool proficiency, which `lib/alchemy.ts` already checks | SRD + alchemy spec |
 
-### Autopsy — the numbers are mine and need Sam's yes
+### Autopsy — approved 2026-09-29
 
-Sam gave the gate ("adequate medicine skill") and the purpose ("divine information from a foe, regarding their weaknesses"), not the maths. Proposed:
+Sam gave the gate ("adequate medicine skill") and the purpose ("divine information from a foe, regarding their weaknesses"); the maths below was proposed on 2026-09-29 and **approved as written**.
 
 - Requires **proficiency in Medicine**, a corpse that is intact and fresh (one long rest), and the tools or an improvised blade.
 - **Wisdom (Medicine) check, DC 10 + the creature's CR** rounded up, minimum DC 10.
@@ -117,7 +120,7 @@ Sam gave the gate ("adequate medicine skill") and the purpose ("divine informati
 - Beating the DC by 5+ reveals two.
 - Failure costs the corpse. Knowing your limits is the skill.
 
-Everything in that box is homebrew and flagged at runtime until Sam rules.
+Homebrew, but **ruled** — no longer flagged at runtime. The one rule that was never homebrew stands: the check reveals what the `bestiary` row already holds and never invents a weakness.
 
 ---
 
@@ -132,7 +135,7 @@ Keyed by **name, not id** — the Jimjar rule from `AGENTS.md` §8. Canon about 
 What "acts on it" means, kept concrete rather than atmospheric:
 - Ilvara reads the escape plan; the watch rotation changes.
 - A merchant reads the recipe section; the same potion is on his table next week, at a price.
-- Anyone who reads the `visions` section knows what frightens you, which is the gravity system's currency.
+- Anyone who reads the `witness` section knows what frightens you, which is the gravity system's currency.
 
 None of that needs new AI machinery. It is a row in the prompt's NPC block, which `formatJournalBlock` already knows how to write without revealing how it knows.
 
@@ -172,7 +175,7 @@ A forged page is therefore not cosmetic. It is the delivery mechanism for a sabo
 | The owner is not told unless they check | **Yes**, and `unseenDisclosures` should count leaked *unlocks*, not just pages. |
 | Custody — no journal, no page | **Yes**, and it now also means: no journal, no recipes at the bench. Losing the book disarms you. |
 | Titles are the writer's, never derived | **Yes**, except that sectioned entries get their section label as a heading, which is the system's, not a title. |
-| Page limit 600 characters | **Needs revisiting for `recipes` and `maps`.** A transcribed recipe is not a diary entry. Proposed: the limit applies to `pages`, `visions` and `lore`; structured sections are bounded by the column's 20,000 instead. |
+| Page limit 600 characters | **Needs revisiting for `recipes` and `maps`.** A transcribed recipe is not a diary entry. Proposed: the limit applies to `pages`, `witness` and `lore`; structured sections are bounded by the column's 20,000 instead. |
 | The AI invents no game data | **Yes**, and the offer mechanism (§2) is how it is kept — the system writes the page from tagged data, not Malachar. |
 
 ---
@@ -190,7 +193,7 @@ alter table public.journal_entries
 alter table public.journal_entries
   add constraint journal_entries_section_check check (section in (
     'pages','alchemy','poisoner','spirits','recipes','arcane','maps',
-    'clues','quests','songs','lore','visions','autopsy','drawings'
+    'clues','quests','songs','lore','witness','autopsy'
   ));
 
 create index if not exists journal_entries_char_section_idx
@@ -250,7 +253,7 @@ create index if not exists npc_knowledge_name_idx on public.npc_knowledge (npc_n
 
 **RLS on every new table, with its read policy in the same block** — the `scene_effects` lesson in project memory: enabling RLS without a policy silently blacks out the dashboard. Writes go through service-role routes, never an anon insert policy. The exact policies are deliberately not drafted here; they belong in the migration PR where they can be reviewed against the existing `journal_read` / `journal_player_insert` pair.
 
-**`journal_offers` is the one I would push back on myself.** It may not need to be a table at all if every offer is resolved in the same session it was raised. It becomes necessary only because of `before_sleep` — a map offer must survive until camp. If Sam would rather maps be transcribed *at the moment of the find*, the table disappears and the whole mechanism is client-side. That is a real simplification and worth one ruling.
+**`journal_offers` is a table — Sam ruled 2026-09-29.** I had argued it might be avoidable if every offer resolved in the session that raised it; Sam kept the table, which is the right call for the `before_sleep` window: a map offer has to survive from the moment of the find until camp, and a client-side offer dies with a page refresh. It also means an offer someone ignored is still *there*, which is its own small piece of characterisation.
 
 ---
 
@@ -272,9 +275,10 @@ One idea per PR, in dependency order.
 
 ## 11. Open questions
 
-1. **`journal_offers` as a table, or client-side only?** Turns entirely on whether maps must survive until camp (§9).
-2. **The 600-character limit on structured sections** — does a transcribed recipe get the diary limit? I would say no (§8).
-3. **Autopsy DC 10 + CR** — mine, needs a yes (§4).
-4. **`visions` as the name** for nightmares / overheard / cultural insight (§1).
-5. **Drawings** — what is actually stored? A description, an uploaded image, or a canvas the player draws on? Sam's item 13 does not say, and the three have very different costs.
-6. **Does a shared page's unlock survive the sharer's death?** Knowledge does; the book might not.
+Answered 2026-09-29: `journal_offers` **is** a table (§9); autopsy **DC 10 + CR** approved (§4); `drawings` **cut**; the section is named **`witness`** (§1).
+
+Still open:
+
+1. **The 600-character limit on structured sections** — does a transcribed recipe get the diary limit? I would say no (§8), and the code currently assumes no.
+2. **Does a shared page's unlock survive the sharer's death?** Knowledge does; the book might not.
+3. **A lore page lifting a Performance band by one** (§6) — still mine, still flagged at runtime.

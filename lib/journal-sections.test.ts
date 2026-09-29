@@ -37,8 +37,8 @@ const wizard: GateSheet = { class: "Wizard", skills: { arcana: true }, arcaneCas
 // ---------------------------------------------------------------------------
 
 describe("the sections", () => {
-  it("carries all fourteen Sam named", () => {
-    expect(JOURNAL_SECTIONS).toHaveLength(14)
+  it("carries the thirteen Sam kept", () => {
+    expect(JOURNAL_SECTIONS).toHaveLength(13)
     expect(DEFAULT_SECTION).toBe("pages")
   })
 
@@ -54,7 +54,7 @@ describe("the sections", () => {
 
   it("keeps the diary limit off structured records", () => {
     expect(limitApplies("pages")).toBe(true)
-    expect(limitApplies("visions")).toBe(true)
+    expect(limitApplies("witness")).toBe(true)
     expect(limitApplies("lore")).toBe(true)
     expect(limitApplies("recipes")).toBe(false)
     expect(limitApplies("maps")).toBe(false)
@@ -87,9 +87,8 @@ describe("routing a discovery", () => {
     expect(sectionFor({ kind: "quest" })).toBe("quests")
     expect(sectionFor({ kind: "song" })).toBe("songs")
     expect(sectionFor({ kind: "lore" })).toBe("lore")
-    expect(sectionFor({ kind: "vision" })).toBe("visions")
+    expect(sectionFor({ kind: "witness" })).toBe("witness")
     expect(sectionFor({ kind: "autopsy" })).toBe("autopsy")
-    expect(sectionFor({ kind: "drawing" })).toBe("drawings")
   })
 })
 
@@ -193,7 +192,7 @@ describe("gates", () => {
   })
 
   it("gates nothing that Sam did not gate", () => {
-    for (const s of ["pages", "recipes", "maps", "clues", "quests", "visions", "drawings"] as const) {
+    for (const s of ["pages", "recipes", "maps", "clues", "quests", "witness"] as const) {
       expect(checkGate(s, rogue).allowed).toBe(true)
     }
   })
@@ -275,9 +274,10 @@ describe("autopsy", () => {
     expect(r.ok).toBe(false)
   })
 
-  it("flags its own DC as homebrew every time", () => {
+  // Sam approved DC 10 + CR on 2026-09-29, so it stops being a caveat.
+  it("no longer flags its own DC, because it is now a ruling", () => {
     const r = autopsy({ sheet: cleric, creature: "Quaggoth", cr: 1, available: ["x"], total: 20 })
-    expect(r.flags.join(" ")).toContain("needs Sam's yes")
+    expect(r.flags).toEqual([])
   })
 })
 
@@ -293,7 +293,7 @@ describe("what an entry unlocks", () => {
     expect(unlockFor("arcane")).toBe("rune")
     expect(unlockFor("autopsy")).toBe("weakness")
     expect(unlockFor("pages")).toBeNull()
-    expect(unlockFor("visions")).toBeNull()
+    expect(unlockFor("witness")).toBeNull()
   })
 
   it("grants nothing from a page nobody has read", () => {
@@ -322,7 +322,7 @@ describe("what an entry unlocks", () => {
   })
 
   it("carries no unlock from a section that has none", () => {
-    const r = shareWith({ section: "visions", visibility: "found", reader: wizard })
+    const r = shareWith({ section: "witness", visibility: "found", reader: wizard })
     expect(r.learns).toBe(false)
     expect(r.note).toContain("worth reading, not learning")
   })
@@ -336,7 +336,7 @@ describe("an NPC who read the book", () => {
   })
 
   it("treats an unlockless page as a page, not as nothing", () => {
-    const r = npcReads({ npcName: "Jimjar", pages: [{ section: "visions", body: "The nightmare again." }] })
+    const r = npcReads({ npcName: "Jimjar", pages: [{ section: "witness", body: "The nightmare again." }] })
     expect(r.learned[0].kind).toBe("journal_page")
   })
 
