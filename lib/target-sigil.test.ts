@@ -35,13 +35,28 @@ describe("targetSigilFor", () => {
       .toBeNull()
   })
 
+  it("draws the illusion sigil for its single-target save spells", () => {
+    // Most of illusion's save spells are AREAS (Fear, Hypnotic Pattern), which
+    // the splash system already draws body by body. These four are the
+    // single-target ones the sigil is actually for.
+    for (const name of ["Phantasmal Killer", "Dream", "Mental Prison", "Seeming"]) {
+      expect(targetSigilFor({ school: "illusion", spellName: name }), name).not.toBeNull()
+    }
+  })
+
+  it("still skips illusion's AREA save spells — splash covers those", () => {
+    for (const name of ["Fear", "Hypnotic Pattern"]) {
+      expect(targetSigilFor({ school: "illusion", spellName: name, isArea: true }), name).toBeNull()
+    }
+  })
+
   it("draws nothing for a save spell of a school with no sigil yet", () => {
     // Updated when enchantment landed: this used to name enchantment as the
     // negative case. A school with art registered must draw; only the six
     // still without art stay silent.
     expect(targetSigilFor({ resolve: "save", school: "evocation", damage: "radiant" })).toBeNull()
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
-    expect(targetSigilFor({ resolve: "save", school: "illusion", damage: null })).toBeNull()
+    expect(targetSigilFor({ resolve: "save", school: "divination", damage: null })).toBeNull()
   })
 
   it("gives every registered sigil mote art and a tint from Sam's palette", () => {
@@ -58,6 +73,7 @@ describe("targetSigilFor", () => {
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
     expect(SCHOOL_SIGIL.necromancy?.ring).toBe("sigilNecroticRing")
     expect(SCHOOL_SIGIL.enchantment?.ring).toBe("sigilEnchantmentRing")
+    expect(SCHOOL_SIGIL.illusion?.ring).toBe("sigilIllusionRing")
   })
 
   it("draws the enchantment sigil for a save spell that deals NO damage", () => {

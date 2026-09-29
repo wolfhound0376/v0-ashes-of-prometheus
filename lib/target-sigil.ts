@@ -60,6 +60,8 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.necromancy.glow },
   enchantment: { ring: "sigilEnchantmentRing", plume: "sigilEnchantmentPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.enchantment.glow },
+  illusion:    { ring: "sigilIllusionRing",    plume: "sigilIllusionPlume",
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.illusion.glow },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
