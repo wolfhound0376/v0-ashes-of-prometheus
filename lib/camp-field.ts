@@ -894,7 +894,7 @@ export function fieldKit(c: {
   }
   if (cls === "warlock") kit.ranged = { name: "Eldritch Blast", toHit: prof + castMod, damage: "1d10", cooldown: 0.35, kind: "force", halve: true, knockback: true }
   if (cls === "fighter" || cls === "barbarian") { kit.melee.mul = 2; kit.knockbackOnMiss = true }
-  if (cls === "cleric") { kit.heal = { name: "Healing Word", uses: 3, dice: `2d4+${Math.max(0, castMod)}` }; kit.lightBonus = 170 }
+  if (cls === "cleric") { /* SRD 5.1 Healing Word at 1st level: 1d4 + spellcasting modifier */ kit.heal = { name: "Healing Word", uses: 3, dice: `1d4+${Math.max(0, castMod)}` }; kit.lightBonus = 170 }
   if (cls === "bard") kit.special = { kind: "music", name: "Song of sleep", uses: 3, radius: 280 }
   if (cls === "ranger") kit.ranged = { name: "Arrows", toHit: prof + mod(c.dex), damage: `1d6+${Math.max(0, mod(c.dex))}`, cooldown: 0.6, kind: "arrow" }
   if (cls === "monk") { kit.melee = { can: true, cooldown: 0.35, mul: 1.5, unarmedOnly: true }; kit.regen = { hp: 1, every: 3, whileStill: true } }

@@ -282,7 +282,7 @@ describe("class kits (Sam's field rules)", () => {
     expect(fieldKit({ class: "Wizard", int: 16, cantrips: ["Fire Bolt"] }).ranged?.name).toBe("Fire Bolt")
   })
   it("clerics heal three times and shed light", () => {
-    expect(samson.heal).toEqual({ name: "Healing Word", uses: 3, dice: "2d4+3" })
+    expect(samson.heal).toEqual({ name: "Healing Word", uses: 3, dice: "1d4+3" })
     expect(samson.lightBonus).toBeGreaterThan(0)
   })
   it("the rest follow Sam's list", () => {
