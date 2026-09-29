@@ -138,8 +138,14 @@ CREATURE_SOURCED = {
     "Create Undead": "worked",         # grave dirt, per corpse
     "Imprisonment": "worked",          # a vellum depiction
     "Augury": "worked",                # sticks, bones or similar tokens
-    "Heroes' Feast": "worked",         # a gem-encrusted bowl
 }
+
+# DELIBERATELY NOT HERE, though an earlier pass had it:
+#   Heroes' Feast — "a gem-encrusted bowl worth at least 1,000 gp". No creature
+#   in it anywhere. It survived the first keyword sweep and was caught while
+#   writing the harvest mapping, when it had no creature to map to. Left
+#   recorded rather than silently dropped, because the next person to run a
+#   keyword sweep will flag it again.
 
 PRICE = re.compile(r"(\d[\d,]*)\s*(gp|sp|cp)\b", re.I)
 MATERIAL = re.compile(r"\bM \((.*)\)\s*$")

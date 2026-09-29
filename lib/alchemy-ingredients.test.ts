@@ -239,13 +239,13 @@ describe("appraiseOffer — the trader at the table", () => {
 describe("creature-sourced components — the harvest demand side", () => {
   it("is far more than the eight spells where the part IS the whole component", () => {
     const all = creatureSourcedSpells("all", true)
-    expect(all.length).toBe(65)
-    expect(creatureSourcedSpells().length).toBe(62) // published only
+    expect(all.length).toBe(64)
+    expect(creatureSourcedSpells().length).toBe(61) // published only
   })
 
   it("counts worked material, per Sam's 2026-09-29 ruling, but keeps it separable", () => {
     expect(creatureSourcedSpells("creature", true)).toHaveLength(57)
-    expect(creatureSourcedSpells("worked", true)).toHaveLength(8)
+    expect(creatureSourcedSpells("worked", true)).toHaveLength(7)
     expect(creatureSourcingOf("Nystul's Magic Aura")).toBe("worked")
     expect(creatureSourcingOf("Fireball")).toBe("creature")
   })
