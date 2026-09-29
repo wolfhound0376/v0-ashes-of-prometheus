@@ -72,6 +72,75 @@ SUBSTANCES = [
     "string", "wire", "rod", "sponge", "soap", "phosphorescent moss",
 ]
 
+# ---------------------------------------------------------------------------
+# CREATURE-SOURCED COMPONENTS
+#
+# Sam, 2026-09-29, arrived with a list of 8 spells and "that's the entire
+# official list." All 8 are real and quoted correctly, but a keyword scan of
+# all 292 components found many more: Fireball is bat guano, Fly is a wing
+# feather, Polymorph is a caterpillar cocoon, five illusion spells run on
+# fleece. The 8 are the spells where the creature part is the WHOLE component;
+# that is a real distinction, just not the same as "the official list".
+#
+# So this flag exists, and it is a CURATED JUDGEMENT, not a keyword match —
+# keyword matching alone pulled in sulfur, incense and thorns. Every name below
+# was read against its own component text. The script asserts each one exists
+# in the dataset, so a rename upstream fails the run instead of silently
+# dropping a spell.
+#
+# Two tiers, because Sam ruled on 2026-09-29 that worked material counts:
+#   creature  the part is raw off a body — fur, feather, blood, bone, cocoon
+#   worked    creature-derived but processed into an object — silk, vellum,
+#             a gilded skull, a jeweled horn, the coins on a corpse's eyes
+# Sam's ruling was to COUNT the worked ones. They are tiered separately so that
+# decision can be reversed by filtering, without re-reading 292 components.
+#
+# (UA) spells are included and marked in their own names; filter on the suffix
+# if a table should be published-only.
+
+CREATURE_SOURCED = {
+    # The 8 Sam brought — the creature part IS the component.
+    "Feather Fall": "creature", "Spider Climb": "creature", "Animate Dead": "creature",
+    "Bigby's Hand": "creature", "Rary's Telepathic Bond": "creature",
+    "Chain Lightning": "creature", "Simulacrum": "creature", "Clone": "creature",
+    # Cantrips and 1st
+    "Dancing Lights": "creature", "Minor Illusion": "creature", "Bane": "creature",
+    "Beast Bond": "creature", "Identify": "creature", "Jump": "creature",
+    "Silent Image": "creature", "Sleep": "creature", "Tasha's Hideous Laughter": "creature",
+    # 2nd
+    "Aganazzar's Scorcher": "creature", "Darkness": "creature", "Enhance Ability": "creature",
+    "Flaming Sphere": "creature", "Locate Animals or Plants": "creature",
+    "Magic Mouth": "creature", "Phantasmal Force": "creature", "Suggestion": "creature",
+    "Summon Beast": "creature", "Web": "creature",
+    # 3rd
+    "Conjure Lesser Demon (UA)": "creature", "Fear": "creature", "Fireball": "creature",
+    "Fly": "creature", "Lightning Bolt": "creature", "Major Image": "creature",
+    "Stinking Cloud": "creature", "Summon Lesser Demons": "creature", "Wind Wall": "creature",
+    # 4th
+    "Arcane Eye": "creature", "Conjure Shadow Demon (UA)": "creature",
+    "Locate Creature": "creature", "Mordenkainen's Faithful Hound": "creature",
+    "Polymorph": "creature", "Summon Greater Demon": "creature",
+    # 5th
+    "Insect Plague": "creature", "Negative Energy Flood": "creature",
+    # 6th
+    "Find the Path": "creature", "Fizban's Platinum Shield (UA)": "creature",
+    "Guards and Wards": "creature", "Mass Suggestion": "creature",
+    "Programmed Illusion": "creature", "Summon Fiend": "creature",
+    "Tenser's Transformation": "creature", "True Seeing": "creature",
+    # 7th and up
+    "Delayed Blast Fireball": "creature", "Antipathy/Sympathy": "creature",
+    "Dark Star": "creature", "Foresight": "creature", "Mass Polymorph": "creature",
+    # Worked — creature-derived but processed. Sam ruled these count (2026-09-29).
+    "Nystul's Magic Aura": "worked",   # a small square of silk
+    "Clairvoyance": "worked",          # a jeweled horn
+    "Summon Undead": "worked",         # a gilded skull
+    "Gentle Repose": "worked",         # coins on the corpse's eyes
+    "Create Undead": "worked",         # grave dirt, per corpse
+    "Imprisonment": "worked",          # a vellum depiction
+    "Augury": "worked",                # sticks, bones or similar tokens
+    "Heroes' Feast": "worked",         # a gem-encrusted bowl
+}
+
 PRICE = re.compile(r"(\d[\d,]*)\s*(gp|sp|cp)\b", re.I)
 MATERIAL = re.compile(r"\bM \((.*)\)\s*$")
 RATE = {"gp": 1.0, "sp": 0.1, "cp": 0.01}
@@ -117,7 +186,18 @@ def main() -> None:
                 "text": clause,
                 "gp": price_gp(clause),
                 "consumed": "consume" in clause.lower(),
+                "creatureSourced": CREATURE_SOURCED.get(s["name"]),
             }
+        )
+
+    known = {r["spell"] for r in rows}
+    unknown = sorted(n for n in CREATURE_SOURCED if n not in known)
+    if unknown:
+        raise SystemExit(
+            "CREATURE_SOURCED names no longer in the dataset (renamed or dropped):\n  "
+            + "\n  ".join(unknown)
+            + "\nFix the names rather than deleting them — a dropped name silently "
+              "removes a spell from the harvest economy."
         )
 
     index: dict[str, list[str]] = {}
@@ -152,14 +232,21 @@ def main() -> None:
         "  gp: number | null",
         "  /** True when the casting destroys the component. */",
         "  consumed: boolean",
+        "  /**",
+        "   * Whether the component comes off a creature, and how directly.",
+        "   * \"creature\" is raw material off a body; \"worked\" is creature-derived",
+        "   * but processed (silk, vellum, a gilded skull). null is neither.",
+        "   * A curated judgement per spell, not a keyword match — see the script.",
+        "   */",
+        "  creatureSourced: \"creature\" | \"worked\" | null",
         "}",
         "",
         "export const SPELL_COMPONENTS: SpellComponent[] = [",
     ]
     for r in rows:
         out.append(
-            "  { spell: %s, text: %s, gp: %s, consumed: %s },"
-            % (ts(r["spell"]), ts(r["text"]), ts(r["gp"]), ts(r["consumed"]))
+            "  { spell: %s, text: %s, gp: %s, consumed: %s, creatureSourced: %s },"
+            % (ts(r["spell"]), ts(r["text"]), ts(r["gp"]), ts(r["consumed"]), ts(r["creatureSourced"]))
         )
     out += [
         "]",
@@ -174,6 +261,15 @@ def main() -> None:
     for term in sorted(index):
         spells_for = ", ".join(ts(n) for n in index[term])
         out.append(f"  {ts(term)}: [{spells_for}],")
+    out += [
+        "}",
+        "",
+        "/** Spells whose component comes off a creature, by how directly. */",
+        "export const CREATURE_SOURCED_SPELLS: Record<string, \"creature\" | \"worked\"> = {",
+    ]
+    for r in rows:
+        if r["creatureSourced"]:
+            out.append(f"  {ts(r['spell'])}: {ts(r['creatureSourced'])},")
     out += ["}", ""]
 
     OUT.write_text("\n".join(out), encoding="utf-8")
@@ -181,6 +277,10 @@ def main() -> None:
     print(f"wrote {OUT.relative_to(ROOT)}")
     print(f"  {len(rows)} material components, {len(priced)} priced, {len(consumed)} consumed")
     print(f"  {len(index)} substances indexed")
+    raw = sum(1 for r in rows if r["creatureSourced"] == "creature")
+    worked = sum(1 for r in rows if r["creatureSourced"] == "worked")
+    ua = sum(1 for r in rows if r["creatureSourced"] and "(UA)" in r["spell"])
+    print(f"  creature-sourced: {raw} raw + {worked} worked = {raw + worked} ({ua} of them UA)")
     if missing:
         print(f"  {len(missing)} substances matched NOTHING in the 556 spells:")
         print("    " + ", ".join(missing))

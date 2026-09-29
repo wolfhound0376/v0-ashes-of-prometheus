@@ -5,6 +5,8 @@ import {
   CATALOG_SLUGS,
   appraiseOffer,
   componentTextFor,
+  creatureSourcedSpells,
+  creatureSourcingOf,
   identify,
   ingredientBySlug,
   keyWords,
@@ -231,5 +233,48 @@ describe("appraiseOffer — the trader at the table", () => {
     const a = appraiseOffer([])
     expect(a.lines).toEqual([])
     expect(a.summary).toContain("0 items")
+  })
+})
+
+describe("creature-sourced components — the harvest demand side", () => {
+  it("is far more than the eight spells where the part IS the whole component", () => {
+    const all = creatureSourcedSpells("all", true)
+    expect(all.length).toBe(65)
+    expect(creatureSourcedSpells().length).toBe(62) // published only
+  })
+
+  it("counts worked material, per Sam's 2026-09-29 ruling, but keeps it separable", () => {
+    expect(creatureSourcedSpells("creature", true)).toHaveLength(57)
+    expect(creatureSourcedSpells("worked", true)).toHaveLength(8)
+    expect(creatureSourcingOf("Nystul's Magic Aura")).toBe("worked")
+    expect(creatureSourcingOf("Fireball")).toBe("creature")
+  })
+
+  it("excludes Unearthed Arcana unless asked", () => {
+    expect(creatureSourcedSpells("all").some((c) => c.spell.includes("(UA)"))).toBe(false)
+    expect(creatureSourcedSpells("all", true).some((c) => c.spell.includes("(UA)"))).toBe(true)
+  })
+
+  it("catches the ones the eight-spell list misses", () => {
+    const names = new Set(creatureSourcedSpells("all", true).map((c) => c.spell))
+    for (const n of ["Fireball", "Fly", "Polymorph", "Web", "Identify", "Jump", "Lightning Bolt"]) {
+      expect(names.has(n)).toBe(true)
+    }
+  })
+
+  it("flags the two the Underdark can already supply", () => {
+    // Umber hulk and giant spider are both in the bestiary at Velkynvelve.
+    expect(componentTextFor("Guards and Wards")).toContain("umber hulk blood")
+    expect(componentTextFor("Web")).toContain("spiderweb")
+  })
+
+  it("is not a keyword match — plant and mineral components stay out", () => {
+    for (const n of ["Thorn Whip", "Flame Strike", "Wall of Thorns", "Melf's Minute Meteors"]) {
+      expect(creatureSourcingOf(n)).toBeNull()
+    }
+  })
+
+  it("returns null for an unknown spell", () => {
+    expect(creatureSourcingOf("Malachar's Withering Regard")).toBeNull()
   })
 })
