@@ -220,7 +220,21 @@ def chase_ring(ring: Image.Image, count: int, cols: int, lift: float, arc: float
 
 
 def bake_plume(frames: list[np.ndarray], clean: np.ndarray, top: int, pal: np.ndarray,
-               px: int, cw: int, ch: int, cols: int, count: int) -> Image.Image:
+               px: int, cw: int, ch: int, cols: int, count: int, width: float) -> Image.Image:
+    """
+    `width` is the fraction of the source taken for the flames, centred.
+
+    THE FLAMES BELONG IN THE MIDDLE OF THE SIGIL (Sam, 2026-09-28). The
+    renderer sets the plume at the sigil's own centre and billboards it
+    upright (target-sigil.ts: `plume.mesh.position.set(at.x, ...)`), so a
+    sheet baked across the ring's full width puts fire on the rim where there
+    is no quad to hold it, and the column reads as sitting in front of the
+    circle rather than rising out of it.
+
+    A first cut took the full width for exactly that reason and it was wrong:
+    the source draws fire all round the band because the SOURCE is a single
+    flat image, not because the board has anywhere to put it.
+    """
     gw, gh = cw // px, ch // px
     sheet = Image.new("RGBA", (cols * cw, ((count + cols - 1) // cols) * ch), (0, 0, 0, 0))
     n = len(frames)
@@ -233,7 +247,10 @@ def bake_plume(frames: list[np.ndarray], clean: np.ndarray, top: int, pal: np.nd
         # (H, 1, 1) — see the header. (H, 1) wipes half of every frame.
         fade = np.clip((top + 20 - np.arange(h)) / 45.0, 0, 1).reshape(h, 1, 1)
         d = d * fade
-        im = Image.fromarray(d.clip(0, 255).astype(np.uint8), "RGB").crop((0, 0, d.shape[1], top + 20))
+        full = Image.fromarray(d.clip(0, 255).astype(np.uint8), "RGB").crop((0, 0, d.shape[1], top + 20))
+        keep = max(0.05, min(1.0, width))
+        half = int(full.width * keep / 2)
+        im = full.crop((full.width // 2 - half, 0, full.width // 2 + half, full.height))
         a = np.asarray(im.resize((gw, gh), Image.BILINEAR)).astype(np.float32)
         idx = ((a[:, :, None, :] - pal[None, None, :, :]) ** 2).sum(3).argmin(2)
         rgb = pal[idx].astype(np.uint8)
@@ -256,7 +273,9 @@ def main() -> None:
     ap.add_argument("school", help="capitalised, e.g. Evocation -> sigilEvocationRing/Plume")
     ap.add_argument("--px", type=int, default=4, help="pixel block size for the flames")
     ap.add_argument("--ring-cell", type=int, default=256)
-    ap.add_argument("--plume-w", type=int, default=320)
+    ap.add_argument("--plume-w", type=int, default=192)
+    ap.add_argument("--flame-width", type=float, default=0.46, metavar="0..1",
+                    help="fraction of the source width taken for the flames, centred on the sigil")
     ap.add_argument("--plume-h", type=int, default=256)
     ap.add_argument("--frames", type=int, default=12)
     ap.add_argument("--cols", type=int, default=4)
@@ -281,7 +300,8 @@ def main() -> None:
 
     ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
     ring_sheet = ring if a.chase <= 1 else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc)
-    plume = bake_plume(frames, clean, top, pal, a.px, a.plume_w, a.plume_h, a.cols, a.frames)
+    plume = bake_plume(frames, clean, top, pal, a.px, a.plume_w, a.plume_h, a.cols, a.frames,
+                       a.flame_width)
 
     print(f"  source        {len(frames)} frames, ring band top={top} centre={centre}")
     print(f"  drawn ellipse {ratio:.2f}:1   (board camera is {BOARD_RATIO:.2f}:1)")
