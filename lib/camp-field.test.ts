@@ -416,7 +416,7 @@ describe("rare prey (Sam, 2026-09-29)", () => {
     const rng = seededRng(99)
     for (let i = 0; i < n; i++) { const r = choosePrey("tunnels", rng).prey!.rarity; tally[r] = (tally[r] || 0) + 1 }
     for (const t of Object.keys(PREY_RARITY) as (keyof typeof PREY_RARITY)[]) expect(Math.abs(tally[t] / n - PREY_RARITY[t])).toBeLessThan(0.01)
-    expect(PREY.filter((p) => p.fightsBack).map((p) => p.slug)).toEqual(["female-steeder", "giant-spider"])
+    expect(PREY.filter((p) => p.fightsBack).map((p) => p.slug)).toEqual(["female-steeder", "chuul", "giant-spider"])
   })
   it("falls back to what the bestiary has when a tier is missing", async () => {
     const { choosePrey } = await import("./camp-field")
@@ -456,5 +456,46 @@ describe("carcasses (Sam, 2026-09-29)", () => {
     expect(butcher({ stage: "bones", size: "Large", creatureType: "beast", name: "x", survival: 20, nature: 0, conMod: 0 }, rng).food).toBe(0)
     expect(butcher({ stage: "fresh", size: "Large", creatureType: "ooze", name: "Ochre jelly", survival: 20, nature: 0, conMod: 0 }, rng).check).toBeNull()
     expect(butcher({ stage: "fresh", size: "Medium", creatureType: "humanoid (orc)", name: "Orog", survival: 20, nature: 0, conMod: 0 }, rng).check).toBeNull()
+  })
+})
+
+describe("Underdark food (Sam, 2026-09-29)", () => {
+  it("hunts only pick from Sam's list", async () => {
+    const { PREY } = await import("./camp-field")
+    expect(PREY.map((p) => p.slug).sort()).toEqual(["chuul", "deep-rothe", "female-steeder", "giant-bat", "giant-fire-beetle", "giant-lizard", "giant-rat", "giant-spider", "giant-toad", "male-steeder"])
+  })
+  it("every hunted animal has a named meat", async () => {
+    const { PREY, meatFor } = await import("./camp-field")
+    for (const p of PREY) expect(meatFor(p.slug), p.slug).not.toBeNull()
+    expect(meatFor("deep-rothe")!.slug).toBe("rothe-meat")
+  })
+  it("butchering names the meat", async () => {
+    const { butcher } = await import("./camp-field")
+    let got = null; const rng = seededRng(2)
+    for (let i = 0; i < 50 && !got; i++) { const r = butcher({ stage: "fresh", size: "Medium", creatureType: "beast", name: "Deep rothé", slug: "deep-rothe", survival: 20, nature: 0, conMod: 0 }, rng); if (r.food) got = r.meat }
+    expect(got).toEqual({ slug: "rothe-meat", name: "Rothé Meat" })
+  })
+  it("half of a good forage turns up as named catches; water ones only where there is water", async () => {
+    const { forageField, CATCHES } = await import("./camp-field")
+    const slugs = new Set(CATCHES.map((c) => c.slug)); let named = 0, total = 0, wet = 0
+    for (let i = 0; i < 300; i++) { const f = forageField({ success: true, supplies: 4, biome: "shore", rng: seededRng(i) }); for (const p of f.patches) if (p.kind === "food") { total++; if (p.slug && slugs.has(p.slug)) { named++; if (p.water) wet++ } } }
+    expect(named / total).toBeGreaterThan(0.4); expect(named / total).toBeLessThan(0.6); expect(wet).toBeGreaterThan(0)
+    for (let i = 0; i < 200; i++) for (const p of forageField({ success: true, supplies: 4, biome: "shore", rng: seededRng(i), water: false }).patches) expect(p.water).toBeFalsy()
+  })
+  it("an albino eel can shock whoever grabs it", async () => {
+    const { catchHazard } = await import("./camp-field")
+    let hurt = 0; const rng = seededRng(9); for (let i = 0; i < 200; i++) if (catchHazard("albino-eel", { dexMod: 0 }, rng).hurt > 0) hurt++
+    expect(hurt).toBeGreaterThan(50); expect(hurt).toBeLessThan(150)
+    expect(catchHazard("cave-snails", { dexMod: 0 }, rng).hurt).toBe(0)
+  })
+})
+
+describe("shore placement", () => {
+  it("shore spots all sit beside water", async () => {
+    const { buildExploreWorld, placeOnWorld, isShore } = await import("./camp-field")
+    const w = buildExploreWorld("shore-test", [])
+    const pts = placeOnWorld(w, 6, seededRng(1), { near: 3, far: 200, spacing: 2, shore: true })
+    expect(pts.length).toBeGreaterThan(0)
+    for (const p of pts) expect(isShore(w, p.x, p.y)).toBe(true)
   })
 })

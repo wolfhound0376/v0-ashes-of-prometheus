@@ -101,6 +101,8 @@ export interface Patch {
   /** Food patches are one day of food each; a reagent patch is one catalog item. */
   slug: string | null
   name: string
+  /** A catch that lives in water — the mini-game sets it at a river's edge. */
+  water?: boolean
 }
 
 export interface ForageField {
@@ -128,6 +130,8 @@ export function forageField(opts: {
   /** Catalog slugs that exist. A fungus missing from it is left out and flagged. */
   catalog?: ReadonlySet<string>
   stream?: boolean
+  /** The map has water to set fish and eels beside. Default true. */
+  water?: boolean
 }): ForageField {
   const { rng, biome } = opts
   const flags = [
@@ -141,7 +145,10 @@ export function forageField(opts: {
     for (let i = 0; i < n; i++) patches.push({ ...at(), kind: "food", slug: null, name: "Scrub — nothing edible" })
     return { dc: opts.stream ? FORAGE_DC.stream : FORAGE_DC.underdark, patches, seconds: 20, flags, note: "The ground is bare. Nothing here will feed anyone." }
   }
-  for (let i = 0; i < Math.max(0, opts.supplies); i++) patches.push({ ...at(), kind: "food", slug: "edible-mushrooms", name: "A day of food" })
+  for (let i = 0; i < Math.max(0, opts.supplies); i++) {
+    const c = rng() < CATCH_SHARE ? pickCatch(biome, rng, { catalog: opts.catalog, water: opts.water !== false }) : null
+    patches.push(c ? { ...at(), kind: "food", slug: c.slug, name: c.name, water: c.water || undefined } : { ...at(), kind: "food", slug: "edible-mushrooms", name: "A day of food" })
+  }
   const pool = FUNGI.filter((f) => f.w[biome] > 0 && (!opts.catalog || opts.catalog.has(f.slug)))
   if (opts.catalog) for (const f of FUNGI) if (!opts.catalog.has(f.slug)) flags.push(`${f.name} is not in the catalog — left out`)
   const reagents = pool.length ? d(4, rng) : 0
@@ -218,15 +225,68 @@ export const PREY_RARITY: Readonly<Record<PreyRarity, number>> = { common: 0.85,
  * spider are SRD 5.1. Weights and food are PROPOSED.
  */
 export const PREY: readonly Prey[] = [
+  { slug: "deep-rothe", name: "Deep rothé", rarity: "common", w: { tunnels: 2, fungal: 4, shore: 3 }, byproduct: "deep-rothe-leather", food: 2 },
+  { slug: "giant-lizard", name: "Giant lizard", rarity: "common", w: { tunnels: 4, fungal: 2, shore: 3 }, byproduct: "lizard-oil", food: 2 },
   { slug: "giant-rat", name: "Giant rat", rarity: "common", w: { tunnels: 4, fungal: 2, shore: 2 } },
   { slug: "giant-fire-beetle", name: "Giant fire beetle", rarity: "common", w: { tunnels: 3, fungal: 4, shore: 1 } },
   { slug: "giant-bat", name: "Giant bat", rarity: "common", w: { tunnels: 2, fungal: 1, shore: 2 } },
-  { slug: "deep-rothe", name: "Deep rothé", rarity: "common", w: { tunnels: 1, fungal: 3, shore: 2 }, byproduct: "deep-rothe-leather" },
-  { slug: "giant-lizard", name: "Giant lizard", rarity: "uncommon", w: { tunnels: 2, fungal: 1, shore: 2 }, byproduct: "cavern-lizard-meat", food: 3 },
+  { slug: "giant-toad", name: "Giant toad", rarity: "common", w: { tunnels: 1, fungal: 2, shore: 4 }, food: 2 },
   { slug: "male-steeder", name: "Male steeder", rarity: "uncommon", w: { tunnels: 2, fungal: 2, shore: 1 }, byproduct: "steeder-silk-spinneret", food: 2 },
   { slug: "female-steeder", name: "Female steeder", rarity: "rare", w: { tunnels: 1, fungal: 1, shore: 1 }, byproduct: "steeder-silk-spinneret", food: 4, fightsBack: true },
+  { slug: "chuul", name: "Chuul", rarity: "rare", w: { tunnels: 0.5, fungal: 0.5, shore: 2 }, food: 3, fightsBack: true },
   { slug: "giant-spider", name: "Giant spider", rarity: "very rare", w: { tunnels: 1, fungal: 1, shore: 1 }, byproduct: "spider-venom-gland", food: 3, fightsBack: true },
 ]
+
+/**
+ * What a carcass is eaten as (Sam, 2026-09-29: named meats instead of "days of food"). One item is one day of food.
+ * Every slug is a catalog item. Spider meat for steeders and spiders is PROPOSED — Sam's list doesn't name it.
+ */
+export const MEAT: Readonly<Record<string, { slug: string; name: string }>> = {
+  "deep-rothe": { slug: "rothe-meat", name: "Rothé Meat" },
+  "giant-lizard": { slug: "cavern-lizard-meat", name: "Cavern Lizard Meat" },
+  "giant-rat": { slug: "rat-meat", name: "Rat Meat" },
+  "diseased-giant-rat": { slug: "rat-meat", name: "Rat Meat" },
+  "giant-fire-beetle": { slug: "beetle-meat", name: "Giant Beetle Meat" },
+  "giant-bat": { slug: "bat-meat", name: "Bat Meat" },
+  "giant-toad": { slug: "toad-legs", name: "Giant Toad Legs" },
+  "chuul": { slug: "chuul-meat", name: "Chuul Meat" },
+  "male-steeder": { slug: "spider-meat", name: "Spider Meat" },
+  "female-steeder": { slug: "spider-meat", name: "Spider Meat" },
+  "giant-spider": { slug: "spider-meat", name: "Spider Meat" },
+}
+export function meatFor(slug: string): { slug: string; name: string } | null { return MEAT[slug] ?? null }
+
+// ---------------------------------------------------------------------------- small catches (Sam, 2026-09-29)
+export interface Catch { slug: string; name: string; water: boolean; w: Record<FieldBiome, number>; hazard?: "shock" | "venom" }
+/** Found while foraging — each is one day of food and a catalog item. Water catches sit at a river's edge. */
+export const CATCHES: readonly Catch[] = [
+  { slug: "blind-cave-fish", name: "Blind Cave Fish", water: true, w: { tunnels: 1, fungal: 1, shore: 5 } },
+  { slug: "albino-eel", name: "Albino Eel", water: true, w: { tunnels: 0.5, fungal: 0.5, shore: 2 }, hazard: "shock" },
+  { slug: "cave-crab", name: "Cave Crab", water: true, w: { tunnels: 0.5, fungal: 0.5, shore: 3 } },
+  { slug: "cave-crayfish", name: "Cave Crayfish", water: true, w: { tunnels: 1, fungal: 1, shore: 3 } },
+  { slug: "subterranean-puffer-fish", name: "Subterranean Puffer Fish", water: true, w: { tunnels: 0.2, fungal: 0.2, shore: 1 }, hazard: "venom" },
+  { slug: "cave-crickets", name: "Cave Crickets", water: false, w: { tunnels: 4, fungal: 2, shore: 1 } },
+  { slug: "cave-snails", name: "Cave Snails", water: false, w: { tunnels: 2, fungal: 3, shore: 2 } },
+  { slug: "shadow-worms", name: "Shadow Worms", water: false, w: { tunnels: 2, fungal: 3, shore: 1 } },
+  { slug: "lizard-eggs", name: "Lizard Eggs", water: false, w: { tunnels: 2, fungal: 1, shore: 1 } },
+]
+/** Share of a successful forage's food that turns up as a named catch instead of mushrooms. PROPOSED. */
+export const CATCH_SHARE = 0.5
+export function pickCatch(biome: FieldBiome, rng: Rng, o: { catalog?: ReadonlySet<string>; water?: boolean } = {}): Catch | null {
+  const pool = CATCHES.filter((c) => c.w[biome] > 0 && (o.water !== false || !c.water) && (!o.catalog || o.catalog.has(c.slug)))
+  return pool.length ? weighted(pool.map((c) => ({ c, w: c.w[biome] })), rng).c : null
+}
+/** An albino eel shocks whoever grabs it: Dex save DC 12 or 1d6 lightning. PROPOSED. */
+export const EEL_SAVE_DC = 12
+export function catchHazard(slug: string, o: { dexMod: number }, rng: Rng): { hurt: number; note: string | null } {
+  const c = CATCHES.find((x) => x.slug === slug)
+  if (!c || !c.hazard) return { hurt: 0, note: null }
+  if (c.hazard === "venom") return { hurt: 0, note: "A puffer fish: prepared right it is a delicacy; prepared wrong it is a funeral." }
+  const roll = d(20, rng), save = roll + o.dexMod
+  if (save >= EEL_SAVE_DC) return { hurt: 0, note: `Dexterity save ${save} vs DC ${EEL_SAVE_DC} — the eel's shock misses.` }
+  const hurt = d(6, rng)
+  return { hurt, note: `Dexterity save ${save} vs DC ${EEL_SAVE_DC} — failed: the eel's shock, ${hurt} lightning.` }
+}
 
 export function choosePrey(biome: FieldBiome, rng: Rng, bestiary?: ReadonlySet<string>): { prey: Prey | null; flags: string[] } {
   const pool = PREY.filter((p) => !bestiary || bestiary.has(p.slug))
@@ -830,7 +890,13 @@ export function lostInTheDark(name: string): { exhaustion: 1; note: string; flag
  * steps from camp (walking distance, not as the crow flies — a spot just
  * across the river can be a long way round). Same rng, same places.
  */
-export function placeOnWorld(w: ExploreWorld, n: number, rng: Rng, opts: { near?: number; far?: number; spacing?: number } = {}): { x: number; y: number }[] {
+/** A floor cell with deep water or a ford beside it — where fish, eels and crabs are found. */
+export function isShore(w: ExploreWorld, x: number, y: number): boolean {
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w.cols || yy >= w.rows) continue; const t = w.grid[yy * w.cols + xx]; if (t === T.DEEP || t === T.FORD) return true }
+  return false
+}
+
+export function placeOnWorld(w: ExploreWorld, n: number, rng: Rng, opts: { near?: number; far?: number; spacing?: number; shore?: boolean } = {}): { x: number; y: number }[] {
   const near = opts.near ?? 6, far = opts.far ?? Infinity, spacing = opts.spacing ?? 5
   const at = (x: number, y: number) => y * w.cols + x
   const dist = new Int32Array(w.cols * w.rows).fill(-1), q = [w.camp]
@@ -845,7 +911,7 @@ export function placeOnWorld(w: ExploreWorld, n: number, rng: Rng, opts: { near?
     }
   }
   const pool: { x: number; y: number }[] = []
-  for (let i = 0; i < w.grid.length; i++) if (w.grid[i] === T.FLOOR && dist[i] >= near && dist[i] <= far) pool.push({ x: i % w.cols, y: Math.floor(i / w.cols) })
+  for (let i = 0; i < w.grid.length; i++) if (w.grid[i] === T.FLOOR && dist[i] >= near && dist[i] <= far && (!opts.shore || isShore(w, i % w.cols, Math.floor(i / w.cols)))) pool.push({ x: i % w.cols, y: Math.floor(i / w.cols) })
   const out: { x: number; y: number }[] = []
   for (let tries = 0; tries < 4000 && out.length < n && pool.length; tries++) {
     const p = pool[Math.floor(rng() * pool.length)]
@@ -1179,6 +1245,8 @@ export function isEdible(creatureType: string | null | undefined): boolean {
 }
 
 export interface ButcherResult {
+  /** The named meat, when there is any (one item per day). */
+  meat?: { slug: string; name: string } | null
   stage: CarcassStage
   /** "survival" or "nature" — whichever the character is better at. */
   skill: "survival" | "nature" | null
@@ -1197,6 +1265,8 @@ export interface ButcherResult {
  */
 export function butcher(o: {
   stage: CarcassStage; size: string; creatureType?: string | null; name: string
+  /** bestiary slug, so the meat can be named */
+  slug?: string
   survival: number; nature: number; conMod: number; advantage?: boolean
 }, rng: Rng): ButcherResult {
   const none = (note: string): ButcherResult => ({ stage: o.stage, skill: null, check: null, food: 0, spoiled: false, poisonSave: null, poisoned: false, note })
@@ -1213,9 +1283,10 @@ export function butcher(o: {
   const check = { rolls, bonus, total, dc, success: total >= dc }
   const label = skill === "nature" ? "Intelligence (Nature)" : "Wisdom (Survival)"
   if (!check.success) return { ...none(`${label} ${total} vs DC ${dc} — the ${o.name.toLowerCase()} is hacked apart for nothing worth keeping.`), skill, check }
-  if (o.stage === "fresh") return { stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — ${meat} day${meat === 1 ? "" : "s"} of meat cut from the ${o.name.toLowerCase()}.` }
+  const named = o.slug ? meatFor(o.slug) : null
+  if (o.stage === "fresh") return { meat: named, stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — ${meat} day${meat === 1 ? "" : "s"} of meat cut from the ${o.name.toLowerCase()}.` }
   const spoiled = rng() < SPOILED_CHANCE
-  if (!spoiled) return { stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — under the flies, ${meat} day${meat === 1 ? "" : "s"} of meat still good.` }
+  if (!spoiled) return { meat: named, stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — under the flies, ${meat} day${meat === 1 ? "" : "s"} of meat still good.` }
   const roll = d(20, rng), save = roll + o.conMod
   const poisonSave = { roll, total: save, dc: SPOILED_SAVE_DC, success: save >= SPOILED_SAVE_DC }
   return { stage: o.stage, skill, check, food: 0, spoiled: true, poisonSave, poisoned: !poisonSave.success,
