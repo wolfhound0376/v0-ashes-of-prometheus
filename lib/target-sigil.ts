@@ -85,7 +85,8 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // its own scattered rubble, which lands over the ring as debris thrown up
   // by whatever is arriving.
   conjuration: { ring: "sigilConjurationRing",   plume: "sigilConjurationPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.conjuration.glow },
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.conjuration.glow,
+                 plumeDrop: 0.62 },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
                  still: true },
@@ -165,6 +166,25 @@ export interface SigilArt {
    * Defaults to turning, because that is what every other school does.
    */
   still?: boolean
+  /**
+   * Lower the plume by this many board units, so its base meets the ring's
+   * NEAR RIM instead of its centre (Sam, 2026-09-29, with an arrow drawn on
+   * the render: the roots belong at the front edge of the ellipse).
+   *
+   * The renderer puts the plume's base on the floor plane at `at`, which is
+   * the sigil's centre — and a flat ellipse draws its whole near half BELOW
+   * that point. So a correctly grounded plume still reads as hovering over
+   * the back of its own ring.
+   *
+   * A ring of diameter RING drawn at the board's 2.04:1 stands (RING / 2) /
+   * 2.04 tall on screen from centre to rim, which is what this offsets. It is
+   * applied in Y rather than Z because the plume is billboarded: Y moves it
+   * straight down on screen at any board rotation, while Z would swing with
+   * the camera.
+   *
+   * Per-school, because it depends on how the art meets its own base.
+   */
+  plumeDrop?: number
 }
 
 export interface SigilPlan {

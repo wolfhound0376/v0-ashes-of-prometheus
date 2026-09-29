@@ -500,7 +500,8 @@ def whirlwind(pal: np.ndarray, cw: int, ch: int, px: int, cols: int, count: int,
 
 
 def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
-                   count: int, recolor: bool, sink: float = 0.0) -> Image.Image:
+                   count: int, recolor: bool, sink: float = 0.0,
+                   scale: float = 1.0) -> Image.Image:
     """
     Use a ready-made pixel animation as the plume, instead of drawing one.
 
@@ -564,9 +565,18 @@ def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
     for i in range(count):
         f = src_frames[int(i * len(src_frames) / count)]      # held, never blended
         quad = Image.fromarray(f.clip(0, 255).astype(np.uint8), "RGBA")
-        # Fit the art into the cell without stretching it out of proportion.
-        scale = min(cw / quad.width, ch / quad.height)
-        w, h = max(1, int(quad.width * scale)), max(1, int(quad.height * scale))
+        # Fit the art into the cell without stretching it out of proportion,
+        # then shrink it by `scale`.
+        #
+        # HEIGHT IS SET HERE, NOT IN THE RENDERER. The plume quad is
+        # FLAME_W 2.4 x FLAME_H 4.8 against a RING of 2.6 — nearly twice the
+        # ring's diameter in height — and those constants are shared by every
+        # school. Art that fills its cell therefore towers over its own ring
+        # (Sam, 2026-09-29: "the plume is way too high"). Filling less of the
+        # cell shortens this school's plume without touching the schools whose
+        # proportions are already right.
+        fit = min(cw / quad.width, ch / quad.height) * max(0.05, scale)
+        w, h = max(1, int(quad.width * fit)), max(1, int(quad.height * fit))
         quad = quad.resize((w, h), Image.NEAREST)
         cellim = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
         # SINK. The renderer sets the quad's bottom edge on the floor plane,
@@ -622,6 +632,8 @@ def main() -> None:
     ap.add_argument("--rocks", type=int, default=62)
     ap.add_argument("--plume-art", type=Path, default=None,
                     help="ready-made pixel animation to use as the plume")
+    ap.add_argument("--plume-scale", type=float, default=1.0, metavar="0..1",
+                    help="fraction of the cell the art fills; below 1 shortens the plume")
     ap.add_argument("--plume-sink", type=float, default=0.0, metavar="0..0.3",
                     help="push the plume's roots below the floor plane, as a fraction of the cell")
     ap.add_argument("--recolor", action="store_true",
@@ -659,7 +671,7 @@ def main() -> None:
                   else ring if a.chase <= 1
                   else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
     plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor,
-                            a.plume_sink)
+                            a.plume_sink, a.plume_scale)
              if a.plume_art else
              whirlwind(pal, a.plume_w, a.plume_h, a.px, a.cols, a.frames, a.rocks, a.seed)
              if a.plume_synth == "whirlwind" else
