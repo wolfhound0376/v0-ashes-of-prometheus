@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
-  T, passable, slowFactor, tileAt, buildExploreWorld, CACHE_COUNT, lostInTheDark,
+  T, passable, slowFactor, tileAt, buildExploreWorld, placeOnWorld, CACHE_COUNT, lostInTheDark,
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
@@ -253,5 +253,18 @@ describe("the overworld", () => {
   })
   it("the lantern running out costs a level of exhaustion", () => {
     expect(lostInTheDark("Fifi").exhaustion).toBe(1)
+  })
+})
+
+describe("placing things on the overworld", () => {
+  const W = buildExploreWorld("wp-17", ROWS)
+  it("puts patches on walkable floor, spaced, within the walking range asked", () => {
+    const ps = placeOnWorld(W, 10, seededRng(1), { near: 6, far: 60, spacing: 5 })
+    expect(ps.length).toBe(10)
+    for (const p of ps) expect(tileAt(W, p.x, p.y)).toBe(T.FLOOR)
+    for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) expect(Math.abs(ps[i].x - ps[j].x) + Math.abs(ps[i].y - ps[j].y)).toBeGreaterThanOrEqual(5)
+  })
+  it("same rng, same places", () => {
+    expect(placeOnWorld(W, 3, seededRng(7))).toEqual(placeOnWorld(W, 3, seededRng(7)))
   })
 })

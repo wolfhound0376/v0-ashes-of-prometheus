@@ -792,3 +792,35 @@ export const HOUR_SECONDS = 60
 export function lostInTheDark(name: string): { exhaustion: 1; note: string; flag: string } {
   return { exhaustion: 1, note: `${name}'s lantern dies far from the fire. Feeling along cold rock for hours, ${name} stumbles back at last — one level of Exhaustion.`, flag: "Lost in the dark costs one level of Exhaustion (SRD condition) — PROPOSED" }
 }
+
+/**
+ * Put things on the overworld: forage patches, a hunter's quarry. Walkable
+ * floor only, at least `spacing` vertices apart, between `near` and `far`
+ * steps from camp (walking distance, not as the crow flies — a spot just
+ * across the river can be a long way round). Same rng, same places.
+ */
+export function placeOnWorld(w: ExploreWorld, n: number, rng: Rng, opts: { near?: number; far?: number; spacing?: number } = {}): { x: number; y: number }[] {
+  const near = opts.near ?? 6, far = opts.far ?? Infinity, spacing = opts.spacing ?? 5
+  const at = (x: number, y: number) => y * w.cols + x
+  const dist = new Int32Array(w.cols * w.rows).fill(-1), q = [w.camp]
+  dist[at(w.camp.x, w.camp.y)] = 0
+  while (q.length) {
+    const c = q.shift()!
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = c.x + dx, y = c.y + dy
+      if (x < 0 || y < 0 || x >= w.cols || y >= w.rows) continue
+      const i = at(x, y); if (dist[i] >= 0 || !passable(w.grid[i])) continue
+      dist[i] = dist[at(c.x, c.y)] + 1; q.push({ x, y })
+    }
+  }
+  const pool: { x: number; y: number }[] = []
+  for (let i = 0; i < w.grid.length; i++) if (w.grid[i] === T.FLOOR && dist[i] >= near && dist[i] <= far) pool.push({ x: i % w.cols, y: Math.floor(i / w.cols) })
+  const out: { x: number; y: number }[] = []
+  for (let tries = 0; tries < 4000 && out.length < n && pool.length; tries++) {
+    const p = pool[Math.floor(rng() * pool.length)]
+    if (out.some((o) => Math.abs(o.x - p.x) + Math.abs(o.y - p.y) < spacing)) continue
+    if (w.pois.some((o) => Math.abs(o.x - p.x) + Math.abs(o.y - p.y) < 3)) continue
+    out.push(p)
+  }
+  return out
+}
