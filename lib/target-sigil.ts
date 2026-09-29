@@ -67,8 +67,14 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // pixels"). The ring stays painted, so the two layers sit at different
   // levels of detail on purpose. scripts/vfx/bake_school_sigil.py builds both
   // from one source and samples the flame ramp out of that source's own fire.
+  // Evocation is the one school with its own hit spark rather than the
+  // shared white one: Sam drew a fire blast for it (2026-09-29) and asked
+  // for sparks thrown off it. It fires on the same frame BURST always has —
+  // the moment the save fails, which is the middle of the effect — so this
+  // is new art in an existing slot, not new timing.
   evocation:   { ring: "sigilEvocationRing",   plume: "sigilEvocationPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.evocation.glow },
+                 motes: MOTES, burst: "sigilEvocationBurst",
+                 tint: SCHOOL_RAMP.evocation.glow },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */

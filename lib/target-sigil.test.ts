@@ -280,10 +280,21 @@ describe("sigilPoseAt — taken and warded are opposite motions", () => {
     }
   })
 
-  it("gives every registered sigil a burst sheet, shared like the motes", () => {
+  it("gives every registered sigil a burst sheet — shared, or its own", () => {
+    // This used to require the SHARED sheet for every school, which held
+    // while one white burst served them all. Evocation now has art of its
+    // own (Sam drew a fire blast for it), so the rule that actually matters
+    // is the one this was protecting: no registered school may go WITHOUT a
+    // hit spark, because the strike frame is the dramatic peak of the effect
+    // and a school missing one simply fades instead of landing.
     for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
-      expect(art?.burst, school).toBe("pxSigilBurst")
+      expect(art?.burst, `${school} has no burst`).toBeTruthy()
     }
+    // The shared sheet is still the default: a school only departs from it
+    // when someone drew art for that school specifically.
+    const own = Object.entries(SCHOOL_SIGIL).filter(([, a]) => a?.burst !== "pxSigilBurst")
+    expect(own.map(([s]) => s)).toEqual(["evocation"])
+    expect(SCHOOL_SIGIL.evocation?.burst).toBe("sigilEvocationBurst")
   })
 
   it("lights the flame when it takes them", () => {

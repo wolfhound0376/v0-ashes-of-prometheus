@@ -546,6 +546,15 @@
   "peak": 0,
   "rows": 1
  },
+ "sigilEvocationBurst": {
+  "file": "sigilEvocationBurst.webp",
+  "bytes": 217874,
+  "cols": 4,
+  "rows": 2,
+  "frames": 8,
+  "fps": 20,
+  "loop": false
+ },
  "sigilEvocationPlume": {
   "file": "sigilEvocationPlume.webp",
   "bytes": 17650,

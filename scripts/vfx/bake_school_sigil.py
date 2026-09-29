@@ -263,6 +263,86 @@ def bake_plume(frames: list[np.ndarray], clean: np.ndarray, top: int, pal: np.nd
     return sheet
 
 
+def bake_burst(src: Path, pal: np.ndarray, cell: int, cols: int, count: int,
+               sparks: int, seed: int) -> Image.Image:
+    """
+    The hit spark thrown on the frame the spell TAKES — the middle of the
+    effect, where form ends and the save is decided (Sam, 2026-09-29: "it
+    should trigger in the middle of the animation"). That is already where
+    target-sigil.ts fires `burst`, so this needs no new timing, only art.
+
+    The source is ONE still, so the burst is built rather than sampled: it
+    expands and fades, which is what a blast does, and pixel shards are thrown
+    outward over the top of it ("add sprites to it to make it spark").
+
+    The shards are SEEDED. Every seat watches the same fight, so two players
+    must see the same sparks — the same rule ImpactBurst and the map scatter
+    already follow. Math.random() here would desynchronise the board.
+
+    They are drawn from the sigil's own flame ramp, and they travel under
+    gravity with drag, shrinking as they go, so they read as embers thrown off
+    the blast rather than as confetti laid on top of it.
+    """
+    art = Image.open(src).convert("RGBA")
+    rows = (count + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * cell, rows * cell), (0, 0, 0, 0))
+    rng = np.random.default_rng(seed)
+    ang = rng.uniform(0, 2 * np.pi, sparks)
+    spd = rng.uniform(0.55, 1.25, sparks)
+    thick = rng.integers(max(2, cell // 90), max(4, cell // 42), sparks)
+    tint = pal[rng.integers(len(pal) - 3, len(pal), sparks)].astype(np.uint8)
+
+    # The blast is a RING, so the sparks leave from the ring, not from the
+    # middle. Emitted at the centre they spend their first frames inside the
+    # brightest part of the art and are simply never seen — which is what the
+    # first cut did.
+    R0 = 0.30
+
+    for i in range(count):
+        p = i / max(1, count - 1)
+        frame = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
+        grow = 0.55 + 0.75 * (1 - (1 - p) ** 2)
+        fade = 1.0 if p < 0.25 else max(0.0, 1 - (p - 0.25) / 0.75)
+        w = max(1, int(cell * grow))
+        layer = art.resize((w, w), Image.LANCZOS)
+        la = np.asarray(layer).astype(np.float32)
+        la[..., 3] *= fade
+        frame.alpha_composite(Image.fromarray(la.astype(np.uint8), "RGBA"),
+                              ((cell - w) // 2, (cell - w) // 2))
+
+        px = np.asarray(frame).copy()
+        t = p * 1.2
+        drag = 1 - np.exp(-2.3 * t)
+        for k in range(sparks):
+            if fade <= 0:
+                continue
+            r = (R0 + spd[k] * drag * 0.80) * cell
+            # Squashed vertically, like everything else the board's camera sees.
+            x = cell / 2 + np.cos(ang[k]) * r
+            y = cell / 2 + np.sin(ang[k]) * r * 0.52 + 0.30 * cell * t * t
+            # A STREAK, not a block. A spark is read by its direction of
+            # travel; a square pixel at this size reads as a compression
+            # artifact, which is exactly how the first cut looked.
+            tail = 0.10 * cell * (0.4 + spd[k]) * (1 - p * 0.5)
+            xs = x - np.cos(ang[k]) * tail
+            ys = y - np.sin(ang[k]) * tail * 0.52
+            steps = max(2, int(tail))
+            for q in range(steps):
+                u = q / (steps - 1)
+                bx, by = int(xs + (x - xs) * u), int(ys + (y - ys) * u)
+                sz = max(1, int(thick[k] * (0.45 + 0.55 * u)))
+                x1, y1 = max(0, bx), max(0, by)
+                x2, y2 = min(cell, bx + sz), min(cell, by + sz)
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                al = fade * (0.35 + 0.65 * u) * max(0.0, 1 - p * 0.7)
+                px[y1:y2, x1:x2, :3] = tint[k]
+                px[y1:y2, x1:x2, 3] = np.maximum(px[y1:y2, x1:x2, 3],
+                                                 int(255 * min(1.0, al)))
+        sheet.paste(Image.fromarray(px, "RGBA"), ((i % cols) * cell, (i // cols) * cell))
+    return sheet
+
+
 def coverage(im: Image.Image) -> float:
     return 100.0 * float((np.asarray(im)[..., 3] > 8).mean())
 
@@ -288,6 +368,12 @@ def main() -> None:
                     help="tail length in radians; larger is a longer comet")
     ap.add_argument("--floor", type=float, default=0.05)
     ap.add_argument("--gain", type=float, default=1.25)
+    ap.add_argument("--burst", type=Path, default=None,
+                    help="still image for the hit spark thrown on the strike frame")
+    ap.add_argument("--burst-cell", type=int, default=256)
+    ap.add_argument("--burst-frames", type=int, default=8)
+    ap.add_argument("--sparks", type=int, default=26)
+    ap.add_argument("--seed", type=int, default=11, help="seeded so every seat sees the same sparks")
     ap.add_argument("--dry-run", action="store_true", help="measure and report, write nothing")
     a = ap.parse_args()
 
@@ -298,6 +384,8 @@ def main() -> None:
     top, centre, ratio = ring_band(clean)
     pal = flame_palette(frames, clean, a.colors)
 
+    burst = (bake_burst(a.burst, pal, a.burst_cell, a.cols, a.burst_frames, a.sparks, a.seed)
+             if a.burst else None)
     ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
     ring_sheet = ring if a.chase <= 1 else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc)
     plume = bake_plume(frames, clean, top, pal, a.px, a.plume_w, a.plume_h, a.cols, a.frames,
@@ -313,6 +401,8 @@ def main() -> None:
           + ("" if a.chase <= 1 else
              f"   chase {a.chase} frames, glyph band r={glyph_band(ring)[0]:.2f}-{glyph_band(ring)[1]:.2f}"))
     print(f"  plume         coverage {coverage(plume):4.1f}%   ({a.plume_w // a.px}x{a.plume_h // a.px} px art)")
+    if burst is not None:
+        print(f"  burst         coverage {coverage(burst):4.1f}%   ({a.burst_frames} frames, {a.sparks} seeded sparks)")
     for name, im in (("ring", ring_sheet), ("plume", plume)):
         if coverage(im) > 70:
             print(f"  WARNING {name} keys at >70% — it will render as an opaque plate, not as light.")
@@ -344,7 +434,9 @@ def main() -> None:
           "fps": 12, "loop": True}),
         ("Plume", plume, {"cols": a.cols, "rows": (a.frames + a.cols - 1) // a.cols,
                           "frames": a.frames, "fps": 12, "loop": True}),
-    ):
+    ) + ((("Burst", burst, {"cols": a.cols, "rows": (a.burst_frames + a.cols - 1) // a.cols,
+                            "frames": a.burst_frames, "fps": 20, "loop": False}),)
+         if burst is not None else ()):
         key = f"sigil{a.school}{suffix}"
         dest = OUT / f"{key}.webp"
         im.save(dest, "WEBP", quality=90, method=6)
