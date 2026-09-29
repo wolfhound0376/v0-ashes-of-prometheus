@@ -408,3 +408,23 @@ describe("wild caps and scrub", () => {
     expect(wildForage({ conMod: 0, biome: "tunnels" }, seq(0.1, 0.1, 0.9)).effect).toBe("blinded")
   })
 })
+
+describe("rare prey (Sam, 2026-09-29)", () => {
+  it("rolls the tier first: commons dominate, the giant spider is about one in a hundred", async () => {
+    const { choosePrey, PREY, PREY_RARITY } = await import("./camp-field")
+    const n = 20000, tally: Record<string, number> = {}
+    const rng = seededRng(99)
+    for (let i = 0; i < n; i++) { const r = choosePrey("tunnels", rng).prey!.rarity; tally[r] = (tally[r] || 0) + 1 }
+    for (const t of Object.keys(PREY_RARITY) as (keyof typeof PREY_RARITY)[]) expect(Math.abs(tally[t] / n - PREY_RARITY[t])).toBeLessThan(0.01)
+    expect(PREY.filter((p) => p.fightsBack).map((p) => p.slug)).toEqual(["female-steeder", "giant-spider"])
+  })
+  it("falls back to what the bestiary has when a tier is missing", async () => {
+    const { choosePrey } = await import("./camp-field")
+    for (let i = 0; i < 50; i++) expect(choosePrey("shore", seededRng(i), new Set(["giant-spider"])).prey!.slug).toBe("giant-spider")
+  })
+  it("rare prey feed a fixed number of days; commons keep the foraging roll", async () => {
+    const { preyFood, PREY } = await import("./camp-field")
+    expect(preyFood(PREY.find((p) => p.slug === "female-steeder")!, 1)).toBe(4)
+    expect(preyFood(PREY.find((p) => p.slug === "giant-rat")!, 5)).toBe(5)
+  })
+})
