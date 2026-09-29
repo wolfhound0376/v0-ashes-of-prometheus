@@ -606,3 +606,189 @@ export function lairOccupant(rows: readonly EncounterTableRow[], rng: Rng): { re
   const det = (row.detail ?? {}) as { bestiary?: string; count?: number | string }
   return { result: row.result, bestiary: det.bestiary ?? null, count: rollCount(det.count ?? 1, rng), face }
 }
+
+// ============================================================================
+// THE OVERWORLD — one big cave map, screen by screen (Sam, 9/28: "much larger
+// maps where a large grid does not guarantee finding anything … tunnels and
+// rivers (harder to cross), more terrain … like a Zelda map … timing is an
+// issue")
+// ============================================================================
+//
+// The world is a grid of VERTICES (the Wang tiles are drawn between them).
+// Caverns joined by winding tunnels are carved out of solid rock; underground
+// rivers run across it (deep water stops you; fords let you wade, slowly); a
+// chasm splits it (rope bridges cross it). A handful of places are worth
+// searching and most of the map is not. Everything is seeded: same seed, same
+// world. All of it — sizes, counts, speeds, the clock — is PROPOSED.
+
+export const T = { WALL: 0, FLOOR: 1, DEEP: 2, FORD: 3, CHASM: 4, BRIDGE: 5, WEB: 6, MUCK: 7 } as const
+export type Tile = (typeof T)[keyof typeof T]
+export const passable = (t: number) => t === T.FLOOR || t === T.FORD || t === T.BRIDGE || t === T.WEB || t === T.MUCK
+/** Wading, webs and muck slow you (PROPOSED: half speed, webs a third — the book halves travel pace in webs). */
+export const slowFactor = (t: number) => (t === T.FORD ? 0.45 : t === T.WEB ? 0.35 : t === T.MUCK ? 0.4 : 1)
+
+/** One screen is 15×9 cells (a Zelda screen); the world is 8×6 screens. PROPOSED. */
+export const SCREEN = { cw: 15, ch: 9 } as const
+export const WORLD_SCREENS = { nx: 8, ny: 6 } as const
+
+export interface WorldPoi { x: number; y: number; kind: "cache" | "lair"; look: string }
+export interface WorldFeature { x: number; y: number; terrain: string }
+export interface ExploreWorld {
+  cols: number; rows: number; grid: number[]
+  camp: { x: number; y: number }
+  pois: WorldPoi[]; lair: { x: number; y: number }
+  features: WorldFeature[]
+  screens: { nx: number; ny: number; cw: number; ch: number }
+  flags: string[]
+}
+
+export function tileAt(w: ExploreWorld, x: number, y: number): number {
+  if (x < 0 || y < 0 || x >= w.cols || y >= w.rows) return T.WALL
+  return w.grid[y * w.cols + x]
+}
+
+export function buildExploreWorld(seed: string | number, terrainRows: readonly EncounterTableRow[], size: { nx: number; ny: number } = WORLD_SCREENS): ExploreWorld {
+  const rng = seededRng(`${seed}:world`)
+  const cols = size.nx * SCREEN.cw + 1, rows = size.ny * SCREEN.ch + 1
+  const g = new Array<number>(cols * rows).fill(T.WALL)
+  const at = (x: number, y: number) => y * cols + x
+  const inside = (x: number, y: number) => x >= 2 && y >= 2 && x < cols - 2 && y < rows - 2
+  const set = (x: number, y: number, t: number) => { if (inside(x, y)) g[at(x, y)] = t }
+  const get = (x: number, y: number) => (x < 0 || y < 0 || x >= cols || y >= rows ? T.WALL : g[at(x, y)])
+  const carveTo = (x: number, y: number) => {
+    if (!inside(x, y)) return
+    const t = g[at(x, y)]
+    g[at(x, y)] = t === T.DEEP ? T.FORD : t === T.CHASM ? T.BRIDGE : t === T.WALL ? T.FLOOR : t
+  }
+  const disc = (cx: number, cy: number, r: number, t: number, rough = 1.2) => {
+    for (let y = Math.floor(cy - r - 2); y <= cy + r + 2; y++) for (let x = Math.floor(cx - r - 2); x <= cx + r + 2; x++) {
+      if (Math.hypot(x - cx, (y - cy) * 1.15) <= r + rng() * rough) (t === T.FLOOR ? carveTo(x, y) : set(x, y, t))
+    }
+  }
+  // 1. Caverns. Camp sits bottom-middle.
+  const camp = { x: Math.floor(size.nx / 2) * SCREEN.cw - 8, y: rows - 6 }
+  const centers = [camp]
+  for (let i = 0; i < size.nx * size.ny * 0.8; i++) centers.push({ x: 5 + Math.floor(rng() * (cols - 10)), y: 5 + Math.floor(rng() * (rows - 10)) })
+  centers.forEach((c, i) => disc(c.x, c.y, i === 0 ? 4 : 2.5 + rng() * 3.5, T.FLOOR))
+  // 2. Tunnels: a spanning tree over the caverns, plus a few loops; each tunnel wanders.
+  const linked = new Set([0]), edges: [number, number][] = []
+  while (linked.size < centers.length) {
+    let best: [number, number] | null = null, bd = Infinity
+    for (const a of linked) for (let b = 0; b < centers.length; b++) if (!linked.has(b)) { const d2 = Math.hypot(centers[a].x - centers[b].x, centers[a].y - centers[b].y); if (d2 < bd) { bd = d2; best = [a, b] } }
+    edges.push(best!); linked.add(best![1])
+  }
+  for (let i = 0; i < 4; i++) edges.push([Math.floor(rng() * centers.length), Math.floor(rng() * centers.length)])
+  const tunnel = (a: { x: number; y: number }, b: { x: number; y: number }, wide = rng() < 0.3) => {
+    let x = a.x, y = a.y, n = 0
+    while ((x !== b.x || y !== b.y) && n++ < 2000) {
+      if (rng() < 0.72) { if (rng() < 0.5 && x !== b.x) x += Math.sign(b.x - x); else if (y !== b.y) y += Math.sign(b.y - y); else x += Math.sign(b.x - x) }
+      else { x += rng() < 0.5 ? -1 : 1; y += rng() < 0.5 ? -1 : 1 }
+      x = Math.max(2, Math.min(cols - 3, x)); y = Math.max(2, Math.min(rows - 3, y))
+      carveTo(x, y); carveTo(x + 1, y); if (wide) { carveTo(x, y + 1); carveTo(x + 1, y + 1) }
+    }
+  }
+  for (const [a, b] of edges) if (a !== b) tunnel(centers[a], centers[b])
+  // 3. Rivers: meander left→right; deep water with fords. Banks are opened so water never touches rock.
+  const riverCount = 1 + (rng() < 0.6 ? 1 : 0)
+  const rivers: { x: number; y: number }[][] = []
+  for (let r = 0; r < riverCount; r++) {
+    const base = Math.floor(rows * (r === 0 ? 0.33 : 0.66) + (rng() - 0.5) * 6)
+    let y = base, drift = 0
+    const path: { x: number; y: number }[] = []
+    for (let x = 3; x < cols - 3; x++) {
+      drift = Math.max(-1, Math.min(1, drift + (rng() - 0.5) * 0.7 - (y - base) * 0.03)); y = Math.max(5, Math.min(rows - 6, Math.round(y + drift)))
+      path.push({ x, y })
+      if (Math.abs(x - camp.x) < 6 && Math.abs(y - camp.y) < 6) continue
+      for (let dy = -1; dy <= 1; dy++) set(x, y + dy, T.DEEP)
+    }
+    rivers.push(path)
+  }
+  // 4. A chasm top→bottom, crossed by rope bridges.
+  const cbase = Math.floor(cols * (0.2 + rng() * 0.6))
+  let cx = cbase, cdrift = 0
+  const chasm: { x: number; y: number }[] = []
+  for (let y = 3; y < rows - 3; y++) {
+    cdrift = Math.max(-1, Math.min(1, cdrift + (rng() - 0.5) * 0.8 - (cx - cbase) * 0.04)); cx = Math.max(6, Math.min(cols - 7, Math.round(cx + cdrift)))
+    chasm.push({ x: cx, y })
+    if (Math.abs(y - camp.y) < 5 && Math.abs(cx - camp.x) < 8) continue
+    for (let dx = 0; dx <= 1; dx++) if (get(cx + dx, y) !== T.DEEP) set(cx + dx, y, T.CHASM)
+  }
+  // 5. Every cavern gets its feature from OotA's Terrain Encounters (p.30). Webs and muck are ground you wade through.
+  const terr = terrainRows.filter((t) => t.table_key === "underdark_terrain")
+  const features: WorldFeature[] = []
+  centers.slice(1).forEach((c) => {
+    if (!terr.length || rng() < 0.35) return
+    const face = 1 + Math.floor(rng() * 20)
+    const row = terr.find((t) => face >= t.roll_min && face <= t.roll_max)
+    if (!row) return
+    features.push({ x: c.x, y: c.y, terrain: row.result })
+    if (/web/i.test(row.result)) disc(c.x, c.y, 3, T.WEB, 1.5)
+    if (/muck/i.test(row.result)) disc(c.x, c.y, 2.2, T.MUCK, 1)
+  })
+  // 6. Banks: rock never touches water or the chasm edge (the tileset draws one transition per cell).
+  const bank = () => {
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const t = g[at(x, y)]
+      if (t === T.DEEP || t === T.FORD || t === T.CHASM || t === T.BRIDGE) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (get(x + dx, y + dy) === T.WALL) set(x + dx, y + dy, T.FLOOR)
+    }
+  }
+  bank()
+  // 7. Fords and bridges where tunnels meet water, then make sure everything is reachable from camp.
+  for (const path of rivers) for (let k = 0; k < 3; k++) { const p = path[Math.floor((k + 0.3 + rng() * 0.4) / 3 * path.length)]; for (let dx = 0; dx < 3; dx++) for (let dy = -2; dy <= 2; dy++) if (get(p.x + dx, p.y + dy) === T.DEEP) set(p.x + dx, p.y + dy, T.FORD) }
+  for (let k = 0; k < 2; k++) { const p = chasm[Math.floor((k + 0.3 + rng() * 0.4) / 2 * chasm.length)]; for (let dx = -1; dx <= 2; dx++) if (get(p.x + dx, p.y) === T.CHASM) set(p.x + dx, p.y, T.BRIDGE) }
+  const reach = () => {
+    const seen = new Uint8Array(cols * rows), q = [camp]; seen[at(camp.x, camp.y)] = 1
+    while (q.length) { const c = q.shift()!; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = c.x + dx, ny = c.y + dy; if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue; const i = at(nx, ny); if (seen[i] || !passable(g[i])) continue; seen[i] = 1; q.push({ x: nx, y: ny }) } }
+    return seen
+  }
+  set(camp.x, camp.y, T.FLOOR)
+  for (let pass = 0; pass < 6; pass++) {
+    const seen = reach()
+    let lost: { x: number; y: number } | null = null
+    for (let i = 0; i < g.length && !lost; i++) if (passable(g[i]) && !seen[i]) lost = { x: i % cols, y: Math.floor(i / cols) }
+    if (!lost) break
+    let near = camp, nd = Infinity
+    for (let i = 0; i < g.length; i += 3) if (seen[i]) { const x = i % cols, y = Math.floor(i / cols), d2 = Math.abs(x - lost.x) + Math.abs(y - lost.y); if (d2 < nd) { nd = d2; near = { x, y } } }
+    tunnel(lost, near, true); bank()
+  }
+  // Anything still cut off goes back to rock, so the map never shows ground you cannot reach.
+  const seen = reach()
+  for (let i = 0; i < g.length; i++) if (passable(g[i]) && !seen[i]) g[i] = T.WALL
+  bank()
+  // 8. Places worth a look: few, far apart, far from camp. The lair is the farthest reachable ground.
+  const dist = new Int32Array(cols * rows).fill(-1); { const q = [camp]; dist[at(camp.x, camp.y)] = 0; while (q.length) { const c = q.shift()!; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = c.x + dx, ny = c.y + dy; if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue; const i = at(nx, ny); if (dist[i] >= 0 || !passable(g[i])) continue; dist[i] = dist[at(c.x, c.y)] + 1; q.push({ x: nx, y: ny }) } } }
+  let lair = camp, ld = 0
+  for (let i = 0; i < g.length; i++) if (g[i] === T.FLOOR && dist[i] > ld) { ld = dist[i]; lair = { x: i % cols, y: Math.floor(i / cols) } }
+  const pois: WorldPoi[] = [{ ...lair, kind: "lair", look: "skull-pile" }]
+  const looks = ["remains-bone-pile", "dead-human", "dead-drow", "dead-duergar", "sack-pile", "rubble-pile", "dead-orc"]
+  for (let tries = 0; tries < 4000 && pois.length < 1 + CACHE_COUNT; tries++) {
+    const x = 3 + Math.floor(rng() * (cols - 6)), y = 3 + Math.floor(rng() * (rows - 6)), i = at(x, y)
+    if (g[i] !== T.FLOOR || dist[i] < 14) continue
+    if (pois.some((p) => Math.abs(p.x - x) + Math.abs(p.y - y) < 16)) continue
+    pois.push({ x, y, kind: "cache", look: looks[Math.floor(rng() * looks.length)] })
+  }
+  return {
+    cols, rows, grid: g, camp, pois, lair, features: features.filter((f) => passable(tileAt({ cols, rows, grid: g } as ExploreWorld, f.x, f.y))),
+    screens: { nx: size.nx, ny: size.ny, cw: SCREEN.cw, ch: SCREEN.ch },
+    flags: [
+      `World ${size.nx}×${size.ny} screens, ${riverCount} river${riverCount > 1 ? "s" : ""}, one chasm, ${CACHE_COUNT} searchable spots — all PROPOSED`,
+      "Wading a ford, webs and muck slow you; deep water and the chasm stop you — PROPOSED",
+      "Cavern terrain is OotA-Enc p.30; a spot's search rolls Ambush Lair Discovery (p.32), and most spots hold nothing",
+    ],
+  }
+}
+
+/** Searchable spots on the map besides the lair. Few on purpose (Sam: a big map need not give anything). PROPOSED. */
+export const CACHE_COUNT = 7
+
+/**
+ * The clock. The lantern holds LANTERN_WORLD_SECONDS of oil; every
+ * HOUR_SECONDS of walking is an hour of the night and brings OotA's Random
+ * Encounters roll. Caught out when the oil runs dry, the explorer stumbles
+ * back and takes a level of exhaustion (SRD). All PROPOSED.
+ */
+export const LANTERN_WORLD_SECONDS = 300
+export const HOUR_SECONDS = 60
+export function lostInTheDark(name: string): { exhaustion: 1; note: string; flag: string } {
+  return { exhaustion: 1, note: `${name}'s lantern dies far from the fire. Feeling along cold rock for hours, ${name} stumbles back at last — one level of Exhaustion.`, flag: "Lost in the dark costs one level of Exhaustion (SRD condition) — PROPOSED" }
+}

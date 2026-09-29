@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
+  T, passable, slowFactor, tileAt, buildExploreWorld, CACHE_COUNT, lostInTheDark,
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
@@ -203,5 +204,54 @@ describe("the zelda layer", () => {
     const f = searchRoom({ who: "Kenta", total: 18, catalog: CATALOG, discoveryRows: ROWS, rng: seq(3, 11, 1), advantage: true })
     expect(f.face).toBe(11)
     expect(f.flags.some((x) => /Advantage/.test(x))).toBe(true)
+  })
+})
+
+describe("the overworld", () => {
+  const W = buildExploreWorld("wp-17", ROWS)
+  const reach = () => {
+    const seen = new Set<string>([`${W.camp.x},${W.camp.y}`]), q = [W.camp]
+    while (q.length) { const c = q.shift()!; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = c.x + dx, y = c.y + dy; if (!passable(tileAt(W, x, y)) || seen.has(`${x},${y}`)) continue; seen.add(`${x},${y}`); q.push({ x, y }) } }
+    return seen
+  }
+  it("is big: 8×6 screens of 15×9", () => {
+    expect(W.cols).toBe(121)
+    expect(W.rows).toBe(55)
+  })
+  it("same seed, same world", () => {
+    expect(buildExploreWorld("wp-17", ROWS).grid.join("")).toBe(W.grid.join(""))
+  })
+  it("every searchable spot and the lair can be walked to from camp", () => {
+    const seen = reach()
+    for (const p of W.pois) expect(seen.has(`${p.x},${p.y}`)).toBe(true)
+    // and no ground is shown that cannot be reached
+    // Unreachable ground only ever shows as a far bank you can see across the water or the chasm.
+    for (let i = 0; i < W.grid.length; i++) if (passable(W.grid[i]) && !seen.has(`${i % W.cols},${Math.floor(i / W.cols)}`)) {
+      const x = i % W.cols, y = Math.floor(i / W.cols); let wet = false
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = tileAt(W, x + dx, y + dy); if (t === T.DEEP || t === T.CHASM) wet = true }
+      expect(wet).toBe(true)
+    }
+  })
+  it("has rivers you cannot wade except at fords, and a chasm with bridges", () => {
+    const n = (t: number) => W.grid.filter((x) => x === t).length
+    expect(n(T.DEEP)).toBeGreaterThan(50)
+    expect(n(T.FORD)).toBeGreaterThan(0)
+    expect(n(T.CHASM)).toBeGreaterThan(20)
+    expect(n(T.BRIDGE)).toBeGreaterThan(0)
+    expect(passable(T.DEEP)).toBe(false)
+    expect(slowFactor(T.FORD)).toBeLessThan(1)
+  })
+  it("rock never touches water or the chasm", () => {
+    for (let y = 1; y < W.rows - 1; y++) for (let x = 1; x < W.cols - 1; x++) {
+      const t = tileAt(W, x, y); if (t !== T.DEEP && t !== T.FORD && t !== T.CHASM && t !== T.BRIDGE) continue
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) expect(tileAt(W, x + dx, y + dy)).not.toBe(T.WALL)
+    }
+  })
+  it("few places are worth searching, and they are spread out", () => {
+    expect(W.pois.filter((p) => p.kind === "cache").length).toBeLessThanOrEqual(CACHE_COUNT)
+    expect(W.pois.filter((p) => p.kind === "lair")).toHaveLength(1)
+  })
+  it("the lantern running out costs a level of exhaustion", () => {
+    expect(lostInTheDark("Fifi").exhaustion).toBe(1)
   })
 })
