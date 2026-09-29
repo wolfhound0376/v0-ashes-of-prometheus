@@ -51,10 +51,17 @@ describe("targetSigilFor", () => {
   })
 
   it("draws nothing for a save spell of a school with no sigil yet", () => {
-    // Updated when enchantment landed: this used to name enchantment as the
-    // negative case. A school with art registered must draw; only the six
-    // still without art stay silent.
-    expect(targetSigilFor({ resolve: "save", school: "evocation", damage: "radiant" })).toBeNull()
+    // Updated when enchantment landed, and again when EVOCATION landed: this
+    // has now named enchantment and then evocation as the negative case, and
+    // each time the school got art the test had to move on. A school with art
+    // registered must draw; only the four still without it stay silent —
+    // abjuration, conjuration, divination and transmutation.
+    expect(targetSigilFor({ resolve: "save", school: "transmutation", damage: "radiant" })).toBeNull()
+    expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: "radiant" })).toBeNull()
+    // and the four that DO have art must not be silent
+    for (const s of ["necromancy", "enchantment", "illusion", "evocation"] as const) {
+      expect(targetSigilFor({ resolve: "save", school: s, damage: "radiant" }), s).not.toBeNull()
+    }
     expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
     expect(targetSigilFor({ resolve: "save", school: "divination", damage: null })).toBeNull()
   })
@@ -273,10 +280,21 @@ describe("sigilPoseAt — taken and warded are opposite motions", () => {
     }
   })
 
-  it("gives every registered sigil a burst sheet, shared like the motes", () => {
+  it("gives every registered sigil a burst sheet — shared, or its own", () => {
+    // This used to require the SHARED sheet for every school, which held
+    // while one white burst served them all. Evocation now has art of its
+    // own (Sam drew a fire blast for it), so the rule that actually matters
+    // is the one this was protecting: no registered school may go WITHOUT a
+    // hit spark, because the strike frame is the dramatic peak of the effect
+    // and a school missing one simply fades instead of landing.
     for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
-      expect(art?.burst, school).toBe("pxSigilBurst")
+      expect(art?.burst, `${school} has no burst`).toBeTruthy()
     }
+    // The shared sheet is still the default: a school only departs from it
+    // when someone drew art for that school specifically.
+    const own = Object.entries(SCHOOL_SIGIL).filter(([, a]) => a?.burst !== "pxSigilBurst")
+    expect(own.map(([s]) => s)).toEqual(["evocation"])
+    expect(SCHOOL_SIGIL.evocation?.burst).toBe("sigilEvocationBurst")
   })
 
   it("lights the flame when it takes them", () => {
