@@ -108,6 +108,18 @@ describe("targetSigilFor", () => {
     }
   })
 
+  it("anchors on the target by default, and on the CASTER only for divination", () => {
+    // Sam, 2026-09-29: "this is our divination sfx for spell casters". The
+    // eyes open around whoever is scrying, not around whoever is scried.
+    // Every other school marks the creature the spell was thrown at, and an
+    // absent `anchor` must keep meaning "target" — the board reads it as
+    // `=== "caster"`, so a typo silently falls back to the safe side.
+    expect(SCHOOL_SIGIL.divination?.anchor).toBe("caster")
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      if (school !== "divination") expect(art?.anchor, school).toBeUndefined()
+    }
+  })
+
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
     expect(SCHOOL_SIGIL.necromancy?.ring).toBe("sigilNecroticRing")
     expect(SCHOOL_SIGIL.enchantment?.ring).toBe("sigilEnchantmentRing")
