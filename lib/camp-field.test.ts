@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
-  fieldKit, kitDamage, fieldFoe, QUIVER, herbSpotDC, skillLevel, spotChance, spotHerb,
+  fieldKit, kitDamage, fieldFoe, QUIVER, lightFor, lightTorchstalk, moraleBreaks, herbSpotDC, skillLevel, spotChance, spotHerb,
   T, passable, slowFactor, tileAt, buildExploreWorld, placeOnWorld, CACHE_COUNT, lostInTheDark,
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
@@ -369,5 +369,27 @@ describe("field fights from bestiary rows", () => {
   })
   it("a stub row cannot be fought here", () => {
     expect(fieldFoe({ name: "Grell", ac: null, hp: null, actions: [] })).toBeNull()
+  })
+})
+
+describe("light and morale", () => {
+  it("needs oil or a light source somewhere in the party", () => {
+    expect(lightFor([{}, {}]).ok).toBe(false)
+    expect(lightFor([{ "hooded-lantern": 1 }]).ok).toBe(false)
+    expect(lightFor([{ "hooded-lantern": 1 }, { "lamp-oil": 2 }])).toMatchObject({ ok: true, source: "lantern" })
+    expect(lightFor([{ "lamp-oil": 1 }]).source).toBe("oil")
+    expect(lightFor([{ torchstalk: 1 }]).source).toBe("torchstalk")
+  })
+  it("a torchstalk goes off on a 1", () => {
+    let i = 0; const seq = [0.0, 0.5]
+    expect(lightTorchstalk(() => seq[i++]).exploded).toBe(true)
+    expect(lightTorchstalk(() => 0.9).exploded).toBe(false)
+  })
+  it("bloodied or crit forces the DC 10 save; oozes never run", () => {
+    expect(moraleBreaks({ hp: 3, max: 10 }, () => 0).flees).toBe(true)      // d20 = 1
+    expect(moraleBreaks({ hp: 3, max: 10 }, () => 0.99).flees).toBe(false)  // d20 = 20
+    expect(moraleBreaks({ hp: 9, max: 10 }, () => 0.5).flees).toBe(false)   // healthy, flat roll 0.5 > 0.1
+    expect(moraleBreaks({ hp: 9, max: 10 }, () => 0.05).flees).toBe(true)   // the flat 10%
+    expect(moraleBreaks({ hp: 1, max: 45, mindless: true }, () => 0).flees).toBe(false)
   })
 })
