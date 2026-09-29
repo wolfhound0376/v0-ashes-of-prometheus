@@ -1017,6 +1017,131 @@ export function fieldKit(c: {
   return kit
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Power attacks (Sam, 2026-09-29): HOLD the attack (left mouse, or the attack key) and each class lets loose its
+// signature move instead of an ordinary swing. A tap is still a tap. The dice, saves and DCs are the SRD's spell or
+// feature each one is named for (save DC = 8 + proficiency + the casting ability, SRD 5.1); the hold, the cooldowns,
+// the throw and the shield are Sam's field-game house rules and flagged as such.
+//   rogue      kick, then a backstab with advantage + Sneak Attack 1d6
+//   paladin    blazing smite — the weapon + Divine Smite 2d8 radiant
+//   monk       Flurry of Blows — the attack and two more unarmed strikes, quick as you like
+//   sorcerer   Shocking Grasp — 1d8 lightning, touch
+//   wizard     Thunderwave — 2d8 thunder, CON save for half, pushed 10 ft on a failure. Charged like a bow.
+//   druid      Entangle — vines rise under the nearest creature, STR save or restrained
+//   warlock    two Eldritch Blasts at once, purple and crackling, each pushes 10 ft
+//   cleric     Guiding Bolt — 4d6 radiant; the next attack on it has advantage
+//   ranger     an ensnaring arrow — the bow's hit, then STR save or wrapped in vines, 1d6 piercing as they bite
+//   barbarian  Rage, then pick up the nearest creature (up to one size larger — SRD grappling) and throw it
+//   fighter    shield up — nothing gets through while it is held (Sam's list names the shield without a class; the
+//              fighter is the one class missing from it, so it goes there — flagged for Sam)
+//   bard       Vicious Mockery — WIS save or 1d4 psychic, and one of three insults out loud
+// ---------------------------------------------------------------------------------------------------------------
+
+export type PowerKind =
+  | "backstab" | "smite" | "flurry" | "shock" | "thunder" | "vines" | "twin-blast" | "guiding-bolt" | "ensnare-arrow" | "rage-throw" | "shield" | "mockery"
+
+export interface FieldPower {
+  kind: PowerKind
+  name: string
+  /** Seconds the attack must be held before the power goes off. Under it, the release is an ordinary strike. */
+  hold: number
+  /** Released only once fully charged (the wizard, like a bow); otherwise it fires the moment `hold` is reached. */
+  chargeRelease: boolean
+  /** Seconds before it can be used again. PROPOSED. */
+  cooldown: number
+  /** Attack powers: the roll. `extra` is dice added on a hit and doubled on a crit (SRD). */
+  strike?: Striker
+  /** Extra attacks in the same breath (Flurry: 2 more; twin blast: 2 beams in all). */
+  strikes?: number
+  /** Save powers: who saves, against what DC, and what a failure costs. */
+  save?: { ability: "str" | "dex" | "con" | "wis"; dc: number; damage?: string; halfOnSave?: boolean }
+  /** Feet the target is shoved (field: 10 ft ≈ one body length). */
+  pushFeet?: number
+  /** Seconds the target is held by vines, or the rage lasts, or the mark stays. */
+  seconds?: number
+  /** Where it reaches, in feet: 5 is touch. */
+  rangeFeet: number
+  note: string
+}
+
+export const POWER_HOLD_SECONDS = 0.45
+export const THUNDER_CHARGE_SECONDS = 1.8
+
+const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`)
+
+/** The class's hold-the-attack power, or null for a class with none. */
+export function fieldPower(c: {
+  class?: string | null; str?: number | null; dex?: number | null; con?: number | null; int?: number | null; wis?: number | null; cha?: number | null
+  prof?: number | null
+}): FieldPower | null {
+  const cls = (c.class ?? "").trim().toLowerCase()
+  const prof = c.prof ?? 2
+  const s = mod(c.str), dx = mod(c.dex)
+  const dc = (score: number | null | undefined) => 8 + prof + mod(score)
+  const base = { hold: POWER_HOLD_SECONDS, chargeRelease: false }
+  switch (cls) {
+    case "rogue": {
+      const fin = Math.max(s, dx) // dagger: finesse
+      return { ...base, kind: "backstab", name: "Kick & backstab", cooldown: 5, rangeFeet: 5, strike: { name: "Backstab (dagger)", toHit: prof + fin, damage: `1d4${sign(fin)}`, extra: "1d6" }, pushFeet: 5, note: "A kick staggers it (a shove, no damage), then the dagger with advantage — Sneak Attack 1d6 on a hit (SRD rogue, 1st level)" }
+    }
+    case "paladin":
+      return { ...base, kind: "smite", name: "Blazing smite", cooldown: 8, rangeFeet: 5, strike: { name: "Divine Smite (longsword)", toHit: prof + s, damage: `1d8${sign(s)}`, extra: "2d8" }, note: "Longsword + Divine Smite 2d8 radiant (SRD, a 1st-level slot)" }
+    case "monk":
+      return { ...base, kind: "flurry", name: "Flurry of Blows", cooldown: 4, rangeFeet: 5, strikes: 3, strike: { name: "Unarmed strike (Martial Arts)", toHit: prof + dx, damage: `1d4${sign(dx)}` }, note: "The attack and two more unarmed strikes (SRD Flurry of Blows, 1 ki)" }
+    case "sorcerer":
+      return { ...base, kind: "shock", name: "Shocking Grasp", cooldown: 3, rangeFeet: 5, strike: { name: "Shocking Grasp", toHit: prof + mod(c.cha), damage: "1d8" }, note: "Melee spell attack, 1d8 lightning; the target can't react until its next turn (SRD)" }
+    case "wizard":
+      return { hold: THUNDER_CHARGE_SECONDS, chargeRelease: true, kind: "thunder", name: "Thunderwave", cooldown: 6, rangeFeet: 15, pushFeet: 10, save: { ability: "con", dc: dc(c.int), damage: "2d8", halfOnSave: true }, note: "15-ft wave: CON save, 2d8 thunder (half on a success), pushed 10 ft on a failure (SRD). Held to charge — house rule" }
+    case "druid":
+      return { ...base, kind: "vines", name: "Grasping vines", cooldown: 10, rangeFeet: 90, seconds: 6, save: { ability: "str", dc: dc(c.wis) }, note: "Entangle on the nearest creature: STR save or restrained (SRD); held 6 s in the field" }
+    case "warlock":
+      return { ...base, kind: "twin-blast", name: "Twin Eldritch Blast", cooldown: 4, rangeFeet: 120, strikes: 2, pushFeet: 10, strike: { name: "Eldritch Blast", toHit: prof + mod(c.cha), damage: "1d10" }, note: "Two beams, 1d10 force each, each hit pushes 10 ft (the second beam and the push are Sam's house rule — the SRD gives two beams at 5th level)" }
+    case "cleric":
+      return { ...base, kind: "guiding-bolt", name: "Guiding Bolt", cooldown: 8, rangeFeet: 120, seconds: 6, strike: { name: "Guiding Bolt", toHit: prof + mod(c.wis), damage: "4d6" }, note: "Ranged spell attack, 4d6 radiant; the next attack on it has advantage (SRD)" }
+    case "ranger":
+      return { ...base, hold: 1.4, kind: "ensnare-arrow", name: "Ensnaring arrow", cooldown: 8, rangeFeet: 150, seconds: 6, strike: { name: "Longbow", toHit: prof + dx, damage: `1d8${sign(Math.max(0, dx))}` }, save: { ability: "str", dc: dc(c.wis), damage: "1d6" }, note: "The bow's hit, then STR save or wrapped in vines, 1d6 piercing as they bite. Named for Ensnaring Strike, which is not in the SRD — house rule" }
+    case "barbarian":
+      return { ...base, kind: "rage-throw", name: "Rage & hurl", cooldown: 20, rangeFeet: 5, seconds: 10, pushFeet: 30, save: { ability: "str", dc: 8 + prof + s, damage: "3d6+2" }, note: "Rage (+2 damage, half damage taken, 10 s), then grab the nearest creature — up to one size larger (SRD grappling; STR save to slip free) — and throw it 30 ft: 3d6 like a 30-ft fall, +2 rage. House rule" }
+    case "fighter":
+      return { ...base, hold: 0.25, kind: "shield", name: "Shield wall", cooldown: 0, rangeFeet: 0, note: "While the attack is held the shield is up: every blow is blocked, and you walk at half speed and can't strike. House rule" }
+    case "bard":
+      return { ...base, kind: "mockery", name: "Vicious Mockery", cooldown: 3, rangeFeet: 60, save: { ability: "wis", dc: dc(c.cha), damage: "1d4" }, note: "WIS save or 1d4 psychic and disadvantage on its next attack (SRD)" }
+  }
+  return null
+}
+
+/** Three insults for the bard's Vicious Mockery (Sam: "saying one of three funny insults"). */
+export const MOCKERIES = [
+  "I've met braver things in a bowl of trillimac soup!",
+  "Your mother was a gelatinous cube — and even she had more backbone.",
+  "Were you born that ugly, or did a beholder just look at you funny?",
+] as const
+
+export function pickMockery(rng: Rng): string {
+  return MOCKERIES[Math.floor(rng() * MOCKERIES.length)]
+}
+
+/** A monster's saving throw: d20 + the ability modifier from its bestiary row (+0 when the row has no score). */
+export function monsterSave(score: number | null | undefined, dc: number, rng: Rng): { roll: number; total: number; saved: boolean } {
+  const roll = d(20, rng)
+  const total = roll + mod(score)
+  return { roll, total, saved: total >= dc }
+}
+
+const SIZES = ["Tiny", "Small", "Medium", "Large", "Huge", "Gargantuan"] as const
+/** SRD grappling: the target can be no more than one size larger than you. */
+export function canGrapple(yourSize: string | null | undefined, theirSize: string | null | undefined): boolean {
+  const a = SIZES.indexOf((yourSize ?? "Medium") as (typeof SIZES)[number])
+  const b = SIZES.indexOf((theirSize ?? "Medium") as (typeof SIZES)[number])
+  return b <= (a < 0 ? 2 : a) + 1
+}
+
+/** Save powers: the damage dealt after the monster's save. Half (rounded down) on a success where the power allows it. */
+export function saveDamage(rolled: number, saved: boolean, halfOnSave?: boolean): number {
+  if (!saved) return rolled
+  return halfOnSave ? Math.floor(rolled / 2) : 0
+}
+
 /** A ranged or melee hit, then Sam's multiplier (and halving for the blast). Never below 1 on a hit. */
 export function kitDamage(base: number, opts: { mul?: number; halve?: boolean }): number {
   if (base <= 0) return 0

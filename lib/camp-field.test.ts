@@ -6,6 +6,7 @@ import {
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
+  fieldPower, MOCKERIES, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
 } from "./camp-field"
 
 // The d20 faces in order; each call returns the next.
@@ -531,5 +532,47 @@ describe("fishing gear, regrowth, rothé, parts (Sam, 2026-09-29)", () => {
     expect(g.food).toBe(0); expect(g.parts!.map((p) => p.slug)).toEqual(["goristro-heart"])
     const s = butcher({ stage: "fresh", size: "Large", creatureType: "beast", name: "Giant spider", slug: "giant-spider", survival: 30, nature: 0, conMod: 0 }, seededRng(1))
     expect(s.food).toBe(2); expect(s.meat!.slug).toBe("spider-meat"); expect(s.parts!.map((p) => p.slug)).toEqual(["giant-spider-silk"])
+  })
+})
+
+describe("power attacks — hold the attack (Sam, 9/29)", () => {
+  const CLASSES = ["rogue", "paladin", "monk", "sorcerer", "wizard", "druid", "warlock", "cleric", "ranger", "barbarian", "fighter", "bard"]
+  it("every class has one, and each kind is different", () => {
+    const kinds = CLASSES.map((c) => fieldPower({ class: c })!.kind)
+    expect(new Set(kinds).size).toBe(12)
+    expect(fieldPower({ class: "commoner" })).toBeNull()
+  })
+  it("uses the SRD dice and save DCs off the sheet", () => {
+    const pal = fieldPower({ class: "paladin", str: 16, prof: 2 })!
+    expect(pal.strike).toMatchObject({ toHit: 5, damage: "1d8+3", extra: "2d8" })
+    const rog = fieldPower({ class: "rogue", str: 8, dex: 17, prof: 2 })!
+    expect(rog.strike).toMatchObject({ toHit: 5, damage: "1d4+3", extra: "1d6" })
+    const wiz = fieldPower({ class: "wizard", int: 16, prof: 2 })!
+    expect(wiz.save).toMatchObject({ ability: "con", dc: 13, damage: "2d8", halfOnSave: true })
+    expect(wiz.chargeRelease).toBe(true); expect(wiz.hold).toBe(THUNDER_CHARGE_SECONDS)
+    expect(fieldPower({ class: "bard", cha: 15, prof: 2 })!.save).toMatchObject({ ability: "wis", dc: 12, damage: "1d4" })
+    expect(fieldPower({ class: "cleric", wis: 16, prof: 2 })!.strike).toMatchObject({ toHit: 5, damage: "4d6" })
+    expect(fieldPower({ class: "monk", dex: 16 })!.strikes).toBe(3)
+    expect(fieldPower({ class: "warlock", cha: 16 })!.strikes).toBe(2)
+    expect(fieldPower({ class: "druid" })!.hold).toBe(POWER_HOLD_SECONDS)
+  })
+  it("a crit doubles the smite dice too", () => {
+    const pal = fieldPower({ class: "paladin", str: 10 })!
+    const a = rollAttack(pal.strike!, 30, seq(20, 20, 20, 20, 20, 20, 20)) // a top-of-range roll is an 8 on every d8
+    expect(a.crit).toBe(true); expect(a.damage).toBe(8 * 2 + 8 * 4) // 2d8 weapon + 4d8 smite, all eights
+  })
+  it("three insults, one at a time", () => {
+    expect(MOCKERIES).toHaveLength(3)
+    expect(MOCKERIES).toContain(pickMockery(seededRng(4)))
+  })
+  it("monster saves use the bestiary score; half damage only where the spell says", () => {
+    expect(monsterSave(16, 13, seq(10))).toMatchObject({ roll: 10, total: 13, saved: true })
+    expect(monsterSave(null, 13, seq(12)).saved).toBe(false)
+    expect(saveDamage(9, true, true)).toBe(4); expect(saveDamage(9, true, false)).toBe(0); expect(saveDamage(9, false, true)).toBe(9)
+  })
+  it("the barbarian can lift one size up, no further", () => {
+    expect(canGrapple("Medium", "Large")).toBe(true)
+    expect(canGrapple("Medium", "Huge")).toBe(false)
+    expect(canGrapple(undefined, "Small")).toBe(true)
   })
 })
