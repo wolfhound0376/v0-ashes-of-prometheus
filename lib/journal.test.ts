@@ -8,9 +8,11 @@ import {
   JOURNAL_NUMBERED_RULE,
   JOURNAL_SURVIVES_CONFISCATION,
   JOURNAL_TAG_RULES,
+  JOURNAL_TITLED_EXAMPLE,
   JOURNAL_VISIBILITIES,
+  NOTIFY_OWNER_ON_DISCOVERY,
   PAGE_HARD_LIMIT,
-  PAGE_SOFT_LIMIT,
+  PAGE_LIMIT,
   QUILL_ITEM_KEY,
   RESTART_BURNS_PAGES,
   compileJournal,
@@ -26,8 +28,10 @@ import {
   journalInsert,
   pagesOnDiscovery,
   parseJournalPages,
+  readPages,
+  splitTitle,
   stripJournalTags,
-  titleFrom,
+  unseenDisclosures,
   type InventoryRow,
   type JournalEntryRow,
 } from "./journal"
@@ -235,12 +239,22 @@ describe("deciding the page", () => {
     expect(d.dropped).toEqual(["second", "third"])
   })
 
-  it("flags an over-long page but still stores it in full", () => {
-    const long = "x".repeat(PAGE_SOFT_LIMIT + 50)
+  it("flags an over-long page but still stores every character of it", () => {
+    const long = "x".repeat(PAGE_LIMIT + 50)
     const d = decideJournalPage({ rawText: `[JOURNAL: ${long}]`, actingCharacterId: FIFI })
     expect(d.write).toBe(true)
-    expect(d.page).toHaveLength(PAGE_SOFT_LIMIT + 50)
-    expect(d.flags.join(" ")).toContain("needs Sam's yes")
+    expect(d.page).toHaveLength(PAGE_LIMIT + 50)
+    expect(d.flags.join(" ")).toContain("stored in full")
+  })
+
+  // Sam's limit must not flag the prompt's own canonical pages, or every
+  // correct page arrives with a complaint attached.
+  it("does not flag the examples the prompt holds up as correct", () => {
+    for (const ex of [JOURNAL_EXAMPLE, JOURNAL_TITLED_EXAMPLE]) {
+      const d = decideJournalPage({ rawText: ex, actingCharacterId: FIFI })
+      expect(d.write).toBe(true)
+      expect(d.flags).toEqual([])
+    }
   })
 
   it("cuts a page the column would reject", () => {
@@ -250,8 +264,19 @@ describe("deciding the page", () => {
     expect(d.flags.join(" ")).toContain("column limit")
   })
 
-  it("keeps the soft limit under the hard one, or the flag is unreachable", () => {
-    expect(PAGE_SOFT_LIMIT).toBeLessThan(PAGE_HARD_LIMIT)
+  it("keeps the house limit under the column's, or the flag is unreachable", () => {
+    expect(PAGE_LIMIT).toBeLessThan(PAGE_HARD_LIMIT)
+  })
+
+  it("takes a title when the writer gave one", () => {
+    const d = decideJournalPage({ rawText: "[JOURNAL: The fourth hour | Three guards.]", actingCharacterId: FIFI })
+    expect(d.title).toBe("The fourth hour")
+    expect(d.page).toBe("Three guards.")
+  })
+
+  it("leaves the title null on an ordinary page", () => {
+    const d = decideJournalPage({ rawText: "[JOURNAL: Three guards.]", actingCharacterId: FIFI })
+    expect(d.title).toBeNull()
   })
 })
 
@@ -338,6 +363,26 @@ describe("disclosure", () => {
   it("flags nothing when the book is empty", () => {
     expect(pagesOnDiscovery([], FIFI).flags).toEqual([])
   })
+
+  // Sam, 2026-09-29: "Owner doesn't necessarily find out unless he is checking."
+  it("never pushes discovery at the owner", () => {
+    expect(NOTIFY_OWNER_ON_DISCOVERY).toBe(false)
+  })
+
+  it("shows a count only to an owner who came looking", () => {
+    const book = [page("a", "one", { visibility: "found" }), page("b", "two"), page("c", "three", { visibility: "found" })]
+    expect(unseenDisclosures(book, FIFI)).toBe(2)
+    expect(readPages(book, FIFI).map((p) => p.id)).toEqual(["a", "c"])
+  })
+
+  // Null, not zero: "no pages have been read" is itself a notification.
+  it("says nothing at all when nothing has been read", () => {
+    expect(unseenDisclosures([page("a", "one"), page("b", "two")], FIFI)).toBeNull()
+  })
+
+  it("does not count another character's compromised pages", () => {
+    expect(unseenDisclosures([page("z", "one", { character_id: "zzz", visibility: "found" })], FIFI)).toBeNull()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -366,11 +411,28 @@ describe("the dateline", () => {
     expect(dateline({ day: 0, minutesOfDay: 60 })).toBe("Day 1 · Night")
   })
 
-  it("takes a title from the first sentence, and nothing longer", () => {
-    expect(titleFrom("Three guards. They change on the fourth hour.")).toBe("Three guards")
-    expect(titleFrom("   ")).toBeNull()
-    const t = titleFrom("x".repeat(200))
-    expect(t && t.length).toBeLessThanOrEqual(48)
+  it("splits a title off the pipe form", () => {
+    expect(splitTitle("The fourth hour | Three guards.")).toEqual({ title: "The fourth hour", body: "Three guards." })
+  })
+
+  it("leaves prose alone when there is no pipe", () => {
+    expect(splitTitle("Three guards.")).toEqual({ title: null, body: "Three guards." })
+  })
+
+  // A pipe deep in prose is prose, not a heading.
+  it("does not mistake a pipe late in a sentence for a title", () => {
+    const prose = "x".repeat(80) + " | and then the rest"
+    expect(splitTitle(prose).title).toBeNull()
+    expect(splitTitle(prose).body).toBe(prose)
+  })
+
+  it("refuses a title with nothing after it, or nothing before it", () => {
+    expect(splitTitle("Only a title |").title).toBeNull()
+    expect(splitTitle("| only a body").title).toBeNull()
+  })
+
+  it("never derives a title the character did not write", () => {
+    expect(splitTitle("Three guards. They change on the fourth hour.").title).toBeNull()
   })
 })
 
@@ -409,10 +471,11 @@ describe("the prompt block", () => {
     expect(b).toContain("Samson (it is gone)")
   })
 
-  it("tells him what was read without telling him how he knows", () => {
+  it("tells him what was read and forbids him telling the owner", () => {
     const b = formatJournalBlock({ custody: [], compromised: [{ name: "Fifi", pages: 3 }] })
     expect(b).toContain("READ BY SOMEONE ELSE")
-    expect(b).toContain("never say how you know")
+    expect(b).toContain("the owner is NOT told")
+    expect(b).toContain("never confirm it if asked outright")
   })
 
   // The repo already has a test that exists because the tag was parsed by the
@@ -422,10 +485,28 @@ describe("the prompt block", () => {
       expect(text).toContain("[JOURNAL:")
     }
     expect(JOURNAL_TAG_RULES).toContain(JOURNAL_EXAMPLE)
+    expect(JOURNAL_TAG_RULES).toContain(JOURNAL_TITLED_EXAMPLE)
+  })
+
+  it("tells him the limit in both copies, in the unit the module measures", () => {
+    for (const text of [JOURNAL_TAG_RULES, JOURNAL_NUMBERED_RULE]) {
+      expect(text).toContain(`${PAGE_LIMIT} characters`)
+    }
+  })
+
+  it("tells him most pages have no title, so he does not decorate every one", () => {
+    expect(JOURNAL_TAG_RULES).toContain("MOST DO NOT")
+    expect(JOURNAL_NUMBERED_RULE).toContain("most do not")
   })
 
   it("ships an example the parser can actually read", () => {
     expect(firstJournalPage(JOURNAL_EXAMPLE)).toContain("Three guards on the gate")
+  })
+
+  it("ships a titled example that splits the way it claims to", () => {
+    const body = firstJournalPage(JOURNAL_TITLED_EXAMPLE)
+    expect(body).not.toBeNull()
+    expect(splitTitle(body as string)).toEqual({ title: "The fourth hour", body: expect.stringContaining("Three guards on the gate") })
   })
 })
 
