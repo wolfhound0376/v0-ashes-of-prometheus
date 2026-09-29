@@ -52,6 +52,7 @@ import {
   attackStateFor,
   castClipFor,
   pickClip,
+  clipPoolFor,
   castEventFor,
   castPlanFor,
   clipFor,
@@ -108,6 +109,8 @@ import SpellBanner, { type BannerCast } from "./spell-banner"
 import { ImpactHold, holdMsFor } from "@/lib/impact-hold"
 // A bolt you can see leave the bow, and a miss that goes past you.
 import { loose } from "./projectile"
+import { weaponArcVfx, ARC_STEEL, ARC_CRIT } from "./weapon-arc"
+import { MeleeCombo, styleFor, rotateClip, arcSecondsFor } from "@/lib/melee-combo"
 // A ward landing: gold, from the feet up.
 import { wardVfx } from "./ward-vfx"
 import { wardSpellFor } from "@/lib/wards"
@@ -2186,6 +2189,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // that is still in the air when the board unmounts is disposed with it.
     const vfx: VfxHandle[] = []
 
+    // ── COMBOS ─────────────────────────────────────────────────────────────
+    // Which blow of a sequence each attacker is on (lib/melee-combo). Lives
+    // here, beside `vfx`, because it is read at exactly one moment — the
+    // frame a swing is chosen — and the arc it decides is pushed into that
+    // list on the same line. It is per-BOARD, so it is torn down with the
+    // board and never leaks a chain across a session.
+    const melee = new MeleeCombo()
+
     // ── CONDITION LOOKS ────────────────────────────────────────────────────
     // Flames, a lightning crackle, webs, lying prone — drawn on the body for
     // as long as the condition holds (status-vfx.ts). The conditions come
@@ -2641,12 +2652,34 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // A model with only the heavy swing is unaffected — lightAttack's
       // candidate list ends in "attack", so it falls through to what exists.
       const swing = plan.state === "attack" ? attackStateFor(ability) : plan.state
+      // WHICH BLOW OF THE SEQUENCE THIS IS (lib/melee-combo).
+      //
+      // Sam: "subsequent attacks prompt different styles of attacks." A swing
+      // used to be a lone event that rolled a random clip, so Extra Attack
+      // could play the same animation twice running and a chain of blows had
+      // no shape to it. The attacker now carries a step that advances on each
+      // blow and resets after a few quiet seconds, and TWO things read it:
+      // the clip, rotated in order rather than rolled, and the arc the blade
+      // leaves behind it. The second is what carries the sequence on a
+      // creature rigged with only one attack clip — Ront cuts down, then back
+      // up, then overhead, on one animation.
+      const isMelee = swing === "attack" || swing === "lightAttack"
+      const step = isMelee ? melee.next(found.row.id, Date.now()) : 0
+      const archetype = archetypeFor(ability, "weapon")
+      const style = styleFor(archetype, step)
       // A DIFFERENT SWING EACH TIME, when the model has more than one.
-      // pickClip pools only the clips matching the SAME candidate term, so a
-      // martial never wanders into a spell cast, and a model with a single
-      // clip behaves exactly as before.
+      // clipPoolFor pools only the clips matching the SAME candidate term, so
+      // a martial never wanders into a spell cast, and a model with a single
+      // clip behaves exactly as before. A melee blow walks that pool in step
+      // order — consecutive blows cannot repeat while the model has the clips
+      // not to; everything else keeps the roll it always had.
+      const chosen = anim
+        ? (explicit ?? (isMelee
+            ? rotateClip(clipPoolFor(swing, anim.names), step, style)
+            : pickClip(swing, anim.names)))
+        : null
       const clip: { name: string; duration: number; release?: number } | null = anim
-        ? playState(anim, swing, true, explicit ?? pickClip(swing, anim.names))
+        ? playState(anim, swing, true, chosen)
         : rig!.playFor(swing)
       if (!clip) { landNow(); return }
       // When the blow lands, in seconds: a sprite knows its own drawn hit
@@ -2696,6 +2729,40 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // shot rather than a swing.
         const reachFt = armedRef.current?.entry.rangeFt ?? 5
         const isShot = reachFt > 5
+        // THE ARC THE BLADE LEAVES BEHIND IT (components/tactical/weapon-arc).
+        //
+        // Sam: "combat swipes with melee weapons [should] have motion arcs
+        // like Street Fighter." A swing was visually nothing — the clip ran,
+        // a sound fired, the target flinched — while every other kind of
+        // damage on this board announces itself with light. This traces the
+        // weapon's own grip and tip through the sweep and leaves the path in
+        // the air for a few frames, which is how a fighting game makes an
+        // edge the eye cannot follow legible.
+        //
+        // NOT FOR A SHOT. A crossbow already has a bolt to watch and a
+        // streak coming off a trigger pull would read as a sword.
+        //
+        // NOT FOR A SPRITE either: `anim` is null for a pixel figure, whose
+        // swings are drawn frames, and there is no bone to trace. Its own art
+        // already carries the motion.
+        if (!isShot && !ranged && anim) {
+          const handBone = found.obj.getObjectByName("RightHand") ?? null
+          // The weapon if one is in the fist, the fist itself otherwise — an
+          // unarmed strike still leaves a knuckle streak, it is just short.
+          const held = handBone?.children.find((c) => c.userData.equipSlot === "main_hand") ?? null
+          vfx.push(weaponArcVfx({
+            parent: scene,
+            body: found.obj,
+            blade: held ?? handBone,
+            style,
+            contact: releaseAt,
+            linger: arcSecondsFor(clip.duration, style),
+            // A crit's arc is gold, the same language the damage numbers
+            // already speak, so the blow that mattered is the one that
+            // lights the room.
+            tint: w?.crit ? ARC_CRIT : ARC_STEEL,
+          }))
+        }
         pending.push({
           wait: releaseAt,
           obj: found.obj,
