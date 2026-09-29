@@ -343,6 +343,100 @@ def bake_burst(src: Path, pal: np.ndarray, cell: int, cols: int, count: int,
     return sheet
 
 
+def whirlwind(pal: np.ndarray, cw: int, ch: int, px: int, cols: int, count: int,
+              rocks: int, seed: int) -> Image.Image:
+    """
+    A whirlwind of rocks and wind, drawn rather than sourced (Sam, 2026-09-29).
+
+    Transmutation's ring art never ignites, so it has no plume to separate out
+    and SigilArt requires one. Rather than invent fire he did not draw, this
+    draws the thing he asked for: debris lifted round a column of wind.
+
+    WHY IT IS DRAWN AND NOT GENERATED. Everything the kit throws in pixels —
+    ImpactBurst's sparks, the burst shards above — is procedural and SEEDED,
+    because every seat watches the same fight and two players must see the
+    same debris. A generated sheet would also have to be regenerated to change
+    one thing about it; this takes parameters.
+
+    THE DEPTH CUE IS THE WHOLE EFFECT. A rock orbits a vertical axis, so half
+    its circuit is in FRONT of the column and half BEHIND. Drawn at one size
+    it reads as a flat ring of dots spinning; scaled and dimmed on the far
+    half, and drawn back-to-front so near rocks occlude far ones, the same
+    points read as a column with volume. Radius narrows with height, so the
+    whole thing tapers like a real vortex.
+
+    Wind is drawn as faint arcs on the same spiral, one layer behind the
+    rocks: without it the rocks read as floating debris rather than as
+    something being CARRIED.
+    """
+    gw, gh = cw // px, ch // px
+    rows = (count + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * cw, rows * ch), (0, 0, 0, 0))
+    rng = np.random.default_rng(seed)
+
+    # Stone, then the school's own ramp for the lit edges. Rocks are rock —
+    # tinting them entirely gold would read as coins, not debris.
+    stone = np.array([[58, 52, 46], [82, 73, 63], [108, 96, 82], [134, 120, 102]], np.float32)
+    lit = pal[len(pal) // 2:].astype(np.float32)
+
+    phase0 = rng.uniform(0, 2 * np.pi, rocks)
+    hgt0 = rng.uniform(0, 1, rocks)
+    spin = rng.uniform(0.8, 1.45, rocks)
+    rise = rng.uniform(0.55, 1.15, rocks)
+    size0 = rng.uniform(0.9, 2.2, rocks)
+    shade = rng.integers(0, len(stone), rocks)
+    hot = rng.uniform(0, 1, rocks) < 0.30          # a few catch the light
+
+    for f in range(count):
+        t = f / count
+        grid = np.zeros((gh, gw, 4), np.float32)
+
+        # --- wind first, so the rocks sit in front of it ---
+        # Enough arcs to read as a current, few enough to see THROUGH: at 16
+        # layers x 70 samples the spiral filled a 48x64 grid solid and the
+        # whirlwind became a wall of rubble.
+        for w in range(9):
+            u = (w / 9 + t * 0.9) % 1.0
+            for q in range(38):
+                v = q / 37.0
+                h = (u + v * 0.42) % 1.0
+                rad = (0.46 - 0.30 * h) * gw * 0.5
+                th = 2 * np.pi * (h * 2.1 + u * 2)
+                x = int(gw / 2 + np.cos(th) * rad)
+                y = int(gh - 1 - h * (gh - 2))
+                if 0 <= x < gw and 0 <= y < gh:
+                    a = 150 * (1 - 0.70 * h) * (0.22 + 0.78 * max(0.0, np.sin(th)))
+                    if a > grid[y, x, 3]:
+                        grid[y, x] = [*(lit[-1] * 0.78), a]
+
+        # --- rocks, far half first so the near half draws over it ---
+        order = []
+        for k in range(rocks):
+            th = phase0[k] + 2 * np.pi * t * spin[k]
+            order.append((np.sin(th), k, th))
+        order.sort()                                # back (sin<0) drawn first
+        for depth, k, th in order:
+            h = (hgt0[k] + t * rise[k]) % 1.0
+            rad = (0.46 - 0.30 * h) * gw * 0.5
+            x = gw / 2 + np.cos(th) * rad
+            y = gh - 1 - h * (gh - 2)
+            near = (depth + 1) / 2                  # 0 far, 1 near
+            sz = max(1, int(round(size0[k] * (0.60 + 0.80 * near) * (1 - 0.30 * h))))
+            col = (lit[rng.integers(len(lit))] if hot[k] else stone[shade[k]])
+            col = col * (0.62 + 0.55 * near)
+            a = 255 * (0.55 + 0.45 * near) * (1 - 0.18 * h)
+            xi, yi = int(x), int(y)
+            for dy in range(sz):
+                for dx in range(sz):
+                    gx, gy = xi + dx, yi + dy
+                    if 0 <= gx < gw and 0 <= gy < gh:
+                        grid[gy, gx] = [*col, a]
+
+        quad = Image.fromarray(grid.clip(0, 255).astype(np.uint8), "RGBA")
+        sheet.paste(quad.resize((cw, ch), Image.NEAREST), ((f % cols) * cw, (f // cols) * ch))
+    return sheet
+
+
 def coverage(im: Image.Image) -> float:
     return 100.0 * float((np.asarray(im)[..., 3] > 8).mean())
 
@@ -374,6 +468,9 @@ def main() -> None:
     ap.add_argument("--burst-frames", type=int, default=8)
     ap.add_argument("--sparks", type=int, default=26)
     ap.add_argument("--seed", type=int, default=11, help="seeded so every seat sees the same sparks")
+    ap.add_argument("--plume-synth", choices=["whirlwind"], default=None,
+                    help="draw the plume instead of separating it out of the source")
+    ap.add_argument("--rocks", type=int, default=62)
     ap.add_argument("--dry-run", action="store_true", help="measure and report, write nothing")
     a = ap.parse_args()
 
@@ -388,8 +485,10 @@ def main() -> None:
              if a.burst else None)
     ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
     ring_sheet = ring if a.chase <= 1 else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc)
-    plume = bake_plume(frames, clean, top, pal, a.px, a.plume_w, a.plume_h, a.cols, a.frames,
-                       a.flame_width)
+    plume = (whirlwind(pal, a.plume_w, a.plume_h, a.px, a.cols, a.frames, a.rocks, a.seed)
+             if a.plume_synth == "whirlwind" else
+             bake_plume(frames, clean, top, pal, a.px, a.plume_w, a.plume_h, a.cols, a.frames,
+                        a.flame_width))
 
     print(f"  source        {len(frames)} frames, ring band top={top} centre={centre}")
     print(f"  drawn ellipse {ratio:.2f}:1   (board camera is {BOARD_RATIO:.2f}:1)")
@@ -414,7 +513,7 @@ def main() -> None:
     # near-empty and the flame ramp is quantised from dither speckle rather
     # than from any real fire. Both sheets still write, the manifest still
     # looks right, and nothing shows up until someone casts the spell.
-    if coverage(plume) < 3.0:
+    if a.plume_synth is None and coverage(plume) < 3.0:
         print(f"  ERROR the plume is empty ({coverage(plume):.1f}% coverage).")
         print("        This source never ignites — its frames differ only by a shimmer, so")
         print("        there is no fire to separate from the ring. The ring above is fine.")
