@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
+  fieldKit, kitDamage,
   T, passable, slowFactor, tileAt, buildExploreWorld, placeOnWorld, CACHE_COUNT, lostInTheDark,
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
@@ -266,5 +267,38 @@ describe("placing things on the overworld", () => {
   })
   it("same rng, same places", () => {
     expect(placeOnWorld(W, 3, seededRng(7))).toEqual(placeOnWorld(W, 3, seededRng(7)))
+  })
+})
+
+describe("class kits (Sam's field rules)", () => {
+  // Real sheets 2026-09-28
+  const kenta = fieldKit({ class: "Sorcerer", cha: 17, prof: 2, spellAbility: "Charisma", cantrips: ["Ray of Frost", "Shocking Grasp", "Minor Illusion", "Chill Touch"] })
+  const samson = fieldKit({ class: "Cleric", wis: 16, prof: 2, spellAbility: "Wisdom", prepared: ["Healing Word"] })
+  it("sorcerers cannot melee and fire the ranged cantrip they know", () => {
+    expect(kenta.melee.can).toBe(false)
+    expect(kenta.ranged?.name).toBe("Ray of Frost")
+    expect(kenta.ranged?.toHit).toBe(5)
+    expect(kenta.notes.some((n) => /does not know Fire Bolt/.test(n))).toBe(true)
+    expect(fieldKit({ class: "Wizard", int: 16, cantrips: ["Fire Bolt"] }).ranged?.name).toBe("Fire Bolt")
+  })
+  it("clerics heal three times and shed light", () => {
+    expect(samson.heal).toEqual({ name: "Healing Word", uses: 3, dice: "2d4+3" })
+    expect(samson.lightBonus).toBeGreaterThan(0)
+  })
+  it("the rest follow Sam's list", () => {
+    expect(fieldKit({ class: "Rogue" }).moveMul).toBeGreaterThan(1)
+    expect(fieldKit({ class: "Warlock", cha: 16 }).ranged).toMatchObject({ name: "Eldritch Blast", halve: true, knockback: true })
+    expect(fieldKit({ class: "Fighter" })).toMatchObject({ knockbackOnMiss: true, melee: { mul: 2 } })
+    expect(fieldKit({ class: "Bard" }).special).toMatchObject({ kind: "music", uses: 3 })
+    expect(fieldKit({ class: "Ranger", dex: 16 }).ranged).toMatchObject({ kind: "arrow", damage: "1d6+3" })
+    expect(fieldKit({ class: "Monk" })).toMatchObject({ melee: { mul: 1.5, unarmedOnly: true }, regen: { hp: 1, every: 3 } })
+    expect(fieldKit({ class: "Druid" }).beastCalm).toBe(0.75)
+    expect(fieldKit({ class: "Paladin" }).special).toMatchObject({ kind: "aura", mul: 3 })
+  })
+  it("multipliers apply after the dice; the blast is halved but never zero", () => {
+    expect(kitDamage(5, { mul: 2 })).toBe(10)
+    expect(kitDamage(5, { mul: 1.5 })).toBe(7)
+    expect(kitDamage(1, { halve: true })).toBe(1)
+    expect(kitDamage(0, { mul: 3 })).toBe(0)
   })
 })

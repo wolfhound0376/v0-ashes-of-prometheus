@@ -824,3 +824,89 @@ export function placeOnWorld(w: ExploreWorld, n: number, rng: Rng, opts: { near?
   }
   return out
 }
+
+// ============================================================================
+// CLASS KITS — what each class can do out there (Sam's rules, 2026-09-28)
+// ============================================================================
+//
+// Sam: "Rogues move faster and stab faster. Wizards and sorcerers can fire
+// firebolts but can't melee; their cantrip has a cool-down. Warlocks can spam
+// eldritch blast but it isn't as strong, and it pushes monsters back. Fighters
+// and barbarians hit twice as hard and push back monsters that miss them.
+// Clerics can heal themselves three times with healing word and radiate light.
+// Bards melee normally and can play music up to three times that puts simple
+// monsters to sleep unless attacked. Rangers fire arrows, faster than casters
+// cast. Monks melee without weapons at 1.5× and heal 1 HP every 3 seconds of
+// meditating. Druids aren't attacked by beasts 75% of the time and can entangle
+// a target. Paladins radiate an aura for a few seconds that makes them hit 3×."
+//
+// These are Sam's house rules for the field game, so they are not flagged as
+// proposals. The DICE are the book's: every attack still rolls d20 + bonus
+// against AC, and every spell deals its SRD damage before Sam's multiplier.
+// A caster fires a ranged attack cantrip they actually KNOW (sheet_spellcasting);
+// Fire Bolt is preferred when the sheet has it.
+
+export interface FieldKit {
+  cls: string
+  /** Walking speed multiplier. */
+  moveMul: number
+  melee: { can: boolean; cooldown: number; mul: number; unarmedOnly?: boolean }
+  ranged: null | { name: string; toHit: number; damage: string; cooldown: number; kind: "fire" | "frost" | "necrotic" | "force" | "arrow"; halve?: boolean; knockback?: boolean }
+  heal: null | { name: string; uses: number; dice: string }
+  special: null | { kind: "music" | "entangle" | "aura"; name: string; uses?: number; cooldown?: number; seconds?: number; mul?: number; radius?: number }
+  /** Extra lantern-light radius, in px. */
+  lightBonus: number
+  knockbackOnMiss: boolean
+  /** Chance a beast leaves this character alone. */
+  beastCalm: number
+  regen: null | { hp: number; every: number; whileStill: true }
+  notes: string[]
+}
+
+const mod = (score: number | null | undefined) => Math.floor(((score ?? 10) - 10) / 2)
+
+/** SRD ranged attack cantrips, level-1 damage. Order = preference. */
+export const RANGED_CANTRIPS: readonly { name: string; damage: string; kind: "fire" | "frost" | "necrotic" | "force" }[] = [
+  { name: "Fire Bolt", damage: "1d10", kind: "fire" },
+  { name: "Ray of Frost", damage: "1d8", kind: "frost" },
+  { name: "Chill Touch", damage: "1d8", kind: "necrotic" },
+  { name: "Eldritch Blast", damage: "1d10", kind: "force" },
+]
+
+export function fieldKit(c: {
+  class?: string | null; str?: number | null; dex?: number | null; wis?: number | null; cha?: number | null; int?: number | null
+  prof?: number | null; cantrips?: string[] | null; prepared?: string[] | null; spellAbility?: string | null
+}): FieldKit {
+  const cls = (c.class ?? "").trim().toLowerCase()
+  const prof = c.prof ?? 2
+  const notes: string[] = ["Class kit is Sam's field-game house rule (2026-09-28); the dice are the SRD's"]
+  const ab = (c.spellAbility ?? "").toLowerCase()
+  const castMod = ab.startsWith("int") ? mod(c.int) : ab.startsWith("wis") ? mod(c.wis) : ab.startsWith("cha") ? mod(c.cha) : cls === "wizard" ? mod(c.int) : cls === "cleric" || cls === "druid" ? mod(c.wis) : mod(c.cha)
+  const knows = (n: string) => (c.cantrips ?? []).some((x) => x.toLowerCase() === n.toLowerCase())
+  const kit: FieldKit = { cls, moveMul: 1, melee: { can: true, cooldown: 0.45, mul: 1 }, ranged: null, heal: null, special: null, lightBonus: 0, knockbackOnMiss: false, beastCalm: 0, regen: null, notes }
+  if (cls === "rogue") { kit.moveMul = 1.3; kit.melee.cooldown = 0.25 }
+  if (cls === "wizard" || cls === "sorcerer") {
+    kit.melee.can = false
+    const known = RANGED_CANTRIPS.filter((r) => r.name !== "Eldritch Blast").find((r) => knows(r.name))
+    if (known) kit.ranged = { name: known.name, toHit: prof + castMod, damage: known.damage, cooldown: 1.2, kind: known.kind }
+    else notes.push("No ranged attack cantrip on the sheet — nothing to fire")
+    if (known && known.name !== "Fire Bolt") notes.push(`Fires ${known.name}: the sheet does not know Fire Bolt`)
+  }
+  if (cls === "warlock") kit.ranged = { name: "Eldritch Blast", toHit: prof + castMod, damage: "1d10", cooldown: 0.35, kind: "force", halve: true, knockback: true }
+  if (cls === "fighter" || cls === "barbarian") { kit.melee.mul = 2; kit.knockbackOnMiss = true }
+  if (cls === "cleric") { kit.heal = { name: "Healing Word", uses: 3, dice: `2d4+${Math.max(0, castMod)}` }; kit.lightBonus = 170 }
+  if (cls === "bard") kit.special = { kind: "music", name: "Song of sleep", uses: 3, radius: 280 }
+  if (cls === "ranger") kit.ranged = { name: "Arrows", toHit: prof + mod(c.dex), damage: `1d6+${Math.max(0, mod(c.dex))}`, cooldown: 0.6, kind: "arrow" }
+  if (cls === "monk") { kit.melee = { can: true, cooldown: 0.35, mul: 1.5, unarmedOnly: true }; kit.regen = { hp: 1, every: 3, whileStill: true } }
+  if (cls === "druid") { kit.beastCalm = 0.75; kit.special = { kind: "entangle", name: "Entangle", cooldown: 10, seconds: 6 } }
+  if (cls === "paladin") kit.special = { kind: "aura", name: "Radiant aura", seconds: 5, cooldown: 20, mul: 3 }
+  return kit
+}
+
+/** A ranged or melee hit, then Sam's multiplier (and halving for the blast). Never below 1 on a hit. */
+export function kitDamage(base: number, opts: { mul?: number; halve?: boolean }): number {
+  if (base <= 0) return 0
+  let d = base * (opts.mul ?? 1)
+  if (opts.halve) d = d / 2
+  return Math.max(1, Math.floor(d))
+}
