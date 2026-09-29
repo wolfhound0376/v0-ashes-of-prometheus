@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
-  fieldKit, kitDamage, fieldFoe, QUIVER, lightFor, lightTorchstalk, moraleBreaks, herbSpotDC, skillLevel, spotChance, spotHerb,
+  fieldKit, kitDamage, fieldFoe, QUIVER, lightFor, lightTorchstalk, moraleBreaks, wildForage, herbSpotDC, skillLevel, spotChance, spotHerb,
   T, passable, slowFactor, tileAt, buildExploreWorld, placeOnWorld, CACHE_COUNT, lostInTheDark,
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
@@ -391,5 +391,20 @@ describe("light and morale", () => {
     expect(moraleBreaks({ hp: 9, max: 10 }, () => 0.5).flees).toBe(false)   // healthy, flat roll 0.5 > 0.1
     expect(moraleBreaks({ hp: 9, max: 10 }, () => 0.05).flees).toBe(true)   // the flat 10%
     expect(moraleBreaks({ hp: 1, max: 45, mindless: true }, () => 0).flees).toBe(false)
+  })
+})
+
+describe("wild caps and scrub", () => {
+  const seq = (...v: number[]) => { let i = 0; return () => v[i++ % v.length] }
+  it("a natural 20 finds something real", () => {
+    expect(wildForage({ conMod: 0, biome: "tunnels" }, seq(0.99, 0.2)).found).toMatchObject({ kind: "food" })
+    expect(wildForage({ conMod: 0, biome: "tunnels" }, seq(0.99, 0.9, 0.1)).found?.kind).toBe("reagent")
+  })
+  it("otherwise a Con save; a failure rolls 1d4 on Sam's table", () => {
+    expect(wildForage({ conMod: 2, biome: "tunnels" }, seq(0.1, 0.5)).effect).toBeNull()             // 11+2 saves
+    expect(wildForage({ conMod: 0, biome: "tunnels" }, seq(0.1, 0.1, 0.0)).effect).toBe("confused")   // save 3, d4 = 1
+    expect(wildForage({ conMod: 0, biome: "tunnels" }, seq(0.1, 0.1, 0.3)).effect).toBe("poisoned")
+    expect(wildForage({ conMod: 0, biome: "tunnels" }, seq(0.1, 0.1, 0.6)).effect).toBe("frightened")
+    expect(wildForage({ conMod: 0, biome: "tunnels" }, seq(0.1, 0.1, 0.9)).effect).toBe("blinded")
   })
 })
