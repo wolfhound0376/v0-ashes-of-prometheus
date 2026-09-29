@@ -11,9 +11,16 @@
   ],
   "ppu": 23,
   "animations": {
+    "cast": {
+      "sheet": "cast.png",
+      "frames": 9,
+      "fps": 10,
+      "loop": false,
+      "hit": 0.6
+    },
     "idle": {
       "sheet": "idle.png",
-      "frames": 1,
+      "frames": 9,
       "fps": 5,
       "loop": true
     }
