@@ -6,7 +6,7 @@ import {
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
-  fieldPower, MOCKERIES, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
+  fieldPower, MOCKERIES, WOLF, wildShapeDamage, POWER_USES, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
 } from "./camp-field"
 
 // The d20 faces in order; each call returns the next.
@@ -537,6 +537,20 @@ describe("fishing gear, regrowth, rothé, parts (Sam, 2026-09-29)", () => {
 
 describe("power attacks — hold the attack (Sam, 9/29)", () => {
   const CLASSES = ["rogue", "paladin", "monk", "sorcerer", "wizard", "druid", "warlock", "cleric", "ranger", "barbarian", "fighter", "bard"]
+  it("three uses an outing — the druid's Wild Shape two", () => {
+    for (const c of CLASSES) expect(fieldPower({ class: c })!.uses).toBe(c === "druid" ? 2 : POWER_USES)
+    expect(POWER_USES).toBe(3)
+  })
+  it("the druid becomes the SRD wolf", () => {
+    const p = fieldPower({ class: "druid", wis: 16 })!
+    expect(p.kind).toBe("wild-shape"); expect(p.form).toBe(WOLF)
+    expect(WOLF).toMatchObject({ ac: 13, hp: 11, speedFeet: 40, bite: { toHit: 4, damage: "2d4+2" }, save: { dc: 11, effect: "prone" } })
+  })
+  it("wolf HP soak damage first, the rest carries over (SRD)", () => {
+    expect(wildShapeDamage(11, 4)).toEqual({ formHp: 7, overflow: 0, reverted: false })
+    expect(wildShapeDamage(7, 10)).toEqual({ formHp: 0, overflow: 3, reverted: true })
+    expect(wildShapeDamage(5, 5)).toEqual({ formHp: 0, overflow: 0, reverted: true })
+  })
   it("every class has one, and each kind is different", () => {
     const kinds = CLASSES.map((c) => fieldPower({ class: c })!.kind)
     expect(new Set(kinds).size).toBe(12)
