@@ -80,6 +80,24 @@ describe("targetSigilFor", () => {
     expect(new Set(tints).size).toBe(tints.length)
   })
 
+  it("lets a school have NO ring, and conjuration is the one that does", () => {
+    // Sam, 2026-09-29: "just remove the sigil". The tentacles stand on their
+    // own with nothing drawn on the floor under them. Every other registered
+    // school still has a ring — this is a deliberate exception, not the
+    // beginning of a drift, so the negative half is asserted too.
+    expect(SCHOOL_SIGIL.conjuration?.ring).toBeUndefined()
+    expect(SCHOOL_SIGIL.conjuration?.plume).toBe("sigilConjurationPlume")
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      if (school === "conjuration") continue
+      expect(art?.ring, school).toBeTruthy()
+    }
+    // Whatever it has or lacks, EVERY sigil has a plume: that is the layer
+    // the effect actually reads from.
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      expect(art?.plume, school).toBeTruthy()
+    }
+  })
+
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
     expect(SCHOOL_SIGIL.necromancy?.ring).toBe("sigilNecroticRing")
     expect(SCHOOL_SIGIL.enchantment?.ring).toBe("sigilEnchantmentRing")
