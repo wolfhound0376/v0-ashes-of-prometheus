@@ -1077,3 +1077,36 @@ export function moraleBreaks(o: { hp: number; max: number; crit?: boolean; wisMo
   }
   return rng() < MORALE_FLAT ? { flees: true, note: "the blow spooks it and it bolts" } : { flees: false, note: "" }
 }
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// Wild caps and scrub (Sam, 9/29). Picking through the scenery a character did NOT identify:
+//   • 1 in 20 it turns up something real — a day of food or a common fungus of the biome.
+//   • Otherwise a Constitution save (DC 10, PROPOSED) against whatever it was; on a failure roll 1d4:
+//       1 — 4 s of laughing and confusion   2 — lose one heart (2 HP), vomit, poisoned for a minute
+//       3 — 5 s of blind fear, running       4 — blind for 4 s
+// ---------------------------------------------------------------------------------------------------------------
+
+export const WILD_SAVE_DC = 10
+export type WildEffect = "confused" | "poisoned" | "frightened" | "blinded"
+export const WILD_EFFECTS: Record<WildEffect, { seconds: number; damage: number; text: string }> = {
+  confused: { seconds: 4, damage: 0, text: "laughing and confused" },
+  poisoned: { seconds: 60, damage: 2, text: "retching — poisoned" },
+  frightened: { seconds: 5, damage: 0, text: "overcome with fear, running blind" },
+  blinded: { seconds: 4, damage: 0, text: "blinded" },
+}
+
+export function wildForage(o: { conMod: number; biome: FieldBiome; catalog?: ReadonlySet<string> }, rng: Rng): {
+  found: null | { slug: string; name: string; kind: "food" | "reagent" }; save: number | null; effect: WildEffect | null; note: string
+} {
+  if (d(20, rng) === 20) {
+    const pool = FUNGI.filter((f) => !f.rare && f.w[o.biome] > 0 && (!o.catalog || o.catalog.has(f.slug)))
+    if (!pool.length || rng() < 0.5) return { found: { slug: "edible-mushrooms", name: "a day of food", kind: "food" }, save: null, effect: null, note: "Among the scrub: something edible — a day of food." }
+    const f = weighted(pool.map((p) => ({ p, w: p.w[o.biome] })), rng).p
+    return { found: { slug: f.slug, name: f.name, kind: "reagent" }, save: null, effect: null, note: `Among the scrub: ${f.name.toLowerCase()}.` }
+  }
+  const save = d(20, rng) + o.conMod
+  if (save >= WILD_SAVE_DC) return { found: null, save, effect: null, note: `Nothing worth taking. Constitution save ${save} vs DC ${WILD_SAVE_DC} — whatever it was, it didn't take.` }
+  const effect = (["confused", "poisoned", "frightened", "blinded"] as const)[d(4, rng) - 1]
+  return { found: null, save, effect, note: `Constitution save ${save} vs DC ${WILD_SAVE_DC} — failed: ${WILD_EFFECTS[effect].text}.` }
+}
