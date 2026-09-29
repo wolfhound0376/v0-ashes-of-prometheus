@@ -186,32 +186,61 @@ export function forageHaul(field: ForageField, picked: number[]): { supplies: nu
 // HUNT — prey, the stalk, and what else is out there
 // ============================================================================
 
+export type PreyRarity = "common" | "uncommon" | "rare" | "very rare"
+
 export interface Prey {
   /** bestiary.slug */
   slug: string
   name: string
+  /** Weight inside its rarity tier, per biome. */
   w: Record<FieldBiome, number>
+  rarity: PreyRarity
   /** A catalog item the carcass gives besides the meat, when there is one. */
   byproduct?: string
+  /** Days of food a clean kill gives. Absent: the foraging roll decides (DMG p.111). PROPOSED. */
+  food?: number
+  /** Spotting the hunter starts a fight instead of a bolt. */
+  fightsBack?: boolean
 }
 
 /**
+ * How often each tier turns up on a hunt (Sam, 2026-09-29: "animals of
+ * increasing rarity"). The tier is rolled first, then the animal inside it by
+ * biome weight. PROPOSED numbers.
+ */
+export const PREY_RARITY: Readonly<Record<PreyRarity, number>> = { common: 0.85, uncommon: 0.1, rare: 0.04, "very rare": 0.01 }
+
+/**
  * Bestiary beasts whose habitat includes the Underdark wilds and that a hunter
- * would eat. Deep rothé yields its leather (catalog: deep-rothe-leather).
- * Weights PROPOSED.
+ * would eat. Every byproduct is a catalog item: deep-rothe-leather,
+ * cavern-lizard-meat, steeder-silk-spinneret, spider-venom-gland.
+ * Steeders are OotA App. C (the duergar's mounts); the lizard and the giant
+ * spider are SRD 5.1. Weights and food are PROPOSED.
  */
 export const PREY: readonly Prey[] = [
-  { slug: "giant-rat", name: "Giant rat", w: { tunnels: 4, fungal: 2, shore: 2 } },
-  { slug: "giant-fire-beetle", name: "Giant fire beetle", w: { tunnels: 3, fungal: 4, shore: 1 } },
-  { slug: "giant-bat", name: "Giant bat", w: { tunnels: 2, fungal: 1, shore: 2 } },
-  { slug: "deep-rothe", name: "Deep rothé", w: { tunnels: 1, fungal: 3, shore: 2 }, byproduct: "deep-rothe-leather" },
+  { slug: "giant-rat", name: "Giant rat", rarity: "common", w: { tunnels: 4, fungal: 2, shore: 2 } },
+  { slug: "giant-fire-beetle", name: "Giant fire beetle", rarity: "common", w: { tunnels: 3, fungal: 4, shore: 1 } },
+  { slug: "giant-bat", name: "Giant bat", rarity: "common", w: { tunnels: 2, fungal: 1, shore: 2 } },
+  { slug: "deep-rothe", name: "Deep rothé", rarity: "common", w: { tunnels: 1, fungal: 3, shore: 2 }, byproduct: "deep-rothe-leather" },
+  { slug: "giant-lizard", name: "Giant lizard", rarity: "uncommon", w: { tunnels: 2, fungal: 1, shore: 2 }, byproduct: "cavern-lizard-meat", food: 3 },
+  { slug: "male-steeder", name: "Male steeder", rarity: "uncommon", w: { tunnels: 2, fungal: 2, shore: 1 }, byproduct: "steeder-silk-spinneret", food: 2 },
+  { slug: "female-steeder", name: "Female steeder", rarity: "rare", w: { tunnels: 1, fungal: 1, shore: 1 }, byproduct: "steeder-silk-spinneret", food: 4, fightsBack: true },
+  { slug: "giant-spider", name: "Giant spider", rarity: "very rare", w: { tunnels: 1, fungal: 1, shore: 1 }, byproduct: "spider-venom-gland", food: 3, fightsBack: true },
 ]
 
 export function choosePrey(biome: FieldBiome, rng: Rng, bestiary?: ReadonlySet<string>): { prey: Prey | null; flags: string[] } {
   const pool = PREY.filter((p) => !bestiary || bestiary.has(p.slug))
-  const flags = ["Prey list and weights are PROPOSED"]
+  const flags = ["Prey list, rarity odds, weights and food are PROPOSED"]
   if (!pool.length) return { prey: null, flags: [...flags, "No prey in the bestiary — the DM describes the hunt"] }
-  return { prey: weighted(pool.map((p) => ({ p, w: p.w[biome] })), rng).p, flags }
+  const tiers = (Object.keys(PREY_RARITY) as PreyRarity[]).filter((t) => pool.some((p) => p.rarity === t && p.w[biome] > 0))
+  const tier = tiers.length ? weighted(tiers.map((t) => ({ t, w: PREY_RARITY[t] })), rng).t : null
+  const inTier = pool.filter((p) => p.rarity === tier && p.w[biome] > 0)
+  return { prey: weighted((inTier.length ? inTier : pool).map((p) => ({ p, w: Math.max(p.w[biome], 0.001) })), rng).p, flags }
+}
+
+/** Days of food from a clean kill: the prey's own figure when it has one, else the foraging roll. */
+export function preyFood(prey: Pick<Prey, "food">, rolled: number): number {
+  return prey.food ?? rolled
 }
 
 /**
