@@ -75,6 +75,13 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   evocation:   { ring: "sigilEvocationRing",   plume: "sigilEvocationPlume",
                  motes: MOTES, burst: "sigilEvocationBurst",
                  tint: SCHOOL_RAMP.evocation.glow },
+  // Transmutation's plume is DRAWN, not separated out of its ring art. That
+  // source never ignites — its frames differ only by a shimmer — so there is
+  // no second layer hiding in it. Sam asked for "a whirlwind of rocks and
+  // wind" instead of fire, which suits the school better anyway: matter
+  // lifted and turned rather than burned.
+  transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
