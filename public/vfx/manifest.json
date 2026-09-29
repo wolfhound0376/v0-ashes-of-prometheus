@@ -546,6 +546,26 @@
     "peak": 0,
     "rows": 1
   },
+  "sigilIllusionPlume": {
+    "bytes": 262820,
+    "cols": 4,
+    "file": "sigilIllusionPlume.webp",
+    "fps": 12,
+    "frames": 12,
+    "loop": false,
+    "peak": 9,
+    "rows": 3
+  },
+  "sigilIllusionRing": {
+    "bytes": 184164,
+    "cols": 4,
+    "file": "sigilIllusionRing.webp",
+    "fps": 12,
+    "frames": 12,
+    "loop": false,
+    "peak": 9,
+    "rows": 3
+  },
   "sigilNecroticPlume": {
     "bytes": 287028,
     "cols": 4,
