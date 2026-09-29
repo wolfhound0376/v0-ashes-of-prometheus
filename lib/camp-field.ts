@@ -910,3 +910,55 @@ export function kitDamage(base: number, opts: { mul?: number; halve?: boolean })
   if (opts.halve) d = d / 2
   return Math.max(1, Math.floor(d))
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Spotting herbs (Sam, 2026-09-28: "characters that have advantage and expertise in foraging / wilderness are more
+// likely to identify hard to find herbs"). Walking up to a patch rolls Wisdom (Survival) once: proficiency adds the
+// bonus, expertise doubles it (SRD 5.1), advantage rolls 2d20 and keeps the higher. A miss means the forager walks
+// past it as ordinary mold. The three spot DCs are PROPOSED: big obvious growths 10, small ones 13, the rare one 16.
+// ---------------------------------------------------------------------------------------------------------------
+
+export type SkillLevel = "none" | "proficient" | "expertise"
+
+export const HERB_SPOT_DC = { obvious: 10, small: 13, rare: 16 } as const
+
+const OBVIOUS = new Set(["trillimac", "bluecap", "barrelstalk", "zurkhwood", "ripplebark", "torchstalk", "edible-mushrooms"])
+
+/** How hard a patch is to spot. Food (a day of mushrooms) is always obvious. */
+export function herbSpotDC(slug: string | null | undefined): number {
+  if (!slug) return HERB_SPOT_DC.obvious
+  if (FUNGI.some((f) => f.slug === slug && f.rare)) return HERB_SPOT_DC.rare
+  return OBVIOUS.has(slug) ? HERB_SPOT_DC.obvious : HERB_SPOT_DC.small
+}
+
+/** Survival from a sheet's `sheet_skill_proficiencies` (keys vary in case: "Survival", "survival"). */
+export function skillLevel(profs: Record<string, string> | null | undefined, skill = "survival"): SkillLevel {
+  const hit = Object.entries(profs ?? {}).find(([k]) => k.toLowerCase().replace(/[\s_]+/g, "") === skill)
+  const v = String(hit?.[1] ?? "").toLowerCase()
+  return v.startsWith("expert") ? "expertise" : v.startsWith("prof") ? "proficient" : "none"
+}
+
+export function skillBonus(o: { abilityMod: number; prof: number; level: SkillLevel }): number {
+  return o.abilityMod + (o.level === "expertise" ? 2 * o.prof : o.level === "proficient" ? o.prof : 0)
+}
+
+export interface SpotRoll { rolls: number[]; total: number; dc: number; success: boolean; note: string }
+
+export function spotHerb(o: { abilityMod: number; prof: number; level: SkillLevel; advantage?: boolean; disadvantage?: boolean; dc: number; name: string }, rng: Rng): SpotRoll {
+  const adv = !!o.advantage && !o.disadvantage, dis = !!o.disadvantage && !o.advantage
+  const rolls = adv || dis ? [d(20, rng), d(20, rng)] : [d(20, rng)]
+  const face = adv ? Math.max(...rolls) : dis ? Math.min(...rolls) : rolls[0]
+  const total = face + skillBonus(o)
+  const success = total >= o.dc
+  const how = `${rolls.length > 1 ? `${rolls.join("/")} ${adv ? "adv" : "dis"}` : rolls[0]}${skillBonus(o) >= 0 ? "+" : ""}${skillBonus(o)}${o.level !== "none" ? ` (${o.level})` : ""}`
+  return { rolls, total, dc: o.dc, success, note: `Survival ${how} = ${total} vs DC ${o.dc} — ${success ? `spots the ${o.name.toLowerCase()}` : "walks past it: just mold"}` }
+}
+
+/** Exact odds of spotting, for the HUD and the tests. */
+export function spotChance(o: { abilityMod: number; prof: number; level: SkillLevel; advantage?: boolean; disadvantage?: boolean; dc: number }): number {
+  const need = o.dc - skillBonus(o)
+  const p = Math.min(1, Math.max(0, (21 - Math.max(1, need)) / 20))
+  if (o.advantage && !o.disadvantage) return 1 - (1 - p) * (1 - p)
+  if (o.disadvantage && !o.advantage) return p * p
+  return p
+}

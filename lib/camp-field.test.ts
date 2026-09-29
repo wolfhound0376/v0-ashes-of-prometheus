@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
-  fieldKit, kitDamage,
+  fieldKit, kitDamage, herbSpotDC, skillLevel, spotChance, spotHerb,
   T, passable, slowFactor, tileAt, buildExploreWorld, placeOnWorld, CACHE_COUNT, lostInTheDark,
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
@@ -300,5 +300,35 @@ describe("class kits (Sam's field rules)", () => {
     expect(kitDamage(5, { mul: 1.5 })).toBe(7)
     expect(kitDamage(1, { halve: true })).toBe(1)
     expect(kitDamage(0, { mul: 3 })).toBe(0)
+  })
+})
+
+describe("spotting herbs", () => {
+  it("rates the rare one hardest and big growths easiest", () => {
+    expect(herbSpotDC("tongue-of-madness")).toBe(16)
+    expect(herbSpotDC("fire-lichen")).toBe(13)
+    expect(herbSpotDC("zurkhwood")).toBe(10)
+    expect(herbSpotDC(null)).toBe(10)
+  })
+  it("reads survival from a sheet in any case", () => {
+    expect(skillLevel({ Survival: "proficient" })).toBe("proficient")
+    expect(skillLevel({ survival: "expertise" })).toBe("expertise")
+    expect(skillLevel({ stealth: "expertise" })).toBe("none")
+  })
+  it("expertise and advantage both raise the odds on the rare herb", () => {
+    const base = { abilityMod: 1, prof: 2, dc: 16 }
+    const none = spotChance({ ...base, level: "none" })
+    const prof = spotChance({ ...base, level: "proficient" })
+    const exp = spotChance({ ...base, level: "expertise" })
+    const expAdv = spotChance({ ...base, level: "expertise", advantage: true })
+    expect(none).toBeCloseTo(0.3)
+    expect(prof).toBeCloseTo(0.4)
+    expect(exp).toBeCloseTo(0.5)
+    expect(expAdv).toBeCloseTo(0.75)
+  })
+  it("advantage keeps the higher die", () => {
+    const seq = [0.1, 0.9]; let i = 0
+    const r = spotHerb({ abilityMod: 0, prof: 2, level: "none", advantage: true, dc: 15, name: "Timmask" }, () => seq[i++ % 2])
+    expect(r.rolls).toEqual([3, 19]); expect(r.total).toBe(19); expect(r.success).toBe(true)
   })
 })
