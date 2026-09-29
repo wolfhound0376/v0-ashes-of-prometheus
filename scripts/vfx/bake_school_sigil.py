@@ -139,6 +139,41 @@ def bake_ring(clean: np.ndarray, top: int, centre: int, ratio: float, cell: int,
     return circle.resize((cell, cell), Image.LANCZOS)
 
 
+def glow_ring(ring: Image.Image, count: int, cols: int, lift: float) -> Image.Image:
+    """
+    The ring simply comes up and glows, with no travelling head (Sam,
+    2026-09-29: "no spinning arcane sigil").
+
+    The alternative to --chase, for a school whose sigil holds still. The
+    renderer already fades opacity in across the form act; this is the second
+    half of that entrance — the art itself heating up from dim to full — so
+    the ring arrives rather than merely appearing.
+
+    Blends toward hot rather than scaling RGB, for the same reason the chase
+    does: multiplying clips the red channel first on a warm palette and slides
+    the whole thing yellow-green.
+
+    Only LIT pixels lift. The alpha is keyed off luminance, so raising the
+    black field would gain coverage and start occluding the board.
+    """
+    w, h = ring.size
+    a = np.asarray(ring).astype(np.float32)
+    hot = np.array([255.0, 233.0, 176.0])
+    rows = (count + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * w, rows * h), (0, 0, 0, 0))
+    for i in range(count):
+        k = i / max(1, count - 1)
+        # Ease in, so the last frames hold near full glow instead of the whole
+        # ramp being over in the first third.
+        e = k * k * (3 - 2 * k)
+        rgbf = a[..., :3]
+        frame = a.copy()
+        frame[..., :3] = np.clip(rgbf * (0.55 + 0.45 * e)
+                                 + (hot - rgbf) * (lift * e * 0.45), 0, 255)
+        sheet.paste(Image.fromarray(frame.astype(np.uint8), "RGBA"), ((i % cols) * w, (i // cols) * h))
+    return sheet
+
+
 def glyph_band(ring: Image.Image) -> tuple[float, float]:
     """
     Radii (as a fraction of the half-cell) of the annulus the glyphs sit in.
@@ -437,6 +472,69 @@ def whirlwind(pal: np.ndarray, cw: int, ch: int, px: int, cols: int, count: int,
     return sheet
 
 
+def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
+                   count: int, recolor: bool) -> Image.Image:
+    """
+    Use a ready-made pixel animation as the plume, instead of drawing one.
+
+    Sam sent a hand-made pixel whirlwind after seeing the procedural version,
+    and hand-made art wins: the drawn one is parameters, this one has taste in
+    it. --plume-synth stays for schools with no art at all.
+
+    NEAREST EVERYWHERE. The source is pixel art at 128px and the cell is
+    larger, so every resize is nearest-neighbour; one bilinear step anywhere
+    in the chain turns crisp blocks into mush and is the single easiest way
+    to ruin this kind of asset.
+
+    SHORT LOOPS ARE HELD, NOT CROSS-FADED. A 4-frame source into a 12-frame
+    sheet repeats each frame three times. Blending between them would ghost
+    the rocks, which on hard-edged pixel art reads as a rendering fault
+    rather than as motion blur.
+
+    RECOLOUR IS HUE-SELECTIVE. Mapping every pixel onto the school ramp turns
+    the ROCKS gold too, and gold rocks read as coins. Only pixels that carry
+    the source's own wind hue are remapped; anything neutral — the stone, the
+    shadow — is left as drawn.
+    """
+    im = Image.open(src)
+    n = getattr(im, "n_frames", 1)
+    src_frames = []
+    for i in range(n):
+        im.seek(i)
+        src_frames.append(np.asarray(im.convert("RGBA")).astype(np.float32))
+
+    if recolor:
+        lo, hi = pal[0], pal[-1]
+        out = []
+        for f in src_frames:
+            rgb, al = f[..., :3], f[..., 3]
+            mx, mn = rgb.max(2), rgb.min(2)
+            sat = mx - mn
+            # The wind is the saturated, blue-leaning part of the art.
+            windy = (sat > 26) & (rgb[..., 2] > rgb[..., 0] + 8)
+            l = (luma(rgb) / 255.0)[..., None]
+            mapped = lo + (hi - lo) * np.clip(l * 1.15, 0, 1)
+            g = f.copy()
+            g[..., :3] = np.where(windy[..., None], mapped, rgb)
+            g[..., 3] = al
+            out.append(g)
+        src_frames = out
+
+    rows = (count + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * cw, rows * ch), (0, 0, 0, 0))
+    for i in range(count):
+        f = src_frames[int(i * len(src_frames) / count)]      # held, never blended
+        quad = Image.fromarray(f.clip(0, 255).astype(np.uint8), "RGBA")
+        # Fit the art into the cell without stretching it out of proportion.
+        scale = min(cw / quad.width, ch / quad.height)
+        w, h = max(1, int(quad.width * scale)), max(1, int(quad.height * scale))
+        quad = quad.resize((w, h), Image.NEAREST)
+        cellim = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+        cellim.alpha_composite(quad, ((cw - w) // 2, ch - h))  # base-flush
+        sheet.paste(cellim, ((i % cols) * cw, (i // cols) * ch))
+    return sheet
+
+
 def coverage(im: Image.Image) -> float:
     return 100.0 * float((np.asarray(im)[..., 3] > 8).mean())
 
@@ -454,6 +552,8 @@ def main() -> None:
     ap.add_argument("--frames", type=int, default=12)
     ap.add_argument("--cols", type=int, default=4)
     ap.add_argument("--colors", type=int, default=8, help="flame ramp steps")
+    ap.add_argument("--glow", type=int, default=0, metavar="N",
+                    help="ring frames that fade up and glow instead of chasing; for a still sigil")
     ap.add_argument("--chase", type=int, default=12, metavar="N",
                     help="ring frames with a travelling glow; 1 = a static ring")
     ap.add_argument("--chase-lift", type=float, default=0.75, metavar="0..1",
@@ -471,6 +571,10 @@ def main() -> None:
     ap.add_argument("--plume-synth", choices=["whirlwind"], default=None,
                     help="draw the plume instead of separating it out of the source")
     ap.add_argument("--rocks", type=int, default=62)
+    ap.add_argument("--plume-art", type=Path, default=None,
+                    help="ready-made pixel animation to use as the plume")
+    ap.add_argument("--recolor", action="store_true",
+                    help="remap the art's wind hue onto the school ramp, leaving stone alone")
     ap.add_argument("--dry-run", action="store_true", help="measure and report, write nothing")
     a = ap.parse_args()
 
@@ -484,8 +588,12 @@ def main() -> None:
     burst = (bake_burst(a.burst, pal, a.burst_cell, a.cols, a.burst_frames, a.sparks, a.seed)
              if a.burst else None)
     ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
-    ring_sheet = ring if a.chase <= 1 else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc)
-    plume = (whirlwind(pal, a.plume_w, a.plume_h, a.px, a.cols, a.frames, a.rocks, a.seed)
+    ring_sheet = (glow_ring(ring, a.glow, a.cols, a.chase_lift) if a.glow > 1
+                  else ring if a.chase <= 1
+                  else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
+    plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor)
+             if a.plume_art else
+             whirlwind(pal, a.plume_w, a.plume_h, a.px, a.cols, a.frames, a.rocks, a.seed)
              if a.plume_synth == "whirlwind" else
              bake_plume(frames, clean, top, pal, a.px, a.plume_w, a.plume_h, a.cols, a.frames,
                         a.flame_width))
@@ -497,7 +605,7 @@ def main() -> None:
         print(f"       ring will read {'rounder' if ratio > BOARD_RATIO else 'flatter'} on the board than in the source.")
     print("  flame ramp    " + " ".join("#%02X%02X%02X" % tuple(int(v) for v in c) for c in pal))
     print(f"  ring          coverage {coverage(ring_sheet):4.1f}%"
-          + ("" if a.chase <= 1 else
+          + (f"   glow-up {a.glow} frames" if a.glow > 1 else "" if a.chase <= 1 else
              f"   chase {a.chase} frames, glyph band r={glyph_band(ring)[0]:.2f}-{glyph_band(ring)[1]:.2f}"))
     print(f"  plume         coverage {coverage(plume):4.1f}%   ({a.plume_w // a.px}x{a.plume_h // a.px} px art)")
     if burst is not None:
@@ -513,7 +621,7 @@ def main() -> None:
     # near-empty and the flame ramp is quantised from dither speckle rather
     # than from any real fire. Both sheets still write, the manifest still
     # looks right, and nothing shows up until someone casts the spell.
-    if a.plume_synth is None and coverage(plume) < 3.0:
+    if a.plume_synth is None and a.plume_art is None and coverage(plume) < 3.0:
         print(f"  ERROR the plume is empty ({coverage(plume):.1f}% coverage).")
         print("        This source never ignites — its frames differ only by a shimmer, so")
         print("        there is no fire to separate from the ring. The ring above is fine.")
@@ -528,6 +636,8 @@ def main() -> None:
     entries = {}
     for suffix, im, meta in (
         ("Ring", ring_sheet,
+         {"cols": a.cols, "rows": (a.glow + a.cols - 1) // a.cols, "frames": a.glow,
+          "fps": 12, "loop": False, "peak": a.glow - 1} if a.glow > 1 else
          {"cols": 1, "rows": 1, "frames": 1, "fps": 1, "loop": False, "peak": 0} if a.chase <= 1 else
          {"cols": a.cols, "rows": (a.chase + a.cols - 1) // a.cols, "frames": a.chase,
           "fps": 12, "loop": True}),
