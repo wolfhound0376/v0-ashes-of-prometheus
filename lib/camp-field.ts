@@ -132,6 +132,8 @@ export function forageField(opts: {
   stream?: boolean
   /** The map has water to set fish and eels beside. Default true. */
   water?: boolean
+  /** Rare fungi already picked tonight — they don't grow back (Sam, 2026-09-29). */
+  taken?: ReadonlySet<string>
 }): ForageField {
   const { rng, biome } = opts
   const flags = [
@@ -149,7 +151,7 @@ export function forageField(opts: {
     const c = rng() < CATCH_SHARE ? pickCatch(biome, rng, { catalog: opts.catalog, water: opts.water !== false }) : null
     patches.push(c ? { ...at(), kind: "food", slug: c.slug, name: c.name, water: c.water || undefined } : { ...at(), kind: "food", slug: "edible-mushrooms", name: "A day of food" })
   }
-  const pool = FUNGI.filter((f) => f.w[biome] > 0 && (!opts.catalog || opts.catalog.has(f.slug)))
+  const pool = FUNGI.filter((f) => f.w[biome] > 0 && (!opts.catalog || opts.catalog.has(f.slug)) && !(f.rare && opts.taken?.has(f.slug)))
   if (opts.catalog) for (const f of FUNGI) if (!opts.catalog.has(f.slug)) flags.push(`${f.name} is not in the catalog — left out`)
   const reagents = pool.length ? d(4, rng) : 0
   for (let i = 0; i < reagents; i++) {
@@ -1247,6 +1249,8 @@ export function isEdible(creatureType: string | null | undefined): boolean {
 export interface ButcherResult {
   /** The named meat, when there is any (one item per day). */
   meat?: { slug: string; name: string } | null
+  /** Creature parts cut free (Sam's table) — alchemy and ritual components. */
+  parts?: { slug: string; name: string }[]
   stage: CarcassStage
   /** "survival" or "nature" — whichever the character is better at. */
   skill: "survival" | "nature" | null
@@ -1271,9 +1275,11 @@ export function butcher(o: {
 }, rng: Rng): ButcherResult {
   const none = (note: string): ButcherResult => ({ stage: o.stage, skill: null, check: null, food: 0, spoiled: false, poisonSave: null, poisoned: false, note })
   if (o.stage === "bones") return none(`Only bones are left of the ${o.name.toLowerCase()}.`)
-  if (!isEdible(o.creatureType)) return none(`Nothing on the ${o.name.toLowerCase()} anyone would eat.`)
-  const meat = MEAT_BY_SIZE[o.size] ?? 1
-  if (meat <= 0) return none(`The ${o.name.toLowerCase()} is too small to be worth the knife.`)
+  const parts = partsFor(o.slug)
+  const edible = isEdible(o.creatureType)
+  if (!edible && !parts.length) return none(`Nothing on the ${o.name.toLowerCase()} anyone would eat.`)
+  const meat = edible ? (MEAT_BY_SIZE[o.size] ?? 1) : 0
+  if (meat <= 0 && !parts.length) return none(`The ${o.name.toLowerCase()} is too small to be worth the knife.`)
   const skill: "survival" | "nature" = o.nature > o.survival ? "nature" : "survival"
   const bonus = Math.max(o.survival, o.nature)
   const t = (o.creatureType || "").toLowerCase()
@@ -1283,12 +1289,79 @@ export function butcher(o: {
   const check = { rolls, bonus, total, dc, success: total >= dc }
   const label = skill === "nature" ? "Intelligence (Nature)" : "Wisdom (Survival)"
   if (!check.success) return { ...none(`${label} ${total} vs DC ${dc} — the ${o.name.toLowerCase()} is hacked apart for nothing worth keeping.`), skill, check }
+  const partNote = parts.length ? ` Cut free: ${parts.map((p) => p.name).join(", ")}.` : ""
+  if (meat <= 0) return { stage: o.stage, skill, check, food: 0, spoiled: false, poisonSave: null, poisoned: false, meat: null, parts: [...parts], note: `${label} ${total} vs DC ${dc} — no meat worth eating.${partNote}` }
   const named = o.slug ? meatFor(o.slug) : null
-  if (o.stage === "fresh") return { meat: named, stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — ${meat} day${meat === 1 ? "" : "s"} of meat cut from the ${o.name.toLowerCase()}.` }
+  if (o.stage === "fresh") return { meat: named, parts: [...parts], stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — ${meat} day${meat === 1 ? "" : "s"} of meat cut from the ${o.name.toLowerCase()}.${partNote}` }
   const spoiled = rng() < SPOILED_CHANCE
-  if (!spoiled) return { meat: named, stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — under the flies, ${meat} day${meat === 1 ? "" : "s"} of meat still good.` }
+  if (!spoiled) return { meat: named, parts: [...parts], stage: o.stage, skill, check, food: meat, spoiled: false, poisonSave: null, poisoned: false, note: `${label} ${total} vs DC ${dc} — under the flies, ${meat} day${meat === 1 ? "" : "s"} of meat still good.` }
   const roll = d(20, rng), save = roll + o.conMod
   const poisonSave = { roll, total: save, dc: SPOILED_SAVE_DC, success: save >= SPOILED_SAVE_DC }
-  return { stage: o.stage, skill, check, food: 0, spoiled: true, poisonSave, poisoned: !poisonSave.success,
+  return { parts: [...parts], stage: o.stage, skill, check, food: 0, spoiled: true, poisonSave, poisoned: !poisonSave.success,
     note: `${label} ${total} vs DC ${dc} — the meat is spoiled. Constitution save ${save} vs DC ${SPOILED_SAVE_DC}${poisonSave.success ? " — the stench, nothing worse" : " — failed: poisoned"}.` }
 }
+
+
+// ============================================================================
+// FISHING GEAR, REGROWTH, SPEAKING WITH ROTHÉ, CREATURE PARTS (Sam, 2026-09-29)
+// ============================================================================
+
+/**
+ * "Fish can not be caught without a spear, a net, or a fishing rod … won't start unless it is in your inventory."
+ * Catalog slugs: fishing-tackle (SRD adventuring gear), net, spear. The best one carried is used. Seconds PROPOSED.
+ */
+export const FISHING_GEAR = [
+  { slug: "fishing-tackle", method: "rod", seconds: 4.2, name: "fishing rod" },
+  { slug: "net", method: "net", seconds: 3.2, name: "net" },
+  { slug: "spear", method: "spear", seconds: 2.6, name: "spear" },
+] as const
+export type FishingMethod = (typeof FISHING_GEAR)[number]["method"]
+export function fishingGear(pack: Readonly<Record<string, number>> | null | undefined): (typeof FISHING_GEAR)[number] | null {
+  return FISHING_GEAR.find((g) => (pack?.[g.slug] ?? 0) > 0) ?? null
+}
+export function isWaterCatch(slug: string | null | undefined): boolean {
+  return !!slug && CATCHES.some((c) => c.slug === slug && c.water)
+}
+
+/** "Most common mushrooms will respawn at different places over time. Rare ones don't." Seconds PROPOSED. */
+export const COMMON_REGROW_SECONDS = 60
+export function regrows(slug: string | null | undefined): boolean {
+  if (!slug) return false
+  if (slug === "edible-mushrooms") return true
+  const f = FUNGI.find((x) => x.slug === slug)
+  return !!f && !f.rare
+}
+export function isRareFungus(slug: string | null | undefined): boolean {
+  return !!slug && FUNGI.some((f) => f.slug === slug && f.rare)
+}
+
+/**
+ * Rothé milk and cheese are delicacies — "a druid or someone able to talk to animals may be awarded it."
+ * Speak with Animals is on the bard, druid and ranger lists (SRD); a druid always has it to prepare.
+ */
+export function canSpeakWithAnimals(o: { cls?: string | null; spells?: readonly string[] | null }): boolean {
+  if ((o.cls || "").toLowerCase() === "druid") return true
+  return (o.spells ?? []).some((s) => /speak with animals/i.test(s))
+}
+/** What a calm rothé gives someone it will talk to: a skin of milk, and now and then cheese. Odds PROPOSED. */
+export const ROTHE_CHEESE_CHANCE = 0.25
+export function rotheGift(rng: Rng): { items: { slug: string; name: string; quantity: number }[]; note: string } {
+  const items: { slug: string; name: string; quantity: number }[] = [{ slug: "deep-rothe-milk", name: "Deep Rothé Milk (skin)", quantity: 1 }]
+  if (rng() < ROTHE_CHEESE_CHANCE) items.push({ slug: "rothe-cheese", name: "Rothé Cheese", quantity: 1 })
+  return { items, note: items.length > 1 ? "The rothé lets you milk it — and shows you where the herders left a wheel of cheese." : "The rothé stands still and lets you milk it." }
+}
+
+/**
+ * Parts harvested from a carcass besides meat (Sam's table, 2026-09-29) — taken on a successful butchering,
+ * even from creatures nobody eats. Every slug is a catalog item.
+ */
+export const PARTS: Readonly<Record<string, readonly { slug: string; name: string }[]>> = {
+  "carrion-crawler": [{ slug: "carrion-crawler-mucus", name: "Carrion Crawler Mucus" }],
+  "purple-worm": [{ slug: "purple-worm-egg", name: "Purple Worm Egg" }],
+  "beholder": [{ slug: "beholder-central-eye", name: "Beholder's Central Eye" }],
+  "goristro": [{ slug: "goristro-heart", name: "Goristro Heart" }],
+  "giant-spider": [{ slug: "giant-spider-silk", name: "Giant Spider Silk" }],
+  "roper": [{ slug: "roper-digestive-juices", name: "Roper Digestive Juices" }],
+  "basilisk": [{ slug: "basilisk-phlegm", name: "Basilisk Phlegm" }],
+}
+export function partsFor(slug: string | null | undefined): readonly { slug: string; name: string }[] { return (slug && PARTS[slug]) || [] }

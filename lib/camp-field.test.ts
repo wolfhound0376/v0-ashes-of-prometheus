@@ -499,3 +499,36 @@ describe("shore placement", () => {
     for (const p of pts) expect(isShore(w, p.x, p.y)).toBe(true)
   })
 })
+
+describe("fishing gear, regrowth, rothé, parts (Sam, 2026-09-29)", () => {
+  it("water catches need a rod, net or spear — the best one carried is used", async () => {
+    const { fishingGear, isWaterCatch } = await import("./camp-field")
+    expect(fishingGear({})).toBeNull()
+    expect(fishingGear({ spear: 1 })!.method).toBe("spear")
+    expect(fishingGear({ spear: 1, "fishing-tackle": 1 })!.method).toBe("rod")
+    expect(isWaterCatch("albino-eel")).toBe(true); expect(isWaterCatch("cave-snails")).toBe(false)
+  })
+  it("common mushrooms regrow, rare fungi don't — and a rare one taken tonight is left out", async () => {
+    const { regrows, isRareFungus, FUNGI, forageField } = await import("./camp-field")
+    expect(regrows("edible-mushrooms")).toBe(true)
+    const rare = FUNGI.find((f) => f.rare)!; expect(regrows(rare.slug)).toBe(false); expect(isRareFungus(rare.slug)).toBe(true)
+    for (let i = 0; i < 200; i++) for (const p of forageField({ success: true, supplies: 2, biome: "fungal", rng: seededRng(i), taken: new Set([rare.slug]) }).patches) expect(p.slug).not.toBe(rare.slug)
+  })
+  it("only a druid or someone with Speak with Animals gets rothé milk; cheese sometimes", async () => {
+    const { canSpeakWithAnimals, rotheGift } = await import("./camp-field")
+    expect(canSpeakWithAnimals({ cls: "Druid" })).toBe(true)
+    expect(canSpeakWithAnimals({ cls: "Bard", spells: ["Speak with Animals"] })).toBe(true)
+    expect(canSpeakWithAnimals({ cls: "Rogue" })).toBe(false)
+    let cheese = 0; const rng = seededRng(4); for (let i = 0; i < 1000; i++) { const g = rotheGift(rng); expect(g.items[0].slug).toBe("deep-rothe-milk"); if (g.items.length > 1) cheese++ }
+    expect(cheese).toBeGreaterThan(180); expect(cheese).toBeLessThan(320)
+  })
+  it("parts come off even creatures nobody eats, on a success", async () => {
+    const { butcher } = await import("./camp-field")
+    const r = butcher({ stage: "fresh", size: "Large", creatureType: "monstrosity", name: "Carrion crawler", slug: "carrion-crawler", survival: 30, nature: 0, conMod: 0 }, seededRng(1))
+    expect(r.parts!.map((p) => p.slug)).toEqual(["carrion-crawler-mucus"])
+    const g = butcher({ stage: "fresh", size: "Huge", creatureType: "fiend (demon)", name: "Goristro", slug: "goristro", survival: 30, nature: 0, conMod: 0 }, seededRng(1))
+    expect(g.food).toBe(0); expect(g.parts!.map((p) => p.slug)).toEqual(["goristro-heart"])
+    const s = butcher({ stage: "fresh", size: "Large", creatureType: "beast", name: "Giant spider", slug: "giant-spider", survival: 30, nature: 0, conMod: 0 }, seededRng(1))
+    expect(s.food).toBe(2); expect(s.meat!.slug).toBe("spider-meat"); expect(s.parts!.map((p) => p.slug)).toEqual(["giant-spider-silk"])
+  })
+})
