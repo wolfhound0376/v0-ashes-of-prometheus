@@ -500,7 +500,7 @@ def whirlwind(pal: np.ndarray, cw: int, ch: int, px: int, cols: int, count: int,
 
 
 def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
-                   count: int, recolor: bool) -> Image.Image:
+                   count: int, recolor: bool, sink: float = 0.0) -> Image.Image:
     """
     Use a ready-made pixel animation as the plume, instead of drawing one.
 
@@ -569,7 +569,17 @@ def plume_from_art(src: Path, pal: np.ndarray, cw: int, ch: int, cols: int,
         w, h = max(1, int(quad.width * scale)), max(1, int(quad.height * scale))
         quad = quad.resize((w, h), Image.NEAREST)
         cellim = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        cellim.alpha_composite(quad, ((cw - w) // 2, ch - h))  # base-flush
+        # SINK. The renderer sets the quad's bottom edge on the floor plane,
+        # which on a flat ellipse is its CENTRELINE — so art that is flush to
+        # the bottom of its cell appears to erupt on top of the ring rather
+        # than out of it (Sam, 2026-09-29: "the plume is too high, it should
+        # start from a more inferior position").
+        #
+        # Pushing the art down inside the cell moves its roots below that line
+        # and clips whatever falls off the bottom. For art that carries its own
+        # base that is two fixes at once: the effect sits into the ring, and
+        # the duplicated base stops stacking on top of the real one.
+        cellim.alpha_composite(quad, ((cw - w) // 2, ch - h + int(ch * sink)))
         sheet.paste(cellim, ((i % cols) * cw, (i // cols) * ch))
     return sheet
 
@@ -612,6 +622,8 @@ def main() -> None:
     ap.add_argument("--rocks", type=int, default=62)
     ap.add_argument("--plume-art", type=Path, default=None,
                     help="ready-made pixel animation to use as the plume")
+    ap.add_argument("--plume-sink", type=float, default=0.0, metavar="0..0.3",
+                    help="push the plume's roots below the floor plane, as a fraction of the cell")
     ap.add_argument("--recolor", action="store_true",
                     help="remap the art's wind hue onto the school ramp, leaving stone alone")
     ap.add_argument("--dry-run", action="store_true", help="measure and report, write nothing")
@@ -646,7 +658,8 @@ def main() -> None:
     ring_sheet = (glow_ring(ring, a.glow, a.cols, a.chase_lift) if a.glow > 1
                   else ring if a.chase <= 1
                   else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
-    plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor)
+    plume = (plume_from_art(a.plume_art, pal, a.plume_w, a.plume_h, a.cols, a.frames, a.recolor,
+                            a.plume_sink)
              if a.plume_art else
              whirlwind(pal, a.plume_w, a.plume_h, a.px, a.cols, a.frames, a.rocks, a.seed)
              if a.plume_synth == "whirlwind" else
