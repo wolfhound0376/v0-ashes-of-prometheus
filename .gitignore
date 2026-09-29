@@ -22,3 +22,7 @@ node_modules
 # tracked copy shows up as an uncommitted change in every session that builds.
 # The file says "should not be edited" in its own header.
 next-env.d.ts
+
+# Python bytecode — 16 scripts in scripts/ and nothing was ignoring these
+__pycache__/
+*.py[cod]
