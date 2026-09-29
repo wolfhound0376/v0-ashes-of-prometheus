@@ -114,7 +114,19 @@ def flame_palette(frames: list[np.ndarray], clean: np.ndarray, colors: int) -> n
         if m.any():
             lit.append(d[m])
     if not lit:
-        raise SystemExit("no flame pixels found — is frame 0 really the clean ring?")
+        # No ignite to diff — a still image, or a loop that only shimmers. The
+        # ramp is still wanted downstream (burst sparks, the whirlwind's lit
+        # edges, --recolor), so take it from the art's OWN warm pixels instead
+        # of failing. Only the plume separation truly needs the ignite, and
+        # that has its own guard further down.
+        base = frames[0]
+        warm = (base[..., 0] > base[..., 2] * 1.1) & (luma(base) > 55)
+        if not warm.any():
+            warm = luma(base) > 55
+        if not warm.any():
+            raise SystemExit("nothing lit enough to sample a palette from")
+        lit = [base[warm]]
+        print("  palette        no ignite to diff — sampled from the art's own colours")
     px = np.concatenate(lit, 0)
     rng = np.random.default_rng(7)          # deterministic: same art, same ramp
     px = px[rng.choice(len(px), size=min(200_000, len(px)), replace=False)]
@@ -130,9 +142,18 @@ def key_alpha(rgb: np.ndarray, floor: float, gain: float) -> np.ndarray:
 
 
 def bake_ring(clean: np.ndarray, top: int, centre: int, ratio: float, cell: int,
-              floor: float, gain: float) -> Image.Image:
-    """The painted ring, flame-free, stretched back into a true circle."""
-    im = Image.fromarray(np.dstack([clean.astype(np.uint8), key_alpha(clean, floor, gain)]), "RGBA")
+              floor: float, gain: float, alpha: np.ndarray | None = None) -> Image.Image:
+    """
+    The painted ring, flame-free, stretched back into a true circle.
+
+    `alpha` preserves a source's OWN transparency. Keying from luminance is
+    right for art drawn on black, and wrong for a cut-out PNG: the dark parts
+    of the artwork are opaque there, and re-keying them punches holes through
+    the piece.
+    """
+    a8 = clean.astype(np.uint8)
+    al = alpha if alpha is not None else key_alpha(clean, floor, gain)
+    im = Image.fromarray(np.dstack([a8, al.astype(np.uint8)]), "RGBA")
     half = centre - top + 40
     band = im.crop((0, max(0, centre - half), im.width, min(im.height, centre + half)))
     circle = band.resize((band.width, int(round(band.height * ratio))), Image.LANCZOS)
@@ -579,15 +600,31 @@ def main() -> None:
     a = ap.parse_args()
 
     frames = frames_of(a.source)
-    if len(frames) < 4:
-        raise SystemExit(f"{a.source} has {len(frames)} frames; this needs the animated source")
+    if len(frames) < 4 and not (a.plume_art or a.plume_synth):
+        raise SystemExit(f"{a.source} has {len(frames)} frames; separating a plume out of it "
+                         f"needs the animated source, or pass --plume-art / --plume-synth")
     clean = frames[0]
     top, centre, ratio = ring_band(clean)
+    # DRAWN FACE-ON, OR DRAWN IN PERSPECTIVE? Every source so far was an
+    # ellipse between 2.04:1 and 2.49:1, because it was drawn as the board's
+    # camera would see a circle. Art drawn as a true circle, face-on, measures
+    # near 1:1 and must NOT be stretched — the camera supplies the whole
+    # squash. Stretching it anyway makes a circle the board then squashes
+    # twice. Below 1.4 nothing is close enough to a drawn ellipse to be one.
+    flat = ratio < 1.4
+    if flat:
+        ratio = 1.0
     pal = flame_palette(frames, clean, a.colors)
 
     burst = (bake_burst(a.burst, pal, a.burst_cell, a.cols, a.burst_frames, a.sparks, a.seed)
              if a.burst else None)
-    ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
+    # A cut-out PNG carries its own alpha; art drawn on black does not.
+    own_alpha = None
+    if Image.open(a.source).mode in ("RGBA", "LA", "P"):
+        probe = np.asarray(Image.open(a.source).convert("RGBA"))[..., 3]
+        if float((probe < 250).mean()) > 0.02:
+            own_alpha = probe.astype(np.float32)
+    ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain, own_alpha)
     ring_sheet = (glow_ring(ring, a.glow, a.cols, a.chase_lift) if a.glow > 1
                   else ring if a.chase <= 1
                   else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc))
@@ -599,8 +636,11 @@ def main() -> None:
                         a.flame_width))
 
     print(f"  source        {len(frames)} frames, ring band top={top} centre={centre}")
-    print(f"  drawn ellipse {ratio:.2f}:1   (board camera is {BOARD_RATIO:.2f}:1)")
-    if abs(ratio - BOARD_RATIO) > 0.25:
+    if flat:
+        print(f"  drawn FACE-ON (near 1:1) — no un-squash; the camera supplies all of it")
+    else:
+        print(f"  drawn ellipse {ratio:.2f}:1   (board camera is {BOARD_RATIO:.2f}:1)")
+    if not flat and abs(ratio - BOARD_RATIO) > 0.25:
         print(f"  NOTE the art is drawn at a different angle from the board's camera, so the")
         print(f"       ring will read {'rounder' if ratio > BOARD_RATIO else 'flatter'} on the board than in the source.")
     print("  flame ramp    " + " ".join("#%02X%02X%02X" % tuple(int(v) for v in c) for c in pal))
@@ -610,7 +650,12 @@ def main() -> None:
     print(f"  plume         coverage {coverage(plume):4.1f}%   ({a.plume_w // a.px}x{a.plume_h // a.px} px art)")
     if burst is not None:
         print(f"  burst         coverage {coverage(burst):4.1f}%   ({a.burst_frames} frames, {a.sparks} seeded sparks)")
-    for name, im in (("ring", ring_sheet), ("plume", plume)):
+    # The >70% warning is about a luminance KEY that failed to cut anything,
+    # not about coverage as such. Cut-out art carries the artist's own alpha,
+    # and a painted circle lying on the floor is MEANT to be solid — firing
+    # there is a false positive, and a warning that cries wolf gets ignored
+    # the one time it is real.
+    for name, im in ((("ring", ring_sheet),) if own_alpha is None else ()) + (("plume", plume),):
         if coverage(im) > 70:
             print(f"  WARNING {name} keys at >70% — it will render as an opaque plate, not as light.")
 
