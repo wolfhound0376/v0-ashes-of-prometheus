@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
-  DEFAULT_PLAN, SCHOOL_SIGIL, callsForSave, sigilDuration, sigilPoseAt, sigilStrikeAt,
-  targetSigilFor, type SigilPlan,
+  BURST_LIFE, DEFAULT_PLAN, SCHOOL_SIGIL, callsForSave, sigilDuration, sigilPoseAt,
+  sigilStrikeAt, targetSigilFor, type SigilPlan,
 } from "./target-sigil"
 
 const PLAN: SigilPlan = { art: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume" }, ...DEFAULT_PLAN }
@@ -121,7 +121,7 @@ describe("sigilPoseAt — the three acts", () => {
         const p = sigilPoseAt(t, PLAN, outcome, PEAK)
         expect(p.opacity, `${outcome} @${t.toFixed(2)}`).toBeGreaterThanOrEqual(0)
         expect(p.opacity, `${outcome} @${t.toFixed(2)}`).toBeLessThanOrEqual(1)
-        for (const v of [p.frame, p.opacity, p.scale, p.spin, p.radiate, p.permeate, p.flame]) {
+        for (const v of [p.frame, p.opacity, p.scale, p.spin, p.radiate, p.permeate, p.flame, p.burst]) {
           expect(Number.isFinite(v)).toBe(true)
         }
       }
@@ -229,6 +229,38 @@ describe("sigilPoseAt — taken and warded are opposite motions", () => {
     expect(mid.opacity).toBe(1)
     expect(sigilPoseAt(0.5, PLAN, "warded", PEAK).spin)
       .toBeLessThan(sigilPoseAt(0.2, PLAN, "warded", PEAK).spin)
+  })
+
+  it("throws the hit spark ON the strike frame, not before it", () => {
+    const strike = sigilStrikeAt(PLAN)
+    expect(sigilPoseAt(strike - 0.02, PLAN, "taken", PEAK).burst).toBeLessThan(0)
+    expect(sigilPoseAt(strike + 0.01, PLAN, "taken", PEAK).burst).toBeGreaterThanOrEqual(0)
+  })
+
+  it("runs the spark once, forward, and stops — it does not fade or loop", () => {
+    const strike = sigilStrikeAt(PLAN)
+    let last = -1
+    for (let u = 0; u <= BURST_LIFE; u += 0.005) {
+      const b = sigilPoseAt(strike + u, PLAN, "taken", PEAK).burst
+      expect(b).toBeGreaterThanOrEqual(last - 1e-9)   // monotonic
+      expect(b).toBeLessThanOrEqual(1)                // never past its end
+      last = b
+    }
+    // The endpoint asserted exactly, rather than trusting the loop to land on
+    // it — accumulating 0.005 steps stops at 0.295, not 0.300.
+    expect(sigilPoseAt(strike + BURST_LIFE, PLAN, "taken", PEAK).burst).toBeCloseTo(1, 6)
+  })
+
+  it("throws NO spark on a save — the spell was turned aside", () => {
+    for (let t = 0; t <= sigilDuration(PLAN) + 0.3; t += 0.01) {
+      expect(sigilPoseAt(t, PLAN, "warded", PEAK).burst, `@${t.toFixed(2)}`).toBeLessThan(0)
+    }
+  })
+
+  it("gives every registered sigil a burst sheet, shared like the motes", () => {
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      expect(art?.burst, school).toBe("pxSigilBurst")
+    }
   })
 
   it("lights the flame when it takes them", () => {

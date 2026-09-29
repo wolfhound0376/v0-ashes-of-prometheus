@@ -39,6 +39,12 @@ import { SPELL_SAVE_ABILITY } from "./spell-save-data"
 /** The one shared mote sheet, drawn white and tinted per school. */
 const MOTES = "pxPlumeMotes"
 
+/** The one shared hit-spark sheet, likewise. */
+const BURST = "pxSigilBurst"
+
+/** How long the hit spark lasts, seconds. Six frames at 20 fps. */
+export const BURST_LIFE = 0.3
+
 /** How the target fared. Mirrors the kit's own `outcome`. */
 export type SigilOutcome = "taken" | "warded"
 
@@ -51,15 +57,15 @@ export type SigilAct = "form" | "hold" | "resolve" | "done"
  */
 export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   necromancy:  { ring: "sigilNecroticRing",    plume: "sigilNecroticPlume",
-                 motes: MOTES, tint: 0x853cb1 },
+                 motes: MOTES, burst: BURST, tint: 0x853cb1 },
   enchantment: { ring: "sigilEnchantmentRing", plume: "sigilEnchantmentPlume",
-                 motes: MOTES, tint: 0xd0407c },
+                 motes: MOTES, burst: BURST, tint: 0xd0407c },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
 export const DAMAGE_SIGIL: Record<string, SigilArt> = {
   necrotic: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume",
-              motes: MOTES, tint: 0x853cb1 },
+              motes: MOTES, burst: BURST, tint: 0x853cb1 },
 }
 
 /**
@@ -94,6 +100,17 @@ export interface SigilArt {
    * use, so a new sigil costs no new mote art.
    */
   motes?: string
+  /**
+   * The fighting-game hit spark thrown on the frame the spell TAKES.
+   *
+   * Sam, 2026-09-28: "the sprites should look like the explosions from Street
+   * Fighter." The strike frame — the end of the hold, the moment the save
+   * fails — was the dramatic peak of the whole effect and had nothing punchy
+   * on it; the sigil simply began to fade. This is what makes the spell land.
+   *
+   * White, like the motes, so one sheet serves every school.
+   */
+  burst?: string
   /**
    * The colour the motes are tinted, from Sam's own palette sheet rather than
    * from invention. These are the "glow" values of school-verify.png.
@@ -203,6 +220,17 @@ export interface SigilPose {
   /** 0..1 — how much the magic has soaked into the body. Drives the inner glow. */
   permeate: number
   /**
+   * The hit spark's progress: NEGATIVE while it is not playing, then 0..1
+   * across BURST_LIFE from the strike frame.
+   *
+   * Negative rather than 0 for "not playing", because 0 is a real value — the
+   * spark's own first frame — and the two must never be confused.
+   *
+   * Stays negative for the whole of a warded cast: the save turned the spell
+   * aside, so there is nothing to detonate. Same rule as the flame.
+   */
+  burst: number
+  /**
    * 0..1 — the FLAME's own visibility, separate from the ring's opacity.
    *
    * Sam, 2026-09-28: "Making the save means the sigil rotates but no flames of
@@ -283,6 +311,7 @@ export function sigilPoseAt(
       radiate: 0.55 + 0.45 * ease(p),
       permeate: 0,
       flame: outcome === "taken" ? ease(p) : 0,
+      burst: -1,
       struck: false,
     }
   }
@@ -299,6 +328,7 @@ export function sigilPoseAt(
       radiate: 1 + 0.10 * Math.sin(p * TAU),
       permeate: outcome === "taken" ? 0.35 + 0.15 * Math.sin(p * TAU * 1.5) : 0,
       flame: outcome === "taken" ? 1 : 0,
+      burst: -1,
       struck: false,
     }
   }
@@ -317,6 +347,8 @@ export function sigilPoseAt(
       radiate: taken ? 1 - 0.35 * ease(p) : 1 + 1.5 * ease(p),
       permeate: taken ? Math.min(1, 0.5 + ease(p)) : 0,
       flame: taken ? Math.min(1, 1.3 - p) : 0,
+      // The spark fires ON the strike frame, which is where this act begins.
+      burst: taken ? clamp01(u / BURST_LIFE) : -1,
       struck: true,
     }
   }
@@ -330,6 +362,7 @@ export function sigilPoseAt(
     radiate: taken ? 0.65 : 2.5,
     permeate: taken ? 1 : 0,
     flame: 0,
+    burst: -1,
     struck: true,
   }
 }

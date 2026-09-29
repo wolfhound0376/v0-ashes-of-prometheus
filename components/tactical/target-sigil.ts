@@ -61,6 +61,16 @@ const RING = 2.6
  * square of source. The stretch lands on smoke and fire, which tolerate it;
  * the ring's glyphs are on their own sheet and are not stretched.
  */
+/**
+ * The hit spark's size, and how high up the body it lands.
+ *
+ * Chest height, not the floor: this is the spell landing ON them, not a mark
+ * under them. Bigger than the flame is wide, so it reads as a detonation
+ * rather than as part of the fire.
+ */
+const BURST_SIZE = 3.0
+const BURST_Y = 1.0
+
 const FLAME_W = 2.4
 const FLAME_H = 4.8
 
@@ -84,6 +94,7 @@ export function targetSigilVfx(opts: {
   let ring: Flip | null = null
   let plume: Flip | null = null
   let motes: Flip | null = null
+  let burst: Flip | null = null
   let glow: THREE.PointLight | null = null
   let peakP = 0.5
   let disposed = false
@@ -131,15 +142,27 @@ export function targetSigilVfx(opts: {
     }).catch(() => {})
   }
 
+  // THE HIT SPARK on the frame the spell takes (Sam: "like the explosions
+  // from Street Fighter"). Drawn at chest height on the victim, not on the
+  // floor — it is the spell landing on them, not a mark under them.
+  if (plan.art.burst) {
+    void loadSheet(plan.art.burst).then((sheet) => {
+      if (disposed) return
+      burst = new Flip(sheet, plan.art.tint ?? 0xffffff, BURST_SIZE, BURST_SIZE)
+      burst.opacity = 0
+      group.add(burst.mesh)
+    }).catch(() => {})
+  }
+
   const dispose = () => {
     if (disposed) return
     disposed = true
-    for (const f of [ring, plume, motes]) {
+    for (const f of [ring, plume, motes, burst]) {
       if (!f) continue
       group.remove(f.mesh)
       f.dispose()
     }
-    ring = plume = motes = null
+    ring = plume = motes = burst = null
     if (glow) { group.remove(glow); glow = null }
     group.parent?.remove(group)
   }
@@ -203,6 +226,22 @@ export function targetSigilVfx(opts: {
           // Under the painted fire, so they read as embers inside it rather
           // than as confetti in front of it.
           motes.opacity = lit * 0.85
+        }
+      }
+
+      if (burst) {
+        // pose.burst is negative until the strike frame, and stays negative
+        // for the whole of a warded cast.
+        const b = pose.burst
+        burst.mesh.visible = b >= 0 && b <= 1
+        if (burst.mesh.visible) {
+          if (opts.camera) burst.mesh.quaternion.copy(opts.camera.quaternion)
+          burst.mesh.position.set(at.x, at.y + BURST_Y, at.z)
+          // Grows as it goes, the way a spark throws itself outward.
+          burst.mesh.scale.setScalar(0.75 + 0.55 * b)
+          burst.setProgress(b)
+          // Full brightness almost to the end: a spark does not fade, it stops.
+          burst.opacity = b < 0.8 ? 1 : (1 - b) / 0.2
         }
       }
 

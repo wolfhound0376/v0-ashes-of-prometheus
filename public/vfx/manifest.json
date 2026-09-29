@@ -333,6 +333,14 @@
     "frames": 8,
     "rows": 2
   },
+  "pxSigilBurst": {
+    "bytes": 1054,
+    "cols": 6,
+    "file": "pxSigilBurst.webp",
+    "fps": 20,
+    "frames": 6,
+    "rows": 1
+  },
   "pxSpark": {
     "bytes": 56,
     "cols": 1,
