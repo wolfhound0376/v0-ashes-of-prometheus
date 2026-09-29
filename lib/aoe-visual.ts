@@ -51,6 +51,7 @@ export type DecalKind =
   | "gloom"    // darkness, silence, necrotic — a soft violet dimming
   | "fog"      // fog cloud, and any conjured bank of vapour — pale, not purple
   | "hallowed" // radiant, holy — a lit ring
+  | "spores"   // a breath of spores — the deep dragon's Nightmare Breath
   | "arcane"   // everything else, and the honest default
 
 /**
@@ -91,6 +92,11 @@ export interface AreaVisual {
   lingers: boolean
   /** Opacity of the settled mark, once the bloom has finished. */
   restOpacity: number
+  /**
+   * Motes drifting up through the cells while the mark is alive — spores
+   * lifting off a breath cloud. Absent for everything that is only a mark.
+   */
+  motes?: { colour: number; perCell: number }
 }
 
 /**
@@ -156,6 +162,10 @@ const TINTS: Record<DecalKind, number> = {
   // `fog`); the two systems simply disagreed, and the decal was winning.
   fog:      0xd9e2ea,
   hallowed: 0xffe6a8,
+  // Psychic violet, not gloom's dusk lilac and never fire-orange: Nightmare
+  // Breath is a cloud of spores that gets into the mind, and it should read
+  // as poisonous-bright rather than as shadow.
+  spores:   0xa25cff,
   arcane:   0x9fd8ff,
 }
 
@@ -173,6 +183,7 @@ const BLOOMS: Record<DecalKind, number> = {
   gloom:    0.80,
   fog:      1.20,   // a bank of fog ROLLS in; it does not snap into being
   hallowed: 0.55,
+  spores:   1.30,   // a cloud BILLOWS out of the mouth; slower than any gas
   arcane:   0.50,
 }
 
@@ -198,6 +209,7 @@ const REST: Record<DecalKind, number> = {
   // the opposite of what the spell now does to the creatures inside it.
   fog:      0.66,
   hallowed: 0.32,
+  spores:   0.58,   // dense enough to be a cloud you are standing inside
   arcane:   0.26,
 }
 
@@ -211,7 +223,7 @@ const REST: Record<DecalKind, number> = {
 const FORMS: Record<DecalKind, DecalForm> = {
   scorch: "floor", frost: "floor", shock: "floor", acid: "floor",
   web: "floor", hallowed: "floor", arcane: "floor",
-  miasma: "cloud", gloom: "cloud", fog: "cloud",
+  miasma: "cloud", gloom: "cloud", fog: "cloud", spores: "cloud",
 }
 
 function kindFor(name: string, entry: SpellEntry | undefined): DecalKind {
@@ -253,5 +265,36 @@ export function areaVisualFor(spellName: string): AreaVisual | null {
  * with the kinds it names and adding a decal is one line in the union.
  */
 export function decalSheet(kind: DecalKind): string {
+  // Spores billow the way standing gas does, so they wear the miasma sheet —
+  // it is near-grayscale and the tint above makes it violet. One more sheet
+  // to download for the same motion would buy nothing a player could see.
+  if (kind === "spores") return "groundMiasma"
   return `ground${kind[0].toUpperCase()}${kind.slice(1)}`
+}
+
+/**
+ * The look of a monster's breath weapon.
+ *
+ * A breath has no spellbook row, so areaVisualFor cannot see it. It is still
+ * made of something, and this reads that the same way a spell is read: by
+ * damage type, through the same table — a red dragon's fire breath scorches
+ * exactly as a Burning Hands does. The one exception is a breath of SPORES,
+ * which is a billowing violet cloud with motes drifting off it whatever its
+ * damage type says.
+ *
+ * Never lingers. A breath is exhaled and gone; nobody concentrates on it.
+ */
+export function areaVisualForBreath(breath: { damageType: string | null; spores: boolean }): AreaVisual {
+  const decal: DecalKind = breath.spores
+    ? "spores"
+    : (breath.damageType && BY_DAMAGE[breath.damageType]) || "arcane"
+  return {
+    decal,
+    form: FORMS[decal],
+    tint: TINTS[decal],
+    bloom: BLOOMS[decal],
+    lingers: false,
+    restOpacity: REST[decal],
+    ...(breath.spores ? { motes: { colour: 0xd4a8ff, perCell: 3 } } : {}),
+  }
 }

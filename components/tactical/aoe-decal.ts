@@ -405,6 +405,62 @@ export function layAreaDecal(opts: {
       })
   }
 
+  // DRIFTING MOTES, for a mark that asks for them (a breath of spores).
+  //
+  // One Points geometry over every cell — one draw call however wide the
+  // cone — seeded low in the cloud and lifting slowly with a sideways drift,
+  // so the cloud reads as something alive and shedding rather than a tinted
+  // shape. They light with the ring they were born in and fade with the mark.
+  let motes: {
+    points: THREE.Points
+    geo: THREE.BufferGeometry
+    mat: THREE.PointsMaterial
+    pos: Float32Array
+    vel: Float32Array
+    delay: Float32Array
+  } | null = null
+  if (visual.motes && cells.length > 0) {
+    const reach = Math.max(
+      1,
+      ...cells.map((c) => Math.max(Math.abs(c.x - centre.x), Math.abs(c.y - centre.y))),
+    )
+    const n = cells.length * Math.max(1, Math.round(visual.motes.perCell))
+    const pos = new Float32Array(n * 3)
+    const vel = new Float32Array(n * 3)
+    const delay = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+      const c = cells[i % cells.length]
+      const w = cellToWorld(c.x, c.y)
+      pos[i * 3] = w.x + (Math.random() - 0.5) * size
+      pos[i * 3 + 1] = Math.random() * size * 0.6
+      pos[i * 3 + 2] = w.z + (Math.random() - 0.5) * size
+      vel[i * 3] = (Math.random() - 0.5) * size * 0.25
+      vel[i * 3 + 1] = size * (0.12 + Math.random() * 0.22)
+      vel[i * 3 + 2] = (Math.random() - 0.5) * size * 0.25
+      // Born with the ring its cell belongs to, so the motes billow outward
+      // from the mouth with the cloud rather than all appearing at once.
+      const d = Math.max(Math.abs(c.x - centre.x), Math.abs(c.y - centre.y))
+      delay[i] = Math.min(BUCKETS - 1, Math.floor((d / reach) * BUCKETS)) * RING_DELAY * 4
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3))
+    const mat = new THREE.PointsMaterial({
+      color: visual.motes.colour,
+      size: size * 0.09,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+      toneMapped: false,
+    })
+    const points = new THREE.Points(geo, mat)
+    points.frustumCulled = false
+    points.renderOrder = 2 + BUCKETS
+    group.add(points)
+    motes = { points, geo, mat, pos, vel, delay }
+  }
+
   const setFrame = (b: Bucket, i: number) => {
     const sheetCols = Math.round(1 / b.tex.repeat.x)
     const sheetRows = Math.round(1 / b.tex.repeat.y)
@@ -460,6 +516,25 @@ export function layAreaDecal(opts: {
         }
       }
 
+      if (motes) {
+        const { pos, vel, geo, mat } = motes
+        for (let i = 0; i < motes.delay.length; i++) {
+          if (t < motes.delay[i]) continue
+          pos[i * 3] += vel[i * 3] * dt
+          pos[i * 3 + 1] += vel[i * 3 + 1] * dt
+          pos[i * 3 + 2] += vel[i * 3 + 2] * dt
+        }
+        geo.attributes.position.needsUpdate = true
+        // The motes follow the cloud: up with its flare, out with its fade.
+        const inT = Math.min(1, t / (visual.bloom * 0.5))
+        const outT = ending
+          ? Math.max(0, 1 - (t - endAt) / FADE_OUT)
+          : visual.lingers
+            ? 1
+            : Math.max(0, 1 - (t - visual.bloom) / (FADE_OUT + BUCKETS * RING_DELAY))
+        mat.opacity = 0.85 * inT * Math.min(1, outT)
+      }
+
       if (ending) return t - endAt < FADE_OUT
       if (visual.lingers) return true
       // A one-shot mark is done when its LAST ring has finished fading, not
@@ -482,6 +557,12 @@ export function layAreaDecal(opts: {
         b.tex.dispose()
       }
       buckets = []
+      if (motes) {
+        group.remove(motes.points)
+        motes.geo.dispose()
+        motes.mat.dispose()
+        motes = null
+      }
       parent.remove(group)
     },
   }

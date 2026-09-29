@@ -86,7 +86,7 @@ import type { MapProp, PropPlacement } from "@/lib/map-props"
 import { layGroundItems, type GroundItemHandle } from "./ground-item-props"
 import { withinReach, type GroundItemRow } from "@/lib/ground-items"
 import { defenceMotion } from "./defence-motion"
-import { areaVisualFor } from "@/lib/aoe-visual"
+import { areaVisualFor, areaVisualForBreath } from "@/lib/aoe-visual"
 import { damageNumberVfx } from "./damage-numbers"
 import { HealPairing } from "@/lib/heal-line"
 import { applyWaterFlow, type WaterFx, type WaterFlowHandle } from "./water-flow"
@@ -127,6 +127,8 @@ import { spellEntry, type SpellEntry } from "@/lib/spellbook"
 // outline a player is looking at and the creatures that actually take damage
 // are the same set by construction rather than by agreement.
 import { areaCells, aimInRange, type Cell } from "@/lib/aoe"
+import { breathFor, mouthCell, type BreathSpec } from "@/lib/breath-weapon"
+import { squaresFor } from "@/lib/sandbox-spawn"
 // The rack's weapons are DERIVED from what a character carries, not read from
 // a hand-kept list on the sheet. Shared with the cast handler so the board
 // cannot offer a weapon the server will refuse.
@@ -645,6 +647,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const heldWeaponRef = useRef<Map<string, { name: string; rarity: string }>>(new Map())
   /** The same question for a monster, answered by its own stat block. */
   const beastWeaponRef = useRef<Map<string, string>>(new Map())
+  /**
+   * Each species' own action list (bestiary.actions), kept whole so a breath
+   * weapon's shape can be read off its text when the creature uses it.
+   */
+  const beastActionsRef = useRef<Map<string, unknown>>(new Map())
   const [tokenToCharacter, setTokenToCharacter] = useState<Record<string, string>>({})
   /** token_id -> portrait URL for NPCs, so the rail shows Ront's face and not "R". */
   const [tokenPortrait, setTokenPortrait] = useState<Record<string, string>>({})
@@ -2914,6 +2921,109 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       }
     }
     castRef.current = performCast
+    /**
+     * A BREATH WEAPON — a monster exhaling its area, drawn from the mouth.
+     *
+     * The shape comes off the creature's own stat block (lib/breath-weapon),
+     * never off a table here, so the next dragon needs a bestiary row and no
+     * code. Everything after that is the spell pipeline's: areaCells picks the
+     * squares, layAreaDecal paints them, the same way a Burning Hands does.
+     *
+     * The creature turns to the aim, plays its CAST state (a deep dragon's is
+     * its breath), and on that clip's release frame the cloud blooms out from
+     * the mouth square — the edge of its body facing the aim, not its centre,
+     * because a gargantuan dragon's cone that starts in its own chest spends
+     * two squares of ninety feet on the dragon.
+     */
+    const breathe = (
+      caster: { row: TokenRow; obj: THREE.Object3D; anim?: TokenAnim },
+      victim: { row: TokenRow; obj: THREE.Object3D; anim?: TokenAnim } | undefined,
+      s: SwingEvent,
+      breath: BreathSpec,
+    ) => {
+      const m = mapRef.current
+      const centre = { x: caster.row.grid_x ?? 0, y: caster.row.grid_y ?? 0 }
+      const aim = victim
+        ? { x: victim.row.grid_x ?? 0, y: victim.row.grid_y ?? 0 }
+        : centre
+      const mouth = mouthCell(centre, aim, squaresFor(caster.row.token_size))
+      // Clipped to the map exactly the way the spell template clips, so the
+      // cloud covers the same ground an aimed Burning Hands would.
+      const cells = areaCells(breath.area, mouth, aim).filter((c) =>
+        !m || (c.x >= 0 && c.y >= 0 && c.x < m.grid_width && c.y < m.grid_height))
+
+      // Face the breath.
+      {
+        const to = sqCentre(aim.x, aim.y)
+        const dx = to.x - caster.obj.position.x
+        const dz = to.z - caster.obj.position.z
+        if (dx * dx + dz * dz > 1e-4) caster.obj.rotation.y = Math.atan2(dx, dz)
+      }
+
+      // THE CAST STATE, the one the creature was drawn with for this. A
+      // sprite knows its own hit frame; a model's clip is looked up by name.
+      // A figure with neither still breathes — the cloud and the damage are
+      // the event, the pose is only how it looks.
+      let release = 0
+      if (!isDowned(caster.row)) {
+        const rig = caster.anim ? undefined : (caster.obj.userData.spriteRig as SpriteRig | undefined)
+        if (caster.anim) {
+          const name = castClipFor("heavy", caster.anim.names) ?? clipFor("cast", caster.anim.names)
+          const clip = playState(caster.anim, "cast", true, name)
+          if (clip) release = castEventFor(clip.name, clip.duration).release
+        } else if (rig) {
+          const clip = rig.playFor("cast")
+          if (clip) release = clip.release
+        }
+      }
+
+      // The server wrote the hit points before it answered. Hold them until
+      // the cloud reaches the body, as every other cast does.
+      if (victim) impactHold.current.hold(victim.row.id, Date.now(), holdMsFor(release + 0.8))
+
+      const land = () => {
+        if (cells.length) {
+          vfx.push(layAreaDecal({
+            parent: scene,
+            cells,
+            centre: mouth,
+            visual: areaVisualForBreath(breath),
+            cellToWorld: (x, y) => sqCentre(x, y),
+            squareSize: SQ,
+          }))
+        }
+        if (!victim) return
+        impactHold.current.release(victim.row.id)
+        if (s.damageType) lastHitBy.set(victim.row.id, (s.damageType as DamageType))
+        lastHitFrom.set(victim.row.id, caster.obj.position.clone())
+        applyCastOutcomeRef.current(victim.row.id, {
+          amount: s.amount,
+          hit: s.amount > 0,
+          heals: false,
+          // A breath is a save, not an attack: nothing is ever MISSED, and
+          // nothing at all getting through reads as SAVED.
+          word: s.amount > 0 ? null : "saved",
+        })
+        if (s.amount > 0 && !isDowned(victim.row)) {
+          const vr = victim.anim ? undefined : (victim.obj.userData.spriteRig as SpriteRig | undefined)
+          if (victim.anim) playState(victim.anim, "hurt", true)
+          else vr?.playFor("hurt")
+        }
+      }
+      // Timed on the board's own effect clock, so it lands on the release
+      // frame whatever the frame rate is doing.
+      let t = 0
+      let fired = false
+      vfx.push({
+        update(dt: number) {
+          t += dt
+          if (!fired && t >= release) { fired = true; land() }
+          return !fired
+        },
+        dispose() {},
+      })
+    }
+
     swingRef.current = (s) => {
       // The sandbox and the live board share a relay channel. A goblin
       // swinging on the practice board must not make a live miniature duck.
@@ -2938,7 +3048,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // and equipOnRig clears the slot BEFORE it decides that — so acting on
       // a bite would permanently disarm a creature that bit somebody while
       // holding a scimitar.
-      if (archetypeFor(s.weapon, "weapon") !== "empty") {
+      // A BREATH WEAPON is not a swing: read its shape off the stat block
+      // now, and the strike below exhales it instead of swinging.
+      const breath = !caster.row.character_id && caster.row.bestiary_id
+        ? breathFor(beastActionsRef.current.get(caster.row.bestiary_id), s.weapon)
+        : null
+      if (!breath && archetypeFor(s.weapon, "weapon") !== "empty") {
         const rig = caster.obj.children.find((c) => c.getObjectByName("RightHand"))
         if (rig) equipOnRig(rig, { name: s.weapon, itemType: "weapon", rarity: "common", slot: "main_hand" })
       }
@@ -2985,8 +3100,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // ask it what that number was for.
         weapon: { hit: s.hit, crit: s.crit, targetAc: s.dc || null },
       }
-      const strike = () =>
-        performCast(caster.row.id, s.weapon, "weapon", caster, victim?.row ?? null, null, answer)
+      const strike = () => breath
+        ? breathe(caster, victim, s, breath)
+        : performCast(caster.row.id, s.weapon, "weapon", caster, victim?.row ?? null, null, answer)
       if (!s.to) { strike(); return }
 
       // IT MOVED FIRST. The server wrote the new square before it answered,
@@ -3583,6 +3699,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             .then(({ data }: { data: { model_url: string | null; model_scale: number | null; model_y_offset: number | null; speed?: string | null; traits?: unknown; actions?: unknown } | null }) => {
               speciesPending.delete(id)
               if (data) beastLocomotion.set(id, locomotionOf(data))
+              if (Array.isArray(data?.actions)) beastActionsRef.current.set(id, data.actions)
               speciesArt.set(id, {
                 url: data?.model_url ?? null,
                 scale: data?.model_scale ?? null,
@@ -5697,6 +5814,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           // keeps its claws and a hook horror is not issued a sword.
           const w = weaponFromActions(b.actions)
           if (w) beastWeaponRef.current.set(b.id, w)
+          if (Array.isArray(b.actions)) beastActionsRef.current.set(b.id, b.actions)
         }
       }
 
