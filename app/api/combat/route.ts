@@ -73,6 +73,16 @@ import { surveySneak, facingTowards, type Vantage } from "@/lib/sneak"
 // The rogue's feature, as its own testable rule rather than four conditions
 // buried in the damage roll.
 import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
+// The gas spore's Death Burst, read off its own trait text (lib/death-burst).
+// The queue is per request: a spore that drops is burst AFTER the action that
+// dropped it has finished writing, never in the middle of its loop.
+import { AsyncLocalStorage } from "node:async_hooks"
+import {
+  deathBurstFor, burstCells, immuneToPoisoned, infectionFor, infectionLine, infectionFlagKey,
+  GAS_SPORE_INFECTION,
+} from "@/lib/death-burst"
+import { squaresFor } from "@/lib/sandbox-spawn"
+import { readGameClock } from "@/lib/time-tracking"
 
 // /api/combat — initiative, rolled once, openly, on the server.
 //
@@ -337,6 +347,10 @@ async function settleHitPoints(
     const hp = a.heals ? Math.min(a.max, a.cur + a.amount) : Math.max(0, a.cur - a.amount)
     await db.from("vtt_tokens").update({ hp_current: hp, updated_by: a.by, updated_at: stamp }).eq("id", a.tokenId)
     const fell = !a.heals && hp === 0 && a.cur > 0
+    // Every creature that falls is offered to the Death Burst queue; the
+    // resolver asks its stat block whether it bursts. Only on the fall, so a
+    // body already at 0 never goes off twice.
+    if (fell) fallenThisRequest.getStore()?.push(a.tokenId)
     return { hp, note: fell ? `${a.label} goes down.` : null, fell }
   }
   const { data: ch } = await db
@@ -468,6 +482,213 @@ async function deathSaveOnTurnStart(
   return true
 }
 
+/**
+ * The creatures that fell during THIS request, in the order they fell.
+ *
+ * settleHitPoints is the one place a monster reaches 0, so it is the one
+ * place that knows; but it is called from inside loops (a Fireball's victims,
+ * a volley's arrows) that are still holding hit-point numbers they read at
+ * the start. A burst that wrote damage in the middle of that loop would be
+ * overwritten a line later by the loop's stale number. So a fall is only
+ * written down here, and POST resolves the bursts once the action is done.
+ *
+ * AsyncLocalStorage rather than a module variable, because two players'
+ * requests share this process and must not share a queue.
+ */
+const fallenThisRequest = new AsyncLocalStorage<string[]>()
+
+/**
+ * A creature's saving-throw modifier for one ability: the score's modifier,
+ * off the sheet for a player and the stat block for anything else. The same
+ * arithmetic the area-spell path has always used, so a spore's Constitution
+ * save and a Fireball's Dexterity save are the same roll.
+ */
+async function saveModifierFor(
+  db: ReturnType<typeof createAdminClient>,
+  t: { character_id?: string | null; bestiary_id?: string | null },
+  ability: string,
+): Promise<number> {
+  if (t.character_id) {
+    const { data: c } = await db.from("characters")
+      .select("str_score,dex_score,con_score,int_score,wis_score,cha_score")
+      .eq("id", t.character_id).maybeSingle()
+    const sc: Record<string, number | undefined> = {
+      STR: c?.str_score, DEX: c?.dex_score, CON: c?.con_score,
+      INT: c?.int_score, WIS: c?.wis_score, CHA: c?.cha_score,
+    }
+    return Math.floor(((sc[ability] ?? 10) - 10) / 2)
+  }
+  if (t.bestiary_id) {
+    const { data: b } = await db.from("bestiary")
+      .select("str,dex,con,int,wis,cha").eq("id", t.bestiary_id).maybeSingle()
+    const sc: Record<string, number | undefined> = {
+      STR: b?.str, DEX: b?.dex, CON: b?.con, INT: b?.int, WIS: b?.wis, CHA: b?.cha,
+    }
+    return Math.floor(((sc[ability] ?? 10) - 10) / 2)
+  }
+  return 0
+}
+
+/**
+ * Resolve every Death Burst owed by the creatures that fell this request.
+ * A burst can drop another spore, which joins the queue behind it; the set
+ * stops any one body going off twice.
+ */
+async function resolveDeathBursts(db: ReturnType<typeof createAdminClient>) {
+  const queue = fallenThisRequest.getStore()
+  if (!queue) return
+  const done = new Set<string>()
+  while (queue.length) {
+    const id = queue.shift()!
+    if (done.has(id)) continue
+    done.add(id)
+    try {
+      await deathBurst(db, id)
+    } catch (e) {
+      // Never silent: a burst that threw is a rule the table did not get.
+      console.error("[combat] death burst threw:", e)
+      await narrate(db, "A Death Burst could not be resolved — Malachar must rule it.")
+    }
+  }
+}
+
+/**
+ * THE GAS SPORE'S DEATH BURST (bestiary slug gas-spore, trait "Death Burst").
+ *
+ * Every creature within the radius makes the save; one roll of the damage
+ * dice for the whole burst, as the area-spell path rolls one Fireball. A
+ * failed save takes the damage through settleHitPoints (so a player drops by
+ * the dying rules exactly as a sword would drop them) and is infected, unless
+ * immune to the poisoned condition. The infection is the condition word on
+ * the sheet, and its clock — the 1d12 rolled now, and the hour it kills — is
+ * kept in world_flags and written into the log Malachar reads.
+ */
+async function deathBurst(db: ReturnType<typeof createAdminClient>, tokenId: string) {
+  const { data: spore } = await db.from("vtt_tokens")
+    .select("id,map_id,label,bestiary_id,character_id,grid_x,grid_y")
+    .eq("id", tokenId).maybeSingle()
+  if (!spore || spore.character_id || !spore.bestiary_id) return
+  const { data: stat } = await db.from("bestiary")
+    .select("slug,traits,size").eq("id", spore.bestiary_id).maybeSingle()
+  const burst = deathBurstFor(stat?.slug as string | null, stat?.traits)
+  if (!burst) return
+  const name = spore.label ?? "The gas spore"
+
+  const reach = new Set(
+    burstCells({ x: spore.grid_x ?? 0, y: spore.grid_y ?? 0 }, burst.radiusFt, squaresFor(stat?.size as string | null))
+      .map((c) => cellKey(c.x, c.y)),
+  )
+  const { data: others } = await db.from("vtt_tokens")
+    .select("id,label,character_id,bestiary_id,grid_x,grid_y,hp_current,hp_max")
+    .eq("map_id", spore.map_id).eq("is_visible", true).neq("id", spore.id)
+  const inRange = (others ?? []).filter((t) => reach.has(cellKey(t.grid_x ?? 0, t.grid_y ?? 0)))
+
+  // Who is still a creature. A monster at 0 is a corpse (SRD: it dies at 0);
+  // a player at 0 is dying and still in the burst — damage at 0 is a failed
+  // death save — until the Dead condition says otherwise.
+  const caught: typeof inRange = []
+  for (const t of inRange) {
+    if (t.character_id) {
+      if (vitalityOf(t.hp_current, await conditionsOf(db, t.character_id, t.label ?? "")) === "dead") continue
+    } else if ((t.hp_current ?? 1) <= 0) continue
+    caught.push(t)
+  }
+
+  const head = `${name} bursts in a cloud of spores — DC ${burst.dc} ${burst.ability} save within ${burst.radiusFt} ft`
+  if (!caught.length) {
+    await narrate(db, `${head}; nobody is close enough.`)
+    return
+  }
+
+  const full = rollDice(burst.dice)
+  const parts: string[] = []
+  const infections: string[] = []
+  // The campaign clock, read once, so every infection in one burst is dated
+  // from the same moment. Resolved the way logCombatEncounter resolves it.
+  let now: { day: number; minutesOfDay: number } | null = null
+  if (burst.disease) {
+    const { data: sess } = await db.from("sessions").select("id,status,started_at").order("started_at", { ascending: false })
+    const rows = (sess ?? []) as { id: string; status: string | null }[]
+    const session = rows.find((s) => s.status === "active") ?? rows[0] ?? null
+    const clock = await readGameClock(db, session?.id ?? null)
+    now = clock ? { day: clock.day, minutesOfDay: clock.minutesOfDay } : null
+  }
+
+  for (const t of caught) {
+    const label = t.label ?? "Someone"
+    const mod = await saveModifierFor(db, t, burst.ability)
+    const roll = d20()
+    const total = roll + mod
+    const saved = total >= burst.dc
+    const amount = saved ? 0 : full
+    parts.push(`${label} ${roll}${mod >= 0 ? "+" : ""}${mod} vs DC ${burst.dc} ${saved ? "saves" : "fails"}${amount ? ` (${amount} ${burst.damageType})` : ""}`)
+    if (saved) continue
+
+    const cur = t.hp_current ?? t.hp_max ?? 0
+    const settled = await settleHitPoints(db, {
+      characterId: t.character_id ?? null, tokenId: t.id, label,
+      cur, max: t.hp_max ?? cur, amount, heals: false, by: "death-burst",
+    })
+    if (settled.note) parts.push(settled.note.replace(/\.$/, ""))
+
+    if (!burst.disease) continue
+    // The creature's own sheet: CON score, condition immunities, conditions.
+    const sheet = t.character_id
+      ? (await db.from("characters").select("con_score,condition_immunities,conditions").eq("id", t.character_id).maybeSingle()).data
+      : null
+    const beast = !t.character_id && t.bestiary_id
+      ? (await db.from("bestiary").select("con,condition_immunities").eq("id", t.bestiary_id).maybeSingle()).data
+      : null
+    if (burst.disease.poisonImmuneAreImmune && immuneToPoisoned(sheet?.condition_immunities ?? beast?.condition_immunities)) {
+      infections.push(`${label} is immune to the poisoned condition, and so to the disease.`)
+      continue
+    }
+    const conds = t.character_id ? normalizeConditions(sheet?.conditions) : await conditionsOf(db, null, label)
+    if (conds.some((c) => c.toLowerCase() === GAS_SPORE_INFECTION.toLowerCase())) {
+      infections.push(`${label} already carries the ${GAS_SPORE_INFECTION}; its clock is unchanged.`)
+      continue
+    }
+
+    // THE WORD, where every condition lives: the sheet for a player, the
+    // encounter row (by name, like all NPC canon) for anything else.
+    const stamp = new Date().toISOString()
+    let recorded = true
+    if (t.character_id) {
+      await db.from("characters").update({ conditions: [...conds, GAS_SPORE_INFECTION], updated_at: stamp }).eq("id", t.character_id)
+    } else {
+      const { data: rows } = await db.from("npc_encounters")
+        .update({ conditions: [...conds, GAS_SPORE_INFECTION] }).eq("name", label).select("id")
+      recorded = Boolean(rows?.length)
+    }
+
+    // THE CLOCK. A missing CON score is said out loud, never filled in.
+    const conScore = (t.character_id ? sheet?.con_score : beast?.con) as number | null | undefined
+    if (typeof conScore !== "number") {
+      infections.push(`${label} is infected: ${GAS_SPORE_INFECTION} — no Constitution score on record, so the hours are Malachar's to set.`)
+      continue
+    }
+    const record = infectionFor({
+      burst, creature: label, characterId: t.character_id ?? null, conScore,
+      d12: rollDice(burst.disease.hoursDice), now,
+    })
+    if (!record) continue
+    const line = infectionLine(record)
+    const { error: flagErr } = await db.from("world_flags").upsert(
+      {
+        campaign_id: "ashes-of-prometheus",
+        key: infectionFlagKey({ characterId: t.character_id ?? null, label }),
+        value: record, set_by: "death-burst", note: line,
+      },
+      { onConflict: "campaign_id,key" },
+    )
+    if (flagErr) console.error("[combat] infection clock failed to write:", flagErr.message)
+    infections.push(recorded ? line : `${line} (No encounter row carries ${label}'s conditions, so the word is only here.)`)
+  }
+
+  await narrate(db, `${head}; ${burst.dice} ${burst.damageType} — ${parts.join("; ")}.`)
+  for (const line of infections) await narrate(db, line)
+}
+
 export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const sandbox = req.nextUrl.searchParams.get("sandbox") === "1"
@@ -482,7 +703,27 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ combat: data ?? null })
 }
 
+/**
+ * Every verb runs inside its own fall queue, and whatever fell is burst once
+ * the verb has finished writing — see fallenThisRequest. The verb's response
+ * goes back unchanged; the burst reaches every screen the way every other
+ * write does, through the token rows and the log.
+ */
 export async function POST(req: NextRequest) {
+  return fallenThisRequest.run([], async () => {
+    const res = await handlePost(req)
+    if (fallenThisRequest.getStore()?.length) {
+      try {
+        await resolveDeathBursts(createAdminClient())
+      } catch (e) {
+        console.error("[combat] death bursts failed:", e)
+      }
+    }
+    return res
+  })
+}
+
+async function handlePost(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   // THE PLAYER'S VERBS — one list, used twice, deliberately.
@@ -1947,24 +2188,7 @@ export async function POST(req: NextRequest) {
       const casterCell = { x: caster.grid_x ?? 0, y: caster.grid_y ?? 0 }
 
       for (const t of caught) {
-        let saveMod = 0
-        if (t.character_id) {
-          const { data: c } = await db.from("characters")
-            .select("str_score,dex_score,con_score,int_score,wis_score,cha_score")
-            .eq("id", t.character_id).maybeSingle()
-          const sc: Record<string, number | undefined> = {
-            STR: c?.str_score, DEX: c?.dex_score, CON: c?.con_score,
-            INT: c?.int_score, WIS: c?.wis_score, CHA: c?.cha_score,
-          }
-          saveMod = Math.floor(((sc[entry.save ?? "DEX"] ?? 10) - 10) / 2)
-        } else if (t.bestiary_id) {
-          const { data: b } = await db.from("bestiary")
-            .select("str,dex,con,int,wis,cha").eq("id", t.bestiary_id).maybeSingle()
-          const sc: Record<string, number | undefined> = {
-            STR: b?.str, DEX: b?.dex, CON: b?.con, INT: b?.int, WIS: b?.wis, CHA: b?.cha,
-          }
-          saveMod = Math.floor(((sc[entry.save ?? "DEX"] ?? 10) - 10) / 2)
-        }
+        const saveMod = await saveModifierFor(db, t, entry.save ?? "DEX")
 
         let amount = full
         let saved = false

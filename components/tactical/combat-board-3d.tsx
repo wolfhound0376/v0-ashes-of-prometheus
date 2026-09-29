@@ -92,6 +92,9 @@ import { HealPairing } from "@/lib/heal-line"
 import { applyWaterFlow, type WaterFx, type WaterFlowHandle } from "./water-flow"
 // Twelve deaths, one per way of being killed - see death-vfx.ts.
 import { deathSceneVfx } from "./death-vfx"
+// The gas spore's Death Burst: its 20 ft ring of spores, drawn on the fall.
+import { sporeBurstVfx } from "./spore-burst"
+import { deathBurstFor } from "@/lib/death-burst"
 // The headstone. Raised on TRUE death only - see tombstone.ts on why being
 // downed must not get one.
 import { preloadTombstone, tombstoneVfx } from "./tombstone"
@@ -3635,6 +3638,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
     // whatever its art suggests. Filled by the same bestiary pass that
     // fetches the art, so it is ready when the token spawns.
     const beastLocomotion = new Map<string, Locomotion>()
+    // bestiary id -> Death Burst radius in feet, for the one species that has
+    // one (lib/death-burst). Filled by the same pass, read at the killing blow.
+    const beastDeathBurstFt = new Map<string, number>()
     /** World units a flier rides over the floor. Hoverers sit low and steady; true fliers higher. */
     const hoverHeight = (l: Locomotion, art?: number) => art ?? (l.hover ? 0.32 : 0.55)
 
@@ -3693,12 +3699,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           speciesPending.add(id)
           void supabase
             .from("bestiary")
-            .select("model_url,model_scale,model_y_offset,speed,traits,actions")
+            .select("model_url,model_scale,model_y_offset,speed,traits,actions,slug")
             .eq("id", id)
             .maybeSingle()
-            .then(({ data }: { data: { model_url: string | null; model_scale: number | null; model_y_offset: number | null; speed?: string | null; traits?: unknown; actions?: unknown } | null }) => {
+            .then(({ data }: { data: { model_url: string | null; model_scale: number | null; model_y_offset: number | null; speed?: string | null; traits?: unknown; actions?: unknown; slug?: string | null } | null }) => {
               speciesPending.delete(id)
               if (data) beastLocomotion.set(id, locomotionOf(data))
+              const burst = deathBurstFor(data?.slug, data?.traits)
+              if (burst) beastDeathBurstFt.set(id, burst.radiusFt)
               if (Array.isArray(data?.actions)) beastActionsRef.current.set(id, data.actions)
               speciesArt.set(id, {
                 url: data?.model_url ?? null,
@@ -4283,6 +4291,14 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
           from: lastHitFrom.get(row.id) ?? null,
           resolve: () => tokensRef.current.get(row.id)?.obj ?? null,
         }))
+        // A GAS SPORE GOES OFF. Here, on the live fall and nowhere else, so
+        // it fires once: a spore already at 0 when the board loads takes the
+        // quiet path above and never re-explodes on a reload. The ring runs
+        // to the edge of the last square the server's burstCells catches.
+        const burstFt = !row.character_id && row.bestiary_id ? beastDeathBurstFt.get(row.bestiary_id) : undefined
+        if (burstFt) {
+          vfx.push(sporeBurstVfx({ parent: scene, position: at, radius: (burstFt / 5 + 0.5) * SQ, camera }))
+        }
         lastHitBy.delete(row.id)
         lastHitWith.delete(row.id)
         lastHitFrom.delete(row.id)
@@ -5803,11 +5819,13 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       if (speciesIds.length) {
         const { data: species } = await supabase
           .from("bestiary")
-          .select("id,ac,model_url,model_scale,model_y_offset,actions,speed,traits")
+          .select("id,ac,model_url,model_scale,model_y_offset,actions,speed,traits,slug")
           .in("id", speciesIds)
-        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null; actions?: unknown; speed?: string | null; traits?: unknown }>) {
+        for (const b of (species ?? []) as Array<{ id: string; ac: number | null; model_url: string | null; model_scale: number | null; model_y_offset: number | null; actions?: unknown; speed?: string | null; traits?: unknown; slug?: string | null }>) {
           speciesModel.set(b.id, { url: b.model_url, scale: b.model_scale, y: b.model_y_offset })
           beastLocomotion.set(b.id, locomotionOf(b))
+          const burst = deathBurstFor(b.slug, b.traits)
+          if (burst) beastDeathBurstFt.set(b.id, burst.radiusFt)
           if (typeof b.ac === "number") acByBeast.set(b.id, b.ac)
           // Its own stat block says what it fights with. lib/stat-block-weapon
           // throws out Multiattack, natural attacks and spells, so a quaggoth
