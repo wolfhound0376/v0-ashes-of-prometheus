@@ -49,9 +49,8 @@ export const JOURNAL_SECTIONS = [
   "quests",
   "songs",
   "lore",
-  "visions",
+  "witness",
   "autopsy",
-  "drawings",
 ] as const
 
 export type JournalSection = (typeof JOURNAL_SECTIONS)[number]
@@ -71,9 +70,8 @@ export const SECTION_LABEL: Record<JournalSection, string> = {
   quests: "Quests",
   songs: "Songs & Ballads",
   lore: "Lore",
-  visions: "Visions & Whispers",
+  witness: "Witness",
   autopsy: "Autopsy",
-  drawings: "Drawings",
 }
 
 export function isJournalSection(v: unknown): v is JournalSection {
@@ -96,7 +94,6 @@ export const STRUCTURED_SECTIONS: ReadonlySet<JournalSection> = new Set<JournalS
   "quests",
   "songs",
   "autopsy",
-  "drawings",
 ])
 
 /** Whether the diary page limit applies to this section. */
@@ -123,9 +120,8 @@ export type DiscoveryKind =
   | "quest"
   | "song"
   | "lore"
-  | "vision"
+  | "witness"
   | "autopsy"
-  | "drawing"
 
 /**
  * An herb's effect decides which of the three benches it belongs to. Sam named
@@ -170,12 +166,10 @@ export function sectionFor(d: Discovery): JournalSection | null {
       return "songs"
     case "lore":
       return "lore"
-    case "vision":
-      return "visions"
+    case "witness":
+      return "witness"
     case "autopsy":
       return "autopsy"
-    case "drawing":
-      return "drawings"
     default:
       return null
   }
@@ -388,18 +382,18 @@ export function checkGate(section: JournalSection, sheet: GateSheet): GateResult
 }
 
 // ============================================================================
-// §5 AUTOPSY — the gate is Sam's, the numbers are mine
+// §5 AUTOPSY
 // ============================================================================
 //
-// Sam gave the gate ("only to be performed with adequate medicine skill") and
-// the purpose ("divine information from a foe, regarding their weaknesses").
-// He did not give a DC, so everything below is flagged until he rules.
+// Sam gave the gate ("only to be performed with adequate medicine skill"), the
+// purpose ("divine information from a foe, regarding their weaknesses"), and
+// on 2026-09-29 the maths: DC 10 + CR, approved as proposed.
 //
-// The hard rule, which is NOT homebrew: a weakness must already exist on the
-// bestiary row. The check reveals; it never invents. A creature with nothing
-// left to reveal says so, and the corpse is spent.
+// The hard rule, which was never homebrew: a weakness must already exist on
+// the bestiary row. The check REVEALS; it never invents. A creature with
+// nothing left to reveal says so, and the corpse is spent.
 
-/** HOUSE RULE — needs Sam's yes. DC 10 + CR, floor 10. */
+/** DC 10 + CR, floor 10. Sam's ruling, 2026-09-29. */
 export const AUTOPSY_DC_BASE = 10
 
 export function autopsyDc(cr: number | null | undefined): number {
@@ -435,7 +429,7 @@ export function autopsy(input: {
   total: number
 }): AutopsyOutcome {
   const dc = autopsyDc(input.cr)
-  const flags = [`autopsy DC ${AUTOPSY_DC_BASE} + CR is homebrew and needs Sam's yes`]
+  const flags: string[] = []
 
   const gate = checkGate("autopsy", input.sheet)
   if (!gate.allowed) return { ok: false, revealed: [], dc, flags, note: gate.note }
