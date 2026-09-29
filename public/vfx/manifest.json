@@ -529,14 +529,14 @@
     "rows": 3
   },
   "sigilEnchantmentRing": {
-    "bytes": 225118,
-    "cols": 4,
+    "bytes": 5784,
+    "cols": 1,
     "file": "sigilEnchantmentRing.webp",
-    "fps": 12,
-    "frames": 12,
+    "fps": 1,
+    "frames": 1,
     "loop": false,
-    "peak": 9,
-    "rows": 3
+    "peak": 0,
+    "rows": 1
   },
   "sigilNecroticPlume": {
     "bytes": 287028,
