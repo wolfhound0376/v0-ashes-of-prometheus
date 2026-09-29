@@ -174,6 +174,20 @@ export interface SigilPlan {
 export const DEFAULT_PLAN = { form: 0.45, hold: 0.40, resolve: 0.55 } as const
 
 /**
+ * A STILL sigil runs twice as long, and the extra time nearly all goes to
+ * FORM (Sam, 2026-09-29: "the sigil needs to last twice as long").
+ *
+ * Reweighting matters more than the doubling. On the default plan the ring
+ * was up in 0.45s and then spent 0.95s holding and fading — so it read as
+ * appearing and then going transparent, which is backwards. A still sigil has
+ * no rotation to carry it, so the slow RISE is the performance: form is now
+ * two thirds of the effect instead of a third of it.
+ *
+ * 1.50 + 0.75 + 0.55 = 2.80, exactly twice DEFAULT_PLAN's 1.40.
+ */
+export const STILL_PLAN = { form: 1.50, hold: 0.75, resolve: 0.55 } as const
+
+/**
  * Does this spell call for a saving throw?
  *
  * lib/spellbook.ts hand-writes about sixty spells and carries `resolve` for
@@ -229,7 +243,7 @@ export function targetSigilFor(opts: {
     (opts.school ? SCHOOL_SIGIL[opts.school] : undefined) ??
     (opts.damage ? DAMAGE_SIGIL[opts.damage] : undefined)
   if (!art) return null
-  return { art, ...DEFAULT_PLAN }
+  return { art, ...(art.still ? STILL_PLAN : DEFAULT_PLAN) }
 }
 
 export interface SigilPose {
@@ -352,8 +366,12 @@ export function sigilPoseAt(
       permeate: 0,
       // The plume waits for a still ring: nothing until the ring is most of
       // the way up, then it climbs through the rest of the act.
+      // THE GLOW BRINGS THE WHIRLWIND, so the plume waits for the ring to be
+      // nearly full. At 0.6 it began while the ring was still visibly coming
+      // up and the two overlapped; at 0.75 the ring has its moment, reaches
+      // its glow, and the whirlwind follows it.
       flame: outcome === "taken"
-        ? ease(plan.art.still ? clamp01((p - 0.6) / 0.4) : p)
+        ? ease(plan.art.still ? clamp01((p - 0.75) / 0.25) : p)
         : 0,
       burst: -1,
       struck: false,

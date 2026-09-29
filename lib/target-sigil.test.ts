@@ -388,8 +388,21 @@ describe("a still sigil — transmutation's ring does not turn", () => {
     const early = sigilPoseAt(plan.form * 0.3, plan, "taken", 0.5)
     expect(early.opacity).toBeGreaterThan(0)     // the ring is coming up
     expect(early.flame).toBe(0)                  // and nothing is rising yet
+    const mid = sigilPoseAt(plan.form * 0.7, plan, "taken", 0.5)
+    expect(mid.flame).toBe(0)                    // still nothing at 70% up
     const late = sigilPoseAt(plan.form * 0.98, plan, "taken", 0.5)
     expect(late.flame).toBeGreaterThan(0.4)      // by the end of form it is there
+  })
+
+  it("lasts twice as long, with the extra time in the RISE", () => {
+    // Sam: "the sigil needs to last twice as long." The doubling is the easy
+    // half; the reweighting is the point. On the default plan the ring was up
+    // in a third of the effect and spent the rest fading, which reads as
+    // appearing and then going transparent.
+    expect(sigilDuration(plan)).toBeCloseTo(2 * sigilDuration({ art: plan.art, ...DEFAULT_PLAN }), 5)
+    expect(plan.form / sigilDuration(plan)).toBeGreaterThan(0.5)
+    expect(DEFAULT_PLAN.form / (DEFAULT_PLAN.form + DEFAULT_PLAN.hold + DEFAULT_PLAN.resolve))
+      .toBeLessThan(0.4)
   })
 
   it("still fades in, and a turning school still turns", () => {
