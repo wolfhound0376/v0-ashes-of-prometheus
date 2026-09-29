@@ -172,12 +172,20 @@ export function hasQuill(characterId: string, rows: readonly InventoryRow[]): bo
 /**
  * A page written by dim light with a stub of quill is short, and the prompt
  * already asks for "a few lines". This is the number that turns that request
- * into an enforceable limit. The database will take 20,000 characters, so
- * nothing breaks if Sam wants it longer or gone.
+ * into an enforceable limit.
  *
- * HOUSE RULE — needs Sam's yes. Flagged at runtime, never silently applied.
+ * SAM'S RULING, 2026-09-29: a page limit, in CHARACTERS, number left to
+ * Claude. 600 is roughly 100 words — a solid paragraph. Measured against the
+ * project's own two canonical journal examples, which run 171 and 152
+ * characters: a real page sits well under this, and the limit only trips when
+ * a page stops being a page. Characters, not words, because the column's own
+ * cap is in characters and one unit beats two.
+ *
+ * Over the limit the page is STORED IN FULL and flagged. Nothing is ever lost
+ * to this limit — the flag is a note to the DM, not a pair of scissors. Only
+ * PAGE_HARD_LIMIT, which is the database's own constraint, ever cuts.
  */
-export const PAGE_SOFT_LIMIT = 1200
+export const PAGE_LIMIT = 600
 
 /** The column's own hard limit, verified live 2026-09-29. Not negotiable. */
 export const PAGE_HARD_LIMIT = 20000
@@ -198,6 +206,8 @@ export interface JournalWriteDecision {
   write: boolean
   /** The page as it should be stored, already trimmed. Null when nothing is written. */
   page: string | null
+  /** The heading, when the writer gave one. Null is the normal case (§6). */
+  title: string | null
   /** Custody at the moment of writing, when it was checked. */
   custody: JournalCustody | null
   /** Pages beyond the first, dropped. Kept so the route can log what it discarded. */
@@ -220,6 +230,7 @@ export function decideJournalPage(input: JournalWriteInput): JournalWriteDecisio
   const nothing = (note: string, extra: Partial<JournalWriteDecision> = {}): JournalWriteDecision => ({
     write: false,
     page: null,
+    title: null,
     custody: null,
     dropped: pages.slice(1),
     flags: [],
@@ -252,18 +263,25 @@ export function decideJournalPage(input: JournalWriteInput): JournalWriteDecisio
   }
 
   let page = pages[0]
+  let title: string | null = null
+
+  const split = splitTitle(page)
+  title = split.title
+  page = split.body
+
   if (page.length > PAGE_HARD_LIMIT) {
     page = page.slice(0, PAGE_HARD_LIMIT)
-    flags.push(`page exceeded the column limit of ${PAGE_HARD_LIMIT} and was cut`)
-  } else if (page.length > PAGE_SOFT_LIMIT) {
-    flags.push(
-      `page runs ${page.length} characters, past the ${PAGE_SOFT_LIMIT}-character house limit — stored in full, limit needs Sam's yes`,
-    )
+    flags.push(`page exceeded the column limit of ${PAGE_HARD_LIMIT} characters and was cut`)
+  }
+  const len = page.length
+  if (len > PAGE_LIMIT) {
+    flags.push(`page runs ${len} characters, past the limit of ${PAGE_LIMIT} — stored in full`)
   }
 
   return {
     write: true,
     page,
+    title,
     custody,
     dropped: pages.slice(1),
     flags,
@@ -401,6 +419,38 @@ export function disclose(current: JournalVisibility, to: JournalVisibility): Dis
   }
 }
 
+/**
+ * SAM'S RULING, 2026-09-29: "Owner doesn't necessarily find out unless he is
+ * checking."
+ *
+ * So discovery is never pushed. No alert, no banner, no line in the log, and
+ * nothing Malachar says. The page carries `visibility = 'found'` and a player
+ * who opens their own journal and looks can see which pages have been read —
+ * that is the whole of the telling. Someone who never checks never learns, and
+ * finds out the hard way when an NPC quotes them back to themselves.
+ *
+ * This is why `unseenDisclosures` exists and why nothing calls it on a timer.
+ */
+export const NOTIFY_OWNER_ON_DISCOVERY = false
+
+/**
+ * The pages in this character's book that somebody else has read — for the
+ * dashboard to mark WHEN THE OWNER OPENS IT, never to push at them.
+ */
+export function readPages(entries: readonly JournalEntryRow[], characterId: string): JournalEntryRow[] {
+  return entries.filter((e) => e.character_id === characterId && e.visibility === "found")
+}
+
+/**
+ * What the journal screen shows the owner when they come looking: a count, or
+ * null when there is nothing to find. Null means render nothing at all — not a
+ * reassuring "no pages read", which would itself be a notification.
+ */
+export function unseenDisclosures(entries: readonly JournalEntryRow[], characterId: string): number | null {
+  const n = readPages(entries, characterId).length
+  return n > 0 ? n : null
+}
+
 /** One stored page, narrowed to what the rules read. */
 export interface JournalEntryRow {
   id: string
@@ -455,18 +505,35 @@ export function dateline(clock: Pick<GameClock, "day" | "minutesOfDay"> | null |
 }
 
 /**
- * A short heading from the page's own first words.
+ * SAM'S RULING, 2026-09-29: "Some pages have titles."
  *
- * HOUSE RULE — needs Sam's yes, and NOT applied by default anywhere. A title
- * the character did not write is the module putting words in their mouth,
- * which §1 of the prompt forbids Malachar from doing. Offered because the
- * column exists and the dashboard renders it; left unused until Sam says.
+ * So a title is optional and per-page, and it is the WRITER's — never derived
+ * from the body by this module. A heading the character did not write is the
+ * module putting words in their mouth, which the prompt forbids Malachar from
+ * doing to the page itself; the same rule applies to the line above it.
+ *
+ * The tag therefore takes an optional pipe form, matching the convention
+ * [CAMP_ACTION: who | action | args] already uses:
+ *
+ *     [JOURNAL: the page]                      → no title, the normal case
+ *     [JOURNAL: Day of the Gate | the page]    → titled
+ *
+ * The guard against a pipe that occurs naturally in prose: the segment before
+ * the pipe is a title only if it is at most TITLE_MAX characters. Longer, and
+ * the whole tag is body. Prose rarely contains a pipe at all, and never inside
+ * the first 60 characters by accident.
  */
-export function titleFrom(body: string, max = 48): string | null {
-  const first = (body ?? "").trim().split(/(?<=[.!?])\s|\n/)[0]?.trim()
-  if (!first) return null
-  if (first.length <= max) return first.replace(/[.,;:]$/, "")
-  return first.slice(0, max - 1).replace(/\s+\S*$/, "") + "…"
+export const TITLE_MAX = 60
+
+/** Split `Title | body` when the tag carries one. Returns a null title otherwise. */
+export function splitTitle(raw: string): { title: string | null; body: string } {
+  const s = (raw ?? "").trim()
+  const i = s.indexOf("|")
+  if (i === -1) return { title: null, body: s }
+  const head = s.slice(0, i).trim()
+  const tail = s.slice(i + 1).trim()
+  if (!head || !tail || head.length > TITLE_MAX) return { title: null, body: s }
+  return { title: head, body: tail }
 }
 
 // ============================================================================
@@ -507,14 +574,20 @@ export const JOURNAL_SURVIVES_CONFISCATION = true
 export const JOURNAL_EXAMPLE =
   "[JOURNAL: Three guards on the gate. They change on the fourth hour — Eldeth says the gap is three minutes. She has been counting longer than I have, and she did not have to tell me.]"
 
+/** The titled form. Most pages have no title; this is what one looks like when it does. */
+export const JOURNAL_TITLED_EXAMPLE =
+  "[JOURNAL: The fourth hour | Three guards on the gate. They change on the fourth hour, and there is a gap. Eldeth has been counting longer than I have.]"
+
 /** The entry for the STRUCTURED TAGS catalogue. */
 export const JOURNAL_TAG_RULES = `JOURNAL:
 - [JOURNAL: the page, in the character's own words] — when the character WRITES in their journal
   - Every prisoner smuggled a battered journal past the drow. Writing in it is a real action with a real record.
   - Emit it whenever the player says they write, note, record, jot, tally, or mark something down. Narrating the quill is not enough — the tag is what puts ink on the page.
-  - Write it as THEY would write it: first person, a few lines, what they saw and what they made of it.
+  - Write it as THEY would write it: first person, a few lines, what they saw and what they made of it. Keep it under ${PAGE_LIMIT} characters.
   - The page is theirs. Never mock them inside the tag and never write something they did not mean to record. Be as cruel as you like in the prose around it.
-  - Example: ${JOURNAL_EXAMPLE}`
+  - A page may carry a title, and MOST DO NOT. Only give one when the character would have headed the page themselves — a date they are keeping, a name for a day. Put it before a pipe: [JOURNAL: <title> | <the page>]. Never invent a title to decorate an ordinary entry.
+  - Example: ${JOURNAL_EXAMPLE}
+  - Titled example: ${JOURNAL_TITLED_EXAMPLE}`
 
 /** The numbered behavioural rule. Same content, the voice the numbered list uses. */
 export const JOURNAL_NUMBERED_RULE = `JOURNAL PAGES: Each prisoner smuggled a battered journal past the drow. When a character WRITES IN IT — says they are noting something down, recording what they saw, keeping a tally, marking the days — emit [JOURNAL: <the page>] on its own line.
@@ -522,7 +595,8 @@ export const JOURNAL_NUMBERED_RULE = `JOURNAL PAGES: Each prisoner smuggled a ba
 - The page is THEIRS, not yours. Write what the character would have written, in their voice: what they observed, what they decided, what they are afraid of. First person.
 - You are the hand, not the author. Never editorialise inside the tag, never mock them there, never put words in the page that the character did not mean to record. Be as cruel as you like in the narration around it; the page itself is private and honest.
 - Emit it ONLY when the character actually writes. Thinking about something, saying it aloud, or you describing the journal is not writing in it.
-- One page per response at most. Keep it short — a few lines, the way someone writes by dim light with a stub of quill.
+- One page per response at most. Keep it short — under ${PAGE_LIMIT} characters, a few lines, the way someone writes by dim light with a stub of quill.
+- Some pages have a title and most do not. Give one only when the character would have headed the page themselves: [JOURNAL: <title> | <the page>]. An untitled page is the normal case.
 - Never mention the tag or tell the player their journal updated. They will see the page.`
 
 export interface JournalBlockState {
@@ -561,8 +635,9 @@ export function formatJournalBlock(s: JournalBlockState): string {
   }
   if (s.compromised?.length) {
     parts.push(
-      `READ BY SOMEONE ELSE (a fact — never say how you know):\n` +
-        s.compromised.map((c) => `- ${c.pages} of ${c.name}'s pages are in another's hands and have been read.`).join("\n"),
+      `READ BY SOMEONE ELSE (for your use only — the owner is NOT told, and you must not tell them):\n` +
+        s.compromised.map((c) => `- ${c.pages} of ${c.name}'s pages are in another's hands and have been read.`).join("\n") +
+        `\nUse it the way it would really surface: an NPC who knows something they should not, a line quoted back. Never announce it, and never confirm it if asked outright.`,
     )
   }
   if (!parts.length) return ""
