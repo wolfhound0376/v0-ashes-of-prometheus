@@ -76,7 +76,11 @@ Only evocation and necromancy touch potency. Everything else buys a better *chan
 **One rune per potion.** Two would stack advantage into nothing (5e does not stack advantage) and invites the Skyrim alchemy/enchanting feedback loop. Scarcity of the wax does the rest.
 
 ### Art
-Zero new art. The eight school colours, ring motions and baked `rune<School>.webp` sheets from `feat/school-runes-and-splash` carry this whole system. The rune flashes on the vessel when the potion is drunk. **This depends on that branch landing** (PR #574) and on the palette being signed off — see the open question at the end.
+Zero new art. The eight school colours, ring motions and baked `rune<School>.webp` sheets carry this whole system; the rune flashes on the vessel when the potion is drunk.
+
+**All of it is already on `main`** (verified 2026-09-29). Colour comes from `SCHOOL_RAMP` in `lib/spell-school.ts`, measured off Sam's own eight-emblem reference sheet and signed off 2026-09-28. `lib/spell-school-vfx.ts` maps each school to a ring motion on top of it. Nothing blocks this section.
+
+The reference sheet does not separate the eight hues evenly — abjuration and illusion are both blue about 4 degrees apart, and divination is violet rather than achromatic — so **motion, not colour, is what distinguishes a school**, and there is a test on `main` asserting that any two schools close in hue must differ in motion. Any rune UI built for alchemy must show the motion, not a static colour swatch, or it loses the distinction the board relies on.
 
 ## 4. Divine bases — the cleric's half
 
@@ -190,7 +194,7 @@ Cutting the push-your-luck brewing variant removes the loud thirty-second table 
 1. Grid schema + `alchemy_effects` table — invisible, everything sits on it
 2. Eat It And See — first visible thing, cheapest, best content-per-hour
 3. Impurity — makes brewing matter
-4. Runes — reuses the school art; **requires PR #574 merged**
+4. Runes — reuses the school art, which is already on `main`; no blocker
 5. Poisoned Cookbook — hangs off loot ceremony
 
 ## Sourced vs homebrew
