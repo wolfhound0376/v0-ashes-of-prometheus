@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { EncounterTableRow } from "./camp"
 import {
-  fieldKit, kitDamage, herbSpotDC, skillLevel, spotChance, spotHerb,
+  fieldKit, kitDamage, fieldFoe, QUIVER, herbSpotDC, skillLevel, spotChance, spotHerb,
   T, passable, slowFactor, tileAt, buildExploreWorld, placeOnWorld, CACHE_COUNT, lostInTheDark,
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
@@ -290,8 +290,8 @@ describe("class kits (Sam's field rules)", () => {
     expect(fieldKit({ class: "Warlock", cha: 16 }).ranged).toMatchObject({ name: "Eldritch Blast", halve: true, knockback: true })
     expect(fieldKit({ class: "Fighter" })).toMatchObject({ knockbackOnMiss: true, melee: { mul: 2 } })
     expect(fieldKit({ class: "Bard" }).special).toMatchObject({ kind: "music", uses: 3 })
-    expect(fieldKit({ class: "Ranger", dex: 16 })).toMatchObject({ ranged: { name: "Longbow", kind: "arrow", damage: "1d8+3", cooldown: 0.3 }, beastCalm: 0.75 })
-    expect(fieldKit({ class: "Rogue", dex: 17 }).ranged).toMatchObject({ name: "Shortbow", damage: "1d6+3", cooldown: 0.6 })
+    expect(fieldKit({ class: "Ranger", dex: 16 })).toMatchObject({ ranged: { name: "Longbow", kind: "arrow", damage: "1d8+3", drawSeconds: 1.4, ammo: 12 }, beastCalm: 0.75 })
+    expect(fieldKit({ class: "Rogue", dex: 17 }).ranged).toMatchObject({ name: "Shortbow", damage: "1d6+3", drawSeconds: 2.3, ammo: QUIVER })
     expect(fieldKit({ class: "Fighter", str: 16 }).melee.weapon).toMatchObject({ name: "Longsword", damage: "1d8+3", toHit: 5 })
     expect(fieldKit({ class: "Paladin", str: 14 }).melee).toMatchObject({ weapon: { name: "Longsword" }, reachMul: 1.35 })
     expect(fieldKit({ class: "Barbarian", str: 17 }).melee).toMatchObject({ weapon: { name: "Greataxe", damage: "1d12+3" }, reachMul: 1.6 })
@@ -335,5 +335,39 @@ describe("spotting herbs", () => {
     const seq = [0.1, 0.9]; let i = 0
     const r = spotHerb({ abilityMod: 0, prof: 2, level: "none", advantage: true, dc: 15, name: "Timmask" }, () => seq[i++ % 2])
     expect(r.rolls).toEqual([3, 19]); expect(r.total).toBe(19); expect(r.success).toBe(true)
+  })
+})
+
+describe("field fights from bestiary rows", () => {
+  const orog = { name: "Orog", ac: 18, hp: 42, speed: "30 ft.", actions: [
+    { name: "Multiattack", desc: "The orog makes two greataxe attacks." },
+    { name: "Greataxe", to_hit: "+6", desc: "Melee Weapon Attack, one target. Hit: 10 (1d12+4) slashing damage.", reach: "5 ft." },
+    { name: "Javelin", to_hit: "+6", desc: "Melee or Ranged Weapon Attack, one target. Hit: 7 (1d6+4) piercing damage." }] }
+  it("an orog swings its greataxe twice", () => {
+    const f = fieldFoe(orog)!
+    expect(f.strikes.map((s) => s.damage)).toEqual(["1d12+4", "1d12+4"])
+    expect(f.chainIfHit).toBe(false)
+  })
+  it("a grick's beak only follows a tentacle hit", () => {
+    const f = fieldFoe({ name: "Grick", ac: 14, hp: 27, speed: "30 ft., climb 30 ft.", actions: [
+      { name: "Multiattack", desc: "One tentacles attack; if it hits, one beak attack against the same target." },
+      { name: "Tentacles", to_hit: "+4", desc: "Hit: 9 (2d6+2) slashing." }, { name: "Beak", to_hit: "+4", desc: "Hit: 5 (1d6+2) piercing." }] })!
+    expect(f.strikes.map((s) => s.name)).toEqual(["Grick — Tentacles", "Grick — Beak"]); expect(f.chainIfHit).toBe(true)
+  })
+  it("the spider's poison is a Con save rider; its web is left to the DM", () => {
+    const f = fieldFoe({ name: "Giant Spider", ac: 14, hp: 26, speed: "30 ft., climb 30 ft.", actions: [
+      { name: "Bite", to_hit: "+5", desc: "Hit: 7 (1d8+3) piercing, plus DC 11 Con save or 9 (2d8) poison (half on success); if reduced to 0 HP, stable but poisoned & paralyzed 1 hr." },
+      { name: "Web (Recharge 5-6)", to_hit: "+5", desc: "Range 30/60 ft. Target restrained by webbing." }] })!
+    expect(f.strikes[0].rider).toMatchObject({ ability: "CON", dc: 11, dice: "2d8", half: true, type: "poison" })
+    expect(f.flags.join(" ")).toMatch(/Web/)
+  })
+  it("the ochre jelly's acid rides on the hit", () => {
+    const f = fieldFoe({ name: "Ochre Jelly", ac: 8, hp: 45, speed: "10 ft., climb 10 ft.", actions: [{ name: "Pseudopod", to_hit: "+4", desc: "Hit: 9 (2d6+2) bludgeoning plus 3 (1d6) acid." }] })!
+    expect(f.strikes[0]).toMatchObject({ damage: "2d6+2", extra: "1d6" }); expect(f.speedFt).toBe(10)
+    const hit = rollAttack(f.strikes[0], 5, () => 0.99)
+    expect(hit.damage).toBe(38) // a natural 20 with every die at 6: 4d6 + 2 = 26, plus the acid doubled 2d6 = 12
+  })
+  it("a stub row cannot be fought here", () => {
+    expect(fieldFoe({ name: "Grell", ac: null, hp: null, actions: [] })).toBeNull()
   })
 })

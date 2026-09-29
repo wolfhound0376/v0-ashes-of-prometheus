@@ -513,7 +513,7 @@ export function exploreEncounterDue(roomsEntered: number): boolean {
 // sheet. Hit points lost here are hit points lost. What is house rule is how
 // the scene is paced (the lantern, the roamers, the lair) and it is flagged.
 
-export interface Striker { name: string; toHit: number; damage: string }
+export interface Striker { name: string; toHit: number; damage: string; /** Extra dice on a hit ("plus 3 (1d6) acid"). */ extra?: string }
 
 /** "1d4+3", "1d6-1", "2d6", "2" → dice. Null when there is nothing to roll. */
 export function parseDice(expr: string | null | undefined): { n: number; d: number; mod: number } | null {
@@ -550,6 +550,8 @@ export function rollAttack(a: Striker, targetAC: number, rng: Rng): AttackRoll {
   if (hit && dice) {
     for (let i = 0; i < dice.n * (crit ? 2 : 1); i++) damage += d(dice.d, rng)
     damage = Math.max(0, damage + dice.mod)
+    const ex = parseDice(a.extra)
+    if (ex) { for (let i = 0; i < ex.n * (crit ? 2 : 1); i++) damage += d(ex.d, rng); damage += ex.mod }
   }
   return { face, total, hit, crit, damage, note: hit ? `${a.name}: ${total} vs AC ${targetAC} — ${crit ? "critical, " : ""}${damage} damage` : `${a.name}: ${total} vs AC ${targetAC} — miss` }
 }
@@ -851,7 +853,9 @@ export interface FieldKit {
   /** Walking speed multiplier. */
   moveMul: number
   melee: { can: boolean; cooldown: number; mul: number; unarmedOnly?: boolean; weapon?: { name: string; slug: string; toHit: number; damage: string }; reachMul?: number }
-  ranged: null | { name: string; toHit: number; damage: string; cooldown: number; kind: "fire" | "frost" | "necrotic" | "force" | "arrow"; halve?: boolean; knockback?: boolean }
+  ranged: null | { name: string; toHit: number; damage: string; cooldown: number; kind: "fire" | "frost" | "necrotic" | "force" | "arrow"; halve?: boolean; knockback?: boolean
+    /** Bows only (Sam, 9/28): hold to draw — a shot looses only when fully drawn — and a quiver of 12 for the outing. */
+    drawSeconds?: number; ammo?: number }
   heal: null | { name: string; uses: number; dice: string }
   special: null | { kind: "music" | "entangle" | "aura"; name: string; uses?: number; cooldown?: number; seconds?: number; mul?: number; radius?: number }
   /** Extra lantern-light radius, in px. */
@@ -864,6 +868,9 @@ export interface FieldKit {
 }
 
 const mod = (score: number | null | undefined) => Math.floor(((score ?? 10) - 10) / 2)
+
+/** Arrows in a quiver for one outing (Sam, 9/28). */
+export const QUIVER = 12
 
 /** SRD ranged attack cantrips, level-1 damage. Order = preference. */
 export const RANGED_CANTRIPS: readonly { name: string; damage: string; kind: "fire" | "frost" | "necrotic" | "force" }[] = [
@@ -890,8 +897,8 @@ export function fieldKit(c: {
   // Big weapons swing further (Sam, 9/28 — a house rule: the SRD gives longsword and greataxe no reach property).
   const big = (name: string, slug: string, dice: string, reachMul: number) => { kit.melee.weapon = { name, slug, toHit: prof + mod(c.str), damage: `${dice}${mod(c.str) >= 0 ? "+" : ""}${mod(c.str)}` }; kit.melee.reachMul = reachMul }
   // Bows: SRD shortbow 1d6, longbow 1d8, both + DEX.
-  const bow = (name: string, dice: string, cooldown: number) => ({ name, toHit: prof + mod(c.dex), damage: `${dice}+${Math.max(0, mod(c.dex))}`, cooldown, kind: "arrow" as const })
-  if (cls === "rogue") { kit.moveMul = 1.3; kit.melee.cooldown = 0.25; kit.ranged = bow("Shortbow", "1d6", 0.6) }
+  const bow = (name: string, dice: string, cooldown: number, drawSeconds: number) => ({ name, toHit: prof + mod(c.dex), damage: `${dice}+${Math.max(0, mod(c.dex))}`, cooldown, kind: "arrow" as const, drawSeconds, ammo: QUIVER })
+  if (cls === "rogue") { kit.moveMul = 1.3; kit.melee.cooldown = 0.25; kit.ranged = bow("Shortbow", "1d6", 0.3, 2.3) }
   if (cls === "wizard" || cls === "sorcerer") {
     kit.melee.can = false
     const known = RANGED_CANTRIPS.filter((r) => r.name !== "Eldritch Blast").find((r) => knows(r.name))
@@ -906,7 +913,7 @@ export function fieldKit(c: {
   if (cls === "cleric") { /* SRD 5.1 Healing Word at 1st level: 1d4 + spellcasting modifier */ kit.heal = { name: "Healing Word", uses: 3, dice: `1d4+${Math.max(0, castMod)}` }; kit.lightBonus = 170 }
   if (cls === "bard") kit.special = { kind: "music", name: "Song of sleep", uses: 3, radius: 280 }
   // Rangers loose twice as fast as a rogue's bow, and beasts leave them be like a druid (Sam, 9/28).
-  if (cls === "ranger") { kit.ranged = bow("Longbow", "1d8", 0.3); kit.beastCalm = 0.75 }
+  if (cls === "ranger") { kit.ranged = bow("Longbow", "1d8", 0.15, 1.4); kit.beastCalm = 0.75 }
   if (cls === "monk") { kit.melee = { can: true, cooldown: 0.35, mul: 1.5, unarmedOnly: true }; kit.regen = { hp: 1, every: 3, whileStill: true } }
   if (cls === "druid") { kit.beastCalm = 0.75; kit.special = { kind: "entangle", name: "Entangle", cooldown: 10, seconds: 6 } }
   if (cls === "paladin") kit.special = { kind: "aura", name: "Radiant aura", seconds: 5, cooldown: 20, mul: 3 }
@@ -971,4 +978,59 @@ export function spotChance(o: { abilityMod: number; prof: number; level: SkillLe
   if (o.advantage && !o.disadvantage) return 1 - (1 - p) * (1 - p)
   if (o.disadvantage && !o.advantage) return p * p
   return p
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fights on the field map (Sam, 9/28: "fight it right there"). A creature from the encounter tables can be fought in
+// the field only when its bestiary row carries a real stat block — AC, HP, speed and at least one melee attack with
+// dice. Stub rows (grell, piercer, umber hulk, carrion crawler...) return null: the DM stages those. What the field
+// cannot simulate (grapples, paralysis, webs, recharge abilities, thrown javelins) is named in `flags` for the DM.
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface FieldRider { ability: string; dc: number; dice: string; half: boolean; type: string }
+export interface FieldFoe {
+  name: string; ac: number; hp: number; speedFt: number; fly: boolean
+  /** One round's attacks, in order. `chainIfHit`: each after the first lands only if the one before hit (the grick). */
+  strikes: (Striker & { rider?: FieldRider })[]; chainIfHit: boolean
+  flags: string[]
+}
+
+const WORDNUM: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 }
+
+export function fieldFoe(row: { name: string; ac?: number | null; hp?: number | null; speed?: string | null; actions?: { name?: string; to_hit?: string | number; desc?: string; reach?: string }[] | null }): FieldFoe | null {
+  const acts = row.actions ?? []
+  if (!row.ac || !row.hp || !acts.length) return null
+  const flags: string[] = []
+  const toStrike = (a: { name?: string; to_hit?: string | number; desc?: string }) => {
+    const desc = a.desc ?? ""
+    const dice = /\(\s*(\d+d\d+\s*[+-]?\s*\d*)\s*\)/.exec(desc)
+    if (a.to_hit == null || !dice) return null
+    const extra = /plus\s+\d+\s*\(\s*(\d+d\d+\s*[+-]?\s*\d*)\s*\)/i.exec(desc)
+    const sv = /DC\s*(\d+)\s*(Str|Dex|Con|Int|Wis|Cha)\w*\s*save[^.]*?(\d+)\s*\((\d+d\d+)\)\s*(\w+)(?:[^.]*half)?/i.exec(desc)
+    const st: Striker & { rider?: FieldRider } = { name: `${row.name} — ${a.name ?? "attack"}`, toHit: Number(String(a.to_hit).replace("+", "")) || 0, damage: dice[1].replace(/\s+/g, "") }
+    if (extra) st.extra = extra[1].replace(/\s+/g, "")
+    if (sv) st.rider = { ability: sv[2].toUpperCase().slice(0, 3), dc: Number(sv[1]), dice: sv[4], half: /half/i.test(sv[0]), type: sv[5].toLowerCase() }
+    if (/grappl|paralyz|restrain/i.test(desc)) flags.push(`${row.name} ${a.name}: the grapple / paralysis / restraint is not simulated — the DM rules`)
+    return st
+  }
+  const melee = acts.filter((a) => a.to_hit != null && !/recharge/i.test(a.name ?? "") && !/^\s*range\b/i.test(a.desc ?? ""))
+  for (const a of acts) if (/recharge/i.test(a.name ?? "") || /^\s*range\b/i.test(a.desc ?? "")) flags.push(`${row.name} ${a.name}: not used in the field — the DM rules`)
+  for (const a of melee) if (/ranged/i.test(a.desc ?? "") && /melee or ranged/i.test(a.desc ?? "")) flags.push(`${row.name} ${a.name}: thrown only in melee here`)
+  const multi = acts.find((a) => /multiattack/i.test(a.name ?? ""))
+  let strikes: (Striker & { rider?: FieldRider })[] = []
+  let chainIfHit = false
+  if (multi) {
+    const desc = (multi.desc ?? "").toLowerCase()
+    chainIfHit = /if it hits/.test(desc)
+    for (const m of desc.matchAll(/\b(one|two|three|four)\s+([a-z ]+?)\s+attacks?\b/g)) {
+      const a = melee.find((x) => m[2].includes((x.name ?? "").toLowerCase()) || (x.name ?? "").toLowerCase().startsWith(m[2].split(" ")[0]))
+      const st = a && toStrike(a)
+      if (st) for (let i = 0; i < WORDNUM[m[1]]; i++) strikes.push(st)
+    }
+  }
+  if (!strikes.length) { const st = melee.map(toStrike).find(Boolean); if (st) strikes = [st] }
+  if (!strikes.length) return null
+  const sp = String(row.speed ?? "30 ft.")
+  return { name: row.name, ac: row.ac, hp: row.hp, speedFt: Number(/(\d+)\s*ft/.exec(sp)?.[1] ?? 30), fly: /\bfly\b/i.test(sp), strikes, chainIfHit, flags: [...new Set(flags)] }
 }
