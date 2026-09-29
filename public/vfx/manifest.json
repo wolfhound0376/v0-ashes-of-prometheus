@@ -557,13 +557,12 @@
  },
  "sigilEvocationRing": {
   "file": "sigilEvocationRing.webp",
-  "bytes": 61758,
-  "cols": 1,
-  "rows": 1,
-  "frames": 1,
-  "fps": 1,
-  "loop": false,
-  "peak": 0
+  "bytes": 203902,
+  "cols": 4,
+  "rows": 2,
+  "frames": 8,
+  "fps": 12,
+  "loop": true
  },
  "sigilIllusionPlume": {
   "bytes": 262820,

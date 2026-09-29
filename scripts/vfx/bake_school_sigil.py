@@ -139,6 +139,86 @@ def bake_ring(clean: np.ndarray, top: int, centre: int, ratio: float, cell: int,
     return circle.resize((cell, cell), Image.LANCZOS)
 
 
+def glyph_band(ring: Image.Image) -> tuple[float, float]:
+    """
+    Radii (as a fraction of the half-cell) of the annulus the glyphs sit in.
+
+    Anchored to the disc's OUTER EDGE, not to its densest ring. The first cut
+    took the busiest radius and got r=0.12-0.30 — the centre star, which is
+    solid and therefore densest, while the runes Sam means are the outer band.
+    Lifting the middle reads as the sigil breathing; lifting the outer band
+    reads as icons lighting one after another, which is the ask.
+    """
+    a = np.asarray(ring).astype(np.float32)
+    h, w = a.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    r = np.sqrt((yy - h / 2.0) ** 2 + (xx - w / 2.0) ** 2) / (h / 2.0)
+    lit = (a[..., 3] > 8) & (luma(a[..., :3]) > 60)
+    step = 0.05
+    outer = 0.0
+    for t in np.arange(0, 1.0, step):
+        m = (r >= t) & (r < t + step)
+        if m.any() and lit[m].mean() > 0.20:
+            outer = float(t + step)
+    if outer <= 0:
+        return 0.55, 0.95
+    return max(0.15, outer * 0.62), outer
+
+
+def chase_ring(ring: Image.Image, count: int, cols: int, lift: float, arc: float) -> Image.Image:
+    """
+    Light the glyphs progressively round the band, as a head with a tail behind
+    it (Sam, 2026-09-28: "glow brighter progressively as the disc spins").
+
+    This is a SHEET animation, and it stacks with the renderer's own rotation
+    rather than replacing it: the plane keeps turning about Y, and the bright
+    head travels round the art at its own rate. Two motions at once is the
+    point — bake the head at the same rate as the spin and it would sit still
+    in world space and look painted on.
+
+    The sweep is computed in the UN-SQUASHED circle, so the angle is a real
+    angle. Measuring it on the drawn ellipse would bunch the head up at the
+    left and right edges and race it through top and bottom.
+
+    TWO THINGS THAT LOOKED FINE AND WERE WRONG:
+
+    The lift BLENDS TOWARD A HOT COLOUR, it does not scale RGB. Multiplying
+    clips the red channel first on an already-hot orange, so the head drifted
+    yellow-green — visibly off-palette on art whose colours were the whole
+    point. Blending keeps the hue and only adds heat.
+
+    Only the GLYPH ANNULUS lifts, not the whole disc. Lifting everything
+    brightens the centre star and the outer rim with it, and the result reads
+    as the sigil breathing rather than as icons lighting in turn.
+
+    Only LIT pixels lift either way: the alpha is keyed off luminance, so
+    raising the black field would quietly gain coverage and start occluding
+    the board.
+    """
+    w, h = ring.size
+    a = np.asarray(ring).astype(np.float32)
+    r0, r1 = glyph_band(ring)
+    yy, xx = np.mgrid[0:h, 0:w]
+    ang = np.arctan2(yy - h / 2.0, xx - w / 2.0)
+    rad = np.sqrt((yy - h / 2.0) ** 2 + (xx - w / 2.0) ** 2) / (h / 2.0)
+    band = ((rad >= r0) & (rad <= r1)).astype(np.float32)
+    # soften the annulus edges so the head does not cut off at a hard radius
+    band = np.clip(band + 0.45 * ((rad >= r0 - 0.08) & (rad <= r1 + 0.08)), 0, 1)
+    hot = np.array([255.0, 233.0, 176.0])       # heat, not white: white greys the gold
+    rows = (count + cols - 1) // cols
+    sheet = Image.new("RGBA", (cols * w, rows * h), (0, 0, 0, 0))
+    for i in range(count):
+        phase = 2 * np.pi * i / count
+        d = (ang - phase + np.pi) % (2 * np.pi) - np.pi
+        tail = np.where(d <= 0, np.exp(d / max(1e-3, arc)), 0.0)
+        k = (np.clip(lift, 0, 1) * tail * band)[..., None]
+        rgbf = a[..., :3]
+        frame = a.copy()
+        frame[..., :3] = np.clip(rgbf + (hot - rgbf) * k, 0, 255)
+        sheet.paste(Image.fromarray(frame.astype(np.uint8), "RGBA"), ((i % cols) * w, (i // cols) * h))
+    return sheet
+
+
 def bake_plume(frames: list[np.ndarray], clean: np.ndarray, top: int, pal: np.ndarray,
                px: int, cw: int, ch: int, cols: int, count: int) -> Image.Image:
     gw, gh = cw // px, ch // px
@@ -181,6 +261,12 @@ def main() -> None:
     ap.add_argument("--frames", type=int, default=12)
     ap.add_argument("--cols", type=int, default=4)
     ap.add_argument("--colors", type=int, default=8, help="flame ramp steps")
+    ap.add_argument("--chase", type=int, default=12, metavar="N",
+                    help="ring frames with a travelling glow; 1 = a static ring")
+    ap.add_argument("--chase-lift", type=float, default=0.75, metavar="0..1",
+                    help="how far the head blends toward hot; 0 is off, 1 is full heat")
+    ap.add_argument("--chase-arc", type=float, default=0.85,
+                    help="tail length in radians; larger is a longer comet")
     ap.add_argument("--floor", type=float, default=0.05)
     ap.add_argument("--gain", type=float, default=1.25)
     ap.add_argument("--dry-run", action="store_true", help="measure and report, write nothing")
@@ -194,6 +280,7 @@ def main() -> None:
     pal = flame_palette(frames, clean, a.colors)
 
     ring = bake_ring(clean, top, centre, ratio, a.ring_cell, a.floor, a.gain)
+    ring_sheet = ring if a.chase <= 1 else chase_ring(ring, a.chase, a.cols, a.chase_lift, a.chase_arc)
     plume = bake_plume(frames, clean, top, pal, a.px, a.plume_w, a.plume_h, a.cols, a.frames)
 
     print(f"  source        {len(frames)} frames, ring band top={top} centre={centre}")
@@ -202,9 +289,11 @@ def main() -> None:
         print(f"  NOTE the art is drawn at a different angle from the board's camera, so the")
         print(f"       ring will read {'rounder' if ratio > BOARD_RATIO else 'flatter'} on the board than in the source.")
     print("  flame ramp    " + " ".join("#%02X%02X%02X" % tuple(int(v) for v in c) for c in pal))
-    print(f"  ring          coverage {coverage(ring):4.1f}%")
+    print(f"  ring          coverage {coverage(ring_sheet):4.1f}%"
+          + ("" if a.chase <= 1 else
+             f"   chase {a.chase} frames, glyph band r={glyph_band(ring)[0]:.2f}-{glyph_band(ring)[1]:.2f}"))
     print(f"  plume         coverage {coverage(plume):4.1f}%   ({a.plume_w // a.px}x{a.plume_h // a.px} px art)")
-    for name, im in (("ring", ring), ("plume", plume)):
+    for name, im in (("ring", ring_sheet), ("plume", plume)):
         if coverage(im) > 70:
             print(f"  WARNING {name} keys at >70% — it will render as an opaque plate, not as light.")
 
@@ -214,7 +303,10 @@ def main() -> None:
 
     entries = {}
     for suffix, im, meta in (
-        ("Ring", ring, {"cols": 1, "rows": 1, "frames": 1, "fps": 1, "loop": False, "peak": 0}),
+        ("Ring", ring_sheet,
+         {"cols": 1, "rows": 1, "frames": 1, "fps": 1, "loop": False, "peak": 0} if a.chase <= 1 else
+         {"cols": a.cols, "rows": (a.chase + a.cols - 1) // a.cols, "frames": a.chase,
+          "fps": 12, "loop": True}),
         ("Plume", plume, {"cols": a.cols, "rows": (a.frames + a.cols - 1) // a.cols,
                           "frames": a.frames, "fps": 12, "loop": True}),
     ):
