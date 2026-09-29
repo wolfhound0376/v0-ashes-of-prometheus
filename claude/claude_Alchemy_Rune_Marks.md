@@ -27,17 +27,21 @@ Measured against the live `characters` rows on 2026-09-29, not assumed:
 | Character | Class | INT | Arcana proficient? | Arcana modifier |
 |---|---|---|---|---|
 | Kenta | Sorcerer 1 | 9 (−1) | no | **−1** |
-| Scott | Bard 1 | 10 (+0) | no (see flag below) | **+0** |
+| Scott | Bard 1 | 12 (+1) | **yes** (rerolled 2026-09-29) | **+3** |
 | Fifi | Rogue 1 | 12 (+1) | no | **+1** |
 | Samson | Cleric 1 | 12 (+1) | no | **+1** |
 
-**Nobody in this party has Arcana proficiency, and the two people who can actually use a mark have the two worst Intelligence scores in the party.** An Intelligence (Arcana) ladder at DC 12–16 would have handed Kenta a 20% chance on the Divination mark and a 40% chance on the easiest one in the game. The found half of the system would simply never have happened at the table.
+Scott's sheet was rerolled and made canon on 2026-09-29 — it had an empty `sheet_skill_proficiencies` where a Half-Elf Bard Entertainer has seven. He now carries **Arcana**, which makes him the party's first and only trained rune-reader at **+3**.
+
+**Kenta — a Sorcerer, the archetypal arcane caster — has an Arcana modifier of −1.** An Intelligence (Arcana) ladder at DC 12–16 would have handed him a 20% chance on the Divination mark and 40% on the easiest one in the game. The found half of the system would never have happened at the table, and the one class that most obviously owns arcane knowledge would have been structurally locked out of it.
 
 So the check is **Charisma (Arcana)** for spontaneous casters — the DMG's own variant of pairing a skill with a different ability. A sorcerer did not study this; they recognise it. Kenta's Charisma modifier is +3 (derived from his Persuasion +5 less his +2 proficiency), which makes the ladder below play at 55–75% rather than 20–40%.
 
-A character who *does* have Arcana proficiency may use Intelligence (Arcana) instead, whichever is better. If Kenta ever earns Arcana through the earned-proficiency system, that is a real and visible upgrade rather than a wash.
+A character who *does* have Arcana proficiency may use Intelligence (Arcana) instead, whichever is better. **Ruled 2026-09-29: the substitution stays.**
 
-> **Data flag, unrelated to alchemy:** Scott's `sheet_skill_proficiencies` is an empty object `{}`. A Bard has three skill proficiencies at level 1, so that sheet is incomplete. Worth fixing before these DCs are trusted — and it is the same `sheet_skill_proficiencies` key hygiene item already on the list, where Fifi's keys are lowercase-with-underscores and everyone else's are Title Case.
+It lands well now that Scott's sheet is fixed. Kenta reads a mark at Charisma +3 because a sorcerer *recognises* magic; Scott reads it at Intelligence +3 because a bard *studied* it. Same number, two different reasons, and the flavour does the work the mechanic cannot. If Kenta ever earns Arcana through the earned-proficiency system that becomes a visible upgrade rather than a wash.
+
+> **Key hygiene, unrelated to alchemy and still open:** Scott's new row uses Title Case keys to match Kenta, Samson and Bastet. **Fifi is the outlier** — her keys are lowercase-with-underscores (`sleight_of_hand`). Any code reading `sheet_skill_proficiencies` has to handle both until that is normalised.
 
 ---
 
@@ -148,10 +152,12 @@ Taking her notes starts a **pursuit track**, 0–6, visible to the DM and never 
 
 | Trigger | Track |
 |---|---|
-| Long rest camped within sight of still water | +1 |
-| Drinking or drawing from a standing pool rather than a `waterorb` or `barrelstalk` | +1 |
-| Camping dry — no standing water in the node | 0 |
+| Long rest camped within sight of still water | +1, **once per node** |
+| Drinking or drawing from a standing pool rather than a `waterorb` or `barrelstalk` | +1, once per node |
+| A full day's travel through a node with no standing water | **−1** |
 | A potion sealed with the **Abjuration** rune, drunk at camp | −1, once per rest |
+
+**Ruled 2026-09-29 — the once-per-node cap and the dry-travel decay are the refinement.** The first draft had the track rise on every long rest near water, which is a timer rather than a decision: a party crossing the Darklake region camps near water whether they like it or not, so it would have hit 5 in a week no matter what anyone chose. Capping the rise at once per node and letting dry travel bleed it back down turns it into a route question — *do we take the fast wet road or the slow dry one* — which is the decision the mechanic was supposed to create.
 
 | Track | What happens |
 |---|---|
@@ -191,6 +197,6 @@ Four found, four taught. The found ones front-load in the prison where an Arcana
 ## Open questions
 
 1. **Is the Buppido hook too on-the-nose?** It is the strongest idea in this draft and also the one most likely to read as the DM winking. The alternative is putting necromancy in the Quaggoth Den (node 12) as a found mark and leaving Buppido out of it.
-2. **The pursuit track numbers** — 0–6 with a patrol at 3 and an ambush at 5 is a first guess and wants one session of play against it.
+2. **The pursuit track still wants one session of play against it.** Ruled as written above, but 3-for-a-patrol and 5-for-an-ambush are judgement calls that only the table can confirm.
 3. **Should a found mark be losable?** Written above so that smashing the shrine before reading it costs the mark forever. That is a real punishment for a reasonable action, so flag it now rather than at the table.
-4. **The Charisma (Arcana) substitution is homebrew** (a DMG variant, applied here as a standing rule for spontaneous casters). If you would rather keep it Intelligence, the DCs have to drop to roughly 8–12 or the found marks do not happen.
+4. **Resolved 2026-09-29.** Charisma (Arcana) for spontaneous casters is ruled in, the DCs stand at 10/12/13/15, and Scott's rerolled sheet gives the party a trained reader at Intelligence (Arcana) +3.
