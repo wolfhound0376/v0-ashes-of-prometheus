@@ -24,6 +24,13 @@
 // reason or returns a flag for the DM. The only house rule is HOUSE_RULES below,
 // off by default, and it is Sam's to switch on.
 //
+// COMPANION FILE: lib/alchemy-ingredients.ts. This file brews from reagents the
+// party already holds, by catalog slug. That one recognises an ingredient by
+// NAME — every material component in the game plus Sam's compiled list of named
+// D&D ingredients — for the moment a surface trader offers something and the DM
+// needs to know whether it is real before it enters the world. It reads the
+// books, never this file's recipes, so the two do not depend on each other.
+//
 // Reagents — Sam's ruling, 2026-09-27: EACH RECIPE NAMES ITS REAGENTS, and having
 // them is enough. No gold changes hands; exactly those reagents are consumed.
 // (In 5e these fungi are food worth copper, and items.value is whole gp, so a
