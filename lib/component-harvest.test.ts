@@ -81,10 +81,19 @@ describe("matching against a bestiary", () => {
     }
   })
 
-  it("no sheep either, so every fleece illusion is unsupplied", () => {
-    for (const spell of ["Minor Illusion", "Silent Image", "Major Image", "Phantasmal Force"]) {
-      expect(supplyFor(spell, bestiary)!.satisfiable).toBe(false)
+  it("the deep rothé supplies fleece — Sam's ruling, 2026-09-29", () => {
+    // There are no sheep in the Underdark. Without this the five fleece
+    // illusion spells are permanently unsupplied down here.
+    for (const spell of ["Minor Illusion", "Silent Image", "Major Image", "Phantasmal Force", "Programmed Illusion"]) {
+      const s = supplyFor(spell, bestiary)!
+      expect(s.satisfiable, `${spell} should be supplied by the rothé`).toBe(true)
+      expect(s.bySource[0].suppliers.map((r) => r.slug)).toEqual(["deep-rothe"])
     }
+  })
+
+  it("fleece is still a real requirement — remove the rothé and it fails", () => {
+    const noRothe = bestiary.filter((r) => r.slug !== "deep-rothe")
+    expect(supplyFor("Minor Illusion", noRothe)!.satisfiable).toBe(false)
   })
 
   it("a deep dragon supplies the generic dragon scale but not the red one", () => {
@@ -116,7 +125,7 @@ describe("harvestReport", () => {
       HARVEST_TABLE.filter((h) => !h.spell.includes("(UA)")).length,
     )
     expect(r.summary).toContain("any bird")
-    expect(r.summary).toContain("any sheep")
+    expect(r.summary).toContain("any snake")
   })
 
   it("excludes Unearthed Arcana unless asked", () => {

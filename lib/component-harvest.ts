@@ -30,7 +30,7 @@ import { SPELL_COMPONENTS, type SpellComponent } from "./spell-component-data"
 /** A kind of creature, as the component text asks for it. */
 export type CreatureKind =
   | "beast" | "bird" | "bat" | "spider" | "snake" | "insect"
-  | "humanoid" | "dragon" | "cattle" | "sheep" | "corporeal"
+  | "humanoid" | "dragon" | "cattle" | "fleece" | "corporeal"
 
 export type HarvestSource =
   /** The text names one creature. `match` is tested against the row's name. */
@@ -94,18 +94,18 @@ export const HARVEST_TABLE: HarvestRow[] = [
   { spell: "Locate Animals or Plants", phrase: "a bit of fur from a bloodhound", sources: [named("bloodhound", /bloodhound|\bhound\b|\bdog\b/i)] },
   { spell: "Locate Creature", phrase: "a bit of fur from a bloodhound", sources: [named("bloodhound", /bloodhound|\bhound\b|\bdog\b/i)] },
   { spell: "Magic Mouth", phrase: "a small bit of honeycomb", sources: [named("bee", /\bbee\b|honeybee/i)] },
-  { spell: "Major Image", phrase: "a bit of fleece", sources: [anyOf("sheep")] },
+  { spell: "Major Image", phrase: "a bit of fleece", sources: [anyOf("fleece")] },
   { spell: "Mass Polymorph", phrase: "a caterpillar cocoon", sources: [anyOf("insect")] },
   { spell: "Mass Suggestion", phrase: "a snake’s tongue", sources: [anyOf("snake")] },
-  { spell: "Minor Illusion", phrase: "A bit of fleece", sources: [anyOf("sheep")] },
+  { spell: "Minor Illusion", phrase: "A bit of fleece", sources: [anyOf("fleece")] },
   { spell: "Mordenkainen's Faithful Hound", phrase: "a piece of bone", sources: [anyOf("corporeal")] },
   { spell: "Negative Energy Flood", phrase: "a broken bone", sources: [anyOf("corporeal")] },
   { spell: "Nystul's Magic Aura", phrase: "a small square of silk", sources: [anyOf("insect")] },
-  { spell: "Phantasmal Force", phrase: "a bit of fleece", sources: [anyOf("sheep")] },
+  { spell: "Phantasmal Force", phrase: "a bit of fleece", sources: [anyOf("fleece")] },
   { spell: "Polymorph", phrase: "a caterpillar cocoon", sources: [anyOf("insect")] },
-  { spell: "Programmed Illusion", phrase: "a bit of fleece", sources: [anyOf("sheep")] },
+  { spell: "Programmed Illusion", phrase: "a bit of fleece", sources: [anyOf("fleece")] },
   { spell: "Rary's Telepathic Bond", phrase: "pieces of eggshell from two different kinds of creatures", sources: [anyOf("bird")] },
-  { spell: "Silent Image", phrase: "a bit of fleece", sources: [anyOf("sheep")] },
+  { spell: "Silent Image", phrase: "a bit of fleece", sources: [anyOf("fleece")] },
   { spell: "Simulacrum", phrase: "some hair, fingernail clippings, or other piece of that creature’s body", sources: [own("the creature being duplicated")] },
   { spell: "Sleep", phrase: "a cricket", sources: [anyOf("insect")] },
   { spell: "Spider Climb", phrase: "a spider", sources: [anyOf("spider")] },
@@ -155,7 +155,14 @@ const KIND_TEST: Record<CreatureKind, (r: BestiaryRow) => boolean> = {
   humanoid: (r) => /\bhumanoid\b/i.test(r.creature_type ?? ""),
   dragon: (r) => /\bdragon\b/i.test(r.creature_type ?? ""),
   cattle: (r) => /roth[ée]|\bbull\b|\box\b|\bcow\b|cattle|auroch/i.test(r.name),
-  sheep: (r) => /\bsheep\b|\bram\b|\blamb\b/i.test(r.name),
+  /**
+   * Fleece. Sam ruled 2026-09-29 that the deep rothé's coat counts: there are
+   * no sheep in the Underdark, and five illusion spells would otherwise be
+   * permanently unsupplied down here. A homebrew reading — 5e says nothing
+   * about shearing a rothé — and it is deliberately its own kind rather than
+   * folded into `cattle`, so the ruling is visible and reversible.
+   */
+  fleece: (r) => /\bsheep\b|\bram\b|\blamb\b|roth[eé]/i.test(r.name),
 }
 
 function matchesSource(src: HarvestSource, r: BestiaryRow): boolean {
@@ -185,7 +192,9 @@ export interface SpellSupply {
 function describe(src: HarvestSource): string {
   if (src.kind === "named") return src.name
   if (src.kind === "self-or-target") return src.note
-  return src.creature === "corporeal" ? "any creature with flesh and bone" : `any ${src.creature}`
+  if (src.creature === "corporeal") return "any creature with flesh and bone"
+  if (src.creature === "fleece") return "a fleece-bearing creature"
+  return `any ${src.creature}`
 }
 
 /** What this bestiary can supply for one spell. */
