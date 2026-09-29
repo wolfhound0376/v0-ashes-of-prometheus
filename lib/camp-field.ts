@@ -1022,12 +1022,14 @@ export function fieldKit(c: {
 // signature move instead of an ordinary swing. A tap is still a tap. The dice, saves and DCs are the SRD's spell or
 // feature each one is named for (save DC = 8 + proficiency + the casting ability, SRD 5.1); the hold, the cooldowns,
 // the throw and the shield are Sam's field-game house rules and flagged as such.
+// USES (Sam, 9/29): each power can be used 3 times an outing; the druid's Wild Shape twice (as the SRD gives it).
 //   rogue      kick, then a backstab with advantage + Sneak Attack 1d6
 //   paladin    blazing smite — the weapon + Divine Smite 2d8 radiant
 //   monk       Flurry of Blows — the attack and two more unarmed strikes, quick as you like
 //   sorcerer   Shocking Grasp — 1d8 lightning, touch
 //   wizard     Thunderwave — 2d8 thunder, CON save for half, pushed 10 ft on a failure. Charged like a bow.
-//   druid      Entangle — vines rise under the nearest creature, STR save or restrained
+//   druid      Wild Shape into a wolf (Sam, 9/29) — the SRD wolf's own stat block; back to the druid when its 11 HP run
+//              out (the rest of the damage carries over, SRD), or hold again to change back early
 //   warlock    two Eldritch Blasts at once, purple and crackling, each pushes 10 ft
 //   cleric     Guiding Bolt — 4d6 radiant; the next attack on it has advantage
 //   ranger     an ensnaring arrow — the bow's hit, then STR save or wrapped in vines, 1d6 piercing as they bite
@@ -1038,7 +1040,7 @@ export function fieldKit(c: {
 // ---------------------------------------------------------------------------------------------------------------
 
 export type PowerKind =
-  | "backstab" | "smite" | "flurry" | "shock" | "thunder" | "vines" | "twin-blast" | "guiding-bolt" | "ensnare-arrow" | "rage-throw" | "shield" | "mockery"
+  | "backstab" | "smite" | "flurry" | "shock" | "thunder" | "wild-shape" | "twin-blast" | "guiding-bolt" | "ensnare-arrow" | "rage-throw" | "shield" | "mockery"
 
 export interface FieldPower {
   kind: PowerKind
@@ -1049,6 +1051,10 @@ export interface FieldPower {
   chargeRelease: boolean
   /** Seconds before it can be used again. PROPOSED. */
   cooldown: number
+  /** Times it can be used in one outing (Sam, 9/29: three; the druid's Wild Shape two). */
+  uses: number
+  /** Wild Shape: the beast the druid becomes. */
+  form?: BeastForm
   /** Attack powers: the roll. `extra` is dice added on a hit and doubled on a crit (SRD). */
   strike?: Striker
   /** Extra attacks in the same breath (Flurry: 2 more; twin blast: 2 beams in all). */
@@ -1065,6 +1071,24 @@ export interface FieldPower {
 }
 
 export const POWER_HOLD_SECONDS = 0.45
+export const POWER_USES = 3
+
+/** A beast a druid can Wild Shape into. */
+export interface BeastForm { slug: string; name: string; ac: number; hp: number; speedFeet: number; bite: Striker; save?: { ability: "str"; dc: number; effect: "prone" }; note: string }
+
+/** SRD 5.1 Wolf (CR 1/4 — inside a 2nd-level druid's Wild Shape limit). */
+export const WOLF: BeastForm = {
+  slug: "wolf", name: "Wolf", ac: 13, hp: 11, speedFeet: 40,
+  bite: { name: "Bite (wolf)", toHit: 4, damage: "2d4+2" },
+  save: { ability: "str", dc: 11, effect: "prone" },
+  note: "SRD Wolf: AC 13, 11 HP, speed 40 ft; Bite +4, 2d4+2 piercing, DC 11 STR save or knocked prone",
+}
+
+/** Damage to a wild-shaped druid (SRD): the beast's HP soak it first; at 0 the druid reverts and the rest carries over. */
+export function wildShapeDamage(formHp: number, damage: number): { formHp: number; overflow: number; reverted: boolean } {
+  if (damage < formHp) return { formHp: formHp - damage, overflow: 0, reverted: false }
+  return { formHp: 0, overflow: damage - formHp, reverted: true }
+}
 export const THUNDER_CHARGE_SECONDS = 1.8
 
 const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`)
@@ -1078,7 +1102,7 @@ export function fieldPower(c: {
   const prof = c.prof ?? 2
   const s = mod(c.str), dx = mod(c.dex)
   const dc = (score: number | null | undefined) => 8 + prof + mod(score)
-  const base = { hold: POWER_HOLD_SECONDS, chargeRelease: false }
+  const base = { hold: POWER_HOLD_SECONDS, chargeRelease: false, uses: POWER_USES }
   switch (cls) {
     case "rogue": {
       const fin = Math.max(s, dx) // dagger: finesse
@@ -1091,9 +1115,9 @@ export function fieldPower(c: {
     case "sorcerer":
       return { ...base, kind: "shock", name: "Shocking Grasp", cooldown: 3, rangeFeet: 5, strike: { name: "Shocking Grasp", toHit: prof + mod(c.cha), damage: "1d8" }, note: "Melee spell attack, 1d8 lightning; the target can't react until its next turn (SRD)" }
     case "wizard":
-      return { hold: THUNDER_CHARGE_SECONDS, chargeRelease: true, kind: "thunder", name: "Thunderwave", cooldown: 6, rangeFeet: 15, pushFeet: 10, save: { ability: "con", dc: dc(c.int), damage: "2d8", halfOnSave: true }, note: "15-ft wave: CON save, 2d8 thunder (half on a success), pushed 10 ft on a failure (SRD). Held to charge — house rule" }
+      return { hold: THUNDER_CHARGE_SECONDS, chargeRelease: true, uses: POWER_USES, kind: "thunder", name: "Thunderwave", cooldown: 6, rangeFeet: 15, pushFeet: 10, save: { ability: "con", dc: dc(c.int), damage: "2d8", halfOnSave: true }, note: "15-ft wave: CON save, 2d8 thunder (half on a success), pushed 10 ft on a failure (SRD). Held to charge — house rule" }
     case "druid":
-      return { ...base, kind: "vines", name: "Grasping vines", cooldown: 10, rangeFeet: 90, seconds: 6, save: { ability: "str", dc: dc(c.wis) }, note: "Entangle on the nearest creature: STR save or restrained (SRD); held 6 s in the field" }
+      return { ...base, uses: 2, kind: "wild-shape", name: "Wild Shape: wolf", cooldown: 1, rangeFeet: 0, form: WOLF, note: "SRD Wild Shape, 2 uses: become a wolf (its own AC, HP, speed and bite); change back at 0 wolf HP, the rest of the damage carrying over, or hold again to change back early. Can't cast spells as a wolf" }
     case "warlock":
       return { ...base, kind: "twin-blast", name: "Twin Eldritch Blast", cooldown: 4, rangeFeet: 120, strikes: 2, pushFeet: 10, strike: { name: "Eldritch Blast", toHit: prof + mod(c.cha), damage: "1d10" }, note: "Two beams, 1d10 force each, each hit pushes 10 ft (the second beam and the push are Sam's house rule — the SRD gives two beams at 5th level)" }
     case "cleric":
