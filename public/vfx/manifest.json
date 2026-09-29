@@ -624,12 +624,13 @@
  },
  "sigilTransmutationRing": {
   "file": "sigilTransmutationRing.webp",
-  "bytes": 208612,
+  "bytes": 178346,
   "cols": 4,
   "rows": 2,
   "frames": 8,
   "fps": 12,
-  "loop": true
+  "loop": false,
+  "peak": 7
  },
  "strikeKick": {
   "bytes": 16166,

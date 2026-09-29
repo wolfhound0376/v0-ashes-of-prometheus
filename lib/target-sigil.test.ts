@@ -360,3 +360,42 @@ describe("the strike frame", () => {
     expect(sigilStrikeAt(PLAN)).toBeLessThan(sigilDuration(PLAN))
   })
 })
+
+describe("a still sigil — transmutation's ring does not turn", () => {
+  const plan = targetSigilFor({ resolve: "save", school: "transmutation", damage: "radiant" })!
+
+  it("is registered still, and the turning schools are not", () => {
+    expect(SCHOOL_SIGIL.transmutation?.still).toBe(true)
+    for (const s of ["necromancy", "enchantment", "illusion", "evocation"] as const) {
+      expect(SCHOOL_SIGIL[s]?.still, s).toBeFalsy()
+    }
+  })
+
+  it("never turns, in any act or outcome", () => {
+    const total = plan.form + plan.hold + plan.resolve
+    for (const outcome of ["taken", "warded"] as const) {
+      for (let i = 0; i <= 40; i++) {
+        const t = (total * 1.1 * i) / 40
+        expect(sigilPoseAt(t, plan, outcome, 0.5).spin, `${outcome} @${t.toFixed(2)}`).toBe(0)
+      }
+    }
+  })
+
+  it("holds the whirlwind back until the ring is lit — the point of the change", () => {
+    // Sam: "transparent to slowly visible and glowing and THEN the whirlwind
+    // shows." Without the delay the plume rises through a ring that is still
+    // fading in and the ring never gets its moment.
+    const early = sigilPoseAt(plan.form * 0.3, plan, "taken", 0.5)
+    expect(early.opacity).toBeGreaterThan(0)     // the ring is coming up
+    expect(early.flame).toBe(0)                  // and nothing is rising yet
+    const late = sigilPoseAt(plan.form * 0.98, plan, "taken", 0.5)
+    expect(late.flame).toBeGreaterThan(0.4)      // by the end of form it is there
+  })
+
+  it("still fades in, and a turning school still turns", () => {
+    expect(sigilPoseAt(0, plan, "taken", 0.5).opacity).toBeLessThan(0.05)
+    expect(sigilPoseAt(plan.form, plan, "taken", 0.5).opacity).toBeGreaterThan(0.9)
+    const spun = targetSigilFor({ resolve: "save", school: "evocation", damage: "fire" })!
+    expect(sigilPoseAt(spun.form * 0.8, spun, "taken", 0.5).spin).toBeLessThan(0)
+  })
+})
