@@ -687,3 +687,54 @@
 }
 .aop-ink-faded { color: #6b4a2c; text-shadow: 0 0 .6px rgba(107,74,44,.4); }
 .aop-ink-rubric { color: #8a2f22; text-shadow: 0 0 .6px rgba(138,47,34,.45); }
+
+/* ── The quill ──────────────────────────────────────────────────────────────
+ * Sam, 2026-09-29: "Whenever something is written into the journal. It is
+ * scribbled with a quill animation."
+ *
+ * The nib is an INLINE element that sits after the revealed text, so the
+ * browser's own line-breaking keeps it at the write point — including across a
+ * wrap, where a measured caret would land on the wrong line. */
+.aop-quill-nib {
+  position: relative;
+  display: inline-block;
+  width: 0;                 /* takes no space, so the text does not shift when it leaves */
+  vertical-align: baseline;
+  animation: aop-quill-bob 340ms ease-in-out infinite alternate;
+}
+.aop-quill-nib svg {
+  position: absolute;
+  left: -2px;
+  bottom: -4px;             /* the point sits ON the baseline, where ink is laid */
+  transform: rotate(0deg);
+  filter: drop-shadow(0 1px 1px rgba(58, 36, 19, .35));
+}
+/* The bead of ink held at the slit. Small, wet, and slightly off the point. */
+.aop-quill-bead {
+  position: absolute;
+  left: -1px;
+  bottom: -2px;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: #2b1a0e;
+  opacity: .8;
+}
+/* A hand is never still. Sub-pixel on purpose: any more and it reads as a
+ * wobble rather than as a person holding something. */
+@keyframes aop-quill-bob {
+  from { transform: translateY(-.4px) rotate(-1.2deg); }
+  to   { transform: translateY(.4px)  rotate(1.2deg); }
+}
+
+/* Ink still wet behind the nib. Darker and very slightly spread — iron gall
+ * darkens over hours, not seconds, so this is the sheen of the wet stroke
+ * rather than real chemistry. */
+.aop-ink-wet {
+  color: #241507;
+  text-shadow: 0 0 1.4px rgba(36, 21, 7, .75);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aop-quill-nib { animation: none; }
+}
