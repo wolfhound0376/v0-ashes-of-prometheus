@@ -25,6 +25,11 @@ import {
   crAppropriateHp,
   type NpcStatBlock,
 } from "@/lib/world-ai/campaigns"
+import {
+  parseQuestTags, decideQuest, questRecipients, questLog, openQuests,
+  formatQuestBlock, stripQuestTags, QUEST_TAG_RULES, QUEST_STRIP_RE,
+  type QuestPage,
+} from "@/lib/quests"
 import { canonicalizeCondition } from "@/lib/conditions"
 // A long rest, as the SRD writes it. The rule is pure and lives in its own
 // file; this route only owns the rows it touches.
@@ -855,6 +860,7 @@ STRICT LIMITS ON USING THESE:
   let campingBefore = false
   let pendingVisitorRestId: string | null = null
   let campBlock = ""
+  let questBlock = ""
   // Set after the reply when a [CAMP_ACTION] needs this player's roll (§14):
   // stamped onto the roll request created at the end of the turn.
   let campCheckPurpose: { purpose: string; skill: string } | null = null
@@ -1376,6 +1382,27 @@ Rules:
   )
 
   // The Lich Malachar system prompt
+
+  // The quests already on the books, so he cannot offer one the party took
+  // three sessions ago or have an NPC beg for something already finished —
+  // the commonest way an AI DM breaks continuity, and one the system can
+  // simply prevent by telling him. Best-effort: a failed read costs the
+  // reminder, never the turn.
+  if (playerCharacter?.id) {
+    try {
+      const { data: questRows } = await supabase
+        .from("journal_entries")
+        .select("section, title, tags, created_at")
+        .eq("character_id", playerCharacter.id)
+        .eq("section", "quests")
+      const pages = (questRows ?? []) as QuestPage[]
+      const closed = questLog(pages).filter((q) => q.resolved).slice(0, 6)
+      questBlock = formatQuestBlock({ open: openQuests(pages), recentlyClosed: closed })
+    } catch (e) {
+      console.warn("[quests] log unavailable this turn:", e)
+    }
+  }
+
   const lichPrompt = `You are Malachar, a lich, and the Dungeon Master of this campaign. You are running D&D 5E "Out of the Abyss" in the Underdark of Faerûn. You never break character.
 
   WHO YOU ARE
@@ -1658,6 +1685,8 @@ JOURNAL:
   - The page is theirs. Never mock them inside the tag and never write something they did not mean to record. Be as cruel as you like in the prose around it.
   - Example: [JOURNAL: Three guards on the gate. They change on the fourth hour and there is a gap, maybe three minutes wide. Eldeth has been counting them longer than I have.]
 
+${QUEST_TAG_RULES}
+
 WORLD FLAGS:
 - [FLAG: <key>] — when a permanent, table-wide fact becomes true
   - pen-door-open — the slave pen's door is open: unlocked, picked, forced, or opened by someone else
@@ -1850,7 +1879,7 @@ result exists until the engine reports it.
   numbers only in the tag ("Roll Stealth. [[1d20+7 | stealth | DC 15]]"). Honor features that
   change rolls (Lucky, Brave, Fey Ancestry, Sneak Attack conditions) without
   the player having to remind you.
-${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
+${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${questBlock ? `\n\n${questBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
 
   // A provider failure here used to escape as a bare 500 with no body: the UI
   // showed nothing, the client retried, and each retry persisted the player's
@@ -1991,6 +2020,77 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${
     }
   } else if (journalTags.length) {
     console.warn("[v0] journal tag emitted with no acting character - page dropped:", journalTags[0].slice(0, 80))
+  }
+
+  // === QUESTS ===
+  // The quest log IS the journal (docs/claude_Journal_Sections.md). A quest
+  // files as a page in the `quests` section, append-only, and lib/quests folds
+  // the pages back into current state.
+  //
+  // Sam, 2026-09-29: "Party quests go to everyone. Individual ones are
+  // individual by nature." So one page PER RECIPIENT, all sharing a quest key,
+  // which is why four journals can agree today and disagree after one of them
+  // is stolen and read.
+  //
+  // Same discipline as the journal block above: a quest is never worth failing
+  // a turn over, and the log says whether the tag was missing or the write
+  // failed — the difference between a prompt problem and a database problem.
+  const questTags = parseQuestTags(rawText)
+  console.log("[v0] quest tag scan:", questTags.length ? JSON.stringify(questTags) : "NO [QUEST] TAG IN RESPONSE")
+  if (questTags.length && playerCharacter?.id) {
+    try {
+      // Already-open quests for the acting character, so the same quest is not
+      // accepted twice under two spellings.
+      const { data: existingRows } = await supabase
+        .from("journal_entries")
+        .select("section, title, tags, created_at")
+        .eq("character_id", playerCharacter.id)
+        .eq("section", "quests")
+      const known = questLog((existingRows ?? []) as QuestPage[])
+
+      // Everyone who should get a party quest.
+      const { data: partyRows } = await supabase
+        .from("characters")
+        .select("id")
+        .eq("is_player", true)
+        .is("archived_at", null)
+      const party = (partyRows ?? []).map((r) => String(r.id))
+
+      for (const tag of questTags) {
+        const decision = decideQuest({ tag, open: known })
+        if (decision.flags.length) console.log("[v0] quest flags:", decision.flags.join(" | "))
+        if (!decision.file) {
+          console.log("[v0] quest not filed:", decision.note)
+          continue
+        }
+        const recipients = questRecipients({
+          scope: decision.scope,
+          actorId: playerCharacter.id,
+          party,
+        })
+        if (!recipients.length) {
+          console.warn("[v0] quest had nobody to file to:", decision.note)
+          continue
+        }
+        const rows = recipients.map((characterId) => ({
+          character_id: characterId,
+          session_id: activeSessionId ?? null,
+          author: decision.file!.author,
+          title: decision.file!.title,
+          body: decision.file!.body,
+          section: decision.file!.section,
+          visibility: decision.file!.visibility,
+          tags: decision.file!.tags,
+        }))
+        const { error: qerr } = await supabase.from("journal_entries").insert(rows)
+        if (qerr) console.error("[v0] quest failed to write:", qerr.message)
+        else console.log(`[v0] quest filed for ${recipients.length} character(s):`, decision.note)
+      }
+    } catch (questError) {
+      console.error("[v0] quest filing threw:", (questError as Error).message)
+    }
+  } else if (questTags.length) {
+    console.warn("[v0] quest tag emitted with no acting character - dropped:", JSON.stringify(questTags[0]))
   }
 
   // === WORLD FLAGS ===
@@ -3082,6 +3182,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${
     .replace(/\[CINEMATIC:[^\]]*\]/gi, "")
     .replace(CAMP_ACTION_STRIP_RE, "")
     .replace(/\[JOURNAL:[^\]]*\]/gi, "")
+    .replace(QUEST_STRIP_RE, "")
     .replace(/\[FLAG:[^\]]*\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
     // somebody has to remember to add here — and forgetting means the tag is
