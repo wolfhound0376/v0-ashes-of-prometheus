@@ -39,6 +39,13 @@ describe("bardSongCue", () => {
     expect(bardSongCue("warm", empty, script(0))).toBe("bard/sun-is-a-rumour")
   })
 
+  it("can reach the shanty, which is the last warm song in the pool", () => {
+    // Guards the off-by-one that a growing pool invites: with four songs the
+    // last one is only reachable from rng >= 0.75, and an index computed with
+    // `length - 1` somewhere would silently never play it.
+    expect(bardSongCue("warm", empty, script(0.99))).toBe("bard/haul-away-deep-water")
+  })
+
   it("returns a moving song for a moving band", () => {
     expect(bardSongCue("moving", empty, script(0))).toBe("bard/down-we-went")
   })

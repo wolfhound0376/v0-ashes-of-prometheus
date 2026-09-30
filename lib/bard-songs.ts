@@ -49,7 +49,13 @@ export type Rng = () => number
  * `vtt-assets/sfx/bard/<slug>.ogg` and `<slug>_2.ogg`.
  */
 export const UNACCOMPANIED: Readonly<Record<Exclude<PerformanceBand, "flat">, readonly string[]>> = {
-  warm: ["sun-is-a-rumour", "count-the-spiders", "rothe-and-rot"],
+  // "haul-away-deep-water" is a sea shanty, and it is the one song here whose
+  // form the unaccompanied constraint actively suits rather than merely
+  // survives: a real hauling shanty IS sung a cappella, because its job is to
+  // time a crew pulling together. Sam asked for a pirate shanty on 2026-09-30;
+  // that the party are slaves doing forced labour is why it landed as a work
+  // song rather than a drinking one.
+  warm: ["sun-is-a-rumour", "count-the-spiders", "rothe-and-rot", "haul-away-deep-water"],
   moving: ["down-we-went", "ashes-the-bards-song"],
 }
 
