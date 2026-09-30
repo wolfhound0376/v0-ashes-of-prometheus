@@ -1,0 +1,77 @@
+<meta charset="utf-8">
+<title>Darklake Cave</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* layout: one first-person view, full width; the hotbar sits on the bottom edge of the view, the key below it */
+:root{
+  --ground:#07060b; --panel:#0f0d16; --line:#4a3c28; --gold:#e3b95c; --ink:#ece2cc; --dim:#9d9281; --blood:#d8243a;
+  --display:'Cinzel',Georgia,'Times New Roman',serif; --body:'Crimson Text',Georgia,'Times New Roman',serif;
+  color-scheme:dark;
+}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:17px;padding:16px;padding-block:16px 24px}
+.wrap{max-width:1280px;margin:0 auto;display:grid;gap:12px}
+h1{margin:0;font-family:var(--display);font-weight:700;font-size:1.05rem;letter-spacing:.22em;color:var(--gold);text-wrap:balance}
+h1 small{font-weight:500;letter-spacing:.14em;color:var(--dim);font-size:.72rem;margin-left:10px}
+.stage{position:relative;width:100%;max-width:100%;aspect-ratio:16/9;border:1px solid var(--line);background:#000;overflow:hidden;container-type:inline-size}
+canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges;cursor:crosshair;touch-action:none}
+#hud{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;image-rendering:auto;cursor:auto}
+canvas:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+#prompt{position:absolute;left:50%;top:7%;transform:translateX(-50%);font-family:var(--display);font-size:clamp(10px,1.3cqw,14px);letter-spacing:.14em;text-transform:uppercase;color:var(--gold);background:rgba(7,6,11,.78);border:1px solid var(--line);padding:6px 12px;pointer-events:none;white-space:nowrap}
+#prompt:empty{display:none}
+/* hotbar: nine cards on the bottom edge */
+#bar{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);display:grid;grid-template-columns:repeat(9,1fr);gap:4px;width:min(96%,900px)}
+.card{position:relative;min-width:0;background:linear-gradient(#17131f,#0c0a12);border:1px solid #5a4830;color:var(--ink);font-family:var(--display);padding:4px 4px 5px;display:grid;gap:1px;text-align:left;overflow:hidden;cursor:pointer}
+.card b{position:absolute;top:2px;right:4px;font-size:clamp(8px,1cqw,12px);color:var(--gold)}
+.card i{font-style:normal;font-size:clamp(12px,1.9cqw,22px);line-height:1}
+.card span{font-size:clamp(7px,.95cqw,11px);font-weight:600;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card small{font-family:var(--body);font-size:clamp(7px,.9cqw,11px);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 0 14px rgba(227,185,92,.35)}
+.card.off{opacity:.38}
+.card .cd{position:absolute;inset:auto 0 0 0;background:rgba(227,185,92,.25);pointer-events:none}
+/* overlays */
+.ov{position:absolute;inset:0;display:grid;place-items:center;background:rgba(5,4,8,.86);padding:16px;text-align:center}
+.ov[hidden]{display:none}
+.ov h2{margin:0 0 4px;font-family:var(--display);color:var(--gold);letter-spacing:.2em;font-size:clamp(14px,2.2cqw,26px)}
+.ov p{margin:0 0 12px;color:var(--dim);font-size:clamp(12px,1.5cqw,17px)}
+.picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;width:min(92%,860px)}
+.pick{background:#120f19;border:1px solid #5a4830;color:var(--ink);padding:10px 8px;font-family:var(--display);cursor:pointer;display:grid;gap:3px}
+.pick:hover,.pick:focus-visible{border-color:var(--gold);outline:none}
+.pick b{font-size:clamp(12px,1.6cqw,17px);letter-spacing:.1em}
+.pick small{font-family:var(--body);color:var(--dim);font-size:clamp(11px,1.2cqw,14px)}
+.pick.test{border-style:dashed}
+.obtn{margin-top:10px;background:none;border:1px solid var(--gold);color:var(--gold);font-family:var(--display);letter-spacing:.16em;padding:8px 16px;cursor:pointer}
+.film{background:#000;padding:0;cursor:pointer}
+.film video{width:100%;height:100%;object-fit:contain;display:block}
+#filmx{position:absolute;top:10px;right:10px;margin:0;background:rgba(0,0,0,.55)}
+.key{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 20px;color:var(--dim);font-size:.95rem;min-width:0}
+.key b{color:var(--ink);font-weight:600}
+@media (prefers-reduced-motion: reduce){ .card{transition:none} }
+</style>
+<div class="wrap">
+  <h1>DARKLAKE CAVE <small>first-person test</small></h1>
+  <div class="stage" id="stage">
+    <canvas id="c" tabindex="0" aria-label="First-person view of a cave."></canvas>
+    <canvas id="hud" aria-hidden="true"></canvas>
+    <div id="prompt"></div>
+    <div id="bar" aria-label="Action cards 1 to 9"></div>
+    <div class="ov" id="start">
+      <div>
+        <h2>WHO GOES INTO THE DARK?</h2>
+        <p>Sound on. Their own sheets from the database: attacks, spells, slots, voice.</p>
+        <div class="picks" id="picks"></div>
+      </div>
+    </div>
+    <div class="ov film" id="film" hidden><video id="filmv" playsinline preload="auto"></video><button class="obtn" id="filmx" aria-label="Skip the film">Skip ✕</button></div>
+    <div class="ov" id="dead" hidden><div><h2 id="deadt">FIFI FALLS</h2><p id="deadp">The dark keeps her.</p><button class="obtn" id="again">Try again</button></div></div>
+  </div>
+  <div class="key">
+    <span><b>Look</b>: the mouse, after one click on the view (Esc lets go). The hands sway as you look.</span>
+    <span><b>Move</b>: ↑ ↓ or W S walk; ← → or A D strafe.</span>
+    <span><b>Mouse</b>: left click strikes, <b>hold left</b> for the class power <b>right click</b> fires (hold to draw the bow). <b>Tap the wheel</b> to crouch (slower, quieter, advantage on Stealth); <b>hold the wheel</b> to hide (rogues).</span>
+    <span><b>1–9</b>: action cards (click uses the lit one). <b>Space</b>: jump. <b>E</b>: forage, open chests, pick up. <b>M</b>: map.</span>
+    <span><b>0</b>: leap back out of reach (rogues, rangers and fighters).</span>
+  </div>
+</div>
+<script src="manifest.js"></script>
+<script src="pov.js"></script>
