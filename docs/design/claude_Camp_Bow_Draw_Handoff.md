@@ -11,8 +11,10 @@ that for the constants. This doc only says how it meets camp.
 ## 0. The one line
 
 A rigged first-person longbow exists, it is pushed, and it is **not wired to
-anything**. Camp is the likeliest home for it, and this is what would have to be
-true for it to land there.
+anything**. This doc was written proposing camp as its home; **that proposal is
+now withdrawn** — see §2. The first-person cave and dungeon mode is the likely
+home instead. The rest is kept because the branch details and the rules notes
+are still accurate.
 
 ---
 
