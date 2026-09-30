@@ -3,6 +3,7 @@
 //   GET  ?characterId=…            → every ingredient column this character knows
 //   POST {characterId, itemSlug, save}
 //                                  → taste one ingredient; records the reveal
+//   POST {…, sandbox: true}        → rehearsal: resolve it, write NOTHING
 //
 // Sam's ruling (29 Sep): tasting an unknown is a DC 10 Constitution save, or
 // column 1 happens to you at tier I. The reveal lands either way — see the
@@ -17,6 +18,13 @@
 // THE DICE ARE NOT ROLLED HERE. The board owns them
 // (components/dice/dice-provider) and Malachar narrates the exact total and
 // never re-rolls it. This route takes the total the player already rolled.
+//
+// SANDBOX MODE resolves the taste and returns the same payload without
+// touching character_known_effects or the dialogue log. It exists because the
+// only way to see what tasting timmask does was to actually feed it to a
+// player and permanently teach them something — a rehearsal that cannot be
+// un-rehearsed is not a rehearsal. Same reasoning as /api/sandbox's
+// rehearsal map and the `sandbox=1` flag on /api/ground-items.
 //
 // Service role, because character_known_effects is public-read and has no
 // anon write policy by design — the same conclusion the cinematic_views
@@ -66,7 +74,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { characterId?: string; itemSlug?: string; save?: number }
+  let body: { characterId?: string; itemSlug?: string; save?: number; sandbox?: boolean }
   try {
     body = await req.json()
   } catch {
@@ -74,6 +82,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { characterId, itemSlug } = body
+  const sandbox = body.sandbox === true
   const save = Number(body.save)
   if (!characterId || !itemSlug) {
     return NextResponse.json({ error: "characterId and itemSlug required" }, { status: 400 })
@@ -121,7 +130,8 @@ export async function POST(req: NextRequest) {
   })
   if (!result.ok) return NextResponse.json({ error: result.reason }, { status: 422 })
 
-  if (result.revealed) {
+  // Rehearsal stops here: everything above is a read, everything below writes.
+  if (result.revealed && !sandbox) {
     // on conflict do nothing: two browsers tasting at once must not 409.
     const { error } = await db
       .from("character_known_effects")
@@ -132,9 +142,12 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  await narrate(db, `${character.name} tastes ${item.name}. ${result.summary}`)
+  if (!sandbox) {
+    await narrate(db, `${character.name} tastes ${item.name}. ${result.summary}`)
+  }
 
   return NextResponse.json({
+    sandbox,
     character: character.name,
     item: item.name,
     itemSlug,

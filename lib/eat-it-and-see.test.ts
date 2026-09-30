@@ -140,3 +140,26 @@ describe("taste", () => {
     expect(r.summary).toContain(String(TASTE_SAVE_DC))
   })
 })
+
+// --- sandbox mode -----------------------------------------------------------
+// The pure layer does not know about sandbox mode: the route decides whether
+// to persist. These assert the property that makes that split safe — resolving
+// a taste is a pure function of its inputs, so rehearsing one and committing
+// one must produce identical results.
+describe("rehearsal and canon resolve identically", () => {
+  it("same inputs, same outcome, every time", () => {
+    for (const save of [1, 9, 10, 11, 20]) {
+      const a = taste({ grid: BLUECAP, known: [], save, harmful: true })
+      const b = taste({ grid: BLUECAP, known: [], save, harmful: true })
+      expect(a).toEqual(b)
+    }
+  })
+
+  it("resolving does not mutate the caller's arrays", () => {
+    const grid: Grid = [...BLUECAP] as unknown as Grid
+    const known = [2, 3]
+    taste({ grid, known, save: 4, harmful: true })
+    expect(grid).toEqual(BLUECAP)
+    expect(known).toEqual([2, 3])
+  })
+})
