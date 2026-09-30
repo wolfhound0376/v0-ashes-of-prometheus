@@ -1,6 +1,7 @@
 # Handoff to the camp module — first-person bow draw rig
 
 **For:** whoever picks up `claude/claude_Camp_Module.md` §8 next.
+**Read §2 first — its camp hooks are withdrawn pending Sam's confirmation.**
 **From:** the asset session, 2026-09-30.
 **Geometry and integration spec:** `docs/design/claude_Bow_Draw_Rig.md` — read
 that for the constants. This doc only says how it meets camp.
@@ -43,36 +44,37 @@ anywhere** — that is the whole reason it is a rig and not a rendered clip.
 
 ---
 
-## 2. Where it plugs into camp
+## 2. Where it plugs into camp — SUSPECT, DO NOT BUILD ON IT YET
 
-Two candidate hooks. Both are proposals, neither is decided.
+**Flagged 2026-09-30 after Sam scoped first-person weapon views.** Sam, on the
+melee rig the same day:
 
-### 2a. Hunt
+> *"This melee effect is only for first person POV like the dark cave module
+> I'm working on right now and other dungeons that are set up first person POV."*
 
-`claude/claude_Camp_Scene.md` puts **Explore → Forage / Hunt / Explore** in a
-sub-window of the Camp Actions frame. Hunt is the obvious place for a bow.
+He said it about melee. The bow is ranged, so it is not literally covered — but
+the principle plainly is. **Camp is a third-person scene**: a painted 4K plate
+with HD-2D pixel sprites composited in (`claude_Camp_Scene.md` §1b). Dropping a
+first-person bow HUD into a Camp Actions tile is a *mode switch* mid-scene, not
+a UI element, and that is almost certainly not what anyone wants.
 
-**It changes no rules.** Per `claude_Camp_Module.md` §2, forage and hunt both
-resolve on WIS (Survival) DC 15 (OotA-Enc p.25), yield 1d6 + WIS person-days
-(DMG p.111, flagged non-SRD), into `party_supplies`. The rig renders the beat;
-`forage()` still decides the outcome. Suggested shape:
+**So treat the two hooks below as withdrawn pending Sam's word.** They are kept
+only so nobody re-derives them.
 
-- open the Hunt tile → `pull` ramps 0 → 1 over ~450 ms, then **holds**
-- the Survival check rolls through the Three.js dice provider as it does today
-- the die lands → `pull` snaps to 0 over ~90 ms, `arrowVisible` goes false
-- success or failure is narrated from `forage()`, not from the animation
+- ~~**Hunt** — the Explore sub-window's Hunt tile, with the draw held while the
+  WIS (Survival) DC 15 check is in the air.~~
+- ~~**Training** — the archery-practice action from
+  `claude_Earned_Proficiency.md` §8 PR 5.~~
 
-The hold is the point: the arrow stays drawn while the die is in the air.
+Neither changed any rule, and that part still stands: forage and hunt resolve
+on WIS (Survival) DC 15 (OotA-Enc p.25) into `party_supplies` whatever renders
+them.
 
-### 2b. Training
-
-`claude/claude_Earned_Proficiency.md` §8 PR 5 is *"training action in the camp
-module (`claude_Camp_Module.md` owns camp; add the action there)"*. Archery
-practice toward a ranged proficiency is a natural fit for the same rig, at a
-lower `pull` with repeats.
-
-If that action gets built, the rig costs nothing extra — same component, same
-props.
+**Where the bow probably belongs instead:** the first-person cave and dungeon
+mode, alongside the melee rig — `claude_Melee_Attack_Rig.md`, and
+`Painted_Scenes_Decision.md` "Cave POV round 2", which already asks to *"see our
+hand grasping the bow, sword, gesturing for magic."* That is the same slot, and
+the bow rig is already built for it.
 
 ---
 

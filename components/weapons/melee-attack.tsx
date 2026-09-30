@@ -8,11 +8,16 @@ import {
 } from "@/lib/weapon-rig"
 
 /**
- * MeleeAttack — canvas renderer for the weapon rig, for the dashboard.
+ * MeleeAttack — REFERENCE RENDERER for the weapon rig.
  *
- * The first-person crawler does NOT need this component: it should call
- * rigAt() and arcAt() from lib/weapon-rig and draw into its own 640x360
- * buffer. See docs/design/claude_Melee_Attack_Rig.md §5.
+ * Scope (Sam, 2026-09-30): the melee rig is for the FIRST-PERSON cave and
+ * dungeon mode only. It is not a dashboard feature and not for the HD-2D
+ * tactical board or the painted camp scenes.
+ *
+ * This component exists so the sandbox and the repo agree on the maths. The
+ * crawler should NOT mount it — call rigAt() and arcAt() from lib/weapon-rig
+ * and draw into its own 640x360 buffer. See
+ * docs/design/claude_Melee_Attack_Rig.md §4.
  */
 
 /** Anchors measured off public/weapons/dagger/dagger.png. */

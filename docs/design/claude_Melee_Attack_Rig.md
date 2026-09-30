@@ -7,6 +7,17 @@
 **Preview:** the *Melee Rig Sandbox* artifact — every clip, scrubbable.
 **Layer 3 only.** No rules, no damage, no item rows.
 
+> ## SCOPE — first-person only (Sam, 2026-09-30)
+>
+> *"This melee effect is only for first person POV like the dark cave module
+> I'm working on right now and other dungeons that are set up first person POV."*
+>
+> This rig is **not** a dashboard feature and **not** for the HD-2D tactical
+> board or the painted camp scenes. It exists for the first-person cave and
+> dungeon mode and nowhere else. `components/weapons/melee-attack.tsx` is a
+> **reference renderer** — it exists so the sandbox and this repo agree on the
+> maths, not so the dashboard can mount it. Consume `lib/weapon-rig.ts`.
+
 ---
 
 ## 0. Read this first — it overlaps work you already have
@@ -40,7 +51,7 @@ just as well as a sprite, because it only ever returns a position and an angle.
 | File | What |
 |---|---|
 | `lib/weapon-rig.ts` | **Pure geometry.** No React, no canvas, no DOM. This is the part the crawler wants. |
-| `components/weapons/melee-attack.tsx` | Canvas renderer for the dashboard. The crawler does **not** need this. |
+| `components/weapons/melee-attack.tsx` | Reference renderer only — proves the maths and the pixel quantisation. Not a dashboard feature, and the crawler does **not** need it. |
 | `public/weapons/dagger/dagger.png` | The painted dagger sprite, 385 × 591, transparent. |
 
 `tsc --noEmit`: 14 errors before, 14 after — no new errors against `main`'s
@@ -104,7 +115,7 @@ const arc = arcAt("slash_d", t, tipOffset, "light")  // { alpha, bands[] } | nul
 ```
 
 `rigAt` gives you a position and an angle; **you draw**. That is why the same
-numbers serve a full-size dashboard canvas and a 640 × 360 raycaster buffer.
+numbers serve the sandbox preview and the 640 × 360 raycaster buffer.
 
 `arcAt` returns ready-to-fill polygons — four bands, outer first, dark navy rim
 through to a white core. `tipOffset` is the blade tip relative to the hand in
@@ -132,8 +143,8 @@ to ~0.30 and lower the rest position; the path shapes stay as they are.
 
 ### The one thing to get right: the effect's pixel size
 
-`components/weapons/melee-attack.tsx` renders the arc to a 1/5-scale buffer and
-upscales it, because the dashboard canvas is not pixelated. **Do not do that in
+The reference renderer draws the arc to a 1/5-scale buffer and upscales it,
+because the sandbox canvas is not pixelated. **Do not do that in
 the crawler.** The crawler already renders at 640 × 360 and scales up with
 pixelated filtering, so:
 

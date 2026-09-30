@@ -181,7 +181,17 @@ That last one is the only timing that must be wired to Layer 1.
 
 ## 6. Rulings (Sam, 2026-09-30) and the capture brief
 
-### 6a. Style — DECIDED: cartoon HUD is green-lit
+### 6a. Style — DECIDED: cartoon HUD is green-lit, FIRST-PERSON ONLY
+
+**Scoped 2026-09-30.** Sam: *"This melee effect is only for first person POV
+like the dark cave module I'm working on right now and other dungeons that are
+set up first person POV."*
+
+That scoping largely dissolves the worry this section opened with. The
+cel-shaded hands only ever appear in the first-person cave and dungeon mode —
+they are never on screen beside the HD-2D board or a painted camp plate. It is
+a separate *mode*, not a third style competing on the same surface.
+
 
 A cel-shaded first-person HUD is accepted as a **third visual language** beside
 the painted inventory icons and the HD-2D pixel board: a first-person weapon
