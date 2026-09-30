@@ -20,7 +20,7 @@
 //     count anywhere else and no banner.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Feather, Share2, Eye } from "lucide-react"
+import { ChevronLeft, Eye, Feather, Share2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import {
   SECTION_LABEL,
@@ -59,6 +59,14 @@ export function JournalPages({
   const supabase = useMemo(() => createClient(), [])
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [tab, setTab] = useState<JournalSection>(initialSection)
+  // Sam, 2026-09-29: the categories were too hard to see, and should read like
+  // a table of contents at the front of the book. So the book OPENS on its
+  // contents rather than on a strip of small tabs — a tab bar asks you to
+  // notice thirteen tiny words at the top of a parchment page, which is
+  // exactly what failed. `openAt` is null while the contents are showing.
+  const [openSection, setOpenSection] = useState<JournalSection | null>(
+    initialSection === "pages" ? null : initialSection,
+  )
   const [selected, setSelected] = useState<string | null>(null)
   const [targets, setTargets] = useState<{ party: ShareTarget[]; present: ShareTarget[] } | null>(null)
   const [sharing, setSharing] = useState(false)
@@ -82,6 +90,7 @@ export function JournalPages({
 
   useEffect(() => {
     setTab(initialSection)
+    setOpenSection(initialSection === "pages" ? null : initialSection)
     setSelected(null)
   }, [initialSection])
 
@@ -114,6 +123,7 @@ export function JournalPages({
     } else {
       setDraft("")
       setTab("pages")
+      setOpenSection("pages")
       await load()
     }
     setSaving(false)
@@ -156,42 +166,80 @@ export function JournalPages({
   // exactly as it had before any of this was built. The sections ARE the
   // feature — a player should be able to see that the book has a Recipes page
   // before they have a recipe to put in it. Empty ones are dimmed, not hidden.
-  const tabs = TAB_ORDER
-  const shown = entries.filter((e) => e.section === tab)
-  const selectedEntry = shown.find((e) => e.id === selected) ?? null
+  const shown = openSection ? entries.filter((e) => e.section === openSection) : []
   const menu = targets ? [...targets.party, ...targets.present] : []
 
+  // THE CONTENTS PAGE. Every section, always, whether or not it holds
+  // anything — the sections are the book's shape, and a player should be able
+  // to see there is a Recipes page before they have a recipe for it. A count
+  // sits on the right where a page number would, and an empty section says so
+  // in words rather than being dimmed into invisibility, which was the first
+  // mistake here.
+  if (!openSection) {
+    return (
+      <div className="flex h-full flex-col">
+        <h3 className="text-center font-serif text-[11px] uppercase tracking-[.3em] text-[#83582e]">Contents</h3>
+        <div className="mx-auto mt-1 h-px w-2/3 bg-gradient-to-r from-transparent via-[#8d6238] to-transparent" />
+        <ul className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
+          {TAB_ORDER.map((s) => {
+            const n = counts.get(s) ?? 0
+            return (
+              <li key={s}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenSection(s)
+                    setTab(s)
+                    setSelected(null)
+                  }}
+                  className="group flex w-full items-baseline gap-2 py-[5px] text-left transition"
+                >
+                  <span className="font-serif text-[15px] text-[#3d2415] group-hover:text-[#73451f] group-hover:underline">
+                    {SECTION_LABEL[s]}
+                  </span>
+                  {/* the leader dots of a real table of contents */}
+                  <span className="min-w-6 flex-1 translate-y-[-3px] border-b border-dotted border-[#8c6844]/60" />
+                  <span className={`font-serif text-[13px] ${n > 0 ? "text-[#73451f]" : "text-[#a3835c] italic"}`}>
+                    {n > 0 ? n : "empty"}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+        <Compose
+          draft={draft}
+          setDraft={setDraft}
+          saving={saving}
+          onCommit={commit}
+          status={status}
+          hint="New writing goes to Pages."
+        />
+      </div>
+    )
+  }
+
+  // ONE SECTION, opened from the contents.
   return (
     <div className="flex h-full flex-col">
-      {/* Section tabs. Only sections that hold something, so an empty book is
-          not a wall of empty drawers. */}
-      <div className="mb-2 flex flex-wrap gap-1 border-b border-[#92704a]/40 pb-2">
-        {tabs.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => {
-              setTab(s)
-              setSelected(null)
-            }}
-            className={`rounded-sm px-2 py-0.5 font-serif text-[10px] uppercase tracking-[.14em] transition ${
-              tab === s
-                ? "bg-[#73451f]/15 text-[#3d2415]"
-                : (counts.get(s) ?? 0) > 0
-                  ? "text-[#8a6a45] hover:text-[#5c3e28]"
-                  : "text-[#b09a7d]/70 hover:text-[#8a6a45]"
-            }`}
-          >
-            {SECTION_LABEL[s]}
-            {counts.get(s) ? <span className="ml-1 text-[#a07b4e]">{counts.get(s)}</span> : null}
-          </button>
-        ))}
+      <div className="mb-2 flex items-baseline gap-2 border-b border-[#92704a]/40 pb-2">
+        <button
+          type="button"
+          onClick={() => {
+            setOpenSection(null)
+            setSelected(null)
+          }}
+          className="flex items-center gap-1 font-serif text-[11px] uppercase tracking-[.16em] text-[#8a6a45] transition hover:text-[#3d2415]"
+        >
+          <ChevronLeft className="h-3 w-3" /> Contents
+        </button>
+        <h3 className="ml-auto font-serif text-[15px] text-[#3d2415]">{SECTION_LABEL[openSection]}</h3>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {shown.length === 0 && (
           <p className="text-center font-serif italic text-[#775435]">
-            {tab === "pages" ? "This journal has no recorded pages yet." : `Nothing under ${SECTION_LABEL[tab]} yet.`}
+            {openSection === "pages" ? "This journal has no recorded pages yet." : `Nothing under ${SECTION_LABEL[openSection]} yet.`}
           </p>
         )}
         {shown.map((entry) => {
@@ -270,27 +318,55 @@ export function JournalPages({
         })}
       </div>
 
-      <div className="mt-3 border-t border-[#92704a]/45 pt-3">
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Take up the quill…"
-          rows={3}
-          className="w-full resize-none rounded-sm border border-[#8c6844]/50 bg-[#f4ecd9]/70 p-2 font-serif text-sm italic text-[#3d2415] outline-none focus:border-[#73451f]"
-        />
-        <div className="mt-2 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={commit}
-            disabled={saving || !draft.trim()}
-            className="flex items-center gap-2 rounded-sm border border-[#73451f] px-3 py-1 font-serif text-xs uppercase tracking-[.18em] text-[#73451f] transition enabled:hover:bg-[#73451f]/10 disabled:opacity-40"
-          >
-            <Feather className="h-3.5 w-3.5" /> {saving ? "Committing…" : "Commit to the page"}
-          </button>
-          <span className="text-[11px] italic text-[#8a5a2e]">Pages are permanent once committed.</span>
-        </div>
-        {status && <p className="mt-2 text-xs italic text-[#8a2f22]">{status}</p>}
+      <Compose draft={draft} setDraft={setDraft} saving={saving} onCommit={commit} status={status} />
+    </div>
+  )
+}
+
+/**
+ * The quill, shared by the contents page and each section so writing is always
+ * one click away rather than only reachable from one view.
+ *
+ * Whatever is written goes to `pages` — the plain, untyped section. The typed
+ * sections are filled by the system from tagged discoveries, not by hand, which
+ * is what keeps "the AI invents no game data" true from this side too.
+ */
+function Compose({
+  draft,
+  setDraft,
+  saving,
+  onCommit,
+  status,
+  hint,
+}: {
+  draft: string
+  setDraft: (v: string) => void
+  saving: boolean
+  onCommit: () => void
+  status: string | null
+  hint?: string
+}) {
+  return (
+    <div className="mt-3 border-t border-[#92704a]/45 pt-3">
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder="Take up the quill…"
+        rows={3}
+        className="w-full resize-none rounded-sm border border-[#8c6844]/50 bg-[#f4ecd9]/70 p-2 font-serif text-sm italic text-[#3d2415] outline-none focus:border-[#73451f]"
+      />
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onCommit}
+          disabled={saving || !draft.trim()}
+          className="flex items-center gap-2 rounded-sm border border-[#73451f] px-3 py-1 font-serif text-xs uppercase tracking-[.18em] text-[#73451f] transition enabled:hover:bg-[#73451f]/10 disabled:opacity-40"
+        >
+          <Feather className="h-3.5 w-3.5" /> {saving ? "Committing…" : "Commit to the page"}
+        </button>
+        <span className="text-[11px] italic text-[#8a5a2e]">{hint ?? "Pages are permanent once committed."}</span>
       </div>
+      {status && <p className="mt-2 text-xs italic text-[#8a2f22]">{status}</p>}
     </div>
   )
 }
