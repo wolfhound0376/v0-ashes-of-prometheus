@@ -6,7 +6,7 @@ import {
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
-  fieldPower, MOCKERIES, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
+  fieldPower, MOCKERIES, WOLF, wildShapeDamage, POWER_USES, SORCERER_SPELL_COOLDOWN, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
 } from "./camp-field"
 
 // The d20 faces in order; each call returns the next.
@@ -275,8 +275,8 @@ describe("class kits (Sam's field rules)", () => {
   // Real sheets 2026-09-28
   const kenta = fieldKit({ class: "Sorcerer", cha: 17, prof: 2, spellAbility: "Charisma", cantrips: ["Ray of Frost", "Shocking Grasp", "Minor Illusion", "Chill Touch"] })
   const samson = fieldKit({ class: "Cleric", wis: 16, prof: 2, spellAbility: "Wisdom", prepared: ["Healing Word"] })
-  it("sorcerers cannot melee and fire the ranged cantrip they know", () => {
-    expect(kenta.melee.can).toBe(false)
+  it("sorcerers melee (Sam, 9/29) and fire the ranged cantrip they know", () => {
+    expect(kenta.melee.can).toBe(true)
     expect(kenta.ranged?.name).toBe("Ray of Frost")
     expect(kenta.ranged?.toHit).toBe(5)
     expect(kenta.notes.some((n) => /does not know Fire Bolt/.test(n))).toBe(true)
@@ -535,8 +535,35 @@ describe("fishing gear, regrowth, rothé, parts (Sam, 2026-09-29)", () => {
   })
 })
 
+describe("the sorcerer (Sam, 9/29)", () => {
+  it("can strike in melee — the wizard still can't", () => {
+    expect(fieldKit({ class: "sorcerer", cantrips: ["Ray of Frost"] }).melee.can).toBe(true)
+    expect(fieldKit({ class: "wizard", cantrips: ["Fire Bolt"] }).melee.can).toBe(false)
+  })
+  it("spells take 25% longer to come back", () => {
+    expect(SORCERER_SPELL_COOLDOWN).toBe(1.25)
+    expect(fieldKit({ class: "sorcerer", cantrips: ["Ray of Frost"] }).ranged!.cooldown).toBeCloseTo(1.5)
+    expect(fieldKit({ class: "wizard", cantrips: ["Fire Bolt"] }).ranged!.cooldown).toBeCloseTo(1.2)
+    expect(fieldPower({ class: "sorcerer" })!.cooldown).toBeCloseTo(3.75)
+  })
+})
+
 describe("power attacks — hold the attack (Sam, 9/29)", () => {
   const CLASSES = ["rogue", "paladin", "monk", "sorcerer", "wizard", "druid", "warlock", "cleric", "ranger", "barbarian", "fighter", "bard"]
+  it("three uses an outing — the druid's Wild Shape two", () => {
+    for (const c of CLASSES) expect(fieldPower({ class: c })!.uses).toBe(c === "druid" ? 2 : POWER_USES)
+    expect(POWER_USES).toBe(3)
+  })
+  it("the druid becomes the SRD wolf", () => {
+    const p = fieldPower({ class: "druid", wis: 16 })!
+    expect(p.kind).toBe("wild-shape"); expect(p.form).toBe(WOLF)
+    expect(WOLF).toMatchObject({ ac: 13, hp: 11, speedFeet: 40, bite: { toHit: 4, damage: "2d4+2" }, save: { dc: 11, effect: "prone" } })
+  })
+  it("wolf HP soak damage first, the rest carries over (SRD)", () => {
+    expect(wildShapeDamage(11, 4)).toEqual({ formHp: 7, overflow: 0, reverted: false })
+    expect(wildShapeDamage(7, 10)).toEqual({ formHp: 0, overflow: 3, reverted: true })
+    expect(wildShapeDamage(5, 5)).toEqual({ formHp: 0, overflow: 0, reverted: true })
+  })
   it("every class has one, and each kind is different", () => {
     const kinds = CLASSES.map((c) => fieldPower({ class: c })!.kind)
     expect(new Set(kinds).size).toBe(12)
