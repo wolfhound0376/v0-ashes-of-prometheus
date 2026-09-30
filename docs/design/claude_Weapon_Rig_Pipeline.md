@@ -1,6 +1,7 @@
 # Weapon Rig Pipeline — one rig, every weapon type
 
-**Status:** design approved 2026-09-30. Waiting on source captures (§6).
+**Status:** design approved 2026-09-30; §3a corrected the same day from the first
+capture. Waiting on the remaining source captures (§6).
 **Generalises** `docs/design/claude_Bow_Draw_Rig.md`, which stays as the worked
 example and the ranged special case.
 **Layer 3 only.** No rules, no damage, no item rows. It renders what Layer 1 decided.
@@ -55,10 +56,28 @@ still took a full session of measured geometry to cut **one** asset.
 
 Three parts. Only one of them is per-weapon.
 
-### 3a. Arm rig — shared, about five assets total
+### 3a. Arm rig — shared, and it must be split UNDER and OVER
 
-- `forearm_<L|R>.png`, pivot at the elbow (usually the frame edge in first person)
-- `hand_<grip>.png`, pivot at the wrist
+**Corrected 2026-09-30 from the dagger capture. The hand is not one sprite.**
+
+Measured on the cut: across **29 scanlines** between y=300 and y=470, the
+handle sits *between* two spans of skin — fingers in front of it, back of the
+hand behind it. A single hand sprite therefore cannot hold a weapon: whatever
+z-order you pick, either the fingers vanish behind the handle or the handle
+floats on top of the fist.
+
+So the arm rig is four layers, drawn in this order:
+
+| # | layer | per | notes |
+|---|---|---|---|
+| 1 | `forearm_<L\|R>.png` | arm | pivot at the elbow — usually the frame edge |
+| 2 | `hand_back_<grip>.png` | grip | back of the hand and the gauntlet, pivot at the wrist |
+| 3 | *the weapon sprite* | weapon | slots **between** the two hand layers |
+| 4 | `hand_fingers_<grip>.png` | grip | the wrapped fingers only, same pivot |
+
+This is how games have always done a held weapon, and it is what preserves the
+saving: the weapon still has exactly one sprite, and the grip still has exactly
+one pair of hand layers.
 
 `grip` has five values, not eighteen:
 
@@ -71,7 +90,26 @@ Three parts. Only one of them is per-weapon.
 | `shield` | shield use |
 
 A closed fist around a cylinder is a closed fist around a cylinder. **One `fist`
-sprite covers roughly two thirds of the list.**
+pair covers roughly two thirds of the list.**
+
+**Capture consequence:** a grab of a hand *holding* a weapon cannot be split into
+these two layers where the fingers overlap the handle — the pixels are shared.
+Either the fingers get redrawn over the handle by hand once, or the `fist` pair
+is captured on a weapon whose handle is plain enough to cut along. This is the
+one thing worth solving before capturing the other seventeen.
+
+### 3a-i. Grip read from the 2026-09-30 dagger capture
+
+Right hand, fingerless gauntlet, bare fingers. Four fingers (index, middle,
+ring, little) wrap the far side of the handle with their tips emerging on the
+near side; the **thumb is extended up the handle's spine toward the guard**, not
+wrapped. That is a **sabre / thumb-forward grip** — a thrust-and-rising-cut
+grip, which is exactly `fist` + the `jab` and `slash_d` clips already assigned
+to the dagger in §4. No change needed there.
+
+Measured anchors, in the 400 × 535 source: `grip` **(205, 380)**, `tip`
+**(272, 12)**, giving a grip→tip length of **374 px** and an axis of
+**(0.179, −0.984)**, i.e. 79.7° above horizontal.
 
 ### 3b. Weapon sprite — the only per-weapon asset
 
