@@ -58,6 +58,9 @@ import {
   type CraftMenuRecipeRow, type CarriedItem,
   type LevelUpSheet,
 } from "@/lib/camp"
+// What the bard actually sings when a performance lands, and the one reason
+// it stays silent — see lib/bard-songs.
+import { bardSongCue, carriesInstrument } from "@/lib/bard-songs"
 // Which of the SRD's four states a character is in, so the rest can refuse to
 // sleep off being downed.
 import { vitalityOf, conditionsFor } from "@/lib/death-saves"
@@ -966,6 +969,45 @@ STRICT LIMITS ON USING THESE:
                 await timeAdmin.from("roll_requests").update({ purpose: "camp:perform:inspired" }).eq("id", req.id)
               }
               campResults.push(out.note)
+
+              // THE SONG. A landed performance is the one moment the table
+              // should hear him rather than read him, so the cue is party-
+              // scoped — everyone at the fire hears the same take.
+              //
+              // The performer is looked up by the name on the camp tag rather
+              // than assumed to be the seat that rolled, because the DM can
+              // put the tag on anyone. Falling back to the seat keeps a
+              // renamed or unmatched character singing instead of silent.
+              //
+              // Nothing here can take the turn down: a failed lookup leaves
+              // `carried` empty, bardSongCue returns a song, and the worst
+              // case is a cue for a file that is not in the bucket — which
+              // lib/sfx already treats as a quiet no-op by design.
+              try {
+                const { data: performer } = await timeAdmin
+                  .from("characters").select("id")
+                  .eq("is_player", true).is("archived_at", null)
+                  .ilike("name", name).maybeSingle()
+                const performerId = (performer?.id as string | undefined) ?? playerCharacter?.id ?? null
+                let carried: (string | null)[] = []
+                if (performerId) {
+                  const { data: rows } = await timeAdmin
+                    .from("inventory_items").select("items(slug)").eq("character_id", performerId)
+                  carried = (rows ?? []).map(
+                    (r) => (r as { items?: { slug?: string | null } | null }).items?.slug ?? null,
+                  )
+                }
+                const cue = bardSongCue(out.band, carried)
+                if (cue) {
+                  sfxCues.push({ type: "raw" as const, scope: "party" as const, key: cue })
+                  console.log(`[camp] bard song: ${cue} (${out.band})`)
+                } else {
+                  console.log(`[camp] no bard song: band=${out.band} instrument=${carriesInstrument(carried)}`)
+                }
+              } catch (e) {
+                console.warn("[camp] bard song cue skipped:", e)
+              }
+
               console.log(`[camp] perform settled: ${total} — ${out.band}${out.lifts ? ", budgets lifted" : ""}`)
             } else if ((linked.action === "artifice" || linked.action === "brew") && linked.arg) {
               // === THE CRAFTING ROLL (lib/camp.ts §18) ===

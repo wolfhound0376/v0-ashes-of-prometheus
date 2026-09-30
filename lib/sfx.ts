@@ -59,6 +59,11 @@ export type SfxName =
   | `creature/${string}`
   | `movement/${string}`
   | `ui/${string}`
+  // The bard's own repertoire — one base slug per song, its takes pooled by
+  // pickVariant the same way a sword blow's are. Open rather than enumerated
+  // for the same reason `barks/` is: the repertoire grows by uploading a file,
+  // not by editing this union. See lib/bard-songs for what picks them.
+  | `bard/${string}`
   // Pack 01: cues that belong to a particular SPELL rather than to its
   // school. A prefix of their own so they cannot be confused with the
   // school chain in `magic/`, which answers a different question — what
