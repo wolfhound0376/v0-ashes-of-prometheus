@@ -149,7 +149,14 @@ export function JournalPages({
 
   const counts = new Map<string, number>()
   for (const e of entries) counts.set(e.section, (counts.get(e.section) ?? 0) + 1)
-  const tabs = TAB_ORDER.filter((s) => s === "pages" || s === initialSection || (counts.get(s) ?? 0) > 0)
+  // EVERY section, always. The first cut of this showed only sections that
+  // held something, reasoning that an empty book should not be a wall of empty
+  // drawers. That was wrong, and it made the whole feature invisible: with no
+  // entries yet, the strip rendered a single "Pages" tab and the panel looked
+  // exactly as it had before any of this was built. The sections ARE the
+  // feature — a player should be able to see that the book has a Recipes page
+  // before they have a recipe to put in it. Empty ones are dimmed, not hidden.
+  const tabs = TAB_ORDER
   const shown = entries.filter((e) => e.section === tab)
   const selectedEntry = shown.find((e) => e.id === selected) ?? null
   const menu = targets ? [...targets.party, ...targets.present] : []
@@ -168,7 +175,11 @@ export function JournalPages({
               setSelected(null)
             }}
             className={`rounded-sm px-2 py-0.5 font-serif text-[10px] uppercase tracking-[.14em] transition ${
-              tab === s ? "bg-[#73451f]/15 text-[#3d2415]" : "text-[#8a6a45] hover:text-[#5c3e28]"
+              tab === s
+                ? "bg-[#73451f]/15 text-[#3d2415]"
+                : (counts.get(s) ?? 0) > 0
+                  ? "text-[#8a6a45] hover:text-[#5c3e28]"
+                  : "text-[#b09a7d]/70 hover:text-[#8a6a45]"
             }`}
           >
             {SECTION_LABEL[s]}
