@@ -6,7 +6,7 @@ import {
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
-  fieldPower, MOCKERIES, WOLF, wildShapeDamage, POWER_USES, SORCERER_SPELL_COOLDOWN, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
+  fieldPower, sneakCheck, blindsightFeet, SNEAK_RECHECK_SECONDS, canHeadOut, CAMP_DEATH_SAVE_SECONDS, rollDeathSave, NO_SAVES, MOCKERIES, WOLF, wildShapeDamage, POWER_USES, SORCERER_SPELL_COOLDOWN, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
 } from "./camp-field"
 
 // The d20 faces in order; each call returns the next.
@@ -551,13 +551,14 @@ describe("the sorcerer (Sam, 9/29)", () => {
 describe("power attacks — hold the attack (Sam, 9/29)", () => {
   const CLASSES = ["rogue", "paladin", "monk", "sorcerer", "wizard", "druid", "warlock", "cleric", "ranger", "barbarian", "fighter", "bard"]
   it("three uses an outing — the druid's Wild Shape two", () => {
-    for (const c of CLASSES) expect(fieldPower({ class: c })!.uses).toBe(c === "druid" ? 2 : POWER_USES)
+    for (const c of CLASSES) expect(fieldPower({ class: c })!.uses).toBe(c === "druid" || c === "rogue" ? 2 : POWER_USES)
     expect(POWER_USES).toBe(3)
   })
   it("the druid becomes the SRD wolf", () => {
     const p = fieldPower({ class: "druid", wis: 16 })!
     expect(p.kind).toBe("wild-shape"); expect(p.form).toBe(WOLF)
     expect(WOLF).toMatchObject({ ac: 13, hp: 11, speedFeet: 40, bite: { toHit: 4, damage: "2d4+2" }, save: { dc: 11, effect: "prone" } })
+    expect(WOLF.ignoredChance).toBe(0.35) // Sam, 9/29: a 35% chance a creature doesn't attack the wolf
   })
   it("wolf HP soak damage first, the rest carries over (SRD)", () => {
     expect(wildShapeDamage(11, 4)).toEqual({ formHp: 7, overflow: 0, reverted: false })
@@ -573,7 +574,9 @@ describe("power attacks — hold the attack (Sam, 9/29)", () => {
     const pal = fieldPower({ class: "paladin", str: 16, prof: 2 })!
     expect(pal.strike).toMatchObject({ toHit: 5, damage: "1d8+3", extra: "2d8" })
     const rog = fieldPower({ class: "rogue", str: 8, dex: 17, prof: 2 })!
+    expect(rog.kind).toBe("sneak")
     expect(rog.strike).toMatchObject({ toHit: 5, damage: "1d4+3", extra: "1d6" })
+    expect(rog.offhand).toMatchObject({ toHit: 5, damage: "1d4" }) // no DEX on the off-hand damage (SRD)
     const wiz = fieldPower({ class: "wizard", int: 16, prof: 2 })!
     expect(wiz.save).toMatchObject({ ability: "con", dc: 13, damage: "2d8", halfOnSave: true })
     expect(wiz.chargeRelease).toBe(true); expect(wiz.hold).toBe(THUNDER_CHARGE_SECONDS)
@@ -601,5 +604,42 @@ describe("power attacks — hold the attack (Sam, 9/29)", () => {
     expect(canGrapple("Medium", "Large")).toBe(true)
     expect(canGrapple("Medium", "Huge")).toBe(false)
     expect(canGrapple(undefined, "Small")).toBe(true)
+  })
+})
+
+describe("coming home at 0 HP (Sam, 9/29)", () => {
+  it("nobody at 0 HP heads out again", () => {
+    expect(canHeadOut({ name: "Fifi", hp: 8 }).ok).toBe(true)
+    expect(canHeadOut({ name: "Fifi", hp: 0 })).toMatchObject({ ok: false, vitality: "dying" })
+    expect(canHeadOut({ name: "Fifi", hp: 0, conditions: ["Unconscious", "Stable"] })).toMatchObject({ ok: false, vitality: "stable" })
+    expect(canHeadOut({ name: "Fifi", hp: 0, conditions: ["Dead"] })).toMatchObject({ ok: false, vitality: "dead" })
+  })
+  it("the death saves are the SRD's", () => {
+    expect(rollDeathSave({ label: "Fifi", roll: 20, saves: NO_SAVES })).toMatchObject({ hp: 1, vitality: "up" })
+    expect(rollDeathSave({ label: "Fifi", roll: 1, saves: { successes: 0, failures: 1 } }).vitality).toBe("dead")
+    expect(rollDeathSave({ label: "Fifi", roll: 12, saves: { successes: 2, failures: 0 } }).vitality).toBe("stable")
+    expect(CAMP_DEATH_SAVE_SECONDS).toBeGreaterThanOrEqual(6)
+  })
+})
+
+describe("the rogue's Sneak (Sam, 9/29)", () => {
+  it("Stealth against passive Perception — equal still hides", () => {
+    const c = { name: "Orog", passive: 10 }
+    expect(sneakCheck({ hider: "Fifi", stealth: 7, creature: c, distanceFeet: 30 }, seq(3)).hidden).toBe(true) // 10 vs 10
+    expect(sneakCheck({ hider: "Fifi", stealth: 7, creature: c, distanceFeet: 30 }, seq(2)).hidden).toBe(false) // 9 vs 10
+  })
+  it("advantage keeps the higher die", () => {
+    expect(sneakCheck({ hider: "Fifi", stealth: 0, advantage: true, creature: { name: "Rat", passive: 15 }, distanceFeet: 30 }, seq(4, 18))).toMatchObject({ roll: 18, hidden: true })
+  })
+  it("blindsight finds you inside its range, not outside", () => {
+    const bat = { name: "Giant bat", passive: 11, blindsightFeet: blindsightFeet("blindsight 60 ft., passive Perception 11") }
+    expect(bat.blindsightFeet).toBe(60)
+    expect(sneakCheck({ hider: "Fifi", stealth: 30, creature: bat, distanceFeet: 40 }, seq(20)).hidden).toBe(false)
+    expect(sneakCheck({ hider: "Fifi", stealth: 30, creature: bat, distanceFeet: 70 }, seq(20)).hidden).toBe(true)
+    expect(blindsightFeet("darkvision 60 ft.")).toBe(0)
+  })
+  it("rechecks every 10 seconds; two uses", () => {
+    expect(SNEAK_RECHECK_SECONDS).toBe(10)
+    expect(fieldPower({ class: "rogue" })!.uses).toBe(2)
   })
 })

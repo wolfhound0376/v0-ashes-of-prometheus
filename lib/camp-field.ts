@@ -32,6 +32,10 @@
 // Pure: rows and rolls in, words and grids out. Every draw takes an `Rng`.
 
 import type { EncounterTableRow } from "./camp"
+import { vitalityOf, type Vitality } from "./death-saves"
+// The camp mock runs the dying rules from here, so it needs the SRD death-save functions too.
+export { rollDeathSave, heal as healDying, NO_SAVES, vitalityOf, conditionsFor } from "./death-saves"
+export type { DeathSaves, Vitality } from "./death-saves"
 
 export type Rng = () => number
 export type FieldBiome = "tunnels" | "fungal" | "shore"
@@ -1027,7 +1031,8 @@ export function fieldKit(c: {
 // feature each one is named for (save DC = 8 + proficiency + the casting ability, SRD 5.1); the hold, the cooldowns,
 // the throw and the shield are Sam's field-game house rules and flagged as such.
 // USES (Sam, 9/29): each power can be used 3 times an outing; the druid's Wild Shape twice (as the SRD gives it).
-//   rogue      kick, then a backstab with advantage + Sneak Attack 1d6
+//   rogue      Sneak (Sam, 9/29, 2 uses): slip out of sight — a Stealth roll against every creature, again every 10 s;
+//              strike from hiding and it is a two-dagger leap: advantage + Sneak Attack 1d6, then the off-hand dagger
 //   paladin    blazing smite — the weapon + Divine Smite 2d8 radiant
 //   monk       Flurry of Blows — the attack and two more unarmed strikes, quick as you like
 //   sorcerer   Shocking Grasp — 1d8 lightning, touch
@@ -1044,7 +1049,7 @@ export function fieldKit(c: {
 // ---------------------------------------------------------------------------------------------------------------
 
 export type PowerKind =
-  | "backstab" | "smite" | "flurry" | "shock" | "thunder" | "wild-shape" | "twin-blast" | "guiding-bolt" | "ensnare-arrow" | "rage-throw" | "shield" | "mockery"
+  | "sneak" | "smite" | "flurry" | "shock" | "thunder" | "wild-shape" | "twin-blast" | "guiding-bolt" | "ensnare-arrow" | "rage-throw" | "shield" | "mockery"
 
 export interface FieldPower {
   kind: PowerKind
@@ -1057,6 +1062,8 @@ export interface FieldPower {
   cooldown: number
   /** Times it can be used in one outing (Sam, 9/29: three; the druid's Wild Shape two). */
   uses: number
+  /** The rogue's second dagger (SRD two-weapon fighting: no ability modifier on the off-hand damage). */
+  offhand?: Striker
   /** Wild Shape: the beast the druid becomes. */
   form?: BeastForm
   /** Attack powers: the roll. `extra` is dice added on a hit and doubled on a crit (SRD). */
@@ -1076,15 +1083,43 @@ export interface FieldPower {
 
 export const POWER_HOLD_SECONDS = 0.45
 export const POWER_USES = 3
+/** Sam, 9/29: a hidden rogue rolls Stealth again every 10 seconds. */
+export const SNEAK_RECHECK_SECONDS = 10
+
+/** Blindsight range in feet from a bestiary `senses` line ("blindsight 60 ft., …"), 0 when it has none. */
+export function blindsightFeet(senses: string | null | undefined): number {
+  const m = /blindsight\s*(\d+)/i.exec(senses ?? "")
+  return m ? Number(m[1]) : 0
+}
+
+/**
+ * One creature's look at a hidden rogue (SRD Hiding). The Stealth total against its passive Perception — the same
+ * comparison as slipAway: equal is still hidden. Blindsight perceives within its range regardless of hiding.
+ * A creature with no stat block uses 10 (the SRD's base for passive checks) and says so.
+ */
+export function sneakCheck(o: { hider: string; stealth: number; advantage?: boolean; creature: { name: string; passive: number | null; blindsightFeet?: number }; distanceFeet: number }, rng: Rng): { roll: number; total: number; hidden: boolean; note: string } {
+  const a = d(20, rng), b = o.advantage ? d(20, rng) : a
+  const roll = Math.max(a, b), total = roll + o.stealth
+  const bs = o.creature.blindsightFeet ?? 0
+  if (bs > 0 && o.distanceFeet <= bs) return { roll, total, hidden: false, note: `The ${o.creature.name.toLowerCase()} senses ${o.hider} by blindsight (${bs} ft) — hiding does not fool it.` }
+  const passive = o.creature.passive ?? 10
+  const hidden = total >= passive
+  const flag = o.creature.passive == null ? " (no stat block — passive 10 assumed)" : ""
+  return { roll, total, hidden, note: `${o.hider} Stealth ${total} vs the ${o.creature.name.toLowerCase()}'s passive Perception ${passive}${flag} — ${hidden ? "unseen" : "spotted"}.` }
+}
 
 /** A beast a druid can Wild Shape into. */
-export interface BeastForm { slug: string; name: string; ac: number; hp: number; speedFeet: number; bite: Striker; save?: { ability: "str"; dc: number; effect: "prone" }; note: string }
+export interface BeastForm { slug: string; name: string; ac: number; hp: number; speedFeet: number; bite: Striker; save?: { ability: "str"; dc: number; effect: "prone" }
+  /** Chance a creature that could attack the beast leaves it be instead (Sam, 9/29: 35% for the wolf — house rule). */
+  ignoredChance: number
+  note: string }
 
 /** SRD 5.1 Wolf (CR 1/4 — inside a 2nd-level druid's Wild Shape limit). */
 export const WOLF: BeastForm = {
   slug: "wolf", name: "Wolf", ac: 13, hp: 11, speedFeet: 40,
   bite: { name: "Bite (wolf)", toHit: 4, damage: "2d4+2" },
   save: { ability: "str", dc: 11, effect: "prone" },
+  ignoredChance: 0.35,
   note: "SRD Wolf: AC 13, 11 HP, speed 40 ft; Bite +4, 2d4+2 piercing, DC 11 STR save or knocked prone",
 }
 
@@ -1110,7 +1145,10 @@ export function fieldPower(c: {
   switch (cls) {
     case "rogue": {
       const fin = Math.max(s, dx) // dagger: finesse
-      return { ...base, kind: "backstab", name: "Kick & backstab", cooldown: 5, rangeFeet: 5, strike: { name: "Backstab (dagger)", toHit: prof + fin, damage: `1d4${sign(fin)}`, extra: "1d6" }, pushFeet: 5, note: "A kick staggers it (a shove, no damage), then the dagger with advantage — Sneak Attack 1d6 on a hit (SRD rogue, 1st level)" }
+      return { ...base, uses: 2, kind: "sneak", name: "Sneak", cooldown: 1, rangeFeet: 5, seconds: SNEAK_RECHECK_SECONDS,
+        strike: { name: "Sneak attack (dagger)", toHit: prof + fin, damage: `1d4${sign(fin)}`, extra: "1d6" },
+        offhand: { name: "Off-hand dagger", toHit: prof + fin, damage: `1d4${fin < 0 ? sign(fin) : ""}` },
+        note: "Hide (SRD): a Stealth check against each creature's passive Perception, rolled for every new creature and again every 10 s; blindsight still finds you in its range. Strike from hiding: a leap with both daggers — advantage and Sneak Attack 1d6 on the first, then the off-hand dagger (two-weapon fighting). Striking gives you away. 2 uses (Sam, 9/29)" }
     }
     case "paladin":
       return { ...base, kind: "smite", name: "Blazing smite", cooldown: 8, rangeFeet: 5, strike: { name: "Divine Smite (longsword)", toHit: prof + s, damage: `1d8${sign(s)}`, extra: "2d8" }, note: "Longsword + Divine Smite 2d8 radiant (SRD, a 1st-level slot)" }
@@ -1526,3 +1564,23 @@ export const PARTS: Readonly<Record<string, readonly { slug: string; name: strin
   "basilisk": [{ slug: "basilisk-phlegm", name: "Basilisk Phlegm" }],
 }
 export function partsFor(slug: string | null | undefined): readonly { slug: string; name: string }[] { return (slug && PARTS[slug]) || [] }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Coming home at 0 HP (Sam, 2026-09-29: "They should be at zero and doing death saves unless healed by a healer").
+// Being carried back to the fire heals nothing. The fallen stay at 0 HP and keep making death saves (lib/death-saves,
+// SRD) until a healer brings them up — a healing spell, a Healer's Kit, or a Medicine check to stabilise. Nobody at
+// 0 HP leaves camp again. The SRD's own exits still stand: a natural 20 on a death save wakes you with 1 HP.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** One death save every this many seconds of camp time. PROPOSED — the SRD rolls one a round (6 s); camp gives the
+ *  healer a little longer to reach the menu. */
+export const CAMP_DEATH_SAVE_SECONDS = 10
+
+/** Whether a character can go foraging, hunting or exploring. */
+export function canHeadOut(c: { name: string; hp: number | null | undefined; conditions?: string[] | null }): { ok: boolean; vitality: Vitality; reason: string } {
+  const v = vitalityOf(c.hp, c.conditions ?? [])
+  if (v === "dead") return { ok: false, vitality: v, reason: `${c.name} is dead.` }
+  if (v === "dying") return { ok: false, vitality: v, reason: `${c.name} is at 0 HP and making death saves. Only a healer can help now.` }
+  if (v === "stable") return { ok: false, vitality: v, reason: `${c.name} is stable but unconscious at 0 HP, and goes nowhere until a healer brings them round.` }
+  return { ok: true, vitality: v, reason: "" }
+}
