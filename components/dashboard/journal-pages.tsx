@@ -19,7 +19,7 @@
 //     out by looking. So a read page is marked quietly, in the margin, with no
 //     count anywhere else and no banner.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft, Eye, Feather, Share2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import {
@@ -28,6 +28,7 @@ import {
   type JournalSection,
 } from "@/lib/journal-sections"
 import { isShareable, shareWarning, type ShareTarget } from "@/lib/journal-share"
+import { ScribedText } from "@/components/dashboard/quill-scribe"
 
 interface JournalEntry {
   id: string
@@ -70,6 +71,12 @@ export function JournalPages({
   const [selected, setSelected] = useState<string | null>(null)
   const [targets, setTargets] = useState<{ party: ShareTarget[]; present: ShareTarget[] } | null>(null)
   const [sharing, setSharing] = useState(false)
+  // Which pages this browser has already watched being written. A page only
+  // scribbles the FIRST time it appears — re-opening the book must not replay
+  // the whole journal, which would be unbearable by session three and would
+  // also mean the reader waits to read something they wrote last week. The
+  // ref, not state, because changing it must never itself cause a render.
+  const seen = useRef<Set<string> | null>(null)
   const [draft, setDraft] = useState("")
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
@@ -81,10 +88,19 @@ export function JournalPages({
       .select("id, title, in_world_date, body, author, section, tags, visibility, created_at")
       .eq("character_id", characterId)
       .order("created_at", { ascending: true })
-    if (!error && data) setEntries(data as JournalEntry[])
+    if (!error && data) {
+      const rows = data as JournalEntry[]
+      // The first load of a book is history, not writing: everything already
+      // in it is marked seen before it renders, so nothing replays.
+      if (seen.current === null) seen.current = new Set(rows.map((r) => r.id))
+      setEntries(rows)
+    }
   }, [characterId, supabase])
 
   useEffect(() => {
+    // A different character is a different book; forget what was seen so the
+    // new one is treated as history too rather than scribbling from scratch.
+    seen.current = null
     void load()
   }, [load])
 
@@ -236,7 +252,10 @@ export function JournalPages({
         <h3 className="aop-blackletter aop-ink ml-auto text-[20px] leading-none">{SECTION_LABEL[openSection]}</h3>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+      {/* pt-8: a full-size quill stands ~92px above the line it is writing, and
+          this container clips. The padding buys the feather headroom on the
+          first entry, where it would otherwise be sliced off at the shaft. */}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 pt-8">
         {shown.length === 0 && (
           <p className="aop-quill aop-ink-faded text-center italic">
             {openSection === "pages" ? "This journal has no recorded pages yet." : `Nothing under ${SECTION_LABEL[openSection]} yet.`}
@@ -270,7 +289,13 @@ export function JournalPages({
                 )}
               </p>
               {entry.title && <h4 className="aop-blackletter aop-ink mt-1 text-[17px]">{entry.title}</h4>}
-              <p className="aop-quill aop-ink mt-1 whitespace-pre-wrap text-[15px] leading-[1.65]">{entry.body}</p>
+              <p className="aop-quill aop-ink mt-1 whitespace-pre-wrap text-[15px] leading-[1.65]">
+                <ScribedText
+                  text={entry.body}
+                  instant={seen.current?.has(entry.id) ?? true}
+                  onDone={() => seen.current?.add(entry.id)}
+                />
+              </p>
 
               {isSelected && (
                 <div className="mt-3 border-t border-[#92704a]/40 pt-2" onClick={(e) => e.stopPropagation()}>
