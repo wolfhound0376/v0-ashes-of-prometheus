@@ -6,7 +6,7 @@ import {
   lairOccupant, lairRoom, parseDice, rollAttack, roomRoamers, strikerFromBestiary, strikerFromSheet,
   buildExploreMap, choosePrey, explorePermit, exploreEncounterDue, forageField, forageHaul, FUNGI, huntDanger,
   passivePerception, rollCount, searchRoom, seededRng, slipAway, type CatalogItem,
-  fieldPower, MOCKERIES, WOLF, wildShapeDamage, POWER_USES, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
+  fieldPower, MOCKERIES, WOLF, wildShapeDamage, POWER_USES, SORCERER_SPELL_COOLDOWN, pickMockery, monsterSave, canGrapple, saveDamage, POWER_HOLD_SECONDS, THUNDER_CHARGE_SECONDS,
 } from "./camp-field"
 
 // The d20 faces in order; each call returns the next.
@@ -275,8 +275,8 @@ describe("class kits (Sam's field rules)", () => {
   // Real sheets 2026-09-28
   const kenta = fieldKit({ class: "Sorcerer", cha: 17, prof: 2, spellAbility: "Charisma", cantrips: ["Ray of Frost", "Shocking Grasp", "Minor Illusion", "Chill Touch"] })
   const samson = fieldKit({ class: "Cleric", wis: 16, prof: 2, spellAbility: "Wisdom", prepared: ["Healing Word"] })
-  it("sorcerers cannot melee and fire the ranged cantrip they know", () => {
-    expect(kenta.melee.can).toBe(false)
+  it("sorcerers melee (Sam, 9/29) and fire the ranged cantrip they know", () => {
+    expect(kenta.melee.can).toBe(true)
     expect(kenta.ranged?.name).toBe("Ray of Frost")
     expect(kenta.ranged?.toHit).toBe(5)
     expect(kenta.notes.some((n) => /does not know Fire Bolt/.test(n))).toBe(true)
@@ -532,6 +532,19 @@ describe("fishing gear, regrowth, rothé, parts (Sam, 2026-09-29)", () => {
     expect(g.food).toBe(0); expect(g.parts!.map((p) => p.slug)).toEqual(["goristro-heart"])
     const s = butcher({ stage: "fresh", size: "Large", creatureType: "beast", name: "Giant spider", slug: "giant-spider", survival: 30, nature: 0, conMod: 0 }, seededRng(1))
     expect(s.food).toBe(2); expect(s.meat!.slug).toBe("spider-meat"); expect(s.parts!.map((p) => p.slug)).toEqual(["giant-spider-silk"])
+  })
+})
+
+describe("the sorcerer (Sam, 9/29)", () => {
+  it("can strike in melee — the wizard still can't", () => {
+    expect(fieldKit({ class: "sorcerer", cantrips: ["Ray of Frost"] }).melee.can).toBe(true)
+    expect(fieldKit({ class: "wizard", cantrips: ["Fire Bolt"] }).melee.can).toBe(false)
+  })
+  it("spells take 25% longer to come back", () => {
+    expect(SORCERER_SPELL_COOLDOWN).toBe(1.25)
+    expect(fieldKit({ class: "sorcerer", cantrips: ["Ray of Frost"] }).ranged!.cooldown).toBeCloseTo(1.5)
+    expect(fieldKit({ class: "wizard", cantrips: ["Fire Bolt"] }).ranged!.cooldown).toBeCloseTo(1.2)
+    expect(fieldPower({ class: "sorcerer" })!.cooldown).toBeCloseTo(3.75)
   })
 })
 

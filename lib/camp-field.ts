@@ -977,6 +977,9 @@ export const RANGED_CANTRIPS: readonly { name: string; damage: string; kind: "fi
   { name: "Eldritch Blast", damage: "1d10", kind: "force" },
 ]
 
+/** Sam, 9/29: the sorcerer's spells take 25% longer to come back. */
+export const SORCERER_SPELL_COOLDOWN = 1.25
+
 export function fieldKit(c: {
   class?: string | null; str?: number | null; dex?: number | null; wis?: number | null; cha?: number | null; int?: number | null
   prof?: number | null; cantrips?: string[] | null; prepared?: string[] | null; spellAbility?: string | null
@@ -997,9 +1000,10 @@ export function fieldKit(c: {
   const bow = (name: string, dice: string, cooldown: number, drawSeconds: number) => ({ name, toHit: prof + mod(c.dex), damage: `${dice}+${Math.max(0, mod(c.dex))}`, cooldown, kind: "arrow" as const, drawSeconds, ammo: QUIVER })
   if (cls === "rogue") { kit.moveMul = 1.3; kit.melee.cooldown = 0.25; kit.ranged = bow("Shortbow", "1d6", 0.3, 2.3) }
   if (cls === "wizard" || cls === "sorcerer") {
-    kit.melee.can = false
+    // Sam, 9/29: the sorcerer can fight hand to hand (the sheet's weapon, or a punch) — the wizard still can't
+    kit.melee.can = cls === "sorcerer"
     const known = RANGED_CANTRIPS.filter((r) => r.name !== "Eldritch Blast").find((r) => knows(r.name))
-    if (known) kit.ranged = { name: known.name, toHit: prof + castMod, damage: known.damage, cooldown: 1.2, kind: known.kind }
+    if (known) kit.ranged = { name: known.name, toHit: prof + castMod, damage: known.damage, cooldown: cls === "sorcerer" ? 1.2 * SORCERER_SPELL_COOLDOWN : 1.2, kind: known.kind }
     else notes.push("No ranged attack cantrip on the sheet — nothing to fire")
     if (known && known.name !== "Fire Bolt") notes.push(`Fires ${known.name}: the sheet does not know Fire Bolt`)
   }
@@ -1113,7 +1117,7 @@ export function fieldPower(c: {
     case "monk":
       return { ...base, kind: "flurry", name: "Flurry of Blows", cooldown: 4, rangeFeet: 5, strikes: 3, strike: { name: "Unarmed strike (Martial Arts)", toHit: prof + dx, damage: `1d4${sign(dx)}` }, note: "The attack and two more unarmed strikes (SRD Flurry of Blows, 1 ki)" }
     case "sorcerer":
-      return { ...base, kind: "shock", name: "Shocking Grasp", cooldown: 3, rangeFeet: 5, strike: { name: "Shocking Grasp", toHit: prof + mod(c.cha), damage: "1d8" }, note: "Melee spell attack, 1d8 lightning; the target can't react until its next turn (SRD)" }
+      return { ...base, kind: "shock", name: "Shocking Grasp", cooldown: 3 * SORCERER_SPELL_COOLDOWN, rangeFeet: 5, strike: { name: "Shocking Grasp", toHit: prof + mod(c.cha), damage: "1d8" }, note: "Melee spell attack, 1d8 lightning; the target can't react until its next turn (SRD)" }
     case "wizard":
       return { hold: THUNDER_CHARGE_SECONDS, chargeRelease: true, uses: POWER_USES, kind: "thunder", name: "Thunderwave", cooldown: 6, rangeFeet: 15, pushFeet: 10, save: { ability: "con", dc: dc(c.int), damage: "2d8", halfOnSave: true }, note: "15-ft wave: CON save, 2d8 thunder (half on a success), pushed 10 ft on a failure (SRD). Held to charge — house rule" }
     case "druid":
