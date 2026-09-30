@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Cinzel, Cinzel_Decorative, Crimson_Text, Geist_Mono } from 'next/font/google'
+import { Cinzel, Cinzel_Decorative, Crimson_Text, Geist_Mono, IM_Fell_English, UnifrakturMaguntia } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { SupabaseStatus } from '@/components/supabase-status'
 import { BuildWatch } from '@/components/build-watch'
@@ -29,6 +29,34 @@ const crimsonText = Crimson_Text({
   subsets: ["latin"],
   weight: ['400', '600', '700'],
   variable: '--font-sans',
+  display: 'swap',
+});
+
+// THE JOURNAL'S OWN TWO FACES (Sam, 2026-09-29: "olde english ... as if it
+// were done with a quill and ink").
+//
+// Blackletter for the section names and headings only. A whole page of
+// blackletter is close to unreadable at UI sizes — the letterforms were cut
+// for a scribe's hand at manuscript scale, and the players read this book
+// every session — so it does the job real blackletter did: headings, initials
+// and titles.
+const unifraktur = UnifrakturMaguntia({
+  subsets: ["latin"],
+  weight: ['400'],
+  variable: '--font-blackletter',
+  display: 'swap',
+});
+
+// IM Fell English is the body hand. It is not a modern face dressed up: it is
+// digitised from the actual 17th-century type John Fell brought to Oxford,
+// cut and inked by hand, so it carries the ink spread and the slightly
+// uneven baseline of metal pressed into rag paper. That is what makes it read
+// as written rather than typed, while staying legible at 14px.
+const imFell = IM_Fell_English({
+  subsets: ["latin"],
+  weight: ['400'],
+  style: ['normal', 'italic'],
+  variable: '--font-quill',
   display: 'swap',
 });
 
@@ -64,7 +92,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark bg-[#0a0908]">
-      <body className={`${cinzel.variable} ${cinzelDecorative.variable} ${crimsonText.variable} font-sans antialiased`}>
+      <body className={`${cinzel.variable} ${cinzelDecorative.variable} ${crimsonText.variable} ${unifraktur.variable} ${imFell.variable} font-sans antialiased`}>
         {children}
         <ThemeAudio />
         <UiClickSound />

@@ -477,23 +477,46 @@
   animation: aop-book-open 420ms cubic-bezier(.2,.8,.2,1) both;
   transform-origin: center;
 }
+/* VELLUM, not beige paper (Sam, 2026-09-29: "Paper should look like velum").
+ *
+ * Real vellum is skin: unevenly translucent, mottled where the follicles were,
+ * fibrous, and darker where it was stretched and handled at the edges. A flat
+ * warm gradient is what makes fantasy UI look like a stock texture, so this is
+ * built in four layers, coarse to fine:
+ *   1. broad mottling  — the irregular blotching of a hide, off-centre
+ *   2. edge staining   — handling and age, heaviest in the corners
+ *   3. fibre grain     — an SVG turbulence, the only thing that stops the
+ *                        gradients reading as a gradient
+ *   4. faint rule lines — a scribe's pricked guide, not notebook ruling
+ * Multiply blending keeps every layer in the paper rather than on top of it. */
 .aop-book-page {
   position: relative;
   overflow: hidden;
   padding: 28px 38px;
   background:
-    linear-gradient(90deg, rgba(72,38,18,.16), transparent 12%, transparent 88%, rgba(72,38,18,.12)),
-    radial-gradient(circle at 45% 28%, #e4c997, #caa66c 72%, #a67b45);
-  box-shadow: inset 0 0 34px rgba(64,34,14,.42);
+    radial-gradient(ellipse 60% 40% at 22% 18%, rgba(255,247,222,.55), transparent 70%),
+    radial-gradient(ellipse 50% 45% at 78% 72%, rgba(173,138,88,.30), transparent 72%),
+    radial-gradient(ellipse 40% 30% at 62% 30%, rgba(196,163,107,.26), transparent 70%),
+    linear-gradient(90deg, rgba(92,56,26,.22), transparent 10%, transparent 90%, rgba(92,56,26,.18)),
+    radial-gradient(circle at 45% 28%, #f0dcb4 0%, #e3caa0 38%, #d8bd8c 68%, #b9915c 100%);
+  box-shadow:
+    inset 0 0 46px rgba(74,42,18,.42),
+    inset 0 0 120px rgba(74,42,18,.20);
 }
+/* Fibre. feTurbulence at a high frequency reads as the grain of a hide; at a
+ * low one it reads as a stain, so both are present at different opacities. */
 .aop-book-page::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: .18;
-  background: repeating-linear-gradient(0deg, transparent 0 25px, #795530 26px 27px);
+  opacity: .5;
   mix-blend-mode: multiply;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='220' height='220' filter='url(%23f)' opacity='0.35'/></svg>"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='600' height='600' filter='url(%23g)' opacity='0.30'/></svg>"),
+    repeating-linear-gradient(0deg, transparent 0 25px, rgba(121,85,48,.5) 26px 26.7px);
+  background-size: 220px 220px, 600px 600px, auto;
 }
 .aop-book-page-left { border-radius: 5px 0 0 8px; border-right: 1px solid #74502e; }
 .aop-book-page-right { border-radius: 0 9px 8px 0; border-left: 1px solid #e0c28e; }
@@ -637,3 +660,30 @@
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.04) translateY(-1.2%); }
 }
+
+
+/* ── The journal's hand ─────────────────────────────────────────────────────
+ * Sam, 2026-09-29: "Font should be written in olde english and as if it were
+ * don't with a quil and ink."
+ *
+ * Two faces, because one cannot do both jobs. Blackletter is the olde-English
+ * half and stays on headings; IM Fell English is the quill-and-ink half and
+ * carries the reading. Ink is never pure black — iron gall ink browns as it
+ * ages, and on a warm ground a true black reads as printed rather than
+ * written. */
+.aop-blackletter {
+  font-family: var(--font-blackletter), "UnifrakturMaguntia", serif;
+  letter-spacing: .02em;
+}
+.aop-quill {
+  font-family: var(--font-quill), "IM Fell English", Georgia, serif;
+}
+/* The bleed of a wet nib into a porous surface: a hair's breadth of the ink
+ * colour spreading around each stroke. Tiny on purpose — at any strength it
+ * stops looking like ink and starts looking like a drop shadow. */
+.aop-ink {
+  color: #3a2413;
+  text-shadow: 0 0 .6px rgba(58,36,19,.55);
+}
+.aop-ink-faded { color: #6b4a2c; text-shadow: 0 0 .6px rgba(107,74,44,.4); }
+.aop-ink-rubric { color: #8a2f22; text-shadow: 0 0 .6px rgba(138,47,34,.45); }
