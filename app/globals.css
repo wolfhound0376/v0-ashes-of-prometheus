@@ -700,31 +700,40 @@
   display: inline-block;
   width: 0;                 /* takes no space, so the text does not shift when it leaves */
   vertical-align: baseline;
-  animation: aop-quill-bob 340ms ease-in-out infinite alternate;
+  /* The pen pivots about the NIB, the way a hand does. Rotating about the
+   * centre of the drawing swings the point off the word being written, which
+   * is the tell that it is a sprite rather than a pen. 8%/93% is where the cut
+   * sits inside the viewBox. */
+  transform-origin: 8% 93%;
+  animation: aop-quill-bob 900ms ease-in-out infinite alternate;
 }
 .aop-quill-nib svg {
   position: absolute;
-  left: -2px;
-  bottom: -4px;             /* the point sits ON the baseline, where ink is laid */
-  transform: rotate(0deg);
-  filter: drop-shadow(0 1px 1px rgba(58, 36, 19, .35));
+  /* Anchored so the cut point lands on the baseline at the write position and
+   * the whole feather sweeps up and back over the wrist, into the empty space
+   * above the line rather than across the words. */
+  left: -7px;
+  bottom: -6px;
+  pointer-events: none;
+  filter: drop-shadow(-2px 3px 3px rgba(48, 30, 14, .38));
 }
-/* The bead of ink held at the slit. Small, wet, and slightly off the point. */
+/* The bead of ink held at the slit. */
 .aop-quill-bead {
   position: absolute;
   left: -1px;
   bottom: -2px;
-  width: 2.5px;
-  height: 2.5px;
+  width: 3px;
+  height: 3px;
   border-radius: 50%;
-  background: #2b1a0e;
-  opacity: .8;
+  background: #241507;
+  opacity: .85;
 }
-/* A hand is never still. Sub-pixel on purpose: any more and it reads as a
- * wobble rather than as a person holding something. */
+/* A hand is never still — but a 92px feather magnifies whatever the wrist
+ * does, so the angle here is far smaller than it was at 18px and the cycle is
+ * slower. At the old values a full-size quill thrashed. */
 @keyframes aop-quill-bob {
-  from { transform: translateY(-.4px) rotate(-1.2deg); }
-  to   { transform: translateY(.4px)  rotate(1.2deg); }
+  from { transform: rotate(-1.1deg) translateY(-.5px); }
+  to   { transform: rotate(1.1deg)  translateY(.5px); }
 }
 
 /* Ink still wet behind the nib. Darker and very slightly spread — iron gall

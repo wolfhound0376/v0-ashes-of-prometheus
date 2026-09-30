@@ -252,7 +252,10 @@ export function JournalPages({
         <h3 className="aop-blackletter aop-ink ml-auto text-[20px] leading-none">{SECTION_LABEL[openSection]}</h3>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+      {/* pt-8: a full-size quill stands ~92px above the line it is writing, and
+          this container clips. The padding buys the feather headroom on the
+          first entry, where it would otherwise be sliced off at the shaft. */}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 pt-8">
         {shown.length === 0 && (
           <p className="aop-quill aop-ink-faded text-center italic">
             {openSection === "pages" ? "This journal has no recorded pages yet." : `Nothing under ${SECTION_LABEL[openSection]} yet.`}

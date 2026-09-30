@@ -87,25 +87,70 @@ export function ScribedText({
 }
 
 /**
- * The nib itself: a cut feather at the angle a right hand holds it, with the
- * slit and the shoulder that make a quill read as a quill rather than as a
- * triangle. It bobs very slightly — a hand is never still — and carries a bead
- * of ink at the point.
+ * A quill, at the size a quill actually is.
+ *
+ * The first version was an 18px glyph, which read as a cursor rather than as a
+ * pen. This is ~92px: a full feather held at about 35 degrees, the angle a
+ * right hand holds one, sweeping up and back over the wrist.
+ *
+ * THE ANCHOR IS THE NIB, not the middle of the drawing. The SVG is positioned
+ * so the cut point sits on the text baseline at the write position and
+ * everything else — shaft, vane, the whole feather — extends up and to the
+ * right into empty space above the line. Anchoring anywhere else puts the
+ * feather through the words being written.
+ *
+ * It is drawn rather than generated: a real quill tapers along its whole
+ * length, the vane is fuller near the middle than at either end, and the barbs
+ * run at a slant to the shaft, not perpendicular to it. Those three things are
+ * what stop a feather looking like a leaf.
  */
 function QuillNib() {
   return (
     <span className="aop-quill-nib" aria-hidden>
-      <svg viewBox="0 0 24 24" width="18" height="18">
-        {/* the vane, swept back over the hand */}
+      <svg viewBox="0 0 100 100" width="92" height="92">
+        <defs>
+          <linearGradient id="aopQuillVane" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stopColor="#6d5b44" />
+            <stop offset="45%" stopColor="#9d8a6a" />
+            <stop offset="100%" stopColor="#cfc0a2" />
+          </linearGradient>
+        </defs>
+
+        {/* THE VANE — fuller at the middle, tapering to nothing at both ends. */}
         <path
-          d="M21.4 2.4c-6.1.5-10.6 3-13.2 6.4-1.6 2.1-2.4 4.4-2.8 6.4l4.6-4.6a.7.7 0 1 1 1 1l-4.6 4.6c2-.4 4.3-1.2 6.4-2.8 3.4-2.6 5.9-7.1 6.4-13.2z"
-          fill="#4a3b2a"
-          opacity=".92"
+          d="M30 68 C38 52 50 34 66 20 C74 13 82 9 88 8 C86 16 82 26 76 36 C66 52 52 64 38 74 Z"
+          fill="url(#aopQuillVane)"
+          opacity=".95"
         />
-        {/* the shaft down to the cut */}
-        <path d="M6.4 15.2 3.1 20.9" stroke="#3a2e21" strokeWidth="1.5" strokeLinecap="round" fill="none" />
-        {/* the nib, and the slit that carries the ink */}
-        <path d="M3.1 20.9 2 23l2.1-1.1z" fill="#241a12" />
+        <path
+          d="M28 70 C34 56 44 38 58 24 C64 18 70 14 75 12 C72 20 67 30 60 40 C50 55 38 66 28 74 Z"
+          fill="#7d6a4f"
+          opacity=".55"
+        />
+
+        {/* BARBS — slanted toward the tip, never perpendicular. */}
+        <g stroke="#5c4c38" strokeWidth=".9" opacity=".5" fill="none">
+          <path d="M38 62 L52 44" /><path d="M43 58 L58 38" /><path d="M48 53 L64 33" />
+          <path d="M53 48 L69 29" /><path d="M58 43 L74 25" /><path d="M63 38 L78 21" />
+          <path d="M34 66 L46 50" /><path d="M68 32 L82 17" />
+        </g>
+
+        {/* THE SHAFT — a taper, not a stroke of constant width. */}
+        <path
+          d="M11 89 C20 76 40 50 62 28 C72 18 82 11 89 7 C84 15 76 25 66 36 C46 58 25 78 14 91 Z"
+          fill="#e8ddc6"
+        />
+        <path
+          d="M11 89 C20 76 40 50 62 28 C72 18 82 11 89 7"
+          stroke="#8c7a5e"
+          strokeWidth=".8"
+          fill="none"
+          opacity=".7"
+        />
+
+        {/* THE CUT NIB. The slit is what makes it a pen. */}
+        <path d="M8 93 L15 85 L18 89 Z" fill="#2f2418" />
+        <path d="M9.5 91.5 L15 86" stroke="#0f0a06" strokeWidth=".7" />
       </svg>
       <span className="aop-quill-bead" />
     </span>
