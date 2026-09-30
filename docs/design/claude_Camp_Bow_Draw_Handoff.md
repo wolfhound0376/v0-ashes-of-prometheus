@@ -76,20 +76,19 @@ props.
 
 ---
 
-## 3. The open question, which is Sam's and not this branch's
+## 3. Style — RESOLVED 2026-09-30, this section supersedes the earlier caution
 
-**This is a third visual language.** The app already runs painted inventory
-icons and pixel-art board icons, and Sam ruled on 2026-09-27 that those two
-**stay split — "that is the decision, not a gap."** The camp scene is specified
-as a painted 4K plate with HD-2D pixel sprites composited in
-(`claude_Camp_Scene.md` §1b). A cel-shaded cartoon first-person HUD is neither
-of those.
+An earlier draft of this doc told you **not** to merge on the assumption the
+style question was settled. **It is now settled.** Sam green-lit the cel-shaded
+first-person HUD on 2026-09-30: a first-person weapon view is accepted as a
+different register from the third-person board, and it stands as a third visual
+language beside the painted inventory icons and the HD-2D pixel sprites.
 
-It may still be right — a first-person weapon view is a different register from
-a third-person camp tableau, and games mix those routinely. But it is a call to
-make deliberately, **before** it lands on `main`, not after. Do not merge
-`feat/bow-draw-rig` into a camp PR on the assumption that the style question is
-settled. It is not.
+`feat/bow-draw-rig` is therefore **clear to merge**. Nothing about the
+2026-09-27 painted-vs-pixel icon split changes — that ruling was about inventory
+icons versus board icons and neither moves.
+
+Melee weapons do not reuse this rig; see `docs/design/claude_Weapon_Rig_Pipeline.md`.
 
 ---
 
@@ -106,7 +105,8 @@ settled. It is not.
 ## 5. Provenance
 
 - **Sam-originated:** the source screenshot; "make it a full draw"; "make the
-  string white"; the instruction to hand this to camp.
+  string white"; the instruction to hand this to camp; the 2026-09-30 style
+  green-light (§3).
 - **Claude-originated:** the two-layer rig and the code-drawn string; the
   fletching taper, horn nock and extended forearm (the source art cropped the
   arrow's entire rear off-frame and painted the string as one straight line
