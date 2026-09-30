@@ -64,9 +64,9 @@ export function CampaignBookModal({ section, inventory, characterId = null, onCl
         <div className="aop-book-page aop-book-page-left">
           <div className="aop-book-corner" />
           <Icon className="mx-auto mt-7 h-8 w-8 text-[#73451f]" />
-          <p className="mt-4 text-center font-serif text-[10px] uppercase tracking-[.24em] text-[#83582e]">Ashes of Prometheus</p>
-          <h2 className="mt-3 text-center font-serif text-3xl text-[#3d2415]">{copy.title}</h2>
-          <p className="mt-2 text-center font-serif italic text-[#775435]">{copy.subtitle}</p>
+          <p className="aop-quill aop-ink-faded mt-4 text-center text-[12px] italic tracking-[.12em]">Ashes of Prometheus</p>
+          <h2 className="aop-blackletter aop-ink mt-3 text-center text-4xl leading-tight">{copy.title}</h2>
+          <p className="aop-quill aop-ink-faded mt-2 text-center text-[15px] italic">{copy.subtitle}</p>
           <div className="mx-auto my-7 h-px w-4/5 bg-gradient-to-r from-transparent via-[#8d6238] to-transparent" />
           {journalLocked ? (
             <div className="mx-auto max-w-sm text-center text-[#4e3422]">
@@ -86,7 +86,7 @@ export function CampaignBookModal({ section, inventory, characterId = null, onCl
           )}
         </div>
         <div className="aop-book-page aop-book-page-right">
-          <h3 className="mt-8 border-b border-[#92704a]/45 pb-3 text-center font-serif text-xl text-[#4b2d19]">Campaign Record</h3>
+          <h3 className="aop-blackletter aop-ink mt-8 border-b border-[#92704a]/45 pb-3 text-center text-2xl">Campaign Record</h3>
           <div className="mt-7 space-y-5 font-serif text-[#583a25]">
             {isBook && <><BookLine label="Owned journals" value={String(journals.length)} /><BookLine label="Maximum allowed" value="2" /></>}
           </div>

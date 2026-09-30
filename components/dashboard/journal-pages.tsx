@@ -154,7 +154,7 @@ export function JournalPages({
   )
 
   if (!characterId) {
-    return <p className="text-center font-serif italic text-[#775435]">No character is seated in this browser.</p>
+    return <p className="aop-quill aop-ink-faded text-center italic">No character is seated in this browser.</p>
   }
 
   const counts = new Map<string, number>()
@@ -178,7 +178,7 @@ export function JournalPages({
   if (!openSection) {
     return (
       <div className="flex h-full flex-col">
-        <h3 className="text-center font-serif text-[11px] uppercase tracking-[.3em] text-[#83582e]">Contents</h3>
+        <h3 className="aop-blackletter aop-ink-faded text-center text-[15px] tracking-[.08em]">Contents</h3>
         <div className="mx-auto mt-1 h-px w-2/3 bg-gradient-to-r from-transparent via-[#8d6238] to-transparent" />
         <ul className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
           {TAB_ORDER.map((s) => {
@@ -194,12 +194,12 @@ export function JournalPages({
                   }}
                   className="group flex w-full items-baseline gap-2 py-[5px] text-left transition"
                 >
-                  <span className="font-serif text-[15px] text-[#3d2415] group-hover:text-[#73451f] group-hover:underline">
+                  <span className="aop-blackletter aop-ink text-[19px] leading-none group-hover:text-[#73451f] group-hover:underline">
                     {SECTION_LABEL[s]}
                   </span>
                   {/* the leader dots of a real table of contents */}
                   <span className="min-w-6 flex-1 translate-y-[-3px] border-b border-dotted border-[#8c6844]/60" />
-                  <span className={`font-serif text-[13px] ${n > 0 ? "text-[#73451f]" : "text-[#a3835c] italic"}`}>
+                  <span className={`aop-quill text-[15px] ${n > 0 ? "aop-ink" : "aop-ink-faded italic opacity-70"}`}>
                     {n > 0 ? n : "empty"}
                   </span>
                 </button>
@@ -229,16 +229,16 @@ export function JournalPages({
             setOpenSection(null)
             setSelected(null)
           }}
-          className="flex items-center gap-1 font-serif text-[11px] uppercase tracking-[.16em] text-[#8a6a45] transition hover:text-[#3d2415]"
+          className="aop-quill aop-ink-faded flex items-center gap-1 text-[13px] italic transition hover:text-[#3d2415]"
         >
           <ChevronLeft className="h-3 w-3" /> Contents
         </button>
-        <h3 className="ml-auto font-serif text-[15px] text-[#3d2415]">{SECTION_LABEL[openSection]}</h3>
+        <h3 className="aop-blackletter aop-ink ml-auto text-[20px] leading-none">{SECTION_LABEL[openSection]}</h3>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {shown.length === 0 && (
-          <p className="text-center font-serif italic text-[#775435]">
+          <p className="aop-quill aop-ink-faded text-center italic">
             {openSection === "pages" ? "This journal has no recorded pages yet." : `Nothing under ${SECTION_LABEL[openSection]} yet.`}
           </p>
         )}
@@ -257,7 +257,7 @@ export function JournalPages({
                 isSelected ? "bg-[#73451f]/10 ring-1 ring-[#8c6844]/60" : "hover:bg-[#73451f]/5"
               }`}
             >
-              <p className="flex items-center gap-2 text-[10px] uppercase tracking-[.2em] text-[#83582e]">
+              <p className="aop-quill aop-ink-faded flex items-center gap-2 text-[12px] italic">
                 {entry.in_world_date ??
                   new Date(entry.created_at).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
                 {entry.author === "malachar" && <span>· in another hand</span>}
@@ -269,20 +269,20 @@ export function JournalPages({
                   </span>
                 )}
               </p>
-              {entry.title && <h4 className="mt-1 font-serif text-[#3d2415]">{entry.title}</h4>}
-              <p className="mt-1 whitespace-pre-wrap font-serif text-sm italic leading-relaxed text-[#4e3422]">{entry.body}</p>
+              {entry.title && <h4 className="aop-blackletter aop-ink mt-1 text-[17px]">{entry.title}</h4>}
+              <p className="aop-quill aop-ink mt-1 whitespace-pre-wrap text-[15px] leading-[1.65]">{entry.body}</p>
 
               {isSelected && (
                 <div className="mt-3 border-t border-[#92704a]/40 pt-2" onClick={(e) => e.stopPropagation()}>
                   {!isShareable(entry.section as JournalSection) ? (
-                    <p className="text-[11px] italic text-[#8a5a2e]">
+                    <p className="aop-quill aop-ink-faded text-[13px] italic">
                       {SECTION_LABEL[entry.section as JournalSection]} pages are not handed around.
                     </p>
                   ) : menu.length === 0 ? (
-                    <p className="text-[11px] italic text-[#8a5a2e]">Nobody here to show it to.</p>
+                    <p className="aop-quill aop-ink-faded text-[13px] italic">Nobody here to show it to.</p>
                   ) : (
                     <>
-                      <p className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-[.16em] text-[#83582e]">
+                      <p className="aop-quill aop-ink-faded mb-1 flex items-center gap-1 text-[12px] italic">
                         <Share2 className="h-3 w-3" /> Show this page to
                       </p>
                       <div className="flex flex-wrap gap-1">
@@ -298,7 +298,7 @@ export function JournalPages({
                                 if (warn && !window.confirm(warn)) return
                                 void share(entry.id, t)
                               }}
-                              className={`rounded-sm border px-2 py-0.5 font-serif text-[11px] transition disabled:opacity-40 ${
+                              className={`aop-quill rounded-sm border px-2 py-0.5 text-[13px] transition disabled:opacity-40 ${
                                 t.kind === "npc"
                                   ? "border-[#8a2f22]/60 text-[#8a2f22] hover:bg-[#8a2f22]/10"
                                   : "border-[#73451f]/60 text-[#73451f] hover:bg-[#73451f]/10"
@@ -353,20 +353,20 @@ function Compose({
         onChange={(event) => setDraft(event.target.value)}
         placeholder="Take up the quill…"
         rows={3}
-        className="w-full resize-none rounded-sm border border-[#8c6844]/50 bg-[#f4ecd9]/70 p-2 font-serif text-sm italic text-[#3d2415] outline-none focus:border-[#73451f]"
+        className="aop-quill aop-ink w-full resize-none rounded-sm border border-[#8c6844]/50 bg-[#f6ebd2]/55 p-2 text-[15px] outline-none focus:border-[#73451f]"
       />
       <div className="mt-2 flex items-center gap-3">
         <button
           type="button"
           onClick={onCommit}
           disabled={saving || !draft.trim()}
-          className="flex items-center gap-2 rounded-sm border border-[#73451f] px-3 py-1 font-serif text-xs uppercase tracking-[.18em] text-[#73451f] transition enabled:hover:bg-[#73451f]/10 disabled:opacity-40"
+          className="aop-blackletter flex items-center gap-2 rounded-sm border border-[#73451f] px-3 py-1 text-[14px] text-[#73451f] transition enabled:hover:bg-[#73451f]/10 disabled:opacity-40"
         >
           <Feather className="h-3.5 w-3.5" /> {saving ? "Committing…" : "Commit to the page"}
         </button>
-        <span className="text-[11px] italic text-[#8a5a2e]">{hint ?? "Pages are permanent once committed."}</span>
+        <span className="aop-quill aop-ink-faded text-[13px] italic">{hint ?? "Pages are permanent once committed."}</span>
       </div>
-      {status && <p className="mt-2 text-xs italic text-[#8a2f22]">{status}</p>}
+      {status && <p className="aop-quill aop-ink-rubric mt-2 text-[13px] italic">{status}</p>}
     </div>
   )
 }
