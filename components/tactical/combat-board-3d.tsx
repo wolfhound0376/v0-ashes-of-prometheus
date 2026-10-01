@@ -1548,6 +1548,33 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         return fx + "," + fy
       }
 
+      // A PILE AT THE FEET OF WHOEVER STANDS ON IT.
+      //
+      // Sam: "I should be able to pick up items on the map by clicking them
+      // with my mouse when I am over them." Creatures are tested before the
+      // floor (a body in front of a pile is still a body), so a pile under a
+      // miniature could never be clicked: the figure standing on that square
+      // took every click aimed at its feet. The hover read-out already looks
+      // through the figure and says "click to take it", so the click was
+      // breaking the hover's promise. No pickup had ever succeeded.
+      //
+      // The piles lie flat on the floor, so the ray only passes through one
+      // when the click is AT the feet. Click the body and it is still the
+      // creature; click the shard it is standing on and it is the shard. A
+      // body on a DIFFERENT square in front of a pile still wins, as above.
+      if (tokenHit && groundItems && !armedRef.current) {
+        const pile = groundItems.rowFor(raycaster.intersectObjects(groundItems.objects(), true)[0]?.object)
+        if (pile) {
+          let o: THREE.Object3D | null = tokenHit.object
+          while (o && !o.userData.tokenId) o = o.parent
+          const over = o ? tokensRef.current.get(o.userData.tokenId as string) : undefined
+          if (over && over.row.grid_x === pile.grid_x && over.row.grid_y === pile.grid_y) {
+            setPendingPickup(pile)
+            return
+          }
+        }
+      }
+
       // A MOVE BEATS A SELECTION when the ground under the cursor is legally
       // walkable. Safe by construction: a token's OWN square is never in the
       // reach set (you may pass through a friend but never end on one), so
