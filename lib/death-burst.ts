@@ -66,7 +66,17 @@ export interface DeathBurst {
     poisonedAtHalf: boolean
     /** "Creatures immune to the poisoned condition are immune to this disease." */
     poisonImmuneAreImmune: boolean
+    /** "After the creature dies, it sprouts 2d4 Tiny gas spores that grow to full size in 7 days." */
+    sprouts: Sprouts | null
   } | null
+}
+
+/** What grows from a body the disease killed. */
+export interface Sprouts {
+  /** "2d4". */
+  dice: string
+  /** Days until they are full-size gas spores. */
+  days: number
 }
 
 interface TraitRow { name?: string | null; desc?: string | null }
@@ -94,9 +104,16 @@ export function parseDeathBurst(text: string | null | undefined): DeathBurst | n
           hoursDice: hours[1],
           poisonedAtHalf: /in half that time, the creature becomes poisoned/i.test(s),
           poisonImmuneAreImmune: /immune to the poisoned condition are immune to this disease/i.test(s),
+          sprouts: parseSprouts(s),
         }
       : null,
   }
+}
+
+/** "sprouts 2d4 Tiny gas spores that grow to full size in 7 days", or null. */
+export function parseSprouts(text: string | null | undefined): Sprouts | null {
+  const m = String(text ?? "").match(/sprouts\s+(\d+d\d+)\s+tiny gas spores\s+that grow to full size in\s+(\d+)\s+days?/i)
+  return m ? { dice: m[1], days: Number(m[2]) } : null
 }
 
 /**
@@ -188,6 +205,8 @@ export interface InfectionRecord {
   infected_at: ClockTime | null
   poisoned_at: ClockTime | null
   dies_at: ClockTime | null
+  /** What sprouts from the body if the disease kills it; absent on records made before this existed. */
+  sprouts?: Sprouts | null
 }
 
 /**
@@ -219,6 +238,7 @@ export function infectionFor(a: {
     infected_at: a.now,
     poisoned_at: a.now && half !== null ? addMinutes(a.now, half * 60) : null,
     dies_at: a.now ? addMinutes(a.now, hours * 60) : null,
+    sprouts: d.sprouts,
   }
 }
 

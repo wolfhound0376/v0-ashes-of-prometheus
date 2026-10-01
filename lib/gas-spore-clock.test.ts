@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   absMinutes, advanceGasSporeInfections, countdownLines, formatInfectionBlock, formatSpan, loadInfectionBlock,
-  stepLines, stepsDue, type InfectionState,
+  maturedLine, rollSpec, sproutFrom, sproutLine, sproutsMature, stepLines, stepsDue, type InfectionState,
 } from "./gas-spore-clock"
 import { infectionFor, parseDeathBurst } from "./death-burst"
 
@@ -188,5 +188,110 @@ describe("the countdown for Malachar", () => {
   })
   it("formats spans", () => {
     expect([formatSpan(0), formatSpan(45), formatSpan(120), formatSpan(390)]).toEqual(["0m", "45m", "2h", "6h 30m"])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The body sprouts: "After the creature dies, it sprouts 2d4 Tiny gas spores
+// that grow to full size in 7 days."
+// ---------------------------------------------------------------------------
+const SPROUTING: InfectionState = { ...KENTA, sprouts: { dice: "2d4", days: 7 } }
+/** A die that always lands on its top face minus nothing: rng 0.99 → max. */
+const high = () => 0.99
+const low = () => 0
+
+describe("sprouting", () => {
+  it("rolls the dice the trait names", () => {
+    expect(rollSpec("2d4", high)).toBe(8)
+    expect(rollSpec("2d4", low)).toBe(2)
+    expect(rollSpec("nonsense", high)).toBe(0)
+  })
+  it("dates full size 7 days after the death", () => {
+    expect(sproutFrom(SPROUTING, at(4, 19), high)).toEqual({ count: 8, dice: "2d4", matures_at: at(11, 19) })
+    expect(sproutFrom(KENTA, at(4, 19), high)).toBeNull() // a record with no sprouts sprouts nothing
+  })
+  it("is grown exactly at the mark, never before, never for undated ones", () => {
+    const s = sproutFrom(SPROUTING, at(4, 19), high)!
+    expect(sproutsMature(s, at(11, 18, 59))).toBe(false)
+    expect(sproutsMature(s, at(11, 19))).toBe(true)
+    expect(sproutsMature({ ...s, matured: true }, at(20, 0))).toBe(false)
+    expect(sproutsMature({ ...s, matures_at: null }, at(20, 0))).toBe(false)
+  })
+  it("says it plainly", () => {
+    const s = sproutFrom(SPROUTING, at(4, 19), high)!
+    expect(sproutLine("Kenta", s, 7)).toBe("8 Tiny gas spores (2d4 8) sprout from Kenta's body; they will be full-grown gas spores by Day 11, 19:00.")
+    expect(maturedLine("Kenta", s)).toBe("The 8 gas spores that sprouted from Kenta's body are full-grown.")
+  })
+
+  it("sprouts when the disease kills, then grows them up a week later, once", async () => {
+    const db = fakeDb({
+      world_flags: [flagRow(SPROUTING)],
+      characters: [{ id: "c1", conditions: ["Gas Spore Infection", "Poisoned"], hp_current: 9 }],
+      vtt_tokens: [{ id: "t1", character_id: "c1", hp_current: 9 }],
+      dialogue: [],
+    })
+    await advanceGasSporeInfections(db, at(4, 20), high)
+    const rec = () => db.tables.world_flags[0].value as InfectionState
+    expect(rec().died).toBe(true)
+    expect(rec().sprouted).toEqual({ count: 8, dice: "2d4", matures_at: at(11, 19) })
+    expect(db.tables.dialogue.map((d) => d.text).slice(-1)[0]).toBe(
+      "8 Tiny gas spores (2d4 8) sprout from Kenta's body; they will be full-grown gas spores by Day 11, 19:00.",
+    )
+    // The countdown carries them while they grow.
+    expect(countdownLines([rec()], at(8, 19))).toEqual([
+      "- 8 Tiny gas spores growing from Kenta's body — full-grown gas spores in 3d.",
+    ])
+
+    await advanceGasSporeInfections(db, at(9, 0), high) // still growing: nothing said
+    const said = db.tables.dialogue.length
+    await advanceGasSporeInfections(db, at(11, 19), high)
+    expect(rec().sprouted?.matured).toBe(true)
+    expect(db.tables.dialogue.slice(said).map((d) => d.text)).toEqual(["The 8 gas spores that sprouted from Kenta's body are full-grown."])
+    await advanceGasSporeInfections(db, at(20, 0), high) // grown is grown: quiet
+    expect(db.tables.dialogue).toHaveLength(said + 1)
+    expect(countdownLines([rec()], at(20, 0))).toEqual([])
+  })
+
+  it("sprouts from a body killed by something else, from the moment the clock sees it", async () => {
+    const db = fakeDb({
+      world_flags: [flagRow(SPROUTING)],
+      characters: [{ id: "c1", conditions: ["Gas Spore Infection", "Dead"], hp_current: 0 }],
+      dialogue: [],
+    })
+    await advanceGasSporeInfections(db, at(4, 2), low)
+    const rec = db.tables.world_flags[0].value as InfectionState
+    expect(rec.died).toBe(true)
+    expect(rec.sprouted).toEqual({ count: 2, dice: "2d4", matures_at: at(11, 2) })
+    expect(db.tables.dialogue.map((d) => d.text)).toEqual([
+      "Kenta died with the spores still in them.",
+      "2 Tiny gas spores (2d4 2) sprout from Kenta's body; they will be full-grown gas spores by Day 11, 02:00.",
+    ])
+  })
+
+  it("does not sprout a body that was cured first", async () => {
+    const db = fakeDb({
+      world_flags: [flagRow(SPROUTING)],
+      characters: [{ id: "c1", conditions: ["Dead"], hp_current: 0 }],
+      dialogue: [],
+    })
+    await advanceGasSporeInfections(db, at(4, 2), high)
+    const rec = db.tables.world_flags[0].value as InfectionState
+    expect(rec.cured).toBe(true)
+    expect(rec.sprouted).toBeUndefined()
+  })
+
+  it("grows them at once when one jump passes the whole week", async () => {
+    const db = fakeDb({
+      world_flags: [flagRow(SPROUTING)],
+      characters: [{ id: "c1", conditions: ["Gas Spore Infection"], hp_current: 9 }],
+      dialogue: [],
+    })
+    await advanceGasSporeInfections(db, at(15, 0), low)
+    expect((db.tables.world_flags[0].value as InfectionState).sprouted?.matured).toBe(true)
+    expect(db.tables.dialogue.map((d) => d.text).slice(-1)[0]).toBe("The 2 gas spores that sprouted from Kenta's body are full-grown.")
+  })
+
+  it("formats spans of days", () => {
+    expect([formatSpan(1440), formatSpan(1440 * 3 + 120)]).toEqual(["1d", "3d 2h"])
   })
 })

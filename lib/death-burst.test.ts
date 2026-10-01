@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  GAS_SPORE_INFECTION, addMinutes, burstCells, deathBurstFor, formatClock, immuneToDamage, immuneToPoisoned,
+  GAS_SPORE_INFECTION, addMinutes, burstCells, deathBurstFor, formatClock, immuneToDamage, immuneToPoisoned, parseSprouts,
   infectionFlagKey, infectionFor, infectionLine, parseDeathBurst,
 } from "./death-burst"
 
@@ -18,7 +18,7 @@ describe("parseDeathBurst", () => {
   it("reads every number off the gas spore's own text", () => {
     expect(parseDeathBurst(DEATH_BURST.desc)).toEqual({
       radiusFt: 20, dc: 15, ability: "CON", dice: "3d6", damageType: "poison",
-      disease: { hoursDice: "1d12", poisonedAtHalf: true, poisonImmuneAreImmune: true },
+      disease: { hoursDice: "1d12", poisonedAtHalf: true, poisonImmuneAreImmune: true, sprouts: { dice: "2d4", days: 7 } },
     })
   })
   it("is null when the rule is missing a number rather than guessing one", () => {
@@ -120,5 +120,19 @@ describe("immuneToDamage", () => {
     expect(immuneToDamage(null, "poison")).toBe(false)
     expect(immuneToDamage("fire", "poison")).toBe(false)
     expect(immuneToDamage("poisonous", "poison")).toBe(false)
+  })
+})
+
+describe("parseSprouts", () => {
+  it("reads what grows from the body, off the trait", () => {
+    expect(parseSprouts(DEATH_BURST.desc)).toEqual({ dice: "2d4", days: 7 })
+  })
+  it("is null when the text says nothing about sprouting", () => {
+    expect(parseSprouts("The creature explodes.")).toBeNull()
+  })
+  it("rides along on an infection record", () => {
+    const burst = parseDeathBurst(DEATH_BURST.desc)!
+    const r = infectionFor({ burst, creature: "Kenta", characterId: "c1", conScore: 14, d12: 7, now: null })!
+    expect(r.sprouts).toEqual({ dice: "2d4", days: 7 })
   })
 })
