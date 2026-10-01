@@ -41,6 +41,15 @@ const MOTES = "pxPlumeMotes"
 
 /** The one shared hit-spark sheet, likewise. */
 const BURST = "pxSigilBurst"
+/**
+ * The ward BREAKING, on the frame a save turns the spell aside.
+ *
+ * The warded path had no beat of its own: the sigil thinned and faded, so a
+ * successful save — the good outcome, the one the player earned — looked like
+ * nothing happening, while a failed save got a hit spark. One shared white
+ * sheet, tinted per school, exactly as BURST is.
+ */
+const SHATTER = "pxSigilShatter"
 
 /** How long the hit spark lasts, seconds. Six frames at 20 fps. */
 export const BURST_LIFE = 0.3
@@ -57,11 +66,11 @@ export type SigilAct = "form" | "hold" | "resolve" | "done"
  */
 export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   necromancy:  { ring: "sigilNecroticRing",    plume: "sigilNecroticPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.necromancy.glow },
+                 motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.necromancy.glow },
   enchantment: { ring: "sigilEnchantmentRing", plume: "sigilEnchantmentPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.enchantment.glow },
+                 motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.enchantment.glow },
   illusion:    { ring: "sigilIllusionRing",    plume: "sigilIllusionPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.illusion.glow },
+                 motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.illusion.glow },
   // Evocation's plume is PIXEL art where the other three are painted (Sam,
   // 2026-09-28: "add pixels for flames ... paint it the same way with
   // pixels"). The ring stays painted, so the two layers sit at different
@@ -73,7 +82,7 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // the moment the save fails, which is the middle of the effect — so this
   // is new art in an existing slot, not new timing.
   evocation:   { ring: "sigilEvocationRing",   plume: "sigilEvocationPlume",
-                 motes: MOTES, burst: "sigilEvocationBurst",
+                 motes: MOTES, burst: "sigilEvocationBurst", shatter: SHATTER,
                  tint: SCHOOL_RAMP.evocation.glow },
   // Transmutation's plume is DRAWN, not separated out of its ring art. That
   // source never ignites — its frames differ only by a shimmer — so there is
@@ -87,7 +96,7 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // arrives, with nothing drawn under it, which is what conjuration is.
   // The ring sheet stays baked in public/vfx; it is just not referenced.
   conjuration: { plume: "sigilConjurationPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.conjuration.glow },
+                 motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.conjuration.glow },
   // Divination has NO RING either, and for a different reason from
   // conjuration: there was never a ring in the art. Sam sent a hooded seer
   // ringed by scrying eyes and asked for the figure cut out of the middle
@@ -101,7 +110,7 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // purple, the way transmutation keeps its whirlwind's colours.
   divination:  { plume: "sigilDivinationPlume", plumeSize: [3.2, 3.2],
                  anchor: "caster",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.divination.glow },
+                 motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.divination.glow },
   // Abjuration is the only school whose art arrived with BOTH layers already
   // in it: Sam drew a ward dome standing on its own rune circle, so the split
   // is where the art's own floor meets its own sphere rather than anywhere
@@ -118,16 +127,16 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   abjuration:  { ring: "sigilAbjurationRing", plume: "sigilAbjurationPlume",
                  plumeSize: [2.8, 2.25], still: true, anchor: "caster",
                  casterPose: "ward",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.abjuration.glow },
+                 motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.abjuration.glow },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
-                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
+                 motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.transmutation.glow,
                  still: true },
 }
 
 /** Sheets by damage type, for spells whose school is unknown. */
 export const DAMAGE_SIGIL: Record<string, SigilArt> = {
   necrotic: { ring: "sigilNecroticRing", plume: "sigilNecroticPlume",
-              motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.necromancy.glow },
+              motes: MOTES, burst: BURST, shatter: SHATTER, tint: SCHOOL_RAMP.necromancy.glow },
 }
 
 /**
@@ -180,6 +189,15 @@ export interface SigilArt {
    * White, like the motes, so one sheet serves every school.
    */
   burst?: string
+  /**
+   * The sheet thrown when the target MAKES its save — the ward coming apart.
+   *
+   * Separate art from `burst` rather than the same sheet played differently,
+   * because the two moments are opposites: a spell that takes detonates from
+   * a point, and a spell that is warded breaks as a shell, hollow in the
+   * middle. Played with the same sheet the save read as a weaker hit.
+   */
+  shatter?: string
   /**
    * The colour the motes and the hit spark are tinted.
    *
@@ -371,6 +389,15 @@ export interface SigilPose {
    */
   burst: number
   /**
+   * The ward-break's progress: NEGATIVE while it is not playing, then 0..1
+   * across BURST_LIFE from the moment the save lands.
+   *
+   * The exact mirror of `burst`, and the two are never both running — a spell
+   * either takes or is turned aside. Negative rather than 0 for "not
+   * playing", because 0 is a real value: the break's own first frame.
+   */
+  shatter: number
+  /**
    * 0..1 — the FLAME's own visibility, separate from the ring's opacity.
    *
    * Sam, 2026-09-28: "Making the save means the sigil rotates but no flames of
@@ -463,6 +490,7 @@ export function sigilPoseAt(
         ? ease(plan.art.still ? clamp01((p - 0.75) / 0.25) : p)
         : 0,
       burst: -1,
+      shatter: -1,
       struck: false,
     }
   }
@@ -480,6 +508,7 @@ export function sigilPoseAt(
       permeate: outcome === "taken" ? 0.35 + 0.15 * Math.sin(p * TAU * 1.5) : 0,
       flame: outcome === "taken" ? 1 : 0,
       burst: -1,
+      shatter: -1,
       struck: false,
     }
   }
@@ -500,6 +529,9 @@ export function sigilPoseAt(
       flame: taken ? Math.min(1, 1.3 - p) : 0,
       // The spark fires ON the strike frame, which is where this act begins.
       burst: taken ? clamp01(u / BURST_LIFE) : -1,
+      // The mirror of the line above: whichever way the save went, exactly
+      // one of these two runs, from the same instant.
+      shatter: taken ? -1 : clamp01(u / BURST_LIFE),
       struck: true,
     }
   }
@@ -514,6 +546,7 @@ export function sigilPoseAt(
     permeate: taken ? 1 : 0,
     flame: 0,
     burst: -1,
+    shatter: -1,
     struck: true,
   }
 }
