@@ -43,7 +43,7 @@ type Pack = {
   flasks: Flask[]
   bases: { water: boolean; holyWater: number; blessedWater: number }
   cleric: null | {
-    vials: number; silver: number
+    vials: number; silver: number; campActions: number
     bless: { ok: boolean; reason?: string }
     holyWater: { ok: boolean; reason?: string }
     purify: { ok: boolean; reason?: string }
@@ -51,7 +51,7 @@ type Pack = {
   effects: Effect[]
   drinks: Array<{ id: string; name: string; slug: string; icon: string | null; quantity: number; class: string; dc: number; steps: number; maxLevel: number | null }>
   makeable: Array<{ slug: string; name: string; icon: string | null; class: string; madeFrom: string[]; ok: boolean; reason: string | null }>
-  inebriation: { level: number; name: string; effect: string | null }
+  inebriation: { level: number; name: string; effect: string | null; hungover?: boolean; since?: string }
   recipes: Array<{ slug: string; name: string; ingredients: string[]; claims: string | null; ready: boolean }>
   runes: { materials: number; marks: Array<{ school: string; learnedVia: string; ok: boolean; reason: string | null }> }
   rolls: {
@@ -438,14 +438,14 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
               )}
               {pack.cleric && (
                 <div className="flex flex-col gap-1 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/80 p-2">
-                  <p className="text-xs uppercase tracking-wider text-[#c9a868]">Clerical help</p>
+                  <p className="text-xs uppercase tracking-wider text-[#c9a868]">Clerical help <span className="normal-case tracking-normal text-stone-500">· each rite is your camp action ({pack.cleric.campActions} left)</span></p>
                   <button type="button" onClick={() => void consecrate("blessed-water")} disabled={busy || !pack.cleric.bless.ok} title={pack.cleric.bless.reason}
                     className="rounded-sm border border-[#7a5f33] px-2 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
-                    Bless a vial of water <span className="text-stone-400">(camp action · {pack.cleric.vials} vials)</span>
+                    Bless a vial of water <span className="text-stone-400">({pack.cleric.vials} vials)</span>
                   </button>
                   <button type="button" onClick={() => void consecrate("holy-water")} disabled={busy || !pack.cleric.holyWater.ok} title={pack.cleric.holyWater.reason}
                     className="rounded-sm border border-[#7a5f33] px-2 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
-                    Make holy water <span className="text-stone-400">(1 hour · 25 gp silver · 1st-level slot)</span>
+                    Make holy water <span className="text-stone-400">(25 gp silver · 1st-level slot)</span>
                   </button>
                   {!pack.cleric.holyWater.ok && pack.cleric.holyWater.reason && <p className="text-[11px] text-stone-500">{pack.cleric.holyWater.reason}</p>}
                   {!pack.cleric.bless.ok && pack.cleric.bless.reason && <p className="text-[11px] text-stone-500">{pack.cleric.bless.reason}</p>}
@@ -541,7 +541,8 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                 <h3 className="mb-2 flex items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">
                   Drink
                   <span className={cn("normal-case tracking-normal", pack.inebriation.level ? "text-[#d9a066]" : "text-stone-500")}>
-                    {pack.inebriation.level ? `${pack.inebriation.name}: ${pack.inebriation.effect}` : "sober"}
+                    {pack.inebriation.level ? `${pack.inebriation.name}: ${pack.inebriation.effect} · wears off an hour at a time` : "sober"}
+                    {pack.inebriation.hungover ? " · hungover" : ""}
                   </span>
                 </h3>
                 {pack.drinks.length > 0 && (

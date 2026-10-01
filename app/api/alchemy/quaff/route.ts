@@ -5,19 +5,20 @@
 //   POST {characterId, inventoryItemId, save} → drink it: one fewer, level updated
 //   POST {…, sandbox: true}                  → rehearsal, writes NOTHING
 //
-// Rules in lib/inebriation.ts (Sam's ladder). The board rolls the CON save;
+// Rules in lib/inebriation.ts (Sam's ladder; time sobers you, an hour a level).
+// Drinkable anywhere, not just at the bench (Sam, 2026-10-01). The board rolls the CON save;
 // this route takes the total and never rolls.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { normalizeConditions } from "@/lib/conditions"
-import { currentLevel, isDrinkData, quaff, withLevel, LEVEL_NAME } from "@/lib/inebriation"
+import { conditionsFor, isDrinkData, quaff, LEVEL_NAME, type InebriationRecord } from "@/lib/inebriation"
+import { inebriationNow } from "@/lib/inebriation-server"
 
 export const dynamic = "force-dynamic"
 
 type Db = ReturnType<typeof createAdminClient>
 
 async function load(db: Db, characterId: string, inventoryItemId: string) {
-  const { data: character } = await db.from("characters").select("id, name, conditions").eq("id", characterId).maybeSingle()
+  const { data: character } = await db.from("characters").select("id, name, conditions, inebriation").eq("id", characterId).maybeSingle()
   if (!character) return { error: "no such character", status: 404 as const }
   const { data: row } = await db
     .from("inventory_items").select("id, name, quantity, item_id")
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const l = await load(db, characterId, inventoryItemId)
   if ("error" in l) return NextResponse.json({ error: l.error }, { status: l.status })
-  const level = currentLevel(normalizeConditions(l.character.conditions))
+  const level = (await inebriationNow(db, l.character)).record.level
   return NextResponse.json({
     item: l.row.name, class: l.drink.class,
     save: { ability: "CON", dc: Number(l.drink.save_dc) },
@@ -62,14 +63,25 @@ export async function POST(req: NextRequest) {
   const l = await load(db, characterId, inventoryItemId)
   if ("error" in l) return NextResponse.json({ error: l.error }, { status: l.status })
 
-  const conditions = normalizeConditions(l.character.conditions)
-  const result = quaff(currentLevel(conditions), save, l.drink)
-  const next = withLevel(conditions, result.after)
+  // Time first: whatever has worn off since the last drink is gone before
+  // this one is judged. Then the drink, and its clock starts now.
+  const now = await inebriationNow(db, l.character)
+  const result = quaff(now.record.level, save, l.drink)
+  const record: InebriationRecord = {
+    ...now.record,
+    level: result.after,
+    since: new Date().toISOString(),
+    since_game: now.gameNow,
+  }
+  const next = conditionsFor(now.conditions, record)
 
   if (!sandbox) {
     // The level is written first; only then is the drink taken, so a refused
     // write never costs the bottle.
-    const { error } = await db.from("characters").update({ conditions: next }).eq("id", characterId)
+    const { error } = await db
+      .from("characters")
+      .update({ conditions: next, inebriation: record.level === 0 && !record.hangover_until ? null : record })
+      .eq("id", characterId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     const left = (l.row.quantity ?? 1) - 1
     const { error: e1 } =

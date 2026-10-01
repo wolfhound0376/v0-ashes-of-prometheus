@@ -1,6 +1,6 @@
 # Alchemy: recipes at the bench
 
-Status: **mechanics built, 2026-10-01. No recipe content yet.** Spec: `claude_Alchemy_Minigame.md` §6 (the Poisoned Cookbook).
+Status: **built, 2026-10-01. Five starter recipes live; they come with the kit.** Spec: `claude_Alchemy_Minigame.md` §6 (the Poisoned Cookbook).
 
 ## What works now
 
@@ -13,12 +13,13 @@ Status: **mechanics built, 2026-10-01. No recipe content yet.** Spec: `claude_Al
 
 ## Not done, on purpose
 
-- **No recipe rows exist.** Recipes are game content, and the source is silent, so none were invented. Below is a starter set worked out from the live grid, for Sam to approve.
 - **Sabotage's effect swap** ("one ingredient is wrong in a way that swaps the effect") is not modelled. Only the +2 is.
 - **Spotting a drifted copy** (moderate Intelligence (Nature) when read) is not modelled.
 - **Leak:** `items` is public-read, so a determined player with the anon key could read `properties.reliability`. Moving reliability to a service-role table would close it.
 
-## Proposed starter recipes (all `true`; Sam to approve before any row is written)
+## The starter recipes — approved ("the five starter recipes that go with the kit", Sam 2026-10-01)
+
+Live as catalog rows (`20261001140000_kit_recipes.sql`). Each carries `properties.recipe.kit = "alchemists-supplies"`: **anyone carrying Alchemist's Supplies knows all five.** Nobody in the party carries the kit today (Fifi has the proficiency but not the tools), so they appear the moment a kit is found or bought.
 
 Worked out from the live `alchemy_effects` grid, 2026-10-01. Each pair shares exactly what the recipe claims and nothing harmful.
 

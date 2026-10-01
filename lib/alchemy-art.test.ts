@@ -7,10 +7,10 @@ describe("approved bench art", () => {
     expect(Object.keys(BENCH_CLIPS).sort()).toEqual(["idle", "inert", "mixing", "purify", "smoke", "success"])
   })
 
-  it("has prepared art only for real ingredients, and none for the Nightlight Sam sent back", () => {
+  it("has prepared art for every ingredient — Nightlight on the approved redo B", () => {
     const withArt = Object.keys(EXTRACTION_METHOD).filter((s) => preparedArt(s))
-    expect(withArt.length).toBe(32)
-    expect(preparedArt("nightlight-fungus")).toBeNull()
+    expect(withArt.length).toBe(33)
+    expect(preparedArt("nightlight-fungus")).toMatch(/nightlight-fungus-b\.png$/)
     expect(preparedArt("not-an-ingredient")).toBeNull()
   })
 })

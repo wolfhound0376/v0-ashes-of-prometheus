@@ -10,6 +10,7 @@ A cleric does not brew. A cleric **consecrates the base** before the brew, or **
 
 - **Two new catalogue rows** (migration `20261001110000_cleric_bases.sql`, data only, applied live): `blessed-water` and `powdered-silver`, with Sam's approved art. `holy-water` already existed.
 - **The brew route now checks the base.** Before this, `base: "holy-water"` was taken on the caller's word and never used up. Now the base must be in the pack, and one is consumed with the ingredients whatever the outcome.
+- **Every rite is the cleric's camp action** (Sam, 2026-10-01): blessing water, holy water and purifying each spend one `pray` action from `rest_actions_remaining` (`lib/camp.ts spendCampAction`). With none left, the bench says so and the route refuses (`no_camp_action`). The action is written only after the rite succeeds.
 - **Slots** are spent the way `/api/combat` spends them: `sheet_spellcasting.slots[level].used += 1`.
 - **Purify works on a flask in the cleric's own pack only.** A party member hands the flask over first. The route never reaches into another pack (AGENTS.md §5). A stack of identical flasks is split, and only the one purified changes.
 - **The order of writes is load-bearing:** what is made goes in first, then the costs are taken. A refused write never costs anything.
