@@ -526,6 +526,25 @@
   "frames": 16,
   "rows": 4
  },
+ "sigilAbjurationPlume": {
+  "file": "sigilAbjurationPlume.webp",
+  "bytes": 293938,
+  "cols": 3,
+  "rows": 3,
+  "frames": 9,
+  "fps": 12,
+  "loop": true
+ },
+ "sigilAbjurationRing": {
+  "file": "sigilAbjurationRing.webp",
+  "bytes": 226598,
+  "cols": 3,
+  "rows": 3,
+  "frames": 8,
+  "fps": 12,
+  "loop": false,
+  "peak": 7
+ },
  "sigilConjurationPlume": {
   "file": "sigilConjurationPlume.webp",
   "bytes": 216510,

@@ -102,6 +102,22 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   divination:  { plume: "sigilDivinationPlume", plumeSize: [3.2, 3.2],
                  anchor: "caster",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.divination.glow },
+  // Abjuration is the only school whose art arrived with BOTH layers already
+  // in it: Sam drew a ward dome standing on its own rune circle, so the split
+  // is where the art's own floor meets its own sphere rather than anywhere
+  // this pipeline had to invent. It is the shape the sigil system was built
+  // for, and it is the last school to get art.
+  //
+  // STILL, like transmutation: a ward holds. The rune circle fades up and
+  // glows, and the dome closes over whoever is standing in it. A spinning
+  // ward reads as a portal, which is conjuration's job.
+  //
+  // The dome's flat body is pulled back to two fifths in the bake so it reads
+  // as glass — the caster stands INSIDE this one, and the point of a ward is
+  // that you can still see who it is protecting.
+  abjuration:  { ring: "sigilAbjurationRing", plume: "sigilAbjurationPlume",
+                 plumeSize: [2.8, 2.25], still: true, anchor: "caster",
+                 motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.abjuration.glow },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
                  still: true },
