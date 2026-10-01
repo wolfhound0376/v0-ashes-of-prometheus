@@ -29,6 +29,7 @@ import { maskGrid, benchProficient } from "@/lib/alchemy-pack"
 import { isPrep, methodOf, METHOD_TOOL, type ExtractionMethod } from "@/lib/extraction"
 import { canBless, canMakeHolyWater, canPurify, isCleric } from "@/lib/alchemy-cleric"
 import type { RiteSheet } from "@/lib/camp-rites"
+import { canInscribe, RUNE_MATERIALS, type KnownRune } from "@/lib/alchemy-runes"
 
 export const dynamic = "force-dynamic"
 
@@ -40,14 +41,15 @@ export async function GET(req: NextRequest) {
 
   const { data: character } = await db
     .from("characters")
-    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies, sheet_spellcasting")
+    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies, sheet_spellcasting, sheet_skill_proficiencies")
     .eq("id", characterId)
     .maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
 
-  const [{ data: pack }, { data: known }] = await Promise.all([
+  const [{ data: pack }, { data: known }, { data: marks }] = await Promise.all([
     db.from("inventory_items").select("id, name, quantity, item_id, icon_url, brew, prep").eq("character_id", characterId),
     db.from("character_known_effects").select("item_slug, column_index").eq("character_id", characterId),
+    db.from("character_known_runes").select("school, learned_via").eq("character_id", characterId),
   ])
 
   const itemIds = [...new Set((pack ?? []).map((p) => p.item_id).filter(Boolean) as string[])]
@@ -83,6 +85,7 @@ export async function GET(req: NextRequest) {
   let blessedWater = 0
   let vials = 0
   let silver = 0
+  let runeMaterials = 0
   const flasks: Array<{ id: string; name: string; potency: number; impurity: number; effects: string[] }> = []
 
   for (const p of pack ?? []) {
@@ -106,6 +109,7 @@ export async function GET(req: NextRequest) {
       if (row.slug === "blessed-water") blessedWater += n
       if (row.slug === "glass-vial") vials += n
       if (row.slug === "powdered-silver") silver += n
+      if ((RUNE_MATERIALS as readonly string[]).includes(row.slug)) runeMaterials += n
     }
     if (!isGrid(row.alchemy_effects)) continue
     const prev = ingredients.get(row.slug)
@@ -159,6 +163,15 @@ export async function GET(req: NextRequest) {
         })()
       : null,
     effects: effects ?? [],
+    // The marks this character knows, each with whether they can inscribe it
+    // tonight. Learning a mark happens in the world, never here.
+    runes: {
+      materials: runeMaterials,
+      marks: ((marks ?? []) as KnownRune[]).map((m) => {
+        const g = canInscribe(character as { name: string; class?: string | null; sheet_skill_proficiencies?: unknown }, (marks ?? []) as KnownRune[], m.school, runeMaterials)
+        return { school: m.school, learnedVia: m.learned_via, ok: g.ok, reason: g.ok ? null : g.reason }
+      }),
+    },
     rolls: {
       brew: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC },
       // Extraction is the same check against the same DC (lib/extraction.ts).

@@ -49,6 +49,7 @@ type Pack = {
     purify: { ok: boolean; reason?: string }
   }
   effects: Effect[]
+  runes: { materials: number; marks: Array<{ school: string; learnedVia: string; ok: boolean; reason: string | null }> }
   rolls: {
     brew: { ability: string; modifier: number; proficient: boolean; dc: number }
     extract: { ability: string; modifier: number; proficient: boolean; dc: number }
@@ -76,6 +77,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<string[]>([])
   const [base, setBase] = useState<"water" | "blessed-water" | "holy-water">("water")
+  const [rune, setRune] = useState<string>("")
   const [busy, setBusy] = useState(false)
   const [stage, setStage] = useState<Stage>({ kind: "idle" })
   // An outcome clip plays ONCE, then the still takes over (the tinted flask,
@@ -206,7 +208,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       const res = await fetch("/api/alchemy/brew", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId, itemSlugs: picked, check: r.total, die: face, base }),
+        body: JSON.stringify({ characterId, itemSlugs: picked, check: r.total, die: face, base, ...(rune ? { rune } : {}) }),
       })
       const body = await res.json()
       if (!res.ok) {
@@ -224,6 +226,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
         })
       }
       setPicked([])
+      setRune("")
       await load()
     } finally {
       setBusy(false)
@@ -368,6 +371,21 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                   : `Brew — INT ${sign(pack.rolls.brew.modifier)} vs DC ${pack.rolls.brew.dc}`}
               </button>
               {(base !== "water") && <p className="text-xs text-[#e2c98e]">A consecrated base: impurity can't rise above 1.</p>}
+              {pack.runes.marks.length > 0 && (
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-xs uppercase tracking-wider text-[#c9a868]">Seal with a rune <span className="normal-case tracking-normal text-stone-500">({pack.runes.materials} rune materials)</span></span>
+                  <select value={rune} onChange={(e) => setRune(e.target.value)} disabled={busy}
+                    className="rounded-sm border border-[#7a5f33] bg-[#0d0b08] px-2 py-1 text-sm text-[#f1dca8]">
+                    <option value="">No rune</option>
+                    {pack.runes.marks.map((m) => (
+                      <option key={m.school} value={m.school} disabled={!m.ok}>
+                        {m.school[0].toUpperCase() + m.school.slice(1)}{m.ok ? "" : " — can't tonight"}
+                      </option>
+                    ))}
+                  </select>
+                  {pack.runes.marks.filter((m) => !m.ok).slice(0, 1).map((m) => <span key={m.school} className="text-[11px] text-stone-500">{m.reason}</span>)}
+                </label>
+              )}
               {pack.cleric && (
                 <div className="flex flex-col gap-1 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/80 p-2">
                   <p className="text-xs uppercase tracking-wider text-[#c9a868]">Clerical help</p>
