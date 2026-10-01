@@ -24,13 +24,27 @@
 //      to write, not a null to swallow.
 //
 // SOURCES, so nothing here can be mistaken for an improvisation:
-//   SRD 5.1     Classes: Cleric — Divine Intervention (10th level, action,
-//               percentile <= cleric level, GM chooses, 7 days on a success /
-//               long rest on a failure, automatic at 20th). This module's CAP
-//               is pinned to that number and never exceeds it.
+//   EDITION (Sam, 2026-10-01): SRD 5.2.1 (2025) is canon for this campaign.
+//               That is what `class_spellcasting_progression` and every live
+//               character sheet cite. BUT the only SRD text ingested into
+//               `campaign_chunks` is SRD 5.1 — 5.2.1 is NOT in the database,
+//               so no 5.2.1 rule can be quoted or verified from a session.
+//               Ingesting it is open work and is the fix for this whole note.
+//
+//   THE CAP, restated so it does not rest on a citation we cannot check.
+//               Divine Intervention is a 10th-level cleric feature in both
+//               editions, but its mechanics differ between them, and the 5.1
+//               version (percentile <= cleric level) is the one this module
+//               was originally written against. The cap is therefore justified
+//               on its own terms rather than by that rule: prayer's ceiling is
+//               the character's CLERIC LEVEL, a number that is at or below
+//               what the class feature offers under either edition, and which
+//               prayer in practice almost never reaches. Nothing below depends
+//               on which edition wins; if 5.2.1 is ingested later and its text
+//               suggests a different ceiling, this is the constant to revisit.
 //   SRD 5.1     Classes: Cleric — Channel Divinity: Turn Undead ("speak a
 //               prayer"). Already a prayer in the rules; this module does not
-//               touch it.
+//               touch it. (Cited from 5.1, the only SRD text ingested.)
 //   SRD 5.1     Characterization: Backgrounds — Acolyte, Shelter of the
 //               Faithful. Samson's only faith mechanic at level 1, and it is
 //               social rather than supernatural. That is the register here.

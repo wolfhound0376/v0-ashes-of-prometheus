@@ -151,6 +151,38 @@ export function domainGate(
 }
 
 // ============================================================================
+// WHAT THE CLASS TABLE OWES
+// ============================================================================
+
+/**
+ * `class_spellcasting_progression.slots` comes in two real shapes, both
+ * verified live against the table on 2026-10-01 (source: SRD 5.2.1 (2025),
+ * cleric p.36, warlock p.71):
+ *
+ *   Cleric  — a map of spell level to slot count:  {"1": 4, "2": 3, "3": 2}
+ *   Warlock — pact magic, one level for all slots: {"pact": true, "count": 2, "level": 3}
+ *
+ * A warlock's pact slots are all at the same level, so reading `max(keys)` on
+ * that object would return NaN or nonsense. Handle both or the warlock grant
+ * silently computes the wrong level.
+ */
+export function owedSpellLevelFromSlots(slots: unknown): number {
+  if (!slots || typeof slots !== "object") return 0
+  const o = slots as Record<string, unknown>
+  if (o.pact === true) {
+    const lvl = Number(o.level)
+    return Number.isFinite(lvl) ? Math.max(0, Math.trunc(lvl)) : 0
+  }
+  let best = 0
+  for (const key of Object.keys(o)) {
+    const lvl = Number(key)
+    const count = Number(o[key])
+    if (Number.isFinite(lvl) && lvl > best && Number.isFinite(count) && count > 0) best = Math.trunc(lvl)
+  }
+  return best
+}
+
+// ============================================================================
 // THE GRANT
 // ============================================================================
 
