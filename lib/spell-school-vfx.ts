@@ -31,14 +31,23 @@
 // caster's hands. MOTION survives both. So each school is a colour AND a
 // distinct way of moving, and either one alone is enough to name it:
 //
-//   abjuration     guard blue      the ring CONTRACTS and locks — a barrier closing
-//   conjuration    gate green      glyphs ARRIVE one at a time, ring opens outward
-//   divination     silver          the ring HOLDS STILL; glyphs light in sequence
-//   enchantment    rose            a slow hypnotic SWAY, glyphs breathing out of phase
-//   evocation      raw orange      spins up ACCELERATING, flares white at release
-//   illusion       lilac           every glyph has a DRIFTING TWIN that flickers
-//   necromancy     grave green     the ring SINKS and tilts, glyphs hang inverted, guttering
-//   transmutation  alchemic gold   glyphs SWAP places in eased steps — change itself
+//   abjuration     cobalt   204deg  the ring CONTRACTS and locks — a barrier closing
+//   conjuration    yellow-green 91  glyphs ARRIVE one at a time, ring opens outward
+//   divination     violet   266deg  the ring HOLDS STILL; glyphs light in sequence
+//   enchantment    rose     335deg  a slow hypnotic SWAY, glyphs breathing out of phase
+//   evocation      orange    27deg  spins up ACCELERATING, flares white at release
+//   illusion       ice blue 207deg  every glyph has a DRIFTING TWIN that flickers
+//   necromancy     violet   277deg  the ring SINKS and tilts, glyphs hang inverted, guttering
+//   transmutation  gold      37deg  glyphs SWAP places in eased steps — change itself
+//
+// THOSE NAMES ARE MEASURED OFF SCHOOL_RAMP, not chosen here, and three of them
+// used to be wrong in this very comment: necromancy was called "grave green"
+// and divination "silver" when both are violet on Sam's sheet, and illusion
+// "lilac" when it is blue. A comment that contradicts the table below it is
+// worse than none — it is the first thing read and the last thing checked.
+// The hue figures are here so the next person can tell at a glance which
+// pairs sit close, which is what makes the motions below load-bearing; the
+// docblock on SCHOOL_VFX spells that consequence out.
 //
 // ── why this file has no THREE import ──────────────────────────────────────
 //
