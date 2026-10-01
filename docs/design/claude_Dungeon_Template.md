@@ -1,6 +1,7 @@
 # Dungeons from the cave template — proposal
 
-**Status:** PROPOSAL, awaiting Sam. Nothing here is built yet.
+**Status:** Sam approved 2026-09-30 — describe-and-build, plus a builder for him to add chests, traps, lore and props.
+Built: build-order step 1 (records) and the builder (step 4). Not built: DB persistence (step 3), generator (step 5).
 **Sam, 2026-09-30:** "the cave is a template for dungeons. There will be many and some naturally will spawn based on
 how exploring goes during travels. Some I will design myself that will have serious monsters, loot, and lore. These
 we will place."

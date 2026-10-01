@@ -22,6 +22,40 @@ painted scenes; entering a cave or dungeon switches to this grid raycaster.
 
 `pov.js` loads audio from a `data:` URI (artifact) or a URL (app), so the same file runs in both.
 
+## 1b. Dungeon records and the builder (Sam, 2026-09-30)
+
+Sam: *"the cave is a template for dungeons"* — then chose **describe-and-build** plus *"the ability for me to add
+assets, chests, traps, lore."*
+
+- **One engine, many dungeons.** `pov.js` plays a record from `public/cave-pov/dungeons/<id>.json` (`/cave?d=<id>`,
+  default `darklake`). A record holds: `id, name, kind, place, intro, map, start, creatures, chests (loot = catalog
+  slugs), forage, props, traps, lore, hazards, dressing {seed, stalactites, props, violets}`. Creature stat blocks live
+  once in `manifest.js` (`A.creatures`); a record only says which and where.
+- **Describe-and-build:** Sam describes a dungeon; Claude writes the record (map + placements) and checks it in.
+- **Builder (B):** the DM gets a *Builder* button on `/cave` (role `dm`); every preview has it too. Walk, pick
+  Chest / Trap / Lore / Prop / Creature / Mushrooms / Light / Erase, *Place at the ring*. Changes save as a draft in
+  that browser at once; **Export** downloads `<id>.json` for Claude to check in, so every player gets it. Monsters,
+  traps and spores sleep while it is open. Chests pick from the **live `items` catalog** (the page passes the public
+  Supabase URL + anon key to the iframe); lore text is Sam's, shown verbatim.
+- **Traps — SRD 5.1 sample traps, numbers as recalled; check against the SRD before canon play:** hidden pit (DC 15 to
+  spot, 10 ft, 1d6), poison darts (DC 15 to spot, 1d3 darts +8, 1d4 piercing + DC 15 CON or 2d10 poison, half on a
+  save), falling net (DC 10 to spot, restrained, DC 10 Strength to escape). Passive Perception = 10 + WIS (skill
+  proficiencies are not on the sheet yet); Search reveals traps whose DC the roll meets. Disarm darts/net: thieves'
+  tools DEX DC 15 (+2 for rogues), failing by 5+ sets it off. **HOUSE:** a jump clears a pit; climbing out takes 2.5 s;
+  darts fire up to 3 times. Note: the SRD darts can kill a level-1 character outright.
+- **Lore:** journal, loose page, book (item-pixel icons) or a carved standing stone; E opens a parchment reader.
+- **Not yet:** saving to the database (`dungeons` / `dungeon_state` — a migration Sam would paste), the travel
+  generator, more creatures with cave art.
+
+## 1c. First-person dagger (Sam, 2026-09-30: "replace the dagger animation like we did for the bow and arrow")
+
+The painted dagger and `lib/weapon-rig.ts` from `feat/bow-draw-rig` (`claude_Melee_Attack_Rig.md`), ported into
+`pov.js`. Quick click = `slash_d` (the hand slides along a bowed arc, never rotating); hold = `thrust` along the blade's
+axis with the lunge and grunt. Light timing (windup 172 ms, strike 90, recover 234); the attack roll lands on the
+strike frame. Dagger on the full-resolution HUD like the bow; the blue arc trail drawn into the 640×360 view as hard
+pixels (FX_PX = 1). The painted hand is Freía's (red nails) — every character uses it until each has their own
+capture. Fists keep the pixel animation.
+
 ## 2. Controls
 
 - **Mouse** looks (after one click; Esc releases). Full pitch.
