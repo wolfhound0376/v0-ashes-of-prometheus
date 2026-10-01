@@ -51,7 +51,8 @@ assets, chests, traps, lore."*
 
 The painted dagger and `lib/weapon-rig.ts` from `feat/bow-draw-rig` (`claude_Melee_Attack_Rig.md`), ported into
 `pov.js`. Light timing (windup 172 ms, strike 90, recover 234); the attack roll lands on the strike frame. Dagger on the
-full-resolution HUD like the bow; never rotates. The painted hand is Freía's (red nails) — every character uses it until
+full-resolution HUD like the bow. Held at a fixed 30° clockwise tilt, blade leaning right (Sam, 9/30: "rotate the blade
+and hand drawing by 30 degrees and fix it there"); it never rotates during a swing. The painted hand is Freía's (red nails) — every character uses it until
 each has their own capture. Fists keep the pixel animation.
 
 - **Quick click = `slash_out`** (Sam, 9/30: "the slash from medially go lateral"): a backhand — the hand cocks across the

@@ -1024,7 +1024,11 @@ function arcTrail(clip,t,tip,w="light",samples=90){ const d=mrTiming(w), T=d.win
   if(alpha<=0||head-tail<.03) return null; const pts=[];
   for(let i=0;i<=samples;i++){ const u=tail+(head-tail)*(i/samples), r=rigAt(clip,a+(b-a)*u,w); pts.push([r.x+tip[0]*r.scale, r.y+tip[1]*r.scale]); }
   return {alpha,pts,strike:tt<=b}; }
-function drawDaggerArc(clip,t){ const tip=[MR.DAG.tipOffset[0]*MR.DAG.scale*MR_K, MR.DAG.tipOffset[1]*MR.DAG.scale*MR_K];
+// Sam, 9/30: "rotate the blade and hand drawing by 30 degrees and fix it there" — a fixed tilt, clockwise (the blade
+// leans out toward the right, the way the backhand travels), held through every frame. Still never rotates mid-swing.
+const MR_TILT=30*Math.PI/180, MR_TC=Math.cos(MR_TILT), MR_TS=Math.sin(MR_TILT);
+function drawDaggerArc(clip,t){ const t0=[MR.DAG.tipOffset[0]*MR.DAG.scale*MR_K, MR.DAG.tipOffset[1]*MR.DAG.scale*MR_K];
+  const tip=[t0[0]*MR_TC-t0[1]*MR_TS, t0[0]*MR_TS+t0[1]*MR_TC]; // the trail follows the tilted tip
   const fade=(P.act&&P.act.stopT>0)?1:.85; fpg.setTransform(1,0,0,1,0,0); fpg.clearRect(0,0,FW,FH); const sx=P.swayX*.0175, sy=P.swayY*.0175;
   if(clip==="thrust_c"){ const d=mrTiming("light"), T=d.windup+d.strike+d.recover, a=d.windup/T, tt=Math.max(0,Math.min(1,t)); if(tt<a) return;
     const k=Math.max(0,1-(tt-a)/(1-a)/.6)*fade; if(k<=0) return; fpg.fillStyle=`rgba(255,240,210,${(.7*k).toFixed(2)})`; // old THRUST "lines"
@@ -1039,7 +1043,7 @@ function drawDaggerArc(clip,t){ const tip=[MR.DAG.tipOffset[0]*MR.DAG.scale*MR_K
 function drawDaggerHUD(W,H,clip,t){ const r=rigAt(clip,t); const [X,Y]=mrMap(r.x,r.y,W,H); const s=MR.DAG.scale*MR_K*r.scale*(H/520);
   const sx=P.swayX*.35*.1*(W/RW), sy=P.swayY*.35*.1*(W/RW);
   const [lr,lg,lb]=light(P.x,P.y,.6); const br=Math.min(1,(lr+lg+lb)/3*.75+.32);
-  hg.save(); hg.translate(X+sx,Y+sy); hg.rotate(r.angle-MR.REST_ANGLE); hg.scale(s,s); hg.imageSmoothingEnabled=true; hg.imageSmoothingQuality="high";
+  hg.save(); hg.translate(X+sx,Y+sy); hg.rotate(r.angle-MR.REST_ANGLE+MR_TILT); hg.scale(s,s); hg.imageSmoothingEnabled=true; hg.imageSmoothingQuality="high";
   hg.globalAlpha=P.hidden?.55:1; hg.filter=`brightness(${br.toFixed(2)})${P.hidden?" saturate(.5)":""}`; hg.drawImage(RIG.dagger,-MR.DAG.grip.x,-MR.DAG.grip.y); hg.restore(); }
 function drawRig(){ const dpr=Math.min(2,window.devicePixelRatio||1), W=Math.round(HUD.clientWidth*dpr), H=Math.round(HUD.clientHeight*dpr);
   if(HUD.width!==W||HUD.height!==H){ HUD.width=W; HUD.height=H; }
