@@ -95,6 +95,7 @@ export function targetSigilVfx(opts: {
   let plume: Flip | null = null
   let motes: Flip | null = null
   let burst: Flip | null = null
+  let shatter: Flip | null = null
   let glow: THREE.PointLight | null = null
   // The plume quad, in board squares. Defaults to the tall column every
   // flame-shaped school uses; a school whose art is a different shape says so
@@ -166,15 +167,28 @@ export function targetSigilVfx(opts: {
     }).catch(() => {})
   }
 
+  // THE WARD BREAKING on the frame the save turns the spell aside. The exact
+  // counterpart to the hit spark above, at the same height on the same body —
+  // the two are mutually exclusive, so a cast shows one or the other and
+  // never both.
+  if (plan.art.shatter) {
+    void loadSheet(plan.art.shatter).then((sheet) => {
+      if (disposed) return
+      shatter = new Flip(sheet, plan.art.tint ?? 0xffffff, BURST_SIZE, BURST_SIZE)
+      shatter.opacity = 0
+      group.add(shatter.mesh)
+    }).catch(() => {})
+  }
+
   const dispose = () => {
     if (disposed) return
     disposed = true
-    for (const f of [ring, plume, motes, burst]) {
+    for (const f of [ring, plume, motes, burst, shatter]) {
       if (!f) continue
       group.remove(f.mesh)
       f.dispose()
     }
-    ring = plume = motes = burst = null
+    ring = plume = motes = burst = shatter = null
     if (glow) { group.remove(glow); glow = null }
     group.parent?.remove(group)
   }
@@ -255,6 +269,23 @@ export function targetSigilVfx(opts: {
           burst.setProgress(b)
           // Full brightness almost to the end: a spark does not fade, it stops.
           burst.opacity = b < 0.8 ? 1 : (1 - b) / 0.2
+        }
+      }
+
+      if (shatter) {
+        // pose.shatter is negative unless the save was MADE, so this and the
+        // spark above can never run together.
+        const b = pose.shatter
+        shatter.mesh.visible = b >= 0 && b <= 1
+        if (shatter.mesh.visible) {
+          if (opts.camera) shatter.mesh.quaternion.copy(opts.camera.quaternion)
+          shatter.mesh.position.set(at.x, at.y + BURST_Y, at.z)
+          // Opens WIDER than the spark and keeps opening: the spark drives
+          // into the body, the break throws itself off it.
+          shatter.mesh.scale.setScalar(0.85 + 0.95 * b)
+          shatter.setProgress(b)
+          // And it fades rather than stopping — a spark ends, glass scatters.
+          shatter.opacity = 1 - b * b
         }
       }
 

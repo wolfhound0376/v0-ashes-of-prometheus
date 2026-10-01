@@ -29,6 +29,7 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxSwirl      48x48  8f loop   the dizzy spiral over a mocked head, violet and blue
   pxPlumeMotes 48x96  8f loop   embers rising through a target sigil's plume, white
   pxSigilBurst 96x96  6f        fighting-game hit spark for the frame a spell takes, white
+  pxSigilShatter 96x96 8f       the ward breaking on the frame a save turns a spell aside, white
   pxFlame      32x48  8f loop   a tongue of fire riding a burning creature
   pxArc        24x24  6f        a lightning crackle around a charged creature
   pxWebWrap    48x64  1f        strands wrapped around a webbed creature
@@ -44,6 +45,7 @@ Usage: draw_pixel_vfx.py <public/vfx> [--preview <dir>]
 
 import json
 import math
+import random
 import os
 import sys
 
@@ -730,6 +732,132 @@ def spark(f, n):
 
 
 # ── sheets ───────────────────────────────────────────────────────────────────
+def sigilshatter(f, n):
+    """The ward BREAKING, for the frame a save-based spell is turned aside.
+
+    The counterpart to sigilburst, and deliberately its opposite. A spell that
+    TAKES throws a hit spark: a point detonating outward. A spell that is
+    WARDED does not detonate — something the caster built gets broken by the
+    target, and until this the warded path had no beat at all. The sigil
+    simply thinned and faded, so a successful save, which is the good outcome
+    and the one the player earned, looked like nothing happening.
+
+    What makes a break read as a break rather than as another explosion:
+
+      IT STARTS AS A SHELL.  The shards begin ON a ring, not at the centre,
+                             and the middle stays EMPTY for the whole thing.
+                             A burst that fills its own centre reads as an
+                             impact; a hollow one reads as something coming
+                             apart.
+      SHARDS, NOT SPIKES.    Each piece is a quad with four corners of its
+                             own, tumbling as it goes. Wedges radiating from
+                             a centre are a spark; angular plates that ROTATE
+                             are glass.
+      IT SLOWS.              A spark is all in its first third. A break keeps
+                             going and decelerates, because the pieces have
+                             mass and nothing is pushing them any more.
+      THE CRACK COMES FIRST. Frame 0 is the intact rim with fracture lines
+                             across it and nothing flying yet, so the eye
+                             reads cause then effect over eight frames
+                             instead of being handed the aftermath.
+
+    SEEDED, like every procedural effect in the kit: every seat watches the
+    same fight, so two players must see the same ward break the same way.
+
+    Drawn WHITE so the kit tints it with the school's colour, as pxFlash,
+    pxRing, pxGlow and pxSigilBurst all are."""
+    cell = Cell(96, 96)
+    cx = cy = 48
+    W = WHITE
+    p = f / max(1, n - 1)
+
+    rng = random.Random(90210)
+    SHARDS = 14
+    specs = []
+    for i in range(SHARDS):
+        a = (i / SHARDS) * math.tau + rng.uniform(-0.11, 0.11)
+        specs.append({
+            "a": a,
+            "speed": rng.uniform(0.72, 1.25),
+            "size": rng.uniform(3.4, 7.2),
+            "spin": rng.uniform(-3.1, 3.1),
+            "tone": rng.randrange(2, 5),
+            "lag": rng.uniform(0.0, 0.16),     # not every piece lets go at once
+        })
+
+    R0 = 21.0                                   # the rim the ward sat on
+
+    # ── the crack, before anything moves ──
+    # ALONG the rim, not out from the centre. Radial dashes drew a sparkler —
+    # exactly what sigilburst's own notes warn a spark must not look like —
+    # and a ward does not crack outward from its middle anyway. It splits
+    # along its shell, between the pieces that are about to let go.
+    crack = max(0.0, 1.0 - p * 3.0)
+    if crack > 0.01:
+        tone = W[2 + int(crack * 2)]
+        for k, sp in enumerate(specs):
+            a0 = sp["a"]
+            a1 = specs[(k + 1) % len(specs)]["a"]
+            if a1 < a0:
+                a1 += math.tau
+            steps = 13
+            for t in range(steps):
+                if t % 3 == 2:                  # dashed: a fracture, not a hoop
+                    continue
+                aa = a0 + (a1 - a0) * (t / (steps - 1))
+                rr = R0 + (vnoise(t * 0.9, aa * 6.0, 7) * 2 - 1) * 1.8
+                cell.put(cx + math.cos(aa) * rr, cy + math.sin(aa) * rr, tone)
+
+    # ── the shards, tumbling outward and slowing ──
+    for sp in specs:
+        q = (p - sp["lag"]) / max(0.01, 1.0 - sp["lag"])
+        if q <= 0:
+            continue
+        q = min(1.0, q)
+        # Decelerating: fast off the rim, slowing as it goes. 1-(1-q)^2 is the
+        # shape a thrown piece takes once nothing is pushing it any more.
+        # 20 units of travel, not 34: at 34 the pieces left the 96px cell by
+        # the fifth frame and the break ended off-screen.
+        travel = (1 - (1 - q) ** 2) * 20.0 * sp["speed"]
+        d = R0 + travel
+        x = cx + math.cos(sp["a"]) * d
+        y = cy + math.sin(sp["a"]) * d
+        shrink = 1.0 - 0.45 * q
+        fade = 1.0 if q < 0.78 else max(0.0, (1.0 - q) / 0.22)
+        if fade <= 0.02:
+            continue
+        body = W[max(0, min(4, sp["tone"] - (0 if fade > 0.55 else 1)))]
+        lip = W[min(4, sp["tone"] + 1)]
+        size = sp["size"] * shrink
+        rot = sp["a"] + sp["spin"] * q
+        # A FILLED quad. Drawn as four edges it read as a wire ring — the eye
+        # saw a tiny hoop, not a plate of glass. Each piece is long on one
+        # axis and short on the other, which is what makes it a shard rather
+        # than a chip.
+        corners = []
+        for k in range(4):
+            ca = rot + k * (math.tau / 4) + 0.4
+            rr = size * (0.42 if k % 2 else 1.0)
+            corners.append((x + math.cos(ca) * rr, y + math.sin(ca) * rr))
+        xs = [c[0] for c in corners]
+        ys = [c[1] for c in corners]
+        for py in range(int(min(ys)) - 1, int(max(ys)) + 2):
+            for px_ in range(int(min(xs)) - 1, int(max(xs)) + 2):
+                inside = True
+                for k in range(4):
+                    x0, y0 = corners[k]
+                    x1, y1 = corners[(k + 1) % 4]
+                    if (x1 - x0) * (py - y0) - (y1 - y0) * (px_ - x0) < 0:
+                        inside = False
+                        break
+                if inside:
+                    cell.put(px_, py, body)
+        # A lit leading edge, so the plate has a face the light catches.
+        cell.line(corners[0][0], corners[0][1], corners[1][0], corners[1][1], lip)
+
+    return cell
+
+
 
 SHEETS = [
     # name, draw, frames, cols, fps, loop
@@ -745,11 +873,13 @@ SHEETS = [
     ("pxSwirl",    swirl,     8, 4, 12, True),
     ("pxPlumeMotes", plumemotes, 8, 4, 12, True),
     ("pxSigilBurst", sigilburst, 6, 6, 20, False),
+    ("pxSigilShatter", sigilshatter, 8, 4, 20, False),
     ("pxFlame",    flame,     8, 4, 12, True),
     ("pxArc",      arc,       6, 6, 12, True),
     ("pxWebWrap",  webwrap,   1, 1, 1,  False),
     ("pxWebFloor", webfloor,  1, 1, 1,  False),
 ]
+
 
 
 def bake(out_dir, name, draw, frames, cols, fps, loop, preview_dir=None):

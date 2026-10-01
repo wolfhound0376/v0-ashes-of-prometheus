@@ -138,6 +138,59 @@ describe("targetSigilFor", () => {
     }
   })
 
+  describe("the warded save finally has a beat of its own", () => {
+    const plan = targetSigilFor({ resolve: "save", school: "necromancy", damage: "necrotic" })!
+    const strike = plan.form + plan.hold
+
+    it("gives every school break art, not just the schools that got a spark", () => {
+      for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+        expect(art?.shatter, school).toBe("pxSigilShatter")
+      }
+    })
+
+    it("NEVER runs the spark and the break together — a spell takes or is turned", () => {
+      const total = plan.form + plan.hold + plan.resolve
+      for (const outcome of ["taken", "warded"] as const) {
+        for (let i = 0; i <= 60; i++) {
+          const t = (total * 1.2 * i) / 60
+          const p = sigilPoseAt(t, plan, outcome, 0.5)
+          const both = p.burst >= 0 && p.shatter >= 0
+          expect(both, `${outcome} @${t.toFixed(2)}`).toBe(false)
+        }
+      }
+    })
+
+    it("breaks on the WARDED resolve, and on the same frame the spark would have fired", () => {
+      // Before the save lands, nothing.
+      expect(sigilPoseAt(strike - 0.01, plan, "warded", 0.5).shatter).toBeLessThan(0)
+      // At the strike frame it is at its own first frame. Asserted as "at or
+      // just past zero" rather than exactly zero: `form + hold` is a float
+      // sum, so the act boundary lands at 1.8e-16 rather than on 0. The point
+      // is that it is NON-NEGATIVE here and negative a moment earlier — 0 is
+      // a real value, which is why "not playing" is negative rather than zero.
+      const atStrike = sigilPoseAt(strike, plan, "warded", 0.5).shatter
+      expect(atStrike).toBeGreaterThanOrEqual(0)
+      expect(atStrike).toBeLessThan(0.001)
+      // And it runs forward from there.
+      expect(sigilPoseAt(strike + 0.1, plan, "warded", 0.5).shatter).toBeGreaterThan(0)
+      // The taken path is the mirror: spark yes, break never.
+      expect(sigilPoseAt(strike, plan, "taken", 0.5).burst).toBeGreaterThanOrEqual(0)
+      expect(sigilPoseAt(strike, plan, "taken", 0.5).burst).toBeLessThan(0.001)
+      expect(sigilPoseAt(strike, plan, "taken", 0.5).shatter).toBeLessThan(0)
+    })
+
+    it("stays silent on a warded cast everywhere EXCEPT the break", () => {
+      // The flame still never lights on a save (Sam's rule), and the spark
+      // still never fires — the break is the only thing the save added.
+      for (let i = 0; i <= 40; i++) {
+        const t = (plan.form + plan.hold + plan.resolve) * i / 40
+        const p = sigilPoseAt(t, plan, "warded", 0.5)
+        expect(p.flame, `flame @${t.toFixed(2)}`).toBe(0)
+        expect(p.burst, `burst @${t.toFixed(2)}`).toBeLessThan(0)
+      }
+    })
+  })
+
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
     expect(SCHOOL_SIGIL.necromancy?.ring).toBe("sigilNecroticRing")
     expect(SCHOOL_SIGIL.enchantment?.ring).toBe("sigilEnchantmentRing")
