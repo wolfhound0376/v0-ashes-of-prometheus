@@ -26,6 +26,7 @@ import { isGrid } from "@/lib/eat-it-and-see"
 import { BREW_DC } from "@/lib/alchemy-bench"
 import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
 import { maskGrid, benchProficient } from "@/lib/alchemy-pack"
+import { isPrep, methodOf, METHOD_TOOL, type ExtractionMethod } from "@/lib/extraction"
 
 export const dynamic = "force-dynamic"
 
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
 
   const [{ data: pack }, { data: known }] = await Promise.all([
-    db.from("inventory_items").select("id, name, quantity, item_id, icon_url, brew").eq("character_id", characterId),
+    db.from("inventory_items").select("id, name, quantity, item_id, icon_url, brew, prep").eq("character_id", characterId),
     db.from("character_known_effects").select("item_slug, column_index").eq("character_id", characterId),
   ])
 
@@ -51,10 +52,10 @@ export async function GET(req: NextRequest) {
   const names = [...new Set((pack ?? []).filter((p) => !p.item_id).map((p) => p.name as string))]
   const [{ data: byId }, { data: byName }] = await Promise.all([
     itemIds.length
-      ? db.from("items").select("id, slug, name, icon_url, alchemy_effects").in("id", itemIds)
+      ? db.from("items").select("id, slug, name, icon_url, alchemy_effects, properties").in("id", itemIds)
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
     names.length
-      ? db.from("items").select("id, slug, name, icon_url, alchemy_effects").in("name", names)
+      ? db.from("items").select("id, slug, name, icon_url, alchemy_effects, properties").in("name", names)
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
   ])
   const catalogById = new Map((byId ?? []).map((r) => [r.id as string, r]))
@@ -67,8 +68,14 @@ export async function GET(req: NextRequest) {
   }
 
   // Ingredients: anything in the pack whose catalogue row carries a grid.
+  // `quantity` is everything held; only `prepared` can go into a brew
+  // (extraction, Sam 2026-10-01). `bruised` is the part of `prepared` that
+  // will cost a point of impurity — the bench uses clean ones first.
   const ingredients = new Map<string, {
-    slug: string; name: string; icon: string | null; quantity: number; columns: (string | null)[]
+    slug: string; name: string; icon: string | null; quantity: number
+    raw: number; prepared: number; bruised: number
+    method: ExtractionMethod | null; tool: string | null
+    columns: (string | null)[]
   }>()
   let holyWater = 0
   const flasks: Array<{ id: string; name: string; potency: number; impurity: number; effects: string[] }> = []
@@ -86,16 +93,24 @@ export async function GET(req: NextRequest) {
       continue
     }
     const row = (p.item_id ? catalogById.get(p.item_id as string) : catalogByName.get(p.name as string)) as
-      | { slug: string; name: string; icon_url: string | null; alchemy_effects: unknown } | undefined
+      | { slug: string; name: string; icon_url: string | null; alchemy_effects: unknown; properties: unknown } | undefined
     if (!row) continue
     if (row.slug === "holy-water") holyWater += Number(p.quantity ?? 1)
     if (!isGrid(row.alchemy_effects)) continue
     const prev = ingredients.get(row.slug)
+    const q = Number(p.quantity ?? 1)
+    const prep = isPrep(p.prep) ? p.prep : null
+    const method = methodOf(row.slug, row.properties)
     ingredients.set(row.slug, {
       slug: row.slug,
       name: row.name,
-      icon: (p.icon_url as string | null) ?? row.icon_url,
-      quantity: (prev?.quantity ?? 0) + Number(p.quantity ?? 1),
+      icon: prev?.icon ?? row.icon_url ?? (p.icon_url as string | null),
+      quantity: (prev?.quantity ?? 0) + q,
+      raw: (prev?.raw ?? 0) + (prep ? 0 : q),
+      prepared: (prev?.prepared ?? 0) + (prep ? q : 0),
+      bruised: (prev?.bruised ?? 0) + (prep?.bruised ? q : 0),
+      method,
+      tool: method ? METHOD_TOOL[method] : null,
       columns: maskGrid(row.alchemy_effects, knownBySlug.get(row.slug) ?? []),
     })
   }
@@ -121,6 +136,8 @@ export async function GET(req: NextRequest) {
     effects: effects ?? [],
     rolls: {
       brew: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC },
+      // Extraction is the same check against the same DC (lib/extraction.ts).
+      extract: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC },
       taste: { ability: "CON", modifier: Number(character.con_modifier ?? 0) + (conSave ? prof : 0), dc: TASTE_SAVE_DC },
     },
   })

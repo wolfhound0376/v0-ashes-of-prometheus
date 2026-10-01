@@ -96,6 +96,9 @@ export interface BenchIngredient {
   knownColumns: readonly number[]
   /** How many of it the character is holding. */
   have: number
+  /** Prepared but bruised by a missed extraction (lib/extraction.ts): the
+   *  only one the brewer has left is damaged, so the brew starts dirtier. */
+  bruised?: boolean
 }
 
 export interface BrewInput {
@@ -215,6 +218,14 @@ export function impurityOf(input: BrewInput, used: readonly string[]): { value: 
     if (blindColumns(ing, used).length > 0) {
       n += 1
       reasons.push(`+1 ${ing.name} — used an effect this brewer had not discovered`)
+    }
+  }
+
+  // Extraction (Sam's "Yes", 2026-10-01): a bruised ingredient costs a point.
+  for (const ing of input.ingredients) {
+    if (ing.bruised) {
+      n += 1
+      reasons.push(`+1 ${ing.name} — bruised in the preparing`)
     }
   }
 

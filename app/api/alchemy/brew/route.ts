@@ -34,6 +34,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { benchProficient } from "@/lib/alchemy-pack"
+import { isPrep } from "@/lib/extraction"
 import {
   brewAtBench, MIN_INGREDIENTS, MAX_INGREDIENTS,
   type BenchIngredient, type BaseLiquid, type RecipeReliability,
@@ -138,11 +139,20 @@ export async function POST(req: NextRequest) {
   // does not — the same resolution /api/ground-items uses for drops.
   const { data: packRows } = await db
     .from("inventory_items")
-    .select("id, name, quantity, item_id")
+    .select("id, name, quantity, item_id, prep")
     .eq("character_id", characterId)
   const pack = packRows ?? []
+  // Only PREPARED ingredients go into a brew (extraction, Sam 2026-10-01).
+  // Clean ones are used before bruised ones, so a brewer who has a good one
+  // never pays for a bad one. Raw rows are counted only to say "prepare it".
+  const matches = (p: (typeof pack)[number], itemId: string, name: string) =>
+    p.item_id ? p.item_id === itemId : p.name === name
   const holdingOf = (itemId: string, name: string) =>
-    pack.filter((p) => (p.item_id ? p.item_id === itemId : p.name === name))
+    pack
+      .filter((p) => matches(p, itemId, name) && isPrep(p.prep))
+      .sort((a, b) => Number(isPrep(a.prep) && a.prep.bruised) - Number(isPrep(b.prep) && b.prep.bruised))
+  const rawOf = (itemId: string, name: string) =>
+    pack.filter((p) => matches(p, itemId, name) && !p.prep).reduce((n, p) => n + (p.quantity ?? 1), 0)
 
   const { data: knownRows } = await db
     .from("character_known_effects")
@@ -174,10 +184,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const unprepared = slugs.filter((slug) => {
+    const row = byslug.get(slug)!
+    return holdingOf(row.id as string, row.name as string).length === 0 && rawOf(row.id as string, row.name as string) > 0
+  })
+  if (unprepared.length > 0) {
+    const names = unprepared.map((s) => byslug.get(s)!.name as string)
+    return NextResponse.json(
+      { error: `prepare it first: ${names.join(", ")}`, reason: "not_prepared", detail: unprepared },
+      { status: 422 },
+    )
+  }
+
   const ingredients: BenchIngredient[] = slugs.map((slug) => {
     const row = byslug.get(slug)!
     const held = holdingOf(row.id as string, row.name as string)
+    const first = held.find((p) => (p.quantity ?? 1) > 0)
     return {
+      bruised: Boolean(first && isPrep(first.prep) && first.prep.bruised),
       slug,
       name: row.name as string,
       grid: row.alchemy_effects,
