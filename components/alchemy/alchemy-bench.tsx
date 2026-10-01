@@ -49,6 +49,9 @@ type Pack = {
     purify: { ok: boolean; reason?: string }
   }
   effects: Effect[]
+  drinks: Array<{ id: string; name: string; slug: string; icon: string | null; quantity: number; class: string; dc: number; steps: number; maxLevel: number | null }>
+  makeable: Array<{ slug: string; name: string; icon: string | null; class: string; madeFrom: string[]; ok: boolean; reason: string | null }>
+  inebriation: { level: number; name: string; effect: string | null }
   runes: { materials: number; marks: Array<{ school: string; learnedVia: string; ok: boolean; reason: string | null }> }
   rolls: {
     brew: { ability: string; modifier: number; proficient: boolean; dc: number }
@@ -189,6 +192,41 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       setStage(res.ok
         ? { kind: "purified", effects: flask.effects, potency: body.after.potency, summary: body.summary }
         : { kind: "note", summary: body.error ?? "The ritual would not hold." })
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function quaff(d: Pack["drinks"][number]) {
+    if (!pack || busy) return
+    setBusy(true)
+    try {
+      const r = await roll({ die: "d20", numDice: 1, modifier: pack.rolls.taste.modifier, label: `CON save vs DC ${d.dc} (${d.name})` })
+      const res = await fetch("/api/alchemy/quaff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, inventoryItemId: d.id, save: r.total }),
+      })
+      const body = await res.json()
+      setStage({ kind: "note", summary: res.ok ? `${d.name}: ${body.summary}` : body.error ?? "It would not go down." })
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function makeDrink(slug: string) {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await fetch("/api/alchemy/make-drink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, drinkSlug: slug }),
+      })
+      const body = await res.json()
+      setStage({ kind: "note", summary: res.ok ? body.summary : body.error ?? "It would not come together." })
       await load()
     } finally {
       setBusy(false)
@@ -463,6 +501,48 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                     )
                   })}
                 </ul>
+              </div>
+
+              <div>
+                <h3 className="mb-2 flex items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">
+                  Drink
+                  <span className={cn("normal-case tracking-normal", pack.inebriation.level ? "text-[#d9a066]" : "text-stone-500")}>
+                    {pack.inebriation.level ? `${pack.inebriation.name}: ${pack.inebriation.effect}` : "sober"}
+                  </span>
+                </h3>
+                {pack.drinks.length > 0 && (
+                  <ul className="mb-2 flex flex-col gap-2">
+                    {pack.drinks.map((d) => (
+                      <li key={d.id} className="flex items-center gap-3 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/85 p-2">
+                        <img src={cutout(d.slug)} onError={(e) => { if (d.icon) (e.currentTarget as HTMLImageElement).src = d.icon }} alt="" className="h-12 w-12 object-contain" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-[#f1dca8]">{d.name} <span className="text-stone-500">×{d.quantity}</span></p>
+                          <p className="text-xs text-stone-400">{d.class} · CON DC {d.dc} · fail climbs {d.steps}{d.maxLevel ? ` · never past ${["", "Warm", "Drunk", "Soused", "Ruined"][d.maxLevel]}` : ""}</p>
+                        </div>
+                        <button type="button" onClick={() => void quaff(d)} disabled={busy} className="rounded-sm border border-[#c9a868] px-3 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
+                          Drink
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <details className="rounded-sm border border-[#7a5f33]/40 bg-[#0d0b08]/70 p-2">
+                  <summary className="cursor-pointer text-xs text-[#c9a868]">Make a drink ({pack.makeable.filter((m) => m.ok).length} ready)</summary>
+                  <ul className="mt-2 flex flex-col gap-1">
+                    {pack.makeable.map((m) => (
+                      <li key={m.slug} className="flex items-center gap-2 text-xs">
+                        <img src={cutout(m.slug)} alt="" className="h-8 w-8 object-contain" />
+                        <span className={cn("min-w-0 flex-1", m.ok ? "text-[#f1dca8]" : "text-stone-500")}>
+                          {m.name} <span className="text-stone-500">· {m.class}</span>
+                          {!m.ok && m.reason && <span className="block text-[11px]">{m.reason}</span>}
+                        </span>
+                        <button type="button" onClick={() => void makeDrink(m.slug)} disabled={busy || !m.ok} className="rounded-sm border border-[#7a5f33] px-2 py-0.5 text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-30">
+                          Make
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               </div>
 
               <div>
