@@ -38,6 +38,21 @@ const nextConfig = {
   // invalid deployment package for a Serverless Function". Globbing the real
   // store directory sidesteps that. Only the .so is taken; the package also
   // ships glib headers that the runtime never reads.
+  // The camp scene's Alchemy tile links to /?view=compact&from=camp&bench=1.
+  // That address now goes straight to /bench, the bench and nothing else (Sam,
+  // 2026-10-01: the dashboard flashing up first "is unnecessary"). Done here,
+  // on the server, so the dashboard is never loaded on the way.
+  async redirects() {
+    return [
+      {
+        source: "/",
+        has: [{ type: "query", key: "bench", value: "1" }],
+        destination: "/bench",
+        permanent: false,
+      },
+    ]
+  },
+
   outputFileTracingIncludes: {
     "/api/upload*": [
       "./node_modules/.pnpm/@img+sharp-libvips-linux-x64@*/node_modules/@img/sharp-libvips-linux-x64/lib/*.so*",
