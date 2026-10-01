@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  GAS_SPORE_INFECTION, addMinutes, burstCells, deathBurstFor, formatClock, immuneToPoisoned,
+  GAS_SPORE_INFECTION, addMinutes, burstCells, deathBurstFor, formatClock, immuneToDamage, immuneToPoisoned,
   infectionFlagKey, infectionFor, infectionLine, parseDeathBurst,
 } from "./death-burst"
 
@@ -100,5 +100,25 @@ describe("clock helpers", () => {
   it("keys a flag per character, or per NPC name", () => {
     expect(infectionFlagKey({ characterId: "abc", label: "Kenta" })).toBe("gas-spore-infection:abc")
     expect(infectionFlagKey({ characterId: null, label: "Ront " })).toBe("gas-spore-infection:npc:ront")
+  })
+})
+
+describe("immuneToDamage", () => {
+  it("reads the gas spore's own line", () => {
+    expect(immuneToDamage("poison", "poison")).toBe(true)
+  })
+  it("finds poison in a list", () => {
+    expect(immuneToDamage("necrotic, poison", "poison")).toBe(true)
+    expect(immuneToDamage("fire, poison", "poison")).toBe(true)
+  })
+  it("reads only the unconditional part of an SRD line", () => {
+    const line = "cold, poison; bludgeoning, piercing, and slashing from nonmagical attacks that aren't silvered"
+    expect(immuneToDamage(line, "poison")).toBe(true)
+    expect(immuneToDamage(line, "piercing")).toBe(false)
+  })
+  it("is false for nothing, for another type, and for a word inside a word", () => {
+    expect(immuneToDamage(null, "poison")).toBe(false)
+    expect(immuneToDamage("fire", "poison")).toBe(false)
+    expect(immuneToDamage("poisonous", "poison")).toBe(false)
   })
 })

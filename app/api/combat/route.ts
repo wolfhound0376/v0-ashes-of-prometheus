@@ -78,7 +78,7 @@ import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
 // dropped it has finished writing, never in the middle of its loop.
 import { AsyncLocalStorage } from "node:async_hooks"
 import {
-  deathBurstFor, burstCells, immuneToPoisoned, infectionFor, infectionLine, infectionFlagKey,
+  deathBurstFor, burstCells, immuneToDamage, immuneToPoisoned, infectionFor, infectionLine, infectionFlagKey,
   GAS_SPORE_INFECTION,
 } from "@/lib/death-burst"
 import { squaresFor } from "@/lib/sandbox-spawn"
@@ -620,25 +620,38 @@ async function deathBurst(db: ReturnType<typeof createAdminClient>, tokenId: str
     const roll = d20()
     const total = roll + mod
     const saved = total >= burst.dc
-    const amount = saved ? 0 : full
-    parts.push(`${label} ${roll}${mod >= 0 ? "+" : ""}${mod} vs DC ${burst.dc} ${saved ? "saves" : "fails"}${amount ? ` (${amount} ${burst.damageType})` : ""}`)
-    if (saved) continue
+    if (saved) {
+      parts.push(`${label} ${roll}${mod >= 0 ? "+" : ""}${mod} vs DC ${burst.dc} saves`)
+      continue
+    }
 
-    const cur = t.hp_current ?? t.hp_max ?? 0
-    const settled = await settleHitPoints(db, {
-      characterId: t.character_id ?? null, tokenId: t.id, label,
-      cur, max: t.hp_max ?? cur, amount, heals: false, by: "death-burst",
-    })
-    if (settled.note) parts.push(settled.note.replace(/\.$/, ""))
-
-    if (!burst.disease) continue
-    // The creature's own sheet: CON score, condition immunities, conditions.
+    // The creature's own sheet: damage and condition immunities, CON score,
+    // conditions. Read before the damage, because the damage asks it first.
     const sheet = t.character_id
-      ? (await db.from("characters").select("con_score,condition_immunities,conditions").eq("id", t.character_id).maybeSingle()).data
+      ? (await db.from("characters").select("con_score,condition_immunities,damage_immunities,conditions").eq("id", t.character_id).maybeSingle()).data
       : null
     const beast = !t.character_id && t.bestiary_id
-      ? (await db.from("bestiary").select("con,condition_immunities").eq("id", t.bestiary_id).maybeSingle()).data
+      ? (await db.from("bestiary").select("con,condition_immunities,damage_immunities").eq("id", t.bestiary_id).maybeSingle()).data
       : null
+
+    // IMMUNE TO THE DAMAGE: still rolls (the save is the burst's, and the
+    // disease rides it), but takes none. This is what stops one gas spore's
+    // burst popping the next one — a gas spore is immune to poison — and a
+    // chain going off across the cave that the rules would never allow.
+    const immune = immuneToDamage(sheet?.damage_immunities ?? beast?.damage_immunities, burst.damageType)
+    const amount = immune ? 0 : full
+    parts.push(`${label} ${roll}${mod >= 0 ? "+" : ""}${mod} vs DC ${burst.dc} fails${immune ? ` (immune to ${burst.damageType})` : ` (${amount} ${burst.damageType})`}`)
+
+    if (amount > 0) {
+      const cur = t.hp_current ?? t.hp_max ?? 0
+      const settled = await settleHitPoints(db, {
+        characterId: t.character_id ?? null, tokenId: t.id, label,
+        cur, max: t.hp_max ?? cur, amount, heals: false, by: "death-burst",
+      })
+      if (settled.note) parts.push(settled.note.replace(/\.$/, ""))
+    }
+
+    if (!burst.disease) continue
     if (burst.disease.poisonImmuneAreImmune && immuneToPoisoned(sheet?.condition_immunities ?? beast?.condition_immunities)) {
       infections.push(`${label} is immune to the poisoned condition, and so to the disease.`)
       continue
