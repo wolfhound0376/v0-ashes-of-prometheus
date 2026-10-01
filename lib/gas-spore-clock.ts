@@ -23,9 +23,9 @@
 // writer below only applies what it decides.
 // ============================================================================
 
-import { GAS_SPORE_INFECTION, type ClockTime, type InfectionRecord } from "./death-burst"
+import { GAS_SPORE_INFECTION, addMinutes, formatClock, type ClockTime, type InfectionRecord } from "./death-burst"
 import { normalizeConditions } from "./conditions"
-import { conditionsFor } from "./death-saves"
+import { DEAD, conditionsFor } from "./death-saves"
 
 export const POISONED = "Poisoned"
 
@@ -34,6 +34,17 @@ export interface InfectionState extends InfectionRecord {
   poisoned_applied?: boolean
   died?: boolean
   cured?: boolean
+  /** What grew from the body, once it died ("sprouts 2d4 Tiny gas spores"). */
+  sprouted?: SproutState
+}
+
+/** The Tiny gas spores growing from a body the infection was in. */
+export interface SproutState {
+  count: number
+  dice: string
+  /** When they are full-size gas spores; null when the death could not be dated. */
+  matures_at: ClockTime | null
+  matured?: boolean
 }
 
 /** A campaign moment as absolute minutes, for comparing. */
@@ -80,6 +91,42 @@ export function stepLines(label: string, due: StepsDue): string[] {
 
 const has = (list: string[], word: string) => list.some((c) => c.toLowerCase() === word.toLowerCase())
 
+/** Roll "NdM" with `rng`. 0 for anything that is not dice. */
+export function rollSpec(spec: string, rng: () => number = Math.random): number {
+  const m = spec.trim().match(/^(\d+)d(\d+)$/i)
+  if (!m) return 0
+  let total = 0
+  for (let i = 0; i < Number(m[1]); i++) total += 1 + Math.floor(rng() * Number(m[2]))
+  return total
+}
+
+/**
+ * THE BODY SPROUTS. "After the creature dies, it sprouts 2d4 Tiny gas spores
+ * that grow to full size in 7 days." Any death: the disease's own, or a blade
+ * that got there first. `at` is when it died; null when that cannot be dated,
+ * and then only the days are known. Null when the record carries no sprouts.
+ */
+export function sproutFrom(rec: InfectionState, at: ClockTime | null, rng: () => number = Math.random): SproutState | null {
+  const sp = rec.sprouts
+  if (!sp) return null
+  return { count: rollSpec(sp.dice, rng), dice: sp.dice, matures_at: at ? addMinutes(at, sp.days * 1440) : null }
+}
+
+/** Are the sprouts full-grown at `now`? Never for undated ones: no start, no finish. */
+export function sproutsMature(s: SproutState | undefined, now: ClockTime): boolean {
+  return Boolean(s && !s.matured && s.count > 0 && s.matures_at && absMinutes(now) >= absMinutes(s.matures_at))
+}
+
+/** The log lines for the sprouting, and for the day they are grown. */
+export function sproutLine(label: string, s: SproutState, days: number): string {
+  if (s.count <= 0) return `Nothing grows from ${label}'s body.`
+  const when = s.matures_at ? `by ${formatClock(s.matures_at)}` : `in ${days} days (the death could not be dated, so the system will not mark it)`
+  return `${s.count} Tiny gas spores (${s.dice} ${s.count}) sprout from ${label}'s body; they will be full-grown gas spores ${when}.`
+}
+export function maturedLine(label: string, s: SproutState): string {
+  return `The ${s.count} gas spores that sprouted from ${label}'s body are full-grown.`
+}
+
 /**
  * Apply every infection that is owed something at `now`.
  *
@@ -87,7 +134,7 @@ const has = (list: string[], word: string) => list.some((c) => c.toLowerCase() =
  * swallowed, because the time already moved and the turn must not fail over
  * a side effect of it. Never silent, though: the console names the creature.
  */
-export async function advanceGasSporeInfections(db: any, now: ClockTime): Promise<void> {
+export async function advanceGasSporeInfections(db: any, now: ClockTime, rng: () => number = Math.random): Promise<void> {
   const { data: flags, error } = await db
     .from("world_flags")
     .select("key,value")
@@ -99,22 +146,69 @@ export async function advanceGasSporeInfections(db: any, now: ClockTime): Promis
   }
   for (const flag of (flags ?? []) as { key: string; value: InfectionState }[]) {
     const rec = flag.value
-    if (!rec || rec.died || rec.cured || !rec.dies_at) continue
+    if (!rec || rec.cured) continue
+    // A body that has died is only still owed its sprouts growing up.
+    if (rec.died && !(rec.sprouted && !rec.sprouted.matured)) continue
     try {
-      await advanceOne(db, flag.key, rec, now)
+      await advanceOne(db, flag.key, rec, now, rng)
     } catch (e) {
       console.error(`[gas-spore] clock for ${rec.creature} threw:`, e)
     }
   }
 }
 
-async function advanceOne(db: any, key: string, rec: InfectionState, now: ClockTime) {
+/** Save the record and say what happened, in that order. */
+async function record(db: any, key: string, next: InfectionState, lines: string[]) {
+  const { error } = await db.from("world_flags")
+    .update({ value: next, note: lines.join(" ") })
+    .eq("campaign_id", "ashes-of-prometheus")
+    .eq("key", key)
+  if (error) console.error(`[gas-spore] clock for ${next.creature} failed to save:`, error.message)
+  for (const text of lines) {
+    await db.from("dialogue").insert({ speaker: "System", text, channel: "dm" })
+  }
+}
+
+/** Sprout from a death at `at`, and grow them up at once if `now` is already past it. */
+function sprout(next: InfectionState, at: ClockTime | null, now: ClockTime, rng: () => number, lines: string[]) {
+  const s = sproutFrom(next, at, rng)
+  if (!s) return
+  next.sprouted = s
+  lines.push(sproutLine(next.creature, s, next.sprouts?.days ?? 0))
+  if (sproutsMature(s, now)) {
+    next.sprouted = { ...s, matured: true }
+    lines.push(maturedLine(next.creature, s))
+  }
+}
+
+async function advanceOne(db: any, key: string, rec: InfectionState, now: ClockTime, rng: () => number) {
   const label = rec.creature
+
+  // ALREADY DEAD: only the sprouts are left to grow.
+  if (rec.died) {
+    if (sproutsMature(rec.sprouted, now)) {
+      const grown = { ...rec.sprouted!, matured: true }
+      await record(db, key, { ...rec, sprouted: grown }, [maturedLine(label, grown)])
+    }
+    return
+  }
+
   // The creature's conditions where they live: the sheet for a player, the
   // encounter row (by name, as all NPC canon is) for anything else.
   const conditions = rec.character_id
     ? normalizeConditions((await db.from("characters").select("conditions").eq("id", rec.character_id).maybeSingle()).data?.conditions)
     : normalizeConditions((await db.from("npc_encounters").select("conditions").eq("name", label).limit(1).maybeSingle()).data?.conditions)
+
+  // DEAD OF SOMETHING ELSE, with the spores still in them. The trait says
+  // "after the creature dies", not "after the disease kills it", so the body
+  // sprouts all the same — from now, the first moment the clock saw it.
+  if (has(conditions, DEAD) && has(conditions, GAS_SPORE_INFECTION)) {
+    const next: InfectionState = { ...rec, died: true }
+    const lines = [`${label} died with the spores still in them.`]
+    sprout(next, now, now, rng, lines)
+    await record(db, key, next, lines)
+    return
+  }
 
   const due = stepsDue(rec, now, has(conditions, GAS_SPORE_INFECTION))
   if (!due.cure && !due.poison && !due.die) return
@@ -157,17 +251,12 @@ async function advanceOne(db: any, key: string, rec: InfectionState, now: ClockT
     }
   }
 
-  // THE CLOCK, marked first-time-only, so the next tick does not repeat it.
-  const { error } = await db.from("world_flags")
-    .update({ value: next, note: stepLines(label, due).join(" ") })
-    .eq("campaign_id", "ashes-of-prometheus")
-    .eq("key", key)
-  if (error) console.error(`[gas-spore] clock for ${label} failed to save:`, error.message)
-
-  // THE LOG, on the DM channel Malachar reads.
-  for (const text of stepLines(label, due)) {
-    await db.from("dialogue").insert({ speaker: "System", text, channel: "dm" })
-  }
+  // THE CLOCK, marked first-time-only so the next tick does not repeat it,
+  // and THE LOG, on the DM channel Malachar reads. A death sprouts the body,
+  // dated from the deadline it died at.
+  const lines = stepLines(label, due)
+  if (due.die) sprout(next, rec.dies_at, now, rng, lines)
+  await record(db, key, next, lines)
 }
 
 // ============================================================================
@@ -185,8 +274,10 @@ async function advanceOne(db: any, key: string, rec: InfectionState, now: ClockT
 /** "6h 30m", "45m", "2h". */
 export function formatSpan(minutes: number): string {
   const m = Math.max(0, Math.round(minutes))
-  const h = Math.floor(m / 60)
+  const d = Math.floor(m / 1440)
+  const h = Math.floor((m % 1440) / 60)
   const r = m % 60
+  if (d) return h ? `${d}d ${h}h` : `${d}d`
   if (!h) return `${r}m`
   return r ? `${h}h ${r}m` : `${h}h`
 }
@@ -195,7 +286,16 @@ export function formatSpan(minutes: number): string {
 export function countdownLines(records: InfectionState[], now: ClockTime | null): string[] {
   const out: string[] = []
   for (const r of records) {
-    if (!r || r.died || r.cured) continue
+    if (!r || r.cured) continue
+    if (r.died) {
+      // What grows from the body, until it is grown.
+      const s = r.sprouted
+      if (!s || s.matured || s.count <= 0) continue
+      out.push(s.matures_at && now
+        ? `- ${s.count} Tiny gas spores growing from ${r.creature}'s body — full-grown gas spores in ${formatSpan(absMinutes(s.matures_at) - absMinutes(now))}.`
+        : `- ${s.count} Tiny gas spores growing from ${r.creature}'s body — full-grown in ${r.sprouts?.days ?? "?"} days from the death (undated).`)
+      continue
+    }
     const who = `- ${r.creature}: ${GAS_SPORE_INFECTION}`
     if (!r.dies_at || !now) {
       // Undated: caught while no campaign clock ran. The hours are known; the
@@ -226,7 +326,9 @@ ${lines.join("\n")}
 Let the infected feel it as the time runs down — show symptoms, never numbers.
 The system applies Poisoned at halfway and death at the deadline on its own:
 do NOT emit [CONDITION_ADD] for either. If the disease is truly removed in the
-fiction, emit [CONDITION_REMOVE: <name> | ${GAS_SPORE_INFECTION}] and the clock stops.`
+fiction, emit [CONDITION_REMOVE: <name> | ${GAS_SPORE_INFECTION}] and the clock stops.
+Tiny gas spores growing from a body have no stat block of their own; they are
+where the body lies, and the log says when they are full-grown gas spores.`
 }
 
 /** Read every infection record and build the block. Best-effort: "" on failure. */
