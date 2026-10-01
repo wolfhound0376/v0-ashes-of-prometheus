@@ -37,6 +37,7 @@
 // anon write policy by design.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { drinkBrew, type Dose } from "@/lib/drink-brew"
 import { addCondition, normalizeConditions } from "@/lib/conditions"
 import { normaliseExhaustion } from "@/lib/exhaustion"
@@ -89,6 +90,7 @@ async function loadFlask(db: Db, characterId: string, inventoryItemId: string) {
 
 export async function GET(req: NextRequest) {
   const characterId = req.nextUrl.searchParams.get("characterId")
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const inventoryItemId = req.nextUrl.searchParams.get("inventoryItemId")
   if (!characterId || !inventoryItemId) {
     return NextResponse.json({ error: "characterId and inventoryItemId required" }, { status: 400 })
@@ -138,6 +140,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { characterId, inventoryItemId } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   if (!characterId || !inventoryItemId) {
     return NextResponse.json({ error: "characterId and inventoryItemId required" }, { status: 400 })
@@ -209,7 +212,7 @@ export async function POST(req: NextRequest) {
     if (harmed) bits.push(`-${harmed} ${dose.harm!.type}`)
     if (exhaustionAfter !== exhaustionBefore) bits.push(`exhaustion ${exhaustionBefore} → ${exhaustionAfter}`)
     if (landing.length) bits.push(landing.join(", "))
-    await narrate(
+    if (!quiet(characterId)) await narrate(
       db,
       `${character.name} drinks ${row.name}. ${dose.summary}` +
         (bits.length ? ` (${bits.join("; ")}, ${before} → ${after} hp)` : ""),

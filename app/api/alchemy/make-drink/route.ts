@@ -9,6 +9,7 @@
 // the recipe (communion wine ← mushroom wine) is used as it is.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { canMake, STILL_SLUG } from "@/lib/drink-making"
 import { isDrinkData } from "@/lib/inebriation"
 import { isPrep } from "@/lib/extraction"
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
   const { characterId, drinkSlug } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   if (!characterId || !drinkSlug) return NextResponse.json({ error: "characterId and drinkSlug required" }, { status: 400 })
 
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
         if (e) return NextResponse.json({ error: e }, { status: 500 })
       }
     }
-    await db.from("dialogue").insert({ speaker: "Malachar", text: summary, channel: "dm" })
+    if (!quiet(characterId)) await db.from("dialogue").insert({ speaker: "Malachar", text: summary, channel: "dm" })
   }
   return NextResponse.json({ sandbox, character: character.name, made: product.name, summary })
 }

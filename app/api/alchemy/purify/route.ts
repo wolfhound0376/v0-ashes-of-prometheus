@@ -13,6 +13,7 @@
 // (AGENTS.md §5, the one-global-seat lesson).
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { canPurify, purified, PURIFY_SPELL } from "@/lib/alchemy-cleric"
 import type { RiteSheet } from "@/lib/camp-rites"
 import { spendCampAction } from "@/lib/camp"
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
   const { characterId, inventoryItemId } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   if (!characterId || !inventoryItemId) {
     return NextResponse.json({ error: "characterId and inventoryItemId required" }, { status: 400 })
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
     }
     const { error: e9 } = await db.from("characters").update({ rest_actions_remaining: spend.remaining }).eq("id", characterId)
     if (e9) return NextResponse.json({ error: e9.message }, { status: 500 })
-    await db.from("dialogue").insert({ speaker: "Malachar", text: `${summary} (${spend.note})`, channel: "dm" })
+    if (!quiet(characterId)) await db.from("dialogue").insert({ speaker: "Malachar", text: `${summary} (${spend.note})`, channel: "dm" })
   }
 
   return NextResponse.json({ sandbox, character: character.name, item: row.name, before: { potency: brew.potency, impurity: brew.impurity }, after: next, summary })

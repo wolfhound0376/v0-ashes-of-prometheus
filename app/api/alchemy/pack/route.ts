@@ -22,6 +22,7 @@
 //   * tasting  = a Constitution save, + proficiency if proficient in CON saves.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { isGrid } from "@/lib/eat-it-and-see"
 import { BREW_DC } from "@/lib/alchemy-bench"
 import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
@@ -38,6 +39,7 @@ export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   const characterId = req.nextUrl.searchParams.get("characterId")
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   if (!characterId) return NextResponse.json({ error: "characterId required" }, { status: 400 })
 
   const db = createAdminClient()

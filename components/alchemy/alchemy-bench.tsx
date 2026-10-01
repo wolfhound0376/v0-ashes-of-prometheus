@@ -19,12 +19,11 @@
 // feed, but nothing parses that tag out of `dialogue` — only Malachar's own
 // output is parsed — so without this the film could never play.
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { FlaskConical, X } from "lucide-react"
 import { useDice, parseDamage } from "@/components/dice/dice-provider"
-import { emitCinematicCue } from "@/lib/cinematic-cue"
 import {
-  BENCH_CLIPS, BENCH_SCENE, VESSEL, bandsOf, cutout, flaskFor, glowRadiusPx, lookOf, preparedArt, type BenchClip,
+  BENCH_CLIPS, BENCH_CRIT_FILM, BENCH_SCENE, VESSEL, bandsOf, cutout, flaskFor, glowRadiusPx, lookOf, preparedArt, type BenchClip,
 } from "@/lib/alchemy-art"
 import { cn } from "@/lib/utils"
 import { BenchSigil, type SigilPhase } from "@/components/alchemy/bench-sigil"
@@ -41,7 +40,7 @@ type Ingredient = {
 }
 type Flask = { id: string; name: string; potency: number; impurity: number; effects: string[] }
 type Pack = {
-  character: { id: string; name: string }
+  character: { id: string; name: string; class?: string | null }
   campActions: number
   ingredients: Ingredient[]
   flasks: Flask[]
@@ -79,8 +78,25 @@ const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`)
 const VERB: Record<string, string> = { grind: "Grind", cut: "Cut", press: "Press", decant: "Decant" }
 const DONE: Record<string, string> = { grind: "ground", cut: "cut", press: "pressed", decant: "decanted" }
 
-export function AlchemyBench({ characterId, onClose }: { characterId: string; onClose: () => void }) {
+export function AlchemyBench({
+  characterId, onClose, sandbox, headerExtra,
+}: {
+  characterId: string
+  onClose: () => void
+  /** The DM's practice character (lib/alchemy-sandbox.ts): every call carries
+   *  the DM key, and the header grows Restock / Refill. */
+  sandbox?: { dmKey: string }
+  /** Anything the page wants in the header (the DM's sandbox switch). */
+  headerExtra?: ReactNode
+}) {
   const { roll } = useDice()
+  // Every bench call goes through here, so the sandbox's DM key rides along.
+  const dmKey = sandbox?.dmKey
+  const api = useCallback(
+    (url: string, init: RequestInit = {}) =>
+      fetch(url, dmKey === undefined ? init : { ...init, headers: { ...(init.headers as Record<string, string> | undefined), "x-dm-key": dmKey } }),
+    [dmKey],
+  )
   const [pack, setPack] = useState<Pack | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<string[]>([])
@@ -95,6 +111,8 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   const [busy, setBusy] = useState(false)
   // The module opens with its film (Sam, 9/29; kept 2026-10-01).
   const [intro, setIntro] = useState(true)
+  // A natural 1 plays the critical-failure film here, then the aftermath.
+  const [critFilm, setCritFilm] = useState(false)
   const [stage, setStage] = useState<Stage>({ kind: "idle" })
   // An outcome clip plays ONCE, then the still takes over (the tinted flask,
   // the sludge). Only the mixing clip loops, for as long as the dice tumble.
@@ -103,7 +121,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch(`/api/alchemy/pack?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
+      const r = await api(`/api/alchemy/pack?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
       const body = await r.json()
       if (!r.ok) throw new Error(body?.error ?? "The bench could not be read.")
       const next = body as Pack
@@ -117,17 +135,53 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     } catch (e) {
       setError(e instanceof Error ? e.message : "The bench could not be read.")
     }
-  }, [characterId])
+  }, [characterId, api])
 
   useEffect(() => { void load() }, [load])
+
+  // Sandbox only: put the practice character back to a full pack, or give it
+  // its camp actions again (app/api/alchemy/sandbox).
+  const [sbClass, setSbClass] = useState<"Wizard" | "Cleric">("Wizard")
+  const [sbKnowAll, setSbKnowAll] = useState(false)
+  const [sbNote, setSbNote] = useState<string | null>(null)
+  useEffect(() => {
+    if (pack?.character.class === "Cleric" || pack?.character.class === "Wizard") setSbClass(pack.character.class)
+  }, [pack?.character.class])
+  const sandboxDo = useCallback(
+    async (action: "restock" | "refill", cls?: "Wizard" | "Cleric") => {
+      setBusy(true)
+      setSbNote(null)
+      try {
+        const r = await api("/api/alchemy/sandbox", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, class: cls ?? sbClass, knowAll: sbKnowAll }),
+        })
+        const b = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(b?.error ?? "The sandbox could not be reset.")
+        if (action === "restock") {
+          setPicked([]); setPrepPick([]); setRecipe(null); setRune(""); setBase("water"); setSigil(null); setStage({ kind: "idle" })
+          setSbNote(`Restocked as a ${b.class}: ${b.items} pack rows, every mark and recipe, ${b.campActions} camp actions${b.knownEffects ? ", every effect known" : ""}.`)
+        } else {
+          setSbNote(`${b.campActions} camp actions again.`)
+        }
+        await load()
+      } catch (e) {
+        setSbNote(e instanceof Error ? e.message : "The sandbox could not be reset.")
+      } finally {
+        setBusy(false)
+      }
+    },
+    [api, load, sbClass, sbKnowAll],
+  )
 
   // Escape closes, as every other overlay on the board does.
   useEffect(() => {
     // While the film plays, Escape skips it (BenchIntro) rather than closing.
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro) onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro && !critFilm) onClose() }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [busy, intro, onClose])
+  }, [busy, intro, critFilm, onClose])
 
   const effectName = useMemo(() => {
     const m = new Map((pack?.effects ?? []).map((e) => [e.slug, e.name]))
@@ -144,7 +198,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     setBusy(true)
     try {
       const r = await roll({ die: "d20", numDice: 1, modifier: pack.rolls.taste.modifier, label: `Taste ${item.name} (CON save)` })
-      const res = await fetch("/api/alchemy/taste", {
+      const res = await api("/api/alchemy/taste", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, itemSlug: item.slug, save: r.total }),
@@ -170,7 +224,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
         })
         entries.push({ itemSlug: item.slug, check: r.total, die: r.keptRolls?.[0] ?? r.rolls[0] })
       }
-      const res = await fetch("/api/alchemy/extract", {
+      const res = await api("/api/alchemy/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, items: entries }),
@@ -194,7 +248,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     if (busy) return
     setBusy(true)
     try {
-      const res = await fetch("/api/alchemy/consecrate", {
+      const res = await api("/api/alchemy/consecrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, kind }),
@@ -211,7 +265,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     if (busy) return
     setBusy(true)
     try {
-      const res = await fetch("/api/alchemy/purify", {
+      const res = await api("/api/alchemy/purify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, inventoryItemId: flask.id }),
@@ -231,7 +285,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     setBusy(true)
     try {
       const r = await roll({ die: "d20", numDice: 1, modifier: pack.rolls.taste.modifier, label: `CON save vs DC ${d.dc} (${d.name})` })
-      const res = await fetch("/api/alchemy/quaff", {
+      const res = await api("/api/alchemy/quaff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, inventoryItemId: d.id, save: r.total }),
@@ -248,7 +302,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     if (busy) return
     setBusy(true)
     try {
-      const res = await fetch("/api/alchemy/make-drink", {
+      const res = await api("/api/alchemy/make-drink", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, drinkSlug: slug }),
@@ -272,7 +326,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
         label: `Brewing check (INT${pack.rolls.brew.proficient ? " + tools" : ""})`,
       })
       const face = r.keptRolls?.[0] ?? r.rolls[0]
-      const res = await fetch("/api/alchemy/brew", {
+      const res = await api("/api/alchemy/brew", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, itemSlugs: picked, check: r.total, die: face, base, ...(rune ? { rune } : {}), ...(recipe ? { recipeSlug: recipe } : {}) }),
@@ -283,7 +337,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       } else if (body.outcome === "critical_failure") {
         setSigil((s) => (s ? { ...s, phase: "shatter" } : s))
         setStage({ kind: "critical", summary: body.summary })
-        if (body.critical?.cue) emitCinematicCue(body.critical.cue)
+        setCritFilm(true)
       } else if (body.outcome === "inert") {
         setSigil((s) => (s ? { ...s, phase: "release" } : s))
         setStage({ kind: "inert", summary: body.summary })
@@ -308,7 +362,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     if (busy) return
     setBusy(true)
     try {
-      const pre = await fetch(`/api/alchemy/drink?characterId=${encodeURIComponent(characterId)}&inventoryItemId=${encodeURIComponent(flask.id)}`, { cache: "no-store" })
+      const pre = await api(`/api/alchemy/drink?characterId=${encodeURIComponent(characterId)}&inventoryItemId=${encodeURIComponent(flask.id)}`, { cache: "no-store" })
       const plan = await pre.json()
       if (!pre.ok) { setStage({ kind: "note", summary: plan.error ?? "That flask will not open." }); return }
       const totals: { heal?: number; harm?: number; save?: number } = {}
@@ -323,7 +377,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       if (plan.roll?.save) {
         totals.save = (await roll({ die: "d20", numDice: 1, modifier: pack?.rolls.taste.modifier ?? 0, label: `CON save vs DC ${plan.roll.save.dc}` })).total
       }
-      const res = await fetch("/api/alchemy/drink", {
+      const res = await api("/api/alchemy/drink", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, inventoryItemId: flask.id, ...totals }),
@@ -348,6 +402,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     <div role="dialog" aria-modal="true" aria-label="Alchemy bench" className="fixed inset-0 z-[60] flex flex-col bg-[#070605] text-stone-200">
       <style>{BENCH_CSS}</style>
       {intro && <BenchIntro onDone={() => setIntro(false)} />}
+      {critFilm && <BenchIntro film={BENCH_CRIT_FILM} label="The flask fails" onDone={() => setCritFilm(false)} />}
 
       {/* The bench itself: painted plate, the idle film over it when there is one. */}
       <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
@@ -364,10 +419,43 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
           <span className="shrink-0">Alchemy bench</span>
           {pack && <span className="truncate font-sans text-xs normal-case tracking-normal text-stone-400">{pack.character.name}</span>}
         </h2>
-        <button type="button" onClick={onClose} disabled={busy} aria-label="Leave the bench" className="rounded-sm p-1 text-stone-400 hover:text-[#e2c98e] disabled:opacity-40">
-          <X className="h-5 w-5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {headerExtra}
+          <button type="button" onClick={onClose} disabled={busy} aria-label="Leave the bench" className="rounded-sm p-1 text-stone-400 hover:text-[#e2c98e] disabled:opacity-40">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </header>
+
+      {sandbox && (
+        <div className="relative z-10 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-[#c9563f]/50 bg-[#2a0f0a]/85 px-4 py-2 text-xs text-stone-300">
+          <span className="font-serif uppercase tracking-[0.2em] text-[#ff9a7a]">Sandbox</span>
+          <span className="text-stone-400">The DM&apos;s practice character. Nothing here reaches the game or its log.</span>
+          <label className="flex items-center gap-1.5">
+            <span className="text-stone-400">As</span>
+            <select
+              value={sbClass}
+              disabled={busy}
+              onChange={(e) => { const c = e.target.value as "Wizard" | "Cleric"; setSbClass(c); void sandboxDo("restock", c) }}
+              className="rounded-sm border border-[#7a5f33] bg-[#0d0b08] px-1.5 py-0.5 text-stone-200"
+            >
+              <option value="Wizard">Wizard (runes)</option>
+              <option value="Cleric">Cleric (blessing, holy water, purify)</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" checked={sbKnowAll} disabled={busy} onChange={(e) => setSbKnowAll(e.target.checked)} />
+            <span>Know every effect on restock</span>
+          </label>
+          <button type="button" disabled={busy} onClick={() => void sandboxDo("restock")} className="rounded-sm border border-[#c9563f] px-2.5 py-1 font-serif uppercase tracking-[0.15em] text-[#ff9a7a] hover:bg-[#c9563f]/20 disabled:opacity-40">
+            Restock
+          </button>
+          <button type="button" disabled={busy} onClick={() => void sandboxDo("refill")} className="rounded-sm border border-[#7a5f33] px-2.5 py-1 font-serif uppercase tracking-[0.15em] text-[#e2c98e] hover:bg-[#7a5f33]/20 disabled:opacity-40">
+            Refill camp actions
+          </button>
+          {sbNote && <span className="basis-full text-stone-400">{sbNote}</span>}
+        </div>
+      )}
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:flex-row">
         {/* The vessel / result */}
