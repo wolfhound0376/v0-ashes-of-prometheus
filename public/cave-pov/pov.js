@@ -283,7 +283,7 @@ function disarm(T){ P.cool=1.2; const prof=/rogue/i.test(PC.cls)?2:0; const r=ch
 function readLore(L){ const o=L.lore; paused=true; keys.clear(); if(document.pointerLockElement) document.exitPointerLock();
   $("loret").textContent=o.title||"Untitled"; $("lorek").textContent=({journal:"A journal",note:"A loose page",book:"A book",carving:"Carved into the stone"})[o.kind]||""; $("lorex").textContent=o.text||""; $("lore").hidden=false;
   if(!LORE_READ.has(o)){ LORE_READ.add(o); SND.chime([440,660,880]); say(`Lore: ${o.title||"untitled"}.`,"#ffd36a"); } }
-function closeLore(){ $("lore").hidden=true; paused=false; last=performance.now(); cv.focus(); }
+function closeLore(){ $("lore").hidden=true; paused=false; last=performance.now(); cv.focus(); relock(); }
 // a pixel stalactite / stalagmite: a tapering cone of wet rock, lit from the left, a bright wet edge and a bead at the tip
 function makeStal(seed,down){ const R=rng32(seed), S=64, c=document.createElement("canvas"); c.width=c.height=S; const g=c.getContext("2d");
   const w0=22+R()*16, L=34+R()*28, cx=32+(R()-.5)*6; const col=(k,lit)=>{ const b=[34,42,48], hi=[88,104,112]; const t=Math.max(0,Math.min(1,lit)); return `rgb(${Math.round(b[0]+(hi[0]-b[0])*t)},${Math.round(b[1]+(hi[1]-b[1])*t)},${Math.round(b[2]+(hi[2]-b[2])*t)})`; };
@@ -396,7 +396,7 @@ document.addEventListener("pointerlockchange",()=>{ locked=document.pointerLockE
 document.addEventListener("mousemove",e=>{ if(!started||!locked||paused) return; mouseTurn+=e.movementX*.0026; P.swayX=Math.max(-46,Math.min(46,P.swayX-e.movementX*.35)); P.swayY=Math.max(-22,Math.min(22,P.swayY+e.movementY*.25)); P.pitch=Math.max(-RH*.55,Math.min(RH*.55,P.pitch-e.movementY*.9*RH/cv.clientHeight*1.6)); });
 cv.addEventListener("contextmenu",e=>e.preventDefault());
 cv.addEventListener("auxclick",e=>{ if(e.button===1) e.preventDefault(); });
-cv.addEventListener("mousedown",e=>{ if(!locked||!started||paused) return; if(e.button===1){ e.preventDefault(); P.mhold={t:performance.now()/1000,fired:false}; } if(e.button===0) holdStart(); if(e.button===2) rangedStart(); });
+cv.addEventListener("mousedown",e=>{ if(FILM_FIN){ e.preventDefault(); FILM_FIN(true); return; } if(!locked||!started||paused) return; if(e.button===1){ e.preventDefault(); P.mhold={t:performance.now()/1000,fired:false}; } if(e.button===0) holdStart(); if(e.button===2) rangedStart(); });
 addEventListener("mouseup",e=>{ if(e.button===1){ const m=P.mhold; P.mhold=null; if(m&&!m.fired){ toggleCrouch(); } } if(e.button===0) holdEnd(); if(e.button===2&&P.drawing) loose(); });
 cv.addEventListener("wheel",e=>{ if(!started) return; e.preventDefault(); const n=CARDS.length; P.sel=(P.sel+(e.deltaY>0?1:-1)+n)%n; renderBar(); },{passive:false});
 let tX=null, tY=null, tMoved=false; cv.addEventListener("touchstart",e=>{ tX=e.touches[0].clientX; tY=e.touches[0].clientY; tMoved=false; },{passive:true});
@@ -725,11 +725,18 @@ function forage(m){ if(P.cool>0) return; m.spent=true; P.act={kind:"forage",hand
 // =====================================================================================================================
 // Sam, 9/30: the hook horror's first sighting plays its cinematic before the roar
 let paused=false;
-function cinematic(src,then){ const ov=$("film"), v=$("filmv"); paused=true; keys.clear(); P.drawing=false; if(document.pointerLockElement) document.exitPointerLock();
+// Sam, 9/30: "I wasn't able to move my mouse cursor or aim after the hook horror startled me." The film used to release
+// the mouse (exitPointerLock) and nothing took it back. Now the mouse stays captured through the film: any click, Space
+// or Enter skips it, and aiming works the moment it ends. If the mouse is ever released anyway (Esc), relock() takes it
+// back on the next click or key that closes something, and the view says "Click to aim" until then.
+let FILM_FIN=null;
+const HAS_MOUSE=matchMedia("(pointer: fine)").matches;
+function relock(){ if(!locked&&started&&!P.dead&&cv.requestPointerLock){ try{ const p=cv.requestPointerLock(); if(p&&p.catch) p.catch(()=>{}); }catch(e){} } }
+function cinematic(src,then){ const ov=$("film"), v=$("filmv"); paused=true; keys.clear(); P.drawing=false; P.hold=null; P.mhold=null;
   if(MUS&&AC) MUS.gain.setTargetAtTime(.05,AC.currentTime,.2); let done=false;
-  const fin=()=>{ if(done) return; done=true; v.pause(); ov.hidden=true; paused=false; last=performance.now(); if(MUS&&AC) MUS.gain.setTargetAtTime(.34,AC.currentTime,.6); removeEventListener("keydown",esc,true); cv.focus(); then&&then(); };
-  const esc=(ev)=>{ if(["Escape"," ","Enter"].includes(ev.key)){ ev.preventDefault(); ev.stopPropagation(); fin(); } };
-  v.src=src; v.currentTime=0; v.muted=false; v.onended=fin; v.onerror=fin; ov.onclick=fin; $("filmx").onclick=(ev)=>{ ev.stopPropagation(); fin(); }; addEventListener("keydown",esc,true); ov.hidden=false;
+  const fin=(gesture)=>{ if(done) return; done=true; FILM_FIN=null; v.pause(); ov.hidden=true; paused=false; if(gesture===true) relock(); last=performance.now(); if(MUS&&AC) MUS.gain.setTargetAtTime(.34,AC.currentTime,.6); removeEventListener("keydown",esc,true); cv.focus(); then&&then(); };
+  const esc=(ev)=>{ if(["Escape"," ","Enter"].includes(ev.key)){ ev.preventDefault(); ev.stopPropagation(); fin(ev.key!=="Escape"); } };
+  v.src=src; v.currentTime=0; v.muted=false; v.onended=()=>fin(); v.onerror=()=>fin(); ov.onclick=()=>fin(true); $("filmx").onclick=(ev)=>{ ev.stopPropagation(); fin(true); }; FILM_FIN=fin; addEventListener("keydown",esc,true); ov.hidden=false;
   const pr=v.play(); if(pr&&pr.catch) pr.catch(()=>{ v.muted=true; v.play().catch(fin); }); }
 function roar(e){ if(e.sprite==="hook"&&!e.filmed&&A.film&&A.film.hook&&!P.dead){ e.filmed=true; cinematic(document.createElement("video").canPlayType('video/mp4; codecs="avc1.42E01E"')?A.film.hook:A.film.hookWebm,()=>{ e.roarT=-99; roar(e); }); return; }
   if(t-e.roarT<18) return; e.roarT=t; faunaNoise(e.x,e.y,9); playBuf(e.roar,{x:e.x,y:e.y,vol:e.sprite==="hook"?1.9:1.6,rate:.95+Math.random()*.1}); P.shake=Math.max(P.shake,.5);
@@ -861,7 +868,9 @@ function render(){ const VS=RH*P.zoom;
   if(P.restrained){ ctx.strokeStyle="rgba(230,230,220,.35)"; ctx.lineWidth=1; for(let i=0;i<14;i++){ ctx.beginPath(); ctx.moveTo((i*97)%RW,0); ctx.quadraticCurveTo(RW/2+Math.sin(i)*80,RH/2,(i*151)%RW,RH); ctx.stroke(); } }
   if(P.hurt>0){ ctx.fillStyle=`rgba(190,20,30,${P.hurt*.8})`; ctx.fillRect(0,0,RW,RH); }
   if(P.hidden){ ctx.fillStyle="rgba(10,14,30,.28)"; ctx.fillRect(0,0,RW,RH); }
-  drawHUD(); }
+  drawHUD();
+  if(HAS_MOUSE&&started&&!locked&&!paused&&!P.dead&&!BLD.open){ const w=150,h=26,x=RW/2-w/2,y=RH*.62; ctx.save(); ctx.globalCompositeOperation="source-over"; ctx.fillStyle="rgba(8,6,10,.78)"; ctx.fillRect(x,y,w,h);
+    ctx.strokeStyle="rgba(227,185,92,.9)"; ctx.lineWidth=1; ctx.strokeRect(x+.5,y+.5,w-1,h-1); ctx.fillStyle="#e3b95c"; ctx.font="700 12px Cinzel, Georgia, serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("Click to aim",RW/2,y+h/2+1); ctx.restore(); } }
 function drawEnt(e){ if(e.removed) return; const pr=project(e.x,e.y,.5); if(!pr) return; const tY=pr.d; if(e.forage&&e.spent) return;
   const h=Math.abs(VS()/tY)*(e.scale||1), w=h*(e.aspect||1); const top=e.hang?CAM.hz-Math.abs(VS()/tY)*(1-CAM.eye):CAM.hz+Math.abs(VS()/tY)*CAM.eye-h; const scrX=Math.floor(pr.x);
   const img=spriteFrame(e); if(!img) return; const [lr,lg,lb]=light(e.x,e.y,tY); const br=Math.min(1.6,(lr+lg+lb)/3*1.25);
