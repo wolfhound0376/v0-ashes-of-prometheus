@@ -10,6 +10,7 @@
 // this route takes the total and never rolls.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { conditionsFor, isDrinkData, quaff, LEVEL_NAME, type InebriationRecord } from "@/lib/inebriation"
 import { inebriationNow } from "@/lib/inebriation-server"
 
@@ -32,6 +33,7 @@ async function load(db: Db, characterId: string, inventoryItemId: string) {
 
 export async function GET(req: NextRequest) {
   const characterId = req.nextUrl.searchParams.get("characterId")
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const inventoryItemId = req.nextUrl.searchParams.get("inventoryItemId")
   if (!characterId || !inventoryItemId) return NextResponse.json({ error: "characterId and inventoryItemId required" }, { status: 400 })
   const db = createAdminClient()
@@ -54,6 +56,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
   const { characterId, inventoryItemId } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   if (!characterId || !inventoryItemId) return NextResponse.json({ error: "characterId and inventoryItemId required" }, { status: 400 })
   const save = Number(body.save)
@@ -89,7 +92,7 @@ export async function POST(req: NextRequest) {
         ? await db.from("inventory_items").delete().eq("id", l.row.id)
         : await db.from("inventory_items").update({ quantity: left }).eq("id", l.row.id)
     if (e1) return NextResponse.json({ error: e1.message }, { status: 500 })
-    await db.from("dialogue").insert({ speaker: "Malachar", text: `${l.character.name} drinks ${l.item.name}. ${result.summary}`, channel: "dm" })
+    if (!quiet(characterId)) await db.from("dialogue").insert({ speaker: "Malachar", text: `${l.character.name} drinks ${l.item.name}. ${result.summary}`, channel: "dm" })
   }
 
   return NextResponse.json({ sandbox, character: l.character.name, item: l.item.name, ...result, conditions: next })

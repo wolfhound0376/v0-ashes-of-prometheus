@@ -31,6 +31,7 @@
 // telemetry problem reached.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { taste, isGrid, unknownColumns } from "@/lib/eat-it-and-see"
 
 export const dynamic = "force-dynamic"
@@ -42,6 +43,7 @@ async function narrate(db: ReturnType<typeof createAdminClient>, text: string) {
 
 export async function GET(req: NextRequest) {
   const characterId = req.nextUrl.searchParams.get("characterId")
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   if (!characterId) return NextResponse.json({ error: "characterId required" }, { status: 400 })
 
   const db = createAdminClient()
@@ -82,6 +84,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { characterId, itemSlug } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   const save = Number(body.save)
   if (!characterId || !itemSlug) {
@@ -143,7 +146,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!sandbox) {
-    await narrate(db, `${character.name} tastes ${item.name}. ${result.summary}`)
+    if (!quiet(characterId)) await narrate(db, `${character.name} tastes ${item.name}. ${result.summary}`)
   }
 
   return NextResponse.json({

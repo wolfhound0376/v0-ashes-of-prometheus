@@ -13,6 +13,7 @@
 // routes: the characterId is the caller's own (AGENTS.md §5).
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import {
   BLESSED_WATER_SLUG, HOLY_WATER_SLUG, HOLY_WATER_SLOT_LEVEL, POWDERED_SILVER_SLUG, VIAL_SLUG,
   canBless, canMakeHolyWater, spendSlot,
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
   const { characterId, kind } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   if (!characterId) return NextResponse.json({ error: "characterId required" }, { status: 400 })
   if (kind !== BLESSED_WATER_SLUG && kind !== HOLY_WATER_SLUG) {
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
     }
     const { error: e9 } = await db.from("characters").update({ rest_actions_remaining: spend.remaining }).eq("id", characterId)
     if (e9) return NextResponse.json({ error: e9.message }, { status: 500 })
-    await db.from("dialogue").insert({ speaker: "Malachar", text: `${summary} (${spend.note})`, channel: "dm" })
+    if (!quiet(characterId)) await db.from("dialogue").insert({ speaker: "Malachar", text: `${summary} (${spend.note})`, channel: "dm" })
   }
 
   return NextResponse.json({ sandbox, character: character.name, made: product.name, kind, summary })

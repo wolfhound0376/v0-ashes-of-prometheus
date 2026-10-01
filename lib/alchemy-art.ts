@@ -45,6 +45,13 @@ export const BENCH_INTRO = {
   mp4: `${STORE}/clip/alchemy-intro.mp4`,
   webm: `${STORE}/clip/alchemy-intro.webm`,
 }
+/** The critical-failure film Sam supplied (Alchemy_Failure.mp4, 2026-10-01),
+ *  played by the bench itself on a natural 1. It used to be cued by a window
+ *  event only the full dashboard listened for, so on the bench page it never
+ *  played. */
+export const BENCH_CRIT_FILM = {
+  mp4: "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/cinematics/Alchemy_CriticalFailure.mp4",
+}
 export type BenchClip = "idle" | "mixing" | "success" | "inert" | "smoke" | "purify"
 
 /** The flask a finished brew is shown in, by impurity (0 clean … 3 corrupt). */

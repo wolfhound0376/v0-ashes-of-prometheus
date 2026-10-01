@@ -11,6 +11,7 @@
 // open.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isRuneSchool } from "@/lib/alchemy-runes"
 
@@ -24,6 +25,7 @@ function authorized(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   const characterId = req.nextUrl.searchParams.get("characterId")
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   if (!characterId) return NextResponse.json({ error: "characterId required" }, { status: 400 })
   const db = createAdminClient()
   const { data, error } = await db
@@ -41,6 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
   const { characterId, school } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const via = body.learnedVia ?? "dm"
   if (!characterId || !isRuneSchool(school)) {
     return NextResponse.json({ error: "characterId and one of the eight schools required" }, { status: 400 })

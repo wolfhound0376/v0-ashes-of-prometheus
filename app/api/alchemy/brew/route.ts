@@ -29,6 +29,7 @@
 // public-read with no anon write policy by design.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { benchProficient } from "@/lib/alchemy-pack"
 import { spendCampAction } from "@/lib/camp"
 import { isPrep } from "@/lib/extraction"
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { characterId } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   const check = Number(body.check)
   const die = Number(body.die)
@@ -392,7 +394,7 @@ export async function POST(req: NextRequest) {
         : result.outcome === "inert"
           ? `${character.name} works the bench. ${result.summary}`
           : `${character.name} brews ${label}. ${result.summary}`
-    await narrate(db, line)
+    if (!quiet(characterId)) await narrate(db, line)
   }
 
   return NextResponse.json({

@@ -15,6 +15,11 @@
 //     last pick, then the DM's spotlight, then the first player in the party.
 // The bench routes take that characterId exactly as they do from the dashboard.
 //
+// SANDBOX (Sam, 2026-10-01: "we need a sandbox so I can test the bench"):
+// /bench?sandbox=1 opens the DM's practice character (lib/alchemy-sandbox.ts)
+// instead of a real one: a full pack, nothing it does reaches the game. Only
+// the DM gets it, and only the DM sees the switch in the bench header.
+//
 // Leaving: the camp scene opened this page in a new tab, so closing the bench
 // closes the tab and the player is back at the fire. A browser only lets a
 // page close a tab it was opened into; if this page was reached any other way
@@ -24,6 +29,8 @@ import { useEffect, useState } from "react"
 import { DiceProvider } from "@/components/dice/dice-provider"
 import { AlchemyBench } from "@/components/alchemy/alchemy-bench"
 import { createClient } from "@/lib/supabase/client"
+import { getDmKey } from "@/lib/dm-key"
+import { SANDBOX_CHARACTER_ID } from "@/lib/alchemy-sandbox"
 
 // The same keys app/page.tsx keeps the per-browser seat under.
 const CHARACTER_LS_KEY = "aop_character_id"
@@ -62,34 +69,57 @@ function leave() {
   window.setTimeout(() => window.location.replace("/?view=compact&from=camp"), 250)
 }
 
+type Seat = { characterId: string | null; dm: boolean; sandbox?: { dmKey: string }; note?: string }
+
 export default function BenchPage() {
-  // undefined = still working it out; null = nobody this browser may play.
-  const [characterId, setCharacterId] = useState<string | null | undefined>(undefined)
+  // undefined = still working it out; characterId null = nobody this browser may play.
+  const [seat, setSeat] = useState<Seat | undefined>(undefined)
+  const characterId = seat === undefined ? undefined : seat.characterId
 
   useEffect(() => {
     let live = true
-    const done = (id: string | null) => { if (live) setCharacterId(id) }
+    const done = (next: Seat) => { if (live) setSeat(next) }
+    const params = new URLSearchParams(window.location.search)
+    const asName = params.get("as")
+    const wantSandbox = params.get("sandbox") === "1"
+
+    // The DM's bench: the practice character when asked for, else whoever is at the fire.
+    const asDm = async (stored: string | null) => {
+      if (!wantSandbox) return done({ characterId: await dmCharacter(asName, stored), dm: true })
+      const dmKey = getDmKey()
+      const r = await fetch("/api/alchemy/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-dm-key": dmKey },
+        body: JSON.stringify({ action: "ensure" }),
+      })
+      if (!r.ok) return done({ characterId: null, dm: true, note: "The DM code on this browser was not accepted. Enter it at /join, then come back." })
+      done({ characterId: SANDBOX_CHARACTER_ID, dm: true, sandbox: { dmKey } })
+    }
+
     try {
       // Coming from camp is not a new arrival: no intro ceremony on the way back.
       window.sessionStorage.setItem("aop_intro_seen", "1")
       const role = window.localStorage.getItem(ROLE_LS_KEY)
       const stored = window.localStorage.getItem(CHARACTER_LS_KEY)
       const token = window.localStorage.getItem(TOKEN_LS_KEY)
-      const asName = new URLSearchParams(window.location.search).get("as")
       if (role === "player") {
-        done(stored && token ? stored : null)
+        done({
+          characterId: stored && token ? stored : null,
+          dm: false,
+          note: wantSandbox ? "The alchemy sandbox is the DM's." : undefined,
+        })
       } else if (role === "dm") {
-        dmCharacter(asName, stored).then(done, () => done(null))
+        asDm(stored).catch(() => done({ characterId: null, dm: true }))
       } else {
         // No code entered on this browser. The dashboard lets such a browser in
         // only while the code gate is off; the bench does the same.
         fetch("/api/claim-code")
           .then((r) => r.json())
-          .then((cfg) => (cfg?.dmGate ? done(null) : dmCharacter(asName, stored).then(done)))
-          .catch(() => done(null))
+          .then((cfg) => (cfg?.dmGate ? done({ characterId: null, dm: false }) : asDm(stored)))
+          .catch(() => done({ characterId: null, dm: false }))
       }
     } catch {
-      done(null)
+      done({ characterId: null, dm: false })
     }
     return () => { live = false }
   }, [])
@@ -100,7 +130,7 @@ export default function BenchPage() {
     return (
       <main className="fixed inset-0 flex items-center justify-center bg-[#070605] p-6 text-center text-stone-300">
         <div className="max-w-sm space-y-4">
-          <p className="font-serif text-lg text-[#e3b95c]">No character on this browser yet</p>
+          <p className="font-serif text-lg text-[#e3b95c]">{seat?.note ?? "No character on this browser yet"}</p>
           <p className="text-sm text-stone-400">
             The bench works for the character this browser plays. Enter your access code first, then come back to the fire.
           </p>
@@ -115,7 +145,25 @@ export default function BenchPage() {
   return (
     <DiceProvider>
       <main className="fixed inset-0 bg-[#070605]">
-        <AlchemyBench characterId={characterId} onClose={leave} />
+        <AlchemyBench
+          key={characterId}
+          characterId={characterId}
+          onClose={leave}
+          sandbox={seat?.sandbox}
+          headerExtra={
+            seat?.dm ? (
+              <a
+                href={seat.sandbox ? "/bench" : "/bench?sandbox=1"}
+                className={
+                  "rounded-sm border px-2.5 py-1 font-serif text-[10px] uppercase tracking-[0.18em] " +
+                  (seat.sandbox ? "border-[#7a5f33] text-[#e2c98e] hover:bg-[#7a5f33]/20" : "border-[#c9563f] text-[#ff9a7a] hover:bg-[#c9563f]/20")
+                }
+              >
+                {seat.sandbox ? "Leave sandbox" : "Sandbox"}
+              </a>
+            ) : null
+          }
+        />
       </main>
     </DiceProvider>
   )

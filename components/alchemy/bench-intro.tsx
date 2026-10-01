@@ -14,7 +14,12 @@
 import { useEffect, useRef } from "react"
 import { BENCH_INTRO } from "@/lib/alchemy-art"
 
-export function BenchIntro({ onDone }: { onDone: () => void }) {
+/** Any bench film: the opening one by default, or the critical failure. */
+export function BenchIntro({ onDone, film = BENCH_INTRO, label = "The alchemy bench" }: {
+  onDone: () => void
+  film?: { mp4: string; webm?: string }
+  label?: string
+}) {
   const ref = useRef<HTMLVideoElement>(null)
   const done = useRef(false)
   const finish = useRef(onDone)
@@ -57,9 +62,9 @@ export function BenchIntro({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black" onClick={skip}>
-      <video ref={ref} playsInline preload="auto" className="h-full w-full object-contain" aria-label="The alchemy bench">
-        <source src={BENCH_INTRO.mp4} type="video/mp4" />
-        <source src={BENCH_INTRO.webm} type="video/webm" />
+      <video ref={ref} playsInline preload="auto" className="h-full w-full object-contain" aria-label={label}>
+        <source src={film.mp4} type="video/mp4" />
+        {film.webm && <source src={film.webm} type="video/webm" />}
       </video>
       <button
         type="button"

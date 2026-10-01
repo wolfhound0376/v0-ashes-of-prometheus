@@ -18,6 +18,7 @@
 // (AGENTS.md §5).
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { quiet, sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { isGrid } from "@/lib/eat-it-and-see"
 import { extract, isPrep, methodOf, preparedName, METHOD_TOOL, type PrepBlob } from "@/lib/extraction"
 import { preparedArt } from "@/lib/alchemy-art"
@@ -121,7 +122,7 @@ async function prepareOne(db: Db, characterId: string, characterName: string, en
       if (error) return { error: error.message, status: 500 }
     }
 
-    await narrate(
+    if (!quiet(characterId)) await narrate(
       db,
       `${characterName} works ${item.name} with the ${METHOD_TOOL[method]}. ${result.summary}` +
         (learned ? ` (Learns: ${learned.name}.)` : ""),
@@ -157,6 +158,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 })
   }
   const { characterId } = body
+  { const refused = sandboxRefused(req, characterId); if (refused) return refused }
   const sandbox = body.sandbox === true
   const entries: Entry[] = Array.isArray(body.items)
     ? (body.items as Entry[]).filter((e) => e && typeof e.itemSlug === "string")
