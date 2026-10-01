@@ -561,6 +561,81 @@ safety net at all; deleting it is permanent.** Three `v0/*` branches that looked
 disposable turned out to hold a media manifest, a set of item-removal rules, and
 an admin section, none of which had ever reached `main`.
 
+### Closing out a lane (Sam's rule, 2026-09-30)
+
+The section above says how to check. This says **when** — because nobody ever
+did it, and on 2026-09-30 there were 13 branches on the remote, two of them
+fully merged and sitting there for weeks.
+
+**When a session's work has landed on `main`, the last thing the session does
+is offer to delete its branch.** Not "the PR is open", not "the PR says
+merged" — landed, verified against `main` itself. The offer is one
+ready-to-paste command, and it is only made after the two checks below both
+pass.
+
+Do not delete the branch yourself. Sam deletes it. Agents verify and hand over.
+
+**Check 1 — is every commit on `main`?**
+
+```bash
+git fetch origin main -q
+SHA=$(git ls-remote origin "refs/heads/<branch>" | awk '{print $1}')
+git merge-base --is-ancestor "$SHA" origin/main && echo "ON MAIN" || echo "not-ancestor"
+git log --oneline origin/main.."$SHA"          # commits not on main — want zero
+```
+
+**`ON MAIN` with zero commits listed → done. Offer the delete.** Every commit
+is in `main`'s own history, so there is nothing left to lose and no pull ref
+to consult. Skip check 2 entirely.
+
+Anything else — not an ancestor, or commits listed — means some work is not on
+`main`. That is either a squash merge (normal; a squashed branch reads
+"ahead of main" forever) or genuinely unmerged work. Check 2 tells them apart.
+Never settle it from the PR page.
+
+**Check 2 — only when check 1 did not clear it.**
+
+You need the PR number; use the one this session handed over, or ask Sam. Do
+not go hunting by scanning every `refs/pull/*`.
+
+```bash
+git ls-remote origin "refs/pull/<n>/head"      # compare against $SHA
+```
+
+| Result | Verdict |
+|---|---|
+| Pull ref **equals** the branch tip | Squash-merged. GitHub keeps `refs/pull/<n>/head` forever, so the work stays recoverable after deletion. **Offer the delete.** |
+| Branch tip is **ahead of** the pull ref | Commits were pushed after the PR merged. They are in no PR and no `main`. **Do not offer.** Name the commits and ask what they are. |
+| **No pull ref** | The branch never had a PR. No safety net; deletion is permanent and unrecoverable. **Do not offer.** |
+
+The middle row is not hypothetical. On 2026-09-30 `claude/camp-poses` had
+merged as PR #532 and then taken **one further commit**, in no PR and not on
+`main`. A rule that deleted on "merged = yes" would have destroyed it.
+
+Worked examples from that same day, which is how this check got corrected —
+an earlier draft demanded a pull ref even for ancestors and so refused to
+clear the two branches that were plainly safe:
+
+| Branch | Check 1 | Verdict |
+|---|---|---|
+| `claude/inspiring-hawking-3s2hux` | ancestor, 0 ahead | **offer** — cleared outright |
+| `v0/playadecartagena-3023-4e04bec4` | ancestor, 0 ahead | **offer** — cleared outright |
+| `claude/camp-poses` | not ancestor, 1 ahead | **hold** — commit after PR #532 |
+| `feat/journal-module` | not ancestor, 1 ahead | **hold** — needs its PR number |
+
+**What the handover looks like** — only when both checks pass:
+
+> Done and on `main` (verified: `<sha>` is an ancestor of `origin/main`; PR #N
+> head matches the tip, so it stays recoverable). Branch is safe to delete:
+>
+> ```
+> git push origin --delete <branch>
+> ```
+
+One command, with the evidence that earned it. No command when the checks
+fail — say which check failed and what is unexplained instead. Silence is
+better than a confident delete.
+
 ### The type gate
 
 `tsc` does not exit 0 on `main` (see §1), so compare the error **sets**, never
