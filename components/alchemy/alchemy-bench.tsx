@@ -188,6 +188,35 @@ export function AlchemyBench({
     return (slug: string) => m.get(slug) ?? slug
   }, [pack])
 
+  // The filter bar over the reagents and ingredients (Sam, 2026-10-01: "We
+  // need a filter option at the top for ingredients"). It only ever filters
+  // by what the player can already see: the effect menu lists known effects,
+  // never the hidden columns.
+  const [q, setQ] = useState("")
+  const [show, setShow] = useState<"all" | "raw" | "ready" | "unknown">("all")
+  const [hasEffect, setHasEffect] = useState("")
+  const knownEffects = useMemo(() => {
+    const seen = new Set<string>()
+    for (const i of pack?.ingredients ?? []) for (const c of i.columns) if (c) seen.add(c)
+    return [...seen].map((slug) => ({ slug, name: effectName(slug) })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [pack, effectName])
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return (pack?.ingredients ?? []).filter(
+      (i) =>
+        (!needle || i.name.toLowerCase().includes(needle) || i.columns.some((c) => c && effectName(c).toLowerCase().includes(needle))) &&
+        (!hasEffect || i.columns.includes(hasEffect)) &&
+        (show === "all" ||
+          (show === "raw" && i.raw > 0) ||
+          (show === "ready" && i.prepared > 0) ||
+          (show === "unknown" && i.columns.some((c) => c === null))),
+    )
+  }, [pack, q, show, hasEffect, effectName])
+  // Reagents: what has been prepared and can go in the vessel. Ingredients: what is still raw.
+  const reagents = shown.filter((i) => i.prepared > 0)
+  const rawOnes = shown.filter((i) => i.raw > 0)
+  const filtering = q.trim() !== "" || show !== "all" || hasEffect !== ""
+
   const toggle = (slug: string) => {
     setRecipe(null)
     setPicked((p) => (p.includes(slug) ? p.filter((s) => s !== slug) : p.length >= 3 ? p : [...p, slug]))
@@ -488,7 +517,7 @@ export function AlchemyBench({
             {picked.length > 0 && stage.kind !== "potion" && (
               <div className="absolute bottom-2 left-2 right-2 flex justify-center gap-1">
                 {picked.map((s) => (
-                  <img key={s} src={cutout(s)} alt="" className="h-10 w-10 rounded-full border border-[#7a5f33] bg-black/60 object-contain" />
+                  <img key={s} src={preparedArt(s) ?? cutout(s)} alt="" className={cn("h-10 w-10 rounded-full border border-[#7a5f33] bg-black/60", preparedArt(s) ? "object-cover" : "object-contain")} />
                 ))}
               </div>
             )}
@@ -578,10 +607,102 @@ export function AlchemyBench({
 
           {pack && (
             <>
+              {pack.ingredients.length > 0 && (
+                <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 rounded-sm border border-[#7a5f33]/60 bg-[#0d0b08]/95 px-2 py-2 text-xs backdrop-blur">
+                  <input
+                    type="search"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search ingredients or effects…"
+                    aria-label="Search ingredients or effects"
+                    className="min-w-[160px] flex-1 rounded-sm border border-[#7a5f33] bg-[#070605] px-2 py-1 text-sm text-stone-200 placeholder:text-stone-500"
+                  />
+                  <select value={show} onChange={(e) => setShow(e.target.value as typeof show)} aria-label="Show"
+                    className="rounded-sm border border-[#7a5f33] bg-[#070605] px-1.5 py-1 text-stone-200">
+                    <option value="all">Everything</option>
+                    <option value="raw">Can be prepared</option>
+                    <option value="ready">Ready to brew</option>
+                    <option value="unknown">Still has unknown effects</option>
+                  </select>
+                  <select value={hasEffect} onChange={(e) => setHasEffect(e.target.value)} aria-label="Has the effect"
+                    className="max-w-[200px] rounded-sm border border-[#7a5f33] bg-[#070605] px-1.5 py-1 text-stone-200">
+                    <option value="">Any effect</option>
+                    {knownEffects.map((e) => <option key={e.slug} value={e.slug}>{e.name}</option>)}
+                  </select>
+                  {filtering && (
+                    <button type="button" onClick={() => { setQ(""); setShow("all"); setHasEffect("") }}
+                      className="rounded-sm border border-[#7a5f33] px-2 py-1 text-[#c9a868] hover:bg-[#2a1f10]">
+                      Clear
+                    </button>
+                  )}
+                  <span className="text-stone-500">{shown.length} of {pack.ingredients.length}</span>
+                </div>
+              )}
+
+              {/* REAGENTS — what has been prepared, shown as it now looks (Sam: "a
+                  window for our reagents made with images"). This is where the
+                  vessel is filled from. */}
+              {pack.ingredients.some((i) => i.prepared > 0) && (
+                <div className="rounded-sm border border-[#9c7a3a]/70 bg-[#120e08]/90 p-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,.6)]">
+                  <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#e2c98e]">
+                    Reagents
+                    <span className="normal-case tracking-normal text-stone-500">prepared and ready for the vessel · pick 2 or 3</span>
+                  </h3>
+                  {reagents.length === 0 && <p className="text-sm text-stone-500">No reagent matches the filter.</p>}
+                  <ul className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">
+                    {reagents.map((i) => {
+                      const on = picked.includes(i.slug)
+                      const art = preparedArt(i.slug)
+                      return (
+                        <li key={i.slug}>
+                          <button
+                            type="button"
+                            onClick={() => toggle(i.slug)}
+                            disabled={busy}
+                            aria-pressed={on}
+                            className={cn(
+                              "flex w-full flex-col items-center gap-1 rounded-sm border bg-[#0d0b08]/85 p-2 text-center transition-colors disabled:opacity-60",
+                              on ? "border-[#e2c98e] bg-[#2a1f10]" : "border-[#7a5f33]/50 hover:border-[#c9a868]",
+                            )}
+                          >
+                            <span className="relative grid h-24 w-full place-items-center overflow-hidden rounded-sm bg-black/40">
+                              <img
+                                src={art ?? cutout(i.slug)}
+                                onError={(e) => { const el = e.currentTarget as HTMLImageElement; if (el.src !== cutout(i.slug)) el.src = cutout(i.slug); else if (i.icon) el.src = i.icon }}
+                                alt=""
+                                className={art ? "h-full w-full object-cover" : "h-20 w-20 object-contain"}
+                              />
+                              {on && <span className="absolute right-1 top-1 rounded-sm bg-[#e2c98e] px-1 text-[10px] font-bold text-black">IN</span>}
+                            </span>
+                            <span className="text-sm text-[#f1dca8]">{i.name}</span>
+                            <span className="text-[11px] text-stone-400">
+                              {i.method ? DONE[i.method] : "ready"} ×{i.prepared}
+                              {i.bruised > 0 && <span className="text-[#d9a066]"> ({i.bruised} bruised)</span>}
+                            </span>
+                            <span className="flex flex-wrap justify-center gap-1" aria-label={`What you know about ${i.name}`}>
+                              {i.columns.map((c, n) => (
+                                <span key={n} title={c ? effectName(c) : "Unknown"} className="h-2.5 w-2.5 rounded-full border border-stone-600" style={c ? { background: lookOf(c).liquid } : undefined} />
+                              ))}
+                            </span>
+                          </button>
+                          {/* Nothing raw left to taste from the Ingredients list: taste a prepared one here. */}
+                          {i.raw === 0 && i.columns[0] === null && (
+                            <button type="button" onClick={() => void taste(i)} disabled={busy}
+                              className="mt-1 w-full rounded-sm border border-[#7a5f33] px-2 py-0.5 text-xs text-[#c9a868] hover:bg-[#2a1f10] disabled:opacity-40">
+                              Taste it (CON {sign(pack.rolls.taste.modifier)} vs DC {pack.rolls.taste.dc})
+                            </button>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )}
+
               <div>
                 <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">
                   Ingredients
-                  <span className="normal-case tracking-normal text-stone-500">camp actions left: {pack.campActions} · a preparing sitting or a brew costs one</span>
+                  <span className="normal-case tracking-normal text-stone-500">raw · camp actions left: {pack.campActions} · a preparing sitting or a brew costs one</span>
                 </h3>
                 {prepPick.length > 0 && (
                   <div className="mb-2 flex flex-wrap items-center gap-2 rounded-sm border border-[#c9a868]/60 bg-[#1a140b] p-2 text-xs">
@@ -593,59 +714,46 @@ export function AlchemyBench({
                   </div>
                 )}
                 {pack.ingredients.length === 0 && <p className="text-sm text-stone-400">Nothing in your pack will go into a brew. Forage first.</p>}
+                {pack.ingredients.length > 0 && rawOnes.length === 0 && (
+                  <p className="text-sm text-stone-500">{filtering ? "No raw ingredient matches the filter." : "Everything you carry is prepared."}</p>
+                )}
                 <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
-                  {pack.ingredients.map((i) => {
-                    const on = picked.includes(i.slug)
-                    const ready = i.prepared > 0
-                    return (
-                      <li key={i.slug} className={cn("flex flex-col gap-1 rounded-sm border bg-[#0d0b08]/85 p-2", on ? "border-[#e2c98e]" : "border-[#7a5f33]/50")}>
+                  {rawOnes.map((i) => (
+                    <li key={i.slug} className="flex flex-col gap-1 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/85 p-2">
+                      <div className="flex flex-col items-center gap-1">
+                        <img src={cutout(i.slug)} onError={(e) => { if (i.icon) (e.currentTarget as HTMLImageElement).src = i.icon }} alt="" className="h-16 w-16 object-contain" />
+                        <span className="text-sm text-[#f1dca8]">{i.name}</span>
+                        <span className="text-[11px] text-stone-400">raw ×{i.raw}</span>
+                      </div>
+                      <ul className="flex flex-col gap-0.5" aria-label={`What you know about ${i.name}`}>
+                        {i.columns.map((c, n) => (
+                          <li key={n} className="flex items-center gap-1 text-[11px]">
+                            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full border border-stone-600" style={c ? { background: lookOf(c).liquid } : undefined} />
+                            <span className={c ? "text-stone-300" : "text-stone-600"}>{c ? effectName(c) : "?"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {i.method && (
                         <button
                           type="button"
-                          onClick={() => toggle(i.slug)}
-                          disabled={busy || !ready}
-                          aria-pressed={on}
-                          title={ready ? undefined : "Prepare it first"}
-                          className="flex flex-col items-center gap-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-pressed={prepPick.includes(i.slug)}
+                          onClick={() => setPrepPick((p) => (p.includes(i.slug) ? p.filter((x) => x !== i.slug) : p.length >= 3 ? p : [...p, i.slug]))}
+                          disabled={busy}
+                          className={cn(
+                            "mt-1 rounded-sm border px-2 py-0.5 text-xs disabled:opacity-40",
+                            prepPick.includes(i.slug) ? "border-[#e2c98e] bg-[#3a2b15] text-[#f1dca8]" : "border-[#c9a868] text-[#f1dca8] hover:bg-[#2a1f10]",
+                          )}
                         >
-                          <img src={(i.raw === 0 && preparedArt(i.slug)) || cutout(i.slug)} onError={(e) => { if (i.icon) (e.currentTarget as HTMLImageElement).src = i.icon }} alt="" className="h-16 w-16 object-contain" />
-                          <span className="text-sm text-[#f1dca8]">{i.name}</span>
-                          <span className="text-[11px] text-stone-400">
-                            {i.raw > 0 && <>raw ×{i.raw}</>}
-                            {i.raw > 0 && i.prepared > 0 && " · "}
-                            {i.prepared > 0 && <>{i.method ? DONE[i.method] : "ready"} ×{i.prepared}</>}
-                            {i.bruised > 0 && <span className="text-[#d9a066]"> ({i.bruised} bruised)</span>}
-                          </span>
+                          {prepPick.includes(i.slug) ? "✓ " : ""}{VERB[i.method]} it — {i.tool}
                         </button>
-                        <ul className="flex flex-col gap-0.5" aria-label={`What you know about ${i.name}`}>
-                          {i.columns.map((c, n) => (
-                            <li key={n} className="flex items-center gap-1 text-[11px]">
-                              <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full border border-stone-600" style={c ? { background: lookOf(c).liquid } : undefined} />
-                              <span className={c ? "text-stone-300" : "text-stone-600"}>{c ? effectName(c) : "?"}</span>
-                            </li>
-                          ))}
-                        </ul>
-                        {i.raw > 0 && i.method && (
-                          <button
-                            type="button"
-                            aria-pressed={prepPick.includes(i.slug)}
-                            onClick={() => setPrepPick((p) => (p.includes(i.slug) ? p.filter((x) => x !== i.slug) : p.length >= 3 ? p : [...p, i.slug]))}
-                            disabled={busy}
-                            className={cn(
-                              "mt-1 rounded-sm border px-2 py-0.5 text-xs disabled:opacity-40",
-                              prepPick.includes(i.slug) ? "border-[#e2c98e] bg-[#3a2b15] text-[#f1dca8]" : "border-[#c9a868] text-[#f1dca8] hover:bg-[#2a1f10]",
-                            )}
-                          >
-                            {prepPick.includes(i.slug) ? "✓ " : ""}{VERB[i.method]} it — {i.tool}
-                          </button>
-                        )}
-                        {i.columns[0] === null && (
-                          <button type="button" onClick={() => void taste(i)} disabled={busy} className="mt-1 rounded-sm border border-[#7a5f33] px-2 py-0.5 text-xs text-[#c9a868] hover:bg-[#2a1f10] disabled:opacity-40">
-                            Taste it (CON {sign(pack.rolls.taste.modifier)} vs DC {pack.rolls.taste.dc})
-                          </button>
-                        )}
-                      </li>
-                    )
-                  })}
+                      )}
+                      {i.columns[0] === null && (
+                        <button type="button" onClick={() => void taste(i)} disabled={busy} className="mt-1 rounded-sm border border-[#7a5f33] px-2 py-0.5 text-xs text-[#c9a868] hover:bg-[#2a1f10] disabled:opacity-40">
+                          Taste it (CON {sign(pack.rolls.taste.modifier)} vs DC {pack.rolls.taste.dc})
+                        </button>
+                      )}
+                    </li>
+                  ))}
                 </ul>
               </div>
 
