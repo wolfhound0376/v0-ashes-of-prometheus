@@ -5,6 +5,7 @@ import {
   MASTERCRAFT_HISTORY_REQUIRED,
   NEGLECT_LONG_RESTS,
   REPAIR_STEP,
+  bankedSuccesses,
   canMend,
   cleanSlugFor,
   conditionEffect,
@@ -378,5 +379,29 @@ describe("salvage", () => {
 
   it("falls back to a tenth of value as scrap", () => {
     expect(salvage({ name: "Longsword", value: 150 }, "destroyed").scrapGp).toBe(15)
+  })
+})
+
+describe("banked progress — one rung per project", () => {
+  const ev = (success: boolean, done = false) => ({ kind: "repair", detail: { success, done } })
+
+  it("counts successes and attempts in the current project", () => {
+    expect(bankedSuccesses([ev(false), ev(true), ev(true)])).toEqual({ successes: 2, attempts: 3 })
+  })
+
+  it("is empty for a fresh item", () => {
+    expect(bankedSuccesses([])).toEqual({ successes: 0, attempts: 0 })
+  })
+
+  it("stops at the check that finished the previous rung", () => {
+    expect(bankedSuccesses([ev(true), ev(false), ev(true, true), ev(true)])).toEqual({ successes: 1, attempts: 2 })
+  })
+
+  it("stops at any event that is not a repair, so a mend or a degrade clears the bench", () => {
+    expect(bankedSuccesses([ev(true), { kind: "degrade", detail: {} }, ev(true)])).toEqual({ successes: 1, attempts: 1 })
+  })
+
+  it("treats a malformed detail as a failed attempt rather than throwing", () => {
+    expect(bankedSuccesses([{ kind: "repair", detail: null }])).toEqual({ successes: 0, attempts: 1 })
   })
 })

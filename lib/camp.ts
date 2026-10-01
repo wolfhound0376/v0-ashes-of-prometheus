@@ -321,7 +321,7 @@ export const CAMP_ACTION_RULES: Record<CampAction, { resolves: string; source: s
   decipher: { resolves: "decipher() — INT (Arcana) vs the DM's DC", source: "SRD 5.1, Using Ability Scores" },
   artifice: { resolves: "craftProgress()", source: "SRD 5.1, Between Adventures: Crafting" },
   forage: { resolves: "forage()", source: "OotA-Enc p.25; DMG p.111" },
-  mend: { resolves: "dmScene() — Mending cantrip repairs one break up to 1 ft; otherwise a tool check", source: "SRD 5.1, Mending" },
+  mend: { resolves: "lib/repair — canMend() for the cantrip, repairSpec() + settleCraftRoll() for the tool check at the bench", source: "SRD 5.1, Mending; docs/claude_Repair_Mend_Upgrade.md, Sam 2026-10-01" },
   brew: { resolves: "craftProgress() against a catalog potion with a craft block", source: "SRD 5.1, Between Adventures: Crafting" },
   pray: { resolves: "dmScene() — no rule; the DM answers or does not", source: "Sam, 2026-09-26" },
   level_up: { resolves: "levelUp()", source: "SRD 5.1, Beyond 1st Level; Sam, 2026-08-20" },

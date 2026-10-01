@@ -638,3 +638,29 @@ export function salvage(
       : `What is left of ${item.name} is worth ${scrapGp} gp as scrap.`,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Banked progress (doc §4 — one rung per project)
+// ---------------------------------------------------------------------------
+
+/**
+ * Successful repair checks banked against the CURRENT rung: everything since
+ * the most recent event that actually moved the condition. A finished repair
+ * therefore starts the next rung's project at zero, which is what "one rung
+ * per project" means.
+ */
+export function bankedSuccesses(
+  history: { kind: string; detail: unknown; to_condition?: string | null }[],
+): { successes: number; attempts: number } {
+  let successes = 0
+  let attempts = 0
+  for (const e of history) {
+    // history is newest-first; stop at the last event that moved the rung.
+    if (e.kind !== "repair") break
+    const d = (e.detail ?? {}) as { success?: unknown; done?: unknown }
+    if (d.done === true) break
+    attempts += 1
+    if (d.success === true) successes += 1
+  }
+  return { successes, attempts }
+}
