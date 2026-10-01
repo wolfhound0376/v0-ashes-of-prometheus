@@ -51,11 +51,16 @@ assets, chests, traps, lore."*
 
 The painted dagger and `lib/weapon-rig.ts` from `feat/bow-draw-rig` (`claude_Melee_Attack_Rig.md`), ported into
 `pov.js`. Light timing (windup 172 ms, strike 90, recover 234); the attack roll lands on the strike frame. Dagger on the
-full-resolution HUD like the bow; never rotates. The painted hand is Freía's (red nails) — every character uses it until
+full-resolution HUD like the bow. Held at a fixed 30° counter-clockwise tilt, blade leaning left (Sam, 9/30: first "rotate
+the blade and hand drawing by 30 degrees and fix it there", then "60 degrees counter clockwise now" from that); it never
+rotates during a swing. The painted hand is Freía's (red nails) — every character uses it until
 each has their own capture. Fists keep the pixel animation.
 
-- **Quick click = `slash_out`** (Sam, 9/30: "the slash from medially go lateral"): a backhand — the hand cocks across the
-  body to the left and sweeps out to the right along a bowed arc. `slash_d` (the rig's inward cut) stays in the table
+- **Quick click = `slash_out`** (Sam, 9/30: "the slash from medially go lateral"): a backhand along a bowed arc. Sam, later: "start left then
+  just slash right" — the hand rises into view already on the left, slashes right, and drops off the bottom right; it
+  never travels left first or slides back to the middle. Sam: "swipe 30% faster" — the slash plays at 1.3× (about
+  380 ms instead of 496; the hit lands about 200 ms in), the thrust keeps the rig timing. How often you can attack is
+  unchanged. `slash_d` (the rig's inward cut) stays in the table
   unused.
 - **Hold = `thrust_c`** (Sam, 9/30: "just go a little in front of the character and come from the center POV; similar
   to what we had previously"): a short draw-back, then a drive in toward the middle, the hand shrinking to 0.8 as the
@@ -87,6 +92,13 @@ SRD 5.1 unless marked **HOUSE**.
 - **Creatures** — giant spider (SRD) and hook horror (OotA) from `bestiary`.
 - **Fright** — roar → WIS save DC 11 spider / 13 hook horror → SRD Frightened 6 s, voice line (**HOUSE** trigger).
 - **Hide** — Stealth vs DC 15; creatures with passive Perception ≥ the total still see you.
+  Blindsight ignores hiding inside its range (hook horror 60 ft, giant spider 10 ft — both from `bestiary`). Whenever a
+  creature finds a hidden character the log says why with the numbers ("blindsight 60 ft and Fifi is 25 ft away…", or
+  "its passive Perception 10 meets or beats her Stealth 9"), and she stops being hidden (Sam, 9/30: "can you prove it
+  beat my stealth").
+- **Creature reach** — an attack starts only inside its reach with a clear line (bite 5 ft = 1.1 squares, hooks 10 ft
+  = 2), and is checked again when the blow lands: still inside reach (+0.1 square) and in line, or it falls short and
+  the log says "out of reach" with the distance. Step back during the wind-up and it misses (Sam, 9/30).
 - **Crouch** — slower (55%), quieter, advantage on Stealth, noticed within 8 squares instead of 12 (**HOUSE**). Standing ends Hide.
 - **Leap back (0)** — ~8 ft, disadvantage on attacks against you while airborne + 0.5 s, 3 s cooldown, grunt (**HOUSE**).
 - **Jump (Space)** — SRD standing high jump, (3 + STR mod) ÷ 2 ft; a moving hop ×1.5 (**HOUSE**). Real gravity.
@@ -101,7 +113,22 @@ SRD 5.1 unless marked **HOUSE**.
   Shooting one wakes it.
 - **Forage** — E at a bluecap patch: Survival (WIS) DC 15 → 1d3 of bluecap, barrelstalk, trillimac, waterorb,
   ripplebark, fire lichen, torchstalk. Each character plays their own pick-up animation (PixelLab `picking-up`).
+  On a find they say one of three lines at random, in their own ElevenLabs voice (`characters.voice_id`), Sam 9/30:
+  "This might be edible." / "I bet I can make something from this." / "This is probably garbage… but maybe…" —
+  `audio-<voice>Forage.webm`, one take each cut at the pauses (`FOUND_CUT`, checked against word timings).
 - **Chests** — fixed test loot from the `items` catalog. Everything resolves to a catalog slug.
+
+- **Cave fauna** (Sam, 9/30: "harmless fauna flying around like bats hanging that get startled when stirred and fly
+  around. Insects should be moving around. Little spiders might be crawling"): set dressing only — no stat blocks, no
+  rolls, nothing to fight. Counts in the record's `dressing` (`bats` 10, `spiders` 9, `swarms` 6).
+  - **Bats** roost on the ceiling in twos to fours. They flush when you come within 2 squares standing, 2.8 walking,
+    4.2 dashing, 1.4 crouched or hidden; also on a loosed arrow (3.5), a weapon hit (4), a jump landing (3; 1.5
+    crouched) or a creature's roar (9). The whole cluster goes up together, wingbeats and squeaks, circles 3.5–7 s,
+    then flies to a new spot in sight and away from you, and hangs again. Distances are Claude's choice, not a rule.
+  - **Moths and gnats** dance around the glowing fungi and crystals: pale moths with beating wings, dark gnats.
+  - **Little spiders** creep along the floor by the walls in fits and starts and scuttle off when you come within 1.6.
+  - Pixel bitmaps drawn in code, lit by the cave light and clipped by the walls. Sounds: ElevenLabs sound effects
+    (`audio-batFlush`, `-batFlush2`, `-batSqueak`, cut at the squeak onsets).
 
 ## 4. Look and sound
 
