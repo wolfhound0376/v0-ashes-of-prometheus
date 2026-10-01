@@ -20,6 +20,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isGrid } from "@/lib/eat-it-and-see"
 import { extract, isPrep, methodOf, preparedName, METHOD_TOOL, type PrepBlob } from "@/lib/extraction"
+import { preparedArt } from "@/lib/alchemy-art"
 
 export const dynamic = "force-dynamic"
 
@@ -108,7 +109,8 @@ export async function POST(req: NextRequest) {
           item_type: item.item_type,
           weight: item.weight,
           value: item.value,
-          icon_url: item.icon_url,
+          // The prepared row wears the prepared painting when Sam has approved one.
+          icon_url: preparedArt(item.slug as string) ?? item.icon_url,
           prep,
         })
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
