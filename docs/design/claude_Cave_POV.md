@@ -74,8 +74,15 @@ each has their own capture. Fists keep the pixel animation.
 
 - **Mouse** looks (after one click; Esc releases). Full pitch.
 - **↑ ↓ / W S** walk, **← → / A D** strafe.
-- **Left click** strikes with the lit card; **hold left** is the class power (Fifi: dagger thrust and lunge with a grunt).
-- **Right click** draws the bow (hold), release looses.
+- **The lit card is the left mouse button** (Sam, 9/30, for every first-person module): 1–9 or a click on the bar only
+  lights a card; **left click** does exactly what the lit card says and nothing else. A card named **"A / B"** also gives
+  the **right click** B — Fifi's *Dagger / Shortbow*: left strikes (hold left for the thrust and lunge), right draws the
+  bow (hold), release looses. On a card without "/", right click does nothing. (The old "hold left = class power" and
+  "right click = the class's ranged attack" are gone; Kenta, Samson and Scott light the spell card they want.)
+- **The mouse stays yours** (Sam, 9/30: "I wasn't able to move my mouse cursor or aim after the hook horror startled
+  me"): the hook horror's film no longer releases the mouse — any click, Space or Enter skips it and aiming carries on.
+  Closing a lore page takes the mouse back. Whenever the mouse is free during play (Esc), the view shows **Click to aim**.
+- **Help legend** under the view: *Hide help / Show help* button or **H**; remembered in that browser.
 - **Wheel tap** crouches / stands; **wheel hold** hides (rogues).
 - **Fifi's bar** (Sam, 9/30: "Clear the text and options but keep the cards 2-8"): names only, no sub-lines —
   1 Dagger / Shortbow (left and right click), 2 Search, 3 Dash, 4 Throw object (throws on the key press; today that is

@@ -49,6 +49,9 @@ canvas:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
 #filmx{position:absolute;top:10px;right:10px;margin:0;background:rgba(0,0,0,.55)}
 .key{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 20px;color:var(--dim);font-size:.95rem;min-width:0}
 .key b{color:var(--ink);font-weight:600}
+.key[hidden]{display:none}
+#keytog{justify-self:start;background:none;border:1px solid #5a4830;color:var(--dim);font-family:var(--display);font-size:.8rem;letter-spacing:.06em;padding:3px 10px;cursor:pointer}
+#keytog:hover{color:var(--ink);border-color:var(--gold)}
 /* lore reader */
 #lore{z-index:5}
 #lore .page{max-width:min(620px,92%);max-height:86%;overflow:auto;background:linear-gradient(#efe2c2,#dcc9a0);color:#2a1d10;border:1px solid #6b5230;box-shadow:0 10px 40px rgba(0,0,0,.6);padding:22px 24px;text-align:left}
@@ -107,16 +110,23 @@ canvas:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
     </aside>
     <div class="ov" id="dead" hidden><div><h2 id="deadt">FIFI FALLS</h2><p id="deadp">The dark keeps her.</p><button class="obtn" id="again">Try again</button></div></div>
   </div>
-  <div class="key">
+  <button id="keytog" type="button" aria-expanded="true" aria-controls="keyhelp">Hide help (H)</button>
+  <div class="key" id="keyhelp">
     <span><b>Look</b>: the mouse, after one click on the view (Esc lets go). The hands sway as you look.</span>
     <span><b>Move</b>: ↑ ↓ or W S walk; ← → or A D strafe.</span>
-    <span><b>Mouse</b>: left click strikes, <b>hold left</b> for the class power <b>right click</b> fires (hold to draw the bow). <b>Tap the wheel</b> to crouch (slower, quieter, advantage on Stealth); <b>hold the wheel</b> to hide (rogues).</span>
-    <span><b>1–9</b>: action cards (click uses the lit one). <b>Space</b>: jump. <b>B</b>: builder (DM). <b>E</b>: forage, open chests, pick up. <b>M</b>: map.</span>
+    <span><b>Left click</b> does what the lit card says, and only that. On a card with a <b>/</b>, the left side is the left button and the right side is the <b>right click</b> — <i>Dagger / Shortbow</i>: left strikes (hold for the thrust), right draws the bow. Other cards: right click does nothing.</span>
+    <span><b>1–9</b> (or click a card): light a card. <b>Tap the wheel</b> to crouch (slower, quieter, advantage on Stealth); <b>hold the wheel</b> to hide (rogues).</span>
+    <span><b>Space</b>: jump. <b>E</b>: forage, open chests, pick up. <b>M</b>: map. <b>B</b>: builder (DM). <b>H</b>: show / hide this help.</span>
     <span><b>0</b>: leap back out of reach (rogues, rangers and fighters).</span>
   </div>
 </div>
 <script src="manifest.js"></script>
 <script>
+// the help legend: shown by default, toggled by the button or H, remembered in this browser (Sam, 9/30)
+(()=>{ const k=document.getElementById("keyhelp"), b=document.getElementById("keytog");
+  const set=(show)=>{ k.hidden=!show; b.textContent=show?"Hide help (H)":"Show help (H)"; b.setAttribute("aria-expanded",String(show)); try{ localStorage.setItem("aop_cave_help",show?"1":"0"); }catch(e){} };
+  let show=true; try{ show=localStorage.getItem("aop_cave_help")!=="0"; }catch(e){} set(show);
+  b.onclick=()=>set(k.hidden); addEventListener("keydown",e=>{ const t=e.target; if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA")) return; if(e.key==="h"||e.key==="H") set(k.hidden); }); })();
 // which dungeon: ?d=<id> (default darklake), from public/cave-pov/dungeons/<id>.json; the game starts once it is here
 (async()=>{ const id=new URLSearchParams(location.search).get("d")||"darklake"; A.dungeons=A.dungeons||{};
   if(!A.dungeons[id]){ try{ A.dungeons[id]=await (await fetch("dungeons/"+encodeURIComponent(id)+".json")).json(); }catch(e){ try{ A.dungeons.darklake=await (await fetch("dungeons/darklake.json")).json(); }catch(e2){} } }
