@@ -11,14 +11,23 @@ const buf=ctx.createImageData(RW,RH), px=new Uint32Array(buf.data.buffer);
 const zbuf=new Float32Array(RW);
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
 const $=(id)=>document.getElementById(id);
-// ---- the cave: # rock, C crystal-veined rock, . floor, * a crystal light on the floor.
-const MAP=A.map, MH=MAP.length, MW=MAP[0].length;
+// ---- THE DUNGEON (Sam, 9/30: "the cave is a template for dungeons"). The engine plays one dungeon record — map,
+// creatures, chests, forage, props, traps, lore, dressing — from public/cave-pov/dungeons/<id>.json (?d=<id>, default
+// darklake). A draft saved by the builder in this browser wins over the file (see BUILDER below).
+// Map: # rock, C crystal-veined rock, . floor, * a crystal light on the floor.
+const DQ=new URLSearchParams(location.search), DID=DQ.get("d")||"darklake";
+const BLD={enabled:DQ.has("build")||!!A.__artifact,open:false};
+let D=null; try{ const sd=localStorage.getItem("aop_dungeon_draft_"+DID); if(sd){ D=JSON.parse(sd); D.__draft=true; } }catch(e){}
+if(!D) D=JSON.parse(JSON.stringify((A.dungeons&&(A.dungeons[DID]||Object.values(A.dungeons)[0]))||null));
+for(const k of ["creatures","chests","forage","props","traps","lore","hazards"]) D[k]=D[k]||[];
+D.dressing=Object.assign({seed:9301,stalactites:44,props:46,violets:7},D.dressing||{});
+const MAP=D.map.map(r=>r.split("")), MH=MAP.length, MW=MAP[0].length;
 const cell=(x,y)=>{ const r=MAP[Math.floor(y)]; return r?r[Math.floor(x)]||"#":"#"; };
 const solid=(x,y)=>{ const c=cell(x,y); return c==="#"||c==="C"; };
 function texFrom(img,size=128){ const c=document.createElement("canvas"); c.width=c.height=size; const g=c.getContext("2d"); g.drawImage(img,0,0,size,size); return {size,d:new Uint8ClampedArray(g.getImageData(0,0,size,size).data)}; }
 const TEX={};
 function loadImg(src){ return new Promise(r=>{ const i=new Image(); i.onload=()=>r(i); i.onerror=()=>r(null); i.src=src; }); }
-const LIGHTS=[]; for(let y=0;y<MH;y++) for(let x=0;x<MW;x++) if(MAP[y][x]==="*") LIGHTS.push({x:x+.5,y:y+.5,r:.35,g:.62,b:1.25,rad:3.4});
+const LIGHTS=[]; for(let y=0;y<MH;y++) for(let x=0;x<MW;x++) if(MAP[y][x]==="*") LIGHTS.push({x:x+.5,y:y+.5,r:.35,g:.62,b:1.25,rad:3.4,cell:true});
 
 // =====================================================================================================================
 // THE PARTY — numbers from the characters table (9/30): HP, AC, ability modifiers, attacks, spells, slots, voice.
@@ -82,12 +91,23 @@ const MSAVE={spider:{wis:0,dex:3,con:1},hook:{wis:1,dex:0,con:2}};
 // STATE
 // =====================================================================================================================
 let PC=null, CARDS=[];
-const P={x:A.start[0],y:A.start[1],a:A.start[2],hp:8,max:8,ac:10,bob:0,cool:0,hurt:0,sel:0,
+const P={x:D.start[0],y:D.start[1],a:D.start[2]||0,hp:8,max:8,ac:10,bob:0,cool:0,hurt:0,sel:0,
   act:null, drawing:false, draw:0, trail:[], dagger:true, slots:2, uses:{}, hidden:0, dodge:0, dash:0, jz:0, jv:0, air:false, jumpPre:0, land:0, crouch:false, poison:0, blur:0, reel:0, sporeGlow:0, leap:0, leapCd:0, leapV:{x:0,y:0}, fright:0, frightSrc:null,
   sanct:0, sof:0, guid:0, innate:0, eye:.5, pitch:0, zoom:1, lunge:0, hx:RW*.5, hy:RH*.5, bodyX:RW*.3, swayX:0, swayY:0, hold:null, power:0, moving:false, hurtAnim:0, deadT:0, slash:null, restrained:false, sneakT:0, revealT:0, shake:0, voiceT:0, dead:false};
-const ENTS=A.ents.map((e,i)=>({...e,id:i,frame:0,ft:0,hp:e.hp??1,max:e.hp??1,cool:1.5,state:"idle",flash:0,dead:false,mode:"idle",home:[e.x,e.y],pops:[],
-  webReady:e.sprite==="spider",webT:0,roarT:-99,sleep:0,incap:0,slow:0,faerie:0,guided:0,mocked:false,sapped:false,flee:0,lure:null,lastSeen:null,opened:false,spent:false}));
-let CHESTN=0; for(const e of ENTS) if(e.chest) e.loot=CHEST_LOOT[(CHESTN++)%CHEST_LOOT.length];
+const ENTS=[];
+function addEnt(e){ const o={...e,id:ENTS.length,frame:0,ft:0,hp:e.hp??1,max:e.hp??1,cool:1.5,state:"idle",flash:0,dead:false,mode:"idle",home:[e.x,e.y],pops:[],
+  webReady:e.sprite==="spider",webT:0,roarT:-99,sleep:0,incap:0,slow:0,faerie:0,guided:0,mocked:false,sapped:false,flee:0,lure:null,lastSeen:null,opened:false,spent:false}; ENTS.push(o); return o; }
+// the record's pieces become entities; `src` points back at the record entry so the builder can erase it
+function entFor(kind,o){ if(kind==="creature"){ const L=A.creatures[o.kind]; return L&&{...L,x:o.x,y:o.y,heading:o.heading??0,src:o}; }
+  if(kind==="chest") return {name:"chest",sprite:"chest",x:o.x,y:o.y,scale:.45,solid:true,chest:true,loot:o.loot&&o.loot.length?o.loot:null,src:o};
+  if(kind==="forage") return {name:"mushrooms",sprite:"p_fungi-bluecap",x:o.x,y:o.y,scale:.34,glow:"rgba(90,230,255,A)",forage:true,src:o};
+  if(kind==="crystal") return {name:"crystal",sprite:"p_crystal-cluster",x:o.x,y:o.y,scale:.72,glow:"rgba(120,180,255,A)",solid:true,rad:.42,src:o};
+  return null; }
+for(const c of D.creatures){ const e=entFor("creature",c); if(e) addEnt(e); }
+for(const c of D.chests) addEnt(entFor("chest",c));
+for(const f of D.forage) addEnt(entFor("forage",f));
+for(let y=0;y<MH;y++) for(let x=0;x<MW;x++) if(MAP[y][x]==="*") addEnt(entFor("crystal",{x:x+.5,y:y+.5,cell:true}));
+let CHESTN=0; for(const e of ENTS) if(e.chest&&!e.loot) e.loot=CHEST_LOOT[(CHESTN++)%CHEST_LOOT.length];
 const SPR={};
 const FX=[];      // projectiles, bursts, fog puffs, decoys
 const LATER=[];   // scheduled callbacks
@@ -97,12 +117,12 @@ let showMap=true, t=0, started=false, searchT=0;
 // seed so the cave is the same every visit: stalactites on the ceiling (water beads and drips from their tips, puddles
 // below some), stalagmites by the walls, glowing mushroom clusters in three colours, a few of which light the rock.
 function rng32(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
-const DECO_RND=rng32(9301);
+const DECO_RND=rng32(D.dressing.seed);
 const taken=new Set(ENTS.map(e=>Math.floor(e.x)+","+Math.floor(e.y))); taken.add(Math.floor(P.x)+","+Math.floor(P.y));
 const openCells=[]; for(let y=1;y<MH-1;y++) for(let x=1;x<MW-1;x++){ if(solid(x+.5,y+.5)||MAP[y][x]==="*"||taken.has(x+","+y)) continue; const walls=[[1,0],[-1,0],[0,1],[0,-1]].filter(([a,b])=>solid(x+a+.5,y+b+.5)).length; openCells.push({x,y,walls}); }
 const pick=(list)=>list.splice(Math.floor(DECO_RND()*list.length),1)[0];
 const STALS=[], MUSHC=[{glow:"rgba(190,110,255,A)",hue:0,l:[.55,.3,1.1]},{glow:"rgba(90,230,255,A)",hue:190,l:[.25,.85,1.1]},{glow:"rgba(255,190,90,A)",hue:-70,l:[1.1,.7,.25]}];
-{ const pool=openCells.slice(); for(let i=0;i<44&&pool.length;i++){ const c=pick(pool); const s={name:"stalactite",sprite:"stalC"+(i%3),hang:true,deco:true,x:c.x+.2+DECO_RND()*.6,y:c.y+.2+DECO_RND()*.6,scale:.34+DECO_RND()*.34};
+{ const pool=openCells.slice(); for(let i=0;i<D.dressing.stalactites&&pool.length;i++){ const c=pick(pool); const s={name:"stalactite",sprite:"stalC"+(i%3),hang:true,deco:true,x:c.x+.2+DECO_RND()*.6,y:c.y+.2+DECO_RND()*.6,scale:.34+DECO_RND()*.34};
     ENTS.push({...s,id:ENTS.length,ft:0,state:"idle",pops:[],flash:0}); STALS.push(s); if(DECO_RND()<.45) FX.push({kind:"puddle",x:s.x,y:s.y,r:.16+DECO_RND()*.14,life:1e9,rip:0}); } }
 // Sam, 9/30: the field games' pixel art in place of the painted cut-outs — crystals, fungi, stalagmites, rock — and you
 // can't walk through the big ones. Solid pieces only go where the floor is open on most sides, so no corridor is blocked.
@@ -114,8 +134,8 @@ const DECO=[ // sprite, height (a cave is 1 tall), solid radius (0 = walk-throug
   {s:"p_fungi-waterorb",h:.42,r:0,glow:"rgba(170,230,255,A)"},{s:"p_fungi-bluecap",h:.26,r:0,glow:"rgba(90,230,255,A)",l:[.2,.8,1.1]},{s:"p_fungi-nightlight",h:.4,r:0,glow:"rgba(230,240,255,A)",l:[.6,.65,.7]},
   {s:"p_fungi-torchstalk",h:.52,r:0,glow:"rgba(255,160,70,A)",l:[1.2,.6,.2]},
   {s:"p_stalagmite-large",h:.75,r:.3},{s:"p_stalagmite-cluster",h:.5,r:.35},{s:"p_stalagmite-small",h:.3,r:0},{s:"p_rock-spire",h:.7,r:.28},{s:"p_boulder",h:.45,r:.38}];
-{ const pool=openCells.filter(c=>c.walls>=1&&!taken.has(c.x+","+c.y)); for(let i=0;i<46&&pool.length;i++){ const c=pick(pool); const D=DECO[i%DECO.length]; const solidOK=D.r>0&&roomy(c);
-    const d0=solidOK||D.r===0?D:DECO.find(x=>x.r===0&&x.s.startsWith(D.s.slice(0,7)))||DECO[1];
+{ const pool=openCells.filter(c=>c.walls>=1&&!taken.has(c.x+","+c.y)); for(let i=0;i<D.dressing.props&&pool.length;i++){ const c=pick(pool); const DD=DECO[i%DECO.length]; const solidOK=DD.r>0&&roomy(c);
+    const d0=solidOK||DD.r===0?DD:DECO.find(x=>x.r===0&&x.s.startsWith(DD.s.slice(0,7)))||DECO[1];
     const e={name:d0.s.slice(2).replace(/-/g," "),sprite:d0.s,deco:true,x:c.x+.3+DECO_RND()*.4,y:c.y+.3+DECO_RND()*.4,scale:d0.h*(.85+DECO_RND()*.3),glow:d0.glow,solid:d0.r>0,rad:d0.r,id:ENTS.length,ft:0,state:"idle",pops:[],flash:0};
     ENTS.push(e); taken.add(c.x+","+c.y); if(d0.l&&i%2===0) LIGHTS.push({x:e.x,y:e.y,r:d0.l[0]*.55,g:d0.l[1]*.55,b:d0.l[2]*.55,rad:2.2}); } }
 // ---- VIOLET FUNGI (Sam, 9/30): "walking past mushrooms like the tentacled one causes it to glow, make an eerie sound, and
@@ -124,9 +144,67 @@ const DECO=[ // sprite, height (a cave is 1 tall), solid radius (0 = walk-throug
 // holds still, the tentacles move more the further they reach). Seven grow in open floor away from the start.
 const PLIGHT={x:0,y:0,r:0,g:0,b:0,rad:2.4}; LIGHTS.push(PLIGHT);
 const SPORES=[]; { const pool=openCells.filter(c=>!taken.has(c.x+","+c.y)&&roomy(c)&&Math.hypot(c.x+.5-P.x,c.y+.5-P.y)>5);
-  for(let i=0;i<7&&pool.length;i++){ const c=pick(pool); const L={x:c.x+.5,y:c.y+.5,r:0,g:0,b:0,rad:2.6}; LIGHTS.push(L);
+  for(let i=0;i<D.dressing.violets&&pool.length;i++){ const c=pick(pool); const L={x:c.x+.5,y:c.y+.5,r:0,g:0,b:0,rad:2.6}; LIGHTS.push(L);
     const e={name:"violet fungus",sprite:"violet",deco:true,spore:true,x:c.x+.35+DECO_RND()*.3,y:c.y+.35+DECO_RND()*.3,scale:.62,solid:true,rad:.26,sporeCd:0,wake:0,light:L,id:ENTS.length,ft:DECO_RND()*3,state:"idle",pops:[],flash:0};
     L.x=e.x; L.y=e.y; ENTS.push(e); SPORES.push(e); taken.add(c.x+","+c.y); } }
+// ---- PLACED PIECES (the dungeon record, and Sam's builder). Each entry keeps `src` = its record entry, so erasing it
+// in the builder removes the right thing from both the world and the file.
+function makeViolet(x,y,src){ const L={x,y,r:0,g:0,b:0,rad:2.6,src}; LIGHTS.push(L);
+  const e={name:"violet fungus",sprite:"violet",deco:true,spore:true,x,y,scale:.62,solid:true,rad:.26,sporeCd:0,wake:0,light:L,id:ENTS.length,ft:Math.random()*3,state:"idle",pops:[],flash:0,src}; ENTS.push(e); SPORES.push(e); return e; }
+function makeProp(o){ const DD=DECO.find(d=>d.s==="p_"+o.kind)||{s:"p_"+o.kind,h:.5,r:0};
+  const e={name:o.kind.replace(/-/g," "),sprite:DD.s,deco:true,x:o.x,y:o.y,scale:o.h||DD.h,glow:DD.glow,solid:o.solid??DD.r>0,rad:DD.r||.3,id:ENTS.length,ft:0,state:"idle",pops:[],flash:0,src:o}; ENTS.push(e);
+  if(DD.l) LIGHTS.push({x:o.x,y:o.y,r:DD.l[0]*.55,g:DD.l[1]*.55,b:DD.l[2]*.55,rad:2.2,src:o}); return e; }
+// Lore (Sam, 9/30: "serious monsters, loot, and lore"): a journal, a loose page, a book on the floor, or a carved stone.
+// E reads it; the text is canon, written by Sam or from the book — never improvised by the engine.
+const LORE_KIND={journal:{sprite:"lore_journal",scale:.24,glow:"rgba(255,214,150,A)"},note:{sprite:"lore_note",scale:.22,glow:"rgba(255,236,190,A)"},
+  book:{sprite:"lore_book",scale:.24,glow:"rgba(255,214,150,A)"},carving:{sprite:"p_rock-spire",scale:.7,glow:"rgba(120,220,255,A)",solid:true,rad:.28}};
+const LORE_READ=new Set();
+function makeLore(o){ const K=LORE_KIND[o.kind]||LORE_KIND.note; const e={name:o.title||"lore",sprite:K.sprite,deco:true,lore:o,x:o.x,y:o.y,scale:K.scale,glow:K.glow,solid:!!K.solid,rad:K.rad||.2,id:ENTS.length,ft:0,state:"idle",pops:[],flash:0,src:o};
+  ENTS.push(e); return e; }
+// Traps — SRD 5.1 sample traps, numbers from the SRD as best recalled (flagged in the design doc for a check):
+//   pit    hidden pit: DC 15 Perception to notice; 10 ft deep, 1d6 bludgeoning. Climbing out takes a few seconds (HOUSE).
+//   darts  poison darts: DC 15 to notice the plate; 1d3 darts, +8 to hit, 1d4 piercing + DC 15 CON or 2d10 poison (half on a save).
+//   net    falling net: DC 10 to notice the trip wire; restrained; DC 10 Strength check (action) to get free.
+// Disarm (darts, net): thieves' tools, DEX DC 15; failing by 5 or more sets it off. A jump carries you over a pit.
+const TRAP_DEF={pit:{name:"hidden pit",dc:15},darts:{name:"poison-dart plate",dc:15},net:{name:"falling net",dc:10}};
+const TRAPS=[], PITV=new Uint8Array(MW*MH);
+function makeTrap(o){ const T={...TRAP_DEF[o.kind],kind:o.kind,x:Math.floor(o.x)+.5,y:Math.floor(o.y)+.5,cx:Math.floor(o.x),cy:Math.floor(o.y),hidden:o.hidden!==false,revealed:o.hidden===false,
+  disarmed:false,spent:false,shots:3,noticed:false,src:o}; TRAPS.push(T); if(T.kind==="pit"&&T.revealed) PITV[T.cy*MW+T.cx]=1; FX.push({kind:"trapMark",x:T.x,y:T.y,z:.01,trap:T,life:1e9}); return T; }
+for(const h of D.hazards) if(h.kind==="violet") makeViolet(h.x,h.y,h);
+for(const p of D.props) makeProp(p);
+for(const l of D.lore) makeLore(l);
+for(const tr of D.traps) makeTrap(tr);
+function revealTrap(T,how){ if(T.revealed||T.disarmed) return; T.revealed=true; if(T.kind==="pit") PITV[T.cy*MW+T.cx]=1; say(`${how}: ${PC.name} spots a ${T.name}.`,"#ffd36a"); SND.chime([660,990]); }
+function passivePerception(){ return 10+PC.mods.wis; }
+let trapCell=-1;
+function trapsTick(dt){ if(!started||P.dead) return;
+  for(const T of TRAPS){ if(T.revealed||T.disarmed||T.noticed) continue; if(Math.hypot(T.x-P.x,T.y-P.y)<2.6){ T.noticed=true; if(passivePerception()>=T.dc) revealTrap(T,`Passive Perception ${passivePerception()}`); } }
+  if(P.inPit){ if(P.climb>0){ P.climb-=dt; if(P.climb<=0){ P.inPit=false; P.x=P.pitFrom.x; P.y=P.pitFrom.y; say(`${PC.name} hauls ${PR().him}self out of the pit.`,"#bfe3a0"); SND.step(1.2); } } return; }
+  const c=Math.floor(P.y)*MW+Math.floor(P.x); if(c===trapCell) return; const prev=trapCell; trapCell=c;
+  if(BLD.open) return; const T=TRAPS.find(t=>!t.disarmed&&t.cy*MW+t.cx===c); if(!T) return;
+  if(T.kind==="pit"){ if(P.air) return; const px=prev>=0?(prev%MW)+.5:P.x, py=prev>=0?Math.floor(prev/MW)+.5:P.y; fallInPit(T,px,py); }
+  else if(T.kind==="darts"&&T.shots>0) fireDarts(T);
+  else if(T.kind==="net"&&!T.spent) dropNet(T); }
+function fallInPit(T,fx,fy){ T.revealed=true; PITV[T.cy*MW+T.cx]=1; P.inPit=true; P.climb=0; P.pitFrom={x:fx,y:fy}; P.x=T.x; P.y=T.y; breakHide();
+  const dmg=d(6); P.hp=Math.max(0,P.hp-dmg); P.hurt=.45; P.hurtAnim=.5; P.shake=Math.max(P.shake,.8); tone(.35,{f0:90,f1:40,vol:.7}); noise(.3,{type:"lowpass",f0:500,vol:.6});
+  say(`The floor gives way — a ${T.name}! ${PC.name} drops 10 feet: ${dmg} bludgeoning. E to climb out.`,"#ff7a6a"); if(Math.random()<.6) swear(); renderBar(); if(P.hp<=0) fall(); }
+function fireDarts(T){ T.shots--; T.revealed=true; const n=d(3); tone(.05,{f0:1800,vol:.25}); noise(.05,{f0:2400,q:6,vol:.3});
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]].map(([a,b])=>{ let k=0; while(k<6&&!solid(T.x+a*(k+1),T.y+b*(k+1))) k++; return {a,b,k}; }).filter(o=>o.k<6).sort((p,q)=>p.k-q.k);
+  const from=dirs[0]||{a:1,b:0,k:2}; const ox=T.x+from.a*(from.k+.45), oy=T.y+from.b*(from.k+.45);
+  say(`Click — a pressure plate. ${n>1?n+" darts hiss":"A dart hisses"} out of the wall.`,"#ff7a6a");
+  for(let i=0;i<n;i++) later(i*.12,()=>shoot({fromWorld:{x:ox,y:oy},to:{x:P.x+(Math.random()-.5)*.2,y:P.y+(Math.random()-.5)*.2},speed:14,color:"#c9a55a",kind:"dart",onHit:()=>{
+    const r=d20(false,P.dodge>0), tot=r.f+8, ac=P.ac+(P.sof>0?2:0); if(r.f!==1&&(r.f===20||tot>=ac)){ let dmg=d(4); const sv=d(20)+PC.mods.con; let pz=d(10)+d(10); if(sv>=15) pz=Math.floor(pz/2); dmg+=pz;
+      P.hp=Math.max(0,P.hp-dmg); P.hurt=.45; P.hurtAnim=.5; SND.hit(); say(`Dart: ${r.txt}+8 = ${tot} vs AC ${ac} — hit, ${dmg} (CON ${sv} vs DC 15${sv>=15?", half the poison":""}).`,"#ff7a6a"); renderBar(); if(P.hp<=0) fall(); }
+    else say(`Dart: ${r.txt}+8 = ${tot} vs AC ${ac} — it clicks off the rock.`,"#9ab8d8"); }})); }
+function dropNet(T){ T.spent=true; T.revealed=true; P.restrained=true; P.netted=true; breakHide(); noise(.4,{type:"lowpass",f0:700,vol:.5}); tone(.2,{f0:160,f1:90,vol:.3});
+  say(`A trip wire — a weighted net falls! RESTRAINED. E: Strength check DC 10 to get free.`,"#ff7a6a"); }
+function trapNear(r=1.4){ let best=null, bd=r; for(const T of TRAPS){ if(!T.revealed||T.disarmed||T.kind==="pit"||(T.kind==="net"&&T.spent)) continue; const dd=Math.hypot(T.x-P.x,T.y-P.y); if(dd<bd){ bd=dd; best=T; } } return best; }
+function disarm(T){ P.cool=1.2; const prof=/rogue/i.test(PC.cls)?2:0; const r=check(`Disarm the ${T.name} (thieves' tools)`,PC.mods.dex+prof,15);
+  if(r.ok){ T.disarmed=true; SND.chime([523,784]); say(`The ${T.name} is safe now.`,"#bfe3a0"); } else if(r.tot<=10){ say(`Fumbled — it goes off!`,"#ff7a6a"); if(T.kind==="darts") fireDarts(T); else dropNet(T); } }
+function readLore(L){ const o=L.lore; paused=true; keys.clear(); if(document.pointerLockElement) document.exitPointerLock();
+  $("loret").textContent=o.title||"Untitled"; $("lorek").textContent=({journal:"A journal",note:"A loose page",book:"A book",carving:"Carved into the stone"})[o.kind]||""; $("lorex").textContent=o.text||""; $("lore").hidden=false;
+  if(!LORE_READ.has(o)){ LORE_READ.add(o); SND.chime([440,660,880]); say(`Lore: ${o.title||"untitled"}.`,"#ffd36a"); } }
+function closeLore(){ $("lore").hidden=true; paused=false; last=performance.now(); cv.focus(); }
 // a pixel stalactite / stalagmite: a tapering cone of wet rock, lit from the left, a bright wet edge and a bead at the tip
 function makeStal(seed,down){ const R=rng32(seed), S=64, c=document.createElement("canvas"); c.width=c.height=S; const g=c.getContext("2d");
   const w0=22+R()*16, L=34+R()*28, cx=32+(R()-.5)*6; const col=(k,lit)=>{ const b=[34,42,48], hi=[88,104,112]; const t=Math.max(0,Math.min(1,lit)); return `rgb(${Math.round(b[0]+(hi[0]-b[0])*t)},${Math.round(b[1]+(hi[1]-b[1])*t)},${Math.round(b[2]+(hi[2]-b[2])*t)})`; };
@@ -230,7 +308,9 @@ addEventListener("keydown",e=>{ if(typing(e)||!started) return; const k=e.key.to
   if(/^[1-9]$/.test(k)) pressCard(+k-1);
   if(k==="0"&&!e.repeat) leapBack();
   if(k==="e"&&!e.repeat) interact();
-  if(k==="m") showMap=!showMap; });
+  if(k==="m") showMap=!showMap;
+  if(k==="b"&&!e.repeat) toggleBuilder();
+  if(k==="escape"&&!$("lore").hidden) closeLore(); });
 addEventListener("keyup",e=>{ const k=e.key.toLowerCase(); keys.delete(k); });
 cv.addEventListener("click",()=>{ if(!started) return; if(!locked&&cv.requestPointerLock){ try{ const p=cv.requestPointerLock(); if(p&&p.catch) p.catch(()=>{}); }catch(e){} } });
 document.addEventListener("pointerlockchange",()=>{ locked=document.pointerLockElement===cv; });
@@ -313,9 +393,9 @@ function runCard(c){ if(!started||P.dead||paused||!c) return; const key=c.key;
   const hand=handFor(c);
   switch(c.kind){
     case "melee": case "spellMelee": { if(c.hand==="dagger"&&!P.dagger){ say(`${cap(PR().his)} dagger is on the floor — E picks it up.`,"#8a8078"); return; }
-      P.act={kind:c.hand==="fist"?"punch":c.kind==="spellMelee"?"thrust":"swing",hand,t:0,dur:(c.hand==="dagger"||c.hand==="fist")&&c.kind==="melee"?SWIPE_LEN:c.hand==="sword"?.5:.45,color:c.color};  P.cool=actCool(c); later(5*TIC*.8,()=>SND.whoosh(c.hand==="sword"?.8:1.1));
+      P.act={kind:c.hand==="fist"?"punch":c.kind==="spellMelee"?"thrust":"swing",hand,t:0,dur:c.hand==="dagger"&&c.kind==="melee"?mrTotal():(c.hand==="fist")&&c.kind==="melee"?SWIPE_LEN:c.hand==="sword"?.5:.45,color:c.color};  P.cool=actCool(c); later(c.hand==="dagger"?mrTiming("light").windup/1000:5*TIC*.8,()=>SND.whoosh(c.hand==="sword"?.8:1.1));
       const e=target(c.reach||1.5); if(c.kind==="spellMelee") SND.cast(c);
-      later(.13,()=>{ if(!e){ return; } breakHide(); if(c.kind==="spellMelee") spellAttack(c,e,false); else weaponHit(c,e); }); break; }
+      later(c.hand==="dagger"&&c.kind==="melee"?mrHit():.13,()=>{ if(!e){ return; } breakHide(); if(c.kind==="spellMelee") spellAttack(c,e,false); else weaponHit(c,e); }); break; }
     case "thrown": { if(!P.dagger){ say(`${cap(PR().his)} dagger is on the floor — E picks it up.`,"#8a8078"); return; } const e=target(c.range[1]); P.act={kind:"throw",hand,t:0,dur:.4}; P.cool=actCool(c); SND.whoosh(1.3);
       P.dagger=false; breakHide(); const to=e?{x:e.x,y:e.y}:aimPoint(c.range[1]); shoot({from:"hand",to,speed:14,color:"#d9dde2",kind:"blade",onHit:()=>{ if(e) weaponHit(c,e,{ranged:true}); dropDagger(to); }}); break; }
     case "bow": startDraw(c); break;
@@ -344,7 +424,7 @@ function runCard(c){ if(!started||P.dead||paused||!c) return; const key=c.key;
       P.act={kind:"cast",hand,t:0,dur:.5,color:c.color}; P.cool=.8; if(!ch){ say("Mage Hand: a spectral hand drifts out — nothing within 30 feet ahead to open.","#bfe3ff"); return; } SND.cast(c); burstAt(ch.x,ch.y,c.color,"ring"); later(.5,()=>openChest(ch,true)); break; }
     case "hide": { if(P.sporeGlow>0){ say(`Hide: not while ${PC.name} is breathing out violet light.`,"#d7a08c"); return; } const seen=ENTS.filter(o=>!o.dead&&o.foe&&o.mode==="hunt"&&!o.sleep&&!o.incap&&perceives(o)); if(seen.length){ say(`Hide: not while the ${seen[0].name.toLowerCase()} is watching ${PR().him}. Break its line of sight first.`,"#d7a08c"); return; }
       const r=check("Hide (Stealth)"+(P.crouch?" — crouched, advantage":""),PC.stealth,15,P.crouch); P.cool=.8; if(r.ok){ P.hidden=r.tot; P.crouch=true; SND.hide(); say(`Hidden (Stealth ${r.tot}). Unseen, ${PR().his} next strike has advantage — Sneak Attack. Anything with passive Perception ${r.tot} or more still finds ${PR().him}.`,"#bfe3a0"); } renderBar(); break; }
-    case "search": { P.cool=.8; const r=check("Search (Perception)",PC.mods.wis,13); if(r.ok){ searchT=12; say(`${PC.name} listens: every creature and chest nearby shows on the map for a while.`,"#bfe3a0"); } break; }
+    case "search": { P.cool=.8; const r=check("Search (Perception)",PC.mods.wis,13); for(const T of TRAPS) if(!T.revealed&&!T.disarmed&&Math.hypot(T.x-P.x,T.y-P.y)<6&&r.tot>=T.dc) revealTrap(T,"Search"); if(r.ok){ searchT=12; say(`${PC.name} listens: every creature and chest nearby shows on the map for a while.`,"#bfe3a0"); } break; }
     case "dash": { P.dash=6; P.cool=.4; say("Dash: double speed for a few seconds.","#e3b95c"); break; }
     case "dodge": { P.dodge=6; P.cool=.4; say(`Dodge: attacks against ${PR().him} have disadvantage for a few seconds.`,"#e3b95c"); break; }
   } }
@@ -375,9 +455,9 @@ function holdEnd(){ const h=P.hold; if(h&&!h.fired&&performance.now()/1000-h.t>=
 // and lunges half a square forward with a grunt. Same SRD dagger attack (+5, 1d4+3); the lunge is what buys the reach.
 const THRUST=[{t:2,x:236,y:150,a:-1.9,s:1},{t:4,x:254,y:172,a:-1.75,s:1.06},{t:2,x:178,y:112,a:-1.57,s:.8,lines:1},{t:4,x:172,y:108,a:-1.57,s:.78,lines:.6},{t:4,x:222,y:150,a:-1.8,s:.95},{t:2,x:236,y:150,a:-1.9,s:1}];
 const thrustLen=()=>THRUST.reduce((s,f)=>s+f.t,0)*TIC;
-function thrust(){ if(P.dead||paused||P.cool>0) return; const c=cardOf("dagger"); P.act={kind:"thrust2",hand:"dagger",t:0,dur:thrustLen()}; P.cool=actCool(c)*1.3;
-  later(4*TIC,()=>{ grunt(); SND.whoosh(1.4); P.lunge=.14; });
-  later(6*TIC,()=>{ const e=target(2.3); if(e){ breakHide(); weaponHit({...c,name:"Dagger thrust"},e); } else SND.miss(); }); }
+function thrust(){ if(P.dead||paused||P.cool>0) return; const c=cardOf("dagger"); const rig=!!(RIG&&RIG.dagger); P.act={kind:"thrust2",hand:"dagger",t:0,dur:rig?mrTotal():thrustLen()}; P.cool=actCool(c)*1.3;
+  later(rig?mrTiming("light").windup/1000:4*TIC,()=>{ grunt(); SND.whoosh(1.4); P.lunge=.14; });
+  later(rig?mrHit():6*TIC,()=>{ const e=target(2.3); if(e){ breakHide(); weaponHit({...c,name:"Dagger thrust"},e); } else SND.miss(); }); }
 // Leap back (Sam, 9/30): 0 on the keyboard. Rogues, rangers and fighters hop ~8 ft backwards out of reach.
 // House rule, not SRD: free; while in the air and for half a second after, attacks against
 // them have disadvantage (the Dodge action's effect, borrowed). 3 s cooldown; always a grunt in their own voice. Cancels a bow draw. Doesn't break Hide.
@@ -403,7 +483,7 @@ const SPORE_DC=12, SPORE_R=1.35, SPORE_CLOUD=1.8;
 function updateSpores(dt){ for(const e of SPORES){ e.sporeCd-=dt; e.ft+=0;
     if(e.wake>0){ e.wake-=dt; e.state="glow"; const k=Math.min(1,e.wake/1.2)*(.75+.25*Math.sin(t*9)); e.light.r=.9*k; e.light.g=.35*k; e.light.b=1.3*k; e.glow="rgba(205,120,255,A)"; }
     else { e.state="idle"; e.light.r=e.light.g=e.light.b=0; e.glow=null; }
-    if(started&&!P.dead&&e.sporeCd<=0&&Math.hypot(e.x-P.x,e.y-P.y)<SPORE_R) sporeBurst(e); } }
+    if(started&&!P.dead&&!BLD.open&&e.sporeCd<=0&&Math.hypot(e.x-P.x,e.y-P.y)<SPORE_R) sporeBurst(e); } }
 function sporeBurst(e){ e.sporeCd=30; e.wake=4.2;
   playBuf("sfung2",{x:e.x,y:e.y,vol:1.6}); tone(3,{f0:196,f1:174,vol:.05,x:e.x,y:e.y,attack:.6}); tone(3,{f0:294,f1:262,vol:.035,x:e.x,y:e.y,attack:.8,wave:"triangle"});
   say("The violet fungus stirs — its tentacles curl and it begins to glow.","#d7a0ff");
@@ -521,8 +601,12 @@ function aimSafe(pt){ let x=pt.x, y=pt.y; for(let k=0;k<10&&solid(x,y);k++){ x-=
 
 // ---- E: whatever is in front of her
 function nearest(pred,r=1.4){ let best=null, bd=r; for(const e of ENTS){ if(!pred(e)) continue; const dd=Math.hypot(e.x-P.x,e.y-P.y); if(dd<bd){ bd=dd; best=e; } } return best; }
-function interact(){ if(!started||P.dead) return;
+function interact(){ if(!$("lore").hidden){ closeLore(); return; } if(!started||P.dead) return;
+  if(P.restrained&&P.netted){ const r=check("Get free of the net (Strength)",PC.mods.str,10); P.cool=1; if(r.ok){ P.restrained=false; P.netted=false; say(`${PC.name} throws off the net.`,"#bfe3a0"); } return; }
   if(P.restrained){ const r=check("Break the web (Strength)",PC.mods.str,12); P.cool=1; if(r.ok){ P.restrained=false; say(`${PC.name} tears free of the webbing.`,"#bfe3a0"); } return; }
+  if(P.inPit){ if(!(P.climb>0)){ P.climb=2.5; say(`${PC.name} starts climbing the pit wall…`,"#9d9281"); noise(.4,{type:"lowpass",f0:600,vol:.25}); } return; }
+  { const L=nearest(e=>e.lore&&!e.removed,1.4); if(L){ readLore(L); return; } }
+  { const T=trapNear(); if(T){ disarm(T); return; } }
   const as=FX.find(f=>{ if(f.kind!=="arrowStuck"||(f.ent&&!f.ent.dead)) return false; const q=stuckPos(f); return Math.hypot(q.x-P.x,q.y-P.y)<1.3; }); if(as){ FX.splice(FX.indexOf(as),1); P.arrows++; say(`Arrow pulled free — ${P.arrows} in the quiver.`,"#e3b95c"); noise(.12,{f0:900,q:2,vol:.25}); renderBar(); return; }
   const ag=FX.find(f=>f.kind==="arrowGround"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3); if(ag){ FX.splice(FX.indexOf(ag),1); P.arrows++; say(`Arrow recovered — ${P.arrows} in the quiver.`,"#e3b95c"); renderBar(); return; }
   const dg=FX.find(f=>f.kind==="dagger"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3); if(dg){ FX.splice(FX.indexOf(dg),1); P.dagger=true; say("Dagger back in hand.","#e3b95c"); SND.chime([990]); renderBar(); return; }
@@ -573,6 +657,7 @@ function steer(e,tx,ty,dt,away=false){ const spd=(e.speed||1.4)*(e.slow>0?.66:1)
 function updateEnts(dt){ for(const e of ENTS){ e.pops.forEach(p=>p.age+=dt); e.pops=e.pops.filter(p=>p.age<(p.long?3.2:1.2)); if(e.dead) continue;
     e.flash=Math.max(0,e.flash-dt); e.ft+=dt; e.cool-=dt; for(const k of ["slow","faerie","guided","flee"]) if(e[k]>0) e[k]-=dt;
     if(!e.foe) continue;
+    if(BLD.open){ e.state="idle"; continue; } // the builder freezes the dungeon
     if(e.incap>0){ e.incap-=dt; e.state="idle"; if(e.incap<=0){ const sv=save(e,"wis"); if(sv.ok){ say(`Sleep: ${e.name} shakes it off (WIS ${sv.txt}).`,"#b9c8ff"); reveal(e); } else { e.sleep=60; say(`Sleep: ${e.name} fails again (WIS ${sv.txt}) — unconscious. Damage wakes it.`,"#b9c8ff"); } } continue; }
     if(e.sleep>0){ e.sleep-=dt; e.state="idle"; if(e.sleep<=0) reveal(e); continue; }
     if(e.stun>0){ e.stun-=dt; continue; }
@@ -637,13 +722,15 @@ function project(x,y,z=.5){ const {dirX,dirY,plX,plY,inv,hz}=CAM; const sx=x-P.x
 const VS=()=>RH*P.zoom;
 function render(){ const VS=RH*P.zoom;
   const dirX=Math.cos(P.a), dirY=Math.sin(P.a), plX=-dirY*.66/P.zoom, plY=dirX*.66/P.zoom;
-  const bob=Math.sin(P.bob)*3*(P.eye<.45?.5:1), hz=RH/2+P.pitch+bob-50*forageK(), eye=P.eye+hopZ()-.1*forageK()+(P.leap>0?Math.sin(Math.PI*(1-P.leap/LEAP_T))*.09:0); CAM={dirX,dirY,plX,plY,inv:1/(plX*dirY-dirX*plY),hz,eye};
+  const bob=Math.sin(P.bob)*3*(P.eye<.45?.5:1), hz=RH/2+P.pitch+bob-50*forageK(), eye=P.eye+hopZ()-.1*forageK()-(P.inPit?.32:0)+(P.leap>0?Math.sin(Math.PI*(1-P.leap/LEAP_T))*.09:0); CAM={dirX,dirY,plX,plY,inv:1/(plX*dirY-dirX*plY),hz,eye};
   const W=TEX.wall, Wc=TEX.crystal||TEX.wall, Fl=TEX.floor, Ce=TEX.ceil||TEX.wall;
   for(let y=0;y<RH;y++){ const isF=y>hz; const p=isF?y-hz:hz-y; if(p<1){ for(let x=0;x<RW;x++) px[y*RW+x]=0xff000000; continue; }
     const rowD=(VS*(isF?eye:1-eye))/p; const sx=rowD*2*plX/RW, sy=rowD*2*plY/RW; let fx=P.x+rowD*(dirX-plX), fy=P.y+rowD*(dirY-plY);
     const T=isF?Fl:Ce, S=T.size, D=T.d; const dim=isF?1:.55; let [lr,lg,lb]=light(fx,fy,rowD);
     for(let x=0;x<RW;x++){ if((x&15)===0){ [lr,lg,lb]=light(fx,fy,rowD); } const tx=((fx*S)|0)&(S-1), ty=((fy*S)|0)&(S-1), i=(ty*S+tx)*4;
-      const r=Math.min(255,D[i]*lr*dim), g=Math.min(255,D[i+1]*lg*dim), b=Math.min(255,D[i+2]*lb*dim); px[y*RW+x]=0xff000000|(b<<16)|(g<<8)|r; fx+=sx; fy+=sy; } }
+      let r=Math.min(255,D[i]*lr*dim), g=Math.min(255,D[i+1]*lg*dim), b=Math.min(255,D[i+2]*lb*dim);
+      if(isF){ const cx=fx|0, cy=fy|0; if(cx>=0&&cy>=0&&cx<MW&&cy<MH&&PITV[cy*MW+cx]&&!P.inPit){ const ex=fx-cx, ey=fy-cy, m=Math.min(ex,ey,1-ex,1-ey); if(m>.06){ r=r*.06; g=g*.05; b=b*.07; } else { r*=.45; g*=.4; b*=.38; } } } // a pit: the hole and its broken lip
+      px[y*RW+x]=0xff000000|(b<<16)|(g<<8)|r; fx+=sx; fy+=sy; } }
   for(let x=0;x<RW;x++){ const cam=2*x/RW-1, rdx=dirX+plX*cam, rdy=dirY+plY*cam; let mx=Math.floor(P.x), my=Math.floor(P.y);
     const ddx=Math.abs(1/rdx), ddy=Math.abs(1/rdy); let stx,sty,sdx,sdy; if(rdx<0){ stx=-1; sdx=(P.x-mx)*ddx; } else { stx=1; sdx=(mx+1-P.x)*ddx; } if(rdy<0){ sty=-1; sdy=(P.y-my)*ddy; } else { sty=1; sdy=(my+1-P.y)*ddy; }
     let side=0, hit="#", n=0; while(n++<64){ if(sdx<sdy){ sdx+=ddx; mx+=stx; side=0; } else { sdy+=ddy; my+=sty; side=1; } const c=(MAP[my]||"")[mx]; if(c==="#"||c==="C"||c===undefined){ hit=c||"#"; break; } }
@@ -660,15 +747,17 @@ function render(){ const VS=RH*P.zoom;
   for(const f of FX){ if(f.kind==="fog"){ for(const p of f.puffs) items.push({k:"puff",o:p,f,d:(f.x+Math.cos(p.a)*p.d*f.grow-P.x)**2+(f.y+Math.sin(p.a)*p.d*f.grow-P.y)**2}); } else if(f.kind!=="arrow3d"&&f.kind!=="trailFade"){ const q=f.kind==="arrowStuck"?(()=>{ const p=stuckPos(f); return {x:p.x-f.dir.x*ARROW_L*.6,y:p.y-f.dir.y*ARROW_L*.6}; })():f; items.push({k:"fx",o:f,d:(q.x-P.x)**2+(q.y-P.y)**2-(f.ent?.05:0)}); } }
   items.sort((a,b)=>b.d-a.d);
   for(const it of items){ if(it.k==="e") drawEnt(it.o); else if(it.k==="puff") drawPuff(it.o,it.f); else drawFx(it.o); }
-  drawSlash(ctx); drawBody(); for(const f of FX) if(f.kind==="arrow3d"||f.kind==="trailFade") drawFx(f); drawCursor(ctx); drawRig();
+  drawSlash(ctx); drawBody(); for(const f of FX) if(f.kind==="arrow3d"||f.kind==="trailFade") drawFx(f); drawCursor(ctx); drawBuildRing(); drawRig();
   // edges of the lantern light, fright, hurt
   const v=ctx.createRadialGradient(RW/2,RH*.55,RH*.25,RW/2,RH*.55,RW*.7); v.addColorStop(0,"rgba(0,0,0,0)"); v.addColorStop(1,"rgba(0,0,0,.55)"); ctx.fillStyle=v; ctx.fillRect(0,0,RW,RH);
+  if(P.inPit){ const pv=ctx.createRadialGradient(RW/2,RH*.5,RH*.18,RW/2,RH*.5,RW*.48); pv.addColorStop(0,"rgba(0,0,0,0)"); pv.addColorStop(.7,"rgba(8,6,5,.85)"); pv.addColorStop(1,"rgba(0,0,0,.98)"); ctx.fillStyle=pv; ctx.fillRect(0,0,RW,RH); }
+  if(P.netted){ ctx.save(); ctx.strokeStyle="rgba(70,52,34,.85)"; ctx.lineWidth=2; ctx.beginPath(); for(let k=-RH;k<RW+RH;k+=34){ ctx.moveTo(k,0); ctx.lineTo(k+RH*.8,RH); ctx.moveTo(k+RH*.8,0); ctx.lineTo(k,RH); } ctx.stroke(); ctx.restore(); }
   if(P.fright>0){ const k=.35+.25*Math.sin(t*9); const fv=ctx.createRadialGradient(RW/2,RH/2,RH*.2,RW/2,RH/2,RW*.62); fv.addColorStop(0,"rgba(0,0,0,0)"); fv.addColorStop(1,`rgba(90,0,10,${k})`); ctx.fillStyle=fv; ctx.fillRect(0,0,RW,RH); }
   if(P.restrained){ ctx.strokeStyle="rgba(230,230,220,.35)"; ctx.lineWidth=1; for(let i=0;i<14;i++){ ctx.beginPath(); ctx.moveTo((i*97)%RW,0); ctx.quadraticCurveTo(RW/2+Math.sin(i)*80,RH/2,(i*151)%RW,RH); ctx.stroke(); } }
   if(P.hurt>0){ ctx.fillStyle=`rgba(190,20,30,${P.hurt*.8})`; ctx.fillRect(0,0,RW,RH); }
   if(P.hidden){ ctx.fillStyle="rgba(10,14,30,.28)"; ctx.fillRect(0,0,RW,RH); }
   drawHUD(); }
-function drawEnt(e){ const pr=project(e.x,e.y,.5); if(!pr) return; const tY=pr.d; if(e.forage&&e.spent) return;
+function drawEnt(e){ if(e.removed) return; const pr=project(e.x,e.y,.5); if(!pr) return; const tY=pr.d; if(e.forage&&e.spent) return;
   const h=Math.abs(VS()/tY)*(e.scale||1), w=h*(e.aspect||1); const top=e.hang?CAM.hz-Math.abs(VS()/tY)*(1-CAM.eye):CAM.hz+Math.abs(VS()/tY)*CAM.eye-h; const scrX=Math.floor(pr.x);
   const img=spriteFrame(e); if(!img) return; const [lr,lg,lb]=light(e.x,e.y,tY); const br=Math.min(1.6,(lr+lg+lb)/3*1.25);
   const x0=Math.floor(scrX-w/2), x1=Math.floor(scrX+w/2);
@@ -708,6 +797,11 @@ function drawFx(f){ const pr=project(f.x,f.y,f.z??.5); if(!pr) return; const col
     if(f.style==="arrow"||f.style==="blade"){ ctx.globalCompositeOperation="source-over"; ctx.strokeStyle=f.color; ctx.lineWidth=Math.max(1,s*.015); ctx.beginPath(); ctx.moveTo(pr.x-r*2,pr.y+r); ctx.lineTo(pr.x+r*2,pr.y-r); ctx.stroke(); } }
   if(f.kind==="spore"){ const a=Math.max(0,Math.min(1,f.life/1.2))*(.7+.3*Math.sin(t*6+f.ph)); const r=Math.max(1,s*.022); const c=f.hue?"150,255,170":"215,140,255";
     const g=ctx.createRadialGradient(pr.x,pr.y,0,pr.x,pr.y,r*3); g.addColorStop(0,`rgba(${c},${a})`); g.addColorStop(.35,`rgba(${c},${a*.45})`); g.addColorStop(1,`rgba(${c},0)`); ctx.fillStyle=g; ctx.fillRect(pr.x-r*3,pr.y-r*3,r*6,r*6); }
+  if(f.kind==="trapMark"){ const T=f.trap; const show=(T.revealed&&!T.disarmed&&T.kind!=="pit"&&!(T.kind==="net"&&T.spent))||(BLD.open&&!T.disarmed); if(!show) return;
+    const cs=[[-.3,-.3],[.3,-.3],[.3,.3],[-.3,.3]].map(([a,b])=>project(T.x+a,T.y+b,.01)); if(cs.some(q=>!q)) return; ctx.save(); ctx.globalCompositeOperation="source-over";
+    ctx.strokeStyle=BLD.open?"rgba(255,70,60,.95)":T.kind==="net"?"rgba(200,180,140,.8)":"rgba(201,165,90,.85)"; ctx.lineWidth=1; ctx.beginPath(); cs.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)); ctx.closePath(); ctx.stroke();
+    if(BLD.open){ ctx.fillStyle="rgba(255,70,60,.95)"; ctx.font="700 9px Cinzel, Georgia, serif"; ctx.textAlign="center"; const c0=project(T.x,T.y,.05); if(c0) ctx.fillText(T.kind.toUpperCase()+(T.hidden?" (hidden)":""),c0.x,c0.y); }
+    ctx.restore(); return; }
   if(f.kind==="burst"){ const k=1-f.life/f.max; const r=s*(f.style==="toll"?.9:.6)*(.3+k); ctx.strokeStyle=f.color; ctx.globalAlpha=Math.max(0,1-k); ctx.lineWidth=Math.max(1,s*.03);
     ctx.beginPath(); ctx.arc(pr.x,pr.y,r,0,6.28); ctx.stroke(); if(f.style==="toll"){ ctx.beginPath(); ctx.arc(pr.x,pr.y,r*.6,0,6.28); ctx.stroke(); }
     if(f.style==="sparkle"||f.style==="burst"){ for(let i=0;i<10;i++){ const a=i*.63+k*2, rr=r*(.5+.5*((i*37)%10)/10); ctx.fillStyle=f.color; ctx.fillRect(pr.x+Math.cos(a)*rr,pr.y+Math.sin(a)*rr-k*s*.2,2,2); } } ctx.globalAlpha=1; }
@@ -855,10 +949,69 @@ const RG={NOCK:{x:602.2274,y:615.9743},AX:{x:.6113,y:.7914},AN:{x:-.7914,y:.6113
 // crosshair rides "just a few millimetres above the tip" (Sam, 9/30) at the bow's apex.
 const RIG_PAD=700, RIG_AIM={x:476,y:420}, RIG_SCALE=.00103; // plate px per screen-height px: the forearm runs off the bottom edge
 const HUD=document.getElementById("hud"), hg=HUD.getContext("2d"); let RIG=null, hudDirty=false;
-Promise.all([loadImg(A.rig.plate),loadImg(A.rig.arrow)]).then(([pl,ar])=>{ if(pl&&ar) RIG={plate:pl,arrow:ar}; });
+Promise.all([loadImg(A.rig.plate),loadImg(A.rig.arrow),A.rig.dagger?loadImg(A.rig.dagger):null]).then(([pl,ar,dg])=>{ if(pl&&ar) RIG={plate:pl,arrow:ar,dagger:dg}; });
+
+// ---- FIRST-PERSON DAGGER (Sam, 9/30: "replace the dagger animation like we did for the bow and arrow").
+// Ported from feat/bow-draw-rig — lib/weapon-rig.ts (pure geometry) and the painted dagger, spec
+// docs/design/claude_Melee_Attack_Rig.md. Path clips never rotate the hand (Sam: "don't rotate the hand/blade AT ALL");
+// the slash slides the whole hand along a bowed arc, the thrust drives out along the blade's own axis (-75.4°).
+// Numbers live in the rig's 900x520 stage; drawn on the full-resolution #hud like the bow, the arc trail goes into the
+// 640x360 view as hard pixels (FX_PX = 1, alpha threshold 110, four-colour snap).
+const MR={ELBOW:{x:620,y:600},FOREARM:240,REST:{dx:0,dy:0,a1:-28,a2:-20,sc:1},
+  CLIPS:{slash_d:{cock:{dx:16,dy:-6,a1:22,a2:4,sc:.97},hit:{dx:-18,dy:10,a1:-78,a2:4,sc:1.05},path:{s:[770,470],e:[290,470],lift:150}},
+         jab:{cock:{dx:-18,dy:13,a1:-38,a2:-28,sc:.97},hit:{dx:27,dy:-29,a1:-16,a2:-8,sc:1.15},path:{s:[484,475],e:[560,185],lift:14}},
+         thrust:{cock:{dx:-30,dy:22,a1:-46,a2:-36,sc:.94},hit:{dx:42,dy:-46,a1:-12,a2:-6,sc:1.22},path:{s:[477,504],e:[575,127],lift:20}}},
+  TIMING:{windup:220,strike:90,recover:300},WEIGHT:{light:.78,mid:1,heavy:1.36},
+  BANDS:[{w:42,c:"#16243f"},{w:32,c:"#2f4f86"},{w:19,c:"#79b2e8"},{w:8,c:"#eef7ff"}],RGB:[[22,36,63],[47,79,134],[121,178,232],[238,247,255]],
+  DAG:{grip:{x:145,y:413},tipOffset:[107,-412],scale:.62}};
+MR.REST_ANGLE=(MR.REST.a1+MR.REST.a2-90)*Math.PI/180;
+const mrTiming=(w)=>{ const m=MR.WEIGHT[w]||1; return {windup:MR.TIMING.windup*m,strike:MR.TIMING.strike,recover:MR.TIMING.recover*m}; };
+const mrTotal=(w="light")=>{ const d=mrTiming(w); return (d.windup+d.strike+d.recover)/1000; };
+const mrHit=(w="light")=>{ const d=mrTiming(w); return (d.windup+d.strike)/1000; };
+function mrWrist(p){ const r=(p.a1-90)*Math.PI/180; return [MR.ELBOW.x+p.dx+Math.cos(r)*MR.FOREARM, MR.ELBOW.y+p.dy+Math.sin(r)*MR.FOREARM]; }
+const MR_REST_WRIST=mrWrist(MR.REST);
+function mrLerp(a,b,p){ return {dx:a.dx+(b.dx-a.dx)*p,dy:a.dy+(b.dy-a.dy)*p,a1:a.a1+(b.a1-a.a1)*p,a2:a.a2+(b.a2-a.a2)*p,sc:a.sc+(b.sc-a.sc)*p}; }
+function mrBez(P2,u){ const mx=(P2.s[0]+P2.e[0])/2, my=(P2.s[1]+P2.e[1])/2-2*P2.lift, v=1-u; return [v*v*P2.s[0]+2*v*u*mx+u*u*P2.e[0], v*v*P2.s[1]+2*v*u*my+u*u*P2.e[1]]; }
+function rigAt(clip,t,w="light"){ const C=MR.CLIPS[clip]||MR.CLIPS.jab, d=mrTiming(w), T=d.windup+d.strike+d.recover; const ms=Math.max(0,Math.min(1,t))*T;
+  const eOut=p=>1-(1-p)*(1-p), eIn=p=>Math.pow(p,1.7), eBack=(p,k)=>1+(k+1)*Math.pow(p-1,3)+k*Math.pow(p-1,2); let phase,u,pose;
+  if(ms<d.windup){ phase="windup"; u=ms/d.windup; pose=mrLerp(MR.REST,C.cock,eOut(u)); }
+  else if(ms-d.windup<d.strike){ phase="strike"; u=(ms-d.windup)/d.strike; pose=mrLerp(C.cock,C.hit,eIn(u)); }
+  else { phase="recover"; u=(ms-d.windup-d.strike)/d.recover; const k=w==="heavy"?1.5:w==="mid"?1.05:.75; pose=mrLerp(C.hit,MR.REST,Math.min(1,eBack(u,k))); }
+  const a=mrBez(C.path,0), b=mrBez(C.path,1); let pt;
+  if(phase==="windup"){ const q=eOut(u); pt=[MR_REST_WRIST[0]+(a[0]-MR_REST_WRIST[0])*q, MR_REST_WRIST[1]+(a[1]-MR_REST_WRIST[1])*q]; }
+  else if(phase==="strike") pt=mrBez(C.path,eIn(u));
+  else { const q=eOut(Math.min(1,u)); pt=[b[0]+(MR_REST_WRIST[0]-b[0])*q, b[1]+(MR_REST_WRIST[1]-b[1])*q]; }
+  return {x:pt[0],y:pt[1],angle:MR.REST_ANGLE,scale:pose.sc,phase}; }
+function arcAt(clip,t,tip,w="light",samples=40){ const d=mrTiming(w), T=d.windup+d.strike+d.recover, a=d.windup/T, b=(d.windup+d.strike)/T, tt=Math.max(0,Math.min(1,t)); if(tt<a) return null;
+  let head,tail,alpha; if(tt<=b){ const p=(tt-a)/(b-a); head=p; tail=Math.max(0,p-.55); alpha=1; } else { const q=(tt-b)/(1-b); head=1; tail=Math.min(1,.45+q*.8); alpha=Math.max(0,1-q/.5); }
+  if(alpha<=0||head-tail<.03) return null; const pts=[];
+  for(let i=0;i<=samples;i++){ const u=tail+(head-tail)*(i/samples), r=rigAt(clip,a+(b-a)*u,w); pts.push([r.x+tip[0]*r.scale, r.y+tip[1]*r.scale]); }
+  const kw=MR.WEIGHT[w]||1; return {alpha,bands:MR.BANDS.map(B=>({c:B.c,pts:mrRibbon(pts,B.w*kw)}))}; }
+function mrRibbon(pts,maxW){ const L=[],R=[],n=pts.length; for(let i=0;i<n;i++){ const u=i/(n-1), w=maxW*Math.pow(Math.sin(Math.PI*u),.7), p0=pts[Math.max(0,i-1)], p1=pts[Math.min(n-1,i+1)];
+  const dx=p1[0]-p0[0], dy=p1[1]-p0[1], m=Math.hypot(dx,dy)||1, nx=-dy/m*w/2, ny=dx/m*w/2; L.push([pts[i][0]+nx,pts[i][1]+ny]); R.push([pts[i][0]-nx,pts[i][1]-ny]); } return L.concat(R.reverse()); }
+// which clip the current act plays: a quick click slashes, the held thrust drives out along the blade
+function daggerClip(){ const a=P.act; if(!a||P.dead||a.hand!=="dagger") return null; if(a.kind==="swing") return "slash_d"; if(a.kind==="thrust2") return "thrust"; return null; }
+// stage (900x520) -> a surface of height H: scaled to the view, smaller and lower than the sandbox (doc §4)
+const MR_K=.58, MR_DROP=0; // MR_K: fraction of the sandbox scale; MR_DROP: stage units lower
+function mrMap(x,y,W,H){ const k=H/520; return [W/2+(x-450)*k, H/2+(y-260+MR_DROP)*k]; }
+let MRF=null;
+function drawDaggerArc(clip,t){ const tip=[MR.DAG.tipOffset[0]*MR.DAG.scale*MR_K, MR.DAG.tipOffset[1]*MR.DAG.scale*MR_K]; const arc=arcAt(clip,t,tip); if(!arc) return;
+  if(!MRF){ MRF=document.createElement("canvas"); MRF.width=RW; MRF.height=RH; } const o=MRF.getContext("2d"); o.setTransform(1,0,0,1,0,0); o.clearRect(0,0,RW,RH);
+  const sx=(P.swayX*.35*.1), sy=(P.swayY*.35*.1);
+  for(const B of arc.bands){ o.beginPath(); B.pts.forEach(([x,y],i)=>{ const [X,Y]=mrMap(x,y,RW,RH); i?o.lineTo(X+sx,Y+sy):o.moveTo(X+sx,Y+sy); }); o.closePath(); o.fillStyle=B.c; o.fill(); }
+  const im=o.getImageData(0,0,RW,RH), d8=im.data;
+  for(let i=0;i<d8.length;i+=4){ if(d8[i+3]<110){ d8[i+3]=0; continue; } d8[i+3]=255; let best=0,bd=1e9; for(let c=0;c<4;c++){ const dr=d8[i]-MR.RGB[c][0], dg=d8[i+1]-MR.RGB[c][1], db=d8[i+2]-MR.RGB[c][2], e=dr*dr+dg*dg+db*db; if(e<bd){ bd=e; best=c; } }
+    d8[i]=MR.RGB[best][0]; d8[i+1]=MR.RGB[best][1]; d8[i+2]=MR.RGB[best][2]; }
+  o.putImageData(im,0,0); ctx.save(); ctx.globalAlpha=arc.alpha; ctx.globalCompositeOperation="source-over"; ctx.drawImage(MRF,0,0); ctx.restore(); }
+function drawDaggerHUD(W,H,clip,t){ const r=rigAt(clip,t); const [X,Y]=mrMap(r.x,r.y,W,H); const s=MR.DAG.scale*MR_K*r.scale*(H/520);
+  const sx=P.swayX*.35*.1*(W/RW), sy=P.swayY*.35*.1*(W/RW);
+  const [lr,lg,lb]=light(P.x,P.y,.6); const br=Math.min(1,(lr+lg+lb)/3*.75+.32);
+  hg.save(); hg.translate(X+sx,Y+sy); hg.rotate(r.angle-MR.REST_ANGLE); hg.scale(s,s); hg.imageSmoothingEnabled=true; hg.imageSmoothingQuality="high";
+  hg.globalAlpha=P.hidden?.55:1; hg.filter=`brightness(${br.toFixed(2)})${P.hidden?" saturate(.5)":""}`; hg.drawImage(RIG.dagger,-MR.DAG.grip.x,-MR.DAG.grip.y); hg.restore(); }
 function drawRig(){ const dpr=Math.min(2,window.devicePixelRatio||1), W=Math.round(HUD.clientWidth*dpr), H=Math.round(HUD.clientHeight*dpr);
   if(HUD.width!==W||HUD.height!==H){ HUD.width=W; HUD.height=H; }
-  const loosing=!P.drawing&&P.act&&P.act.kind==="loose";
+  const loosing=!P.drawing&&P.act&&P.act.kind==="loose"; const dclip=RIG&&RIG.dagger?daggerClip():null;
+  if(dclip&&!paused){ hg.setTransform(1,0,0,1,0,0); hg.clearRect(0,0,W,H); hudDirty=true; const tt=P.act.t/P.act.dur; drawDaggerArc(dclip,tt); drawDaggerHUD(W,H,dclip,tt); return; }
   if(!RIG||P.dead||paused||!(P.drawing||loosing)){ if(hudDirty){ hg.setTransform(1,0,0,1,0,0); hg.clearRect(0,0,W,H); hudDirty=false; } return; }
   hudDirty=true; hg.setTransform(1,0,0,1,0,0); hg.clearRect(0,0,W,H);
   const lt=loosing?P.act.t:0;
@@ -886,7 +1039,7 @@ const TOPS=new Map(); // first opaque row of a sheet cell, cached
 function topRow(im,f,row,cell){ const key=im.src.length+":"+f+":"+row; if(TOPS.has(key)) return TOPS.get(key); let top=0; for(let y=0;y<cell;y++){ let hit=false; for(let x=0;x<cell;x+=2){ if(alphaAt(im,f*cell+x,row*cell+y)>60){ hit=true; break; } } if(hit){ top=y; break; } } TOPS.set(key,top); return top; }
 function forageK(){ return P.act&&P.act.kind==="forage"?Math.sin(Math.PI*Math.min(1,P.act.t/P.act.dur)):0; } // 0→1→0 over the pick-up
 function drawBody(){ const g=ctx; if(!P.dead&&(P.drawing||(P.act&&P.act.kind==="loose"))){ if(!RIG) drawBowFP(); return; } // the rig draws on #hud
-  if(!P.dead&&P.act&&(P.act.kind==="swing"||P.act.kind==="punch"||P.act.kind==="thrust2")&&(P.act.hand==="dagger"||P.act.hand==="fist")){ drawDaggerFP(P.act); return; } const st=bodyState(); const A2=BODY[st.anim]||BODY.idle; if(!A2||!A2.im) return;
+  if(!P.dead&&P.act&&(P.act.kind==="swing"||P.act.kind==="punch"||P.act.kind==="thrust2")&&(P.act.hand==="dagger"||P.act.hand==="fist")){ if(!(P.act.hand==="dagger"&&RIG&&RIG.dagger)) drawDaggerFP(P.act); return; } const st=bodyState(); const A2=BODY[st.anim]||BODY.idle; if(!A2||!A2.im) return;
   const n=A2.n, f=st.once?Math.min(n-1,Math.floor(st.k*n)):Math.floor(t*A2.fps)%n;
   // facing: straight ahead, or turned toward the hand when it is far to one side
   const row=P.swayX<-20?0:P.swayX>20?2:1; // rows in the build: NE, N, NW
@@ -942,7 +1095,11 @@ function renderBar(){ const bar=$("bar"); bar.innerHTML=CARDS.map((c,i)=>{ let s
     return `<button class="card ${i===P.sel?"on":""} ${off?"off":""}" data-i="${i}" title="${c.name}"><b>${i+1}</b><i>${c.icon}</i><span>${c.name}</span><small>${sub}</small><div class="cd"></div></button>`; }).join("");
   bar.querySelectorAll(".card").forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); pressCard(+b.dataset.i); cv.focus(); }); }
 function updateBarCooldown(){ const bo=P.drawing||(P.act&&P.act.kind==="loose")?".18":"1"; if($("bar").style.opacity!==bo) $("bar").style.opacity=bo; const els=$("bar").querySelectorAll(".cd"); const k=P.cool>0?Math.min(1,P.cool/1.5):0; els.forEach(el=>el.style.height=`${k*100}%`); }
-function prompt(){ let s=""; if(P.dead) s=""; else if(P.restrained) s="E — tear free of the web (Strength DC 12)";
+function prompt(){ let s=""; if(P.dead) s=""; else if(BLD.open) s="BUILDER — the ring on the floor is where things go";
+  else if(P.restrained&&P.netted) s="E — get free of the net (Strength DC 10)"; else if(P.restrained) s="E — tear free of the web (Strength DC 12)";
+  else if(P.inPit) s=P.climb>0?"Climbing out…":"E — climb out of the pit";
+  else if(nearest(e=>e.lore&&!e.removed,1.4)) s=`E — read: ${nearest(e=>e.lore&&!e.removed,1.4).lore.title||"lore"}`;
+  else if(trapNear()) s=`E — disarm the ${trapNear().name} (thieves' tools, DEX DC 15)`;
   else if(FX.some(f=>f.kind==="dagger"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3)) s="E — pick up the dagger";
   else if(FX.some(f=>f.kind==="arrowGround"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3)) s="E — pick up the arrow";
   else if(FX.some(f=>{ if(f.kind!=="arrowStuck"||(f.ent&&!f.ent.dead)) return false; const q=stuckPos(f); return Math.hypot(q.x-P.x,q.y-P.y)<1.3; })) s="E — pull the arrow free";
@@ -960,7 +1117,7 @@ function frame(now){ const dt=Math.min(.05,(now-last)/1000); last=now; t+=dt;
     const f=((keys.has("w")||keys.has("arrowup"))?1:0)-((keys.has("s")||keys.has("arrowdown"))?1:0), s=((keys.has("d")||keys.has("arrowright"))?1:0)-((keys.has("a")||keys.has("arrowleft"))?1:0);
     const sp=2.6*(PC.speed||1)*dt*(P.dash>0?2:1)*(P.drawing?.5:1)*((P.hidden||P.crouch)?.55:1);
     if(P.reel>0) P.a+=Math.sin(t*1.1)*dt*.45; // reeling: the view drifts
-    if((f||s)&&!P.restrained){ const n=Math.hypot(f,s); let mx=(Math.cos(P.a)*f-Math.sin(P.a)*s)/n*sp, my=(Math.sin(P.a)*f+Math.cos(P.a)*s)/n*sp;
+    if((f||s)&&!P.restrained&&!P.inPit){ const n=Math.hypot(f,s); let mx=(Math.cos(P.a)*f-Math.sin(P.a)*s)/n*sp, my=(Math.sin(P.a)*f+Math.cos(P.a)*s)/n*sp;
       if(P.reel>0){ const v=Math.sin(t*1.7)*.7; mx+=-Math.sin(P.a)*v*sp; my+=Math.cos(P.a)*v*sp; } // …and the steps veer
       // frightened: can't move closer to what scared her while it's in sight
       if(frightDis()){ const src=P.frightSrc; const d0=Math.hypot(src.x-P.x,src.y-P.y), d1=Math.hypot(src.x-P.x-mx,src.y-P.y-my); if(d1<d0){ mx=0; my=0; } }
@@ -978,7 +1135,7 @@ function frame(now){ const dt=Math.min(.05,(now-last)/1000); last=now; t+=dt;
   log.forEach(l=>l.age+=dt);
   if(paused){ /* the film is playing: the world waits */ }
   else if(started){ updateEnts(dt); updateFX(dt);
-    updateSpores(dt); breathe(dt);
+    updateSpores(dt); breathe(dt); trapsTick(dt);
     dripT-=dt; if(dripT<=0){ dripT=.5+Math.random()*1.1; spawnDrip(); } updateDrops(dt);
     ambT-=dt; if(ambT<=0){ ambT=35+Math.random()*40; if(!ENTS.some(e=>!e.dead&&e.foe&&e.mode==="hunt")){ const a=Math.random()*6.28; playBuf(Math.random()<.5?"hook":"spider",{x:P.x+Math.cos(a)*14,y:P.y+Math.sin(a)*14,vol:.9,rate:.8}); } }
     // walking over the thrown dagger picks it up
@@ -1000,7 +1157,7 @@ async function loadBody(){ BODY.idle=null; for(const [an,a] of Object.entries(A.
 function begin(key){ PC=PCS[key]; loadBody(); CARDS=PC.cards.map(k=>({...CARD[k],key:k})); P.hp=P.max=PC.hp; P.ac=PC.ac; P.power=KIT[PC.voice].uses; P.arrows=PC.arrows||0; P.sel=0; $("start").hidden=true; started=true; renderBar();
   audioInit(); cv.focus(); try{ const p=cv.requestPointerLock&&cv.requestPointerLock(); if(p&&p.catch) p.catch(()=>{}); }catch(e){}
   say(`${PC.name} starts rested: full hit points${PC.spell?", both spell slots":""}.`,"#9d9281");
-  say("A cave off the Darklake. Something skitters in the dark ahead.","#b9a36a"); }
+  say(D.intro||`${D.name}.`,"#b9a36a"); if(D.__draft) say("(Builder draft from this browser — B → Reset to go back to the file.)","#8a8078"); }
 $("picks").innerHTML=Object.entries(PCS).map(([k,p])=>`<button class="pick ${p.test?"test":""}" data-k="${k}"><b>${p.name.toUpperCase()}</b><small>${p.cls} · ${p.hp} HP · AC ${p.ac}</small><small>${p.note}</small></button>`).join("");
 $("picks").querySelectorAll(".pick").forEach(b=>b.onclick=()=>begin(b.dataset.k));
 $("again").onclick=()=>location.reload();
@@ -1009,6 +1166,73 @@ $("again").onclick=()=>location.reload();
   for(const [k,s] of Object.entries(A.sprites)){ SPR[k]={}; for(const [st,a] of Object.entries(s)){ SPR[k][st]={im:await loadImg(a.src),cell:a.cell,fps:a.fps}; } }
   for(const [k,a] of Object.entries(A.props||{})) SPR["p_"+k]={idle:{im:await loadImg(a.src),cell:a.cell,fps:1}};
   for(let k=0;k<3;k++){ SPR["stalC"+k]={idle:{im:makeStal(11+k*7,true),cell:64,fps:1}}; SPR["stalF"+k]={idle:{im:makeStal(29+k*5,false),cell:64,fps:1}}; }
+  for(const [k,src] of Object.entries(A.loreIcons||{})){ const im=await loadImg(src); if(im) SPR["lore_"+k]={idle:{im,cell:im.height,fps:1}}; }
   SPR.glove=await loadImg(A.glove); SPR.dagger=await loadImg(A.daggerIcon); SPR.bow=await loadImg(A.bowIcon);
   requestAnimationFrame(frame); })();
-window.__pov={solid,clearLine,propHit,landArrow,jump,SPORES,sporeBurst,sporeSave,toggleCrouch,sneakPower,perceives,P,ENTS,FX,CARDS:()=>CARDS,begin,useCard,interact,holdStart,holdEnd,rangedStart,loose,BAG,log:()=>log,AC:()=>AC,BUF};
+// =====================================================================================================================
+// BUILDER (Sam, 9/30: "describe and you build, and the ability for me to add assets, chests, traps, lore").
+// B opens it (DM link /cave?build, or any preview). Walk to a spot, pick what to add, press Place: it goes on the ring
+// in front of you and into this dungeon's record at once. Every change is kept as a draft in this browser; Export saves
+// the record as <id>.json — send it to Claude, who checks it in as public/cave-pov/dungeons/<id>.json for everyone.
+// Chests take items from the real catalog only (live from Supabase in the app); lore text is yours, read back verbatim.
+let CATALOG=null, SUPA=null;
+addEventListener("message",e=>{ if(e.origin!==location.origin) return; const m=e.data; if(m&&m.aop==="config"&&m.url&&m.key){ SUPA=m; CATALOG=null; } });
+async function loadCatalog(){ if(CATALOG) return CATALOG;
+  if(SUPA){ try{ const r=await fetch(`${SUPA.url}/rest/v1/items?select=slug,name,item_type,rarity&order=name`,{headers:{apikey:SUPA.key,Authorization:`Bearer ${SUPA.key}`}}); if(r.ok){ CATALOG=await r.json(); for(const it of CATALOG) ITEMS[it.slug]=it.name; return CATALOG; } }catch(e){} }
+  CATALOG=Object.entries(ITEMS).map(([slug,name])=>({slug,name,item_type:"",rarity:""})); return CATALOG; }
+const B={tab:"chest",loot:[],last:[]};
+function bTarget(){ let d=1.7; for(let k=.2;k<=1.7;k+=.05){ if(solid(P.x+Math.cos(P.a)*k,P.y+Math.sin(P.a)*k)){ d=k-.35; break; } } d=Math.max(.55,d); return {x:+(P.x+Math.cos(P.a)*d).toFixed(2),y:+(P.y+Math.sin(P.a)*d).toFixed(2)}; }
+function bStatus(t){ $("bstat").textContent=t; }
+function saveDraft(){ try{ const o={...D}; delete o.__draft; localStorage.setItem("aop_dungeon_draft_"+DID,JSON.stringify(o)); bStatus(`Draft saved in this browser · ${D.chests.length} chests · ${D.traps.length} traps · ${D.lore.length} lore · ${D.props.length} props · ${D.creatures.length} creatures`); }catch(e){ bStatus("This browser won't keep a draft — Export to keep your work."); } }
+function toggleBuilder(){ if(!BLD.enabled) return; BLD.open=!BLD.open; $("build").hidden=!BLD.open; if(BLD.open){ if(document.pointerLockElement) document.exitPointerLock(); keys.clear(); P.drawing=false; $("bname").value=D.name||""; bTab(B.tab); saveDraft(); } else cv.focus(); }
+const esc=(s)=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+function bTab(tab){ B.tab=tab; document.querySelectorAll("#btabs button").forEach(b=>b.classList.toggle("on",b.dataset.t===tab)); const F=$("bform");
+  if(tab==="chest"){ F.innerHTML=`<label>Find an item <input id="bq" placeholder="type to search the catalog"></label><div id="bres" class="blist"></div><div class="bh">In the chest</div><div id="bloot" class="blist"></div>`;
+    const draw=()=>{ $("bloot").innerHTML=B.loot.length?B.loot.map((l,i)=>`<div class="brow"><span>${esc(ITEMS[l[0]]||l[0])}</span><input data-i="${i}" value="${esc(l[1])}" title="number, or dice like 2d6" size="4"><button data-x="${i}" aria-label="remove">✕</button></div>`).join(""):`<div class="bnote">Empty — search above and click to add.</div>`;
+      $("bloot").querySelectorAll("input").forEach(inp=>inp.oninput=()=>{ const v=inp.value.trim(); B.loot[+inp.dataset.i][1]=/^\d+d\d+$/.test(v)?v:Math.max(1,parseInt(v)||1); });
+      $("bloot").querySelectorAll("button").forEach(b=>b.onclick=()=>{ B.loot.splice(+b.dataset.x,1); draw(); }); };
+    const search=async()=>{ const cat=await loadCatalog(), q=$("bq").value.toLowerCase().trim(); const hits=cat.filter(it=>!q||it.name.toLowerCase().includes(q)||it.slug.includes(q)).slice(0,40);
+      $("bres").innerHTML=hits.map(it=>`<button class="bitem" data-s="${esc(it.slug)}">${esc(it.name)}<small>${esc(it.item_type||"")}${it.rarity&&it.rarity!=="common"?" · "+esc(it.rarity):""}</small></button>`).join("")||`<div class="bnote">No match in the catalog.</div>`;
+      $("bres").querySelectorAll("button").forEach(b=>b.onclick=()=>{ B.loot.push([b.dataset.s,1]); draw(); }); };
+    $("bq").oninput=search; search(); draw(); }
+  else if(tab==="trap") F.innerHTML=`<label>Trap <select id="btk"><option value="pit">Hidden pit — fall 10 ft, 1d6 (spot DC 15)</option><option value="darts">Poison darts — pressure plate (spot DC 15)</option><option value="net">Falling net — trip wire (spot DC 10)</option><option value="violet">Violet fungus — spores (CON DC 12)</option></select></label><label class="bchk"><input type="checkbox" id="bth" checked> Hidden until spotted</label><div class="bnote">Traps fill the square under the ring.</div>`;
+  else if(tab==="lore") F.innerHTML=`<label>Kind <select id="blk"><option value="journal">Journal on the floor</option><option value="note">Loose page</option><option value="book">Book</option><option value="carving">Carving on a standing stone</option></select></label><label>Title <input id="blt" placeholder="e.g. The Zhent's last entry"></label><label>Text <textarea id="blx" rows="7" placeholder="Exactly what the players read."></textarea></label>`;
+  else if(tab==="prop") F.innerHTML=`<label>Piece <select id="bpk">${Object.keys(A.props).map(k=>`<option value="${k}">${k.replace(/-/g," ")}</option>`).join("")}</select></label><div class="bnote">Big crystals, big mushrooms, stalagmites and boulders are solid.</div>`;
+  else if(tab==="creature") F.innerHTML=`<label>Creature <select id="bck">${Object.entries(A.creatures).map(([k,c])=>`<option value="${k}">${esc(c.name)} — AC ${c.ac}, ${c.hp} HP</option>`).join("")}</select></label><div class="bnote">Only creatures with cave art can go in for now. It faces you; it wakes when the builder closes.</div>`;
+  else if(tab==="forage") F.innerHTML=`<div class="bnote">A bluecap patch to forage (Survival DC 15).</div>`;
+  else if(tab==="light") F.innerHTML=`<div class="bnote">A glowing crystal cluster that lights the rock around it. Fills the square under the ring.</div>`;
+  else if(tab==="erase") F.innerHTML=`<div class="bnote">Removes the placed thing nearest the ring (chests, traps, lore, props, creatures, lights). The random cave dressing stays.</div>`;
+  $("bplace").textContent=tab==="erase"?"Erase at the ring":"Place at the ring"; }
+function bPlace(){ const p=bTarget(), tab=B.tab;
+  if(tab==="chest"){ if(!B.loot.length){ bStatus("Add at least one item to the chest first."); return; } const o={x:p.x,y:p.y,loot:B.loot.map(l=>[l[0],l[1]])}; D.chests.push(o); addEnt(entFor("chest",o)); B.loot=[]; bTab("chest"); }
+  else if(tab==="trap"){ const k=$("btk").value, cx=Math.floor(p.x), cy=Math.floor(p.y); if(solid(cx+.5,cy+.5)){ bStatus("That square is rock."); return; }
+    if(k==="violet"){ const o={kind:"violet",x:p.x,y:p.y}; D.hazards.push(o); makeViolet(o.x,o.y,o); } else { const o={kind:k,x:cx+.5,y:cy+.5,hidden:$("bth").checked}; D.traps.push(o); makeTrap(o); } }
+  else if(tab==="lore"){ const o={kind:$("blk").value,x:p.x,y:p.y,title:$("blt").value.trim()||"Untitled",text:$("blx").value}; if(!o.text.trim()){ bStatus("Write what the players will read first."); return; } D.lore.push(o); makeLore(o); }
+  else if(tab==="prop"){ const o={kind:$("bpk").value,x:p.x,y:p.y}; D.props.push(o); makeProp(o); }
+  else if(tab==="creature"){ const o={kind:$("bck").value,x:p.x,y:p.y,heading:+(Math.atan2(P.y-p.y,P.x-p.x)).toFixed(2)}; D.creatures.push(o); const e=entFor("creature",o); if(e) addEnt(e); }
+  else if(tab==="forage"){ const o={x:p.x,y:p.y}; D.forage.push(o); addEnt(entFor("forage",o)); }
+  else if(tab==="light"){ const cx=Math.floor(p.x), cy=Math.floor(p.y); if(MAP[cy][cx]!=="."){ bStatus("Put a light on open floor."); return; } MAP[cy][cx]="*"; D.map[cy]=MAP[cy].join(""); LIGHTS.push({x:cx+.5,y:cy+.5,r:.35,g:.62,b:1.25,rad:3.4,cell:true}); addEnt(entFor("crystal",{x:cx+.5,y:cy+.5,cell:true})); }
+  else if(tab==="erase"){ bErase(p); return; }
+  SND.chime([660,990]); saveDraft(); }
+function bErase(p){ let best=null, bd=1.3;
+  for(const e of ENTS){ if(e.removed||!e.src) continue; const dd=Math.hypot(e.x-p.x,e.y-p.y); if(dd<bd){ bd=dd; best={e}; } }
+  for(const T of TRAPS){ const dd=Math.hypot(T.x-p.x,T.y-p.y); if(dd<bd){ bd=dd; best={T}; } }
+  if(!best){ bStatus("Nothing placed near the ring."); return; }
+  const src=best.e?best.e.src:best.T.src; for(const k of ["creatures","chests","forage","props","traps","lore","hazards"]){ const i=D[k].indexOf(src); if(i>=0) D[k].splice(i,1); }
+  for(let i=LIGHTS.length-1;i>=0;i--) if(LIGHTS[i].src===src) LIGHTS.splice(i,1);
+  if(best.e){ const e=best.e; e.removed=true; e.dead=true; e.solid=false; if(e.spore){ SPORES.splice(SPORES.indexOf(e),1); } if(src.cell){ const cx=Math.floor(e.x), cy=Math.floor(e.y); MAP[cy][cx]="."; D.map[cy]=MAP[cy].join(""); for(let i=LIGHTS.length-1;i>=0;i--) if(LIGHTS[i].cell&&Math.floor(LIGHTS[i].x)===cx&&Math.floor(LIGHTS[i].y)===cy) LIGHTS.splice(i,1); } }
+  else { const T=best.T; TRAPS.splice(TRAPS.indexOf(T),1); PITV[T.cy*MW+T.cx]=0; const fi=FX.findIndex(f=>f.kind==="trapMark"&&f.trap===T); if(fi>=0) FX.splice(fi,1); }
+  noise(.15,{type:"lowpass",f0:500,vol:.3}); saveDraft(); }
+function bExport(){ D.name=$("bname").value.trim()||D.name; const o={...D}; delete o.__draft; const txt=JSON.stringify(o,null,1);
+  try{ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([txt],{type:"application/json"})); a.download=`${D.id||DID}.json`; document.body.appendChild(a); a.click(); a.remove(); }catch(e){}
+  try{ navigator.clipboard&&navigator.clipboard.writeText(txt); }catch(e){}
+  saveDraft(); bStatus(`Exported ${D.id||DID}.json (also copied). Send it to Claude to make it the dungeon everyone gets.`); }
+function bReset(){ try{ localStorage.removeItem("aop_dungeon_draft_"+DID); }catch(e){} location.reload(); }
+function drawBuildRing(){ if(!BLD.open) return; const p=bTarget(); ctx.save(); ctx.globalCompositeOperation="source-over";
+  if(B.tab==="trap"||B.tab==="light"){ const cx=Math.floor(p.x), cy=Math.floor(p.y); const cs=[[0,0],[1,0],[1,1],[0,1]].map(([a,b])=>project(cx+a,cy+b,.01)); if(!cs.some(q=>!q)){ ctx.strokeStyle="rgba(255,90,70,.95)"; ctx.setLineDash([3,2]); ctx.beginPath(); cs.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)); ctx.closePath(); ctx.stroke(); } }
+  ctx.setLineDash([]); ctx.strokeStyle=B.tab==="erase"?"rgba(255,80,70,.95)":"rgba(227,185,92,.95)"; ctx.beginPath(); let first=true;
+  for(let i=0;i<=24;i++){ const a=i/24*6.283, q=project(p.x+Math.cos(a)*.3,p.y+Math.sin(a)*.3,.01); if(!q){ first=true; continue; } if(first){ ctx.moveTo(q.x,q.y); first=false; } else ctx.lineTo(q.x,q.y); } ctx.stroke(); ctx.restore(); }
+$("lorec").onclick=closeLore;
+if(BLD.enabled){ $("bhint").hidden=false; document.querySelectorAll("#btabs button").forEach(b=>b.onclick=()=>bTab(b.dataset.t)); $("bplace").onclick=bPlace; $("bexport").onclick=bExport; $("breset").onclick=bReset; $("bclose").onclick=toggleBuilder;
+  $("bname").oninput=()=>{ D.name=$("bname").value; saveDraft(); }; }
+window.__pov={BLD,D,bPlace,bTab,bErase,TRAPS,makeTrap,makeLore,readLore,closeLore,solid,clearLine,propHit,landArrow,jump,SPORES,sporeBurst,sporeSave,toggleCrouch,sneakPower,perceives,P,ENTS,FX,CARDS:()=>CARDS,begin,useCard,interact,holdStart,holdEnd,rangedStart,loose,BAG,log:()=>log,AC:()=>AC,BUF};

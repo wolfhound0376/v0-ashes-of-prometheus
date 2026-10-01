@@ -26,8 +26,13 @@ def walk(node, key=""):
         return f"data:{mime};base64," + base64.b64encode(open(p, "rb").read()).decode()
     return node
 
+# every dungeon record rides along inline; the builder is open in a preview (A.__artifact)
+A2 = walk(A)
+A2["dungeons"] = {f[:-5]: json.load(open(os.path.join(root, "dungeons", f), encoding="utf-8"))
+                  for f in sorted(os.listdir(os.path.join(root, "dungeons"))) if f.endswith(".json")} if os.path.isdir(os.path.join(root, "dungeons")) else {}
+A2["__artifact"] = True
 html = open(os.path.join(root, "index.html"), encoding="utf-8").read()
 top = html[: html.index('<script src="manifest.js">')].rstrip()
 js = open(os.path.join(root, "pov.js"), encoding="utf-8").read()
-open(dst, "w", encoding="utf-8").write(top + "\n<script>\nconst A=" + json.dumps(walk(A), separators=(",", ":")) + ";\n" + js + "\n</script>\n")
+open(dst, "w", encoding="utf-8").write(top + "\n<script>\nconst A=" + json.dumps(A2, separators=(",", ":")) + ";\n" + js + "\n</script>\n")
 print(f"{os.path.getsize(dst)//1024} KB -> {dst}")
