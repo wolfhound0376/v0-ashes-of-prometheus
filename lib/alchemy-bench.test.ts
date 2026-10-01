@@ -293,3 +293,22 @@ describe("extraction — a bruised ingredient (Sam's 'Yes', 2026-10-01)", () => 
     expect(r.ok && r.outcome).toBe("potion")
   })
 })
+
+describe("recipes (spec §6, the Poisoned Cookbook)", () => {
+  const blind = () => [ripplebark(), bluecap()]
+
+  it("a TRUE recipe waives the unknown-ingredient penalty", () => {
+    const without = brewAtBench(input({ ingredients: blind() }))
+    const withTrue = brewAtBench(input({ ingredients: blind(), recipe: { slug: "r", reliability: "true" } }))
+    if (!without.ok || !withTrue.ok) throw new Error("expected brews")
+    expect(withTrue.impurity).toBeLessThan(without.impurity)
+    expect(withTrue.impurityReasons.some((r) => r.includes("had not discovered"))).toBe(false)
+  })
+
+  it("a drifted copy does NOT waive it, and adds its own point", () => {
+    const without = brewAtBench(input({ ingredients: blind() }))
+    const drifted = brewAtBench(input({ ingredients: blind(), recipe: { slug: "r", reliability: "drifted" } }))
+    if (!without.ok || !drifted.ok) throw new Error("expected brews")
+    expect(drifted.impurity).toBe(Math.min(3, without.impurity + 1))
+  })
+})

@@ -214,8 +214,13 @@ export function impurityOf(input: BrewInput, used: readonly string[]): { value: 
     reasons.push("+1 no proficiency with the tools")
   }
 
+  // Spec §6: a TRUE recipe "works, and following it waives the unknown-
+  // ingredient impurity penalty — this is what makes recipes worth having".
+  // A drifted or sabotaged copy does NOT waive it: the brewer believes they
+  // are covered and is not. That is the trap, and it is silent.
+  const waived = input.recipe?.reliability === "true"
   for (const ing of input.ingredients) {
-    if (blindColumns(ing, used).length > 0) {
+    if (!waived && blindColumns(ing, used).length > 0) {
       n += 1
       reasons.push(`+1 ${ing.name} — used an effect this brewer had not discovered`)
     }

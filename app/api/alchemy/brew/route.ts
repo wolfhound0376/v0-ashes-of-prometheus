@@ -171,6 +171,15 @@ export async function POST(req: NextRequest) {
     if (!known.data) {
       return NextResponse.json({ error: "this character has not learned that recipe" }, { status: 403 })
     }
+    // Following a recipe means brewing what it says. A page whose ingredient
+    // list does not match what is on the bench is not being followed.
+    const wants = (r.properties as { recipe?: { ingredients?: unknown } } | null)?.recipe?.ingredients
+    if (Array.isArray(wants)) {
+      const a = [...wants].map(String).sort().join(","), b = [...slugs].sort().join(",")
+      if (a !== b) {
+        return NextResponse.json({ error: `that is not what ${r.name} calls for`, reason: "not_the_recipe" }, { status: 422 })
+      }
+    }
     const rel = (r.properties as { reliability?: string } | null)?.reliability
     // An unmarked recipe is an honest one. A `drifted` or `sabotaged` value
     // is NEVER echoed back in the response — the brewer finds out later, in
@@ -377,7 +386,10 @@ export async function POST(req: NextRequest) {
     impurity: result.impurity,
     // The reasons are for the DM. A sabotaged recipe's line would name the
     // liar, so the player-facing client must not render this list.
-    impurityReasons: result.impurityReasons,
+    // Never when a recipe was followed: the reasons name a bad copy ("+2 the
+    // recipe is sabotaged") and a TRUE recipe gives itself away by what is
+    // missing. The Poisoned Cookbook only works if the brewer cannot tell.
+    impurityReasons: recipe ? null : result.impurityReasons,
     learned: result.revealed,
     critical: result.critical,
     dc: result.dc,
