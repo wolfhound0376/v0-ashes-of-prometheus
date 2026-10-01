@@ -30,6 +30,9 @@ import { isPrep, methodOf, METHOD_TOOL, type ExtractionMethod } from "@/lib/extr
 import { canBless, canMakeHolyWater, canPurify, isCleric } from "@/lib/alchemy-cleric"
 import type { RiteSheet } from "@/lib/camp-rites"
 import { canInscribe, RUNE_MATERIALS, type KnownRune } from "@/lib/alchemy-runes"
+import { currentLevel, isDrinkData, LEVEL_NAME, LEVEL_EFFECT } from "@/lib/inebriation"
+import { canMake, STILL_SLUG } from "@/lib/drink-making"
+import { normalizeConditions } from "@/lib/conditions"
 
 export const dynamic = "force-dynamic"
 
@@ -41,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   const { data: character } = await db
     .from("characters")
-    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies, sheet_spellcasting, sheet_skill_proficiencies")
+    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies, sheet_spellcasting, sheet_skill_proficiencies, conditions")
     .eq("id", characterId)
     .maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
@@ -86,6 +89,10 @@ export async function GET(req: NextRequest) {
   let vials = 0
   let silver = 0
   let runeMaterials = 0
+  let hasStill = false
+  const drinks: Array<{ id: string; name: string; slug: string; icon: string | null; quantity: number; class: string; dc: number; steps: number; maxLevel: number | null }> = []
+  // Usable counts for drink-making: prepared for ingredients, plain for drinks.
+  const usable: Record<string, number> = {}
   const flasks: Array<{ id: string; name: string; potency: number; impurity: number; effects: string[] }> = []
 
   for (const p of pack ?? []) {
@@ -103,6 +110,17 @@ export async function GET(req: NextRequest) {
     const row = (p.item_id ? catalogById.get(p.item_id as string) : catalogByName.get(p.name as string)) as
       | { slug: string; name: string; icon_url: string | null; alchemy_effects: unknown; properties: unknown } | undefined
     if (!row) continue
+    if (!p.prep && row.slug === STILL_SLUG && Number(p.quantity ?? 1) > 0) hasStill = true
+    const drinkData = (row.properties as { drink?: unknown } | null)?.drink
+    if (!p.prep && isDrinkData(drinkData)) {
+      drinks.push({
+        id: p.id as string, name: p.name as string, slug: row.slug, icon: row.icon_url,
+        quantity: Number(p.quantity ?? 1), class: String(drinkData.class),
+        dc: Number(drinkData.save_dc), steps: Number(drinkData.steps_per_drink), maxLevel: drinkData.max_level ?? null,
+      })
+      usable[row.slug] = (usable[row.slug] ?? 0) + Number(p.quantity ?? 1)
+    }
+    if (isPrep(p.prep)) usable[row.slug] = (usable[row.slug] ?? 0) + Number(p.quantity ?? 1)
     if (!p.prep) {
       const n = Number(p.quantity ?? 1)
       if (row.slug === "holy-water") holyWater += n
@@ -138,6 +156,19 @@ export async function GET(req: NextRequest) {
     ? await db.from("alchemy_effects").select("slug, name, category, summary, is_harmful").in("slug", [...visible])
     : { data: [] }
 
+  // Every drink the catalogue knows how to make, with whether this character
+  // can make one tonight and, if not, why.
+  const { data: drinkRows } = await db.from("items").select("slug, name, icon_url, properties").not("properties->drink", "is", null)
+  const makeable = (drinkRows ?? [])
+    .filter((r) => isDrinkData((r.properties as { drink?: unknown } | null)?.drink))
+    .map((r) => {
+      const d = (r.properties as { drink: Parameters<typeof canMake>[1] }).drink
+      const g = canMake(r.name as string, d, { character, have: usable, hasStill })
+      return { slug: r.slug as string, name: r.name as string, icon: (r.icon_url as string | null) ?? null, class: String(d.class), madeFrom: d.made_from ?? [], ok: g.ok, reason: g.ok ? null : g.reason }
+    })
+    .sort((a, b) => Number(b.ok) - Number(a.ok) || a.name.localeCompare(b.name))
+  const level = currentLevel(normalizeConditions(character.conditions))
+
   const prof = Number(character.proficiency_bonus ?? 2)
   const proficient = benchProficient(character.sheet_proficiencies)
   const conSave = Array.isArray(character.sheet_save_proficiencies) &&
@@ -163,6 +194,9 @@ export async function GET(req: NextRequest) {
         })()
       : null,
     effects: effects ?? [],
+    drinks,
+    makeable,
+    inebriation: { level, name: LEVEL_NAME[level] || "sober", effect: LEVEL_EFFECT[level] ?? null },
     // The marks this character knows, each with whether they can inscribe it
     // tonight. Learning a mark happens in the world, never here.
     runes: {
