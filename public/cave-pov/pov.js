@@ -1223,7 +1223,14 @@ function bErase(p){ let best=null, bd=1.3;
   if(best.e){ const e=best.e; e.removed=true; e.dead=true; e.solid=false; if(e.spore){ SPORES.splice(SPORES.indexOf(e),1); } if(src.cell){ const cx=Math.floor(e.x), cy=Math.floor(e.y); MAP[cy][cx]="."; D.map[cy]=MAP[cy].join(""); for(let i=LIGHTS.length-1;i>=0;i--) if(LIGHTS[i].cell&&Math.floor(LIGHTS[i].x)===cx&&Math.floor(LIGHTS[i].y)===cy) LIGHTS.splice(i,1); } }
   else { const T=best.T; TRAPS.splice(TRAPS.indexOf(T),1); PITV[T.cy*MW+T.cx]=0; const fi=FX.findIndex(f=>f.kind==="trapMark"&&f.trap===T); if(fi>=0) FX.splice(fi,1); }
   noise(.15,{type:"lowpass",f0:500,vol:.3}); saveDraft(); }
+/* In the claude.ai preview a plain download link does nothing; the viewer's `downloads` capability saves the file
+   (with a confirmation). In the app window.claude is absent and the plain link runs. */
+let DLS=null; try{ if(window.claude&&window.claude.use) window.claude.use("downloads").then(d=>{ DLS=d; }).catch(()=>{}); }catch(e){}
 function bExport(){ D.name=$("bname").value.trim()||D.name; const o={...D}; delete o.__draft; const txt=JSON.stringify(o,null,1);
+  if(DLS){ try{ navigator.clipboard&&navigator.clipboard.writeText(txt); }catch(e){} saveDraft();
+    DLS.save({filename:`${D.id||DID}.json`,data:txt}).then(()=>bStatus(`Exported ${D.id||DID}.json. Send it to Claude to make it the dungeon everyone gets.`),
+      e=>bStatus(e&&e.code==="declined"?"Export cancelled. The draft is still saved in this browser.":"Couldn't save the file here; it was copied to the clipboard instead."));
+    return; }
   try{ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([txt],{type:"application/json"})); a.download=`${D.id||DID}.json`; document.body.appendChild(a); a.click(); a.remove(); }catch(e){}
   try{ navigator.clipboard&&navigator.clipboard.writeText(txt); }catch(e){}
   saveDraft(); bStatus(`Exported ${D.id||DID}.json (also copied). Send it to Claude to make it the dungeon everyone gets.`); }
