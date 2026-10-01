@@ -1100,9 +1100,10 @@ function arcTrail(clip,t,tip,w="light",samples=90){ const d=mrTiming(w), T=d.win
   if(alpha<=0||head-tail<.03) return null; const pts=[];
   for(let i=0;i<=samples;i++){ const u=tail+(head-tail)*(i/samples), r=rigAt(clip,a+(b-a)*u,w); pts.push([r.x+tip[0]*r.scale, r.y+tip[1]*r.scale]); }
   return {alpha,pts,strike:tt<=b}; }
-// Sam, 9/30: "rotate the blade and hand drawing by 30 degrees and fix it there" — a fixed tilt, clockwise (the blade
-// leans out toward the right, the way the backhand travels), held through every frame. Still never rotates mid-swing.
-const MR_TILT=30*Math.PI/180, MR_TC=Math.cos(MR_TILT), MR_TS=Math.sin(MR_TILT);
+// Sam, 9/30: "rotate the blade and hand drawing by 30 degrees and fix it there", then "rotate the blade and hand ... 60
+// degrees counter clockwise now" — so the fixed tilt is 30° counter-clockwise of the rig's own pose (blade leaning left),
+// held through every frame. Still never rotates mid-swing. (Canvas angles: negative = counter-clockwise.)
+const MR_TILT=-30*Math.PI/180, MR_TC=Math.cos(MR_TILT), MR_TS=Math.sin(MR_TILT);
 function drawDaggerArc(clip,t){ const t0=[MR.DAG.tipOffset[0]*MR.DAG.scale*MR_K, MR.DAG.tipOffset[1]*MR.DAG.scale*MR_K];
   const tip=[t0[0]*MR_TC-t0[1]*MR_TS, t0[0]*MR_TS+t0[1]*MR_TC]; // the trail follows the tilted tip
   const fade=(P.act&&P.act.stopT>0)?1:.85; fpg.setTransform(1,0,0,1,0,0); fpg.clearRect(0,0,FW,FH); const sx=P.swayX*.0175, sy=P.swayY*.0175;
