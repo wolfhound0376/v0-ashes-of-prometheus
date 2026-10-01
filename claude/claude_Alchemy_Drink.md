@@ -36,7 +36,9 @@ Named states (Resist Poison, Soft Step, Inner Light) ride as **conditions** — 
 
 **Tier III healing is deliberately NOT the SRD superior potion's 8d4+8.** A superior potion is three workweeks of XGE downtime crafting; one good roll at a camp bench must not match it, or `lib/alchemy.ts`'s whole crafting ladder stops mattering. There is a test pinning this so a later session does not "fix" it upward.
 
-**The save DC is Sam's own number, not a new one.** Harmful effects use `TASTE_SAVE_DC` — he ruled DC 10 for "column 1 happens to you," and a brew doing the same thing to the same throat is the same event. Imported from `lib/eat-it-and-see.ts` so there is literally one constant.
+**The save DC scales: 10 / 12 / 14** (Sam's ruling, 2026-09-30 — a stronger brew should be harder to shrug off). Tier I is not a number of its own: it IS `TASTE_SAVE_DC`, imported rather than copied, because he ruled DC 10 for "column 1 happens to you" and a brew doing the same thing to the same throat is the same event. A test holds the two together, so changing the tasting DC moves tier I with it.
+
+The +2 a tier lands the ladder *inside* the published poison band rather than beside it: SRD basic poison is DC 10, serpent venom 11, drow poison 13, wyvern 15. Tier III at 14 sits between the drow and the wyvern — about right for the worst thing a camp bench can make. Tiers II and III are homebrew.
 
 **The twenty-two effect rows are all homebrew.** The grid doc gives each effect one line of intent; this turns that line into something the engine can apply. Each is one object — the easiest possible redline, one row at a time.
 
@@ -48,10 +50,14 @@ An earlier draft gave `sicken` both the poisoned condition **and** poison damage
 
 `GET` previews and `POST` drinks. The caller cannot know what to roll until the flask is resolved, because the dice depend on the instance's potency, which is not on the label. `POST` refuses with `needs_dice` rather than guessing — a dose drunk without its dice would silently heal nothing and the flask would be gone.
 
+## Rulings, 2026-09-30
+
+**Tier III healing stays 6d4+6.** The bench does not reach the SRD superior potion. The test pinning it stands.
+
+**The save DC scales with potency**, 10 / 12 / 14 — see above.
+
 ## Open questions
 
-1. **Should the save DC scale with potency?** It does not today: a tier III `sicken` is as resistible as a tier I. Reusing Sam's DC 10 was the honest move, but a stronger potion arguably ought to be harder to shrug off.
-2. **Tier III healing at 6d4+6** — confirm, or let the bench reach the SRD superior potion after all.
-3. **The duration ladder** (1 min / 10 min / 1 hour) — a decade per tier is clean but arbitrary.
-4. **Nothing clears a rider yet.** Residue should lapse in an hour and Taint and Corruption should survive to a long rest, but conditions carry no duration in this schema, so clearing them is the DM's, by hand. The long-rest path in `lib/camp.ts` is where that would live.
-5. **`inner-light` is the only effect with a built-in drawback.** The grid doc asks whether it should keep it or hand the drawback to the impurity system. Kept for now, both halves always, because it is the only reason a light source is ever a decision.
+1. **The duration ladder** (1 min / 10 min / 1 hour) — a decade per tier is clean but arbitrary, and it is the last untouched homebrew number in the drink path.
+2. **Nothing clears a rider.** Residue should lapse in an hour and Taint and Corruption should survive to a long rest, but conditions carry no duration in this schema, so clearing them is the DM's, by hand. The long-rest path in `lib/camp.ts` is where that would live. This is unfinished work rather than an open design question.
+3. **`inner-light` is the only effect with a built-in drawback.** The grid doc asks whether it should keep it or hand the drawback to the impurity system. Kept for now, both halves always, because it is the only reason a light source is ever a decision.

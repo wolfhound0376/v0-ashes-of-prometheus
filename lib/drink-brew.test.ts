@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest"
 import {
-  drinkBrew, DRINK_EFFECTS, RIDERS, TIER_ROUNDS, HEAL_DICE, HARM_DICE,
+  drinkBrew, DRINK_EFFECTS, RIDERS, TIER_ROUNDS, HEAL_DICE, HARM_DICE, SAVE_DC,
 } from "@/lib/drink-brew"
+import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
 
 const blob = (over: Record<string, unknown> = {}) => ({
   effects: ["restore-health"], potency: 2, impurity: 0, rune: null, base: "water", ...over,
@@ -160,5 +161,25 @@ describe("effects do only what the grid doc says they do", () => {
   it("numbing-venom is the one that bites", () => {
     const d = drinkBrew({ effects: ["numbing-venom"], potency: 2, impurity: 0 }) as any
     expect(d.harm).toEqual({ dice: "2d6", type: "poison" })
+  })
+})
+
+describe("the save DC scales with potency — Sam's ruling 2026-09-30", () => {
+  it("is harder to shrug off a stronger brew", () => {
+    const dc = (t: number) => (drinkBrew({ effects: ["sicken"], potency: t, impurity: 0 }) as any).saveDc
+    expect(dc(1)).toBe(10)
+    expect(dc(2)).toBe(12)
+    expect(dc(3)).toBe(14)
+  })
+  it("anchors tier I to the tasting DC rather than copying the number", () => {
+    // Sam ruled DC 10 for "column 1 happens to you". A brew doing the same
+    // thing to the same throat is the same event, so the two must move
+    // together if he ever changes it.
+    expect(SAVE_DC[1]).toBe(TASTE_SAVE_DC)
+  })
+  it("stays inside the published poison band", () => {
+    // SRD: basic poison DC 10, serpent venom 11, drow poison 13, wyvern 15.
+    expect(SAVE_DC[3]).toBeGreaterThan(13)
+    expect(SAVE_DC[3]).toBeLessThan(15)
   })
 })

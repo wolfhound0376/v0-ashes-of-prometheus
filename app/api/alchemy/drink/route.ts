@@ -22,11 +22,11 @@
 // Applied the other way round a drinker at 1 hp drops unconscious before the
 // healing lands, which turns an interesting potion into a coin flip.
 //
-// THE SAVE DC IS SAM'S OWN NUMBER, NOT A NEW ONE. Harmful effects use
-// TASTE_SAVE_DC — he ruled DC 10 for "column 1 happens to you", and a brew
-// doing the same thing to the same throat is the same event. Potency does not
-// raise it; see claude/claude_Alchemy_Drink.md for why that is flagged rather
-// than silently laddered.
+// THE SAVE DC SCALES WITH POTENCY (Sam's ruling, 2026-09-30): DC 10 / 12 / 14.
+// Tier I is not a number of its own — it is the DC he ruled for "column 1
+// happens to you", since a brew doing the same thing to the same throat is the
+// same event. The ladder lives in lib/drink-brew.ts and the dose carries it, so
+// this route never names a DC of its own.
 //
 // A PLAYER VERB, fenced like /api/alchemy/taste and /api/ground-items: the
 // characterId comes from the caller and is never read off
@@ -38,7 +38,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { drinkBrew, type Dose } from "@/lib/drink-brew"
-import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
 import { addCondition, normalizeConditions } from "@/lib/conditions"
 import { normaliseExhaustion } from "@/lib/exhaustion"
 
@@ -110,7 +109,7 @@ export async function GET(req: NextRequest) {
       heal: dose.heal,
       harm: dose.harm,
       // One save covers the whole dose; see the header note on the DC.
-      save: needsSave.length > 0 ? { ability: "CON", dc: TASTE_SAVE_DC, gates: needsSave } : null,
+      save: needsSave.length > 0 ? { ability: "CON", dc: dose.saveDc, gates: needsSave } : null,
     },
     conditions: dose.conditions,
     exhaustionDelta: dose.exhaustionDelta,
@@ -154,17 +153,17 @@ export async function POST(req: NextRequest) {
   if (dose.heal && !Number.isFinite(Number(body.heal))) missing.push(`heal (${dose.heal})`)
   if (dose.harm && !Number.isFinite(Number(body.harm))) missing.push(`harm (${dose.harm} ${dose.harm.type})`)
   const needsSave = savedEffects(dose)
-  if (needsSave.length > 0 && !Number.isFinite(Number(body.save))) missing.push(`save (CON vs DC ${TASTE_SAVE_DC})`)
+  if (needsSave.length > 0 && !Number.isFinite(Number(body.save))) missing.push(`save (CON vs DC ${dose.saveDc})`)
   if (missing.length > 0) {
     return NextResponse.json(
-      { error: `roll these first and send the totals: ${missing.join(", ")}`, reason: "needs_dice", roll: { heal: dose.heal, harm: dose.harm, save: needsSave.length > 0 ? { ability: "CON", dc: TASTE_SAVE_DC } : null } },
+      { error: `roll these first and send the totals: ${missing.join(", ")}`, reason: "needs_dice", roll: { heal: dose.heal, harm: dose.harm, save: needsSave.length > 0 ? { ability: "CON", dc: dose.saveDc } : null } },
       { status: 400 },
     )
   }
 
   const healed = dose.heal ? Math.max(0, Math.trunc(Number(body.heal))) : 0
   const harmed = dose.harm ? Math.max(0, Math.trunc(Number(body.harm))) : 0
-  const resisted = needsSave.length > 0 ? Number(body.save) >= TASTE_SAVE_DC : true
+  const resisted = needsSave.length > 0 ? Number(body.save) >= dose.saveDc : true
 
   const hpMax = Number(character.hp_max ?? 0)
   const before = Number(character.hp_current ?? 0)
@@ -219,7 +218,7 @@ export async function POST(req: NextRequest) {
     impurity: dose.impurity,
     hp: { before, after, max: hpMax, healed, harmed },
     exhaustion: { before: exhaustionBefore, after: exhaustionAfter },
-    save: needsSave.length > 0 ? { total: Number(body.save), dc: TASTE_SAVE_DC, resisted, turnedAside: resisted ? [...gated] : [] } : null,
+    save: needsSave.length > 0 ? { total: Number(body.save), dc: dose.saveDc, resisted, turnedAside: resisted ? [...gated] : [] } : null,
     conditionsApplied: landing,
     conditions,
     rider: dose.rider,

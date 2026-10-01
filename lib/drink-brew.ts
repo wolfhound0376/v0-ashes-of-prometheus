@@ -30,6 +30,7 @@
 // reads the row, rolls nothing, and applies what this returns.
 import type { SpellEffect } from "@/lib/spell-effects"
 import { MAX_IMPURITY, type Tier } from "@/lib/alchemy-bench"
+import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
 
 /**
  * Duration ladder. HOMEBREW — the spec says potency "scales duration and
@@ -49,6 +50,23 @@ export const HEAL_DICE: Record<Tier, string> = { 1: "2d4+2", 2: "4d4+4", 3: "6d4
 
 /** Harmful dice by tier. HOMEBREW, all three. */
 export const HARM_DICE: Record<Tier, string> = { 1: "1d6", 2: "2d6", 3: "3d6" }
+
+/**
+ * Save DC for the gated effects, by tier. Sam's ruling, 2026-09-30: a stronger
+ * brew IS harder to shrug off.
+ *
+ * Tier I is not a number of its own -- it IS `TASTE_SAVE_DC`, imported rather
+ * than copied, because Sam ruled DC 10 for "column 1 happens to you" and a
+ * brew doing the same thing to the same throat is the same event. Change that
+ * constant and this moves with it; there is a test holding them together.
+ *
+ * +2 a tier lands the ladder inside the published poison band rather than
+ * beside it: SRD basic poison is DC 10, serpent venom DC 11, drow poison
+ * DC 13, wyvern DC 15. Tier III at 14 sits between the drow and the wyvern,
+ * which is about right for the worst thing a camp bench can produce.
+ * HOMEBREW at tiers II and III.
+ */
+export const SAVE_DC: Record<Tier, number> = { 1: TASTE_SAVE_DC, 2: 12, 3: 14 }
 
 export interface BrewBlob {
   effects: unknown
@@ -154,6 +172,8 @@ export interface Dose {
   effects: SpellEffect[]
   /** Negative removes levels. */
   exhaustionDelta: number
+  /** DC for every save-gated effect in this dose. Scales with potency. */
+  saveDc: number
   rider: { condition: string; text: string } | null
   /** Effect slugs with no row in DRINK_EFFECTS. Handed to the DM, never dropped. */
   unknownEffects: string[]
@@ -254,6 +274,7 @@ export function drinkBrew(blob: unknown): DrinkResult {
     harm,
     effects,
     exhaustionDelta,
+    saveDc: SAVE_DC[potency],
     rider,
     unknownEffects,
     conditions,
