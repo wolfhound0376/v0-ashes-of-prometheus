@@ -10,6 +10,11 @@
 
 export type TokenState =
   | "idle" | "walk" | "attack" | "lightAttack" | "cast" | "hurt" | "dead"
+  // A WARD is a cast that is raised rather than thrown — the hands come up
+  // and stay up. Abjuration asks for it (SigilArt.casterPose); a figure with
+  // none drawn falls back to the ordinary cast, so this adds a pose without
+  // taking one away.
+  | "ward"
   // ── DEFENCE ───────────────────────────────────────────────────────────
   // A miss is not a small hit. Until now the board had no way to say so:
   // the only reaction state was "hurt", so a sword that went nowhere near
@@ -46,6 +51,10 @@ const CANDIDATES: Record<TokenState, string[]> = {
   // swings rather than standing still.
   lightAttack: ["left_slash", "slash", "stab", "knife", "dagger", "attack"],
   cast: ["charged_spell_cast", "spell_cast", "soell_cast", "cast", "attack"],
+  // A ward is raised, not thrown. A rigged model rarely has one drawn, so
+  // this leans on the summon/buff clips when they exist and otherwise falls
+  // through to the ordinary cast — the same fallback the sprites use.
+  ward: ["ward", "shield", "summon", "buff", "charged_spell_cast", "spell_cast", "cast"],
   // A flinch, THEN a fall. Leading with fall1 meant every hit read as a
   // collapse: the creature dropped, stood back up, and did it again next
   // round. A stagger is what taking damage looks like; falling is what dying

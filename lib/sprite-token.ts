@@ -35,7 +35,7 @@ export const SPRITE_DIRECTIONS = [
 ] as const
 
 export type SpriteState =
-  | "idle" | "walk" | "attack" | "cast" | "hurt" | "dodge" | "dead"
+  | "idle" | "walk" | "attack" | "cast" | "ward" | "hurt" | "dodge" | "dead"
   // Airborne loop: wings beating, used for both standing and moving while
   // the creature is off the floor. Burrow sinks into the ground, emerge
   // climbs back out.
@@ -132,6 +132,11 @@ const FALLBACK: Record<SpriteState, SpriteState[]> = {
   walk: ["idle"],
   attack: ["cast", "idle"],
   cast: ["attack", "idle"],
+  // A WARD is raised, not thrown: the hands come up and stay up. Kenta's is
+  // the cast wind-up without the bolt — frames 0-5, where the arms rise and
+  // before anything leaves them. Falls back to the full cast for a figure
+  // that never had one drawn, so an unwarded sprite looks exactly as it did.
+  ward: ["cast", "attack", "idle"],
   hurt: [],
   // No borrowed pose for a dodge: a figure that flinches on a miss is lying.
   // Undrawn, the board moves the body instead (defenceMotion).
@@ -405,7 +410,8 @@ export class SpriteRig {
    */
   playFor(action: string): { name: string; duration: number; release: number } | null {
     const state: SpriteState | null =
-      action === "cast" ? "cast"
+      action === "ward" ? "ward"
+      : action === "cast" ? "cast"
       : action === "attack" || action === "lightAttack" ? "attack"
       : action === "hurt" ? "hurt"
       : action === "dodge" ? "dodge"

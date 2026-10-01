@@ -50,17 +50,18 @@ describe("targetSigilFor", () => {
     }
   })
 
-  it("draws nothing for a save spell of a school with no sigil yet", () => {
-    // This test has moved every time a school got art — enchantment, then
-    // evocation, then transmutation, then conjuration, now divination — which
-    // is the point of it: the list is not allowed to drift without someone
-    // noticing. ABJURATION is the last school with none.
-    expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: "radiant" })).toBeNull()
-    expect(targetSigilFor({ resolve: "save", school: "abjuration", damage: null })).toBeNull()
-    // and the seven that DO have art must not be silent
-    for (const s of ["necromancy", "enchantment", "illusion", "evocation", "transmutation",
-                     "conjuration", "divination"] as const) {
+  it("draws a sigil for EVERY school — the list is finally complete", () => {
+    // This test moved five times as schools got art — enchantment, evocation,
+    // transmutation, conjuration, divination — each time naming whoever was
+    // still silent. Abjuration was the last, so there is no negative case
+    // left and the test inverts: all eight must draw, with and without a
+    // damage type. If a school ever goes quiet again, this is what says so.
+    const ALL = ["abjuration", "conjuration", "divination", "enchantment",
+                 "evocation", "illusion", "necromancy", "transmutation"] as const
+    expect(ALL).toHaveLength(8)
+    for (const s of ALL) {
       expect(targetSigilFor({ resolve: "save", school: s, damage: "radiant" }), s).not.toBeNull()
+      expect(targetSigilFor({ resolve: "save", school: s, damage: null }), s).not.toBeNull()
     }
   })
 
@@ -95,28 +96,45 @@ describe("targetSigilFor", () => {
     }
   })
 
-  it("sizes the plume quad from the art, and only divination overrides it", () => {
-    // Divination's art is square; the default quad is 1:2. Shipping it
-    // unsized stretched every eye to twice its height.
+  it("sizes the plume quad from the art, and only where the art needs it", () => {
+    // Two schools override, for the same reason and different shapes:
+    // divination's eyes are SQUARE, abjuration's dome is wider than tall.
+    // Everything else is the default tall column and must stay unset, or the
+    // override stops meaning anything.
     expect(SCHOOL_SIGIL.divination?.plumeSize).toEqual([3.2, 3.2])
-    const [w, h] = SCHOOL_SIGIL.divination!.plumeSize!
-    expect(w / h, "square art needs a square quad").toBe(1)
-    // 3.2 squares clears a one-square sprite standing in the middle.
-    expect(w).toBeGreaterThan(1)
+    expect(SCHOOL_SIGIL.abjuration?.plumeSize).toEqual([2.8, 2.25])
+    const SIZED = new Set(["divination", "abjuration"])
     for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
-      if (school !== "divination") expect(art?.plumeSize, school).toBeUndefined()
+      if (!SIZED.has(school)) expect(art?.plumeSize, school).toBeUndefined()
+    }
+    // A dome is wider than it is tall; eyes ringing a figure are square.
+    const [aw, ah] = SCHOOL_SIGIL.abjuration!.plumeSize!
+    expect(aw).toBeGreaterThan(ah)
+    // Both must clear a one-square sprite standing in the middle.
+    for (const s of SIZED) expect(SCHOOL_SIGIL[s as "divination"]!.plumeSize![0]).toBeGreaterThan(1)
+  })
+
+  it("anchors on the target by default, and on the CASTER for the two self-wards", () => {
+    // Divination's eyes open around whoever is scrying; abjuration's ward
+    // closes over whoever is casting it. Both are things a caster does to
+    // their own square. Every other school marks the creature the spell was
+    // thrown at, and an absent `anchor` must keep meaning "target" — the
+    // board reads it as `=== "caster"`, so a typo falls back to the safe side.
+    const SELF = new Set(["divination", "abjuration"])
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      if (SELF.has(school)) expect(art?.anchor, school).toBe("caster")
+      else expect(art?.anchor, school).toBeUndefined()
     }
   })
 
-  it("anchors on the target by default, and on the CASTER only for divination", () => {
-    // Sam, 2026-09-29: "this is our divination sfx for spell casters". The
-    // eyes open around whoever is scrying, not around whoever is scried.
-    // Every other school marks the creature the spell was thrown at, and an
-    // absent `anchor` must keep meaning "target" — the board reads it as
-    // `=== "caster"`, so a typo silently falls back to the safe side.
-    expect(SCHOOL_SIGIL.divination?.anchor).toBe("caster")
+  it("asks for the ward pose only where the caster raises rather than throws", () => {
+    // Sam, 2026-09-30: "he just needs to raise his hands, the magic sphere is
+    // what he creates." Abjuration is the only school that wants its own
+    // caster pose; every other one keeps the ordinary cast, and an undefined
+    // casterPose must keep meaning that.
+    expect(SCHOOL_SIGIL.abjuration?.casterPose).toBe("ward")
     for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
-      if (school !== "divination") expect(art?.anchor, school).toBeUndefined()
+      if (school !== "abjuration") expect(art?.casterPose, school).toBeUndefined()
     }
   })
 

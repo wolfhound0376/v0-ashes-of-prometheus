@@ -1,71 +1,77 @@
 {
-  "version": 1,
-  "name": "Kenta",
-  "cell": [
-    128,
-    128
-  ],
-  "pivot": [
-    64,
-    126
-  ],
-  "ppu": 96,
-  "animations": {
-    "attack": {
-      "sheet": "attack.png",
-      "frames": 6,
-      "fps": 12,
-      "loop": false,
-      "hit": 0.75
-    },
-    "hurt": {
-      "sheet": "hurt.png",
-      "frames": 6,
-      "fps": 10,
-      "loop": false
-    },
-    "idle": {
-      "sheet": "idle.png",
-      "frames": 4,
-      "fps": 5,
-      "loop": true
-    },
-    "dead": {
-      "sheet": "dead.png",
-      "frames": 7,
-      "fps": 8,
-      "loop": false
-    },
-    "walk": {
-      "sheet": "walk.png",
-      "frames": 8,
-      "fps": 10,
-      "loop": true
-    },
-    "cast": {
-      "sheet": "cast.png",
-      "frames": 9,
-      "fps": 10,
-      "loop": false,
-      "hit": 0.6
-    },
-    "eat": {
-      "sheet": "eat.png",
-      "frames": 7,
-      "fps": 6,
-      "loop": true
-    },
-    "sit": {
-      "sheet": "sit.png",
-      "frames": 5,
-      "fps": 4,
-      "loop": true
-    },
-    "sleep": {
-      "sheet": "sleep.png",
-      "frames": 5,
-      "fps": 3,
-      "loop": true
-    }
+ "version": 1,
+ "name": "Kenta",
+ "cell": [
+  128,
+  128
+ ],
+ "pivot": [
+  64,
+  126
+ ],
+ "ppu": 96,
+ "animations": {
+  "attack": {
+   "sheet": "attack.png",
+   "frames": 6,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.75
+  },
+  "hurt": {
+   "sheet": "hurt.png",
+   "frames": 6,
+   "fps": 10,
+   "loop": false
+  },
+  "idle": {
+   "sheet": "idle.png",
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "dead": {
+   "sheet": "dead.png",
+   "frames": 7,
+   "fps": 8,
+   "loop": false
+  },
+  "walk": {
+   "sheet": "walk.png",
+   "frames": 8,
+   "fps": 10,
+   "loop": true
+  },
+  "cast": {
+   "sheet": "cast.png",
+   "frames": 9,
+   "fps": 10,
+   "loop": false,
+   "hit": 0.6
+  },
+  "eat": {
+   "sheet": "eat.png",
+   "frames": 7,
+   "fps": 6,
+   "loop": true
+  },
+  "sit": {
+   "sheet": "sit.png",
+   "frames": 5,
+   "fps": 4,
+   "loop": true
+  },
+  "sleep": {
+   "sheet": "sleep.png",
+   "frames": 5,
+   "fps": 3,
+   "loop": true
+  },
+  "ward": {
+   "sheet": "ward.png",
+   "frames": 6,
+   "fps": 9,
+   "loop": false
   }
+ }
 }
