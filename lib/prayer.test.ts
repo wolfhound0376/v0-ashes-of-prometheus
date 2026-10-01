@@ -28,6 +28,9 @@ import {
   tierFor,
   vowTerm,
   wrongListenerRisk,
+  prayerVisibility,
+  HAND_CAN_SAVE_FROM_DEATH,
+  HAND_EFFECTS,
   type Deity,
   type Offering,
   type PrayerInput,
@@ -406,5 +409,31 @@ describe("Samson, level 1, in the pen", () => {
     expect(out.responseNumber).toBe(1)
     // RN 1: floor(1/3) is 0, so a hand is unreachable at level 1 by construction.
     expect(out.tier).toBe(TIER_SIGN)
+  })
+})
+
+describe("Sam's rulings of 2026-10-01", () => {
+  it("lets a Hand pull someone back from dying", () => {
+    expect(HAND_CAN_SAVE_FROM_DEATH).toBe(true)
+    expect(HAND_EFFECTS).toContain("ally_death_save")
+  })
+
+  it("still refuses to let a Hand be a spell, healing or a bonus", () => {
+    // Rail 1 survives the ruling: saving someone is steadying a hand or
+    // turning a blade, never casting cure wounds.
+    for (const e of HAND_EFFECTS) {
+      expect(e).not.toMatch(/spell|heal|cure|bonus|ac|attack|save_dc/i)
+    }
+  })
+
+  it("keeps a prayer private unless it is spoken aloud", () => {
+    expect(prayerVisibility("silent")).toBe("private")
+    expect(prayerVisibility("murmured")).toBe("private")
+    expect(prayerVisibility("aloud")).toBe("party")
+  })
+
+  it("carries that visibility on the result", () => {
+    expect(resolvePrayer(prayer({ posture: "silent" }), rngOf(d100(50))).visibility).toBe("private")
+    expect(resolvePrayer(prayer({ posture: "aloud" }), rngOf(d100(50))).visibility).toBe("party")
   })
 })
