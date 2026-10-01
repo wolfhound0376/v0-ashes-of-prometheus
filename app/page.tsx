@@ -292,6 +292,19 @@ export default function DashboardPage() {
     url.searchParams.delete("talk")
     window.history.replaceState(null, "", url.pathname + url.search + url.hash)
   }, [])
+  // The camp scene's Alchemy tile links here as /?view=compact&from=camp&bench=1
+  // (Sam, 2026-10-01: "make sure the alchemy bench is wired to the camp at the
+  // fire"): the compact view opens on Camp with the real alchemy bench already
+  // up. The bench spends the camp action itself, server-side.
+  const [campBench, setCampBench] = useState(false)
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (url.searchParams.get("bench") !== "1") return
+    setCampBench(true)
+    // Same as talk: gone from the address, so a refresh does not reopen it.
+    url.searchParams.delete("bench")
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash)
+  }, [])
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
@@ -1634,6 +1647,8 @@ if (error) {
             isThinking={lichLoading}
             onExitCompact={() => switchView("full")}
             onTalkStart={setCampTalkWith}
+            openBench={campBench}
+            onBenchClosed={() => setCampBench(false)}
           />
         </div>
       ) : null}

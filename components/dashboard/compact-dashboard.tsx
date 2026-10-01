@@ -57,6 +57,9 @@ interface CompactDashboardProps {
   onExitCompact: () => void
   /** Opens the talk mini-dashboard once someone is chosen by the fire. */
   onTalkStart?: (name: string) => void
+  /** Arrived from the camp scene's Alchemy tile (?bench=1): open the bench. */
+  openBench?: boolean
+  onBenchClosed?: () => void
 }
 
 type Tab = "story" | "camp" | "party" | "sheet"
@@ -130,6 +133,13 @@ export function CompactDashboard(props: CompactDashboardProps) {
   const [trainTeacher, setTrainTeacher] = useState<string | null>(null)
   const [craftOpen, setCraftOpen] = useState(false)
   const [benchOpen, setBenchOpen] = useState(false)
+  // The camp at the fire hands over here. The bench needs the claimed
+  // character, so it waits until there is one.
+  useEffect(() => {
+    if (!props.openBench || !me?.id) return
+    setTab("camp")
+    setBenchOpen(true)
+  }, [props.openBench, me?.id])
   const logEnd = useRef<HTMLDivElement>(null)
 
   const recent = useMemo(() => dialogue.slice(-80), [dialogue])
@@ -276,7 +286,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
               </div>
             </section>
             {craftOpen && <CraftMenuPanel characterId={me?.id ?? null} onClose={() => setCraftOpen(false)} onCraft={send} busy={!!isThinking} onOpenBench={() => setBenchOpen(true)} />}
-            {benchOpen && me?.id && <AlchemyBench characterId={me.id} onClose={() => setBenchOpen(false)} />}
+            {benchOpen && me?.id && <AlchemyBench characterId={me.id} onClose={() => { setBenchOpen(false); props.onBenchClosed?.() }} />}
           </div>
         )}
 
