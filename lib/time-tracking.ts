@@ -15,10 +15,14 @@
  *   - inserts rows into time_log (the trigger does the rest)
  *   - derives player-safe / DM-only descriptors from the clock
  *   - parses the inline time tags Malachar emits in his prose
+ *   - after the clock moves, hands the new time to anything that keeps a
+ *     deadline on it (lib/gas-spore-clock: poisoned at halfway, dead at the end)
  *
  * All callers MUST use a service-role client: the three tables have RLS enabled
  * with no policies, so the anon key can neither read nor write them.
  */
+
+import { advanceGasSporeInfections } from "./gas-spore-clock"
 
 // The event types the app logs. Every one except `cinematic_cut` is expected to
 // have a matching row in time_advancement_rules, so the trigger can fill in
@@ -133,7 +137,15 @@ export async function logTimeEvent(admin: any, sessionId: string | null, event: 
   if (event.hiddenRoll) payload.hidden_roll = event.hiddenRoll
   try {
     const { error } = await admin.from("time_log").insert(payload)
-    if (error) console.error(`[time] logTimeEvent(${event.eventType}) failed:`, error.message)
+    if (error) {
+      console.error(`[time] logTimeEvent(${event.eventType}) failed:`, error.message)
+      return
+    }
+    // The clock just moved. Read where the trigger put it and let the
+    // deadlines that ride on it catch up — every path that advances time
+    // comes through here, so nothing that keeps time can be skipped by one.
+    const clock = await readGameClock(admin, sessionId)
+    if (clock) await advanceGasSporeInfections(admin, { day: clock.day, minutesOfDay: clock.minutesOfDay })
   } catch (e) {
     console.error(`[time] logTimeEvent(${event.eventType}) threw:`, e)
   }
