@@ -341,6 +341,15 @@
   "frames": 6,
   "rows": 1
  },
+ "pxSigilShatter": {
+  "file": "pxSigilShatter.webp",
+  "bytes": 1340,
+  "cols": 4,
+  "rows": 2,
+  "frames": 8,
+  "fps": 20,
+  "loop": false
+ },
  "pxSpark": {
   "bytes": 56,
   "cols": 1,
