@@ -123,6 +123,12 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const BASES: BaseLiquid[] = ["water", "blessed-water", "holy-water"]
+  if (body.base !== undefined && !BASES.includes(body.base)) {
+    // An unknown string made the impurity cap undefined and the result NaN.
+    return NextResponse.json({ error: `base must be one of ${BASES.join(", ")}` }, { status: 400 })
+  }
+
   const db = createAdminClient()
 
   // Never .single() on a query that might match zero rows — AGENTS.md §8.
@@ -241,17 +247,11 @@ export async function POST(req: NextRequest) {
 
   // Rehearsal stops here: everything above is a read, everything below writes.
   if (!sandbox) {
-    // One of each, every outcome — a failed brew costs the same as a good one.
-    for (const slug of result.consumed) {
-      const row = byslug.get(slug)!
-      const held = holdingOf(row.id as string, row.name as string)
-      const from = held.find((p) => (p.quantity ?? 1) > 0)
-      if (!from) continue
-      const left = (from.quantity ?? 1) - 1
-      if (left <= 0) await db.from("inventory_items").delete().eq("id", from.id)
-      else await db.from("inventory_items").update({ quantity: left }).eq("id", from.id)
-    }
-
+    // The potion goes in FIRST. If the insert is refused, nothing has been
+    // consumed yet and the brewer keeps their ingredients. The other order
+    // ate three ingredients and then failed the CHECK constraint on every
+    // brew ever attempted (fixed 2026-10-01: the constraint wanted `effect`,
+    // this writes `effects`).
     if (result.outcome === "potion" && product) {
       const { error } = await db.from("inventory_items").insert({
         character_id: characterId,
@@ -276,6 +276,17 @@ export async function POST(req: NextRequest) {
         },
       })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // One of each, every outcome — a failed brew costs the same as a good one.
+    for (const slug of result.consumed) {
+      const row = byslug.get(slug)!
+      const held = holdingOf(row.id as string, row.name as string)
+      const from = held.find((p) => (p.quantity ?? 1) > 0)
+      if (!from) continue
+      const left = (from.quantity ?? 1) - 1
+      if (left <= 0) await db.from("inventory_items").delete().eq("id", from.id)
+      else await db.from("inventory_items").update({ quantity: left }).eq("id", from.id)
     }
 
     if (result.revealed.length > 0) {
