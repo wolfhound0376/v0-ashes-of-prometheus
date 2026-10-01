@@ -78,6 +78,7 @@ import {
   describeTimeOfDay,
   type GameClock,
 } from "@/lib/time-tracking"
+import { loadInfectionBlock } from "@/lib/gas-spore-clock"
 import * as fal from "@fal-ai/serverless-client"
 
 // Configure Fal client
@@ -853,6 +854,13 @@ STRICT LIMITS ON USING THESE:
   }
   const gameClock: GameClock | null = await readGameClock(timeAdmin, activeSessionId)
   const pacingBlock = buildPacingBlock(gameClock)
+  // Diseases running on that clock (lib/gas-spore-clock): who is infected and
+  // how long they have, so Malachar can pace the symptoms. DM-only, like the
+  // clock; empty when nobody is infected.
+  const infectionBlock = await loadInfectionBlock(
+    timeAdmin,
+    gameClock ? { day: gameClock.day, minutesOfDay: gameClock.minutesOfDay } : null,
+  )
 
   // === THE CAMP (lib/camp.ts §13) ===
   // Whether the party is camping is read from time_log — the latest of
@@ -1921,7 +1929,7 @@ result exists until the engine reports it.
   numbers only in the tag ("Roll Stealth. [[1d20+7 | stealth | DC 15]]"). Honor features that
   change rolls (Lucky, Brave, Fey Ancestry, Sneak Attack conditions) without
   the player having to remind you.
-${pacingBlock ? `\n${pacingBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${questBlock ? `\n\n${questBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
+${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${questBlock ? `\n\n${questBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
 
   // A provider failure here used to escape as a bare 500 with no body: the UI
   // showed nothing, the client retried, and each retry persisted the player's
