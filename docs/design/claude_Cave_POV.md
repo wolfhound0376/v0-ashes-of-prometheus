@@ -56,8 +56,9 @@ the blade and hand drawing by 30 degrees and fix it there", then "60 degrees cou
 rotates during a swing. The painted hand is Freía's (red nails) — every character uses it until
 each has their own capture. Fists keep the pixel animation.
 
-- **Quick click = `slash_out`** (Sam, 9/30: "the slash from medially go lateral"): a backhand — the hand cocks across the
-  body to the left and sweeps out to the right along a bowed arc. `slash_d` (the rig's inward cut) stays in the table
+- **Quick click = `slash_out`** (Sam, 9/30: "the slash from medially go lateral"): a backhand along a bowed arc. Sam, later: "start left then
+  just slash right" — the hand rises into view already on the left, slashes right, and drops off the bottom right; it
+  never travels left first or slides back to the middle. `slash_d` (the rig's inward cut) stays in the table
   unused.
 - **Hold = `thrust_c`** (Sam, 9/30: "just go a little in front of the character and come from the center POV; similar
   to what we had previously"): a short draw-back, then a drive in toward the middle, the hand shrinking to 0.8 as the

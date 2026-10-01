@@ -1050,7 +1050,10 @@ const MR={ELBOW:{x:620,y:600},FOREARM:240,REST:{dx:0,dy:0,a1:-28,a2:-20,sc:1},
   CLIPS:{slash_d:{cock:{dx:16,dy:-6,a1:22,a2:4,sc:.97},hit:{dx:-18,dy:10,a1:-78,a2:4,sc:1.05},path:{s:[770,470],e:[290,470],lift:150}},
          // Sam, 9/30: "the slash from medially go lateral" — a backhand. The hand cocks across the body to the left, then
          // sweeps out to the right along the same bowed arc. (slash_d above is the rig's own inward cut, kept as ported.)
-         slash_out:{cock:{dx:16,dy:-6,a1:22,a2:4,sc:.97},hit:{dx:-18,dy:10,a1:-78,a2:4,sc:1.05},path:{s:[300,478],e:[790,452],lift:150}},
+         // Sam, 9/30 (later): "The blade moves left then swipes right currently. Lets have it start left then just slash
+         // right." So `left`: no travel across from the middle — the hand rises into view already on the left, slashes
+         // right, and drops away off the bottom on the right instead of sliding back to the middle.
+         slash_out:{cock:{dx:16,dy:-6,a1:22,a2:4,sc:.97},hit:{dx:-18,dy:10,a1:-78,a2:4,sc:1.05},path:{s:[240,478],e:[790,452],lift:150},left:true},
          // Sam, 9/30: the thrust "should just go a little in front of the character and come from the center POV; similar to
          // what we had previously" — the old pixel thrust slid in toward the middle and shrank as the blade went away. So:
          // pull back toward the viewer (bigger), then a short drive in to just under the crosshair (smaller).
@@ -1074,7 +1077,11 @@ function rigAt(clip,t,w="light"){ const C=MR.CLIPS[clip]||MR.CLIPS.jab, d=mrTimi
   else if(ms-d.windup<d.strike){ phase="strike"; u=(ms-d.windup)/d.strike; pose=mrLerp(C.cock,C.hit,eIn(u)); }
   else { phase="recover"; u=(ms-d.windup-d.strike)/d.recover; const k=w==="heavy"?1.5:w==="mid"?1.05:.75; pose=mrLerp(C.hit,MR.REST,Math.min(1,eBack(u,k))); }
   const a=mrBez(C.path,0), b=mrBez(C.path,1); let pt;
-  if(phase==="windup"){ const q=eOut(u); pt=[MR_REST_WRIST[0]+(a[0]-MR_REST_WRIST[0])*q, MR_REST_WRIST[1]+(a[1]-MR_REST_WRIST[1])*q]; }
+  if(C.left){ // starts on the left, slashes right, and is gone — never crosses back
+    if(phase==="windup"){ const q=eOut(Math.min(1,u*1.6)); pt=[a[0], a[1]+260*(1-q)]; } // straight up from below, already on the left
+    else if(phase==="strike") pt=mrBez(C.path,eIn(u));
+    else { const q=Math.min(1,u); pt=[b[0]+40*q, b[1]+330*q*q]; } } // follow through, then down out of the frame
+  else if(phase==="windup"){ const q=eOut(u); pt=[MR_REST_WRIST[0]+(a[0]-MR_REST_WRIST[0])*q, MR_REST_WRIST[1]+(a[1]-MR_REST_WRIST[1])*q]; }
   else if(phase==="strike") pt=mrBez(C.path,eIn(u));
   else { const q=eOut(Math.min(1,u)); pt=[b[0]+(MR_REST_WRIST[0]-b[0])*q, b[1]+(MR_REST_WRIST[1]-b[1])*q]; }
   return {x:pt[0],y:pt[1],angle:MR.REST_ANGLE,scale:pose.sc,phase}; }
