@@ -28,6 +28,7 @@ import {
 } from "@/lib/alchemy-art"
 import { cn } from "@/lib/utils"
 import { BenchSigil, type SigilPhase } from "@/components/alchemy/bench-sigil"
+import { BenchIntro } from "@/components/alchemy/bench-intro"
 import type { MagicSchool } from "@/lib/spell-school"
 
 type Effect = { slug: string; name: string; category: string; summary: string; is_harmful: boolean }
@@ -92,6 +93,8 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   // The recipe being followed. Picking ingredients by hand stops following it.
   const [recipe, setRecipe] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The module opens with its film (Sam, 9/29; kept 2026-10-01).
+  const [intro, setIntro] = useState(true)
   const [stage, setStage] = useState<Stage>({ kind: "idle" })
   // An outcome clip plays ONCE, then the still takes over (the tinted flask,
   // the sludge). Only the mixing clip loops, for as long as the dice tumble.
@@ -120,10 +123,11 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
 
   // Escape closes, as every other overlay on the board does.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose() }
+    // While the film plays, Escape skips it (BenchIntro) rather than closing.
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro) onClose() }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [busy, onClose])
+  }, [busy, intro, onClose])
 
   const effectName = useMemo(() => {
     const m = new Map((pack?.effects ?? []).map((e) => [e.slug, e.name]))
@@ -343,6 +347,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   return (
     <div role="dialog" aria-modal="true" aria-label="Alchemy bench" className="fixed inset-0 z-[60] flex flex-col bg-[#070605] text-stone-200">
       <style>{BENCH_CSS}</style>
+      {intro && <BenchIntro onDone={() => setIntro(false)} />}
 
       {/* The bench itself: painted plate, the idle film over it when there is one. */}
       <div className="absolute inset-0 overflow-hidden" aria-hidden="true">

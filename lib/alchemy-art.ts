@@ -38,6 +38,13 @@ export const BENCH_CLIPS: Partial<Record<BenchClip, string>> = {
   smoke: `${STORE}/clip/smoke.mp4`,
   purify: `${STORE}/clip/purify.mp4`,
 }
+/** The alchemy module's opening film (Runway, 5 s). Approved by Sam for the
+ *  camp scene on 9/29 and kept when the bench moved into the game (2026-10-01).
+ *  The MP4 plays where H.264 does; the WebM is the fallback. */
+export const BENCH_INTRO = {
+  mp4: `${STORE}/clip/alchemy-intro.mp4`,
+  webm: `${STORE}/clip/alchemy-intro.webm`,
+}
 export type BenchClip = "idle" | "mixing" | "success" | "inert" | "smoke" | "purify"
 
 /** The flask a finished brew is shown in, by impurity (0 clean … 3 corrupt). */
