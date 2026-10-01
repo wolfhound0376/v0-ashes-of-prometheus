@@ -30,10 +30,11 @@ import { BenchSigil, type SigilPhase } from "@/components/alchemy/bench-sigil"
 import { BenchIntro } from "@/components/alchemy/bench-intro"
 import { JournalButton, RecipeJournal, type Schematic } from "@/components/alchemy/recipe-journal"
 import { RUNE_RIDER, isRuneSchool } from "@/lib/alchemy-runes"
+import { ExtractFocus, type ExtractResult } from "@/components/alchemy/extract-focus"
 import type { MagicSchool } from "@/lib/spell-school"
 
 type Effect = { slug: string; name: string; category: string; summary: string; is_harmful: boolean }
-type Ingredient = {
+export type Ingredient = {
   slug: string; name: string; icon: string | null; quantity: number
   /** Only `prepared` goes into a brew (extraction, Sam 2026-10-01). */
   raw: number; prepared: number; bruised: number
@@ -124,7 +125,8 @@ export function AlchemyBench({
   const [base, setBase] = useState<"water" | "blessed-water" | "holy-water">("water")
   const [rune, setRune] = useState<string>("")
   // Raw ingredients picked for one preparing sitting (up to three, one camp action).
-  const [prepPick, setPrepPick] = useState<string[]>([])
+  // The raw ingredient zoomed to the centre to be extracted (Sam, 2026-10-01).
+  const [focus, setFocus] = useState<string | null>(null)
   // The rune sealing the current brew, shown on the vessel (board school art).
   const [sigil, setSigil] = useState<{ school: MagicSchool; phase: SigilPhase; key: number } | null>(null)
   // The recipe being followed. Picking ingredients by hand stops following it.
@@ -201,7 +203,7 @@ export function AlchemyBench({
         const b = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(b?.error ?? "The sandbox could not be reset.")
         if (action === "restock") {
-          setPicked([]); setPrepPick([]); setRecipe(null); setRune(""); setBase("water"); setSigil(null); setStage({ kind: "idle" })
+          setPicked([]); setFocus(null); setRecipe(null); setRune(""); setBase("water"); setSigil(null); setStage({ kind: "idle" })
           setSbNote(`Restocked as a ${b.class}: ${b.items} pack rows, every mark and recipe, ${b.campActions} camp actions${b.knownEffects ? ", every effect known" : ""}.`)
         } else {
           setSbNote(`${b.campActions} camp actions again.`)
@@ -219,10 +221,10 @@ export function AlchemyBench({
   // Escape closes, as every other overlay on the board does.
   useEffect(() => {
     // While the film plays, Escape skips it (BenchIntro) rather than closing.
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro && !critFilm && !made) onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro && !critFilm && !made && !focus) onClose() }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [busy, intro, critFilm, made, onClose])
+  }, [busy, intro, critFilm, made, focus, onClose])
 
   const effectName = useMemo(() => {
     const m = new Map((pack?.effects ?? []).map((e) => [e.slug, e.name]))
@@ -296,9 +298,11 @@ export function AlchemyBench({
     }
   }
 
-  async function prepareSitting() {
-    if (!pack || busy || prepPick.length === 0) return
-    const items = pack.ingredients.filter((i) => prepPick.includes(i.slug) && i.method)
+  /** One sitting: roll each ingredient on the board's dice, post them
+   *  together (one camp action), and return a result per slug, in order. */
+  async function extractRun(slugs: string[]): Promise<ExtractResult[]> {
+    if (!pack || busy) return []
+    const items = slugs.map((s) => pack.ingredients.find((i) => i.slug === s)).filter((i): i is Ingredient => !!i && !!i.method)
     setBusy(true)
     try {
       const entries: Array<{ itemSlug: string; check: number; die: number }> = []
@@ -314,16 +318,23 @@ export function AlchemyBench({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ characterId, items: entries }),
       })
-      const body = await res.json()
-      const learned = (body.results ?? []).filter((r: { learned?: { name: string } }) => r.learned).map((r: { learned: { name: string } }) => r.learned.name)
-      setStage({
-        kind: "note",
-        summary: res.ok
-          ? `${body.summary}${learned.length ? ` You learn: ${learned.join(", ")}.` : ""} (${body.campAction})`
-          : body.error ?? "The bench would not take it.",
-      })
-      setPrepPick([])
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok && !Array.isArray(body.results)) {
+        return items.map((i) => ({ slug: i.slug, ok: false as const, error: body.error ?? "The bench would not take it." }))
+      }
+      const out = ((body.results ?? []) as Array<Record<string, unknown>>).map((r, k): ExtractResult =>
+        r.ok
+          ? {
+              slug: entries[k].itemSlug, ok: true,
+              outcome: r.outcome as "prepared" | "bruised" | "ruined",
+              preparedName: (r.preparedName as string | null) ?? null,
+              learned: ((r.learned as { name?: string } | null)?.name) ?? null,
+              summary: String(r.summary ?? ""),
+            }
+          : { slug: entries[k].itemSlug, ok: false, error: String(r.error ?? "Refused.") },
+      )
       await load()
+      return out
     } finally {
       setBusy(false)
     }
@@ -511,6 +522,22 @@ export function AlchemyBench({
       <style>{BENCH_CSS}</style>
       {intro && <BenchIntro onDone={() => setIntro(false)} />}
       {critFilm && <BenchIntro film={BENCH_CRIT_FILM} label="The flask fails" onDone={() => setCritFilm(false)} />}
+      {focus && pack && (() => {
+        const ing = pack.ingredients.find((i) => i.slug === focus)
+        if (!ing) return null
+        return (
+          <ExtractFocus
+            ingredient={ing}
+            others={pack.ingredients.filter((o) => o.slug !== ing.slug && o.raw > 0 && o.method)}
+            roll={pack.rolls}
+            campActions={pack.campActions}
+            busy={busy}
+            onExtract={extractRun}
+            onTaste={() => { setFocus(null); void taste(ing) }}
+            onClose={() => setFocus(null)}
+          />
+        )
+      })()}
       {made && !intro && !critFilm && <MadeWindow made={made} busy={busy} onKeep={() => setMade(null)} onToss={() => void toss(made)} />}
 
       {/* The bench itself: painted plate, the idle film over it when there is one. */}
@@ -792,7 +819,7 @@ export function AlchemyBench({
                             aria-pressed={on}
                             title={on ? "In the vessel. Click to take it out" : "Drag it into the vessel (or click)"}
                             className={cn(
-                              "flex w-full cursor-grab flex-col items-center gap-1 rounded-sm border bg-[#0d0b08]/85 p-2 text-center transition-colors active:cursor-grabbing disabled:opacity-60",
+                              "flex w-full cursor-grab flex-col items-center gap-1 rounded-sm border bg-[#0d0b08]/85 p-2 text-center transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_0_18px_rgba(226,201,142,.45)] active:cursor-grabbing disabled:opacity-60",
                               on ? "border-[#e2c98e] bg-[#2a1f10]" : "border-[#7a5f33]/50 hover:border-[#c9a868]",
                             )}
                           >
@@ -835,54 +862,39 @@ export function AlchemyBench({
                   Ingredients
                   <span className="normal-case tracking-normal text-stone-500">raw · camp actions left: {pack.campActions} · a preparing sitting or a brew costs one</span>
                 </h3>
-                {prepPick.length > 0 && (
-                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-sm border border-[#c9a868]/60 bg-[#1a140b] p-2 text-xs">
-                    <span className="text-[#f1dca8]">Prepare {prepPick.length} in one sitting (up to 3) — INT {sign(pack.rolls.extract.modifier)} vs DC {pack.rolls.extract.dc} each</span>
-                    <button type="button" onClick={() => void prepareSitting()} disabled={busy || pack.campActions < 1}
-                      className="ml-auto rounded-sm border border-[#c9a868] bg-[#2a1f10] px-3 py-1 text-[#f1dca8] hover:bg-[#3a2b15] disabled:opacity-40">
-                      {pack.campActions < 1 ? "No camp action left" : "Prepare (1 camp action)"}
-                    </button>
-                  </div>
-                )}
                 {pack.ingredients.length === 0 && <p className="text-sm text-stone-400">Nothing in your pack will go into a brew. Forage first.</p>}
                 {pack.ingredients.length > 0 && rawOnes.length === 0 && (
                   <p className="text-sm text-stone-500">{filtering ? "No raw ingredient matches the filter." : "Everything you carry is prepared."}</p>
                 )}
                 <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
                   {rawOnes.map((i) => (
-                    <li key={i.slug} className="flex flex-col gap-1 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/85 p-2">
-                      <div className="flex flex-col items-center gap-1">
-                        <img src={cutout(i.slug)} onError={(e) => { if (i.icon) (e.currentTarget as HTMLImageElement).src = i.icon }} alt="" className="h-16 w-16 object-contain" />
-                        <span className="text-sm text-[#f1dca8]">{i.name}</span>
-                        <span className="text-[11px] text-stone-400">raw ×{i.raw}</span>
-                      </div>
-                      <ul className="flex flex-col gap-0.5" aria-label={`What you know about ${i.name}`}>
-                        {i.columns.map((c, n) => (
-                          <li key={n} className="flex items-center gap-1 text-[11px]">
-                            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full border border-stone-600" style={c ? { background: lookOf(c).liquid } : undefined} />
-                            <span className={c ? "text-stone-300" : "text-stone-600"}>{c ? effectName(c) : "?"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      {i.method && (
-                        <button
-                          type="button"
-                          aria-pressed={prepPick.includes(i.slug)}
-                          onClick={() => setPrepPick((p) => (p.includes(i.slug) ? p.filter((x) => x !== i.slug) : p.length >= 3 ? p : [...p, i.slug]))}
-                          disabled={busy}
-                          className={cn(
-                            "mt-1 rounded-sm border px-2 py-0.5 text-xs disabled:opacity-40",
-                            prepPick.includes(i.slug) ? "border-[#e2c98e] bg-[#3a2b15] text-[#f1dca8]" : "border-[#c9a868] text-[#f1dca8] hover:bg-[#2a1f10]",
-                          )}
-                        >
-                          {prepPick.includes(i.slug) ? "✓ " : ""}{VERB[i.method]} it — {i.tool}
-                        </button>
-                      )}
-                      {i.columns[0] === null && (
-                        <button type="button" onClick={() => void taste(i)} disabled={busy} className="mt-1 rounded-sm border border-[#7a5f33] px-2 py-0.5 text-xs text-[#c9a868] hover:bg-[#2a1f10] disabled:opacity-40">
-                          Taste it (CON {sign(pack.rolls.taste.modifier)} vs DC {pack.rolls.taste.dc})
-                        </button>
-                      )}
+                    <li key={i.slug}>
+                      {/* Hover glows; click ticks and zooms it to the centre (Sam, 2026-10-01). */}
+                      <button
+                        type="button"
+                        data-tick="click"
+                        aria-haspopup="dialog"
+                        onClick={() => setFocus(i.slug)}
+                        disabled={busy}
+                        className="group flex h-full w-full flex-col gap-1 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/85 p-2 text-left transition duration-200 hover:-translate-y-0.5 hover:border-[#e2c98e] hover:shadow-[0_0_18px_rgba(226,201,142,.45)] focus-visible:border-[#e2c98e] focus-visible:shadow-[0_0_18px_rgba(226,201,142,.45)] disabled:opacity-60"
+                      >
+                        <span className="flex w-full flex-col items-center gap-1">
+                          <img src={cutout(i.slug)} onError={(e) => { if (i.icon) (e.currentTarget as HTMLImageElement).src = i.icon }} alt="" className="h-16 w-16 object-contain transition-transform duration-200 group-hover:scale-110" />
+                          <span className="text-sm text-[#f1dca8]">{i.name}</span>
+                          <span className="text-[11px] text-stone-400">raw ×{i.raw}</span>
+                        </span>
+                        <span className="flex flex-col gap-0.5" aria-label={`What you know about ${i.name}`}>
+                          {i.columns.map((c, n) => (
+                            <span key={n} className="flex items-center gap-1 text-[11px]">
+                              <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full border border-stone-600" style={c ? { background: lookOf(c).liquid } : undefined} />
+                              <span className={c ? "text-stone-300" : "text-stone-600"}>{c ? effectName(c) : "?"}</span>
+                            </span>
+                          ))}
+                        </span>
+                        <span className="mt-1 rounded-sm border border-[#7a5f33] px-2 py-0.5 text-center text-xs text-[#c9a868]">
+                          {i.method ? `${VERB[i.method]} — ${i.tool}` : "No method known"}
+                        </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
