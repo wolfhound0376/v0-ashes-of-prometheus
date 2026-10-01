@@ -459,13 +459,46 @@ worse, a broken vow shifts it another.
 
 ### Open — flagged, not resolved
 
-- **Edition split.** The ingested rulebook is **SRD 5.1**, but `class_spellcasting_progression`
-  and the live character sheets both cite **SRD 5.2.1 (2025)**. Divine Intervention differs
-  between them, and §5's cap cites the 5.1 version. The cap's *number* is conservative
-  either way; its *justification* needs Sam to say which edition is canon. `lib/devotion.ts`
-  is unaffected — it never computes a slot.
-- **Mission storage.** `Mission` is modelled in the lib but has no column yet. It wants
-  either a `missions` jsonb on `character_faith` or a `faith_missions` table. **Not applied,
-  not decided.**
-- **The deity roster** still needs tenets. See §7 — Roll20 is not reachable from a Claude
-  session, so the text has to come from Sam.
+- **Edition: SRD 5.2.1 (2025) is canon** (Sam, 2026-10-01). That matches
+  `class_spellcasting_progression` and every live sheet. **But 5.2.1 is not ingested** —
+  `campaign_chunks` holds SRD 5.1 only, so no 5.2.1 rule can be quoted or checked from a
+  session. §5's cap has been restated to stand on its own terms rather than on a citation
+  that cannot be verified here. **Ingesting SRD 5.2.1 is the real fix and is open work.**
+- **Mission storage — DECIDED and APPLIED** (2026-10-01): `character_faith.missions` jsonb,
+  plus `character_faith.last_prayer_day` integer for the observance. A jsonb column rather
+  than a `faith_missions` table because missions are few, always read with the faith row,
+  and never queried across characters. Promote to a table if they ever need searching.
+- **The `pool` flip is BLOCKED by a CHECK constraint.** `class_spellcasting_progression.pool`
+  allows only `'class_list'` and `'spellbook'`. Adding `'deity_granted'` means dropping and
+  recreating the constraint — a destructive DDL, so it waits for Sam. See §14.
+- **Samson's live sheet is deliberately untouched.** `sheet_spellcasting.pool` stays
+  `"class_list"` until the grant route exists. Marking him deity-granted with nothing on the
+  other end to grant anything is the shape of a silent failure, on a live character.
+- **The deity roster**: Lathander is seeded (2026-10-01). The other seven wait on Roll20
+  text, which is not reachable from a Claude session.
+
+---
+
+## 14. Applied to the database so far
+
+| When | What | How |
+|---|---|---|
+| 2026-10-01 | `deities`, `character_faith`, `prayers`, `faith_events` | migration `create_prayer_module_tables` |
+| 2026-10-01 | `character_faith.last_prayer_day`, `character_faith.missions` | migration `add_prayer_observance_and_missions` |
+| 2026-10-01 | Lathander seeded — 1 row in `deities`, `reach='dawn_hour'`, hostile to Lolth | insert |
+
+**Still to apply, needs Sam's go** — the `pool` flip requires widening a CHECK:
+
+```sql
+alter table public.class_spellcasting_progression
+  drop constraint class_spellcasting_progression_pool_check;
+alter table public.class_spellcasting_progression
+  add constraint class_spellcasting_progression_pool_check
+  check (pool in ('class_list','spellbook','deity_granted'));
+update public.class_spellcasting_progression
+   set pool = 'deity_granted'
+ where class in ('Cleric','Warlock');
+```
+
+It is a *widening* — it adds an allowed value and rejects nothing currently valid — but it
+is still a drop, and drops wait for Sam.

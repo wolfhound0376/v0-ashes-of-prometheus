@@ -12,6 +12,7 @@ import {
   grantDecision,
   missionGate,
   observanceState,
+  owedSpellLevelFromSlots,
   patronAlwaysAnswers,
   selectGrantedSpells,
   type GrantInput,
@@ -269,5 +270,48 @@ describe("the warlock commune — the inversion", () => {
 
   it("still pays a boon to a devout warlock even though the patron is grim", () => {
     expect(commune({ roll: 1, observance: "current", standing: { attention: 80, accord: 60, debt: 0 } }).outcome).toBe("boon")
+  })
+})
+
+describe("what the class table owes — both real slot shapes", () => {
+  // Verified against class_spellcasting_progression on 2026-10-01,
+  // source "SRD 5.2.1 (2025)" (cleric p.36, warlock p.71).
+
+  it("reads a cleric's highest slot level from the level map", () => {
+    expect(owedSpellLevelFromSlots({ "1": 2 })).toBe(1)
+    expect(owedSpellLevelFromSlots({ "1": 4, "2": 2 })).toBe(2)
+    expect(owedSpellLevelFromSlots({ "1": 4, "2": 3, "3": 2 })).toBe(3)
+  })
+
+  it("reads a warlock's pact level instead of the key, which is the trap", () => {
+    // max(keys) on a pact object would read "count" and "level" as keys and
+    // return garbage. The warlock's slots are ALL at one level.
+    expect(owedSpellLevelFromSlots({ pact: true, count: 1, level: 1 })).toBe(1)
+    expect(owedSpellLevelFromSlots({ pact: true, count: 2, level: 2 })).toBe(2)
+    expect(owedSpellLevelFromSlots({ pact: true, count: 2, level: 3 })).toBe(3)
+  })
+
+  it("ignores a level whose slot count is zero", () => {
+    expect(owedSpellLevelFromSlots({ "1": 4, "2": 0 })).toBe(1)
+  })
+
+  it("returns 0 for junk rather than NaN", () => {
+    for (const junk of [null, undefined, 0, "", "slots", [], {}]) {
+      expect(owedSpellLevelFromSlots(junk)).toBe(0)
+    }
+  })
+
+  it("drives the grant off the real cleric rows", () => {
+    // Samson at level 3 is owed level 2 spells; if he has only been granted
+    // level 1 and has kept the observance, the god gives him the next step.
+    const owed = owedSpellLevelFromSlots({ "1": 4, "2": 2 })
+    const d = grantDecision({
+      characterClass: "cleric",
+      owedSpellLevel: owed,
+      grantedSpellLevel: 1,
+      standing: BLANK,
+      observance: "current",
+    })
+    expect(d.grantSpellLevel).toBe(2)
   })
 })
