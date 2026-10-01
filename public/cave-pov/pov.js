@@ -35,7 +35,10 @@ const LIGHTS=[]; for(let y=0;y<MH;y++) for(let x=0;x<MW;x++) if(MAP[y][x]==="*")
 // =====================================================================================================================
 const PCS={
   fifi:  {name:"Fifi",   cls:"Rogue 1",    hp:8,  ac:13, mods:{str:-1,dex:3,con:0,wis:1}, skin:["#e9c29d","#b68762"], sleeve:"#5d5345", voice:"fifi", bowProf:true, speed:1, sprite:"freia",
-          stealth:7, note:"Dagger · Shortbow (12 arrows) · Sneak Attack 1d6", cards:["dagger","fifiBow","throw","hide","search","dash","dodge","unarmed"], unarmed:{hit:1,flat:1}, arrows:12},
+          // Sam, 9/30: "Clear the text and options but keep the cards 2-8. Card two can have Search. 3. Dash. 4. Throw object.
+          // 5-8 can stay clear. Card 1 should show Dagger / Shortbow." The mouse already does the rest: left = dagger, right =
+          // bow, wheel tap/hold = crouch/hide, 0 = leap back; a thrown-away dagger leaves the left button punching.
+          stealth:7, note:"Dagger · Shortbow (12 arrows) · Sneak Attack 1d6", cards:["daggerBow","search","dash","throwObj"], slots:8, bare:true, unarmed:{hit:1,flat:1}, arrows:12},
   kenta: {name:"Kenta",  cls:"Sorcerer 1", hp:8,  ac:10, mods:{str:1,dex:0,con:2,wis:-1}, skin:["#dcae86","#a67a57"], sleeve:"#4c4a52", voice:"kenta", bowProf:false, speed:0.72, sprite:"kenta", sorcerer:true,
           note:"4 cantrips · 2 first-level slots", cards:["rayOfFrost","shockingGrasp","chillTouch","minorIllusion","fogCloud","innate","dash","dodge","unarmed"], unarmed:{hit:3,flat:2}, spell:{hit:5,dc:13,mod:3}},
   samson:{name:"Samson", cls:"Cleric 1",   hp:9,  ac:10, mods:{str:0,dex:2,con:1,wis:3}, skin:["#c99672","#94664a"], sleeve:"#54483a", voice:"samson", bowProf:true, speed:1, sprite:"samson",
@@ -83,6 +86,8 @@ const CARD={
   dash:{name:"Dash",icon:"»",kind:"dash",self:true,sub:"double speed · 6 s"},
   dodge:{name:"Dodge",icon:"⤺",kind:"dodge",self:true,sub:"attacks at disadvantage"},
 };
+// Fifi's card 1 is both weapons (left click dagger, right click bow) and card 4 throws what's in hand — today the dagger.
+CARD.daggerBow={...CARD.dagger,name:"Dagger / Shortbow",both:true}; CARD.throwObj={...CARD.throw,name:"Throw object"};
 // monster saves and details not carried in the build: bestiary rows (Giant Spider SRD 5.1; Hook Horror, Out of the Abyss)
 const PRON={fifi:{his:"her",him:"her"}}; const PR=()=>PRON[PC.voice==='fifi'?'fifi':'x']||{his:"his",him:"him"}; const cap=(s)=>s[0].toUpperCase()+s.slice(1);
 const MSAVE={spider:{wis:0,dex:3,con:1},hook:{wis:1,dex:0,con:2}};
@@ -367,7 +372,9 @@ function hurt(e,dmg,type){ if(e.dead) return; e.hp-=dmg; e.flash=.25; e.state="h
 // =====================================================================================================================
 // THE CARDS IN USE
 // =====================================================================================================================
-function pressCard(i){ if(i>=CARDS.length) return; const c=CARDS[i]; if(c.self&&!c.hand) { useCard(i); return; } if(c.self){ useCard(i); return; } P.sel=i; renderBar(); SND.tap(); }
+function pressCard(i){ if(i>=CARDS.length) return; const c=CARDS[i]; if(c.self&&!c.hand) { useCard(i); return; } if(c.self){ useCard(i); return; }
+  if(c.kind==="thrown"){ runCard(c); renderBar(); return; } // a throw goes on the key press; the lit card and left button stay the dagger
+  P.sel=i; renderBar(); SND.tap(); }
 function actCool(c){ const base=c.kind==="melee"?.85:c.self?.6:1.2; return base*((PC.sorcerer&&/spell|decoy|fog|sleep/.test(c.kind))?1.25:1); } // sorcerer spells 25% slower (Sam, camp ruling)
 function attackRoll(c,e,ranged){ // advantage and disadvantage from what is going on right now
   let adv=false, dis=false, why=[];
@@ -959,6 +966,13 @@ Promise.all([loadImg(A.rig.plate),loadImg(A.rig.arrow),A.rig.dagger?loadImg(A.ri
 // 640x360 view as hard pixels (FX_PX = 1, alpha threshold 110, four-colour snap).
 const MR={ELBOW:{x:620,y:600},FOREARM:240,REST:{dx:0,dy:0,a1:-28,a2:-20,sc:1},
   CLIPS:{slash_d:{cock:{dx:16,dy:-6,a1:22,a2:4,sc:.97},hit:{dx:-18,dy:10,a1:-78,a2:4,sc:1.05},path:{s:[770,470],e:[290,470],lift:150}},
+         // Sam, 9/30: "the slash from medially go lateral" — a backhand. The hand cocks across the body to the left, then
+         // sweeps out to the right along the same bowed arc. (slash_d above is the rig's own inward cut, kept as ported.)
+         slash_out:{cock:{dx:16,dy:-6,a1:22,a2:4,sc:.97},hit:{dx:-18,dy:10,a1:-78,a2:4,sc:1.05},path:{s:[300,478],e:[790,452],lift:150}},
+         // Sam, 9/30: the thrust "should just go a little in front of the character and come from the center POV; similar to
+         // what we had previously" — the old pixel thrust slid in toward the middle and shrank as the blade went away. So:
+         // pull back toward the viewer (bigger), then a short drive in to just under the crosshair (smaller).
+         thrust_c:{cock:{dx:0,dy:0,a1:0,a2:0,sc:1.05},hit:{dx:0,dy:0,a1:0,a2:0,sc:.8},path:{s:[528,436],e:[425,398],lift:6}},
          jab:{cock:{dx:-18,dy:13,a1:-38,a2:-28,sc:.97},hit:{dx:27,dy:-29,a1:-16,a2:-8,sc:1.15},path:{s:[484,475],e:[560,185],lift:14}},
          thrust:{cock:{dx:-30,dy:22,a1:-46,a2:-36,sc:.94},hit:{dx:42,dy:-46,a1:-12,a2:-6,sc:1.22},path:{s:[477,504],e:[575,127],lift:20}}},
   TIMING:{windup:220,strike:90,recover:300},WEIGHT:{light:.78,mid:1,heavy:1.36},
@@ -990,19 +1004,32 @@ function arcAt(clip,t,tip,w="light",samples=40){ const d=mrTiming(w), T=d.windup
 function mrRibbon(pts,maxW){ const L=[],R=[],n=pts.length; for(let i=0;i<n;i++){ const u=i/(n-1), w=maxW*Math.pow(Math.sin(Math.PI*u),.7), p0=pts[Math.max(0,i-1)], p1=pts[Math.min(n-1,i+1)];
   const dx=p1[0]-p0[0], dy=p1[1]-p0[1], m=Math.hypot(dx,dy)||1, nx=-dy/m*w/2, ny=dx/m*w/2; L.push([pts[i][0]+nx,pts[i][1]+ny]); R.push([pts[i][0]-nx,pts[i][1]-ny]); } return L.concat(R.reverse()); }
 // which clip the current act plays: a quick click slashes, the held thrust drives out along the blade
-function daggerClip(){ const a=P.act; if(!a||P.dead||a.hand!=="dagger") return null; if(a.kind==="swing") return "slash_d"; if(a.kind==="thrust2") return "thrust"; return null; }
+function daggerClip(){ const a=P.act; if(!a||P.dead||a.hand!=="dagger") return null; if(a.kind==="swing") return "slash_out"; if(a.kind==="thrust2") return "thrust_c"; return null; }
 // stage (900x520) -> a surface of height H: scaled to the view, smaller and lower than the sandbox (doc §4)
 const MR_K=.58, MR_DROP=0; // MR_K: fraction of the sandbox scale; MR_DROP: stage units lower
 function mrMap(x,y,W,H){ const k=H/520; return [W/2+(x-450)*k, H/2+(y-260+MR_DROP)*k]; }
-let MRF=null;
-function drawDaggerArc(clip,t){ const tip=[MR.DAG.tipOffset[0]*MR.DAG.scale*MR_K, MR.DAG.tipOffset[1]*MR.DAG.scale*MR_K]; const arc=arcAt(clip,t,tip); if(!arc) return;
-  if(!MRF){ MRF=document.createElement("canvas"); MRF.width=RW; MRF.height=RH; } const o=MRF.getContext("2d"); o.setTransform(1,0,0,1,0,0); o.clearRect(0,0,RW,RH);
-  const sx=(P.swayX*.35*.1), sy=(P.swayY*.35*.1);
-  for(const B of arc.bands){ o.beginPath(); B.pts.forEach(([x,y],i)=>{ const [X,Y]=mrMap(x,y,RW,RH); i?o.lineTo(X+sx,Y+sy):o.moveTo(X+sx,Y+sy); }); o.closePath(); o.fillStyle=B.c; o.fill(); }
-  const im=o.getImageData(0,0,RW,RH), d8=im.data;
-  for(let i=0;i<d8.length;i+=4){ if(d8[i+3]<110){ d8[i+3]=0; continue; } d8[i+3]=255; let best=0,bd=1e9; for(let c=0;c<4;c++){ const dr=d8[i]-MR.RGB[c][0], dg=d8[i+1]-MR.RGB[c][1], db=d8[i+2]-MR.RGB[c][2], e=dr*dr+dg*dg+db*db; if(e<bd){ bd=e; best=c; } }
-    d8[i]=MR.RGB[best][0]; d8[i+1]=MR.RGB[best][1]; d8[i+2]=MR.RGB[best][2]; }
-  o.putImageData(im,0,0); ctx.save(); ctx.globalAlpha=arc.alpha; ctx.globalCompositeOperation="source-over"; ctx.drawImage(MRF,0,0); ctx.restore(); }
+// The strike's trail, the old pixel look (Sam, 9/30: "more like it looked before. Street Fighter type of arc"): a warm
+// crescent stamped as square pixels on the 320x180 first-person canvas (so each is 2x2 in the view), three bands —
+// cream on the outside edge, gold, then a faint orange inside — fat through the middle of the sweep, dotted at the ends.
+// It follows the painted dagger's real tip path. The thrust gets the old speed lines toward the centre instead.
+const SMEAR=[{c:[255,200,120],a:.3,off:14,w:5},{c:[255,226,160],a:.6,off:7,w:7},{c:[255,248,226],a:.95,off:0,w:9}];
+function arcTrail(clip,t,tip,w="light",samples=90){ const d=mrTiming(w), T=d.windup+d.strike+d.recover, a=d.windup/T, b=(d.windup+d.strike)/T, tt=Math.max(0,Math.min(1,t)); if(tt<a) return null;
+  let head,tail,alpha; if(tt<=b){ const p=(tt-a)/(b-a); head=p; tail=Math.max(0,p-.7); alpha=1; } else { const q=(tt-b)/(1-b); head=1; tail=Math.min(1,.3+q*.9); alpha=Math.max(0,1-q/.45); }
+  if(alpha<=0||head-tail<.03) return null; const pts=[];
+  for(let i=0;i<=samples;i++){ const u=tail+(head-tail)*(i/samples), r=rigAt(clip,a+(b-a)*u,w); pts.push([r.x+tip[0]*r.scale, r.y+tip[1]*r.scale]); }
+  return {alpha,pts,strike:tt<=b}; }
+function drawDaggerArc(clip,t){ const tip=[MR.DAG.tipOffset[0]*MR.DAG.scale*MR_K, MR.DAG.tipOffset[1]*MR.DAG.scale*MR_K];
+  const fade=(P.act&&P.act.stopT>0)?1:.85; fpg.setTransform(1,0,0,1,0,0); fpg.clearRect(0,0,FW,FH); const sx=P.swayX*.0175, sy=P.swayY*.0175;
+  if(clip==="thrust_c"){ const d=mrTiming("light"), T=d.windup+d.strike+d.recover, a=d.windup/T, tt=Math.max(0,Math.min(1,t)); if(tt<a) return;
+    const k=Math.max(0,1-(tt-a)/(1-a)/.6)*fade; if(k<=0) return; fpg.fillStyle=`rgba(255,240,210,${(.7*k).toFixed(2)})`; // old THRUST "lines"
+    for(let i=0;i<10;i++){ const an=i*.63+1.3, r0=70+(i%3)*12, r1=r0+22+(i%2)*12; for(let q=r0;q<r1;q+=2) fpg.fillRect(Math.round(FW/2+Math.cos(an)*q+sx),Math.round(FH/2+Math.sin(an)*q+sy),1,1); } }
+  else { const tr=arcTrail(clip,t,tip); if(!tr) return; const pts=tr.pts.map(([x,y])=>mrMap(x,y,FW,FH)), n=pts.length;
+    for(const B of SMEAR){ fpg.fillStyle=`rgba(${B.c[0]},${B.c[1]},${B.c[2]},${(B.a*fade*tr.alpha).toFixed(3)})`;
+      for(let i=0;i<n;i++){ const u=i/(n-1), p0=pts[Math.max(0,i-1)], p1=pts[Math.min(n-1,i+1)], tx=p1[0]-p0[0], ty=p1[1]-p0[1], m=Math.hypot(tx,ty)||1;
+        let nx=-ty/m, ny=tx/m; if(ny>0||(ny===0&&nx<0)){ nx=-nx; ny=-ny; } // the outside of the bow (upward)
+        const prof=Math.sin(Math.PI*Math.pow(u,.8)), wd=Math.max(1,Math.round(prof*B.w)), off=B.off*prof; // tapers to dots at both ends
+        fpg.fillRect(Math.round(pts[i][0]-nx*off-wd/2+sx),Math.round(pts[i][1]-ny*off-wd/2+sy),wd,wd); } } }
+  ctx.save(); ctx.imageSmoothingEnabled=false; ctx.globalCompositeOperation="source-over"; ctx.drawImage(FPB,0,0,FW,FH,0,0,RW,RH); ctx.restore(); }
 function drawDaggerHUD(W,H,clip,t){ const r=rigAt(clip,t); const [X,Y]=mrMap(r.x,r.y,W,H); const s=MR.DAG.scale*MR_K*r.scale*(H/520);
   const sx=P.swayX*.35*.1*(W/RW), sy=P.swayY*.35*.1*(W/RW);
   const [lr,lg,lb]=light(P.x,P.y,.6); const br=Math.min(1,(lr+lg+lb)/3*.75+.32);
@@ -1090,10 +1117,13 @@ function drawHUD(){ const g=ctx; g.textAlign="left";
 
 // ---- the hotbar (HTML, so the text stays crisp)
 function renderBar(){ const bar=$("bar"); bar.innerHTML=CARDS.map((c,i)=>{ let sub=c.sub; if(c.key==="unarmed") sub=`+${PC.unarmed.hit} · ${PC.unarmed.flat}`;
-    let off=false; if(c.slot&&P.slots<=0) off=true; if(c.uses&&(P.uses[c.key]??c.uses)<=0) off=true; if(c.hand==="dagger"&&c.kind!=="hide"&&!P.dagger) off=true;
+    let off=false; if(c.slot&&P.slots<=0) off=true; if(c.uses&&(P.uses[c.key]??c.uses)<=0) off=true; if(c.hand==="dagger"&&c.kind!=="hide"&&!c.both&&!P.dagger) off=true;
     if(c.slot) sub=`${sub} · ${P.slots}/2`; if(c.ammo) { sub=`${P.arrows} arrows · 1d6+3`; if(P.arrows<=0) off=true; } if(c.uses) sub=`${sub.split(" · ")[0]} · ${P.uses[c.key]??c.uses} left`;
-    return `<button class="card ${i===P.sel?"on":""} ${off?"off":""}" data-i="${i}" title="${c.name}"><b>${i+1}</b><i>${c.icon}</i><span>${c.name}</span><small>${sub}</small><div class="cd"></div></button>`; }).join("");
-  bar.querySelectorAll(".card").forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); pressCard(+b.dataset.i); cv.focus(); }); }
+    if(PC.bare) sub=""; // Sam, 9/30: names only
+    return `<button class="card ${i===P.sel?"on":""} ${off?"off":""}" data-i="${i}" title="${c.name}"><b>${i+1}</b><i>${c.icon}</i><span>${c.name}</span><small>${sub}</small><div class="cd"></div></button>`; }).join("")
+    + Array.from({length:Math.max(0,(PC.slots||0)-CARDS.length)},(_,j)=>`<div class="card empty" aria-hidden="true"><b>${CARDS.length+j+1}</b></div>`).join(""); // open slots, kept for later
+  bar.classList.toggle("bare",!!PC.bare); bar.style.gridTemplateColumns=`repeat(${Math.max(CARDS.length,PC.slots||0)},1fr)`;
+  bar.querySelectorAll("button.card").forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); pressCard(+b.dataset.i); cv.focus(); }); }
 function updateBarCooldown(){ const bo=P.drawing||(P.act&&P.act.kind==="loose")?".18":"1"; if($("bar").style.opacity!==bo) $("bar").style.opacity=bo; const els=$("bar").querySelectorAll(".cd"); const k=P.cool>0?Math.min(1,P.cool/1.5):0; els.forEach(el=>el.style.height=`${k*100}%`); }
 function prompt(){ let s=""; if(P.dead) s=""; else if(BLD.open) s="BUILDER — the ring on the floor is where things go";
   else if(P.restrained&&P.netted) s="E — get free of the net (Strength DC 10)"; else if(P.restrained) s="E — tear free of the web (Strength DC 12)";

@@ -50,11 +50,20 @@ assets, chests, traps, lore."*
 ## 1c. First-person dagger (Sam, 2026-09-30: "replace the dagger animation like we did for the bow and arrow")
 
 The painted dagger and `lib/weapon-rig.ts` from `feat/bow-draw-rig` (`claude_Melee_Attack_Rig.md`), ported into
-`pov.js`. Quick click = `slash_d` (the hand slides along a bowed arc, never rotating); hold = `thrust` along the blade's
-axis with the lunge and grunt. Light timing (windup 172 ms, strike 90, recover 234); the attack roll lands on the
-strike frame. Dagger on the full-resolution HUD like the bow; the blue arc trail drawn into the 640×360 view as hard
-pixels (FX_PX = 1). The painted hand is Freía's (red nails) — every character uses it until each has their own
-capture. Fists keep the pixel animation.
+`pov.js`. Light timing (windup 172 ms, strike 90, recover 234); the attack roll lands on the strike frame. Dagger on the
+full-resolution HUD like the bow; never rotates. The painted hand is Freía's (red nails) — every character uses it until
+each has their own capture. Fists keep the pixel animation.
+
+- **Quick click = `slash_out`** (Sam, 9/30: "the slash from medially go lateral"): a backhand — the hand cocks across the
+  body to the left and sweeps out to the right along a bowed arc. `slash_d` (the rig's inward cut) stays in the table
+  unused.
+- **Hold = `thrust_c`** (Sam, 9/30: "just go a little in front of the character and come from the center POV; similar
+  to what we had previously"): a short draw-back, then a drive in toward the middle, the hand shrinking to 0.8 as the
+  blade goes away; the tip lands just under the crosshair. The rig's long `thrust` clip stays unused.
+- **The trail** (Sam, 9/30: "more like it looked before. Street Fighter type of arc"): the old pixel crescent is back —
+  square pixels on the 320×180 canvas, cream outer edge, gold, faint orange inside, fat through the middle and dotted at
+  the ends — riding the painted dagger's real tip path. The thrust gets the old radiating speed lines instead. The
+  rig's blue ribbon (`arcAt`, `MR.BANDS`) is no longer drawn.
 
 ## 2. Controls
 
@@ -63,6 +72,10 @@ capture. Fists keep the pixel animation.
 - **Left click** strikes with the lit card; **hold left** is the class power (Fifi: dagger thrust and lunge with a grunt).
 - **Right click** draws the bow (hold), release looses.
 - **Wheel tap** crouches / stands; **wheel hold** hides (rogues).
+- **Fifi's bar** (Sam, 9/30: "Clear the text and options but keep the cards 2-8"): names only, no sub-lines —
+  1 Dagger / Shortbow (left and right click), 2 Search, 3 Dash, 4 Throw object (throws on the key press; today that is
+  the dagger, and left click punches until it is picked up), 5–8 empty slots kept for later. Hide is the wheel hold,
+  Dodge is 0, Unarmed is automatic. The other three characters keep their spell bars.
 - **1–9** action cards · **Space** jumps · **0** leaps back (rogue, ranger, fighter) · **E** forage / open / pull arrows · **M** map.
 
 ## 3. Rules — SRD vs house rules (flagged)
