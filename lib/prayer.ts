@@ -71,6 +71,20 @@ export const d20 = (rng: Rng) => 1 + Math.floor(rng() * 20)
 
 export type Posture = "aloud" | "murmured" | "silent"
 
+/**
+ * Who can see that a prayer happened at all (Sam, 2026-10-01: "private unless
+ * spoken aloud"). This is the same shape as the journal ruling — the act is
+ * the petitioner's own until they make it audible. `silent` and `murmured`
+ * are private to the petitioner and the DM; only `aloud` is party-visible.
+ *
+ * NOTE this is about the PRAYER, not the ANSWER. A Hand that turns a blade in
+ * front of four witnesses is visible because its EFFECT is; what stays private
+ * is that Samson asked, and what he asked for.
+ */
+export function prayerVisibility(posture: Posture): "private" | "party" {
+  return posture === "aloud" ? "party" : "private"
+}
+
 export type OfferingKind = "none" | "costly" | "irreplaceable"
 
 /**
@@ -118,6 +132,12 @@ export interface Deity {
   reach?: ReachRuleKey
   /** Slugs this god is canonically set against. Drives the wrong listener. */
   enemies?: string[]
+  /**
+   * What this god is a god OF, as lowercase terms. Used by lib/devotion.ts to
+   * weight which spells get granted, so a Lathanderite's list reads as light
+   * and dawn rather than as a random draw from the cleric list.
+   */
+  portfolio?: string[]
 }
 
 export interface PrayerContext {
@@ -159,6 +179,19 @@ export const TIER_SILENCE: Tier = 0
 export const TIER_SIGN: Tier = 1
 export const TIER_WITNESS: Tier = 2
 export const TIER_HAND: Tier = 3
+
+/**
+ * What a Hand is allowed to be (Sam, 2026-10-01). A re-roll of one die already
+ * rolled, one ally's death save, or one specific thing warded off — and Sam
+ * ruled explicitly that a Hand MAY save a character from death. It is still
+ * never a spell, never healing, and never a bonus to AC, attack or saves: the
+ * god steadies a hand or turns a blade, it does not cast cure wounds.
+ */
+export const HAND_EFFECTS = ["reroll_one_die", "ally_death_save", "ward_one_thing"] as const
+export type HandEffect = (typeof HAND_EFFECTS)[number]
+
+/** Sam, 2026-10-01: yes, a Hand can pull someone back from dying. */
+export const HAND_CAN_SAVE_FROM_DEATH = true
 /**
  * Tier 4, "An Answer", IS Divine Intervention (SRD 5.1). This module never
  * returns it and must never learn how: at cleric 10 the character already owns
@@ -454,6 +487,8 @@ export interface PrayerResult {
   terms: ResponseTerms
   /** Debt this answer adds to the ledger. Never negative. */
   debtDelta: number
+  /** "party" only when spoken aloud (Sam, 2026-10-01). Otherwise private. */
+  visibility: "private" | "party"
   /** 0 when nothing hostile was listening and no d20 was rolled. */
   wrongListenerBand: number
   wrongListenerRoll: number | null
@@ -493,6 +528,7 @@ export function resolvePrayer(input: PrayerInput, rng: Rng): PrayerResult {
     tierName: TIER_NAMES[tier],
     terms,
     debtDelta: debtForTier(tier),
+    visibility: prayerVisibility(input.posture),
     wrongListenerBand: band,
     wrongListenerRoll,
     overheard,

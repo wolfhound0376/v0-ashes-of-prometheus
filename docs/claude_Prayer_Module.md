@@ -382,7 +382,90 @@ rather than discovered later. The sheet shows the `state` word, served by a rout
 1. ~~Samson's god~~ — **answered: Lathander** (§8).
 2. ~~The **Reach** rule~~ — **answered: keep as written** (Sam, 2026-10-01).
 3. Is the roster the proposed eight, or does Sam want to pull tenets from Roll20 first?
-4. Does a Tier 3 "Hand" ever get to save a character from death, or is that a line?
-5. Should other players *see* that Samson prayed, or only hear what he said aloud?
+4. ~~Does a Tier 3 "Hand" ever save a character from death?~~ — **answered: yes** (Sam, 2026-10-01).
+5. ~~Is a prayer private?~~ — **answered: private unless spoken aloud** (Sam, 2026-10-01).
+6. Should other players *see* that Samson prayed, or only hear what he said aloud?
    (The journal module's ruling was "the owner isn't told when someone reads it" — the
    parallel ruling here would be that prayer is private unless spoken aloud.)
+
+---
+
+## 13. Devotion, granted spells, missions, and the warlock commune
+
+Sam's ruling, 2026-10-01, verbatim:
+
+> "prayers are required regularly for Cleric god's to bestow up level spells. Getting them
+> at level 2 and on isn't automatic and isn't chosen by the player. Their God may also give
+> missions to unlock the next level spells or a certain domain. Regarding warlocks, praying
+> allows them to commune with their patron to determine if they will receive a boon or
+> debuff/curse. They are required to check in regularly. They're spell progression is
+> similar to clerics and not chosen."
+
+Code of record: `lib/devotion.ts` + `lib/devotion.test.ts` (33 tests).
+
+### Why this is a separate clock from §5
+
+The answer roll is rare on purpose — a level 1 cleric sees silence four times in five, and
+that is the design. If spell progression rode on *that* roll, Samson could level three
+times, roll badly each time, and reach level 4 with level 1 spells through no decision of
+his own. That is not a demanding god; it is a slot machine deciding whether he has a
+character sheet.
+
+So:
+
+| Module | What it decides | How often it pays | Driven by |
+|---|---|---|---|
+| `lib/prayer.ts` | The **answer** — signs, witness, a hand | Rarely | Luck, conduct, cost |
+| `lib/devotion.ts` | The **grant** — spells, domains | Reliably | Keeping the cadence |
+
+The grant rides on the **observance**, which is entirely in the player's control. That is
+the difference between a demand and a punishment.
+
+### The four rails
+
+1. **Slots always advance by the book.** Spell slots are class maths and are never
+   withheld. A lapsed cleric can still upcast what he has. He is never non-functional.
+2. **Nothing is ever revoked.** A lapse stops you *gaining*; it never takes away a spell
+   already granted. `grantDecision` can only add — asserted by test.
+3. **The god chooses, not the player** (Sam's ruling). The pick is weighted by the deity's
+   portfolio, so a Lathanderite's list reads as light and dawn rather than a random draw.
+   The live sheet already has the hook: `sheet_spellcasting.pool`, currently `"class_list"`,
+   becomes `"deity_granted"`. **No migration needed for that part — the field exists.**
+4. **Missions gate the exceptional, never the ordinary.** A mission can hold back a new
+   *domain*, or a spell level that runs *ahead* of the class table. It can never gate
+   progression a character is already owed by levelling. Asserted by test.
+
+### Observance (homebrew — cadence numbers invented)
+
+| State | When |
+|---|---|
+| `current` | Prayed within 7 game days |
+| `due` | 7–10 days — still grants, but the sheet says the clock is running |
+| `lapsed` | Past 10 days — new spell levels stop arriving until he prays again |
+
+A character who has **never** prayed is `due`, not `lapsed`. You cannot fall behind on an
+observance nobody told you about.
+
+### The warlock inversion
+
+The best idea in Sam's message, and it falls straight out of the design:
+
+> **A cleric's bad outcome is silence. A warlock's bad outcome is attention.**
+
+A patron *always* answers — that is what a pact is. Skipping the check-in does not get a
+warlock ignored, it gets them noticed. `communeOutcome` returns `boon` / `indifference` /
+`displeasure` / `curse` and never silence; a lapsed observance shifts the result one step
+worse, a broken vow shifts it another.
+
+### Open — flagged, not resolved
+
+- **Edition split.** The ingested rulebook is **SRD 5.1**, but `class_spellcasting_progression`
+  and the live character sheets both cite **SRD 5.2.1 (2025)**. Divine Intervention differs
+  between them, and §5's cap cites the 5.1 version. The cap's *number* is conservative
+  either way; its *justification* needs Sam to say which edition is canon. `lib/devotion.ts`
+  is unaffected — it never computes a slot.
+- **Mission storage.** `Mission` is modelled in the lib but has no column yet. It wants
+  either a `missions` jsonb on `character_faith` or a `faith_missions` table. **Not applied,
+  not decided.**
+- **The deity roster** still needs tenets. See §7 — Roll20 is not reachable from a Claude
+  session, so the text has to come from Sam.
