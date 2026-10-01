@@ -22,10 +22,7 @@
 // tell you whether the die showed a 1.
 //
 // WHAT IS DELIBERATELY NOT HERE:
-//   * Runes. lib/alchemy-bench.ts already does their arithmetic, but the
-//     eligibility gate (arcane only, one mark per school, marks are found)
-//     is the next piece of the spec and a rune accepted here before that gate
-//     exists would be a rune anyone could claim. Sending one is a 400.
+//   * (Runes are wired as of 2026-10-01: gate in lib/alchemy-runes.ts.)
 //   * The camp action budget. lib/camp.ts already knows `brew` spends an
 //     action; nothing wires it to this route yet.
 //
@@ -35,10 +32,11 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { benchProficient } from "@/lib/alchemy-pack"
 import { isPrep } from "@/lib/extraction"
+import { canInscribe, isRuneSchool, RUNE_MATERIALS, type KnownRune } from "@/lib/alchemy-runes"
 import { catalogRow, plainHeld, takeOne, type PackRow } from "@/lib/alchemy-pack-ops"
 import {
   brewAtBench, MIN_INGREDIENTS, MAX_INGREDIENTS,
-  type BenchIngredient, type BaseLiquid, type RecipeReliability,
+  type BenchIngredient, type BaseLiquid, type RecipeReliability, type RuneSchool,
 } from "@/lib/alchemy-bench"
 
 export const dynamic = "force-dynamic"
@@ -102,12 +100,10 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
-  if (body.rune) {
-    return NextResponse.json(
-      { error: "runes are not wired yet — the mark gate is the next piece", reason: "runes_not_wired" },
-      { status: 400 },
-    )
+  if (body.rune !== undefined && body.rune !== null && !isRuneSchool(body.rune)) {
+    return NextResponse.json({ error: "rune must be one of the eight schools" }, { status: 400 })
   }
+  const rune: RuneSchool | null = isRuneSchool(body.rune) ? body.rune : null
 
   const BASES: BaseLiquid[] = ["water", "blessed-water", "holy-water"]
   if (body.base !== undefined && !BASES.includes(body.base)) {
@@ -120,7 +116,7 @@ export async function POST(req: NextRequest) {
   // Never .single() on a query that might match zero rows — AGENTS.md §8.
   const { data: character } = await db
     .from("characters")
-    .select("id, name, sheet_proficiencies")
+    .select("id, name, class, sheet_proficiencies, sheet_skill_proficiencies")
     .eq("id", characterId)
     .maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
@@ -213,6 +209,28 @@ export async function POST(req: NextRequest) {
     baseRow = held[0]
   }
 
+  // A rune: the mark must be known, the brewer arcane (or trained in Arcana
+  // with a TAUGHT mark), and one rune material in the pack. One rune, one
+  // material, used up whatever the outcome — a natural 1 takes the rune too.
+  let runeMaterial: PackRow | null = null
+  if (rune) {
+    const { data: marks } = await db
+      .from("character_known_runes").select("school, learned_via").eq("character_id", characterId)
+    const mats: PackRow[] = []
+    for (const slug of RUNE_MATERIALS) {
+      const item = await catalogRow(db, slug)
+      if (item) mats.push(...(await plainHeld(db, characterId, item)))
+    }
+    const gate = canInscribe(
+      character as { name: string; class?: string | null; sheet_skill_proficiencies?: unknown },
+      (marks ?? []) as KnownRune[],
+      rune,
+      mats.reduce((n, r) => n + (r.quantity ?? 1), 0),
+    )
+    if (!gate.ok) return NextResponse.json({ error: gate.reason, reason: "cannot_inscribe" }, { status: 422 })
+    runeMaterial = mats[0]
+  }
+
   const ingredients: BenchIngredient[] = slugs.map((slug) => {
     const row = byslug.get(slug)!
     const held = holdingOf(row.id as string, row.name as string)
@@ -236,6 +254,7 @@ export async function POST(req: NextRequest) {
     proficient: benchProficient(character.sheet_proficiencies),
     recipe,
     base: body.base,
+    rune,
   })
 
   if (!result.ok) {
@@ -293,7 +312,7 @@ export async function POST(req: NextRequest) {
           effects: result.effects,
           potency: result.potency,
           impurity: result.impurity,
-          rune: null,
+          rune,
           base: body.base ?? "water",
           recipe: recipe?.slug ?? null,
           brewed_by: characterId,
@@ -312,6 +331,11 @@ export async function POST(req: NextRequest) {
       const left = (from.quantity ?? 1) - 1
       if (left <= 0) await db.from("inventory_items").delete().eq("id", from.id)
       else await db.from("inventory_items").update({ quantity: left }).eq("id", from.id)
+    }
+
+    if (runeMaterial) {
+      const err = await takeOne(db, runeMaterial)
+      if (err) return NextResponse.json({ error: err }, { status: 500 })
     }
 
     if (baseRow) {

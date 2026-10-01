@@ -40,6 +40,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { drinkBrew, type Dose } from "@/lib/drink-brew"
 import { addCondition, normalizeConditions } from "@/lib/conditions"
 import { normaliseExhaustion } from "@/lib/exhaustion"
+import { RUNE_RIDER, isRuneSchool } from "@/lib/alchemy-runes"
 
 export const dynamic = "force-dynamic"
 
@@ -183,6 +184,11 @@ export async function POST(req: NextRequest) {
       .map((e) => (e as { condition: string }).condition),
   )
   const landing = dose.conditions.filter((c) => (resisted ? !gated.has(c) : true))
+  // The rune's rider is the brewer's work, not an effect of the potion, so a
+  // save never turns it aside (the same reasoning as impurity's rider).
+  const runeSchool = (row.brew as { rune?: unknown } | null)?.rune
+  const runeRider = isRuneSchool(runeSchool) ? RUNE_RIDER[runeSchool] : null
+  if (runeRider) landing.push(runeRider)
 
   let conditions = normalizeConditions(character.conditions)
   for (const c of landing) conditions = addCondition(conditions, c)
