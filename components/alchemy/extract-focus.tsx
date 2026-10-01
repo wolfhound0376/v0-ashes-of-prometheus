@@ -14,13 +14,18 @@
 //
 // The animations draw only approved art: the raw cut-out turning into its
 // approved prepared painting (prepared), the same tinged amber (bruised), or
-// the raw cut-out shuddering, darkening and breaking apart (ruined). When the
-// method films are approved they can play here instead.
+// the raw cut-out shuddering, darkening and breaking apart (ruined).
+//
+// Before that, the method's own film (approved 2026-10-01, lib/alchemy-art
+// methodFilm): the mortar for grinding, the pour for decanting. It plays after
+// the roll and before the result, once per method in the sitting. Cutting and
+// pressing have no film yet and go straight to the reveal.
 
 import { useEffect, useState } from "react"
 import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { cutout, preparedArt } from "@/lib/alchemy-art"
+import { cutout, methodFilm, preparedArt, type BenchFilm } from "@/lib/alchemy-art"
+import { BenchIntro } from "@/components/alchemy/bench-intro"
 import type { Ingredient } from "@/components/alchemy/alchemy-bench"
 
 export type ExtractResult =
@@ -46,7 +51,8 @@ export function ExtractFocus({
   onClose: () => void
 }) {
   const [extra, setExtra] = useState<string[]>([])
-  const [phase, setPhase] = useState<"ask" | "rolling" | "reveal" | "done">("ask")
+  const [phase, setPhase] = useState<"ask" | "rolling" | "film" | "reveal" | "done">("ask")
+  const [films, setFilms] = useState<BenchFilm[]>([])
   const [results, setResults] = useState<ExtractResult[]>([])
   const [shown, setShown] = useState(0)
   const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
@@ -56,7 +62,7 @@ export function ExtractFocus({
 
   // Escape closes, except mid-roll.
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && phase !== "rolling") { e.stopPropagation(); onClose() } }
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && phase !== "rolling" && phase !== "film") { e.stopPropagation(); onClose() } }
     window.addEventListener("keydown", k, true)
     return () => window.removeEventListener("keydown", k, true)
   }, [phase, onClose])
@@ -75,7 +81,15 @@ export function ExtractFocus({
       const r = await onExtract(all.map((i) => i.slug))
       setResults(r)
       setShown(0)
-      setPhase(r.length ? "reveal" : "done")
+      // One film per filmed method among the ingredients that actually went
+      // under the tool (a refused one never touched the mortar).
+      const reel: BenchFilm[] = []
+      for (const res of r) {
+        const f = res.ok ? methodFilm(bySlug.get(res.slug)?.method) : null
+        if (f && !reel.includes(f)) reel.push(f)
+      }
+      setFilms(reel)
+      setPhase(!r.length ? "done" : reel.length ? "film" : "reveal")
     } catch {
       setResults([{ slug: ingredient.slug, ok: false, error: "The bench would not take it." }])
       setPhase("done")
@@ -88,8 +102,20 @@ export function ExtractFocus({
   return (
     <div className="absolute inset-0 z-40 grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label={`Extract ${ingredient.name}`}>
       <style>{FOCUS_CSS}</style>
+      {phase === "film" && films[0] && (
+        <BenchIntro
+          key={films[0].mp4}
+          film={films[0]}
+          label={films[0].label}
+          onDone={() => {
+            const rest = films.slice(1)
+            setFilms(rest)
+            if (!rest.length) setPhase("reveal")
+          }}
+        />
+      )}
       <div className="aop-zoom relative flex w-full max-w-md flex-col items-center gap-3 rounded-sm border border-[#c9a868] bg-[#100c07] p-5 shadow-[0_0_0_3px_rgba(6,5,10,.95),0_0_0_4px_#7a6238,0_0_60px_rgba(226,201,142,.25)]">
-        {phase !== "rolling" && phase !== "reveal" && (
+        {phase !== "rolling" && phase !== "film" && phase !== "reveal" && (
           <button type="button" onClick={onClose} aria-label="Close" className="absolute right-2 top-2 rounded-sm p-1 text-stone-400 hover:text-[#e2c98e]">
             <X className="h-4 w-4" />
           </button>

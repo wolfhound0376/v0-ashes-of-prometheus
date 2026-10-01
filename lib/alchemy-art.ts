@@ -54,6 +54,60 @@ export const BENCH_CRIT_FILM = {
 }
 export type BenchClip = "idle" | "mixing" | "success" | "inert" | "smoke" | "purify"
 
+/** A film the bench plays full-screen (skippable) between a roll and its result. */
+export type BenchFilm = { mp4: string; webm?: string; label: string }
+
+/** The step films (Runway seedance-2, 5 s, from approved start frames). Sam,
+ *  2026-10-01: "I'd like animations showing distilling, grinding (pestle &
+ *  mortar), brewing on a fire and the liquid bubbling, decanting, and the rune
+ *  sigil ... from a top down look with the bottle or flask in the center the
+ *  rune activating and the flask glowing". All five approved on the review
+ *  page the same day ("all approved ... make sure the videos are wired to the
+ *  result of the alchemy step").
+ *
+ *  Each plays AFTER its roll and BEFORE the result, so the film is the step
+ *  happening and the window after it is what came of it. The WebM is the same
+ *  film for browsers without H.264 (silent; the Runway films have no sound). */
+export const BENCH_FILMS = {
+  grind: { mp4: `${STORE}/clip/grind.mp4`, webm: `${STORE}/clip/grind.webm`, label: "Grinding in the mortar" },
+  distill: { mp4: `${STORE}/clip/distill.mp4`, webm: `${STORE}/clip/distill.webm`, label: "The still runs" },
+  brewFire: { mp4: `${STORE}/clip/brew-fire.mp4`, webm: `${STORE}/clip/brew-fire.webm`, label: "Brewing over the fire" },
+  decant: { mp4: `${STORE}/clip/decant.mp4`, webm: `${STORE}/clip/decant.webm`, label: "Decanting" },
+} satisfies Record<string, BenchFilm>
+
+/** The rune films, by school. Only necromancy has one so far; every other
+ *  school keeps the drawn sigil on the vessel (components/alchemy/bench-sigil). */
+export const RUNE_FILMS: Partial<Record<string, BenchFilm>> = {
+  necromancy: { mp4: `${STORE}/clip/sigil-necromancy.mp4`, webm: `${STORE}/clip/sigil-necromancy.webm`, label: "The necromancy rune wakes" },
+}
+
+/** The extraction film for a method, if it has one. Cutting and pressing have
+ *  none yet, so they keep the drawn reveal only. */
+export function methodFilm(method: string | null | undefined): BenchFilm | null {
+  if (method === "grind") return BENCH_FILMS.grind
+  if (method === "decant") return BENCH_FILMS.decant
+  return null
+}
+
+/** The films for one brew, in order: the fire, then (on a flask that took)
+ *  its rune and the pour. A natural 1 is the fire then the failure film. */
+export function brewFilms(outcome: string, rune: string | null): BenchFilm[] {
+  const reel: BenchFilm[] = [BENCH_FILMS.brewFire]
+  if (outcome === "critical_failure") {
+    reel.push({ ...BENCH_CRIT_FILM, label: "The flask fails" })
+  } else if (outcome !== "inert") {
+    const r = rune ? RUNE_FILMS[rune] : undefined
+    if (r) reel.push(r)
+    reel.push(BENCH_FILMS.decant)
+  }
+  return reel
+}
+
+/** A fermented drink: liquor comes off the still, beer and wine are decanted. */
+export function drinkFilm(cls: string | null | undefined): BenchFilm {
+  return cls === "liquor" ? BENCH_FILMS.distill : BENCH_FILMS.decant
+}
+
 /** The flask a finished brew is shown in, by impurity (0 clean … 3 corrupt). */
 export function flaskFor(impurity: number): string {
   const i = Math.max(0, Math.min(3, Math.trunc(Number(impurity) || 0)))

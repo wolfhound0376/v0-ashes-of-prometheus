@@ -19,11 +19,11 @@
 // feed, but nothing parses that tag out of `dialogue` — only Malachar's own
 // output is parsed — so without this the film could never play.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { FlaskConical, X } from "lucide-react"
 import { useDice, parseDamage } from "@/components/dice/dice-provider"
 import {
-  BENCH_CLIPS, BENCH_CRIT_FILM, BENCH_SCENE, VESSEL, bandsOf, cutout, flaskFor, glowRadiusPx, lookOf, preparedArt, type BenchClip,
+  BENCH_CLIPS, BENCH_SCENE, brewFilms, drinkFilm, type BenchFilm, VESSEL, bandsOf, cutout, flaskFor, glowRadiusPx, lookOf, preparedArt, type BenchClip,
 } from "@/lib/alchemy-art"
 import { cn } from "@/lib/utils"
 import { BenchSigil, type SigilPhase } from "@/components/alchemy/bench-sigil"
@@ -134,8 +134,15 @@ export function AlchemyBench({
   const [busy, setBusy] = useState(false)
   // The module opens with its film (Sam, 9/29; kept 2026-10-01).
   const [intro, setIntro] = useState(true)
-  // A natural 1 plays the critical-failure film here, then the aftermath.
-  const [critFilm, setCritFilm] = useState(false)
+  // The step films waiting to play, in order (lib/alchemy-art BENCH_FILMS):
+  // the fire, the rune, the pour, the still, or on a natural 1 the failure.
+  // Each plays after its roll and before the result window (Sam, 2026-10-01:
+  // "make sure the videos are wired to the result of the alchemy step").
+  const [reel, setReel] = useState<Array<BenchFilm & { key: number }>>([])
+  const reelKey = useRef(0)
+  const playFilms = (films: BenchFilm[]) =>
+    setReel((q) => [...q, ...films.map((f) => ({ ...f, key: ++reelKey.current }))])
+  const filming = reel.length > 0
   // The pack, in order (Sam, 2026-10-01): ingredients, reagents, fermented
   // drinks, potions, elixirs. One effect is a potion; two or more in the same
   // flask is an elixir (Sam's ruling, same day).
@@ -221,10 +228,10 @@ export function AlchemyBench({
   // Escape closes, as every other overlay on the board does.
   useEffect(() => {
     // While the film plays, Escape skips it (BenchIntro) rather than closing.
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro && !critFilm && !made && !focus) onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro && !filming && !made && !focus) onClose() }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [busy, intro, critFilm, made, focus, onClose])
+  }, [busy, intro, filming, made, focus, onClose])
 
   const effectName = useMemo(() => {
     const m = new Map((pack?.effects ?? []).map((e) => [e.slug, e.name]))
@@ -405,7 +412,10 @@ export function AlchemyBench({
       })
       const body = await res.json()
       setStage({ kind: "note", summary: res.ok ? body.summary : body.error ?? "It would not come together." })
-      if (res.ok) { setTab("drinks"); setJournal(false); setSchematic(null); if (body.drink) setMade({ kind: "drink", ...body.drink }) }
+      if (res.ok) {
+        setTab("drinks"); setJournal(false); setSchematic(null)
+        if (body.drink) { playFilms([drinkFilm(body.drink.class)]); setMade({ kind: "drink", ...body.drink }) }
+      }
       await load()
     } finally {
       setBusy(false)
@@ -429,12 +439,12 @@ export function AlchemyBench({
         body: JSON.stringify({ characterId, itemSlugs: picked, check: r.total, die: face, base, ...(rune ? { rune } : {}), ...(recipe ? { recipeSlug: recipe } : {}) }),
       })
       const body = await res.json()
+      if (res.ok) playFilms(brewFilms(String(body.outcome), body.rune ?? (rune || null)))
       if (!res.ok) {
         setStage({ kind: "note", summary: body.error ?? "The bench refused that brew." })
       } else if (body.outcome === "critical_failure") {
         setSigil((s) => (s ? { ...s, phase: "shatter" } : s))
         setStage({ kind: "critical", summary: body.summary })
-        setCritFilm(true)
       } else if (body.outcome === "inert") {
         setSigil((s) => (s ? { ...s, phase: "release" } : s))
         setStage({ kind: "inert", summary: body.summary })
@@ -521,7 +531,9 @@ export function AlchemyBench({
     <div role="dialog" aria-modal="true" aria-label="Alchemy bench" className="fixed inset-0 z-[60] flex flex-col bg-[#070605] text-stone-200">
       <style>{BENCH_CSS}</style>
       {intro && <BenchIntro onDone={() => setIntro(false)} />}
-      {critFilm && <BenchIntro film={BENCH_CRIT_FILM} label="The flask fails" onDone={() => setCritFilm(false)} />}
+      {!intro && filming && (
+        <BenchIntro key={reel[0].key} film={reel[0]} label={reel[0].label} onDone={() => setReel((q) => q.slice(1))} />
+      )}
       {focus && pack && (() => {
         const ing = pack.ingredients.find((i) => i.slug === focus)
         if (!ing) return null
@@ -538,7 +550,7 @@ export function AlchemyBench({
           />
         )
       })()}
-      {made && !intro && !critFilm && <MadeWindow made={made} busy={busy} onKeep={() => setMade(null)} onToss={() => void toss(made)} />}
+      {made && !intro && !filming && <MadeWindow made={made} busy={busy} onKeep={() => setMade(null)} onToss={() => void toss(made)} />}
 
       {/* The bench itself: painted plate, the idle film over it when there is one. */}
       <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
