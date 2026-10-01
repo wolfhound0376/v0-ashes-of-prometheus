@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { absMinutes, advanceGasSporeInfections, stepLines, stepsDue, type InfectionState } from "./gas-spore-clock"
+import {
+  absMinutes, advanceGasSporeInfections, countdownLines, formatInfectionBlock, formatSpan, loadInfectionBlock,
+  stepLines, stepsDue, type InfectionState,
+} from "./gas-spore-clock"
 import { infectionFor, parseDeathBurst } from "./death-burst"
 
 const BURST = parseDeathBurst(
@@ -151,5 +154,39 @@ describe("advanceGasSporeInfections", () => {
     await advanceGasSporeInfections(db, at(5, 0))
     expect(db.tables.npc_encounters[0]).toMatchObject({ hp_current: 0, conditions: ["Gas Spore Infection", "Poisoned", "Dead"] })
     expect(db.tables.vtt_tokens.map((t) => t.hp_current)).toEqual([0, 12])
+  })
+})
+
+describe("the countdown for Malachar", () => {
+  it("counts down to halfway and to the deadline", () => {
+    expect(countdownLines([KENTA], at(4, 6))).toEqual([
+      "- Kenta: Gas Spore Infection — dies in 13h unless the disease is removed; poisoned in 2h 30m.",
+    ])
+  })
+  it("says when the poison has already taken hold", () => {
+    expect(countdownLines([{ ...KENTA, poisoned_applied: true }], at(4, 18, 15))).toEqual([
+      "- Kenta: Gas Spore Infection — dies in 45m unless the disease is removed; already poisoned.",
+    ])
+  })
+  it("leaves out the dead and the cured", () => {
+    expect(countdownLines([{ ...KENTA, died: true }, { ...KENTA, cured: true }], at(4, 6))).toEqual([])
+    expect(formatInfectionBlock([{ ...KENTA, died: true }], at(4, 6))).toBe("")
+  })
+  it("keeps an undated infection's hours without inventing a start", () => {
+    const undated = infectionFor({ burst: BURST, creature: "Ront", characterId: null, conScore: 16, d12: 3, now: null })!
+    expect(countdownLines([undated], at(4, 6))[0]).toContain("19 hours from infection (1d12 3 + CON 16); start time unknown")
+  })
+  it("tells Malachar not to double what the system applies, and how a cure is written", () => {
+    const block = formatInfectionBlock([KENTA], at(4, 6))
+    expect(block).toContain("DM's eyes only")
+    expect(block).toContain("do NOT emit [CONDITION_ADD]")
+    expect(block).toContain("[CONDITION_REMOVE: <name> | Gas Spore Infection]")
+  })
+  it("reads the flags and builds nothing when nobody is infected", async () => {
+    expect(await loadInfectionBlock(fakeDb({ world_flags: [] }), at(4, 6))).toBe("")
+    expect(await loadInfectionBlock(fakeDb({ world_flags: [flagRow(KENTA)] }), at(4, 6))).toContain("dies in 13h")
+  })
+  it("formats spans", () => {
+    expect([formatSpan(0), formatSpan(45), formatSpan(120), formatSpan(390)]).toEqual(["0m", "45m", "2h", "6h 30m"])
   })
 })

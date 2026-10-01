@@ -169,3 +169,81 @@ async function advanceOne(db: any, key: string, rec: InfectionState, now: ClockT
     await db.from("dialogue").insert({ speaker: "System", text, channel: "dm" })
   }
 }
+
+// ============================================================================
+// THE COUNTDOWN, FOR MALACHAR'S EYES
+//
+// The log tells him each step as it happens; this tells him what is coming,
+// every turn, beside the world clock in his prompt. It is the same record the
+// clock above keeps — nothing here decides anything, it only reads it out.
+//
+// DM-only, like the clock it sits beside: the players see symptoms, never the
+// hours. And it says plainly that the system lays Poisoned and death itself,
+// so Malachar never emits a tag that would double them.
+// ============================================================================
+
+/** "6h 30m", "45m", "2h". */
+export function formatSpan(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes))
+  const h = Math.floor(m / 60)
+  const r = m % 60
+  if (!h) return `${r}m`
+  return r ? `${h}h ${r}m` : `${h}h`
+}
+
+/** One line per infection still running. Finished ones are left out. */
+export function countdownLines(records: InfectionState[], now: ClockTime | null): string[] {
+  const out: string[] = []
+  for (const r of records) {
+    if (!r || r.died || r.cured) continue
+    const who = `- ${r.creature}: ${GAS_SPORE_INFECTION}`
+    if (!r.dies_at || !now) {
+      // Undated: caught while no campaign clock ran. The hours are known; the
+      // start is not, and it is not invented here.
+      out.push(`${who} — ${r.hours} hours from infection (1d12 ${r.d12} + CON ${r.con_score}); start time unknown, so the system will not apply it. Pace it yourself.`)
+      continue
+    }
+    const t = absMinutes(now)
+    const left = absMinutes(r.dies_at) - t
+    const poison = r.poisoned_applied || !r.poisoned_at
+      ? (r.poisoned_applied ? "already poisoned" : null)
+      : absMinutes(r.poisoned_at) - t > 0
+        ? `poisoned in ${formatSpan(absMinutes(r.poisoned_at) - t)}`
+        : "poisoned now"
+    out.push(`${who} — dies in ${formatSpan(left)} unless the disease is removed${poison ? `; ${poison}` : ""}.`)
+  }
+  return out
+}
+
+/** The block for Malachar's system prompt, or "" when nobody is infected. */
+export function formatInfectionBlock(records: InfectionState[], now: ClockTime | null): string {
+  const lines = countdownLines(records, now)
+  if (!lines.length) return ""
+  return `════════════════════════════════════════════════════════════════════
+DISEASES IN PROGRESS (DM's eyes only — never state hours, deadlines or the clock to players)
+════════════════════════════════════════════════════════════════════
+${lines.join("\n")}
+Let the infected feel it as the time runs down — show symptoms, never numbers.
+The system applies Poisoned at halfway and death at the deadline on its own:
+do NOT emit [CONDITION_ADD] for either. If the disease is truly removed in the
+fiction, emit [CONDITION_REMOVE: <name> | ${GAS_SPORE_INFECTION}] and the clock stops.`
+}
+
+/** Read every infection record and build the block. Best-effort: "" on failure. */
+export async function loadInfectionBlock(db: any, now: ClockTime | null): Promise<string> {
+  try {
+    const { data, error } = await db
+      .from("world_flags")
+      .select("key,value")
+      .eq("campaign_id", "ashes-of-prometheus")
+      .like("key", "gas-spore-infection:%")
+    if (error) {
+      console.error("[gas-spore] countdown unreadable:", error.message)
+      return ""
+    }
+    return formatInfectionBlock(((data ?? []) as { value: InfectionState }[]).map((f) => f.value), now)
+  } catch (e) {
+    console.error("[gas-spore] countdown threw:", e)
+    return ""
+  }
+}
