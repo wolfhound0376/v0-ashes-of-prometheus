@@ -117,6 +117,7 @@ export const SCHOOL_SIGIL: Partial<Record<MagicSchool, SigilArt>> = {
   // that you can still see who it is protecting.
   abjuration:  { ring: "sigilAbjurationRing", plume: "sigilAbjurationPlume",
                  plumeSize: [2.8, 2.25], still: true, anchor: "caster",
+                 casterPose: "ward",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.abjuration.glow },
   transmutation: { ring: "sigilTransmutationRing", plume: "sigilTransmutationPlume",
                  motes: MOTES, burst: BURST, tint: SCHOOL_RAMP.transmutation.glow,
@@ -233,6 +234,20 @@ export interface SigilArt {
    * separate callback and belongs to whoever was hit.
    */
   anchor?: "target" | "caster"
+  /**
+   * The pose the CASTER strikes, when this school's spell wants one of its
+   * own (Sam, 2026-09-30, of abjuration: "he just needs to raise his hands,
+   * the magic sphere is what he creates").
+   *
+   * Kenta's `cast` ends by throwing a bolt, which is right for evocation and
+   * wrong for a ward — it made him look like he was firing the dome at
+   * himself. `ward` is the same wind-up without the throw: the arms come up
+   * and stay up. Sprites that never had one drawn fall back to `cast`
+   * (lib/sprite-token FALLBACK), so nothing unposed changes.
+   *
+   * Undefined means the ordinary cast, which is every other school.
+   */
+  casterPose?: "ward"
 }
 
 export interface SigilPlan {

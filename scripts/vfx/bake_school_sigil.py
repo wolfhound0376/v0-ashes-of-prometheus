@@ -636,6 +636,12 @@ def main() -> None:
                     help="fraction of the cell the art fills; below 1 shortens the plume")
     ap.add_argument("--plume-sink", type=float, default=0.0, metavar="0..0.3",
                     help="push the plume's roots below the floor plane, as a fraction of the cell")
+    ap.add_argument("--plume-peak", type=int, default=-1,
+                    help="the plume is a ONE-SHOT that parks at this frame, not a "
+                         "loop. For a plume that BUILDS — abjuration's ward closing "
+                         "over its caster — rather than one that cycles. Without it "
+                         "the sheet loops and the ward would keep re-forming while "
+                         "the save is rolled.")
     ap.add_argument("--no-ring", action="store_true",
                     help="bake the PLUME only. Some schools have no floor ring at all "
                          "(Sam, 2026-09-29, of conjuration: \"just remove the sigil\"), and "
@@ -743,7 +749,9 @@ def main() -> None:
     ring_entry = () if ring_sheet is None else (("Ring", ring_sheet, ring_meta),)
     for suffix, im, meta in ring_entry + (
         ("Plume", plume, {"cols": a.cols, "rows": (a.frames + a.cols - 1) // a.cols,
-                          "frames": a.frames, "fps": 12, "loop": True}),
+                          "frames": a.frames, "fps": 12,
+                          **({"loop": False, "peak": a.plume_peak} if a.plume_peak >= 0
+                             else {"loop": True})}),
     ) + ((("Burst", burst, {"cols": a.cols, "rows": (a.burst_frames + a.cols - 1) // a.cols,
                             "frames": a.burst_frames, "fps": 20, "loop": False}),)
          if burst is not None else ()):

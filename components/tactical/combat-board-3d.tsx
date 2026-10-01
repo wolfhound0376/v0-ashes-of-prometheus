@@ -2661,7 +2661,17 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       //
       // A model with only the heavy swing is unaffected — lightAttack's
       // candidate list ends in "attack", so it falls through to what exists.
-      const swing = plan.state === "attack" ? attackStateFor(ability) : plan.state
+      // A WARD IS RAISED, NOT THROWN. A school whose sigil asks for its own
+      // caster pose (SigilArt.casterPose) overrides the cast clip: abjuration
+      // closes a dome over the caster, and the ordinary cast ends by hurling
+      // a bolt, which made Kenta look like he was firing the ward at himself.
+      // Sprites with no `ward` drawn fall back to `cast`, so every other
+      // figure is untouched.
+      const wardPose = plan.state === "cast"
+        ? targetSigilFor({ resolve: spellEntry(ability)?.resolve ?? null,
+                           school: schoolOf(ability), spellName: ability })?.art.casterPose
+        : undefined
+      const swing = wardPose ?? (plan.state === "attack" ? attackStateFor(ability) : plan.state)
       // WHICH BLOW OF THE SEQUENCE THIS IS (lib/melee-combo).
       //
       // Sam: "subsequent attacks prompt different styles of attacks." A swing

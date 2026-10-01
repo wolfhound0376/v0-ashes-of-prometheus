@@ -127,6 +127,17 @@ describe("targetSigilFor", () => {
     }
   })
 
+  it("asks for the ward pose only where the caster raises rather than throws", () => {
+    // Sam, 2026-09-30: "he just needs to raise his hands, the magic sphere is
+    // what he creates." Abjuration is the only school that wants its own
+    // caster pose; every other one keeps the ordinary cast, and an undefined
+    // casterPose must keep meaning that.
+    expect(SCHOOL_SIGIL.abjuration?.casterPose).toBe("ward")
+    for (const [school, art] of Object.entries(SCHOOL_SIGIL)) {
+      if (school !== "abjuration") expect(art?.casterPose, school).toBeUndefined()
+    }
+  })
+
   it("has a registry keyed by school, so a second sigil is one line and no logic", () => {
     expect(SCHOOL_SIGIL.necromancy?.ring).toBe("sigilNecroticRing")
     expect(SCHOOL_SIGIL.enchantment?.ring).toBe("sigilEnchantmentRing")
