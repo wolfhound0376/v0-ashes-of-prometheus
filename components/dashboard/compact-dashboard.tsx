@@ -32,6 +32,7 @@ import {
 import { CAMP_ACTIONS_NOT_YET, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABEL, type CampAction, type CraftCategory, type CraftMenu } from "@/lib/camp"
 import { SRD_SKILLS } from "@/lib/roll-requests"
 import { cn } from "@/lib/utils"
+import { AlchemyBench } from "@/components/alchemy/alchemy-bench"
 import type { Character } from "@/lib/types/database"
 
 // The phone / camp view. Same page state as the full dashboard — same
@@ -128,6 +129,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
   const [trainOpen, setTrainOpen] = useState(false)
   const [trainTeacher, setTrainTeacher] = useState<string | null>(null)
   const [craftOpen, setCraftOpen] = useState(false)
+  const [benchOpen, setBenchOpen] = useState(false)
   const logEnd = useRef<HTMLDivElement>(null)
 
   const recent = useMemo(() => dialogue.slice(-80), [dialogue])
@@ -273,7 +275,8 @@ export function CompactDashboard(props: CompactDashboardProps) {
                 })}
               </div>
             </section>
-            {craftOpen && <CraftMenuPanel characterId={me?.id ?? null} onClose={() => setCraftOpen(false)} onCraft={send} busy={!!isThinking} />}
+            {craftOpen && <CraftMenuPanel characterId={me?.id ?? null} onClose={() => setCraftOpen(false)} onCraft={send} busy={!!isThinking} onOpenBench={() => setBenchOpen(true)} />}
+            {benchOpen && me?.id && <AlchemyBench characterId={me.id} onClose={() => setBenchOpen(false)} />}
           </div>
         )}
 
@@ -540,11 +543,15 @@ function CraftMenuPanel({
   onClose,
   onCraft,
   busy,
+  onOpenBench,
 }: {
   characterId: string | null
   onClose: () => void
   onCraft: (line: string) => void
   busy: boolean
+  /** The Grid bench (taste, brew, drink). Separate from the catalogue
+   *  recipes listed below, which are XGE downtime crafting. */
+  onOpenBench?: () => void
 }) {
   const [category, setCategory] = useState<CraftCategory>("alchemy")
   const [menu, setMenu] = useState<CraftMenu | null>(null)
@@ -603,6 +610,18 @@ function CraftMenuPanel({
           )
         })}
       </div>
+
+      {category === "alchemy" && characterId && onOpenBench && (
+        <button
+          type="button"
+          onClick={onOpenBench}
+          className="flex items-center justify-center gap-2 rounded-sm border border-[#c9a868] bg-[#2a1f10] px-3 py-2 font-serif text-sm text-[#f1dca8] hover:bg-[#3a2b15]"
+        >
+          <Flame className="h-4 w-4" aria-hidden="true" />
+          Open the alchemy bench
+          <span className="font-sans text-xs text-stone-400">taste · brew · drink</span>
+        </button>
+      )}
 
       {!characterId && <p className="text-sm text-stone-400">Choose your character to see what you can make.</p>}
       {error && <p className="text-sm text-[#e0651a]">{error}</p>}

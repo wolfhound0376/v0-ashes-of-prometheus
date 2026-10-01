@@ -33,6 +33,7 @@
 // public-read with no anon write policy by design.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { benchProficient } from "@/lib/alchemy-pack"
 import {
   brewAtBench, MIN_INGREDIENTS, MAX_INGREDIENTS,
   type BenchIngredient, type BaseLiquid, type RecipeReliability,
@@ -55,23 +56,6 @@ type Db = ReturnType<typeof createAdminClient>
  *  corrupt one would merge into a single row and one of the two `brew` blobs
  *  would simply be gone. */
 const BREW_ITEM_SLUG = "brewed-potion"
-
-/** Spec §5 names these two. Poisoner's kit is NOT included — flagged for Sam
- *  in claude/claude_Alchemy_Bench.md rather than quietly assumed. */
-const BENCH_TOOLS = ["alchemists supplies", "herbalism kit"]
-
-/** Sheet tool strings are hand-entered and inconsistent — "Light armor" and
- *  "Light Armor" both appear, and apostrophes vary between ' and ’. Compare
- *  on letters and digits only. */
-function normalizeTool(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
-}
-
-function hasBenchTool(sheet: unknown): boolean {
-  const tools = (sheet as { tools?: unknown } | null)?.tools
-  if (!Array.isArray(tools)) return false
-  return tools.some((t) => typeof t === "string" && BENCH_TOOLS.includes(normalizeTool(t)))
-}
 
 const ROMAN = ["", "I", "II", "III"]
 
@@ -208,7 +192,7 @@ export async function POST(req: NextRequest) {
     ingredients,
     check,
     die,
-    proficient: hasBenchTool(character.sheet_proficiencies),
+    proficient: benchProficient(character.sheet_proficiencies),
     recipe,
     base: body.base,
   })
