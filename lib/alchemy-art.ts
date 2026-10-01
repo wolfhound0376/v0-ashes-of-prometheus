@@ -29,7 +29,15 @@ export const BENCH_SCENE = {
 /** Reaction clips (Runway image-to-video, 5 s, from approved start frames).
  *  A key that is missing simply means "no film yet"; every caller must
  *  degrade to the still. */
-export const BENCH_CLIPS: Partial<Record<BenchClip, string>> = {}
+export const BENCH_CLIPS: Partial<Record<BenchClip, string>> = {
+  // All six approved by Sam on the review page, 2026-10-01.
+  idle: `${STORE}/clip/idle.mp4`,
+  mixing: `${STORE}/clip/mixing.mp4`,
+  success: `${STORE}/clip/success.mp4`,
+  inert: `${STORE}/clip/inert.mp4`,
+  smoke: `${STORE}/clip/smoke.mp4`,
+  purify: `${STORE}/clip/purify.mp4`,
+}
 export type BenchClip = "idle" | "mixing" | "success" | "inert" | "smoke" | "purify"
 
 /** The flask a finished brew is shown in, by impurity (0 clean … 3 corrupt). */
@@ -108,10 +116,42 @@ export function bandsOf(effects: readonly string[]): Array<{ effect: string; loo
 }
 
 /** Prepared-form art (extraction). Only APPROVED pictures are listed; an
- *  ingredient missing here shows its raw cut-out. The bluecap flour sample
- *  was approved in round 1b (2026-10-01); the other 32 wait on the review page. */
+ *  ingredient missing here shows its raw cut-out. */
 const PREPARED_ART: Record<string, string> = {
   bluecap: cutout("bluecap-flour"),
+  // Approved by Sam on the review page, 2026-10-01. Nightlight was sent back
+  // ("blurry") and is absent until its redo is approved.
+  "barrelstalk": `${STORE}/prep/barrelstalk.png`,
+  "bigwig": `${STORE}/prep/bigwig.png`,
+  "blind-cave-fish": `${STORE}/prep/blind-cave-fish.png`,
+  "bonecap": `${STORE}/prep/bonecap.png`,
+  "carrion-crawler-mucus": `${STORE}/prep/carrion-crawler-mucus.png`,
+  "cave-cricket-skewer": `${STORE}/prep/cave-cricket-skewer.png`,
+  "cavern-lizard-meat": `${STORE}/prep/cavern-lizard-meat.png`,
+  "deep-rothe-jerky": `${STORE}/prep/deep-rothe-jerky.png`,
+  "deep-rothe-milk": `${STORE}/prep/deep-rothe-milk.png`,
+  "edible-mushrooms": `${STORE}/prep/edible-mushrooms.png`,
+  "fire-lichen": `${STORE}/prep/fire-lichen.png`,
+  "fried-grubs": `${STORE}/prep/fried-grubs.png`,
+  "glowcap": `${STORE}/prep/glowcap.png`,
+  "gray-ooze-residue": `${STORE}/prep/gray-ooze-residue.png`,
+  "nilhoggs-nose": `${STORE}/prep/nilhoggs-nose.png`,
+  "nimergan": `${STORE}/prep/nimergan.png`,
+  "ormu-ink-vial": `${STORE}/prep/ormu-ink-vial.png`,
+  "ormu-moss": `${STORE}/prep/ormu-moss.png`,
+  "pygmywort": `${STORE}/prep/pygmywort.png`,
+  "ripplebark": `${STORE}/prep/ripplebark.png`,
+  "sporebread-loaf": `${STORE}/prep/sporebread-loaf.png`,
+  "tainted-spores-pouch": `${STORE}/prep/tainted-spores-pouch.png`,
+  "tessadyle": `${STORE}/prep/tessadyle.png`,
+  "timmask": `${STORE}/prep/timmask.png`,
+  "tongue-of-madness": `${STORE}/prep/tongue-of-madness.png`,
+  "torchstalk": `${STORE}/prep/torchstalk.png`,
+  "trillimac": `${STORE}/prep/trillimac.png`,
+  "vial-of-rapport-spores": `${STORE}/prep/vial-of-rapport-spores.png`,
+  "waterorb": `${STORE}/prep/waterorb.png`,
+  "wind-spores": `${STORE}/prep/wind-spores.png`,
+  "zurkhwood": `${STORE}/prep/zurkhwood.png`,
 }
 
 export function preparedArt(slug: string): string | null {
