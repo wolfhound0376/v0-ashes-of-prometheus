@@ -24,12 +24,18 @@ import { FlaskConical, X } from "lucide-react"
 import { useDice, parseDamage } from "@/components/dice/dice-provider"
 import { emitCinematicCue } from "@/lib/cinematic-cue"
 import {
-  BENCH_CLIPS, BENCH_SCENE, VESSEL, bandsOf, cutout, flaskFor, glowRadiusPx, lookOf, type BenchClip,
+  BENCH_CLIPS, BENCH_SCENE, VESSEL, bandsOf, cutout, flaskFor, glowRadiusPx, lookOf, preparedArt, type BenchClip,
 } from "@/lib/alchemy-art"
 import { cn } from "@/lib/utils"
 
 type Effect = { slug: string; name: string; category: string; summary: string; is_harmful: boolean }
-type Ingredient = { slug: string; name: string; icon: string | null; quantity: number; columns: (string | null)[] }
+type Ingredient = {
+  slug: string; name: string; icon: string | null; quantity: number
+  /** Only `prepared` goes into a brew (extraction, Sam 2026-10-01). */
+  raw: number; prepared: number; bruised: number
+  method: "grind" | "cut" | "press" | "decant" | null; tool: string | null
+  columns: (string | null)[]
+}
 type Flask = { id: string; name: string; potency: number; impurity: number; effects: string[] }
 type Pack = {
   character: { id: string; name: string }
@@ -39,6 +45,7 @@ type Pack = {
   effects: Effect[]
   rolls: {
     brew: { ability: string; modifier: number; proficient: boolean; dc: number }
+    extract: { ability: string; modifier: number; proficient: boolean; dc: number }
     taste: { ability: string; modifier: number; dc: number }
   }
 }
@@ -53,6 +60,8 @@ type Stage =
 const ROMAN = ["", "I", "II", "III"]
 const IMPURITY = ["clean", "residue", "taint", "corruption"]
 const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`)
+const VERB: Record<string, string> = { grind: "Grind", cut: "Cut", press: "Press", decant: "Decant" }
+const DONE: Record<string, string> = { grind: "ground", cut: "cut", press: "pressed", decant: "decanted" }
 
 export function AlchemyBench({ characterId, onClose }: { characterId: string; onClose: () => void }) {
   const { roll } = useDice()
@@ -108,6 +117,33 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       })
       const body = await res.json()
       setStage({ kind: "note", summary: res.ok ? body.summary : body.error ?? "The taste did not land." })
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function prepare(item: Ingredient) {
+    if (!pack || busy || !item.method) return
+    setBusy(true)
+    try {
+      const r = await roll({
+        die: "d20", numDice: 1, modifier: pack.rolls.extract.modifier,
+        label: `${VERB[item.method]} ${item.name} (INT${pack.rolls.extract.proficient ? " + tools" : ""})`,
+      })
+      const face = r.keptRolls?.[0] ?? r.rolls[0]
+      const res = await fetch("/api/alchemy/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, itemSlug: item.slug, check: r.total, die: face }),
+      })
+      const body = await res.json()
+      setStage({
+        kind: "note",
+        summary: res.ok
+          ? `${body.summary}${body.learned ? ` You learn: ${body.learned.name}.` : ""}`
+          : body.error ?? "The bench would not take it.",
+      })
       await load()
     } finally {
       setBusy(false)
@@ -272,7 +308,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                 className="rounded-sm border border-[#c9a868] bg-[#2a1f10] px-3 py-2 font-serif text-sm text-[#f1dca8] hover:bg-[#3a2b15] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {picked.length < 2
-                  ? "Choose 2 or 3 different ingredients"
+                  ? "Choose 2 or 3 prepared ingredients"
                   : `Brew — INT ${sign(pack.rolls.brew.modifier)} vs DC ${pack.rolls.brew.dc}`}
               </button>
               {!pack.rolls.brew.proficient && (
@@ -295,11 +331,25 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                 <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
                   {pack.ingredients.map((i) => {
                     const on = picked.includes(i.slug)
+                    const ready = i.prepared > 0
                     return (
                       <li key={i.slug} className={cn("flex flex-col gap-1 rounded-sm border bg-[#0d0b08]/85 p-2", on ? "border-[#e2c98e]" : "border-[#7a5f33]/50")}>
-                        <button type="button" onClick={() => toggle(i.slug)} disabled={busy} aria-pressed={on} className="flex flex-col items-center gap-1 text-left disabled:opacity-60">
-                          <img src={cutout(i.slug)} onError={(e) => { if (i.icon) (e.currentTarget as HTMLImageElement).src = i.icon }} alt="" className="h-16 w-16 object-contain" />
-                          <span className="text-sm text-[#f1dca8]">{i.name} <span className="text-stone-500">×{i.quantity}</span></span>
+                        <button
+                          type="button"
+                          onClick={() => toggle(i.slug)}
+                          disabled={busy || !ready}
+                          aria-pressed={on}
+                          title={ready ? undefined : "Prepare it first"}
+                          className="flex flex-col items-center gap-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <img src={(i.raw === 0 && preparedArt(i.slug)) || cutout(i.slug)} onError={(e) => { if (i.icon) (e.currentTarget as HTMLImageElement).src = i.icon }} alt="" className="h-16 w-16 object-contain" />
+                          <span className="text-sm text-[#f1dca8]">{i.name}</span>
+                          <span className="text-[11px] text-stone-400">
+                            {i.raw > 0 && <>raw ×{i.raw}</>}
+                            {i.raw > 0 && i.prepared > 0 && " · "}
+                            {i.prepared > 0 && <>{i.method ? DONE[i.method] : "ready"} ×{i.prepared}</>}
+                            {i.bruised > 0 && <span className="text-[#d9a066]"> ({i.bruised} bruised)</span>}
+                          </span>
                         </button>
                         <ul className="flex flex-col gap-0.5" aria-label={`What you know about ${i.name}`}>
                           {i.columns.map((c, n) => (
@@ -309,6 +359,11 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                             </li>
                           ))}
                         </ul>
+                        {i.raw > 0 && i.method && (
+                          <button type="button" onClick={() => void prepare(i)} disabled={busy} className="mt-1 rounded-sm border border-[#c9a868] px-2 py-0.5 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
+                            {VERB[i.method]} it — {i.tool} (INT {sign(pack.rolls.extract.modifier)} vs DC {pack.rolls.extract.dc})
+                          </button>
+                        )}
                         {i.columns[0] === null && (
                           <button type="button" onClick={() => void taste(i)} disabled={busy} className="mt-1 rounded-sm border border-[#7a5f33] px-2 py-0.5 text-xs text-[#c9a868] hover:bg-[#2a1f10] disabled:opacity-40">
                             Taste it (CON {sign(pack.rolls.taste.modifier)} vs DC {pack.rolls.taste.dc})

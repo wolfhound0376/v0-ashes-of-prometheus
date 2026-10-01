@@ -106,3 +106,14 @@ export function bandsOf(effects: readonly string[]): Array<{ effect: string; loo
   const n = Math.max(1, effects.length)
   return effects.map((effect, i) => ({ effect, look: lookOf(effect), from: i / n, to: (i + 1) / n }))
 }
+
+/** Prepared-form art (extraction). Only APPROVED pictures are listed; an
+ *  ingredient missing here shows its raw cut-out. The bluecap flour sample
+ *  was approved in round 1b (2026-10-01); the other 32 wait on the review page. */
+const PREPARED_ART: Record<string, string> = {
+  bluecap: cutout("bluecap-flour"),
+}
+
+export function preparedArt(slug: string): string | null {
+  return PREPARED_ART[slug] ?? null
+}

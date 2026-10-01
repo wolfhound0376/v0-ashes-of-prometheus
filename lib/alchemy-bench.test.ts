@@ -274,3 +274,22 @@ describe("the summary line", () => {
     expect(r.summary).not.toMatch(/sabotag/i)
   })
 })
+
+describe("extraction — a bruised ingredient (Sam's 'Yes', 2026-10-01)", () => {
+  const known = () => [ripplebark([3, 4]), bluecap([2, 3])]
+
+  it("costs exactly one point per bruised ingredient", () => {
+    const clean = brewAtBench(input({ ingredients: known() }))
+    const one = brewAtBench(input({ ingredients: [{ ...known()[0], bruised: true }, known()[1]] }))
+    const two = brewAtBench(input({ ingredients: known().map((i) => ({ ...i, bruised: true })) }))
+    if (!clean.ok || !one.ok || !two.ok) throw new Error("expected brews")
+    expect(one.impurity - clean.impurity).toBe(1)
+    expect(two.impurity - clean.impurity).toBe(2)
+    expect(one.impurityReasons.some((r) => r.includes("bruised"))).toBe(true)
+  })
+
+  it("never denies the potion — bruising is a cost, not a punishment", () => {
+    const r = brewAtBench(input({ ingredients: known().map((i) => ({ ...i, bruised: true })), check: 3, die: 3, proficient: false }))
+    expect(r.ok && r.outcome).toBe("potion")
+  })
+})
