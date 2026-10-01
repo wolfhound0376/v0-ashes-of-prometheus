@@ -87,7 +87,7 @@ const CARD={
   dodge:{name:"Dodge",icon:"⤺",kind:"dodge",self:true,sub:"attacks at disadvantage"},
 };
 // Fifi's card 1 is both weapons (left click dagger, right click bow) and card 4 throws what's in hand — today the dagger.
-CARD.daggerBow={...CARD.dagger,name:"Dagger / Shortbow",both:true}; CARD.throwObj={...CARD.throw,name:"Throw object"};
+CARD.daggerBow={...CARD.dagger,name:"Dagger / Shortbow",both:true,right:"fifiBow"}; CARD.throwObj={...CARD.throw,name:"Throw object"};
 // monster saves and details not carried in the build: bestiary rows (Giant Spider SRD 5.1; Hook Horror, Out of the Abyss)
 const PRON={fifi:{his:"her",him:"her"}}; const PR=()=>PRON[PC.voice==='fifi'?'fifi':'x']||{his:"his",him:"him"}; const cap=(s)=>s[0].toUpperCase()+s.slice(1);
 const MSAVE={spider:{wis:0,dex:3,con:1},hook:{wis:1,dex:0,con:2}};
@@ -453,9 +453,11 @@ function hurt(e,dmg,type){ if(e.dead) return; e.hp-=dmg; e.flash=.25; e.state="h
 // =====================================================================================================================
 // THE CARDS IN USE
 // =====================================================================================================================
-function pressCard(i){ if(i>=CARDS.length) return; const c=CARDS[i]; if(c.self&&!c.hand) { useCard(i); return; } if(c.self){ useCard(i); return; }
-  if(c.kind==="thrown"){ runCard(c); renderBar(); return; } // a throw goes on the key press; the lit card and left button stay the dagger
-  P.sel=i; renderBar(); SND.tap(); }
+// First-person modules (Sam, 9/30): the lit card IS the left mouse button. 1–9 (or a click on the bar) only lights a card;
+// LEFT click does exactly what it says — nothing else. A card named "A / B" also gives the RIGHT button B (Fifi's
+// "Dagger / Shortbow": left strikes, hold left for the thrust, right draws the bow); on any other card right click is idle.
+function pressCard(i){ if(i>=CARDS.length) return; P.sel=i; renderBar(); SND.tap(); }
+const rightOf=(c)=>c&&c.right?cardOf(c.right):null;
 function actCool(c){ const base=c.kind==="melee"?.85:c.self?.6:1.2; return base*((PC.sorcerer&&/spell|decoy|fog|sleep/.test(c.kind))?1.25:1); } // sorcerer spells 25% slower (Sam, camp ruling)
 function attackRoll(c,e,ranged){ // advantage and disadvantage from what is going on right now
   let adv=false, dis=false, why=[];
@@ -538,7 +540,7 @@ const KIT={fifi:{melee:"dagger",power:null,thrust:true,sneak:"hide",ranged:"fifi
   samson:{melee:"unarmed",power:"guidingBolt",ranged:"tollTheDead",uses:3},scott:{melee:"unarmed",power:"viciousMockery",ranged:"viciousMockery",uses:3}};
 const cardOf=(k)=>CARDS.find(c=>c.key===k)||(CARD[k]&&{...CARD[k],key:k});
 function holdStart(){ if(P.dead||paused) return; P.hold={t:performance.now()/1000,fired:false}; }
-function holdEnd(){ const h=P.hold; if(h&&!h.fired&&performance.now()/1000-h.t>=HOLD){ holdTick(); } P.hold=null; if(!h||h.fired) return; const kit=KIT[PC.voice]; const c=cardOf(kit.melee); if(c.hand==="dagger"&&!P.dagger) runCard(cardOf("unarmed")); else runCard(c); }
+function holdEnd(){ const h=P.hold; if(h&&!h.fired&&performance.now()/1000-h.t>=HOLD){ holdTick(); } P.hold=null; if(!h||h.fired) return; const c=curCard(); if(!c) return; if(c.hand==="dagger"&&c.kind==="melee"&&!P.dagger) runCard(cardOf("unarmed")); else runCard(c); renderBar(); }
 // ---- the thrust (Sam, 9/30): hold the left button with the dagger — she draws the blade back, drives it straight ahead
 // and lunges half a square forward with a grunt. Same SRD dagger attack (+5, 1d4+3); the lunge is what buys the reach.
 const THRUST=[{t:2,x:236,y:150,a:-1.9,s:1},{t:4,x:254,y:172,a:-1.75,s:1.06},{t:2,x:178,y:112,a:-1.57,s:.8,lines:1},{t:4,x:172,y:108,a:-1.57,s:.78,lines:.6},{t:4,x:222,y:150,a:-1.8,s:.95},{t:2,x:236,y:150,a:-1.9,s:1}];
@@ -612,9 +614,12 @@ function hopZ(){ const dip=P.jumpPre>0?-.025*Math.sin(Math.PI*(1-P.jumpPre/.07)*
 function grunt(){ const L=GRUNTS[PC.voice]; if(!L||!BUF[PC.voice+"Grunt"]) return; const seg=L[d(L.length)-1]; playBuf(PC.voice+"Grunt",{off:seg[0],dur:seg[1]-seg[0],vol:1.3}); }
 function sneakPower(){ const kit=KIT[PC.voice]; const c=cardOf(kit.sneak); if(P.power<=0){ say(`${c.name} (power): none left this outing.`,"#8a8078"); return; } P.cool=0; const h0=P.hidden; runCard(c); if(P.hidden&&!h0){ P.power--; say(`Sneak — ${P.power} left this outing.`,"#e3b95c"); } renderBar(); }
 function midTick(){ const m=P.mhold; if(!m||m.fired||performance.now()/1000-m.t<HOLD) return; m.fired=true; if(KIT[PC.voice].sneak) sneakPower(); }
-function holdTick(){ midTick(); const h=P.hold; if(!h||h.fired||performance.now()/1000-h.t<HOLD) return; const kit=KIT[PC.voice]; if(kit.thrust&&P.dagger){ h.fired=true; thrust(); return; } if(!kit.power) return; h.fired=true; const c=cardOf(kit.power);
-  if(P.power<=0){ say(`${c.name} (power): none left this outing.`,"#8a8078"); return; } P.cool=0; const before=P.slots, a0=P.act, h0=P.hidden; runCard({...c,slot:0}); if((P.act&&P.act!==a0)||(P.hidden&&!h0)){ P.power--; say(`Power: ${c.name} — ${P.power} left this outing.`,"#e3b95c"); } P.slots=before; renderBar(); }
-function rangedStart(){ const c=cardOf(KIT[PC.voice].ranged); if(c.kind==="bow") startDraw(c); else runCard(c); }
+function holdTick(){ midTick(); const h=P.hold; if(!h||h.fired||performance.now()/1000-h.t<HOLD) return; const kit=KIT[PC.voice], lit=curCard();
+  if(kit.thrust&&P.dagger&&lit&&lit.hand==="dagger"&&lit.kind==="melee"){ h.fired=true; thrust(); return; } // holding the dagger card: the thrust
+  if(!LIT_ONLY&&kit.power){ h.fired=true; const c=cardOf(kit.power);
+  if(P.power<=0){ say(`${c.name} (power): none left this outing.`,"#8a8078"); return; } P.cool=0; const before=P.slots, a0=P.act, h0=P.hidden; runCard({...c,slot:0}); if((P.act&&P.act!==a0)||(P.hidden&&!h0)){ P.power--; say(`Power: ${c.name} — ${P.power} left this outing.`,"#e3b95c"); } P.slots=before; renderBar(); } }
+const LIT_ONLY=true; // left click = the lit card only; the old "hold left for the class power" no longer fires
+function rangedStart(){ const c=rightOf(curCard()); if(!c) return; if(c.kind==="bow") startDraw(c); else runCard(c); } // only a "/" card has a right button
 // Crouch (Sam, 9/30): TAP the mouse wheel to crouch or stand; HOLD it to Hide (rogues — Cunning Action).
 // Crouched: slower (55%), quieter footsteps, advantage on Stealth checks, and creatures without blindsight only
 // pick you out within 8 squares instead of 12 (house rule — the SRD has no crouch). Hiding crouches you;
