@@ -128,7 +128,7 @@ describe("the terms", () => {
   })
 })
 
-describe("reach — Lathander underground (NEEDS SAM)", () => {
+describe("reach — Lathander underground (Sam, 2026-10-01)", () => {
   const rule = REACH_RULES.dawn_hour
 
   it("shortens his reach where there is no sky", () => {
@@ -161,9 +161,13 @@ describe("reach — Lathander underground (NEEDS SAM)", () => {
     expect(reachTerm(null, { sunless: true })).toBe(0)
   })
 
-  it("flags itself at runtime as unruled homebrew whenever it bites", () => {
+  it("names itself at runtime as approved homebrew whenever it bites", () => {
     const { flags } = responseNumber(prayer({ context: { sunless: true } }))
-    expect(flags.some((f) => f.includes("NEEDS SAM"))).toBe(true)
+    const reach = flags.find((f) => f.includes("reach rule"))
+    expect(reach).toBeDefined()
+    expect(reach).toContain("approved Sam 2026-10-01")
+    // The rule is ruled, so nothing in this module may still claim otherwise.
+    expect(flags.some((f) => f.includes("NEEDS SAM"))).toBe(false)
   })
 })
 

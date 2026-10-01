@@ -48,9 +48,10 @@
 //
 //   EVERYTHING ELSE IS HOMEBREW. Every band, every threshold, every constant
 //   below is invented and is Sam's to overrule. The ones he has explicitly
-//   approved are marked "Sam, <date>"; the ones he has NOT ruled on are marked
+//   approved are marked "Sam, <date>"; any that he has NOT ruled on are marked
 //   NEEDS SAM and surfaced in `flags` at runtime, so an unruled number can
-//   never pass as a ruled one.
+//   never pass as a ruled one. As of 2026-10-01 there are none outstanding:
+//   the response-number bands and the Reach rule are both approved.
 
 import type { Rng } from "./game-context"
 
@@ -176,7 +177,7 @@ export const TIER_NAMES: Record<Tier, string> = {
 }
 
 // ============================================================================
-// THE REACH RULES (NEEDS SAM — added 2026-10-01, not yet ruled on)
+// THE REACH RULES (Sam, 2026-10-01 — approved as written)
 // ============================================================================
 //
 // Lathander is a god of the dawn and there is no dawn in the Underdark. The
@@ -186,8 +187,9 @@ export const TIER_NAMES: Record<Tier, string> = {
 // and makes the one hour his god reaches him something he has to earn by
 // paying attention.
 //
-// Delete this constant and `reachTerm` returns 0 for every god; nothing else
-// in the module depends on it.
+// Approved by Sam on 2026-10-01 as written. Delete this constant and
+// `reachTerm` returns 0 for every god; nothing else in the module depends on
+// it, so retuning later costs one edit here and nothing elsewhere.
 
 export const REACH_RULES: Record<ReachRuleKey, ReachRule> = {
   dawn_hour: {
@@ -333,7 +335,7 @@ export function responseNumber(input: PrayerInput): ResponseNumber {
     flags.push("no gravity score for the moment — extremity counted as nothing")
   }
   if (reach !== 0) {
-    flags.push(`reach rule "${deity?.reach}" applied (${reach > 0 ? "+" : ""}${reach}) — NEEDS SAM, unruled homebrew`)
+    flags.push(`reach rule "${deity?.reach}" applied (${reach > 0 ? "+" : ""}${reach}) — homebrew, approved Sam 2026-10-01`)
   }
   if (!deity) {
     flags.push("addressed to no god in particular — capped at 2 and a wider wrong listener")

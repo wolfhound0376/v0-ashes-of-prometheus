@@ -1,6 +1,7 @@
 # Prayer Module — design spec
 
-**Status:** PR 1 (the pure rules module) built. Schema NOT applied; nothing else built.
+**Status:** PR 1 (the pure rules module) built. Schema APPLIED 2026-10-01 (§9). Deity
+seed, API route, phrasebook and UI not built.
 **Code of record:** `lib/prayer.ts` + `lib/prayer.test.ts`.
 **Date:** 2026-10-01
 **Homebrew flag:** the whole module is homebrew. SRD 5.1 has no prayer mechanic. Every
@@ -115,7 +116,7 @@ RN = A + C + O + E + V + R − D,  clamped to [0, CAP]
 | **O** Offering | nothing → 0 · something that costs (a ration, a watch stood, a wound taken for another) → +1 · something irreplaceable (an heirloom, a secret, a hand) → +3 |
 | **E** Extremity | from the existing gravity score of the moment: ≥70 → +3 · 40–69 → +1 · else 0 |
 | **V** Vow | an open vow in this god's name, currently kept → +2 · any vow broken → **−5**, and no answer above Tier 1 until atoned |
-| **R** Reach | see §8 — Lathander only, and NEEDS SAM |
+| **R** Reach | see §8 — Lathander only (Sam, 2026-10-01) |
 | **D** Debt | `trunc(Debt / 25)`, truncated so a god who owes you is worth what owing costs |
 | **CAP** | cleric of that deity → **your cleric level** · any other class → **5** · praying to a god you have no standing with → **2** |
 
@@ -228,10 +229,10 @@ That last one has teeth. Samson is praying to a declared enemy of Lolth, inside 
 outpost, in front of her priestesses. He sits on the **wide** wrong-listener band (1–4),
 not the default (1–2), by sourced canon rather than by a ruling.
 
-### Reach — a dawn god where there is no dawn (NEEDS SAM, added 2026-10-01)
+### Reach — a dawn god where there is no dawn (Sam, 2026-10-01 — approved)
 
-One term Sam has not ruled on, implemented behind a single deletable constant
-(`REACH_RULES` in `lib/prayer.ts`):
+Approved by Sam on 2026-10-01 as written, and implemented behind a single deletable
+constant (`REACH_RULES` in `lib/prayer.ts`) so retuning it later costs one edit:
 
 | Where / when | R |
 |---|---|
@@ -246,8 +247,8 @@ keeping the calendar a devotional act and makes the one hour his god reaches him
 something he has to earn by paying attention.
 
 Delete `REACH_RULES` and `reachTerm` returns 0 for every god. Nothing else depends on it.
-Whenever the rule bites, the result carries a `NEEDS SAM` flag at runtime, so an unruled
-number can never pass as a ruled one.
+Whenever the rule bites, the result carries a flag at runtime naming it as homebrew and
+recording whose ruling it is — the module never applies an invented number silently.
 
 ---
 
@@ -379,7 +380,7 @@ rather than discovered later. The sheet shows the `state` word, served by a rout
 ## 12. Open questions for Sam
 
 1. ~~Samson's god~~ — **answered: Lathander** (§8).
-2. The **Reach** rule (§8) — the one new term, unruled. Keep, retune, or delete.
+2. ~~The **Reach** rule~~ — **answered: keep as written** (Sam, 2026-10-01).
 3. Is the roster the proposed eight, or does Sam want to pull tenets from Roll20 first?
 4. Does a Tier 3 "Hand" ever get to save a character from death, or is that a line?
 5. Should other players *see* that Samson prayed, or only hear what he said aloud?
