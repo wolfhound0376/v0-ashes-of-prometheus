@@ -486,19 +486,53 @@ worse, a broken vow shifts it another.
 | 2026-10-01 | `deities`, `character_faith`, `prayers`, `faith_events` | migration `create_prayer_module_tables` |
 | 2026-10-01 | `character_faith.last_prayer_day`, `character_faith.missions` | migration `add_prayer_observance_and_missions` |
 | 2026-10-01 | Lathander seeded — 1 row in `deities`, `reach='dawn_hour'`, hostile to Lolth | insert |
+| 2026-10-01 | `pool` CHECK widened to allow `deity_granted`; Cleric + Warlock rows flipped | migration `widen_spellcasting_pool_for_deity_granted` |
 
-**Still to apply, needs Sam's go** — the `pool` flip requires widening a CHECK:
+All applied. Verified after the fact: the constraint now reads
+`CHECK (pool = ANY (ARRAY['class_list','spellbook','deity_granted']))`, Cleric and Warlock
+are `deity_granted`, and Bard / Druid / Paladin / Ranger / Sorcerer / Wizard are untouched.
 
-```sql
-alter table public.class_spellcasting_progression
-  drop constraint class_spellcasting_progression_pool_check;
-alter table public.class_spellcasting_progression
-  add constraint class_spellcasting_progression_pool_check
-  check (pool in ('class_list','spellbook','deity_granted'));
-update public.class_spellcasting_progression
-   set pool = 'deity_granted'
- where class in ('Cleric','Warlock');
-```
+**Two corrections to what was said in chat before this was run**, both found by querying
+rather than assuming:
 
-It is a *widening* — it adds an allowed value and rejects nothing currently valid — but it
-is still a drop, and drops wait for Sam.
+- It touched **10 rows, not 40**. The table only holds levels 1–5 for each class.
+- **`class_spellcasting_progression` stops at level 5 for every class.** Levels 6–20 do not
+  exist. `grantDecision` reads `owedSpellLevel` from this table, so the grant system has
+  nothing to read above level 5. Filling the table out is a prerequisite for the grant
+  route and is **open work**.
+
+---
+
+## 15. The PRAY button already exists — and this module is the rule behind it
+
+Found 2026-10-01 by searching the repo rather than assuming the UI was greenfield.
+
+`lib/camp.ts` has shipped a `pray` camp action since **2026-09-26**. It is in
+`CAMP_ACTIONS`, it has alias parsing (`pray` / `prayer` / `praying`), it costs one camp
+action, and the camp screen renders it as **PRAY — "Speak to your god."** Players can
+press it right now.
+
+And `CAMP_ACTION_RULES` says exactly what happens when they do:
+
+> `pray: { resolves: "dmScene() — no rule; the DM answers or does not", source: "Sam, 2026-09-26" }`
+
+**There is no mechanic behind it.** Malachar improvises an answer, every time, with nothing
+constraining what a god may give. That is precisely the failure mode the referee skill
+exists to prevent — the fake scavenged-items table, the invented Hook Horror attack — and
+it is live in production in the camp screen today.
+
+So the integration is smaller and better-aimed than the build order assumed:
+
+- **No new UI is needed.** PR 6 was "a prayer panel as a camp action". The action is there.
+  What is missing is the rule it calls, which is `lib/prayer.ts`.
+- **The wiring point is one function.** `decideCampAction({ action: "pray" })` currently
+  returns `check: null` and hands off to `dmScene()`. It should call `resolvePrayer()` and
+  hand Malachar a tier and a standing instead of a blank page.
+- **The camp action cost is the rate limit, and it is better than anything designed here.**
+  A prayer costs one of two camp actions per full rest. That is a real scarcity the
+  observance cadence should defer to rather than duplicate — praying is already something
+  you give something up to do.
+
+Revised next step: **the wiring PR is `lib/camp.ts` + a service-role route**, not a UI
+build. It is also now the highest-value piece, because every unwired prayer between now and
+then is Malachar inventing divine mechanics in front of players.
