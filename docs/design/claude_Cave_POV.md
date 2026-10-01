@@ -58,7 +58,9 @@ each has their own capture. Fists keep the pixel animation.
 
 - **Quick click = `slash_out`** (Sam, 9/30: "the slash from medially go lateral"): a backhand along a bowed arc. Sam, later: "start left then
   just slash right" — the hand rises into view already on the left, slashes right, and drops off the bottom right; it
-  never travels left first or slides back to the middle. `slash_d` (the rig's inward cut) stays in the table
+  never travels left first or slides back to the middle. Sam: "swipe 30% faster" — the slash plays at 1.3× (about
+  380 ms instead of 496; the hit lands about 200 ms in), the thrust keeps the rig timing. How often you can attack is
+  unchanged. `slash_d` (the rig's inward cut) stays in the table
   unused.
 - **Hold = `thrust_c`** (Sam, 9/30: "just go a little in front of the character and come from the center POV; similar
   to what we had previously"): a short draw-back, then a drive in toward the middle, the hand shrinking to 0.8 as the

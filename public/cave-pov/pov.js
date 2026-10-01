@@ -474,9 +474,9 @@ function runCard(c){ if(!started||P.dead||paused||!c) return; const key=c.key;
   const hand=handFor(c);
   switch(c.kind){
     case "melee": case "spellMelee": { if(c.hand==="dagger"&&!P.dagger){ say(`${cap(PR().his)} dagger is on the floor — E picks it up.`,"#8a8078"); return; }
-      P.act={kind:c.hand==="fist"?"punch":c.kind==="spellMelee"?"thrust":"swing",hand,t:0,dur:c.hand==="dagger"&&c.kind==="melee"?mrTotal():(c.hand==="fist")&&c.kind==="melee"?SWIPE_LEN:c.hand==="sword"?.5:.45,color:c.color};  P.cool=actCool(c); later(c.hand==="dagger"?mrTiming("light").windup/1000:5*TIC*.8,()=>SND.whoosh(c.hand==="sword"?.8:1.1));
+      P.act={kind:c.hand==="fist"?"punch":c.kind==="spellMelee"?"thrust":"swing",hand,t:0,dur:c.hand==="dagger"&&c.kind==="melee"?mrTotal()/SLASH_SPEED:(c.hand==="fist")&&c.kind==="melee"?SWIPE_LEN:c.hand==="sword"?.5:.45,color:c.color};  P.cool=actCool(c); later(c.hand==="dagger"?mrTiming("light").windup/1000/SLASH_SPEED:5*TIC*.8,()=>SND.whoosh(c.hand==="sword"?.8:1.1));
       const e=target(c.reach||1.5); if(c.kind==="spellMelee") SND.cast(c);
-      later(c.hand==="dagger"&&c.kind==="melee"?mrHit():.13,()=>{ if(!e){ return; } breakHide(); if(c.kind==="spellMelee") spellAttack(c,e,false); else weaponHit(c,e); }); break; }
+      later(c.hand==="dagger"&&c.kind==="melee"?mrHit()/SLASH_SPEED:.13,()=>{ if(!e){ return; } breakHide(); if(c.kind==="spellMelee") spellAttack(c,e,false); else weaponHit(c,e); }); break; }
     case "thrown": { if(!P.dagger){ say(`${cap(PR().his)} dagger is on the floor — E picks it up.`,"#8a8078"); return; } const e=target(c.range[1]); P.act={kind:"throw",hand,t:0,dur:.4}; P.cool=actCool(c); SND.whoosh(1.3);
       P.dagger=false; breakHide(); const to=e?{x:e.x,y:e.y}:aimPoint(c.range[1]); shoot({from:"hand",to,speed:14,color:"#d9dde2",kind:"blade",onHit:()=>{ if(e) weaponHit(c,e,{ranged:true}); dropDagger(to); }}); break; }
     case "bow": startDraw(c); break;
@@ -1066,6 +1066,7 @@ const MR={ELBOW:{x:620,y:600},FOREARM:240,REST:{dx:0,dy:0,a1:-28,a2:-20,sc:1},
 MR.REST_ANGLE=(MR.REST.a1+MR.REST.a2-90)*Math.PI/180;
 const mrTiming=(w)=>{ const m=MR.WEIGHT[w]||1; return {windup:MR.TIMING.windup*m,strike:MR.TIMING.strike,recover:MR.TIMING.recover*m}; };
 const mrTotal=(w="light")=>{ const d=mrTiming(w); return (d.windup+d.strike+d.recover)/1000; };
+const SLASH_SPEED=1.3; // Sam, 9/30: "swipe 30% faster" — the whole slash (rise, cut, drop) runs in 1/1.3 of the time; the hit and whoosh keep their place in it. The thrust is unchanged.
 const mrHit=(w="light")=>{ const d=mrTiming(w); return (d.windup+d.strike)/1000; };
 function mrWrist(p){ const r=(p.a1-90)*Math.PI/180; return [MR.ELBOW.x+p.dx+Math.cos(r)*MR.FOREARM, MR.ELBOW.y+p.dy+Math.sin(r)*MR.FOREARM]; }
 const MR_REST_WRIST=mrWrist(MR.REST);
