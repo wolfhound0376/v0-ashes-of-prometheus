@@ -27,6 +27,8 @@ import { BREW_DC } from "@/lib/alchemy-bench"
 import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
 import { maskGrid, benchProficient } from "@/lib/alchemy-pack"
 import { isPrep, methodOf, METHOD_TOOL, type ExtractionMethod } from "@/lib/extraction"
+import { canBless, canMakeHolyWater, canPurify, isCleric } from "@/lib/alchemy-cleric"
+import type { RiteSheet } from "@/lib/camp-rites"
 
 export const dynamic = "force-dynamic"
 
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest) {
 
   const { data: character } = await db
     .from("characters")
-    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies")
+    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies, sheet_spellcasting")
     .eq("id", characterId)
     .maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
@@ -78,6 +80,9 @@ export async function GET(req: NextRequest) {
     columns: (string | null)[]
   }>()
   let holyWater = 0
+  let blessedWater = 0
+  let vials = 0
+  let silver = 0
   const flasks: Array<{ id: string; name: string; potency: number; impurity: number; effects: string[] }> = []
 
   for (const p of pack ?? []) {
@@ -95,7 +100,13 @@ export async function GET(req: NextRequest) {
     const row = (p.item_id ? catalogById.get(p.item_id as string) : catalogByName.get(p.name as string)) as
       | { slug: string; name: string; icon_url: string | null; alchemy_effects: unknown; properties: unknown } | undefined
     if (!row) continue
-    if (row.slug === "holy-water") holyWater += Number(p.quantity ?? 1)
+    if (!p.prep) {
+      const n = Number(p.quantity ?? 1)
+      if (row.slug === "holy-water") holyWater += n
+      if (row.slug === "blessed-water") blessedWater += n
+      if (row.slug === "glass-vial") vials += n
+      if (row.slug === "powdered-silver") silver += n
+    }
     if (!isGrid(row.alchemy_effects)) continue
     const prev = ingredients.get(row.slug)
     const q = Number(p.quantity ?? 1)
@@ -132,7 +143,21 @@ export async function GET(req: NextRequest) {
     character: { id: character.id, name: character.name, class: character.class },
     ingredients: [...ingredients.values()].sort((a, b) => a.name.localeCompare(b.name)),
     flasks,
-    bases: { water: true, holyWater },
+    bases: { water: true, holyWater, blessedWater },
+    // What a cleric can do at the bench, each with the reason when they can't.
+    cleric: isCleric(character)
+      ? (() => {
+          const sheet = character as unknown as RiteSheet
+          const h = { vials, silver }
+          const b = canBless(sheet, h), w = canMakeHolyWater(sheet, h), p = canPurify(sheet)
+          return {
+            vials, silver,
+            bless: b.ok ? { ok: true } : { ok: false, reason: b.reason },
+            holyWater: w.ok ? { ok: true } : { ok: false, reason: w.reason },
+            purify: p.ok ? { ok: true } : { ok: false, reason: p.reason },
+          }
+        })()
+      : null,
     effects: effects ?? [],
     rolls: {
       brew: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC },

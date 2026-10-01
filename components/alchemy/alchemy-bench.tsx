@@ -41,7 +41,13 @@ type Pack = {
   character: { id: string; name: string }
   ingredients: Ingredient[]
   flasks: Flask[]
-  bases: { water: boolean; holyWater: number }
+  bases: { water: boolean; holyWater: number; blessedWater: number }
+  cleric: null | {
+    vials: number; silver: number
+    bless: { ok: boolean; reason?: string }
+    holyWater: { ok: boolean; reason?: string }
+    purify: { ok: boolean; reason?: string }
+  }
   effects: Effect[]
   rolls: {
     brew: { ability: string; modifier: number; proficient: boolean; dc: number }
@@ -52,6 +58,7 @@ type Pack = {
 type Stage =
   | { kind: "idle" }
   | { kind: "rolling"; clip: BenchClip }
+  | { kind: "purified"; effects: string[]; potency: number; summary: string }
   | { kind: "potion"; effects: string[]; potency: number; impurity: number; label: string; summary: string }
   | { kind: "inert"; summary: string }
   | { kind: "critical"; summary: string }
@@ -68,7 +75,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   const [pack, setPack] = useState<Pack | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<string[]>([])
-  const [base, setBase] = useState<"water" | "holy-water">("water")
+  const [base, setBase] = useState<"water" | "blessed-water" | "holy-water">("water")
   const [busy, setBusy] = useState(false)
   const [stage, setStage] = useState<Stage>({ kind: "idle" })
   // An outcome clip plays ONCE, then the still takes over (the tinted flask,
@@ -150,6 +157,42 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     }
   }
 
+  async function consecrate(kind: "blessed-water" | "holy-water") {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await fetch("/api/alchemy/consecrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, kind }),
+      })
+      const body = await res.json()
+      setStage({ kind: "note", summary: res.ok ? body.summary : body.error ?? "The rite did not take." })
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function purify(flask: Flask) {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await fetch("/api/alchemy/purify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId, inventoryItemId: flask.id }),
+      })
+      const body = await res.json()
+      setStage(res.ok
+        ? { kind: "purified", effects: flask.effects, potency: body.after.potency, summary: body.summary }
+        : { kind: "note", summary: body.error ?? "The ritual would not hold." })
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function brew() {
     if (!pack || busy || picked.length < 2) return
     setBusy(true)
@@ -220,7 +263,11 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   }
 
   const clip: BenchClip | null =
-    stage.kind === "rolling" ? stage.clip : stage.kind === "inert" ? "inert" : stage.kind === "potion" ? "success" : null
+    stage.kind === "rolling" ? stage.clip
+      : stage.kind === "inert" ? "inert"
+      : stage.kind === "potion" ? "success"
+      : stage.kind === "purified" ? "purify"
+      : null
   const clipUrl = clip ? BENCH_CLIPS[clip] ?? null : null
 
   return (
@@ -265,6 +312,8 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
               />
             ) : stage.kind === "potion" ? (
               <TintedFlask effects={stage.effects} potency={stage.potency} impurity={stage.impurity} className="h-[85%]" />
+            ) : stage.kind === "purified" ? (
+              <TintedFlask effects={stage.effects} potency={stage.potency} impurity={0} className="h-[85%]" />
             ) : (
               <img
                 src={stage.kind === "inert" ? VESSEL.inert : picked.length ? VESSEL.full : VESSEL.empty}
@@ -281,6 +330,9 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
             )}
           </div>
 
+          {stage.kind === "purified" && (
+            <p className="text-center font-serif text-[#e2c98e]">Purified<span className="block text-xs text-stone-400">Potency {ROMAN[stage.potency]} · clean</span></p>
+          )}
           {stage.kind === "potion" && (
             <p className="text-center font-serif text-[#e2c98e]">
               {stage.label}
@@ -296,9 +348,13 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
               <fieldset className="flex flex-wrap gap-2 text-sm">
                 <legend className="mb-1 text-xs uppercase tracking-wider text-[#c9a868]">Base</legend>
                 <label className="flex items-center gap-1"><input type="radio" name="base" checked={base === "water"} onChange={() => setBase("water")} /> Water</label>
+                <label className={cn("flex items-center gap-1", !pack.bases.blessedWater && "opacity-40")}>
+                  <input type="radio" name="base" disabled={!pack.bases.blessedWater} checked={base === "blessed-water"} onChange={() => setBase("blessed-water")} />
+                  Blessed water ({pack.bases.blessedWater})
+                </label>
                 <label className={cn("flex items-center gap-1", !pack.bases.holyWater && "opacity-40")}>
                   <input type="radio" name="base" disabled={!pack.bases.holyWater} checked={base === "holy-water"} onChange={() => setBase("holy-water")} />
-                  Holy water ({pack.bases.holyWater}) — impurity can't pass 1
+                  Holy water ({pack.bases.holyWater})
                 </label>
               </fieldset>
               <button
@@ -311,6 +367,22 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                   ? "Choose 2 or 3 prepared ingredients"
                   : `Brew — INT ${sign(pack.rolls.brew.modifier)} vs DC ${pack.rolls.brew.dc}`}
               </button>
+              {(base !== "water") && <p className="text-xs text-[#e2c98e]">A consecrated base: impurity can't rise above 1.</p>}
+              {pack.cleric && (
+                <div className="flex flex-col gap-1 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/80 p-2">
+                  <p className="text-xs uppercase tracking-wider text-[#c9a868]">Clerical help</p>
+                  <button type="button" onClick={() => void consecrate("blessed-water")} disabled={busy || !pack.cleric.bless.ok} title={pack.cleric.bless.reason}
+                    className="rounded-sm border border-[#7a5f33] px-2 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
+                    Bless a vial of water <span className="text-stone-400">(camp action · {pack.cleric.vials} vials)</span>
+                  </button>
+                  <button type="button" onClick={() => void consecrate("holy-water")} disabled={busy || !pack.cleric.holyWater.ok} title={pack.cleric.holyWater.reason}
+                    className="rounded-sm border border-[#7a5f33] px-2 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
+                    Make holy water <span className="text-stone-400">(1 hour · 25 gp silver · 1st-level slot)</span>
+                  </button>
+                  {!pack.cleric.holyWater.ok && pack.cleric.holyWater.reason && <p className="text-[11px] text-stone-500">{pack.cleric.holyWater.reason}</p>}
+                  {!pack.cleric.bless.ok && pack.cleric.bless.reason && <p className="text-[11px] text-stone-500">{pack.cleric.bless.reason}</p>}
+                </div>
+              )}
               {!pack.rolls.brew.proficient && (
                 <p className="text-xs text-stone-400">No alchemist's supplies or herbalism kit on your sheet: every brew starts one step dirtier.</p>
               )}
@@ -386,6 +458,12 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                         <p className="truncate text-sm text-[#f1dca8]">{f.effects.map(effectName).join(" / ") || f.name}</p>
                         <p className="text-xs text-stone-400">Potency {ROMAN[f.potency]} · {IMPURITY[f.impurity]}</p>
                       </div>
+                      {pack.cleric && f.impurity > 0 && (
+                        <button type="button" onClick={() => void purify(f)} disabled={busy || !pack.cleric.purify.ok} title={pack.cleric.purify.reason ?? "Purify Food and Drink: clean it, one tier weaker"}
+                          className="rounded-sm border border-[#7a5f33] px-3 py-1 text-xs text-[#c9a868] hover:bg-[#2a1f10] disabled:opacity-40">
+                          Purify
+                        </button>
+                      )}
                       <button type="button" onClick={() => void drink(f)} disabled={busy} className="rounded-sm border border-[#c9a868] px-3 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
                         Drink
                       </button>
