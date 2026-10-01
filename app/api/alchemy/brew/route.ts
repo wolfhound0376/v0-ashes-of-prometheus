@@ -171,6 +171,15 @@ export async function POST(req: NextRequest) {
     if (!known.data) {
       return NextResponse.json({ error: "this character has not learned that recipe" }, { status: 403 })
     }
+    // Following a recipe means brewing what it says. A page whose ingredient
+    // list does not match what is on the bench is not being followed.
+    const wants = (r.properties as { recipe?: { ingredients?: unknown } } | null)?.recipe?.ingredients
+    if (Array.isArray(wants)) {
+      const a = [...wants].map(String).sort().join(","), b = [...slugs].sort().join(",")
+      if (a !== b) {
+        return NextResponse.json({ error: `that is not what ${r.name} calls for`, reason: "not_the_recipe" }, { status: 422 })
+      }
+    }
     const rel = (r.properties as { reliability?: string } | null)?.reliability
     // An unmarked recipe is an honest one. A `drifted` or `sabotaged` value
     // is NEVER echoed back in the response — the brewer finds out later, in

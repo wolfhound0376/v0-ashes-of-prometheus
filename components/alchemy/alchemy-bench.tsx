@@ -52,6 +52,7 @@ type Pack = {
   drinks: Array<{ id: string; name: string; slug: string; icon: string | null; quantity: number; class: string; dc: number; steps: number; maxLevel: number | null }>
   makeable: Array<{ slug: string; name: string; icon: string | null; class: string; madeFrom: string[]; ok: boolean; reason: string | null }>
   inebriation: { level: number; name: string; effect: string | null }
+  recipes: Array<{ slug: string; name: string; ingredients: string[]; claims: string | null; ready: boolean }>
   runes: { materials: number; marks: Array<{ school: string; learnedVia: string; ok: boolean; reason: string | null }> }
   rolls: {
     brew: { ability: string; modifier: number; proficient: boolean; dc: number }
@@ -81,6 +82,8 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   const [picked, setPicked] = useState<string[]>([])
   const [base, setBase] = useState<"water" | "blessed-water" | "holy-water">("water")
   const [rune, setRune] = useState<string>("")
+  // The recipe being followed. Picking ingredients by hand stops following it.
+  const [recipe, setRecipe] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [stage, setStage] = useState<Stage>({ kind: "idle" })
   // An outcome clip plays ONCE, then the still takes over (the tinted flask,
@@ -114,8 +117,10 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     return (slug: string) => m.get(slug) ?? slug
   }, [pack])
 
-  const toggle = (slug: string) =>
+  const toggle = (slug: string) => {
+    setRecipe(null)
     setPicked((p) => (p.includes(slug) ? p.filter((s) => s !== slug) : p.length >= 3 ? p : [...p, slug]))
+  }
 
   async function taste(item: Ingredient) {
     if (!pack || busy) return
@@ -246,7 +251,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       const res = await fetch("/api/alchemy/brew", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId, itemSlugs: picked, check: r.total, die: face, base, ...(rune ? { rune } : {}) }),
+        body: JSON.stringify({ characterId, itemSlugs: picked, check: r.total, die: face, base, ...(rune ? { rune } : {}), ...(recipe ? { recipeSlug: recipe } : {}) }),
       })
       const body = await res.json()
       if (!res.ok) {
@@ -265,6 +270,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       }
       setPicked([])
       setRune("")
+      setRecipe(null)
       await load()
     } finally {
       setBusy(false)
@@ -502,6 +508,28 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                   })}
                 </ul>
               </div>
+
+              {pack.recipes.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">Your recipes</h3>
+                  <ul className="flex flex-col gap-2">
+                    {pack.recipes.map((r) => (
+                      <li key={r.slug} className={cn("flex items-center gap-3 rounded-sm border bg-[#0d0b08]/85 p-2", recipe === r.slug ? "border-[#e2c98e]" : "border-[#7a5f33]/50")}>
+                        <img src={cutout("recipe-page")} alt="" className="h-10 w-10 object-contain" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-[#f1dca8]">{r.name}</p>
+                          <p className="text-xs text-stone-400">{r.ingredients.join(" + ")}{r.claims ? ` → ${r.claims}` : ""}</p>
+                        </div>
+                        <button type="button" disabled={busy || !r.ready} title={r.ready ? undefined : "You need every ingredient prepared"}
+                          onClick={() => { setPicked(r.ingredients); setRecipe(r.slug) }}
+                          className="rounded-sm border border-[#c9a868] px-3 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
+                          {recipe === r.slug ? "Following" : "Follow"}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <div>
                 <h3 className="mb-2 flex items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">

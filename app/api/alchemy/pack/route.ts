@@ -49,10 +49,11 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
 
-  const [{ data: pack }, { data: known }, { data: marks }] = await Promise.all([
+  const [{ data: pack }, { data: known }, { data: marks }, { data: recipeRows }] = await Promise.all([
     db.from("inventory_items").select("id, name, quantity, item_id, icon_url, brew, prep").eq("character_id", characterId),
     db.from("character_known_effects").select("item_slug, column_index").eq("character_id", characterId),
     db.from("character_known_runes").select("school, learned_via").eq("character_id", characterId),
+    db.from("character_known_recipes").select("recipe_slug").eq("character_id", characterId),
   ])
 
   const itemIds = [...new Set((pack ?? []).map((p) => p.item_id).filter(Boolean) as string[])]
@@ -156,6 +157,8 @@ export async function GET(req: NextRequest) {
     ? await db.from("alchemy_effects").select("slug, name, category, summary, is_harmful").in("slug", [...visible])
     : { data: [] }
 
+  const ingredients_ready = new Map([...ingredients.values()].map((i) => [i.slug, i.prepared]))
+
   // Every drink the catalogue knows how to make, with whether this character
   // can make one tonight and, if not, why.
   const { data: drinkRows } = await db.from("items").select("slug, name, icon_url, properties").not("properties->drink", "is", null)
@@ -168,6 +171,24 @@ export async function GET(req: NextRequest) {
     })
     .sort((a, b) => Number(b.ok) - Number(a.ok) || a.name.localeCompare(b.name))
   const level = currentLevel(normalizeConditions(character.conditions))
+
+  // Recipes this character has learned. NEVER the reliability: a drifted or
+  // sabotaged copy must read exactly like a true one (spec §6).
+  const recipeSlugs = (recipeRows ?? []).map((r) => r.recipe_slug as string)
+  const { data: recipeItems } = recipeSlugs.length
+    ? await db.from("items").select("slug, name, properties").in("slug", recipeSlugs)
+    : { data: [] as Array<Record<string, unknown>> }
+  const recipes = (recipeItems ?? []).map((r) => {
+    const rec = (r.properties as { recipe?: { ingredients?: unknown; claims?: unknown } } | null)?.recipe
+    const ingredients = Array.isArray(rec?.ingredients) ? rec!.ingredients.map(String) : []
+    return {
+      slug: r.slug as string,
+      name: r.name as string,
+      ingredients,
+      claims: typeof rec?.claims === "string" ? rec.claims : null,
+      ready: ingredients.length >= 2 && ingredients.every((s) => (ingredients_ready.get(s) ?? 0) > 0),
+    }
+  })
 
   const prof = Number(character.proficiency_bonus ?? 2)
   const proficient = benchProficient(character.sheet_proficiencies)
@@ -196,6 +217,7 @@ export async function GET(req: NextRequest) {
     effects: effects ?? [],
     drinks,
     makeable,
+    recipes,
     inebriation: { level, name: LEVEL_NAME[level] || "sober", effect: LEVEL_EFFECT[level] ?? null },
     // The marks this character knows, each with whether they can inscribe it
     // tonight. Learning a mark happens in the world, never here.
