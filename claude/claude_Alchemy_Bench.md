@@ -97,3 +97,16 @@ The bench now has a face. Camp → **Craft** → Alchemy → **Open the alchemy 
 - **Art** is the approved set (`lib/alchemy-art.ts`). The 22 effect colours are CSS over the approved flask: one band per effect, glow by potency, a distinct motion per effect (a test holds that no two effects share a motion). Reaction clips are uploaded but `BENCH_CLIPS` stays **empty until Sam approves them** on the review page; every clip has a still fallback.
 
 Not in this piece: extraction, cleric consecration, runes, recipes in the UI, drinks and inebriation. Each is its own PR.
+
+## Camp actions and the bench sigil (2026-10-01, round 3)
+
+**Brewing costs a camp action** (Sam: "Yes"). `/api/alchemy/brew` refuses with `no_camp_action` before anything else, and writes `rest_actions_remaining` only on a real brew (never in the sandbox). The bench shows "camp actions left" and greys the Brew button when there are none. Extraction costs one per sitting of up to three; see `claude_Alchemy_Extraction.md`.
+
+**The rune now shows on the vessel.** Sam asked whether the bench had sigil activation animations. It did not: the battle board did, the bench did not. `components/alchemy/bench-sigil.tsx` draws one over the vessel whenever a brew carries a rune, and **nothing new was drawn or generated**. It reuses the board's approved art and motion:
+
+- the school's glyph sheet (`public/vfx/rune<School>.webp`) and ring sheet (`sigil<School>Ring.webp`; necromancy uses the necrotic ring; divination has no ring and carries on glyphs alone),
+- the board's per-school colour and motion (`lib/spell-school-vfx.ts`): evocation winds up and flares, abjuration's two rings contract and lock, divination holds still,
+- the board's white burst and shatter sheets, tinted in the school's colour exactly as `lib/target-sigil.ts` does.
+
+Three beats: **charge** while the brewing check rolls, **release** when the potion (or an inert brew) lands, where the ring throws outward and the burst flashes, and **shatter** on a natural 1, where the rune breaks with the vessel. Gone within about half a second of release. Respects reduced motion. Checked by screenshot for evocation, abjuration, necromancy and divination.
+

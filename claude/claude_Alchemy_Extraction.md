@@ -15,7 +15,9 @@ Sam, 2026-10-01: "We do need an extraction step." Then "Yes" to the rule as writ
 | miss by 1–4 | prepared but **bruised**: +1 impurity in any brew it goes into |
 | miss by 5 or more, or a natural 1 | ruined and consumed |
 
-- One action per ingredient, about 10 minutes, so it fits a short rest.
+- **It costs a camp action** (Sam, 2026-10-01: "Yes"). One **sitting** prepares up to **three** raw ingredients for one camp action, the "brew" slot on the camp menu (`lib/camp.ts`). Each ingredient is still its own roll. Why three and not one each: a rest gives two camp actions, so one action per ingredient would make a two-ingredient brew cost the whole rest before the brew itself. One sitting of three, then the brew, fits in a single rest.
+- The action is spent only if at least one ingredient in the sitting actually went on the bench. If every one is refused (none held raw, no method), nothing is spent.
+- `POST /api/alchemy/extract` takes `items: [{itemSlug, check, die}]` (1–3). The old single-ingredient body still works and still answers in the old shape.
 - Same tools and same DC as brewing (alchemist's supplies or an herbalism kit). One bench, one number.
 - The bench uses **clean** prepared ingredients before bruised ones, so a brewer who has a good one never pays for a bad one.
 - Bruising, like every other impurity, never denies the potion. A test holds that.
@@ -44,7 +46,7 @@ The tool decides the method; each ingredient has exactly one. The tools are benc
 
 - **`/api/alchemy/brew`** now only counts prepared rows. If you hold raw but none prepared, it says `prepare it first: Bluecap` (422 `not_prepared`).
 - **`/api/alchemy/pack`** reports `raw`, `prepared`, `bruised`, `method` and `tool` per ingredient.
-- **The bench screen** shows the counts. It offers "Grind it — mortar and pestle (INT +3 vs DC 10)" when there are raw ones, and only lets you pick ingredients you have prepared.
+- **The bench screen** lets a player tick up to three raw ingredients ("✓ Grind it") and press **Prepare (1 camp action)**; each is rolled on the shared dice. It also shows the counts. It offers "Grind it — mortar and pestle (INT +3 vs DC 10)" when there are raw ones, and only lets you pick ingredients you have prepared.
 
 ## Art
 

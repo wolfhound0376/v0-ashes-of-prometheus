@@ -27,6 +27,8 @@ import {
   BENCH_CLIPS, BENCH_SCENE, VESSEL, bandsOf, cutout, flaskFor, glowRadiusPx, lookOf, preparedArt, type BenchClip,
 } from "@/lib/alchemy-art"
 import { cn } from "@/lib/utils"
+import { BenchSigil, type SigilPhase } from "@/components/alchemy/bench-sigil"
+import type { MagicSchool } from "@/lib/spell-school"
 
 type Effect = { slug: string; name: string; category: string; summary: string; is_harmful: boolean }
 type Ingredient = {
@@ -39,6 +41,7 @@ type Ingredient = {
 type Flask = { id: string; name: string; potency: number; impurity: number; effects: string[] }
 type Pack = {
   character: { id: string; name: string }
+  campActions: number
   ingredients: Ingredient[]
   flasks: Flask[]
   bases: { water: boolean; holyWater: number; blessedWater: number }
@@ -82,6 +85,10 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
   const [picked, setPicked] = useState<string[]>([])
   const [base, setBase] = useState<"water" | "blessed-water" | "holy-water">("water")
   const [rune, setRune] = useState<string>("")
+  // Raw ingredients picked for one preparing sitting (up to three, one camp action).
+  const [prepPick, setPrepPick] = useState<string[]>([])
+  // The rune sealing the current brew, shown on the vessel (board school art).
+  const [sigil, setSigil] = useState<{ school: MagicSchool; phase: SigilPhase; key: number } | null>(null)
   // The recipe being followed. Picking ingredients by hand stops following it.
   const [recipe, setRecipe] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -146,27 +153,33 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     }
   }
 
-  async function prepare(item: Ingredient) {
-    if (!pack || busy || !item.method) return
+  async function prepareSitting() {
+    if (!pack || busy || prepPick.length === 0) return
+    const items = pack.ingredients.filter((i) => prepPick.includes(i.slug) && i.method)
     setBusy(true)
     try {
-      const r = await roll({
-        die: "d20", numDice: 1, modifier: pack.rolls.extract.modifier,
-        label: `${VERB[item.method]} ${item.name} (INT${pack.rolls.extract.proficient ? " + tools" : ""})`,
-      })
-      const face = r.keptRolls?.[0] ?? r.rolls[0]
+      const entries: Array<{ itemSlug: string; check: number; die: number }> = []
+      for (const item of items) {
+        const r = await roll({
+          die: "d20", numDice: 1, modifier: pack.rolls.extract.modifier,
+          label: `${VERB[item.method!]} ${item.name} (INT${pack.rolls.extract.proficient ? " + tools" : ""})`,
+        })
+        entries.push({ itemSlug: item.slug, check: r.total, die: r.keptRolls?.[0] ?? r.rolls[0] })
+      }
       const res = await fetch("/api/alchemy/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ characterId, itemSlug: item.slug, check: r.total, die: face }),
+        body: JSON.stringify({ characterId, items: entries }),
       })
       const body = await res.json()
+      const learned = (body.results ?? []).filter((r: { learned?: { name: string } }) => r.learned).map((r: { learned: { name: string } }) => r.learned.name)
       setStage({
         kind: "note",
         summary: res.ok
-          ? `${body.summary}${body.learned ? ` You learn: ${body.learned.name}.` : ""}`
+          ? `${body.summary}${learned.length ? ` You learn: ${learned.join(", ")}.` : ""} (${body.campAction})`
           : body.error ?? "The bench would not take it.",
       })
+      setPrepPick([])
       await load()
     } finally {
       setBusy(false)
@@ -248,6 +261,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
     if (!pack || busy || picked.length < 2) return
     setBusy(true)
     setStage({ kind: "rolling", clip: "mixing" })
+    if (rune) setSigil((s) => ({ school: rune as MagicSchool, phase: "charge", key: (s?.key ?? 0) + 1 }))
     try {
       const r = await roll({
         die: "d20", numDice: 1, modifier: pack.rolls.brew.modifier,
@@ -263,11 +277,14 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       if (!res.ok) {
         setStage({ kind: "note", summary: body.error ?? "The bench refused that brew." })
       } else if (body.outcome === "critical_failure") {
+        setSigil((s) => (s ? { ...s, phase: "shatter" } : s))
         setStage({ kind: "critical", summary: body.summary })
         if (body.critical?.cue) emitCinematicCue(body.critical.cue)
       } else if (body.outcome === "inert") {
+        setSigil((s) => (s ? { ...s, phase: "release" } : s))
         setStage({ kind: "inert", summary: body.summary })
       } else {
+        setSigil((s) => (s ? { ...s, phase: "release" } : s))
         setStage({
           kind: "potion",
           effects: (body.effects ?? []).map((e: { slug: string }) => e.slug),
@@ -374,6 +391,7 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                 className="h-[85%] object-contain"
               />
             )}
+            {sigil && <BenchSigil key={sigil.key} school={sigil.school} phase={sigil.phase} />}
             {picked.length > 0 && stage.kind !== "potion" && (
               <div className="absolute bottom-2 left-2 right-2 flex justify-center gap-1">
                 {picked.map((s) => (
@@ -413,10 +431,12 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
               <button
                 type="button"
                 onClick={() => void brew()}
-                disabled={busy || picked.length < 2}
+                disabled={busy || picked.length < 2 || pack.campActions < 1}
                 className="rounded-sm border border-[#c9a868] bg-[#2a1f10] px-3 py-2 font-serif text-sm text-[#f1dca8] hover:bg-[#3a2b15] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {picked.length < 2
+                {pack.campActions < 1
+                  ? "No camp action left this rest"
+                  : picked.length < 2
                   ? "Choose 2 or 3 prepared ingredients"
                   : `Brew — INT ${sign(pack.rolls.brew.modifier)} vs DC ${pack.rolls.brew.dc}`}
               </button>
@@ -466,7 +486,19 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
           {pack && (
             <>
               <div>
-                <h3 className="mb-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">Ingredients</h3>
+                <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">
+                  Ingredients
+                  <span className="normal-case tracking-normal text-stone-500">camp actions left: {pack.campActions} · a preparing sitting or a brew costs one</span>
+                </h3>
+                {prepPick.length > 0 && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-sm border border-[#c9a868]/60 bg-[#1a140b] p-2 text-xs">
+                    <span className="text-[#f1dca8]">Prepare {prepPick.length} in one sitting (up to 3) — INT {sign(pack.rolls.extract.modifier)} vs DC {pack.rolls.extract.dc} each</span>
+                    <button type="button" onClick={() => void prepareSitting()} disabled={busy || pack.campActions < 1}
+                      className="ml-auto rounded-sm border border-[#c9a868] bg-[#2a1f10] px-3 py-1 text-[#f1dca8] hover:bg-[#3a2b15] disabled:opacity-40">
+                      {pack.campActions < 1 ? "No camp action left" : "Prepare (1 camp action)"}
+                    </button>
+                  </div>
+                )}
                 {pack.ingredients.length === 0 && <p className="text-sm text-stone-400">Nothing in your pack will go into a brew. Forage first.</p>}
                 <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
                   {pack.ingredients.map((i) => {
@@ -500,8 +532,17 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
                           ))}
                         </ul>
                         {i.raw > 0 && i.method && (
-                          <button type="button" onClick={() => void prepare(i)} disabled={busy} className="mt-1 rounded-sm border border-[#c9a868] px-2 py-0.5 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
-                            {VERB[i.method]} it — {i.tool} (INT {sign(pack.rolls.extract.modifier)} vs DC {pack.rolls.extract.dc})
+                          <button
+                            type="button"
+                            aria-pressed={prepPick.includes(i.slug)}
+                            onClick={() => setPrepPick((p) => (p.includes(i.slug) ? p.filter((x) => x !== i.slug) : p.length >= 3 ? p : [...p, i.slug]))}
+                            disabled={busy}
+                            className={cn(
+                              "mt-1 rounded-sm border px-2 py-0.5 text-xs disabled:opacity-40",
+                              prepPick.includes(i.slug) ? "border-[#e2c98e] bg-[#3a2b15] text-[#f1dca8]" : "border-[#c9a868] text-[#f1dca8] hover:bg-[#2a1f10]",
+                            )}
+                          >
+                            {prepPick.includes(i.slug) ? "✓ " : ""}{VERB[i.method]} it — {i.tool}
                           </button>
                         )}
                         {i.columns[0] === null && (

@@ -23,14 +23,14 @@
 //
 // WHAT IS DELIBERATELY NOT HERE:
 //   * (Runes are wired as of 2026-10-01: gate in lib/alchemy-runes.ts.)
-//   * The camp action budget. lib/camp.ts already knows `brew` spends an
-//     action; nothing wires it to this route yet.
+//   * (The camp action is wired as of 2026-10-01: a brew spends one.)
 //
 // Service role, because character_known_effects and inventory_items are
 // public-read with no anon write policy by design.
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { benchProficient } from "@/lib/alchemy-pack"
+import { spendCampAction } from "@/lib/camp"
 import { isPrep } from "@/lib/extraction"
 import { canInscribe, isRuneSchool, RUNE_MATERIALS, type KnownRune } from "@/lib/alchemy-runes"
 import { catalogRow, plainHeld, takeOne, type PackRow } from "@/lib/alchemy-pack-ops"
@@ -116,10 +116,17 @@ export async function POST(req: NextRequest) {
   // Never .single() on a query that might match zero rows — AGENTS.md §8.
   const { data: character } = await db
     .from("characters")
-    .select("id, name, class, sheet_proficiencies, sheet_skill_proficiencies")
+    .select("id, name, class, sheet_proficiencies, sheet_skill_proficiencies, rest_actions_remaining")
     .eq("id", characterId)
     .maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
+
+  // A brew is a camp action ("brew" on the camp menu, lib/camp.ts; Sam,
+  // 2026-10-01). Checked before anything is touched; written with the rest.
+  const spend = spendCampAction(character.rest_actions_remaining as number | null, "brew")
+  if (!spend.ok) {
+    return NextResponse.json({ error: `${character.name} has no camp action left this rest.`, reason: "no_camp_action" }, { status: 422 })
+  }
 
   const { data: itemRows } = await db
     .from("items")
@@ -348,6 +355,11 @@ export async function POST(req: NextRequest) {
       const left = (from.quantity ?? 1) - 1
       if (left <= 0) await db.from("inventory_items").delete().eq("id", from.id)
       else await db.from("inventory_items").update({ quantity: left }).eq("id", from.id)
+    }
+
+    {
+      const { error } = await db.from("characters").update({ rest_actions_remaining: spend.remaining }).eq("id", characterId)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     if (runeMaterial) {
