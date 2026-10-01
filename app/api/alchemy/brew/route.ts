@@ -35,6 +35,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { benchProficient } from "@/lib/alchemy-pack"
 import { isPrep } from "@/lib/extraction"
+import { catalogRow, plainHeld, takeOne, type PackRow } from "@/lib/alchemy-pack-ops"
 import {
   brewAtBench, MIN_INGREDIENTS, MAX_INGREDIENTS,
   type BenchIngredient, type BaseLiquid, type RecipeReliability,
@@ -196,6 +197,22 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // A blessed or holy base must actually be in the pack, and it is used up
+  // with the ingredients whatever the outcome. Before 2026-10-01 the route
+  // took the base on the caller's word and never consumed it.
+  let baseRow: PackRow | null = null
+  if (body.base && body.base !== "water") {
+    const item = await catalogRow(db, body.base)
+    const held = item ? await plainHeld(db, characterId, item) : []
+    if (held.length === 0) {
+      return NextResponse.json(
+        { error: `no ${item?.name ?? body.base} in this pack to brew on`, reason: "no_base" },
+        { status: 422 },
+      )
+    }
+    baseRow = held[0]
+  }
+
   const ingredients: BenchIngredient[] = slugs.map((slug) => {
     const row = byslug.get(slug)!
     const held = holdingOf(row.id as string, row.name as string)
@@ -295,6 +312,11 @@ export async function POST(req: NextRequest) {
       const left = (from.quantity ?? 1) - 1
       if (left <= 0) await db.from("inventory_items").delete().eq("id", from.id)
       else await db.from("inventory_items").update({ quantity: left }).eq("id", from.id)
+    }
+
+    if (baseRow) {
+      const err = await takeOne(db, baseRow)
+      if (err) return NextResponse.json({ error: err }, { status: 500 })
     }
 
     if (result.revealed.length > 0) {
