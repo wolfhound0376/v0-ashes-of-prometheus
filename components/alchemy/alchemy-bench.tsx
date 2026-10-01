@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils"
 import { BenchSigil, type SigilPhase } from "@/components/alchemy/bench-sigil"
 import { BenchIntro } from "@/components/alchemy/bench-intro"
+import { JournalButton, RecipeJournal, type Schematic } from "@/components/alchemy/recipe-journal"
 import type { MagicSchool } from "@/lib/spell-school"
 
 type Effect = { slug: string; name: string; category: string; summary: string; is_harmful: boolean }
@@ -38,8 +39,8 @@ type Ingredient = {
   method: "grind" | "cut" | "press" | "decant" | null; tool: string | null
   columns: (string | null)[]
 }
-type Flask = { id: string; name: string; potency: number; impurity: number; effects: string[] }
-type Pack = {
+export type Flask = { id: string; name: string; potency: number; impurity: number; effects: string[] }
+export type Pack = {
   character: { id: string; name: string; class?: string | null }
   campActions: number
   ingredients: Ingredient[]
@@ -53,9 +54,12 @@ type Pack = {
   }
   effects: Effect[]
   drinks: Array<{ id: string; name: string; slug: string; icon: string | null; quantity: number; class: string; dc: number; steps: number; maxLevel: number | null }>
-  makeable: Array<{ slug: string; name: string; icon: string | null; class: string; madeFrom: string[]; ok: boolean; reason: string | null }>
+  makeable: Array<{
+    slug: string; name: string; icon: string | null; class: string; madeFrom: string[]; ok: boolean; reason: string | null
+    description?: string | null; dc: number; steps: number; needs?: string | null; maker?: string | null
+  }>
   inebriation: { level: number; name: string; effect: string | null; hungover?: boolean; since?: string }
-  recipes: Array<{ slug: string; name: string; ingredients: string[]; claims: string | null; ready: boolean }>
+  recipes: Array<{ slug: string; name: string; ingredients: string[]; claims: string | null; description?: string | null; ready: boolean }>
   runes: { materials: number; marks: Array<{ school: string; learnedVia: string; ok: boolean; reason: string | null }> }
   rolls: {
     brew: { ability: string; modifier: number; proficient: boolean; dc: number }
@@ -72,6 +76,14 @@ type Stage =
   | { kind: "critical"; summary: string }
   | { kind: "note"; summary: string }
 
+type BenchTab = "ingredients" | "reagents" | "drinks" | "potions" | "elixirs"
+const TABS: Array<{ id: BenchTab; label: string }> = [
+  { id: "ingredients", label: "Ingredients" },
+  { id: "reagents", label: "Reagents" },
+  { id: "drinks", label: "Fermented drinks" },
+  { id: "potions", label: "Potions" },
+  { id: "elixirs", label: "Elixirs" },
+]
 const ROMAN = ["", "I", "II", "III"]
 const IMPURITY = ["clean", "residue", "taint", "corruption"]
 const sign = (n: number) => (n >= 0 ? `+${n}` : `${n}`)
@@ -113,11 +125,27 @@ export function AlchemyBench({
   const [intro, setIntro] = useState(true)
   // A natural 1 plays the critical-failure film here, then the aftermath.
   const [critFilm, setCritFilm] = useState(false)
+  // The pack, in order (Sam, 2026-10-01): ingredients, reagents, fermented
+  // drinks, potions, elixirs. One effect is a potion; two or more in the same
+  // flask is an elixir (Sam's ruling, same day).
+  const [tab, setTab] = useState<BenchTab>("ingredients")
+  // The recipe journal, and the schematic open in it (null = the journal's list).
+  const [journal, setJournal] = useState(false)
+  const [schematic, setSchematic] = useState<Schematic | null>(null)
   const [stage, setStage] = useState<Stage>({ kind: "idle" })
   // An outcome clip plays ONCE, then the still takes over (the tinted flask,
   // the sludge). Only the mixing clip loops, for as long as the dice tumble.
   const [clipEnded, setClipEnded] = useState(false)
   useEffect(() => setClipEnded(false), [stage])
+  useEffect(() => {
+    // A brew has landed (or failed): close the schematic so the vessel shows it,
+    // and open the tab its flask went into.
+    if (stage.kind === "potion" || stage.kind === "purified") setTab(stage.effects.length >= 2 ? "elixirs" : "potions")
+    if (stage.kind === "potion" || stage.kind === "inert" || stage.kind === "critical") {
+      setJournal(false)
+      setSchematic(null)
+    }
+  }, [stage])
 
   const load = useCallback(async () => {
     try {
@@ -216,6 +244,12 @@ export function AlchemyBench({
   const reagents = shown.filter((i) => i.prepared > 0)
   const rawOnes = shown.filter((i) => i.raw > 0)
   const filtering = q.trim() !== "" || show !== "all" || hasEffect !== ""
+  const flasksIn = (t: BenchTab) => (pack?.flasks ?? []).filter((f) => (t === "elixirs" ? f.effects.length >= 2 : f.effects.length < 2))
+  const tabCount = (t: BenchTab) =>
+    t === "ingredients" ? (pack?.ingredients ?? []).filter((i) => i.raw > 0).length
+      : t === "reagents" ? (pack?.ingredients ?? []).filter((i) => i.prepared > 0).length
+      : t === "drinks" ? (pack?.drinks ?? []).length
+      : flasksIn(t).length
 
   const toggle = (slug: string) => {
     setRecipe(null)
@@ -338,6 +372,7 @@ export function AlchemyBench({
       })
       const body = await res.json()
       setStage({ kind: "note", summary: res.ok ? body.summary : body.error ?? "It would not come together." })
+      if (res.ok) { setTab("drinks"); setJournal(false); setSchematic(null) }
       await load()
     } finally {
       setBusy(false)
@@ -607,8 +642,30 @@ export function AlchemyBench({
 
           {pack && (
             <>
-              {pack.ingredients.length > 0 && (
-                <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 rounded-sm border border-[#7a5f33]/60 bg-[#0d0b08]/95 px-2 py-2 text-xs backdrop-blur">
+              <div className="sticky top-0 z-20 -mx-1 flex flex-col gap-2 bg-[#070605]/90 px-1 pb-2 backdrop-blur">
+                <div role="tablist" aria-label="The pack" className="flex flex-wrap items-end gap-1 border-b border-[#7a5f33]/60">
+                  {TABS.map((t) => {
+                    const on = !journal && tab === t.id
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => { setTab(t.id); setJournal(false); setSchematic(null) }}
+                        className={cn(
+                          "-mb-px rounded-t-sm border px-2 py-1.5 font-serif text-[11px] uppercase tracking-[0.06em]",
+                          on ? "border-[#9c7a3a] border-b-[#070605] bg-[#1a140b] text-[#f1dca8]" : "border-transparent text-stone-400 hover:text-[#e2c98e]",
+                        )}
+                      >
+                        {t.label} <span className="text-stone-500">{tabCount(t.id)}</span>
+                      </button>
+                    )
+                  })}
+                  <JournalButton onOpen={() => { setJournal(true); setSchematic(null) }} count={pack.recipes.filter((r) => r.ingredients.length >= 2).length + pack.makeable.length} />
+                </div>
+                  {pack.ingredients.length > 0 && (tab === "ingredients" || tab === "reagents") && (
+                <div className="flex flex-wrap items-center gap-2 rounded-sm border border-[#7a5f33]/60 bg-[#0d0b08]/95 px-2 py-2 text-xs backdrop-blur">
                   <input
                     type="search"
                     value={q}
@@ -638,17 +695,32 @@ export function AlchemyBench({
                   <span className="text-stone-500">{shown.length} of {pack.ingredients.length}</span>
                 </div>
               )}
+              </div>
 
+              {journal ? (
+                <RecipeJournal
+                  pack={pack} busy={busy} effectName={effectName}
+                  open={schematic} onOpen={setSchematic} onClose={() => { setJournal(false); setSchematic(null) }}
+                  base={base} setBase={setBase} rune={rune} setRune={setRune}
+                  setPicked={setPicked} setRecipe={setRecipe}
+                  onBrew={() => void brew()} onMakeDrink={(slug) => void makeDrink(slug)}
+                />
+              ) : (
+                <>
               {/* REAGENTS — what has been prepared, shown as it now looks (Sam: "a
                   window for our reagents made with images"). This is where the
                   vessel is filled from. */}
-              {pack.ingredients.some((i) => i.prepared > 0) && (
+              {tab === "reagents" && (
                 <div className="rounded-sm border border-[#9c7a3a]/70 bg-[#120e08]/90 p-3 shadow-[inset_0_0_0_1px_rgba(0,0,0,.6)]">
                   <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#e2c98e]">
                     Reagents
                     <span className="normal-case tracking-normal text-stone-500">prepared and ready for the vessel · pick 2 or 3</span>
                   </h3>
-                  {reagents.length === 0 && <p className="text-sm text-stone-500">No reagent matches the filter.</p>}
+                  {reagents.length === 0 && (
+                    <p className="text-sm text-stone-500">
+                      {filtering ? "No reagent matches the filter." : "Nothing prepared yet. Grind, cut or press raw ingredients in the Ingredients tab."}
+                    </p>
+                  )}
                   <ul className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">
                     {reagents.map((i) => {
                       const on = picked.includes(i.slug)
@@ -699,7 +771,7 @@ export function AlchemyBench({
                 </div>
               )}
 
-              <div>
+              {tab === "ingredients" && (<div>
                 <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">
                   Ingredients
                   <span className="normal-case tracking-normal text-stone-500">raw · camp actions left: {pack.campActions} · a preparing sitting or a brew costs one</span>
@@ -755,33 +827,11 @@ export function AlchemyBench({
                     </li>
                   ))}
                 </ul>
-              </div>
+              </div>)}
 
-              {pack.recipes.length > 0 && (
-                <div>
-                  <h3 className="mb-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">Your recipes</h3>
-                  <ul className="flex flex-col gap-2">
-                    {pack.recipes.map((r) => (
-                      <li key={r.slug} className={cn("flex items-center gap-3 rounded-sm border bg-[#0d0b08]/85 p-2", recipe === r.slug ? "border-[#e2c98e]" : "border-[#7a5f33]/50")}>
-                        <img src={cutout("recipe-page")} alt="" className="h-10 w-10 object-contain" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm text-[#f1dca8]">{r.name}</p>
-                          <p className="text-xs text-stone-400">{r.ingredients.join(" + ")}{r.claims ? ` → ${r.claims}` : ""}</p>
-                        </div>
-                        <button type="button" disabled={busy || !r.ready} title={r.ready ? undefined : "You need every ingredient prepared"}
-                          onClick={() => { setPicked(r.ingredients); setRecipe(r.slug) }}
-                          className="rounded-sm border border-[#c9a868] px-3 py-1 text-xs text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-40">
-                          {recipe === r.slug ? "Following" : "Follow"}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div>
+              {tab === "drinks" && (<div>
                 <h3 className="mb-2 flex items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">
-                  Drink
+                  Fermented drinks
                   <span className={cn("normal-case tracking-normal", pack.inebriation.level ? "text-[#d9a066]" : "text-stone-500")}>
                     {pack.inebriation.level ? `${pack.inebriation.name}: ${pack.inebriation.effect} · wears off an hour at a time` : "sober"}
                     {pack.inebriation.hungover ? " · hungover" : ""}
@@ -803,30 +853,18 @@ export function AlchemyBench({
                     ))}
                   </ul>
                 )}
-                <details className="rounded-sm border border-[#7a5f33]/40 bg-[#0d0b08]/70 p-2">
-                  <summary className="cursor-pointer text-xs text-[#c9a868]">Make a drink ({pack.makeable.filter((m) => m.ok).length} ready)</summary>
-                  <ul className="mt-2 flex flex-col gap-1">
-                    {pack.makeable.map((m) => (
-                      <li key={m.slug} className="flex items-center gap-2 text-xs">
-                        <img src={cutout(m.slug)} alt="" className="h-8 w-8 object-contain" />
-                        <span className={cn("min-w-0 flex-1", m.ok ? "text-[#f1dca8]" : "text-stone-500")}>
-                          {m.name} <span className="text-stone-500">· {m.class}</span>
-                          {!m.ok && m.reason && <span className="block text-[11px]">{m.reason}</span>}
-                        </span>
-                        <button type="button" onClick={() => void makeDrink(m.slug)} disabled={busy || !m.ok} className="rounded-sm border border-[#7a5f33] px-2 py-0.5 text-[#f1dca8] hover:bg-[#2a1f10] disabled:opacity-30">
-                          Make
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              </div>
+                {pack.drinks.length === 0 && <p className="mb-1 text-sm text-stone-500">No drinks in your pack.</p>}
+                <p className="text-xs text-stone-500">New drinks are made from the recipe journal.</p>
+              </div>)}
 
-              <div>
-                <h3 className="mb-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">Your flasks</h3>
-                {pack.flasks.length === 0 && <p className="text-sm text-stone-400">No brews yet.</p>}
+              {(tab === "potions" || tab === "elixirs") && (<div>
+                <h3 className="mb-2 flex flex-wrap items-baseline gap-2 text-xs uppercase tracking-[0.2em] text-[#c9a868]">
+                  {tab === "potions" ? "Potions" : "Elixirs"}
+                  <span className="normal-case tracking-normal text-stone-500">{tab === "potions" ? "one effect" : "two or more effects in one flask"}</span>
+                </h3>
+                {flasksIn(tab).length === 0 && <p className="text-sm text-stone-400">{tab === "potions" ? "No potions yet." : "No elixirs yet."}</p>}
                 <ul className="flex flex-col gap-2">
-                  {pack.flasks.map((f) => (
+                  {flasksIn(tab).map((f) => (
                     <li key={f.id} className="flex items-center gap-3 rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/85 p-2">
                       <TintedFlask effects={f.effects} potency={f.potency} impurity={f.impurity} className="h-14 w-14" />
                       <div className="min-w-0 flex-1">
@@ -845,7 +883,9 @@ export function AlchemyBench({
                     </li>
                   ))}
                 </ul>
-              </div>
+              </div>)}
+                </>
+              )}
             </>
           )}
         </section>

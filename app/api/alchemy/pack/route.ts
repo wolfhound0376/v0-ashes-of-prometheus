@@ -163,13 +163,21 @@ export async function GET(req: NextRequest) {
 
   // Every drink the catalogue knows how to make, with whether this character
   // can make one tonight and, if not, why.
-  const { data: drinkRows } = await db.from("items").select("slug, name, icon_url, properties").not("properties->drink", "is", null)
+  const { data: drinkRows } = await db.from("items").select("slug, name, icon_url, description, properties").not("properties->drink", "is", null)
   const makeable = (drinkRows ?? [])
     .filter((r) => isDrinkData((r.properties as { drink?: unknown } | null)?.drink))
     .map((r) => {
       const d = (r.properties as { drink: Parameters<typeof canMake>[1] }).drink
       const g = canMake(r.name as string, d, { character, have: usable, hasStill })
-      return { slug: r.slug as string, name: r.name as string, icon: (r.icon_url as string | null) ?? null, class: String(d.class), madeFrom: d.made_from ?? [], ok: g.ok, reason: g.ok ? null : g.reason }
+      return {
+        slug: r.slug as string, name: r.name as string, icon: (r.icon_url as string | null) ?? null, class: String(d.class), madeFrom: d.made_from ?? [],
+        ok: g.ok, reason: g.ok ? null : g.reason,
+        // For the recipe journal's schematic (Sam, 2026-10-01): what it is and how it is made.
+        description: (r.description as string | null) ?? null,
+        dc: Number(d.save_dc), steps: Number(d.steps_per_drink),
+        needs: ((n) => (typeof n === "string" ? n : null))((d as unknown as { needs?: unknown }).needs),
+        maker: typeof d.maker === "string" ? d.maker : null,
+      }
     })
     .sort((a, b) => Number(b.ok) - Number(a.ok) || a.name.localeCompare(b.name))
   // Time sobers you up; the look is what applies it (and writes it back).
@@ -193,7 +201,7 @@ export async function GET(req: NextRequest) {
     .map((r) => r.slug as string)
   const recipeSlugs = [...new Set([...(recipeRows ?? []).map((r) => r.recipe_slug as string), ...fromKit])]
   const { data: recipeItems } = recipeSlugs.length
-    ? await db.from("items").select("slug, name, properties").in("slug", recipeSlugs)
+    ? await db.from("items").select("slug, name, description, properties").in("slug", recipeSlugs)
     : { data: [] as Array<Record<string, unknown>> }
   const recipes = (recipeItems ?? []).map((r) => {
     const rec = (r.properties as { recipe?: { ingredients?: unknown; claims?: unknown } } | null)?.recipe
@@ -203,6 +211,7 @@ export async function GET(req: NextRequest) {
       name: r.name as string,
       ingredients,
       claims: typeof rec?.claims === "string" ? rec.claims : null,
+      description: (r.description as string | null) ?? null,
       ready: ingredients.length >= 2 && ingredients.every((s) => (ingredients_ready.get(s) ?? 0) > 0),
     }
   })
