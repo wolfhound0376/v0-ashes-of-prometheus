@@ -53,3 +53,42 @@ describe("on the sheet", () => {
     expect(withLevel(["Poisoned"], 1)).toEqual(["Poisoned", "Warm (inebriated 1)"])
   })
 })
+
+import { conditionsFor, sober, HUNGOVER, type InebriationRecord } from "./inebriation"
+
+describe("time sobers you up (Sam, 2026-10-01; LMoP's one-hour poisoning as the anchor)", () => {
+  const t0 = "2026-10-01T20:00:00.000Z"
+  const at = (mins: number) => new Date(new Date(t0).getTime() + mins * 60000)
+  const drunk: InebriationRecord = { level: 2, since: t0 }
+
+  it("holds for the first hour", () => {
+    expect(sober(drunk, at(59), null).level).toBe(2)
+  })
+
+  it("drops one level an hour", () => {
+    expect(sober(drunk, at(60), null).level).toBe(1)
+    expect(sober(drunk, at(125), null).level).toBe(0)
+  })
+
+  it("keeps the remainder, so 90 minutes then 30 more is two levels", () => {
+    const once = sober(drunk, at(90), null)
+    expect(once.level).toBe(1)
+    expect(sober(once, at(120), null).level).toBe(0)
+  })
+
+  it("uses the game clock when both ends have it", () => {
+    const g: InebriationRecord = { level: 3, since: t0, since_game: 1000 }
+    // Real time says nothing has passed; the game clock says two hours have.
+    expect(sober(g, at(0), 1120).level).toBe(1)
+  })
+
+  it("coming round from Ruined leaves Hungover for 8 hours", () => {
+    const ruined: InebriationRecord = { level: 4, since: t0 }
+    const woke = sober(ruined, at(61), null)
+    expect(woke.level).toBe(3)
+    expect(conditionsFor([], woke)).toContain(HUNGOVER)
+    const later = sober(woke, at(60 + 8 * 60 + 1), null)
+    expect(later.hangover_until ?? null).toBeNull()
+    expect(conditionsFor([], later)).not.toContain(HUNGOVER)
+  })
+})

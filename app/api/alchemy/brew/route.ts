@@ -168,7 +168,15 @@ export async function POST(req: NextRequest) {
       .eq("character_id", characterId)
       .eq("recipe_slug", body.recipeSlug)
       .maybeSingle()
-    if (!known.data) {
+    // The starter recipes come with the kit (Sam, 2026-10-01): carrying the
+    // kit named on the recipe is knowing it.
+    const kitSlug = (r.properties as { recipe?: { kit?: unknown } } | null)?.recipe?.kit
+    let viaKit = false
+    if (!known.data && typeof kitSlug === "string") {
+      const kit = await catalogRow(db, kitSlug)
+      viaKit = !!kit && (await plainHeld(db, characterId, kit)).length > 0
+    }
+    if (!known.data && !viaKit) {
       return NextResponse.json({ error: "this character has not learned that recipe" }, { status: 403 })
     }
     // Following a recipe means brewing what it says. A page whose ingredient

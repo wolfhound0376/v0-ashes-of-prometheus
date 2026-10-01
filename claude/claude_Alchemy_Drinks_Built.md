@@ -32,8 +32,20 @@ The level rides as a named condition, e.g. `Drunk (inebriated 2)`. That is how e
 
 **Data.** The three drinks that predate the drinks list (Darklake Stout, Fire Lichen Liquor, Mushroom Wine) had no `properties.drink`, so nothing could drink or make them. Migration `20261001120000_drink_data.sql` (data only, applied live) gives them the approved ladder numbers, with `made_from` taken from the drinks doc's existing-rows table.
 
+## Time sobers you up (Sam, 2026-10-01)
+
+**5E has no core intoxication rules.** The PHB and DMG mention drinking contests as a Constitution check and go no further. The one published mechanic is *Lost Mine of Phandelver*'s dwarven brandy: two glasses within an hour and you are **poisoned for 1 hour**. That hour is the anchor:
+
+- **Each level wears off after one hour without a drink.** Drinking again restarts the clock. The remainder carries over, so 90 minutes is one level with half an hour banked.
+- **Coming round from Ruined leaves `Hungover` for 8 hours**, a long rest's length; that is Sam's "hangover through the next long rest", made time-based. What a hangover does is the DM's to rule.
+- **Time is the game clock** (`game_clock`) when one is running, otherwise real time. `game_clock` is empty today, so the table runs on real time.
+- **Where it lives:** `characters.inebriation` (migration `20261001130000_inebriation_record`, applied live), with `lib/inebriation.ts` holding `sober()`. It is applied whenever the bench or inventory reads the pack, and before every drink.
+
+## Drink anywhere (Sam, 2026-10-01)
+
+Drinks and brewed flasks have a **Drink** button in the inventory window (`components/alchemy/drink-button.tsx`, mounted in `v4-dashboard.tsx`'s EquipmentManager), so you don't need the camp bench.
+
 ## Open, for Sam
 
-1. **"Days."** The spec says beer takes days. This build makes a drink ready at once. Fermenting time needs the game clock wired in.
-2. **Sobering up.** Nothing lowers the level yet. A long rest should clear it, and Ruined should leave a hangover. That belongs in the long-rest path of `lib/camp.ts`.
-3. **Mushroom Wine is "cleric only" to make**, which means the party makes wine only through Samson. It is still a drow and duergar staple to *drink*. (This was flagged in the drinks doc on 2026-09-29 and is still open.)
+1. **"Days."** The spec says beer takes days. This build makes a drink ready at once.
+2. **Mushroom Wine is "cleric only" to make.** It is still a drow and duergar staple to *drink*.

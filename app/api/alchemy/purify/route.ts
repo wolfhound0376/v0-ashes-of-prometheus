@@ -15,6 +15,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { canPurify, purified, PURIFY_SPELL } from "@/lib/alchemy-cleric"
 import type { RiteSheet } from "@/lib/camp-rites"
+import { spendCampAction } from "@/lib/camp"
 
 export const dynamic = "force-dynamic"
 
@@ -33,11 +34,16 @@ export async function POST(req: NextRequest) {
 
   const db = createAdminClient()
   const { data: character } = await db
-    .from("characters").select("id, name, class, sheet_spellcasting").eq("id", characterId).maybeSingle()
+    .from("characters").select("id, name, class, sheet_spellcasting, rest_actions_remaining").eq("id", characterId).maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
 
   const gate = canPurify(character as unknown as RiteSheet)
   if (!gate.ok) return NextResponse.json({ error: gate.reason, reason: "not_able" }, { status: 422 })
+
+  // A rite at camp is the cleric's camp action (Sam, 2026-10-01): it is "pray"
+  // on the camp menu (lib/camp.ts), and the budget is rest_actions_remaining.
+  const spend = spendCampAction(character.rest_actions_remaining as number | null, "pray")
+  if (!spend.ok) return NextResponse.json({ error: `${character.name} has no camp action left this rest.`, reason: "no_camp_action" }, { status: 422 })
 
   const { data: row } = await db
     .from("inventory_items")
@@ -73,7 +79,9 @@ export async function POST(req: NextRequest) {
       const { error } = await db.from("inventory_items").update({ brew: { ...brew, ...next, purified: true } }).eq("id", row.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     }
-    await db.from("dialogue").insert({ speaker: "Malachar", text: summary, channel: "dm" })
+    const { error: e9 } = await db.from("characters").update({ rest_actions_remaining: spend.remaining }).eq("id", characterId)
+    if (e9) return NextResponse.json({ error: e9.message }, { status: 500 })
+    await db.from("dialogue").insert({ speaker: "Malachar", text: `${summary} (${spend.note})`, channel: "dm" })
   }
 
   return NextResponse.json({ sandbox, character: character.name, item: row.name, before: { potency: brew.potency, impurity: brew.impurity }, after: next, summary })

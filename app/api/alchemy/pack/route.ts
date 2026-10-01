@@ -30,9 +30,9 @@ import { isPrep, methodOf, METHOD_TOOL, type ExtractionMethod } from "@/lib/extr
 import { canBless, canMakeHolyWater, canPurify, isCleric } from "@/lib/alchemy-cleric"
 import type { RiteSheet } from "@/lib/camp-rites"
 import { canInscribe, RUNE_MATERIALS, type KnownRune } from "@/lib/alchemy-runes"
-import { currentLevel, isDrinkData, LEVEL_NAME, LEVEL_EFFECT } from "@/lib/inebriation"
+import { isDrinkData, LEVEL_NAME, LEVEL_EFFECT } from "@/lib/inebriation"
+import { inebriationNow, persistIfChanged } from "@/lib/inebriation-server"
 import { canMake, STILL_SLUG } from "@/lib/drink-making"
-import { normalizeConditions } from "@/lib/conditions"
 
 export const dynamic = "force-dynamic"
 
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   const { data: character } = await db
     .from("characters")
-    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies, sheet_spellcasting, sheet_skill_proficiencies, conditions")
+    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies, sheet_spellcasting, sheet_skill_proficiencies, conditions, inebriation, rest_actions_remaining")
     .eq("id", characterId)
     .maybeSingle()
   if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
@@ -170,11 +170,26 @@ export async function GET(req: NextRequest) {
       return { slug: r.slug as string, name: r.name as string, icon: (r.icon_url as string | null) ?? null, class: String(d.class), madeFrom: d.made_from ?? [], ok: g.ok, reason: g.ok ? null : g.reason }
     })
     .sort((a, b) => Number(b.ok) - Number(a.ok) || a.name.localeCompare(b.name))
-  const level = currentLevel(normalizeConditions(character.conditions))
+  // Time sobers you up; the look is what applies it (and writes it back).
+  const drunkNow = await inebriationNow(db, character)
+  await persistIfChanged(db, characterId, character, drunkNow)
+  const level = drunkNow.record.level
 
   // Recipes this character has learned. NEVER the reliability: a drifted or
   // sabotaged copy must read exactly like a true one (spec §6).
-  const recipeSlugs = (recipeRows ?? []).map((r) => r.recipe_slug as string)
+  // Learned recipes, plus the starter recipes of any kit in the pack (Sam,
+  // 2026-10-01: "the five starter recipes that go with the kit").
+  const kitsHeld = new Set(
+    (pack ?? [])
+      .filter((p) => !p.prep && !p.brew && p.item_id)
+      .map((p) => (catalogById.get(p.item_id as string) as { slug?: string } | undefined)?.slug)
+      .filter((s): s is string => Boolean(s)),
+  )
+  const { data: kitRecipes } = await db.from("items").select("slug, properties").not("properties->recipe->kit", "is", null)
+  const fromKit = (kitRecipes ?? [])
+    .filter((r) => kitsHeld.has(String((r.properties as { recipe?: { kit?: unknown } }).recipe?.kit)))
+    .map((r) => r.slug as string)
+  const recipeSlugs = [...new Set([...(recipeRows ?? []).map((r) => r.recipe_slug as string), ...fromKit])]
   const { data: recipeItems } = recipeSlugs.length
     ? await db.from("items").select("slug, name, properties").in("slug", recipeSlugs)
     : { data: [] as Array<Record<string, unknown>> }
@@ -205,9 +220,14 @@ export async function GET(req: NextRequest) {
       ? (() => {
           const sheet = character as unknown as RiteSheet
           const h = { vials, silver }
-          const b = canBless(sheet, h), w = canMakeHolyWater(sheet, h), p = canPurify(sheet)
+          // Each rite is the cleric's camp action; none left, none of them tonight.
+          const actions = Math.max(0, Number(character.rest_actions_remaining ?? 0))
+          const noAction = { ok: false as const, reason: `${character.name} has no camp action left this rest.` }
+          const b = actions ? canBless(sheet, h) : noAction
+          const w = actions ? canMakeHolyWater(sheet, h) : noAction
+          const p = actions ? canPurify(sheet) : noAction
           return {
-            vials, silver,
+            vials, silver, campActions: actions,
             bless: b.ok ? { ok: true } : { ok: false, reason: b.reason },
             holyWater: w.ok ? { ok: true } : { ok: false, reason: w.reason },
             purify: p.ok ? { ok: true } : { ok: false, reason: p.reason },
@@ -218,7 +238,10 @@ export async function GET(req: NextRequest) {
     drinks,
     makeable,
     recipes,
-    inebriation: { level, name: LEVEL_NAME[level] || "sober", effect: LEVEL_EFFECT[level] ?? null },
+    inebriation: {
+      level, name: LEVEL_NAME[level] || "sober", effect: LEVEL_EFFECT[level] ?? null,
+      hungover: Boolean(drunkNow.record.hangover_until), since: drunkNow.record.since,
+    },
     // The marks this character knows, each with whether they can inscribe it
     // tonight. Learning a mark happens in the world, never here.
     runes: {

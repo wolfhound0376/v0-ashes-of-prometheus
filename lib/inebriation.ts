@@ -104,3 +104,81 @@ export function withLevel(conditions: readonly string[], level: number): string[
   for (const c of srdConditionsFor(level)) if (!out.some((x) => x.toLowerCase() === c.toLowerCase())) out.push(c)
   return out
 }
+
+// ---------------------------------------------------------------------------
+// TIME SOBERS YOU UP (Sam, 2026-10-01).
+//
+// 5E has no core intoxication rules (PHB/DMG mention drinking contests as a
+// Constitution check and stop there). The one published mechanic is Lost Mine
+// of Phandelver's dwarven brandy: two glasses within an hour and you are
+// poisoned FOR 1 HOUR. That hour is the anchor here: each level wears off
+// after one hour without a drink. Drinking again restarts the clock.
+//
+// Ruined is Sam's "hangover through the next long rest": coming round from
+// Ruined leaves `Hungover` for 8 hours, the length of a long rest. What a
+// hangover does is the DM's to rule; nothing here invents a number for it.
+//
+// Time is the GAME clock when there is one (game_clock, minutes), otherwise
+// real elapsed time. game_clock is empty today, so the table runs on real time.
+
+export const MINUTES_PER_LEVEL = 60
+export const HANGOVER_MINUTES = 8 * 60
+export const HUNGOVER = "Hungover"
+
+export interface InebriationRecord {
+  level: number
+  /** When the level was last set (real time, ISO). */
+  since: string
+  /** The same moment on the game clock, in absolute minutes, when known. */
+  since_game?: number | null
+  /** Real ISO time the hangover ends, if Ruined has worn off. */
+  hangover_until?: string | null
+  hangover_until_game?: number | null
+}
+
+export function isInebriationRecord(v: unknown): v is InebriationRecord {
+  const r = v as InebriationRecord | null
+  return !!r && typeof r === "object" && Number.isFinite(Number(r.level)) && typeof r.since === "string"
+}
+
+/** Minutes between two moments: the game clock when both ends have it, else real time. */
+function elapsedMinutes(fromReal: string, fromGame: number | null | undefined, nowReal: Date, nowGame: number | null): number {
+  if (typeof fromGame === "number" && typeof nowGame === "number") return Math.max(0, nowGame - fromGame)
+  return Math.max(0, (nowReal.getTime() - new Date(fromReal).getTime()) / 60000)
+}
+
+/** The record as it stands NOW: levels worn off by time, hangover expired or begun. */
+export function sober(rec: InebriationRecord, nowReal: Date, nowGame: number | null): InebriationRecord {
+  const mins = elapsedMinutes(rec.since, rec.since_game, nowReal, nowGame)
+  const gone = Math.floor(mins / MINUTES_PER_LEVEL)
+  let out: InebriationRecord = { ...rec }
+  if (gone > 0 && rec.level > 0) {
+    const level = Math.max(0, rec.level - gone)
+    // The clock keeps its remainder, so 90 minutes is one level and a half-hour banked.
+    const used = Math.min(gone, rec.level) * MINUTES_PER_LEVEL
+    const sinceReal = new Date(new Date(rec.since).getTime() + used * 60000).toISOString()
+    const sinceGame = typeof rec.since_game === "number" ? rec.since_game + used : rec.since_game ?? null
+    out = { ...out, level, since: sinceReal, since_game: sinceGame }
+    if (rec.level >= MAX_LEVEL && level < MAX_LEVEL) {
+      // Came round from Ruined: the hangover runs a long rest's length from the moment you woke.
+      const wokeReal = new Date(new Date(rec.since).getTime() + MINUTES_PER_LEVEL * 60000)
+      out.hangover_until = new Date(wokeReal.getTime() + HANGOVER_MINUTES * 60000).toISOString()
+      out.hangover_until_game = typeof rec.since_game === "number" ? rec.since_game + MINUTES_PER_LEVEL + HANGOVER_MINUTES : null
+    }
+  }
+  if (out.hangover_until) {
+    const left =
+      typeof out.hangover_until_game === "number" && typeof nowGame === "number"
+        ? out.hangover_until_game - nowGame
+        : (new Date(out.hangover_until).getTime() - nowReal.getTime()) / 60000
+    if (left <= 0) out = { ...out, hangover_until: null, hangover_until_game: null }
+  }
+  return out
+}
+
+/** The sheet's conditions for a record: the level's named condition, its SRD
+ *  conditions, and Hungover while it lasts. */
+export function conditionsFor(conditions: readonly string[], rec: InebriationRecord): string[] {
+  const base = withLevel(conditions.filter((c) => c !== HUNGOVER), rec.level)
+  return rec.hangover_until ? [...base, HUNGOVER] : base
+}

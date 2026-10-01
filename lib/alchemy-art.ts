@@ -119,8 +119,9 @@ export function bandsOf(effects: readonly string[]): Array<{ effect: string; loo
  *  ingredient missing here shows its raw cut-out. */
 const PREPARED_ART: Record<string, string> = {
   bluecap: cutout("bluecap-flour"),
-  // Approved by Sam on the review page, 2026-10-01. Nightlight was sent back
-  // ("blurry") and is absent until its redo is approved.
+  // Approved by Sam on the review page, 2026-10-01. Nightlight's first try was
+  // sent back ("blurry"); redo B was approved the same night.
+  "nightlight-fungus": `${STORE}/prep/nightlight-fungus-b.png`,
   "barrelstalk": `${STORE}/prep/barrelstalk.png`,
   "bigwig": `${STORE}/prep/bigwig.png`,
   "blind-cave-fish": `${STORE}/prep/blind-cave-fish.png`,
