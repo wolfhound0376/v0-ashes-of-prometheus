@@ -35,7 +35,10 @@ const LIGHTS=[]; for(let y=0;y<MH;y++) for(let x=0;x<MW;x++) if(MAP[y][x]==="*")
 // =====================================================================================================================
 const PCS={
   fifi:  {name:"Fifi",   cls:"Rogue 1",    hp:8,  ac:13, mods:{str:-1,dex:3,con:0,wis:1}, skin:["#e9c29d","#b68762"], sleeve:"#5d5345", voice:"fifi", bowProf:true, speed:1, sprite:"freia",
-          stealth:7, note:"Dagger · Shortbow (12 arrows) · Sneak Attack 1d6", cards:["dagger","fifiBow","throw","hide","search","dash","dodge","unarmed"], unarmed:{hit:1,flat:1}, arrows:12},
+          // Sam, 9/30: "Clear the text and options but keep the cards 2-8. Card two can have Search. 3. Dash. 4. Throw object.
+          // 5-8 can stay clear. Card 1 should show Dagger / Shortbow." The mouse already does the rest: left = dagger, right =
+          // bow, wheel tap/hold = crouch/hide, 0 = leap back; a thrown-away dagger leaves the left button punching.
+          stealth:7, note:"Dagger · Shortbow (12 arrows) · Sneak Attack 1d6", cards:["daggerBow","search","dash","throwObj"], slots:8, bare:true, unarmed:{hit:1,flat:1}, arrows:12},
   kenta: {name:"Kenta",  cls:"Sorcerer 1", hp:8,  ac:10, mods:{str:1,dex:0,con:2,wis:-1}, skin:["#dcae86","#a67a57"], sleeve:"#4c4a52", voice:"kenta", bowProf:false, speed:0.72, sprite:"kenta", sorcerer:true,
           note:"4 cantrips · 2 first-level slots", cards:["rayOfFrost","shockingGrasp","chillTouch","minorIllusion","fogCloud","innate","dash","dodge","unarmed"], unarmed:{hit:3,flat:2}, spell:{hit:5,dc:13,mod:3}},
   samson:{name:"Samson", cls:"Cleric 1",   hp:9,  ac:10, mods:{str:0,dex:2,con:1,wis:3}, skin:["#c99672","#94664a"], sleeve:"#54483a", voice:"samson", bowProf:true, speed:1, sprite:"samson",
@@ -83,6 +86,8 @@ const CARD={
   dash:{name:"Dash",icon:"»",kind:"dash",self:true,sub:"double speed · 6 s"},
   dodge:{name:"Dodge",icon:"⤺",kind:"dodge",self:true,sub:"attacks at disadvantage"},
 };
+// Fifi's card 1 is both weapons (left click dagger, right click bow) and card 4 throws what's in hand — today the dagger.
+CARD.daggerBow={...CARD.dagger,name:"Dagger / Shortbow",both:true}; CARD.throwObj={...CARD.throw,name:"Throw object"};
 // monster saves and details not carried in the build: bestiary rows (Giant Spider SRD 5.1; Hook Horror, Out of the Abyss)
 const PRON={fifi:{his:"her",him:"her"}}; const PR=()=>PRON[PC.voice==='fifi'?'fifi':'x']||{his:"his",him:"him"}; const cap=(s)=>s[0].toUpperCase()+s.slice(1);
 const MSAVE={spider:{wis:0,dex:3,con:1},hook:{wis:1,dex:0,con:2}};
@@ -367,7 +372,9 @@ function hurt(e,dmg,type){ if(e.dead) return; e.hp-=dmg; e.flash=.25; e.state="h
 // =====================================================================================================================
 // THE CARDS IN USE
 // =====================================================================================================================
-function pressCard(i){ if(i>=CARDS.length) return; const c=CARDS[i]; if(c.self&&!c.hand) { useCard(i); return; } if(c.self){ useCard(i); return; } P.sel=i; renderBar(); SND.tap(); }
+function pressCard(i){ if(i>=CARDS.length) return; const c=CARDS[i]; if(c.self&&!c.hand) { useCard(i); return; } if(c.self){ useCard(i); return; }
+  if(c.kind==="thrown"){ runCard(c); renderBar(); return; } // a throw goes on the key press; the lit card and left button stay the dagger
+  P.sel=i; renderBar(); SND.tap(); }
 function actCool(c){ const base=c.kind==="melee"?.85:c.self?.6:1.2; return base*((PC.sorcerer&&/spell|decoy|fog|sleep/.test(c.kind))?1.25:1); } // sorcerer spells 25% slower (Sam, camp ruling)
 function attackRoll(c,e,ranged){ // advantage and disadvantage from what is going on right now
   let adv=false, dis=false, why=[];
@@ -1110,10 +1117,13 @@ function drawHUD(){ const g=ctx; g.textAlign="left";
 
 // ---- the hotbar (HTML, so the text stays crisp)
 function renderBar(){ const bar=$("bar"); bar.innerHTML=CARDS.map((c,i)=>{ let sub=c.sub; if(c.key==="unarmed") sub=`+${PC.unarmed.hit} · ${PC.unarmed.flat}`;
-    let off=false; if(c.slot&&P.slots<=0) off=true; if(c.uses&&(P.uses[c.key]??c.uses)<=0) off=true; if(c.hand==="dagger"&&c.kind!=="hide"&&!P.dagger) off=true;
+    let off=false; if(c.slot&&P.slots<=0) off=true; if(c.uses&&(P.uses[c.key]??c.uses)<=0) off=true; if(c.hand==="dagger"&&c.kind!=="hide"&&!c.both&&!P.dagger) off=true;
     if(c.slot) sub=`${sub} · ${P.slots}/2`; if(c.ammo) { sub=`${P.arrows} arrows · 1d6+3`; if(P.arrows<=0) off=true; } if(c.uses) sub=`${sub.split(" · ")[0]} · ${P.uses[c.key]??c.uses} left`;
-    return `<button class="card ${i===P.sel?"on":""} ${off?"off":""}" data-i="${i}" title="${c.name}"><b>${i+1}</b><i>${c.icon}</i><span>${c.name}</span><small>${sub}</small><div class="cd"></div></button>`; }).join("");
-  bar.querySelectorAll(".card").forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); pressCard(+b.dataset.i); cv.focus(); }); }
+    if(PC.bare) sub=""; // Sam, 9/30: names only
+    return `<button class="card ${i===P.sel?"on":""} ${off?"off":""}" data-i="${i}" title="${c.name}"><b>${i+1}</b><i>${c.icon}</i><span>${c.name}</span><small>${sub}</small><div class="cd"></div></button>`; }).join("")
+    + Array.from({length:Math.max(0,(PC.slots||0)-CARDS.length)},(_,j)=>`<div class="card empty" aria-hidden="true"><b>${CARDS.length+j+1}</b></div>`).join(""); // open slots, kept for later
+  bar.classList.toggle("bare",!!PC.bare); bar.style.gridTemplateColumns=`repeat(${Math.max(CARDS.length,PC.slots||0)},1fr)`;
+  bar.querySelectorAll("button.card").forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); pressCard(+b.dataset.i); cv.focus(); }); }
 function updateBarCooldown(){ const bo=P.drawing||(P.act&&P.act.kind==="loose")?".18":"1"; if($("bar").style.opacity!==bo) $("bar").style.opacity=bo; const els=$("bar").querySelectorAll(".cd"); const k=P.cool>0?Math.min(1,P.cool/1.5):0; els.forEach(el=>el.style.height=`${k*100}%`); }
 function prompt(){ let s=""; if(P.dead) s=""; else if(BLD.open) s="BUILDER — the ring on the floor is where things go";
   else if(P.restrained&&P.netted) s="E — get free of the net (Strength DC 10)"; else if(P.restrained) s="E — tear free of the web (Strength DC 12)";

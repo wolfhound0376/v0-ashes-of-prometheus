@@ -28,6 +28,9 @@ canvas:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
 .card small{font-family:var(--body);font-size:clamp(7px,.9cqw,11px);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 0 14px rgba(227,185,92,.35)}
 .card.off{opacity:.38}
+#bar.bare .card span{white-space:normal;line-height:1.15}
+#bar.bare .card small{display:none}
+.card.empty{cursor:default;opacity:.5;background:linear-gradient(#110e17,#09080d)}
 .card .cd{position:absolute;inset:auto 0 0 0;background:rgba(227,185,92,.25);pointer-events:none}
 /* overlays */
 .ov{position:absolute;inset:0;display:grid;place-items:center;background:rgba(5,4,8,.86);padding:16px;text-align:center}

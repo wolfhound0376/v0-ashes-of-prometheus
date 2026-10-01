@@ -72,6 +72,10 @@ each has their own capture. Fists keep the pixel animation.
 - **Left click** strikes with the lit card; **hold left** is the class power (Fifi: dagger thrust and lunge with a grunt).
 - **Right click** draws the bow (hold), release looses.
 - **Wheel tap** crouches / stands; **wheel hold** hides (rogues).
+- **Fifi's bar** (Sam, 9/30: "Clear the text and options but keep the cards 2-8"): names only, no sub-lines —
+  1 Dagger / Shortbow (left and right click), 2 Search, 3 Dash, 4 Throw object (throws on the key press; today that is
+  the dagger, and left click punches until it is picked up), 5–8 empty slots kept for later. Hide is the wheel hold,
+  Dodge is 0, Unarmed is automatic. The other three characters keep their spell bars.
 - **1–9** action cards · **Space** jumps · **0** leaps back (rogue, ranger, fighter) · **E** forage / open / pull arrows · **M** map.
 
 ## 3. Rules — SRD vs house rules (flagged)
