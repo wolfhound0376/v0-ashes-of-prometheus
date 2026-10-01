@@ -360,8 +360,15 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
 - **Item art**: the inventory uses the uploaded `icon_url` when present, otherwise a neutral
   framed glyph tile. The battle board draws `items.pixel_icon_url` (48px pixel art in
   `public/item-pixels/<slug>.png`) for items lying on the floor, falling back to the 3D
-  proxy. Sam lifted the no-AI rule for these pixel board icons only (2026-09-26); painted
-  inventory icons are still uploaded, never generated.
+  proxy.
+  **The art rule is about supervision, not about AI** (Sam, 2026-09-30: "I just didn't want
+  malachar generating things without my supervision"). Nothing is generated live at runtime
+  without Sam: no game code, route or Malachar turn creates art on its own. Art made at
+  build time by a session is fine, painted inventory art included, **but every image goes
+  to Sam for approval before it is cut out, uploaded or attached to an item row.** The
+  alchemy bench art went this way (review page with approve/redo, 2026-09-30). The fal
+  NPC/location images in `app/api/chat/route.ts` predate this rule and do generate at
+  runtime; routing them through approval is open work, not a precedent.
   **The two styles stay split — that is the decision, not a gap** (Sam, 2026-09-27, asked
   directly). Painted art in the bag, pixel art on the floor. Do not "converge" them.
 - **Item pixel scale ladder (Sam's ruling, 2026-09-27)**: board icons are sized against
