@@ -46,7 +46,14 @@ type Db = ReturnType<typeof createAdminClient>
  *  unlabelled flask of something the brewer made; WHAT it does lives in
  *  inventory_items.brew, not in a new catalogue row per effect. Nothing is
  *  invented: if this row is missing the route refuses rather than minting an
- *  item the catalogue has never heard of. */
+ *  item the catalogue has never heard of.
+ *
+ *  That row is deliberately `stackable = false`, and it is the only reason
+ *  two brews cannot silently become one. This route inserts its own rows and
+ *  never stacks, but /api/ground-items DOES stack by name on pickup when the
+ *  catalogue row allows it — so a tier III clean brew dropped beside a tier I
+ *  corrupt one would merge into a single row and one of the two `brew` blobs
+ *  would simply be gone. */
 const BREW_ITEM_SLUG = "brewed-potion"
 
 /** Spec §5 names these two. Poisoner's kit is NOT included — flagged for Sam

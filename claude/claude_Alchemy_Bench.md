@@ -49,7 +49,9 @@ A natural 1 is decided by the **face**, not the total. A +14 brewer still blows 
 
 A brewed potion is an instance, not a new catalogue entry per effect. Twenty-two effects would mean twenty-two homebrew potion rows and twenty-two icons; instead there is **one** catalogue row, an unlabelled flask, and what the flask does lives in `inventory_items.brew` — which is exactly what that column was added for.
 
-**That row does not exist yet.** The route refuses with `no_product_row` rather than minting an item the catalogue has never heard of, which keeps the standing rule intact: nothing the party can hold is invented. The SQL is one additive insert and is in the PR body for Sam to approve.
+**Applied 2026-09-30 on Sam's "run it."** One row, `brewed-potion`: consumable, common, 0.5 lb, no value, `source = 'homebrew'`, reusing `glass-vial`'s painted and pixel icons rather than generating art. The route still refuses with `no_product_row` if it ever goes missing, which keeps the standing rule intact: nothing the party can hold is invented.
+
+**It is `stackable = false`, and that is load-bearing.** Everything else in the catalogue stacks. `/api/ground-items` stacks by name on pickup when the catalogue row allows it, so a tier III clean brew dropped beside a tier I corrupt one would merge into one row and one of the two `brew` blobs would be gone. Two potions off the same pair of ingredients are not the same object.
 
 ## Not in this piece, deliberately
 
@@ -64,10 +66,20 @@ A brewed potion is an instance, not a new catalogue entry per effect. Twenty-two
 
 Tool-proficiency matching is case- and punctuation-insensitive, because the live sheets are inconsistent: Bastet has "Light Armor" and Scott has "Light armor", and apostrophes vary. Fifi's "Alchemist's Supplies" is the only live bench proficiency in the party.
 
-## Open questions
+## Rulings, 2026-09-30
 
-1. **Sabotaged recipe: +1 or +2?** The spec says both.
-2. **Should a missed check cost impurity at all**, or should the roll only gate potency?
-3. **Poisoner's kit as a bench tool** — in or out?
-4. **Approve the one-row `brewed-potion` catalogue insert**, and whether its icon comes from the existing art or waits for a new one.
-5. **Can a brew carry a benefit and a harm at once?** It can today, and that is the most interesting thing in the system or the first thing to cut.
+Sam delegated these three ("your call"). Recorded here so a later session does not reopen them as if they were still live.
+
+**1. A sabotaged recipe is +2 impurity, a drifted one +1.** The §6 cookbook table wins over §5's summary line. At +1 each the two are mechanically identical, and the whole point of the 80/15/5 split is that a liar costs more than an honest mistake. §5 should be corrected to +2 when someone next touches it.
+
+**2. A missed check keeps its +1 impurity.** The alternative was to let the roll gate potency only — but potency is already pinned at tier I for an unproficient brewer, so for a level-1 character the d20 would have done nothing at all. The impurity point is what makes the roll matter at the bottom of the ladder, which is exactly where all the brewing happens right now. It also lands the spec's own stated target: untrained and unlucky sits at impurity 2–3, which is what §5 says level 1 should feel like.
+
+**3. A brew may carry a benefit and a harm at once.** Kept. It is the only thing in the system that punishes brewing blind with something more interesting than a worse number, and it is the reason the Grid is worth learning rather than just worth having. `ripplebark + edible-mushrooms` shares `restore-health` and `rot` — a healing potion that also rots you, and the brewer who knew both columns could have seen it coming.
+
+**4. Poisoner's kit is NOT a bench proficiency.** Spec §5 names alchemist's supplies and the herbalism kit; that stands. Adding a third tool lowers impurity for everyone who holds it, and nobody in the party does — Fifi has alchemist's supplies and thieves' tools. Revisit when the harmful half of the grid is actually in play, not before.
+
+## Still open
+
+- **Drinking the potion.** Nothing reads `inventory_items.brew`, so potency tiers and the residue/taint/corruption riders are recorded and not yet applied. That is the next thing that makes any of this visible at the table.
+- **Runes** (step 4) and the **Poisoned Cookbook** (step 5).
+- **The camp action budget** — `lib/camp.ts` knows `brew` spends an action; nothing wires it to the route.
