@@ -49,6 +49,13 @@ export type Tier = 1 | 2 | 3
 /** CLAUDE'S PROPOSAL, not Sam's ruling. Matches HOUSE_RULES.brewDc in
  *  lib/alchemy.ts rather than inventing a second brewing number. */
 export const BREW_DC = 10
+/** Mixing blind, with no recipe (Sam, 2026-10-01: "Most experimentation
+ *  should produce garbage"; his pick of the options, DC 15). 53% of random
+ *  pairs in the live grid share an effect, so before this more than half of
+ *  all experiments made a potion. Below DC 15 a blind mix is sludge, and it
+ *  says nothing about whether the ingredients had anything in common. A
+ *  recipe keeps DC 10. */
+export const BLIND_BREW_DC = 15
 
 /** Beat the DC by this much and the brew comes out a tier stronger. Proposal. */
 export const BREW_MARGIN = 5
@@ -342,6 +349,24 @@ export function brewAtBench(input: BrewInput): BrewResult {
       dc: BREW_DC,
       beat: false,
       summary: `Natural 1. The bench goes up. Everything in it is gone.`,
+    }
+  }
+
+  // An experiment that misses DC 15 never takes, before anything is compared.
+  if (!input.recipe && input.check < BLIND_BREW_DC) {
+    return {
+      ok: true,
+      outcome: "inert",
+      consumed,
+      effects: [],
+      potency: 1,
+      impurity: 0,
+      impurityReasons: [],
+      revealed: [],
+      critical: null,
+      dc: BLIND_BREW_DC,
+      beat: false,
+      summary: `Mixed blind, and it didn't take: check ${input.check} vs DC ${BLIND_BREW_DC}. Sludge, and the ingredients are gone.`,
     }
   }
 

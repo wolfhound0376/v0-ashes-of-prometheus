@@ -75,5 +75,12 @@ export async function POST(req: NextRequest) {
     }
     if (!quiet(characterId)) await db.from("dialogue").insert({ speaker: "Malachar", text: summary, channel: "dm" })
   }
-  return NextResponse.json({ sandbox, character: character.name, made: product.name, summary })
+  return NextResponse.json({
+    sandbox, character: character.name, made: product.name, summary,
+    // For the "what you made" window (Sam, 2026-10-01): what it is, and enough to toss one.
+    drink: {
+      slug: drinkSlug, name: product.name, class: String(drink.class), dc: Number(drink.save_dc), steps: Number(drink.steps_per_drink),
+      description: (product as { description?: string | null }).description ?? null,
+    },
+  })
 }

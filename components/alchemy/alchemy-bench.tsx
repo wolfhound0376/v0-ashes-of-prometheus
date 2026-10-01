@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils"
 import { BenchSigil, type SigilPhase } from "@/components/alchemy/bench-sigil"
 import { BenchIntro } from "@/components/alchemy/bench-intro"
 import { JournalButton, RecipeJournal, type Schematic } from "@/components/alchemy/recipe-journal"
+import { RUNE_RIDER, isRuneSchool } from "@/lib/alchemy-runes"
 import type { MagicSchool } from "@/lib/spell-school"
 
 type Effect = { slug: string; name: string; category: string; summary: string; is_harmful: boolean }
@@ -62,11 +63,19 @@ export type Pack = {
   recipes: Array<{ slug: string; name: string; ingredients: string[]; claims: string | null; description?: string | null; ready: boolean }>
   runes: { materials: number; marks: Array<{ school: string; learnedVia: string; ok: boolean; reason: string | null }> }
   rolls: {
-    brew: { ability: string; modifier: number; proficient: boolean; dc: number }
+    brew: { ability: string; modifier: number; proficient: boolean; dc: number; blindDc?: number }
     extract: { ability: string; modifier: number; proficient: boolean; dc: number }
     taste: { ability: string; modifier: number; dc: number }
   }
 }
+type Made =
+  | {
+      kind: "brew"; id: string | null; label: string; potency: number; impurity: number
+      effects: Array<{ slug: string; name: string; summary?: string | null; harmful?: boolean }>
+      rune: string | null; base: string; recipe: boolean
+    }
+  | { kind: "drink"; slug: string; name: string; class: string; dc: number; steps: number; description: string | null }
+
 type Stage =
   | { kind: "idle" }
   | { kind: "rolling"; clip: BenchClip }
@@ -132,6 +141,10 @@ export function AlchemyBench({
   // The recipe journal, and the schematic open in it (null = the journal's list).
   const [journal, setJournal] = useState(false)
   const [schematic, setSchematic] = useState<Schematic | null>(null)
+  // What was just made, shown before it goes in the pack for good (Sam,
+  // 2026-10-01: "showing you what you made and its properties, asking you if
+  // you want it or toss it"). It is already in the pack; Toss takes it out.
+  const [made, setMade] = useState<Made | null>(null)
   const [stage, setStage] = useState<Stage>({ kind: "idle" })
   // An outcome clip plays ONCE, then the still takes over (the tinted flask,
   // the sludge). Only the mixing clip loops, for as long as the dice tumble.
@@ -206,10 +219,10 @@ export function AlchemyBench({
   // Escape closes, as every other overlay on the board does.
   useEffect(() => {
     // While the film plays, Escape skips it (BenchIntro) rather than closing.
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro && !critFilm) onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && !intro && !critFilm && !made) onClose() }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [busy, intro, critFilm, onClose])
+  }, [busy, intro, critFilm, made, onClose])
 
   const effectName = useMemo(() => {
     const m = new Map((pack?.effects ?? []).map((e) => [e.slug, e.name]))
@@ -250,6 +263,15 @@ export function AlchemyBench({
       : t === "reagents" ? (pack?.ingredients ?? []).filter((i) => i.prepared > 0).length
       : t === "drinks" ? (pack?.drinks ?? []).length
       : flasksIn(t).length
+
+  // Grab a reagent and drop it in (Sam, 2026-10-01: "grab reagents and place
+  // them in the mix not just click on them"). Clicking still works.
+  const [vesselOver, setVesselOver] = useState(false)
+  const dropInVessel = (slug: string) => {
+    if (!slug || busy || !(pack?.ingredients ?? []).some((i) => i.slug === slug && i.prepared > 0)) return
+    setRecipe(null)
+    setPicked((p) => (p.includes(slug) || p.length >= 3 ? p : [...p, slug]))
+  }
 
   const toggle = (slug: string) => {
     setRecipe(null)
@@ -372,7 +394,7 @@ export function AlchemyBench({
       })
       const body = await res.json()
       setStage({ kind: "note", summary: res.ok ? body.summary : body.error ?? "It would not come together." })
-      if (res.ok) { setTab("drinks"); setJournal(false); setSchematic(null) }
+      if (res.ok) { setTab("drinks"); setJournal(false); setSchematic(null); if (body.drink) setMade({ kind: "drink", ...body.drink }) }
       await load()
     } finally {
       setBusy(false)
@@ -387,7 +409,7 @@ export function AlchemyBench({
     try {
       const r = await roll({
         die: "d20", numDice: 1, modifier: pack.rolls.brew.modifier,
-        label: `Brewing check (INT${pack.rolls.brew.proficient ? " + tools" : ""})`,
+        label: `Brewing check (INT${pack.rolls.brew.proficient ? " + tools" : ""}) vs DC ${recipe ? pack.rolls.brew.dc : pack.rolls.brew.blindDc ?? 15}`,
       })
       const face = r.keptRolls?.[0] ?? r.rolls[0]
       const res = await api("/api/alchemy/brew", {
@@ -411,6 +433,10 @@ export function AlchemyBench({
           kind: "potion",
           effects: (body.effects ?? []).map((e: { slug: string }) => e.slug),
           potency: body.potency, impurity: body.impurity, label: body.label, summary: body.summary,
+        })
+        setMade({
+          kind: "brew", id: body.productId ?? null, label: body.label, effects: body.effects ?? [],
+          potency: body.potency, impurity: body.impurity, rune: body.rune ?? null, base: body.base ?? "water", recipe: Boolean(recipe),
         })
       }
       setPicked([])
@@ -454,6 +480,24 @@ export function AlchemyBench({
     }
   }
 
+  async function toss(m: Made) {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await api("/api/alchemy/discard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(m.kind === "brew" ? { characterId, inventoryItemId: m.id } : { characterId, drinkSlug: m.slug }),
+      })
+      const body = await res.json().catch(() => ({}))
+      setStage({ kind: "note", summary: res.ok ? `Tossed: ${body.tossed}.` : body.error ?? "It would not pour out." })
+      setMade(null)
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const clip: BenchClip | null =
     stage.kind === "rolling" ? stage.clip
       : stage.kind === "inert" ? "inert"
@@ -467,6 +511,7 @@ export function AlchemyBench({
       <style>{BENCH_CSS}</style>
       {intro && <BenchIntro onDone={() => setIntro(false)} />}
       {critFilm && <BenchIntro film={BENCH_CRIT_FILM} label="The flask fails" onDone={() => setCritFilm(false)} />}
+      {made && !intro && !critFilm && <MadeWindow made={made} busy={busy} onKeep={() => setMade(null)} onToss={() => void toss(made)} />}
 
       {/* The bench itself: painted plate, the idle film over it when there is one. */}
       <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
@@ -524,7 +569,16 @@ export function AlchemyBench({
       <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:flex-row">
         {/* The vessel / result */}
         <section aria-live="polite" className="flex flex-col items-center gap-3 lg:w-[38%]">
-          <div className="relative grid aspect-square w-full max-w-[260px] place-items-center sm:max-w-[340px] rounded-sm border border-[#7a5f33]/50 bg-[#0d0b08]/70">
+          <div
+            onDragOver={(e) => { if (e.dataTransfer.types.includes("application/x-aop-reagent")) { e.preventDefault(); setVesselOver(true) } }}
+            onDragLeave={() => setVesselOver(false)}
+            onDrop={(e) => { e.preventDefault(); setVesselOver(false); dropInVessel(e.dataTransfer.getData("application/x-aop-reagent")) }}
+            className={cn(
+              "relative grid aspect-square w-full max-w-[260px] place-items-center sm:max-w-[340px] rounded-sm border bg-[#0d0b08]/70 transition-shadow",
+              vesselOver ? "border-[#e2c98e] shadow-[0_0_24px_rgba(226,201,142,.45)]" : "border-[#7a5f33]/50",
+            )}
+          >
+            {vesselOver && <span className="pointer-events-none absolute top-2 z-10 rounded-sm bg-black/70 px-2 py-0.5 text-xs text-[#f1dca8]">Drop it in</span>}
             {clipUrl && stage.kind !== "idle" && !clipEnded ? (
               <video
                 key={clip}
@@ -595,7 +649,9 @@ export function AlchemyBench({
                   ? "No camp action left this rest"
                   : picked.length < 2
                   ? "Choose 2 or 3 prepared ingredients"
-                  : `Brew — INT ${sign(pack.rolls.brew.modifier)} vs DC ${pack.rolls.brew.dc}`}
+                  : recipe
+                  ? `Brew — INT ${sign(pack.rolls.brew.modifier)} vs DC ${pack.rolls.brew.dc}`
+                  : `Mix blind — INT ${sign(pack.rolls.brew.modifier)} vs DC ${pack.rolls.brew.blindDc ?? 15}`}
               </button>
               {(base !== "water") && <p className="text-xs text-[#e2c98e]">A consecrated base: impurity can't rise above 1.</p>}
               {pack.runes.marks.length > 0 && (
@@ -729,11 +785,14 @@ export function AlchemyBench({
                         <li key={i.slug}>
                           <button
                             type="button"
+                            draggable={!busy && !on}
+                            onDragStart={(e) => { e.dataTransfer.setData("application/x-aop-reagent", i.slug); e.dataTransfer.effectAllowed = "move" }}
                             onClick={() => toggle(i.slug)}
                             disabled={busy}
                             aria-pressed={on}
+                            title={on ? "In the vessel. Click to take it out" : "Drag it into the vessel (or click)"}
                             className={cn(
-                              "flex w-full flex-col items-center gap-1 rounded-sm border bg-[#0d0b08]/85 p-2 text-center transition-colors disabled:opacity-60",
+                              "flex w-full cursor-grab flex-col items-center gap-1 rounded-sm border bg-[#0d0b08]/85 p-2 text-center transition-colors active:cursor-grabbing disabled:opacity-60",
                               on ? "border-[#e2c98e] bg-[#2a1f10]" : "border-[#7a5f33]/50 hover:border-[#c9a868]",
                             )}
                           >
@@ -889,6 +948,65 @@ export function AlchemyBench({
             </>
           )}
         </section>
+      </div>
+    </div>
+  )
+}
+
+/** What was just made: what it is, what it does, keep it or toss it. */
+function MadeWindow({ made, busy, onKeep, onToss }: { made: Made; busy: boolean; onKeep: () => void; onToss: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onKeep() } }
+    window.addEventListener("keydown", k, true)
+    return () => window.removeEventListener("keydown", k, true)
+  }, [onKeep])
+  const brew = made.kind === "brew" ? made : null
+  const drink = made.kind === "drink" ? made : null
+  const kind = brew ? (brew.effects.length >= 2 ? "Elixir" : "Potion") : `Fermented drink · ${drink!.class}`
+  return (
+    <div className="absolute inset-0 z-50 grid place-items-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="What you made">
+      <div className="flex w-full max-w-md flex-col items-center gap-3 rounded-sm border border-[#9c7a3a] bg-[#100c07] p-5 shadow-[0_0_0_3px_rgba(6,5,10,.95),0_0_0_4px_#7a6238,0_30px_80px_rgba(0,0,0,.8)]">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-stone-500">You made</p>
+        {brew ? (
+          <TintedFlask effects={brew.effects.map((e) => e.slug)} potency={brew.potency} impurity={brew.impurity} className="h-32 w-32" />
+        ) : (
+          <img src={cutout(drink!.slug)} alt="" className="h-32 w-32 object-contain" />
+        )}
+        <h3 className="text-center font-serif text-lg text-[#f1dca8]">{brew ? brew.label : drink!.name}</h3>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-[#c9a868]">{kind}</p>
+        <dl className="w-full divide-y divide-[#7a5f33]/40 border-y border-[#7a5f33]/40 text-sm">
+          {brew && brew.effects.map((e) => (
+            <div key={e.slug} className="flex flex-col gap-0.5 py-1.5">
+              <dt className={cn("font-serif", e.harmful ? "text-[#f0875f]" : "text-[#e2c98e]")}>{e.name}{e.harmful ? " (harmful)" : ""}</dt>
+              {e.summary && <dd className="text-xs text-stone-400">{e.summary}</dd>}
+            </div>
+          ))}
+          {brew && (
+            <div className="flex justify-between py-1.5 text-xs text-stone-300">
+              <span>Potency {ROMAN[brew.potency]}</span><span>{IMPURITY[brew.impurity]}</span>
+            </div>
+          )}
+          {brew && brew.rune && isRuneSchool(brew.rune) && (
+            <p className="py-1.5 text-xs text-stone-300">{RUNE_RIDER[brew.rune] ?? `${brew.rune[0].toUpperCase()}${brew.rune.slice(1)} rune: one potency tier stronger.`}</p>
+          )}
+          {brew && brew.base !== "water" && <p className="py-1.5 text-xs text-stone-300">Brewed on {brew.base.replace("-", " ")}.</p>}
+          {drink && (
+            <>
+              {drink.description && <p className="py-1.5 text-xs italic text-stone-300">{drink.description}</p>}
+              <p className="py-1.5 text-xs text-stone-300">Each drink: CON save DC {drink.dc}. A failure climbs {drink.steps} step{drink.steps === 1 ? "" : "s"}.</p>
+            </>
+          )}
+        </dl>
+        <div className="flex w-full gap-3">
+          <button type="button" onClick={onToss} disabled={busy || (brew ? !brew.id : false)}
+            className="flex-1 rounded-sm border border-[#7a5f33] px-3 py-2 font-serif text-sm uppercase tracking-[0.15em] text-stone-300 hover:bg-[#2a1f10] disabled:opacity-40">
+            Toss it
+          </button>
+          <button type="button" onClick={onKeep} disabled={busy} autoFocus
+            className="flex-1 rounded-sm border border-[#c9a868] bg-[#2a1f10] px-3 py-2 font-serif text-sm uppercase tracking-[0.15em] text-[#f1dca8] hover:bg-[#3a2b15] disabled:opacity-40">
+            Keep it
+          </button>
+        </div>
       </div>
     </div>
   )

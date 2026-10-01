@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  BLIND_BREW_DC,
   brewAtBench, sharedEffects, blindColumns, impurityOf, potencyOf,
   BREW_DC, BREW_MARGIN, MAX_IMPURITY, CRIT_FAIL_CUE,
   type BenchIngredient, type BrewInput,
@@ -118,8 +119,9 @@ describe("no shared effect", () => {
 })
 
 describe("the load-bearing rules", () => {
-  it("a missed check still produces a potion — only a 1 and an empty grid give nothing", () => {
-    const r = brewAtBench(input({ check: 4, die: 4, proficient: false }))
+  it("following a recipe, a missed check still produces a potion — only a 1 and an empty grid give nothing", () => {
+    // Blind, a missed check is sludge (DC 15, Sam 2026-10-01; see below).
+    const r = brewAtBench(input({ check: 4, die: 4, proficient: false, recipe: { slug: "r", reliability: "true" } }))
     expect(r).toMatchObject({ ok: true, outcome: "potion" })
     if (!r.ok) throw new Error("unreachable")
     expect(r.effects.length).toBeGreaterThan(0)
@@ -289,7 +291,35 @@ describe("extraction — a bruised ingredient (Sam's 'Yes', 2026-10-01)", () => 
   })
 
   it("never denies the potion — bruising is a cost, not a punishment", () => {
-    const r = brewAtBench(input({ ingredients: known().map((i) => ({ ...i, bruised: true })), check: 3, die: 3, proficient: false }))
+    const r = brewAtBench(input({ ingredients: known().map((i) => ({ ...i, bruised: true })), check: 3, die: 3, proficient: false, recipe: { slug: "r", reliability: "true" } }))
+    expect(r.ok && r.outcome).toBe("potion")
+  })
+})
+
+describe("mixing blind (Sam, 2026-10-01: most experimentation should produce garbage)", () => {
+  it("below DC 15 with no recipe is sludge, even when the ingredients share an effect", () => {
+    const r = brewAtBench(input({ check: 14, die: 12 }))
+    if (!r.ok) throw new Error("unreachable")
+    expect(r.outcome).toBe("inert")
+    expect(r.dc).toBe(BLIND_BREW_DC)
+    expect(r.effects).toEqual([])
+    expect(r.revealed).toEqual([])
+  })
+
+  it("a failed experiment does not say whether the ingredients had anything in common", () => {
+    const shared = brewAtBench(input({ check: 9, die: 7 }))
+    const none = brewAtBench(input({ ingredients: [ripplebark(), ing("fish", "Fish", BLIND_CAVE_FISH)], check: 9, die: 7 }))
+    if (!shared.ok || !none.ok) throw new Error("unreachable")
+    expect(shared.summary.replace(/check \d+/, "")).toBe(none.summary.replace(/check \d+/, ""))
+  })
+
+  it("at DC 15 or better a blind mix that shares an effect still works", () => {
+    const r = brewAtBench(input({ check: 15, die: 13 }))
+    expect(r.ok && r.outcome).toBe("potion")
+  })
+
+  it("a recipe keeps DC 10", () => {
+    const r = brewAtBench(input({ check: 11, die: 9, recipe: { slug: "r", reliability: "true" } }))
     expect(r.ok && r.outcome).toBe("potion")
   })
 })
