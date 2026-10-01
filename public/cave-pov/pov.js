@@ -622,8 +622,14 @@ function interact(){ if(!$("lore").hidden){ closeLore(); return; } if(!started||
 function openChest(ch,magic){ ch.opened=true; SND.creak(ch.x,ch.y,.35); burstAt(ch.x,ch.y,"#ffd36a","sparkle");
   later(.6,()=>{ const got=ch.loot.map(([slug,q])=>{ const n=typeof q==="string"?dice(+q[0],+q.slice(2)):q; BAG[slug]=(BAG[slug]||0)+n; return `${ITEMS[slug]}${n>1?` ×${n}`:""}`; });
     SND.chime(); say(`${magic?"Mage Hand lifts the lid. ":""}Chest: ${got.join(", ")}.`,"#ffd36a"); }); }
+// Sam, 9/30: on a find the character says one of three things, in their own ElevenLabs voice (characters.voice_id).
+// One take per character, cut at the pauses: [start,end] seconds, in the order of FOUND_TXT.
+const FOUND_TXT=["This might be edible.","I bet I can make something from this.","This is probably garbage… but maybe…"];
+const FOUND_CUT={fifi:[[0,1.5],[2.55,4.62],[5.78,8.91]],kenta:[[0,1.7],[2.82,5.02],[6.28,9.33]],samson:[[0,1.06],[2.35,3.88],[5.3,8.02]],scott:[[0,1.15],[2.48,4.56],[5.98,9.85]]};
+function foundLine(){ const k=PC.voice, i=d(3)-1, seg=(FOUND_CUT[k]||[])[i]; say(`${PC.name}: “${FOUND_TXT[i]}”`,"#e8dcc0");
+  if(seg&&BUF[k+"Forage"]){ P.voiceT=t; later(.35,()=>playBuf(k+"Forage",{off:seg[0],dur:seg[1]-seg[0],vol:1.3})); } }
 function forage(m){ if(P.cool>0) return; m.spent=true; P.act={kind:"forage",hand:"open",t:0,dur:1.1}; P.cool=1.2; SND.rustle();
-  later(1.0,()=>{ const r=check("Forage (Survival)",PC.mods.wis,15); if(r.ok){ const slug=FORAGE[d(FORAGE.length)-1], n=d(3); BAG[slug]=(BAG[slug]||0)+n; SND.chime([700,1050]); say(`Foraged: ${ITEMS[slug]} ×${n}.`,"#bfe3a0"); }
+  later(1.0,()=>{ const r=check("Forage (Survival)",PC.mods.wis,15); if(r.ok){ const slug=FORAGE[d(FORAGE.length)-1], n=d(3); BAG[slug]=(BAG[slug]||0)+n; SND.chime([700,1050]); say(`Foraged: ${ITEMS[slug]} ×${n}.`,"#bfe3a0"); foundLine(); }
     else say(`Nothing here ${PC.name} would trust in ${PR().his} mouth.`,"#d7a08c"); }); }
 
 // =====================================================================================================================

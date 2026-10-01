@@ -101,6 +101,9 @@ SRD 5.1 unless marked **HOUSE**.
   Shooting one wakes it.
 - **Forage** — E at a bluecap patch: Survival (WIS) DC 15 → 1d3 of bluecap, barrelstalk, trillimac, waterorb,
   ripplebark, fire lichen, torchstalk. Each character plays their own pick-up animation (PixelLab `picking-up`).
+  On a find they say one of three lines at random, in their own ElevenLabs voice (`characters.voice_id`), Sam 9/30:
+  "This might be edible." / "I bet I can make something from this." / "This is probably garbage… but maybe…" —
+  `audio-<voice>Forage.webm`, one take each cut at the pauses (`FOUND_CUT`, checked against word timings).
 - **Chests** — fixed test loot from the `items` catalog. Everything resolves to a catalog slug.
 
 ## 4. Look and sound
