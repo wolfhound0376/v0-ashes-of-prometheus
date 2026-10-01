@@ -67,14 +67,16 @@ export async function POST(req: NextRequest) {
   const next = withLevel(conditions, result.after)
 
   if (!sandbox) {
+    // The level is written first; only then is the drink taken, so a refused
+    // write never costs the bottle.
+    const { error } = await db.from("characters").update({ conditions: next }).eq("id", characterId)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     const left = (l.row.quantity ?? 1) - 1
     const { error: e1 } =
       left <= 0
         ? await db.from("inventory_items").delete().eq("id", l.row.id)
         : await db.from("inventory_items").update({ quantity: left }).eq("id", l.row.id)
     if (e1) return NextResponse.json({ error: e1.message }, { status: 500 })
-    const { error } = await db.from("characters").update({ conditions: next }).eq("id", characterId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     await db.from("dialogue").insert({ speaker: "Malachar", text: `${l.character.name} drinks ${l.item.name}. ${result.summary}`, channel: "dm" })
   }
 

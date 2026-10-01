@@ -386,7 +386,10 @@ export async function POST(req: NextRequest) {
     impurity: result.impurity,
     // The reasons are for the DM. A sabotaged recipe's line would name the
     // liar, so the player-facing client must not render this list.
-    impurityReasons: result.impurityReasons,
+    // Never when a recipe was followed: the reasons name a bad copy ("+2 the
+    // recipe is sabotaged") and a TRUE recipe gives itself away by what is
+    // missing. The Poisoned Cookbook only works if the brewer cannot tell.
+    impurityReasons: recipe ? null : result.impurityReasons,
     learned: result.revealed,
     critical: result.critical,
     dc: result.dc,

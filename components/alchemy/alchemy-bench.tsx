@@ -96,7 +96,13 @@ export function AlchemyBench({ characterId, onClose }: { characterId: string; on
       const r = await fetch(`/api/alchemy/pack?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
       const body = await r.json()
       if (!r.ok) throw new Error(body?.error ?? "The bench could not be read.")
-      setPack(body as Pack)
+      const next = body as Pack
+      setPack(next)
+      // A consecrated base that has run out falls back to water, so the next
+      // brew does not roll a d20 only to be refused for a missing base.
+      setBase((b) =>
+        (b === "blessed-water" && !next.bases.blessedWater) || (b === "holy-water" && !next.bases.holyWater) ? "water" : b,
+      )
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : "The bench could not be read.")
