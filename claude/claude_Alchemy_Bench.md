@@ -83,3 +83,17 @@ Sam delegated these three ("your call"). Recorded here so a later session does n
 - **Drinking the potion.** Nothing reads `inventory_items.brew`, so potency tiers and the residue/taint/corruption riders are recorded and not yet applied. That is the next thing that makes any of this visible at the table.
 - **Runes** (step 4) and the **Poisoned Cookbook** (step 5).
 - **The camp action budget** — `lib/camp.ts` knows `brew` spends an action; nothing wires it to the route.
+
+---
+
+## The bench screen (2026-10-01)
+
+The bench now has a face. Camp → **Craft** → Alchemy → **Open the alchemy bench** opens `components/alchemy/alchemy-bench.tsx`, a full-screen overlay over the approved bench plate. From it a player can **taste** (CON save), **brew** (INT check) and **drink**, all through the existing routes; nothing in the screen decides a rule.
+
+- **`GET /api/alchemy/pack`** is the player's read: ingredients in the pack with every *unknown* column masked to `null` server-side (`lib/alchemy-pack.ts maskGrid`, tested), carried flasks, holy water held, and the two roll modifiers. The DM-gated `/api/alchemy/bench` still exists for the full grid.
+- **Roll modifiers are decided server-side.** Brewing = INT + proficiency with alchemist's supplies or an herbalism kit (XGE tool check). Tasting = CON save + proficiency if proficient in CON saves.
+- **A bug that made Fifi brew untrained.** The tool check normalised `Alchemist's Supplies` to `alchemist s supplies`, which never matched `alchemists supplies`. Apostrophes are now deleted, not spaced; the brew route and the pack route share one function (`benchProficient`).
+- **The critical-failure film is cued client-side** off the brew response, because nothing parses the `[CINEMATIC:]` tag the route writes into `dialogue`. The clip row exists; the **file is still missing from storage** (`vtt-assets/cinematics/Alchemy_CriticalFailure.mp4` → 400). Until Sam uploads it a natural 1 shows the painted aftermath and the summary, and no film.
+- **Art** is the approved set (`lib/alchemy-art.ts`). The 22 effect colours are CSS over the approved flask: one band per effect, glow by potency, a distinct motion per effect (a test holds that no two effects share a motion). Reaction clips are uploaded but `BENCH_CLIPS` stays **empty until Sam approves them** on the review page; every clip has a still fallback.
+
+Not in this piece: extraction, cleric consecration, runes, recipes in the UI, drinks and inebriation. Each is its own PR.

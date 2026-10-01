@@ -1,0 +1,127 @@
+// The alchemy bench, seen by ONE player.
+//
+//   GET ?characterId=…  → what this character can put on the bench, what
+//                         they already know about it, the flasks they carry,
+//                         and the modifiers for the two rolls the bench asks for.
+//
+// The player-facing twin of /api/alchemy/bench. That route is DM-gated
+// because it returns every ingredient's full four-effect grid — the thing
+// players are meant to discover one column at a time. This one never does:
+// an unknown column leaves here as `null`, never as its effect slug, and the
+// effect vocabulary returned is only the effects this character has learned
+// or is carrying in a flask. A test holds that line (alchemy-pack.test.ts).
+//
+// A PLAYER READ, fenced like /api/alchemy/taste: the characterId comes from
+// the caller and is never read off sessions.active_character_id (AGENTS.md §5).
+//
+// The roll modifiers are decided HERE, not in the browser, so every client
+// rolls the same thing:
+//   * brewing  = Intelligence + proficiency if the sheet has alchemist's
+//                supplies or an herbalism kit (XGE tool check; the same two
+//                tools /api/alchemy/brew accepts).
+//   * tasting  = a Constitution save, + proficiency if proficient in CON saves.
+import { type NextRequest, NextResponse } from "next/server"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { isGrid } from "@/lib/eat-it-and-see"
+import { BREW_DC } from "@/lib/alchemy-bench"
+import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
+import { maskGrid, benchProficient } from "@/lib/alchemy-pack"
+
+export const dynamic = "force-dynamic"
+
+export async function GET(req: NextRequest) {
+  const characterId = req.nextUrl.searchParams.get("characterId")
+  if (!characterId) return NextResponse.json({ error: "characterId required" }, { status: 400 })
+
+  const db = createAdminClient()
+
+  const { data: character } = await db
+    .from("characters")
+    .select("id, name, class, int_modifier, con_modifier, proficiency_bonus, sheet_proficiencies, sheet_save_proficiencies")
+    .eq("id", characterId)
+    .maybeSingle()
+  if (!character) return NextResponse.json({ error: "no such character" }, { status: 404 })
+
+  const [{ data: pack }, { data: known }] = await Promise.all([
+    db.from("inventory_items").select("id, name, quantity, item_id, icon_url, brew").eq("character_id", characterId),
+    db.from("character_known_effects").select("item_slug, column_index").eq("character_id", characterId),
+  ])
+
+  const itemIds = [...new Set((pack ?? []).map((p) => p.item_id).filter(Boolean) as string[])]
+  const names = [...new Set((pack ?? []).filter((p) => !p.item_id).map((p) => p.name as string))]
+  const [{ data: byId }, { data: byName }] = await Promise.all([
+    itemIds.length
+      ? db.from("items").select("id, slug, name, icon_url, alchemy_effects").in("id", itemIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    names.length
+      ? db.from("items").select("id, slug, name, icon_url, alchemy_effects").in("name", names)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+  ])
+  const catalogById = new Map((byId ?? []).map((r) => [r.id as string, r]))
+  const catalogByName = new Map((byName ?? []).map((r) => [r.name as string, r]))
+
+  const knownBySlug = new Map<string, number[]>()
+  for (const k of known ?? []) {
+    const s = k.item_slug as string
+    knownBySlug.set(s, [...(knownBySlug.get(s) ?? []), k.column_index as number])
+  }
+
+  // Ingredients: anything in the pack whose catalogue row carries a grid.
+  const ingredients = new Map<string, {
+    slug: string; name: string; icon: string | null; quantity: number; columns: (string | null)[]
+  }>()
+  let holyWater = 0
+  const flasks: Array<{ id: string; name: string; potency: number; impurity: number; effects: string[] }> = []
+
+  for (const p of pack ?? []) {
+    if (p.brew && typeof p.brew === "object") {
+      const b = p.brew as { effects?: unknown; potency?: unknown; impurity?: unknown }
+      flasks.push({
+        id: p.id as string,
+        name: p.name as string,
+        potency: Number(b.potency) || 1,
+        impurity: Number(b.impurity) || 0,
+        effects: Array.isArray(b.effects) ? b.effects.filter((e): e is string => typeof e === "string") : [],
+      })
+      continue
+    }
+    const row = (p.item_id ? catalogById.get(p.item_id as string) : catalogByName.get(p.name as string)) as
+      | { slug: string; name: string; icon_url: string | null; alchemy_effects: unknown } | undefined
+    if (!row) continue
+    if (row.slug === "holy-water") holyWater += Number(p.quantity ?? 1)
+    if (!isGrid(row.alchemy_effects)) continue
+    const prev = ingredients.get(row.slug)
+    ingredients.set(row.slug, {
+      slug: row.slug,
+      name: row.name,
+      icon: (p.icon_url as string | null) ?? row.icon_url,
+      quantity: (prev?.quantity ?? 0) + Number(p.quantity ?? 1),
+      columns: maskGrid(row.alchemy_effects, knownBySlug.get(row.slug) ?? []),
+    })
+  }
+
+  // The vocabulary: only effects this character can already see.
+  const visible = new Set<string>()
+  for (const i of ingredients.values()) for (const c of i.columns) if (c) visible.add(c)
+  for (const f of flasks) for (const e of f.effects) visible.add(e)
+  const { data: effects } = visible.size
+    ? await db.from("alchemy_effects").select("slug, name, category, summary, is_harmful").in("slug", [...visible])
+    : { data: [] }
+
+  const prof = Number(character.proficiency_bonus ?? 2)
+  const proficient = benchProficient(character.sheet_proficiencies)
+  const conSave = Array.isArray(character.sheet_save_proficiencies) &&
+    (character.sheet_save_proficiencies as unknown[]).some((s) => String(s).toLowerCase() === "con")
+
+  return NextResponse.json({
+    character: { id: character.id, name: character.name, class: character.class },
+    ingredients: [...ingredients.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    flasks,
+    bases: { water: true, holyWater },
+    effects: effects ?? [],
+    rolls: {
+      brew: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC },
+      taste: { ability: "CON", modifier: Number(character.con_modifier ?? 0) + (conSave ? prof : 0), dc: TASTE_SAVE_DC },
+    },
+  })
+}
