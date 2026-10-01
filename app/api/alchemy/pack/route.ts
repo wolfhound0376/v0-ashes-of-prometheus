@@ -24,7 +24,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sandboxRefused } from "@/lib/alchemy-sandbox-server"
 import { isGrid } from "@/lib/eat-it-and-see"
-import { BREW_DC } from "@/lib/alchemy-bench"
+import { BREW_DC, BLIND_BREW_DC } from "@/lib/alchemy-bench"
 import { TASTE_SAVE_DC } from "@/lib/eat-it-and-see"
 import { maskGrid, benchProficient } from "@/lib/alchemy-pack"
 import { isPrep, methodOf, METHOD_TOOL, type ExtractionMethod } from "@/lib/extraction"
@@ -265,7 +265,7 @@ export async function GET(req: NextRequest) {
       }),
     },
     rolls: {
-      brew: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC },
+      brew: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC, blindDc: BLIND_BREW_DC },
       // Extraction is the same check against the same DC (lib/extraction.ts).
       extract: { ability: "INT", modifier: Number(character.int_modifier ?? 0) + (proficient ? prof : 0), proficient, dc: BREW_DC },
       taste: { ability: "CON", modifier: Number(character.con_modifier ?? 0) + (conSave ? prof : 0), dc: TASTE_SAVE_DC },

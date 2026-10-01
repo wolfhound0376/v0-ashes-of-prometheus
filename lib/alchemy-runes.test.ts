@@ -56,7 +56,8 @@ describe("riders", () => {
     const g1: Grid = ["restore-health", "rot", "darksight", "sicken"]
     const g2: Grid = ["restore-health", "long-march", "keen-scent", "corrode"]
     const ing = (slug: string, grid: Grid): BenchIngredient => ({ slug, name: slug, grid, knownColumns: [1, 2, 3, 4], have: 1 })
-    const base = { ingredients: [ing("a", g1), ing("b", g2)], check: 12, die: 12, proficient: false }
+    // Followed from a recipe: a blind mix at 12 is sludge (DC 15, Sam 2026-10-01).
+    const base = { ingredients: [ing("a", g1), ing("b", g2)], check: 12, die: 12, proficient: false, recipe: { slug: "r", reliability: "true" as const } }
     const plain = brewAtBench(base)
     const evo = brewAtBench({ ...base, rune: "evocation" })
     const abj = brewAtBench({ ...base, rune: "abjuration" })

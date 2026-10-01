@@ -305,16 +305,21 @@ export async function POST(req: NextRequest) {
   }
 
   const effectNames = new Map<string, string>()
+  // What each effect does, for the "what you made" window.
+  const effectInfo = new Map<string, { summary: string | null; harmful: boolean }>()
   if (result.effects.length > 0) {
     const { data: effs } = await db
       .from("alchemy_effects").select("slug, name, summary, is_harmful").in("slug", result.effects)
     for (const e of effs ?? []) effectNames.set(e.slug as string, e.name as string)
+    for (const e of effs ?? []) effectInfo.set(e.slug as string, { summary: (e.summary as string | null) ?? null, harmful: Boolean(e.is_harmful) })
   }
 
   const label =
     result.effects.map((e) => effectNames.get(e) ?? e).join(" / ") +
     ` (${ROMAN[result.potency]})`
 
+  // The new flask's row, so the bench can offer to toss it (Sam, 2026-10-01).
+  let productId: string | null = null
   // Rehearsal stops here: everything above is a read, everything below writes.
   if (!sandbox) {
     // The potion goes in FIRST. If the insert is refused, nothing has been
@@ -323,7 +328,7 @@ export async function POST(req: NextRequest) {
     // brew ever attempted (fixed 2026-10-01: the constraint wanted `effect`,
     // this writes `effects`).
     if (result.outcome === "potion" && product) {
-      const { error } = await db.from("inventory_items").insert({
+      const { data: madeRow, error } = await db.from("inventory_items").insert({
         character_id: characterId,
         name: `Brew — ${label}`,
         quantity: 1,
@@ -344,8 +349,9 @@ export async function POST(req: NextRequest) {
           brewed_by: characterId,
           brewed_at: new Date().toISOString(),
         },
-      })
+      }).select("id").maybeSingle()
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      productId = (madeRow?.id as string | undefined) ?? null
     }
 
     // One of each, every outcome — a failed brew costs the same as a good one.
@@ -402,7 +408,10 @@ export async function POST(req: NextRequest) {
     character: character.name,
     outcome: result.outcome,
     consumed: result.consumed,
-    effects: result.effects.map((slug) => ({ slug, name: effectNames.get(slug) ?? slug })),
+    effects: result.effects.map((slug) => ({ slug, name: effectNames.get(slug) ?? slug, summary: effectInfo.get(slug)?.summary ?? null, harmful: effectInfo.get(slug)?.harmful ?? false })),
+    productId,
+    rune: rune ?? null,
+    base: body.base ?? "water",
     label: result.outcome === "potion" ? label : null,
     potency: result.potency,
     impurity: result.impurity,
