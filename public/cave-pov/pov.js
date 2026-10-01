@@ -417,6 +417,13 @@ function fogBetween(x0,y0,x1,y1){ const n=12; for(let i=0;i<=n;i++) if(inFog(x0+
 // can this creature perceive her? blindsight inside its radius; otherwise sight — the lantern shows her unless fog or a good hide hides her
 function perceives(e){ const dist=Math.hypot(P.x-e.x,P.y-e.y); if(!clearLine(e.x,e.y,P.x,P.y)) return false; if(dist<=e.blind) return true; if(dist>((P.crouch||P.hidden)&&!(P.sporeGlow>0)?8:12)) return false;
   if(fogBetween(e.x,e.y,P.x,P.y)) return false; if(P.hidden&&e.pp<P.hidden) return false; return true; }
+// Sam, 9/30: "I was hiding; can you prove it beat my stealth" — whenever a creature finds a hidden character, the log says
+// exactly why, with the numbers: blindsight (hiding does nothing inside it — the hook horror's is 60 ft, the giant
+// spider's 10 ft), or its passive Perception against the Stealth roll she hid with.
+function foundHidden(e,dist){ const ft=Math.round(dist*5), st=P.hidden; let why;
+  if(dist<=e.blind) why=`blindsight ${e.blind*5} ft and ${PC.name} is ${ft} ft away — hiding doesn't work against blindsight (Stealth ${st} doesn't matter)`;
+  else why=`its passive Perception ${e.pp} meets or beats ${PR().his} Stealth ${st}`;
+  P.hidden=0; say(`${e.name} finds ${PC.name}: ${why}.`,"#ff9f7a"); e.pops.push({t:"!",c:"#ff9f7a",age:0}); renderBar(); }
 function canSee(e){ return !e.dead&&clearLine(P.x,P.y,e.x,e.y)&&!fogBetween(P.x,P.y,e.x,e.y); }
 // the creature in front of her: melee inside reach, ranged along the line of sight
 function aimAngle(){ return P.a; }
@@ -749,6 +756,7 @@ function updateEnts(dt){ for(const e of ENTS){ e.pops.forEach(p=>p.age+=dt); e.p
     if(e.sleep>0){ e.sleep-=dt; e.state="idle"; if(e.sleep<=0) reveal(e); continue; }
     if(e.stun>0){ e.stun-=dt; continue; }
     const dx=P.x-e.x, dy=P.y-e.y, dist=Math.hypot(dx,dy), sees=!P.dead&&perceives(e);
+    if(sees&&P.hidden) foundHidden(e,dist);
     // hidden: a creature whose passive Perception beats her Stealth finds her
     if(sees){ e.lastSeen={x:P.x,y:P.y}; if(e.mode!=="hunt"){ e.mode="hunt"; roar(e); } }
     else if(e.mode==="hunt"&&!P.dead){ if(e.lastSeen&&Math.hypot(e.lastSeen.x-e.x,e.lastSeen.y-e.y)<.6){ e.mode="search"; e.searchT=6; } }
@@ -768,7 +776,10 @@ function updateEnts(dt){ for(const e of ENTS){ e.pops.forEach(p=>p.age+=dt); e.p
 // SRD attacks. Giant Spider — Bite +5, 1d8+3 piercing plus DC 11 CON or 2d8 poison (half on a save). Hook Horror — two Hooks, +6, 2d6+4.
 const ATK={bite:{name:"bite",hit:5,n:1,d:8,mod:3,poison:{dc:11,n:2,d:8}},hook:{name:"hook",hit:6,n:2,d:6,mod:4}};
 function strike(e){ if(e.dead||e.incap||e.sleep||P.dead) return; const A2=ATK[e.atk]||ATK.bite; const ac=P.ac+(P.sof>0?2:0);
-  if(Math.hypot(P.x-e.x,P.y-e.y)>(e.reach||1.1)+.4) return;
+  // Sam, 9/30: "it should be able to reach you" — checked again on the frame the blow lands: its real reach (spider bite
+  // 5 ft = 1.1 squares, hook horror 10 ft = 2), plus 0.1 square for the body jostling, and nothing solid in between.
+  // Step back during its wind-up and the blow falls short.
+  { const dd=Math.hypot(P.x-e.x,P.y-e.y), R=e.reach||1.1; if(dd>R+.1||!clearLine(e.x,e.y,P.x,P.y)){ say(`${e.name} ${A2.name} — ${PC.name} is out of reach (${Math.round(dd*5)} ft, reach ${Math.floor(R*5)} ft).`,"#9ab8d8"); SND.miss(e.x,e.y); return; } }
   if(P.sanct>0){ const r=d(20), m=(MSAVE[e.sprite]||{}).wis||0; if(r+m<13){ say(`Sanctuary: the ${e.name.toLowerCase()} (WIS ${r+m} vs DC 13) can't bring itself to strike ${PR().him}.`,"#fff4c9"); return; } }
   let adv=P.restrained, dis=P.dodge>0||!!P.hidden||e.mocked||e.sapped; const why=[P.dodge>0&&"dodging",P.hidden&&"unseen",e.mocked&&"mocked",e.sapped&&"sapped",P.restrained&&"restrained"].filter(Boolean); e.mocked=false; e.sapped=false;
   const r=d20(adv,dis), tot=r.f+A2.hit, crit=r.f===20;

@@ -92,6 +92,13 @@ SRD 5.1 unless marked **HOUSE**.
 - **Creatures** — giant spider (SRD) and hook horror (OotA) from `bestiary`.
 - **Fright** — roar → WIS save DC 11 spider / 13 hook horror → SRD Frightened 6 s, voice line (**HOUSE** trigger).
 - **Hide** — Stealth vs DC 15; creatures with passive Perception ≥ the total still see you.
+  Blindsight ignores hiding inside its range (hook horror 60 ft, giant spider 10 ft — both from `bestiary`). Whenever a
+  creature finds a hidden character the log says why with the numbers ("blindsight 60 ft and Fifi is 25 ft away…", or
+  "its passive Perception 10 meets or beats her Stealth 9"), and she stops being hidden (Sam, 9/30: "can you prove it
+  beat my stealth").
+- **Creature reach** — an attack starts only inside its reach with a clear line (bite 5 ft = 1.1 squares, hooks 10 ft
+  = 2), and is checked again when the blow lands: still inside reach (+0.1 square) and in line, or it falls short and
+  the log says "out of reach" with the distance. Step back during the wind-up and it misses (Sam, 9/30).
 - **Crouch** — slower (55%), quieter, advantage on Stealth, noticed within 8 squares instead of 12 (**HOUSE**). Standing ends Hide.
 - **Leap back (0)** — ~8 ft, disadvantage on attacks against you while airborne + 0.5 s, 3 s cooldown, grunt (**HOUSE**).
 - **Jump (Space)** — SRD standing high jump, (3 + STR mod) ÷ 2 ft; a moving hop ×1.5 (**HOUSE**). Real gravity.
