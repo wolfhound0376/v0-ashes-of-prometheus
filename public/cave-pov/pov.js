@@ -152,6 +152,80 @@ const SPORES=[]; { const pool=openCells.filter(c=>!taken.has(c.x+","+c.y)&&roomy
   for(let i=0;i<D.dressing.violets&&pool.length;i++){ const c=pick(pool); const L={x:c.x+.5,y:c.y+.5,r:0,g:0,b:0,rad:2.6}; LIGHTS.push(L);
     const e={name:"violet fungus",sprite:"violet",deco:true,spore:true,x:c.x+.35+DECO_RND()*.3,y:c.y+.35+DECO_RND()*.3,scale:.62,solid:true,rad:.26,sporeCd:0,wake:0,light:L,id:ENTS.length,ft:DECO_RND()*3,state:"idle",pops:[],flash:0};
     L.x=e.x; L.y=e.y; ENTS.push(e); SPORES.push(e); taken.add(c.x+","+c.y); } }
+// ---- CAVE FAUNA (Sam, 9/30): "Caves should have harmless fauna flying around like bats hanging that get startled when
+// stirred and fly around. Insects should be moving around. Little spiders might be crawling." Harmless set dressing — no
+// stat blocks, no rolls, nothing to fight. Tiny pixel bitmaps drawn in code (the view's own pixel look), lit by the cave
+// light and clipped per column against the walls like every other sprite. Counts come from the record's `dressing`.
+//  · bats roost on the ceiling in twos to fours; walk close (closer still if you crouch), dash, loose an arrow, land a blow,
+//    land a jump or set off a roar nearby, and they drop, scatter and circle, squeaking, then settle somewhere else;
+//  · moths and gnats dance in the light of the glowing fungi and crystals;
+//  · little spiders creep along the floor by the walls in fits and starts, and scuttle off if you come near.
+const FA_PAL={x:[37,28,31],h:[75,59,58],e:[170,60,46],s:[31,25,21],m:[122,102,80]};
+const FA_ART={
+  hang:[".x.x.",".xxx.","xxxxx","xxhxx",".xxx.",".xex.","x...x"],
+  fly:[["x...........x",".x.........x.",".xx.x...x.xx.","..xxxhxhxxx..",".....xxx....."],
+       [".....x.x.....",".xxx.xxx.xxx.","xxxxxhxhxxxxx","x...xxxxx...x",".....x.x....."],
+       ["....x...x....","....xxxxx....","...xxhxhxx...",".xxx.xxx.xxx.","xx.........xx"]],
+  spider:[["s.sss.s",".ssmss.","s.s.s.s"],[".s.s.s.","sssmsss","s.s.s.s"]]};
+const BATS=[], SPIDS=[], MOTHS=[]; let batSqT=0, batFlushT=0;
+D.dressing=Object.assign({bats:10,spiders:9,swarms:6},D.dressing);
+{ const pool=openCells.filter(c=>Math.hypot(c.x+.5-P.x,c.y+.5-P.y)>4); let n=D.dressing.bats;
+  while(n>0&&pool.length){ const c=pick(pool), k=Math.min(n,2+Math.floor(DECO_RND()*3)); n-=k;
+    for(let i=0;i<k;i++) BATS.push({x:c.x+.2+DECO_RND()*.6,y:c.y+.2+DECO_RND()*.6,z:.95,st:"roost",ph:DECO_RND()*6,hd:0,vx:0,vy:0,tm:0,delay:0,tx:0,ty:0,flip:DECO_RND()<.5}); } }
+{ const pool=openCells.filter(c=>c.walls>=1); for(let i=0;i<D.dressing.spiders&&pool.length;i++){ const c=pick(pool);
+    SPIDS.push({x:c.x+.2+DECO_RND()*.6,y:c.y+.2+DECO_RND()*.6,hd:DECO_RND()*6.28,go:0,rest:DECO_RND()*2,step:0,sp:.7+DECO_RND()*.5}); } }
+{ const glows=ENTS.filter(e=>e.deco&&e.glow&&!e.spore); for(let i=0;i<D.dressing.swarms&&glows.length;i++){ const e=glows.splice(Math.floor(DECO_RND()*glows.length),1)[0];
+    for(let j=0;j<6+Math.floor(DECO_RND()*5);j++) MOTHS.push({cx:e.x,cy:e.y,cz:Math.min(.85,(e.scale||.5)*.9+.12),r:.12+DECO_RND()*.32,a:DECO_RND()*6.28,b:1.3+DECO_RND()*2.4,c:2+DECO_RND()*3,ph:DECO_RND()*6.28,x:e.x,y:e.y,z:.5,moth:DECO_RND()<.5}); } }
+function startleBat(b,delay=0){ if(b.st!=="roost") return; b.st="flush"; b.delay=delay; }
+function faunaNoise(x,y,r){ if(BLD.open) return; for(const b of BATS) if(Math.hypot(b.x-x,b.y-y)<r) startleBat(b,Math.random()*.25); }
+function batOpen(x,y){ return !solid(x,y)&&!solid(x+.12,y)&&!solid(x-.12,y)&&!solid(x,y+.12)&&!solid(x,y-.12); }
+function faunaTick(dt){ if(BLD.open) return;
+  const near=(P.crouch||P.hidden)?1.4:P.dash>0?4.2:P.moving?2.8:2;
+  batSqT-=dt; batFlushT-=dt;
+  for(const b of BATS){ b.ph+=dt;
+    if(b.st==="roost"){ if(!P.dead&&Math.hypot(b.x-P.x,b.y-P.y)<near) startleBat(b); continue; }
+    if(b.st==="flush"){ b.delay-=dt; if(b.delay>0) continue; b.st="fly"; b.tm=3.5+Math.random()*3.5; b.zo=Math.random()*6.28; b.hd=Math.atan2(b.y-P.y,b.x-P.x)+(Math.random()-.5)*1.4; b.vx=b.vy=0;
+      for(const o of BATS) if(o!==b&&Math.hypot(o.x-b.x,o.y-b.y)<2.4) startleBat(o,.05+Math.random()*.3); // the colony goes up together
+      if(batFlushT<=0){ batFlushT=2.2; playBuf(Math.random()<.5?"batFlush":"batFlush2",{x:b.x,y:b.y,vol:.55,rate:.95+Math.random()*.12}); } }
+    // flying: a jittery wander, quick turns off the walls, swooping up and down
+    b.hd+=(Math.random()-.5)*dt*9;
+    if(b.st==="home"){ const dh=Math.atan2(b.ty-b.y,b.tx-b.x)-b.hd; b.hd+=Math.atan2(Math.sin(dh),Math.cos(dh))*Math.min(1,dt*5); }
+    else { b.tm-=dt; if(b.tm<=0){ // look for a new roost in sight, away from the player
+        const cand=openCells.filter(c=>{ const x=c.x+.5, y=c.y+.5, dd=Math.hypot(x-b.x,y-b.y); return dd>1.5&&dd<7&&Math.hypot(x-P.x,y-P.y)>3.5&&clearLine(b.x,b.y,x,y); });
+        if(cand.length){ const c=cand[Math.floor(Math.random()*cand.length)]; b.tx=c.x+.2+Math.random()*.6; b.ty=c.y+.2+Math.random()*.6; b.st="home"; } else b.tm=1; } }
+    const sp=b.st==="home"?2.2:3; for(const tryA of [0,.9,-.9,1.8,-1.8,Math.PI]){ const a=b.hd+tryA; if(batOpen(b.x+Math.cos(a)*.45,b.y+Math.sin(a)*.45)){ b.hd=a; break; } }
+    b.vx+=(Math.cos(b.hd)*sp-b.vx)*Math.min(1,dt*5); b.vy+=(Math.sin(b.hd)*sp-b.vy)*Math.min(1,dt*5);
+    const nx=b.x+b.vx*dt, ny=b.y+b.vy*dt; if(batOpen(nx,b.y)) b.x=nx; else b.vx*=-.5; if(batOpen(b.x,ny)) b.y=ny; else b.vy*=-.5;
+    const zt=b.st==="home"&&Math.hypot(b.tx-b.x,b.ty-b.y)<.6?.95:.58+.22*Math.sin(t*2.3+(b.zo||0))+.08*Math.sin(t*7.1+(b.zo||0)*2); b.z+=(zt-b.z)*Math.min(1,dt*4); b.flip=b.vx<0;
+    if(b.st==="home"&&Math.hypot(b.tx-b.x,b.ty-b.y)<.18){ b.st="roost"; b.z=.95; }
+    if(batSqT<=0&&Math.hypot(b.x-P.x,b.y-P.y)<7){ batSqT=.35+Math.random()*1.1; const n=1+Math.floor(Math.random()*5); playBuf("batSqueak",{x:b.x,y:b.y,vol:.28,rate:.9+Math.random()*.3,off:BAT_SQ[n-1][0],dur:BAT_SQ[n-1][1]}); } }
+  for(const s of SPIDS){ const dp=Math.hypot(s.x-P.x,s.y-P.y);
+    if(dp<1.6&&!P.dead){ s.hd=Math.atan2(s.y-P.y,s.x-P.x)+(Math.random()-.5)*.6; s.go=.5; s.rest=0; s.fast=1; }
+    if(s.go>0){ s.go-=dt; const v=s.sp*(s.fast?2.4:1)*dt, nx=s.x+Math.cos(s.hd)*v, ny=s.y+Math.sin(s.hd)*v;
+      if(!solid(nx+Math.cos(s.hd)*.08,ny+Math.sin(s.hd)*.08)){ s.x=nx; s.y=ny; s.step+=v; } else s.hd+=1.4+Math.random()*1.4;
+      if(s.go<=0){ s.rest=.5+Math.random()*2.2; s.fast=0; } }
+    else { s.rest-=dt; if(s.rest<=0){ s.go=.25+Math.random()*.8; s.hd+=(Math.random()-.5)*2.2; } } }
+  for(const m of MOTHS){ m.x=m.cx+Math.sin(t*m.b+m.ph)*m.r+Math.sin(t*7.3+m.ph*3)*.03; m.y=m.cy+Math.cos(t*m.b*.83+m.ph)*m.r+Math.cos(t*6.1+m.ph*2)*.03; m.z=m.cz+Math.sin(t*m.c+m.ph)*.1; } }
+const BAT_SQ=[[.13,.34],[.48,.32],[.82,.26],[1.1,.32],[1.44,.22]]; // [start, length] of each squeak in audio-batSqueak (ElevenLabs SFX), cut at the onsets
+// one pixel bitmap, at a world point, `size` squares wide; per-column wall clipping; lit by the cave light
+function drawBM(rows,x,y,z,size,flip){ const pr=project(x,y,z); if(!pr||pr.x<-60||pr.x>RW+60) return; const w=rows[0].length, h=rows.length;
+  const [lr,lg,lb]=light(x,y,pr.d); const k=Math.min(1.3,Math.max(.16,(lr+lg+lb)/3*1.3)); const ps=pr.s*size/w;
+  ctx.save(); ctx.globalCompositeOperation="source-over"; ctx.globalAlpha=1;
+  if(ps<.55){ const cx=Math.round(pr.x); if(cx>=0&&cx<RW&&pr.d<zbuf[cx]){ ctx.fillStyle=shadeRGB(FA_PAL.x,k*1.4); ctx.fillRect(cx,Math.round(pr.y),1,1); } ctx.restore(); return; }
+  const p=Math.max(1,Math.round(ps)), x0=Math.round(pr.x-w*p/2), y0=Math.round(pr.y-h*p/2);
+  for(let j=0;j<h;j++) for(let i=0;i<w;i++){ const c=rows[j][flip?w-1-i:i]; if(c===".") continue; const sx=x0+i*p; if(sx+p<=0||sx>=RW) continue;
+    if(pr.d>=zbuf[Math.max(0,Math.min(RW-1,sx))]) continue; ctx.fillStyle=shadeRGB(FA_PAL[c],c==="e"?Math.max(.6,k):k); ctx.fillRect(sx,y0+j*p,p,p); }
+  ctx.restore(); }
+function drawFauna(o){ if(o.kind==="bat"){ const b=o.o;
+    if(b.st==="roost"||(b.st==="flush"&&b.delay>0)){ const sw=Math.sin(t*1.3+b.ph)*.004; drawBM(FA_ART.hang,b.x+sw,b.y,.95-.045,.075,b.flip); }
+    else { const f=[0,1,2,1][Math.floor(b.ph*16)%4]; drawBM(FA_ART.fly[f],b.x,b.y,b.z,.2,b.flip); } }
+  else if(o.kind==="spider"){ const s=o.o; drawBM(FA_ART.spider[Math.floor(s.step*40)%2],s.x,s.y,.03,.1,Math.cos(s.hd-P.a)<0); }
+  else { const m=o.o, pr=project(m.x,m.y,m.z); if(!pr) return; const cx=Math.round(pr.x), cy=Math.round(pr.y); if(cx<1||cx>=RW-1||pr.d>=zbuf[cx]) return;
+    const p=pr.s>170?2:1; ctx.save(); ctx.globalCompositeOperation="source-over";
+    if(m.moth){ const up=Math.sin(t*16+m.ph*5)>0; ctx.fillStyle="rgba(236,226,198,.9)"; // a pale moth: body, wings beating up and down
+      ctx.fillRect(cx,cy,p,p); ctx.fillStyle="rgba(214,202,170,.8)"; if(up){ ctx.fillRect(cx-p,cy-p,p,p); ctx.fillRect(cx+p,cy-p,p,p); } else { ctx.fillRect(cx-p,cy,p,p); ctx.fillRect(cx+p,cy,p,p); } }
+    else { ctx.fillStyle=`rgba(24,20,18,${(.65+.3*Math.sin(t*31+m.ph*5)).toFixed(2)})`; ctx.fillRect(cx,cy,p,p); } // a gnat: a dark speck, flickering
+    ctx.restore(); } }
 // ---- PLACED PIECES (the dungeon record, and Sam's builder). Each entry keeps `src` = its record entry, so erasing it
 // in the builder removes the right thing from both the world and the file.
 function makeViolet(x,y,src){ const L={x,y,r:0,g:0,b:0,rad:2.6,src}; LIGHTS.push(L);
@@ -391,7 +465,7 @@ function weaponHit(c,e,{ranged=false}={}){ const hitB=c.kind==="melee"&&c.name==
   const cr=crit||autoCrit; let dmg=c.name==="Unarmed strike"?PC.unarmed.flat:(dice(c.dice[0]*(cr?2:1),c.dice[1])+c.mod); let extra="";
   if(PC===PCS.fifi&&(c.finesse||ranged)&&r.adv&&P.sneakT<=0){ const s=dice(cr?2:1,6); dmg+=s; extra=` +${s} Sneak Attack`; P.sneakT=6; }
   if(c.sap){ e.sapped=true; extra+=" · Sap"; }
-  say(`${tag} — ${cr?"CRITICAL, ":""}${dmg} ${c.type}${extra}`,"#ffd36a"); SND.hit(e.x,e.y); if(P.act&&!ranged){ P.act.stopT=cr?.18:.11; P.shake=Math.max(P.shake,cr?.35:.2); } hurt(e,dmg,c.type); }
+  say(`${tag} — ${cr?"CRITICAL, ":""}${dmg} ${c.type}${extra}`,"#ffd36a"); SND.hit(e.x,e.y); faunaNoise(e.x,e.y,4); if(P.act&&!ranged){ P.act.stopT=cr?.18:.11; P.shake=Math.max(P.shake,cr?.35:.2); } hurt(e,dmg,c.type); }
 
 function useCard(i){ const c=CARDS[i]; if(!c) return; if(c.hand&&!c.self&&!P.cool) { P.sel=i; renderBar(); } runCard(c); }
 function handFor(c){ return (c&&c.hand)||"fist"; }
@@ -524,7 +598,7 @@ function takeOff(){ const run=(keys.has("w")||keys.has("arrowup"))&&!P.drawing; 
   SND.step(.8); noise(.16,{type:"bandpass",f0:600,f1:1400,q:.8,vol:.07,attack:.02}); }
 function jumpTick(dt){ if(P.jumpPre>0){ P.jumpPre-=dt; if(P.jumpPre<=0){ P.jumpPre=0; takeOff(); } }
   if(P.air){ P.jv-=32*FT*dt; P.jz+=P.jv*dt; if(P.jz<=0){ const hard=Math.min(1,-P.jv/(32*FT*.5)); P.jz=0; P.air=false; P.jv=0; P.land=.22;
-      P.swayY=Math.min(22,P.swayY+6+8*hard); SND.step(.9+.4*hard); later(.05,()=>SND.step(.5)); } }
+      P.swayY=Math.min(22,P.swayY+6+8*hard); SND.step(.9+.4*hard); later(.05,()=>SND.step(.5)); faunaNoise(P.x,P.y,P.crouch?1.5:3); } }
   if(P.land>0) P.land=Math.max(0,P.land-dt); }
 // the eye's offset from the hop: dip before take-off, the arc, the knees giving on landing
 function hopZ(){ const dip=P.jumpPre>0?-.025*Math.sin(Math.PI*(1-P.jumpPre/.07)*.5):0; const land=P.land>0?-.03*Math.sin(Math.PI*(1-P.land/.22)):0; return P.jz+dip+land; }
@@ -545,7 +619,7 @@ function toggleCrouch(){ if(P.dead) return;
 function speak(){ say("She calls into the dark. Nothing here answers — Speak with Animals needs an animal.".replace("She",PC.name),"#9d9281"); }
 // ---- the bow: hold to draw, let go to loose
 function startDraw(c){ if(!c||c.kind!=="bow"||P.cool>0||P.dead) return; P.bowCard=c; if(c.ammo&&P.arrows<=0){ say("No arrows left in the quiver.","#8a8078"); return; } P.drawing=true; P.draw=0; if(P.drawSnd) P.drawSnd.stop(true); P.drawSnd=SND.draw(); }
-function loose(){ const c=P.bowCard||curCard(); P.drawing=false; if(P.drawSnd){ P.drawSnd.stop(P.draw>=.35); P.drawSnd=null; } if(P.draw<.35){ P.draw=0; return; } const e=target(c.range[1]); P.looseFrom=P.draw; P.act={kind:"loose",hand:"bow",t:0,dur:.35}; P.cool=.9; P.draw=0; SND.twang(); breakHide(); if(c.ammo){ P.arrows--; renderBar(); }
+function loose(){ const c=P.bowCard||curCard(); P.drawing=false; if(P.drawSnd){ P.drawSnd.stop(P.draw>=.35); P.drawSnd=null; } if(P.draw<.35){ P.draw=0; return; } const e=target(c.range[1]); P.looseFrom=P.draw; P.act={kind:"loose",hand:"bow",t:0,dur:.35}; P.cool=.9; P.draw=0; SND.twang(); faunaNoise(P.x,P.y,3.5); breakHide(); if(c.ammo){ P.arrows--; renderBar(); }
   fireArrow(c); }
 // ---- ARROW PHYSICS (Sam, 9/30 — house rules on top of the SRD roll): the arrow is a real object in flight.
 //  • Speed and force from STRENGTH: (20 + 3 per STR modifier, never under 12) × 1.3 squares a second (Sam 9/30: +30%); force shoves a creature back.
@@ -646,7 +720,7 @@ function cinematic(src,then){ const ov=$("film"), v=$("filmv"); paused=true; key
   v.src=src; v.currentTime=0; v.muted=false; v.onended=fin; v.onerror=fin; ov.onclick=fin; $("filmx").onclick=(ev)=>{ ev.stopPropagation(); fin(); }; addEventListener("keydown",esc,true); ov.hidden=false;
   const pr=v.play(); if(pr&&pr.catch) pr.catch(()=>{ v.muted=true; v.play().catch(fin); }); }
 function roar(e){ if(e.sprite==="hook"&&!e.filmed&&A.film&&A.film.hook&&!P.dead){ e.filmed=true; cinematic(document.createElement("video").canPlayType('video/mp4; codecs="avc1.42E01E"')?A.film.hook:A.film.hookWebm,()=>{ e.roarT=-99; roar(e); }); return; }
-  if(t-e.roarT<18) return; e.roarT=t; playBuf(e.roar,{x:e.x,y:e.y,vol:e.sprite==="hook"?1.9:1.6,rate:.95+Math.random()*.1}); P.shake=Math.max(P.shake,.5);
+  if(t-e.roarT<18) return; e.roarT=t; faunaNoise(e.x,e.y,9); playBuf(e.roar,{x:e.x,y:e.y,vol:e.sprite==="hook"?1.9:1.6,rate:.95+Math.random()*.1}); P.shake=Math.max(P.shake,.5);
   const dist=Math.hypot(e.x-P.x,e.y-P.y); if(dist>11||P.dead) return; later(.35,()=>frightSave(e)); }
 function frightSave(e){ const r=d(20), m=PC.mods.wis, tot=r+m, dc=e.dc; if(tot>=dc){ say(`Fright — WIS save ${r}${m>=0?"+":""}${m} = ${tot} vs DC ${dc}: ${PC.name} holds ${PR().his} nerve.`,"#bfe3a0"); return; }
   P.fright=6; P.frightSrc=e; P.shake=1; say(`Fright — WIS save ${r}${m>=0?"+":""}${m} = ${tot} vs DC ${dc}: FRIGHTENED of the ${e.name.toLowerCase()}.`,"#ff7a6a"); swear(); }
@@ -758,8 +832,10 @@ function render(){ const VS=RH*P.zoom;
   // sprites and effects, far to near, clipped by the wall depth per column
   const items=[]; for(const e of ENTS){ items.push({k:"e",o:e,d:(e.x-P.x)**2+(e.y-P.y)**2}); }
   for(const f of FX){ if(f.kind==="fog"){ for(const p of f.puffs) items.push({k:"puff",o:p,f,d:(f.x+Math.cos(p.a)*p.d*f.grow-P.x)**2+(f.y+Math.sin(p.a)*p.d*f.grow-P.y)**2}); } else if(f.kind!=="arrow3d"&&f.kind!=="trailFade"){ const q=f.kind==="arrowStuck"?(()=>{ const p=stuckPos(f); return {x:p.x-f.dir.x*ARROW_L*.6,y:p.y-f.dir.y*ARROW_L*.6}; })():f; items.push({k:"fx",o:f,d:(q.x-P.x)**2+(q.y-P.y)**2-(f.ent?.05:0)}); } }
+  for(const b of BATS) items.push({k:"fa",o:{kind:"bat",o:b},d:(b.x-P.x)**2+(b.y-P.y)**2}); for(const sp of SPIDS) items.push({k:"fa",o:{kind:"spider",o:sp},d:(sp.x-P.x)**2+(sp.y-P.y)**2});
+  for(const m of MOTHS) items.push({k:"fa",o:{kind:"moth",o:m},d:(m.x-P.x)**2+(m.y-P.y)**2});
   items.sort((a,b)=>b.d-a.d);
-  for(const it of items){ if(it.k==="e") drawEnt(it.o); else if(it.k==="puff") drawPuff(it.o,it.f); else drawFx(it.o); }
+  for(const it of items){ if(it.k==="e") drawEnt(it.o); else if(it.k==="fa") drawFauna(it.o); else if(it.k==="puff") drawPuff(it.o,it.f); else drawFx(it.o); }
   drawSlash(ctx); drawBody(); for(const f of FX) if(f.kind==="arrow3d"||f.kind==="trailFade") drawFx(f); drawCursor(ctx); drawBuildRing(); drawRig();
   // edges of the lantern light, fright, hurt
   const v=ctx.createRadialGradient(RW/2,RH*.55,RH*.25,RW/2,RH*.55,RW*.7); v.addColorStop(0,"rgba(0,0,0,0)"); v.addColorStop(1,"rgba(0,0,0,.55)"); ctx.fillStyle=v; ctx.fillRect(0,0,RW,RH);
@@ -1175,7 +1251,7 @@ function frame(now){ const dt=Math.min(.05,(now-last)/1000); last=now; t+=dt;
   log.forEach(l=>l.age+=dt);
   if(paused){ /* the film is playing: the world waits */ }
   else if(started){ updateEnts(dt); updateFX(dt);
-    updateSpores(dt); breathe(dt); trapsTick(dt);
+    updateSpores(dt); breathe(dt); trapsTick(dt); faunaTick(dt);
     dripT-=dt; if(dripT<=0){ dripT=.5+Math.random()*1.1; spawnDrip(); } updateDrops(dt);
     ambT-=dt; if(ambT<=0){ ambT=35+Math.random()*40; if(!ENTS.some(e=>!e.dead&&e.foe&&e.mode==="hunt")){ const a=Math.random()*6.28; playBuf(Math.random()<.5?"hook":"spider",{x:P.x+Math.cos(a)*14,y:P.y+Math.sin(a)*14,vol:.9,rate:.8}); } }
     // walking over the thrown dagger picks it up
@@ -1282,4 +1358,4 @@ function drawBuildRing(){ if(!BLD.open) return; const p=bTarget(); ctx.save(); c
 $("lorec").onclick=closeLore;
 if(BLD.enabled){ $("bhint").hidden=false; document.querySelectorAll("#btabs button").forEach(b=>b.onclick=()=>bTab(b.dataset.t)); $("bplace").onclick=bPlace; $("bexport").onclick=bExport; $("breset").onclick=bReset; $("bclose").onclick=toggleBuilder;
   $("bname").oninput=()=>{ D.name=$("bname").value; saveDraft(); }; }
-window.__pov={BLD,D,bPlace,bTab,bErase,TRAPS,makeTrap,makeLore,readLore,closeLore,solid,clearLine,propHit,landArrow,jump,SPORES,sporeBurst,sporeSave,toggleCrouch,sneakPower,perceives,P,ENTS,FX,CARDS:()=>CARDS,begin,useCard,interact,holdStart,holdEnd,rangedStart,loose,BAG,log:()=>log,AC:()=>AC,BUF};
+window.__pov={BATS,SPIDS,MOTHS,faunaNoise,BLD,D,bPlace,bTab,bErase,TRAPS,makeTrap,makeLore,readLore,closeLore,solid,clearLine,propHit,landArrow,jump,SPORES,sporeBurst,sporeSave,toggleCrouch,sneakPower,perceives,P,ENTS,FX,CARDS:()=>CARDS,begin,useCard,interact,holdStart,holdEnd,rangedStart,loose,BAG,log:()=>log,AC:()=>AC,BUF};

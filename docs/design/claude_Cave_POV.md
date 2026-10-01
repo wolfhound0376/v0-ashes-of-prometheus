@@ -107,6 +107,18 @@ SRD 5.1 unless marked **HOUSE**.
   `audio-<voice>Forage.webm`, one take each cut at the pauses (`FOUND_CUT`, checked against word timings).
 - **Chests** — fixed test loot from the `items` catalog. Everything resolves to a catalog slug.
 
+- **Cave fauna** (Sam, 9/30: "harmless fauna flying around like bats hanging that get startled when stirred and fly
+  around. Insects should be moving around. Little spiders might be crawling"): set dressing only — no stat blocks, no
+  rolls, nothing to fight. Counts in the record's `dressing` (`bats` 10, `spiders` 9, `swarms` 6).
+  - **Bats** roost on the ceiling in twos to fours. They flush when you come within 2 squares standing, 2.8 walking,
+    4.2 dashing, 1.4 crouched or hidden; also on a loosed arrow (3.5), a weapon hit (4), a jump landing (3; 1.5
+    crouched) or a creature's roar (9). The whole cluster goes up together, wingbeats and squeaks, circles 3.5–7 s,
+    then flies to a new spot in sight and away from you, and hangs again. Distances are Claude's choice, not a rule.
+  - **Moths and gnats** dance around the glowing fungi and crystals: pale moths with beating wings, dark gnats.
+  - **Little spiders** creep along the floor by the walls in fits and starts and scuttle off when you come within 1.6.
+  - Pixel bitmaps drawn in code, lit by the cave light and clipped by the walls. Sounds: ElevenLabs sound effects
+    (`audio-batFlush`, `-batFlush2`, `-batSqueak`, cut at the squeak onsets).
+
 ## 4. Look and sound
 
 - Raycaster 640×360, pixelated; floor/ceiling per pixel; billboards clipped per column against the wall depth buffer.
