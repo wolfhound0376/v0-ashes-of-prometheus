@@ -212,6 +212,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     character: { id: character.id, name: character.name, class: character.class },
+    // Brewing and each extraction sitting cost one; tasting and drinking are free.
+    campActions: Math.max(0, Number(character.rest_actions_remaining ?? 0)),
     ingredients: [...ingredients.values()].sort((a, b) => a.name.localeCompare(b.name)),
     flasks,
     bases: { water: true, holyWater, blessedWater },
