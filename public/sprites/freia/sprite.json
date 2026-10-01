@@ -69,8 +69,8 @@
   },
   "ward": {
    "sheet": "ward.png",
-   "frames": 5,
-   "fps": 8,
+   "frames": 9,
+   "fps": 12,
    "loop": false
   }
  }
