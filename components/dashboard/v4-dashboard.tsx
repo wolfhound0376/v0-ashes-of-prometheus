@@ -357,6 +357,13 @@ function Frame({ title, children, className, action, hideHeader = false, hideDec
       {action ? <span className="ml-auto shrink-0">{action}</span> : null}
       {!hideDecorativeControls ? <span className={cn("shrink-0 text-[#675638]", action ? "" : "ml-auto")}>— ×</span> : null}
     </header> : null}{children}
+    {/* A hidden title bar must not take its controls with it. The NPC / DM
+        window's action is the voice player itself (DmNarration): hiding that
+        panel's header on 2026-09-27 unmounted it, and from then on nothing in
+        the game spoke — no Malachar, no NPCs, no players. Sam, 2026-10-03:
+        "I am not able to hear fifi's voices". So with no header the controls
+        sit in a slim row along the bottom of the panel instead. */}
+    {hideHeader && action ? <div className="flex shrink-0 justify-end px-3 pb-1.5">{action}</div> : null}
   </section>
 }
 
