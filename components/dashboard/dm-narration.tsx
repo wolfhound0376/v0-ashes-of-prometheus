@@ -175,10 +175,18 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
   useEffect(() => { onSpeakingChangeRef.current = onSpeakingChange }, [onSpeakingChange])
   const setFloor = useCallback((npc: VoiceNpc | null) => { onSpeakingChangeRef.current?.(npc) }, [])
   const drainingRef = useRef(false)
-  // Keyed by the SANITISED TEXT, not the row id. The dashboard inserts an
+  // Keyed by speaker + text, not the row id. The dashboard inserts an
   // optimistic entry with a temp id and then merges the real Supabase row over
   // it — same words, different id. Keying on id would speak every line twice.
-  const spokenRef = useRef<Set<string>>(new Set())
+  //
+  // It COUNTS each key rather than just noting it, so a line said twice is
+  // heard twice (Fifi typed "look around" twice on 2026-10-03 and the second
+  // was silenced as already spoken). And it remembers EVERY line in the feed,
+  // voiced or not: the NPC roster loads after the transcript, so a set of only
+  // voiced lines grew the moment the roster landed, the old NPC lines read as
+  // new, and the next real line was bundled with them and dismissed as a page
+  // load.
+  const heardRef = useRef<Map<string, number>>(new Map())
   const enabledRef = useRef(false)
   const dmOnRef = useRef(false)
   const npcOnRef = useRef(false)
@@ -357,23 +365,35 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
       .filter((entry) => entry.speaker === DM_SPEAKER || npcsRef.current.some((npc) => npc.name.toLowerCase() === entry.speaker.toLowerCase()) || playersRef.current.some((pc) => pc.name.toLowerCase() === entry.speaker.toLowerCase()))
       .filter((entry) => Boolean(entry.text))
     const lineKey = (entry: Line) => `${entry.speaker.toLowerCase()}\u0000${entry.text}`
-    const voicedKeys = voicedLines.map(lineKey)
+    // Which lines are new since the last look: the nth copy of a key is new
+    // when fewer than n copies of it have been seen before.
+    const seen = new Map<string, number>()
+    const fresh = new Set<Line>()
+    for (const entry of dialogue) {
+      if (!entry.text) continue
+      const key = lineKey(entry)
+      const n = (seen.get(key) ?? 0) + 1
+      seen.set(key, n)
+      if (n > (heardRef.current.get(key) ?? 0)) fresh.add(entry)
+    }
+    // Whatever happens, none of these get spoken twice. Never lower a count:
+    // a line scrolling out of the feed must not make its twin "new" later.
+    for (const [key, n] of seen) {
+      if (n > (heardRef.current.get(key) ?? 0)) heardRef.current.set(key, n)
+    }
 
     if (!enabled) {
-      // Off: everything on screen counts as heard, so switching on later does
-      // not read the backlog.
-      spokenRef.current = new Set(voicedKeys)
+      // Off: everything on screen counts as heard (done above), so switching
+      // on later does not read the backlog.
       primedRef.current = false
       return
     }
 
-    const unheard = voicedLines.filter((line) => !spokenRef.current.has(lineKey(line)))
-    // Whatever happens, none of these get spoken twice.
-    for (const line of voicedLines) spokenRef.current.add(lineKey(line))
+    const unheard = voicedLines.filter((line) => fresh.has(line))
 
     if (!primedRef.current) {
       // Don't burn the priming pass on an empty first paint.
-      if (voicedLines.length === 0) return
+      if (seen.size === 0) return
       primedRef.current = true
       return
     }
