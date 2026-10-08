@@ -1,0 +1,33 @@
+-- Close the one real hole on session_beats: anon INSERT.
+--
+-- STATE BEFORE THIS (measured 2026-10-08, not quoted from a doc):
+--   sessions       RLS on, 1 policy  — anon/authenticated SELECT only. Already
+--                                      correct; anon can read, not write.
+--   session_beats  RLS on, 2 policies — anon SELECT *and* anon INSERT with a
+--                                      `with_check` of plain `true`, so anyone
+--                                      holding the public key could forge a
+--                                      cinematic beat into any session.
+--
+-- AGENTS.md §9 says RLS is DISABLED on both and that anon can "read or rewrite"
+-- them. That is stale: it was enabled at some point after that note was written.
+-- The note is corrected in the same change as this migration.
+--
+-- WHY THE POLICY EXISTED. app/api/chat/route.ts wrote its three session_beats
+-- inserts through the cookie-bound ANON client, so dropping this policy on its
+-- own would have broken every cinematic beat. Those three writes now use
+-- createAdminClient(), which bypasses RLS — that code change ships WITH this
+-- migration and must be deployed first or at the same time.
+--
+-- Worse, it would have broken them SILENTLY: the beat writers are best-effort
+-- and only console.error on failure, so the shotlist would simply have stopped
+-- filling with no user-visible error at all.
+--
+-- The SELECT policy stays. /shotlist reads session_beats from the browser and
+-- subscribes to it over realtime, which also runs as anon and also needs SELECT.
+
+drop policy if exists "anon can insert session_beats" on public.session_beats;
+
+-- After this, session_beats is: anon/authenticated may SELECT, nobody may write
+-- except the service role. Verify with:
+--   select policyname, cmd, roles from pg_policies
+--    where schemaname='public' and tablename='session_beats';

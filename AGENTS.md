@@ -469,8 +469,22 @@ a Vercel preview, **not yet merged**.
 - **Item catalog wiring not yet applied**: `awardItem` should resolve the catalog first
   (name → alias → fuzzy), canonical name wins, insert carries `item_id`/slot/weight/value,
   slot badge suggested but **never auto-equip**, cursed items reveal nothing.
-- **RLS is disabled on `sessions` and `session_beats`** — anyone with the public anon key
-  can read or rewrite them. Needs enabling *with* policies, or it locks everything out.
+- **RLS on `sessions` and `session_beats` is DONE** (2026-10-08). This entry used to say
+  RLS was disabled on both and that anon could "read or rewrite" them; measured against
+  the live database, it had been enabled at some point and the claim was stale. Actual
+  state now: `sessions` is anon SELECT only, `session_beats` is anon SELECT only. The one
+  real hole was an anon INSERT policy on `session_beats` with a `with_check` of plain
+  `true` — anyone holding the public key could forge a cinematic beat. Dropped in
+  `migrations/session_beats_drop_anon_insert.sql`, together with the code change it
+  required: `app/api/chat/route.ts` wrote its three beats through the cookie-bound ANON
+  client, so dropping the policy alone would have broken them — silently, since those
+  writes are best-effort and only `console.error`.
+- **`dialogue` is the wide-open one now.** Its single policy is `ALL` for role `public`
+  with `using true` / `with_check true`, so the anon key can UPDATE and DELETE every line
+  in the log, not just append to it. The browser genuinely needs SELECT, INSERT and
+  DELETE here (`app/page.tsx` deletes), so this cannot simply be dropped the way the
+  session_beats one was — it needs narrowing to those three commands at minimum, and
+  ideally a rule about whose lines may be removed. Not yet done.
 - `ANTHROPIC_API_KEY` must be set in Supabase → Settings → Edge Functions → Secrets, or
   `ask-world` returns 503 (retrieval itself still works).
 - `music_cues` is empty: items carry `music_theme` filenames that have no files yet.
