@@ -2207,7 +2207,14 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
         const cue = `[catalog] ${catalog.name} — ${flags.join("; ")}`
         narration = narration ? `${narration}\n${cue}` : cue
       }
-      const { error: beatError } = await supabase.from("session_beats").insert({
+      // SERVICE-ROLE WRITE. `supabase` here is the cookie-bound ANON client,
+      // and session_beats is anon-readable but not anon-writable: the insert
+      // policy that used to allow this let anyone holding the public key forge
+      // cinematic beats into any session. Same reasoning as the characters
+      // write above, and the failure mode was worse here — these beats are
+      // best-effort and only console.error, so a denied insert would have
+      // emptied the shotlist with nothing but a server log to show for it.
+      const { error: beatError } = await createAdminClient().from("session_beats").insert({
         session_id: activeSessionId,
         beat_type: "item_award",
         character_id: playerCharacter.id,
@@ -2455,7 +2462,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
         if (!activeSessionId) {
           console.warn("[v0] item_loss beat skipped: no active session")
         } else {
-          const { error: lossBeatError } = await supabase.from("session_beats").insert({
+          // Service-role write: see the item_award beat above.
+          const { error: lossBeatError } = await createAdminClient().from("session_beats").insert({
             session_id: activeSessionId,
             beat_type: "item_loss",
             character_id: playerCharacter.id,
@@ -2606,7 +2614,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     // Best-effort session beat, mirroring the item-award beat writer.
     const writeConditionBeat = async (subjectName: string, verb: "gained" | "lost", condition: string, charId: string | null) => {
       if (!activeSessionId) return
-      const { error: beatError } = await supabase.from("session_beats").insert({
+      // Service-role write: see the item_award beat above.
+      const { error: beatError } = await createAdminClient().from("session_beats").insert({
         session_id: activeSessionId,
         beat_type: "condition_change",
         character_id: charId,
