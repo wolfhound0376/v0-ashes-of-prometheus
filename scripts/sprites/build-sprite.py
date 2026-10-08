@@ -36,9 +36,10 @@ DIRECTIONS = ["south", "south-east", "east", "north-east", "north", "north-west"
 # to the board's states. First match wins.
 STATE_PATTERNS = [
     ("idle", r"^idle$|breathing-idle|fight-stance-idle"),
-    ("walk", r"^walk$|^walk(ing)?(-\d+)?(-\d+-frames)?$|crouched-walking|scary-walk|sad-walk"),
+    ("walk", r"^walk$|^walk(ing)?(-\d+)?(-\d+-frames)?$|^walk-[a-z]+$|crouched-walking|scary-walk|sad-walk"),
     ("attack", r"^attack$|slash|swing|cross-punch|lead-jab|punch$|kick"),
     ("cast", r"^cast$|fireball|spell"),
+    ("ward", r"^ward$"),
     ("hurt", r"^hurt$|taking-punch|hit"),
     ("dodge", r"^dodge$|dodg|evade|sidestep"),
     ("dead", r"^dead$|death"),
@@ -54,6 +55,7 @@ PLAYBACK = {
     "walk": {"fps": 10, "loop": True},
     "attack": {"fps": 12, "loop": False, "hit": 0.75},
     "cast": {"fps": 10, "loop": False, "hit": 0.6},
+    "ward": {"fps": 12, "loop": False},
     "hurt": {"fps": 10, "loop": False},
     "dodge": {"fps": 12, "loop": False},
     "dead": {"fps": 8, "loop": False},
@@ -68,6 +70,14 @@ def state_for(name: str) -> str | None:
     for state, pat in STATE_PATTERNS:
         if re.search(pat, key):
             return state
+    # A group created without a display name comes back as "<state>-<group id>"
+    # ("walk-1b456695") - the usual shape when a rate-limited run was finished
+    # off by a second call. Match on the stem so those frames are not lost.
+    stem = re.sub(r"-[0-9a-f]{6,}$", "", key)
+    if stem != key:
+        for state, pat in STATE_PATTERNS:
+            if re.search(pat, stem):
+                return state
     return None
 
 
@@ -159,10 +169,21 @@ def main() -> None:
         if not state:
             print(f"  skipping animation '{anim_name}' (no board state for it)")
             continue
+        incoming = {facing(d): paths for d, paths in dirs.items()}
         if state in found:
-            print(f"  skipping animation '{anim_name}' ('{state}' already taken)")
+            # PixelLab can hold one state across several animation groups: a run
+            # that landed only some directions, finished off in a second call.
+            # Take the directions the first group never drew rather than leaving
+            # them on a still pose.
+            extra = sorted(d for d in incoming if d not in found[state])
+            if not extra:
+                print(f"  skipping animation '{anim_name}' ('{state}' already taken)")
+                continue
+            for d in extra:
+                found[state][d] = [load(p) for p in incoming[d]]
+            print(f"  {state}: filled {', '.join(extra)} from '{anim_name}'")
             continue
-        found[state] = {facing(d): [load(p) for p in paths] for d, paths in dirs.items()}
+        found[state] = {d: [load(p) for p in paths] for d, paths in incoming.items()}
     if "idle" not in found and rotations:
         # No breathing drawn: stand still on the rotation images.
         found["idle"] = {d: [im] for d, im in rotations.items()}
