@@ -34,6 +34,9 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //     happened.
 //   - Ground items nobody dropped. Placed loot is canon; see 5f.
 //   - Character rows, stats, XP and levels.
+//   NOT on this list: world_flags. Every flag is a fact about one run of the
+//   story (the pen door, a Gas Spore Infection's clock), so all are cleared
+//   (step 2b).
 //
 // KNOWN GAP, stated rather than implied
 //   Nothing returns the party's tokens to their opening squares. This comment
@@ -253,6 +256,24 @@ export async function POST(req: Request) {
       .neq("id", "00000000-0000-0000-0000-000000000000")
     note("sessions", error)
     report.sessionsDeleted = count ?? 0
+  }
+
+  // --- 2b. world flags ----------------------------------------------------
+  // Every row here is a fact about THIS run of the story: the pen door that
+  // was opened (pen-door-open), a Gas Spore Infection's clock and the spores
+  // that sprouted from a body (gas-spore-infection:*). Sam, 8 Oct 2026: a
+  // restart is "as if a fresh play" — ALL of it resets. Left behind, the
+  // infection clock reads them against the NEW game clock: every survivor
+  // logs "the spores' clock stops" into the fresh campaign on its first tick
+  // (the restart cleared the condition word), and leftover sprouts announce
+  // themselves full-grown once the new clock passes the old date.
+  {
+    const { count, error } = await admin
+      .from("world_flags")
+      .delete({ count: "exact" })
+      .neq("key", "")
+    note("world_flags", error)
+    report.worldFlagsCleared = count ?? 0
   }
 
   // --- 3. NPC memory ------------------------------------------------------
