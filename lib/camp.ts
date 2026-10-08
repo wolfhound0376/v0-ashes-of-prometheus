@@ -323,7 +323,7 @@ export const CAMP_ACTION_RULES: Record<CampAction, { resolves: string; source: s
   forage: { resolves: "forage()", source: "OotA-Enc p.25; DMG p.111" },
   mend: { resolves: "lib/repair — canMend() for the cantrip, repairSpec() + settleCraftRoll() for the tool check at the bench", source: "SRD 5.1, Mending; docs/claude_Repair_Mend_Upgrade.md, Sam 2026-10-01" },
   brew: { resolves: "craftProgress() against a catalog potion with a craft block", source: "SRD 5.1, Between Adventures: Crafting" },
-  pray: { resolves: "dmScene() — no rule; the DM answers or does not", source: "Sam, 2026-09-26" },
+  pray: { resolves: "prayAtCamp() in lib/camp-prayer — resolvePrayer() decides the tier; Malachar narrates inside the contract and never decides whether the god answered", source: "Sam, 2026-09-26 (the action); Sam, 2026-10-01 (the rule)" },
   level_up: { resolves: "levelUp()", source: "SRD 5.1, Beyond 1st Level; Sam, 2026-08-20" },
   trade: { resolves: "trade() — only when the passive roll brought a merchant", source: "Sam, 2026-09-26" },
   hunt: { resolves: "hunt() — the foraging rule; the SRD has no separate hunting rule", source: "DMG p.111" },
@@ -1196,7 +1196,8 @@ export function trade(c: { name: string }, encounter: { merchantPresent: boolean
   return { ok: true, note: `${c.name} trades with the merchant — prices and stock are the DM's; every item resolves against the catalog.` }
 }
 
-/** The actions with no rule — pray, explore, mend — are the DM's scene. This says so instead of pretending. */
+/** The actions with no rule — explore chief among them — are the DM's scene. This says so instead of pretending.
+ *  `pray` left this list on 2026-10-01: it resolves through lib/camp-prayer → lib/prayer. */
 export function dmScene(action: CampAction, c: { name: string }): { action: CampAction; rule: string; source: string; flags: string[]; note: string } {
   const r = CAMP_ACTION_RULES[action]
   return { action, rule: r.resolves, source: r.source, flags: [`${action}: no mechanical rule; resolved as a scene by the DM.`], note: `${c.name} spends the evening on ${action.replace("_", " ")}.` }

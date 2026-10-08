@@ -247,9 +247,15 @@ describe("attune, identify, decipher, hunt, scenes", () => {
     expect(h.supplies).toBe(3)
     expect(h.flags[0]).toMatch(/foraging rule/)
     expect(h.note).toMatch(/hunts/)
-    const pray = dmScene("pray", kenta)
-    expect(pray.source).toBe("Sam, 2026-09-26")
-    expect(pray.flags[0]).toMatch(/no mechanical rule/)
+    // `pray` used to be the example of a ruleless DM scene here. It stopped
+    // being one on 2026-10-01: it resolves through lib/camp-prayer ->
+    // lib/prayer, so the DM narrates the answer but no longer decides it.
+    // `explore` is now the standing example of an action with no rule.
+    const explore = dmScene("explore", kenta)
+    expect(explore.source).toBe("Sam, 2026-09-26")
+    expect(explore.flags[0]).toMatch(/no mechanical rule/)
+    expect(CAMP_ACTION_RULES.pray.resolves).not.toContain("dmScene")
+    expect(CAMP_ACTION_RULES.pray.resolves).toContain("prayAtCamp")
   })
 })
 
