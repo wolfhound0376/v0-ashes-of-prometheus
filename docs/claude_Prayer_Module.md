@@ -536,3 +536,79 @@ So the integration is smaller and better-aimed than the build order assumed:
 Revised next step: **the wiring PR is `lib/camp.ts` + a service-role route**, not a UI
 build. It is also now the highest-value piece, because every unwired prayer between now and
 then is Malachar inventing divine mechanics in front of players.
+
+---
+
+## 16. WIRED — the PRAY button resolves against the rule (2026-10-08)
+
+`CAMP_ACTION_RULES.pray` no longer reads `dmScene() — no rule; the DM answers or does
+not`. It reads `prayAtCamp()`. Every press of the PRAY button on the camp screen now goes
+through `lib/prayer.ts`, and Malachar narrates inside a contract instead of deciding what a
+god does.
+
+**`lib/camp-prayer.ts`** — the bridge, in its own file so `lib/camp.ts` (1,800+ lines, and
+a repeat collision point) takes only a one-line change. It owns no rules: it reads what the
+camp already knows and returns a resolved tier plus a `NarrationContract`.
+
+The contract is the point. `PRAYER_FORBIDDEN` ships in every response at every tier:
+
+> do not cast or imitate any spell · do not restore hit points · do not deal damage · do
+> not grant a bonus to AC, an attack roll, a saving throw or a skill check · do not create
+> or hand over any item · do not grant a spell slot or class feature · do not reveal that a
+> prayer was offered unless it was spoken aloud
+
+A test asserts that list is byte-identical across all 100 rolls at all 20 levels, so no
+tier can quietly widen it.
+
+**`app/api/prayer/route.ts`** — service-role, because `character_faith` and `faith_events`
+have RLS on with no select policy. It resolves, writes `prayers` (every tier, silence
+included), upserts the ledger, logs a `faith_events` row, spends the camp action, and posts
+to `dialogue` **only when the prayer was spoken aloud**.
+
+### Rulings this bakes in
+
+- **A silence still costs the camp action.** Silence is the god's answer, not a failed
+  attempt. Refunding it would teach players to press again until something happened, which
+  is the vending machine the whole design avoids.
+- **The camp action is the rate limit.** One of two per full rest, which is a real scarcity
+  the observance cadence defers to rather than duplicating.
+- **An unknown deity slug is never created.** The catalogue rule (AGENTS.md §0: the AI
+  cannot invent items) applied to gods — an unrecognised slug prays to nobody, which the
+  rules already handle at cap 2.
+
+### Two schema assumptions that were wrong, caught before shipping
+
+- `travel_nodes` has **no `is_current` column**. The party's location is
+  `party_position → travel_nodes`. The first draft of the route would have thrown at
+  runtime on the first press.
+- `dialogue` takes `speaker_type`, and its `channel` is `dm` in every live row. The draft
+  wrote `channel: "player"`, which exists nowhere in the data.
+
+### Data applied 2026-10-08
+
+| What | Why |
+|---|---|
+| `class_spellcasting_progression` 40 → **160 rows** (all 8 casters, levels 1–20) | `grantDecision` was blind above level 5 |
+| `prepared` made nullable | SRD 5.1 prints no number for Cleric/Druid/Paladin/Wizard — it is computed per character |
+| Lolth seeded in `deities`, hostile to Lathander | without her the wrong listener could never fire |
+| `Velkynvelve.metadata` gains `location_faith: lolth`, `sunless`, `confined` | a hostile faith is a property of the node, never guessed from its name |
+| `character_faith` row for Samson → Lathander | the ledger starts at zero; `last_prayer_day` NULL reads "due", never "lapsed" |
+
+### Edition note
+
+Levels 1–5 remain **SRD 5.2.1 (2025)**; levels 6–20 are **SRD 5.1**, each row saying so in
+its own `source` column. Slots and cantrips agree between the editions from level 2 up, so
+the grant system is unaffected. Two real differences, left as they are:
+
+- **Paladin and Ranger keep level-1 spellcasting** (Sam, 2026-10-08). 5.2.1 gives it; 5.1
+  starts them at level 2.
+- **`prepared` has a visible cliff** at level 5→6 for the prepared casters (a number, then
+  NULL). It goes away when SRD 5.2.1 is ingested, which remains the real fix.
+
+### Still owed
+
+- The silence/answer phrasebook (`dm_phrasebook` pattern), so a silence is authored rather
+  than improvised prose about nothing.
+- The Malachar prompt block that carries `NarrationContract` into the system prompt.
+- The UI call: the PRAY button still needs to POST to `/api/prayer` and render the result.
+  **Until that lands, the route exists and the button does not call it.**
