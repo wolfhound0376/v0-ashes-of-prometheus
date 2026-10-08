@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { resolveVoice, resolveNamedNpcVoiceId, sanitizeForTTS } from "@/lib/tts"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback } from "@/lib/tts-model"
 
 /**
  * Text-to-speech for a named NPC line.
@@ -85,31 +86,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3) Synthesize.
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${resolvedVoiceId}`, {
-      method: "POST",
-      headers: {
-        Accept: "audio/mpeg",
-        "Content-Type": "application/json",
-        "xi-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        text: clean,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.8,
-          style: 0.35,
-          use_speaker_boost: true,
+    // 3) Synthesize. v4 first, the proven model second — same two-attempt rule
+    // as /api/tts, so the players and Malachar never end up on different models
+    // by accident. lib/tts-model.ts holds the reasoning.
+    const settings = { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true }
+    let response: Response | null = null
+    let errorText = ""
+    let usedModel = ""
+    for (const model of [TTS_MODEL, TTS_FALLBACK_MODEL]) {
+      usedModel = model
+      response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${resolvedVoiceId}`, {
+        method: "POST",
+        headers: {
+          Accept: "audio/mpeg",
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
         },
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[v0] npc-tts ElevenLabs error:", errorText)
-      return NextResponse.json({ error: "TTS generation failed" }, { status: 500 })
+        body: JSON.stringify({ text: clean, model_id: model, voice_settings: settingsFor(model, settings) }),
+      })
+      if (response.ok) break
+      errorText = await response.text()
+      console.error(`[v0] npc-tts ElevenLabs rejected ${model} (${response.status}):`, errorText)
+      if (!shouldRetryOnFallback(model, response.status)) break
     }
+
+    if (!response || !response.ok) {
+      const status = response?.status ?? 0
+      if (status === 401 || status === 403) {
+        console.error("[v0] npc-tts auth/quota failure — check the ElevenLabs key and remaining credits")
+      }
+      return NextResponse.json({ error: "TTS generation failed", detail: errorText }, { status: 500 })
+    }
+    console.log(`[v0] npc-tts spoke with ${usedModel}`)
 
     const audioBuffer = await response.arrayBuffer()
     return new NextResponse(audioBuffer, {
@@ -117,6 +125,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "audio/mpeg",
         "Content-Length": audioBuffer.byteLength.toString(),
         "X-Resolved-Voice": resolvedVoiceId || "",
+        "X-TTS-Model": usedModel,
       },
     })
   } catch (error) {

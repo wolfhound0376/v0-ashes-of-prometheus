@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback } from "@/lib/tts-model"
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,48 +24,47 @@ export async function POST(request: NextRequest) {
 
     const voiceId = voiceIds[voice] || voiceIds.onyx
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
+    const settings = {
+      stability: 0.5,
+      similarity_boost: 0.75,
+      style: voice === "onyx" ? 0.3 : 0.0,
+      use_speaker_boost: true,
+    }
+
+    // Ask for v4; drop to the proven model if this account cannot use it.
+    // See lib/tts-model.ts for why the retry is wider than unsupported_model.
+    let response: Response | null = null
+    let errorText = ""
+    let usedModel = ""
+    for (const model of [TTS_MODEL, TTS_FALLBACK_MODEL]) {
+      usedModel = model
+      response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
         method: "POST",
         headers: {
           "Accept": "audio/mpeg",
           "Content-Type": "application/json",
           "xi-api-key": apiKey,
         },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: voice === "onyx" ? 0.3 : 0.0,
-            use_speaker_boost: true,
-          },
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[TTS] ElevenLabs error:", errorText)
-
-      // Graceful handling if ElevenLabs rejects the model (e.g. another
-      // deprecation). Log the exact error and return a clear 502 so the failure
-      // is distinguishable from a generic server error.
-      if (/unsupported_model/i.test(errorText)) {
-        console.error(
-          "[TTS] ElevenLabs reported unsupported_model. Current model_id: eleven_multilingual_v2. Full error:",
-          errorText,
-        )
-        return NextResponse.json(
-          { error: "TTS provider rejected the voice model (unsupported_model)", detail: errorText },
-          { status: 502 },
-        )
-      }
-
-      return NextResponse.json({ error: "TTS generation failed" }, { status: 500 })
+        body: JSON.stringify({ text, model_id: model, voice_settings: settingsFor(model, settings) }),
+      })
+      if (response.ok) break
+      errorText = await response.text()
+      console.error(`[TTS] ElevenLabs rejected ${model} (${response.status}):`, errorText)
+      if (!shouldRetryOnFallback(model, response.status)) break
+      console.error(`[TTS] retrying on ${TTS_FALLBACK_MODEL}`)
     }
+
+    if (!response || !response.ok) {
+      const status = response?.status ?? 0
+      // 401/403 is the key or the quota, not the model — say so plainly in the
+      // log, because this is the case Sam will be looking for.
+      if (status === 401 || status === 403) {
+        console.error("[TTS] auth/quota failure — check the ElevenLabs key and remaining credits")
+        return NextResponse.json({ error: "TTS provider rejected the credentials or quota", detail: errorText }, { status: 502 })
+      }
+      return NextResponse.json({ error: "TTS generation failed", detail: errorText }, { status: 500 })
+    }
+    console.log(`[TTS] spoke with ${usedModel}`)
 
     const audioBuffer = await response.arrayBuffer()
 
@@ -72,6 +72,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "audio/mpeg",
         "Content-Length": audioBuffer.byteLength.toString(),
+        "X-TTS-Model": usedModel,
       },
     })
   } catch (error) {
