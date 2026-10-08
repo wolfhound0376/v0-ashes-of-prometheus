@@ -19,7 +19,7 @@
 // narrative, and it is what `item_events_item_idx` is for.
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { settleCraftRoll, craftModifier } from "@/lib/camp"
+import { settleCraftRoll, craftModifier, spendCampAction } from "@/lib/camp"
 import {
   canMend,
   cleanSlugFor,
@@ -107,7 +107,9 @@ export async function GET(req: Request) {
   }
 
   const { data: character, error: charError } = await admin
-    .from("characters").select("id, name, sheet_proficiencies").eq("id", characterId).is("archived_at", null).maybeSingle()
+    .from("characters")
+    .select("id, name, sheet_proficiencies, proficiency_bonus, rest_actions_remaining, str_score, dex_score, con_score, int_score, wis_score, cha_score")
+    .eq("id", characterId).is("archived_at", null).maybeSingle()
   if (charError) {
     console.error("[repair] character:", charError.message)
     return Response.json({ error: "read_failed" }, { status: 500 })
@@ -124,6 +126,23 @@ export async function GET(req: Request) {
   }
 
   const tools = toolList(character.sheet_proficiencies)
+  const pb = Number(character.proficiency_bonus ?? 0)
+
+  // Banked progress for the whole pack in one read, newest first, so each row
+  // can say "2 of 4 hours done" instead of the bench lying about a fresh start.
+  const ids = (pack ?? []).map((r) => (r as PackRow).id)
+  const bankedByItem = new Map<string, { successes: number; attempts: number }>()
+  if (ids.length) {
+    const { data: events } = await admin
+      .from("item_events")
+      .select("inventory_item_id, kind, detail, occurred_at")
+      .in("inventory_item_id", ids)
+      .order("occurred_at", { ascending: false })
+    for (const id of ids) {
+      const mine = (events ?? []).filter((e) => (e as { inventory_item_id: string }).inventory_item_id === id)
+      bankedByItem.set(id, bankedSuccesses(mine as { kind: string; detail: unknown }[]))
+    }
+  }
 
   const rows = (pack ?? []).map((raw) => {
     const row = raw as PackRow
@@ -140,14 +159,29 @@ export async function GET(req: Request) {
       maintainable: condition === "worn" || condition === "pristine",
       mend: { ok: mend.ok, to: mend.to, reason: mend.reason, flags: mend.flags },
       repair: spec
-        ? { ...spec, haveTool: hasTool(tools, spec.tool), toPristineGp: repairToPristineGp(item.value, condition) }
+        ? {
+            ...spec,
+            haveTool: hasTool(tools, spec.tool),
+            toPristineGp: repairToPristineGp(item.value, condition),
+            // The modifier the route itself will apply, so the dice label and
+            // the settled roll can never disagree.
+            modifier: craftModifier(character as Record<string, number | null>, spec.abilities, pb).modifier,
+            ability: craftModifier(character as Record<string, number | null>, spec.abilities, pb).ability,
+            banked: bankedByItem.get(row.id)?.successes ?? 0,
+          }
         : null,
       repairReason: reason,
       becomesOnRepair: cleanSlugFor(item.slug),
     }
   })
 
-  return Response.json({ character: { id: character.id, name: character.name }, facilities, tools, items: rows })
+  return Response.json({
+    character: { id: character.id, name: character.name },
+    campActions: Number(character.rest_actions_remaining ?? 0),
+    facilities,
+    tools,
+    items: rows,
+  })
 }
 
 function toolList(sheetProficiencies: unknown): string[] {
@@ -194,7 +228,7 @@ export async function POST(req: Request) {
 
   const { data: character } = await admin
     .from("characters")
-    .select("id, name, sheet_proficiencies, proficiency_bonus, level, str_score, dex_score, con_score, int_score, wis_score, cha_score")
+    .select("id, name, sheet_proficiencies, proficiency_bonus, level, rest_actions_remaining, str_score, dex_score, con_score, int_score, wis_score, cha_score")
     .eq("id", characterId).is("archived_at", null).maybeSingle()
   if (!character) return Response.json({ error: "character_not_found" }, { status: 404 })
 
@@ -268,6 +302,13 @@ export async function POST(req: Request) {
         .limit(50)
       const banked = bankedSuccesses(history ?? [])
 
+      // Repair costs one camp action (doc §4), the same as a brew. Maintain is
+      // free and Mend is a 1-minute cantrip, so neither spends — this is the
+      // only verb on the bench with a price. A refusal above this line never
+      // spends, which is the spendCampAction contract.
+      const spend = spendCampAction(character.rest_actions_remaining as number | null, "mend")
+      if (!spend.ok) return Response.json({ ok: false, reason: spend.note }, { status: 409 })
+
       const pb = Number(character.proficiency_bonus ?? 0)
       const { modifier } = craftModifier(character as Record<string, number | null>, spec.abilities, pb)
       const out = settleCraftRoll({
@@ -296,6 +337,7 @@ export async function POST(req: Request) {
         }
       }
       if (Object.keys(patch).length) await admin.from("inventory_items").update(patch).eq("id", inventoryItemId)
+      await admin.from("characters").update({ rest_actions_remaining: spend.remaining }).eq("id", characterId)
 
       await log(admin, {
         inventoryItemId, characterId, kind: "repair", from, to,
@@ -310,6 +352,7 @@ export async function POST(req: Request) {
         ok: true, success: out.success, total: out.total, dc: spec.dc,
         successes: out.successes, checks: spec.checks, done: out.done,
         from, to, swappedTo, note: out.note, flags: spec.flags,
+        campActions: spend.remaining,
       })
     }
 

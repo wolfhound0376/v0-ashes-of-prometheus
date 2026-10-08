@@ -405,3 +405,53 @@ describe("banked progress — one rung per project", () => {
     expect(bankedSuccesses([{ kind: "repair", detail: null }])).toEqual({ successes: 0, attempts: 1 })
   })
 })
+
+// The canon path Sam unlocked on 2026-10-08 by giving Eldeth Feldrun Smith's
+// Tools. Values are the live catalog rows, read 2026-10-08:
+//   rusted-longsword  weapon, common, 2 gp, 3 lb, properties.rusted_rule set
+//   longsword         weapon, common, 15 gp, 3 lb
+// If the catalog changes, this test should change with it deliberately.
+describe("end to end: Eldeth and a rusted longsword", () => {
+  const rusted = {
+    name: "Rusted Longsword", slug: "rusted-longsword", item_type: "weapon",
+    rarity: "common", value: 2, weight: 3,
+    properties: { breaks_on_nat_1: true, rusted: true },
+  }
+  const eldeth = { name: "Eldeth Feldrun", tools: ["Smith's Tools"] }
+
+  it("starts damaged, which is what its rusted_rule already said", () => {
+    expect(startingCondition(rusted)).toBe("damaged")
+    const e = conditionEffect("damaged", rusted.item_type)
+    expect(e.attack).toBe(-1)
+    expect(e.damage).toBe(-1)
+  })
+
+  it("resolves to a real repair for a smith, and refuses for everyone else", () => {
+    const { spec } = repairSpec(rusted, "damaged")
+    expect(spec).not.toBeNull()
+    expect(spec!.tool).toBe("Smith's Tools")
+    expect(hasTool(eldeth.tools, spec!.tool)).toBe(true)
+    expect(hasTool(["Thieves' Tools", "Alchemist's Supplies"], spec!.tool)).toBe(false)
+  })
+
+  it("costs a single gold piece, because the junk is only worth two", () => {
+    expect(repairMaterialsGp(rusted.value, "damaged")).toBe(1)
+  })
+
+  it("climbs one rung to worn, then care alone finishes it", () => {
+    const { spec } = repairSpec(rusted, "damaged")
+    expect(spec!.to).toBe("worn")
+    const after = maintain(rusted, "worn", eldeth, "Smith's Tools")
+    expect(after.ok).toBe(true)
+    expect(after.to).toBe("pristine")
+  })
+
+  it("and the rust comes off for good — the instance becomes a longsword", () => {
+    expect(cleanSlugFor(rusted.slug)).toBe("longsword")
+  })
+
+  it("a nat 1 on an already-damaged rusted blade is what broke it in the first place", () => {
+    expect(breaksOnNat1(rusted, "damaged")).toBe(true)
+    expect(degrade(rusted, "damaged", "nat1").to).toBe("broken")
+  })
+})
