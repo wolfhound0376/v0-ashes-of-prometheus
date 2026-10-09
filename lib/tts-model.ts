@@ -61,3 +61,36 @@ export function shouldRetryOnFallback(model: string, status: number): boolean {
   if (status === 401 || status === 403) return false
   return status >= 400
 }
+
+// ============================================================================
+// Per-voice delivery profiles.
+//
+// A voice made in ElevenLabs Voice Design is built on the v3 model, and its
+// accent lives partly in how v3 reads it. Read on v4 (or multilingual_v2) the
+// same voice id loses the accent and drifts from its design preview — measured
+// on Turvy, 2026-10-09: v4, v3 and multilingual_v2 all dropped the Romanian
+// accent; v3 with an explicit accent direction kept it.
+//
+// A profile pins such a voice to its own model, a direction prefixed to every
+// line, and its own stability. The fallback model never gets the prefix:
+// multilingual_v2 would read "[strong Romanian accent]" out loud.
+// ============================================================================
+
+export type VoiceDelivery = {
+  model: string
+  /** Prepended to the line on `model` only. v3 audio-tag syntax. */
+  direction?: string
+  /** v3 accepts only 0 (Creative), 0.5 (Natural) or 1 (Robust). */
+  stability: number
+}
+
+export const VOICE_DELIVERY: Record<string, VoiceDelivery> = {
+  // Empty. Turvy had { model: "eleven_v3", direction: "[strong Romanian
+  // accent]", stability: 0.5 } on his designed voice; an Instant Voice Clone of
+  // the design preview replaced it and needs none (Sam, 2026-10-09). Keep the
+  // mechanism for the next designed voice that drifts.
+}
+
+export function deliveryFor(voiceId: string | null | undefined): VoiceDelivery | null {
+  return (voiceId && VOICE_DELIVERY[voiceId]) || null
+}

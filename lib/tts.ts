@@ -175,8 +175,13 @@ export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   { name: "Sarith Kzekarit", voiceId: "LtatEcI0kyKTsTngQlD8", archetype: "grim, haunted drow warrior with a fraying mind", aliases: ["sarith", "kzekarit"] },
   { name: "Shuushar the Awakened", voiceId: "Uzt8OVGqinnV0TMbbk28", archetype: "serene, wise amphibious mystic", aliases: ["shuushar"] },
   { name: "Jorlan Duskryn", voiceId: "S9fXBozPl46ZX7nuL84Z", archetype: "bitter, aristocratic drow commander", aliases: ["jorlan", "duskryn"] },
-  { name: "Turvey", voiceId: "PpgkkvljpSnwEaGm6ybH", archetype: "woozy, spore-dazed deep gnome", aliases: ["turvey"] },
-  { name: "Tipsy", voiceId: "9k8qSCg5OCUsf7lkNEc8", archetype: "giddy, sing-song spore-addled gnome", aliases: ["tipsy"] },
+  // Topsy and Turvy: the DB spells them "Topsy" / "Turvy". These entries used
+  // to read "Tipsy" / "Turvey" and never matched. Their voices are the ones
+  // made for them (Sam, 2026-10-09). Turvy's is "Turvey Deep Gnome V3.0", Sam's
+  // third design that day (V1 EC7ildPU…, V2 PpLQnDiY…, a clone YewO1hdC… all
+  // rejected by ear).
+  { name: "Topsy", voiceId: "w03vWgAq1QMOM3DaeWzB", archetype: "hesitant, fearful young deep gnome twin", aliases: ["topsy", "tipsy"] },
+  { name: "Turvy", voiceId: "yZ94ol1u2PFSbLQdCTzB", archetype: "small, unconfident deep gnome twin, Romanian accent", aliases: ["turvy", "turvey"] },
   { name: "Eldeth", voiceId: "yZt09SSNiK1Vhjbf8Peq", archetype: "gruff, warm dwarf warrior", aliases: ["eldeth"] },
   { name: "Derendil", voiceId: "JwgGi9aLSpBIW7pVE2A8", archetype: "growling beast with regal elven diction", aliases: ["derendil"] },
   { name: "JimJar", voiceId: "3shyWw5cq1cr7y8xyeZg", archetype: "sly deep gnome gambler/rogue", aliases: ["jimjar"] },
