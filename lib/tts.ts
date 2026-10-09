@@ -164,6 +164,22 @@ export const ELEVEN_VOICE_LIBRARY: ElevenVoice[] = [
  * that map to the voice. A DB NPC name matches when its normalized form
  * contains any alias, so "Sarith Kzekarit" → sarith, "The Lich" → lich, etc.
  */
+/** Malachar's canon voice ("Obsidian - Dark Fantasy Storyteller"). /api/tts
+ *  speaks the DM through this, and the VO library's narration uses it. */
+export const MALACHAR_VOICE_ID = "acrqYoDVmcpJemOxjC39"
+
+/** Player-character canon voices, from the VO library's combat barks. Keyed by
+ *  the normalized character name prefix. */
+export const PLAYER_CHARACTER_VOICES: Record<string, string> = {
+  samson: "xHxp1c5pQOzhWjBqV78M", // Garrison - Rugged and Stoic
+  kenta: "Qgg2Tb3UNSkQVZcrV4H0", // Kieran - Energetic and Dynamic
+  fifi: "o9B86nZP8mMLaT5FBEzP", // Kathie - Sassy & Playful
+  scott: "jiJOsq5SEyngSDmtW0UP", // Julian Ross - The Radio Host
+}
+
+/** UI / system announcer voice ("Talia - Warm Confident Narrator"). */
+export const SYSTEM_VOICE_ID = "xt1AC3mKnyqJYvD3KK90"
+
 export interface NamedNpcVoice {
   name: string
   voiceId: string
@@ -172,18 +188,32 @@ export interface NamedNpcVoice {
 }
 
 export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
-  { name: "Sarith Kzekarit", voiceId: "LtatEcI0kyKTsTngQlD8", archetype: "grim, haunted drow warrior with a fraying mind", aliases: ["sarith", "kzekarit"] },
-  { name: "Shuushar the Awakened", voiceId: "Uzt8OVGqinnV0TMbbk28", archetype: "serene, wise amphibious mystic", aliases: ["shuushar"] },
-  { name: "Jorlan Duskryn", voiceId: "S9fXBozPl46ZX7nuL84Z", archetype: "bitter, aristocratic drow commander", aliases: ["jorlan", "duskryn"] },
-  { name: "Turvey", voiceId: "PpgkkvljpSnwEaGm6ybH", archetype: "woozy, spore-dazed deep gnome", aliases: ["turvey"] },
-  { name: "Tipsy", voiceId: "9k8qSCg5OCUsf7lkNEc8", archetype: "giddy, sing-song spore-addled gnome", aliases: ["tipsy"] },
-  { name: "Eldeth", voiceId: "yZt09SSNiK1Vhjbf8Peq", archetype: "gruff, warm dwarf warrior", aliases: ["eldeth"] },
-  { name: "Derendil", voiceId: "JwgGi9aLSpBIW7pVE2A8", archetype: "growling beast with regal elven diction", aliases: ["derendil"] },
-  { name: "JimJar", voiceId: "3shyWw5cq1cr7y8xyeZg", archetype: "sly deep gnome gambler/rogue", aliases: ["jimjar"] },
+  // Canon cast (Sam, 2026-10-09): the voices of the pre-recorded VO library in
+  // lib/data/vo-manifest.json. Live speech must use the same voice as the
+  // recorded clips, or a character changes voice mid-scene. Change a voice in
+  // BOTH places, and in the npc_encounters.voice_id row (an explicit row voice
+  // wins over this table in /api/npc-tts).
+  { name: "Ilvara Mizzrym", voiceId: "ROkSP7oeR0SRS2aHJXMo", archetype: "sultry, confident drow priestess of Lolth", aliases: ["ilvara", "mizzrym"] },
+  { name: "Asha Vandree", voiceId: "FCYF8vBfwu11whOhvb94", archetype: "edgy, nonchalant junior priestess", aliases: ["asha"] },
+  { name: "Shoor Vandree", voiceId: "cYFZSlrM2dt21SlCIokN", archetype: "arrogant, naive drow elite warrior", aliases: ["shoor"] },
+  { name: "Jorlan Duskryn", voiceId: "cymHWdiF8WjUCg6vvFxx", archetype: "rugged, gravelly, disgraced drow elite", aliases: ["jorlan", "duskryn"] },
+  { name: "Drow Guard", voiceId: "DGzg6RaUqxGRTHSBjfgF", archetype: "barking drill-sergeant drow guard", aliases: ["drowguard"] },
+  { name: "Sarith Kzekarit", voiceId: "M5E055lOUxMi0kJpGyE9", archetype: "grim, haunted drow warrior with a fraying mind", aliases: ["sarith", "kzekarit"] },
+  { name: "Shuushar the Awakened", voiceId: "OKqOM06abBsLyb8k3fXw", archetype: "calm, meditative kuo-toa mystic", aliases: ["shuushar"] },
+  { name: "Eldeth Feldrun", voiceId: "YHcCpa6SBWnKDaCPZJQR", archetype: "gritty, enigmatic shield dwarf", aliases: ["eldeth"] },
+  { name: "Prince Derendil", voiceId: "jhBzyKbsdeM6F66SZCaK", archetype: "steady, resonant quaggoth with regal elven diction", aliases: ["derendil"] },
+  { name: "Jimjar", voiceId: "MjEQaRiSe6jP1b0vagRU", archetype: "energetic Irish deep gnome gambler", aliases: ["jimjar"] },
+  { name: "Ront", voiceId: "QzD8JR9v8A4kqCDL8XD4", archetype: "vicious, hungry orc bully", aliases: ["ront"] },
+  { name: "Buppido", voiceId: "ouL9IsyrSnUkCmfnD02u", archetype: "chirpy, unsettling derro", aliases: ["buppido"] },
+  { name: "Stool", voiceId: "fjgAVa6FpNYGo4UpjqML", archetype: "cute little myconid sprout", aliases: ["stool"] },
+  // Topsy and Turvy are not in the VO library; these are their own canon
+  // voices. The DB spells them "Topsy" / "Turvy" — the old aliases "tipsy" /
+  // "turvey" never matched either, so the twins fell through to generic voices.
+  { name: "Topsy", voiceId: "9k8qSCg5OCUsf7lkNEc8", archetype: "giddy, sing-song deep gnome twin", aliases: ["topsy", "tipsy"] },
+  { name: "Turvy", voiceId: "PpgkkvljpSnwEaGm6ybH", archetype: "woozy, nervous deep gnome twin", aliases: ["turvy", "turvey"] },
   { name: "Drow Matron", voiceId: "AaYuthhtZkIbXwIXDdTi", archetype: "cold, seductive noble drow", aliases: ["matron"] },
-  { name: "Ront", voiceId: "HPNUUUFNQiMEJN5oqMLX", archetype: "brutish, short-tempered orc warrior", aliases: ["ront"] },
   { name: "Deep Gnome (Svirfneblin)", voiceId: "Eja1uLaoEhh7YwasRYmL", archetype: "wary, secretive Underdark gnome", aliases: ["svirfneblin", "deepgnome"] },
-  { name: "The Lich", voiceId: "NiQt0cwFeLsVf6cAmcCp", archetype: "ancient, quietly contemptuous undead sorcerer", aliases: ["lich", "malachar"] },
+  { name: "Malachar", voiceId: MALACHAR_VOICE_ID, archetype: "dark fantasy storyteller lich", aliases: ["lich", "malachar"] },
 ]
 
 /** Normalize a name to lowercase alphanumerics for alias matching. */

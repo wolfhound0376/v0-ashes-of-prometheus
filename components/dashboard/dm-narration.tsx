@@ -3,8 +3,8 @@
 // ============================================================================
 // DM NARRATION — Malachar's voice, on a toggle.
 //
-// The lich voice already existed: /api/tts speaks through the custom
-// ElevenLabs voice NiQt0cwFeLsVf6cAmcCp. What was missing was anything that
+// The lich voice already existed: /api/tts speaks through the canon
+// ElevenLabs voice MALACHAR_VOICE_ID (lib/tts.ts). What was missing was anything that
 // STARTED it in the V4 dashboard. The only per-line speaker buttons lived in
 // the v3 left column, which V4 keeps mounted at `display: none` — so the
 // buttons were in the DOM but unreachable, and the status bar's "Mute

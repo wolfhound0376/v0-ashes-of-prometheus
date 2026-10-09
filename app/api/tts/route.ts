@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { MALACHAR_VOICE_ID } from "@/lib/tts"
 import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback } from "@/lib/tts-model"
 
 export async function POST(request: NextRequest) {
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     // For Malachar (onyx): Custom lich voice - cold, ancient, contemptuous
     // For players (alloy): "Rachel" - clear, warm voice
     const voiceIds: Record<string, string> = {
-      onyx: "NiQt0cwFeLsVf6cAmcCp",  // Custom Malachar lich voice
+      onyx: MALACHAR_VOICE_ID,       // Malachar — canon, see lib/tts.ts
       alloy: "21m00Tcm4TlvDq8ikWAM", // Rachel - clear female
     }
 
