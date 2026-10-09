@@ -78,10 +78,16 @@ import { sneakAttackFor, type SneakAttackVerdict } from "@/lib/sneak-attack"
 // dropped it has finished writing, never in the middle of its loop.
 import { AsyncLocalStorage } from "node:async_hooks"
 import {
-  deathBurstFor, burstCells, immuneToDamage, immuneToPoisoned, infectionFor, infectionLine, infectionFlagKey,
+  deathBurstFor, burstCells, immuneToPoisoned, infectionFor, infectionLine, infectionFlagKey,
   GAS_SPORE_INFECTION,
 } from "@/lib/death-burst"
 import { squaresFor } from "@/lib/sandbox-spawn"
+// Resistance, vulnerability and immunity, read off the stat block and the
+// sheet (lib/damage-modifiers). Applied at every place damage lands.
+import {
+  mitigate, mitigationNote, vulnerabilitiesFromTraits, hasMagicWeapons, isMagicRarity, damageTypeOf,
+  type DamageSource, type Defences,
+} from "@/lib/damage-modifiers"
 import { readGameClock } from "@/lib/time-tracking"
 
 // /api/combat — initiative, rolled once, openly, on the server.
@@ -530,6 +536,49 @@ async function saveModifierFor(
 }
 
 /**
+ * A creature's damage defences: immunities and resistances off the sheet for
+ * a player, off the stat block for anything else, and vulnerabilities from
+ * the stat block's "Damage Vulnerabilities" trait (there is no column for
+ * them, on either table). Players have no vulnerability field at all.
+ */
+async function defencesOf(
+  db: ReturnType<typeof createAdminClient>,
+  t: { character_id?: string | null; bestiary_id?: string | null },
+): Promise<Defences> {
+  if (t.character_id) {
+    const { data } = await db.from("characters")
+      .select("damage_immunities,damage_resistances").eq("id", t.character_id).maybeSingle()
+    return { immunities: data?.damage_immunities, resistances: data?.damage_resistances }
+  }
+  if (t.bestiary_id) {
+    const { data } = await db.from("bestiary")
+      .select("damage_immunities,damage_resistances,traits").eq("id", t.bestiary_id).maybeSingle()
+    return {
+      immunities: data?.damage_immunities,
+      resistances: data?.damage_resistances,
+      vulnerabilities: vulnerabilitiesFromTraits(data?.traits),
+    }
+  }
+  return {}
+}
+
+/**
+ * The damage that actually lands on `t` from `source`, and the words for the
+ * log when resistance, vulnerability or immunity changed it ("" otherwise).
+ * SRD: applied after every other modifier, so callers roll and add first.
+ */
+async function landDamage(
+  db: ReturnType<typeof createAdminClient>,
+  t: { character_id?: string | null; bestiary_id?: string | null },
+  amount: number,
+  source: DamageSource,
+): Promise<{ amount: number; note: string }> {
+  if (amount <= 0 || !source.type) return { amount, note: "" }
+  const m = mitigate(amount, source, await defencesOf(db, t))
+  return { amount: m.amount, note: mitigationNote(amount, m) }
+}
+
+/**
  * Resolve every Death Burst owed by the creatures that fell this request.
  * A burst can drop another spore, which joins the queue behind it; the set
  * stops any one body going off twice.
@@ -628,19 +677,28 @@ async function deathBurst(db: ReturnType<typeof createAdminClient>, tokenId: str
     // The creature's own sheet: damage and condition immunities, CON score,
     // conditions. Read before the damage, because the damage asks it first.
     const sheet = t.character_id
-      ? (await db.from("characters").select("con_score,condition_immunities,damage_immunities,conditions").eq("id", t.character_id).maybeSingle()).data
+      ? (await db.from("characters").select("con_score,condition_immunities,damage_immunities,damage_resistances,conditions").eq("id", t.character_id).maybeSingle()).data
       : null
     const beast = !t.character_id && t.bestiary_id
-      ? (await db.from("bestiary").select("con,condition_immunities,damage_immunities").eq("id", t.bestiary_id).maybeSingle()).data
+      ? (await db.from("bestiary").select("con,condition_immunities,damage_immunities,damage_resistances,traits").eq("id", t.bestiary_id).maybeSingle()).data
       : null
 
     // IMMUNE TO THE DAMAGE: still rolls (the save is the burst's, and the
     // disease rides it), but takes none. This is what stops one gas spore's
     // burst popping the next one — a gas spore is immune to poison — and a
     // chain going off across the cave that the rules would never allow.
-    const immune = immuneToDamage(sheet?.damage_immunities ?? beast?.damage_immunities, burst.damageType)
-    const amount = immune ? 0 : full
-    parts.push(`${label} ${roll}${mod >= 0 ? "+" : ""}${mod} vs DC ${burst.dc} fails${immune ? ` (immune to ${burst.damageType})` : ` (${amount} ${burst.damageType})`}`)
+    //
+    // Resistance and vulnerability go through the same rule as every other
+    // hit (lib/damage-modifiers). A burst is no weapon, so nothing about it
+    // is "nonmagical attacks" — and poison is never in that clause anyway.
+    const m = mitigate(full, { type: burst.damageType, magical: true }, {
+      immunities: sheet?.damage_immunities ?? beast?.damage_immunities,
+      resistances: sheet?.damage_resistances ?? beast?.damage_resistances,
+      vulnerabilities: vulnerabilitiesFromTraits(beast?.traits),
+    })
+    const amount = m.amount
+    const immune = amount === 0
+    parts.push(`${label} ${roll}${mod >= 0 ? "+" : ""}${mod} vs DC ${burst.dc} fails${immune ? ` (immune to ${burst.damageType})` : ` (${amount} ${burst.damageType}${m.why ? `, ${m.why}` : ""})`}`)
 
     if (amount > 0) {
       const cur = t.hp_current ?? t.hp_max ?? 0
@@ -1169,30 +1227,48 @@ async function handlePost(req: NextRequest) {
         .update({ grid_x: decision.to.x, grid_y: decision.to.y, updated_by: "npc-ai", updated_at: new Date().toISOString() })
         .eq("id", self.token_id)
     }
+    // What actually landed after resistance and the rest — the board draws
+    // this number, not the dice, so an immune target is not shown bleeding.
+    let npcDealt: number | null = null
     if ((decision.kind === "attack" || decision.kind === "move-attack") && decision.hit && decision.damage > 0) {
       const target = board.combatants.find((c) => c.token_id === decision.target.token_id)
       if (target) {
+        // RESISTANCE, VULNERABILITY, IMMUNITY. A stat-block attack is
+        // nonmagical unless the attacker has the SRD "Magic Weapons" trait,
+        // which is what a "from nonmagical attacks" resistance turns on.
+        const { data: attackerStats } = self.bestiary_id
+          ? await db.from("bestiary").select("traits").eq("id", self.bestiary_id).maybeSingle()
+          : { data: null }
+        const landed = await landDamage(db, target, decision.damage, {
+          type: decision.attack.damageType,
+          magical: hasMagicWeapons(attackerStats?.traits),
+        })
+        const dealt = landed.amount
+        npcDealt = dealt
+        if (landed.note) decision.narration += landed.note
         // Token and sheet together, and the dying rules with them — see
         // settleHitPoints. THIS is the path that hurts players: a drow crit
         // Kenta for 11 once and his card went on reading 8/8.
-        const settled = await settleHitPoints(db, {
-          characterId: (target as { character_id?: string | null }).character_id ?? null,
-          tokenId: target.token_id,
-          label: target.label,
-          cur: target.hp_current ?? target.hp_max ?? 0,
-          max: target.hp_max ?? 0,
-          amount: decision.damage,
-          heals: false,
-          crit: decision.crit,
-          by: "npc-ai",
-        })
+        const settled = dealt > 0
+          ? await settleHitPoints(db, {
+              characterId: (target as { character_id?: string | null }).character_id ?? null,
+              tokenId: target.token_id,
+              label: target.label,
+              cur: target.hp_current ?? target.hp_max ?? 0,
+              max: target.hp_max ?? 0,
+              amount: dealt,
+              heals: false,
+              crit: decision.crit,
+              by: "npc-ai",
+            })
+          : { hp: target.hp_current ?? 0, note: null, fell: false }
         if (settled.note) decision.narration += ` ${settled.note}`
         // Steel in melee leaves its mark on the floor: the blow that drops
         // someone, or any blow on someone the DM has tagged Bleeding.
-        if (!decision.attack.ranged) {
+        if (!decision.attack.ranged && dealt > 0) {
           const bleeding = await isBleeding(db, (target as { character_id?: string | null }).character_id ?? null, target.label)
-          if (bleeds({ melee: true, amount: decision.damage, fell: settled.fell, bleeding })) {
-            await layBlood(db, map.id, target.x, target.y, poolSize({ amount: decision.damage, fell: settled.fell }), target.token_id)
+          if (bleeds({ melee: true, amount: dealt, fell: settled.fell, bleeding })) {
+            await layBlood(db, map.id, target.x, target.y, poolSize({ amount: dealt, fell: settled.fell }), target.token_id)
           }
         }
       }
@@ -1249,13 +1325,13 @@ async function handlePost(req: NextRequest) {
             hit: swung.hit,
             crit: swung.crit,
             fumble,
-            amount: swung.damage,
+            amount: npcDealt ?? swung.damage,
             roll: swung.roll,
             total: swung.total,
             dc,
             margin: swung.total - dc,
             outcome: verdictWord({
-              weapon: true, crit: swung.crit, fumble, saved: null, amount: swung.damage, hit: swung.hit,
+              weapon: true, crit: swung.crit, fumble, saved: null, amount: npcDealt ?? swung.damage, hit: swung.hit,
             }),
             // Read off the stat block's own "Hit: 5 (1d6+2) piercing damage".
             // The player's cast response has carried this for weeks; the NPC's
@@ -1477,6 +1553,9 @@ async function handlePost(req: NextRequest) {
     // Derived through the same function the board builds its rack with, so the
     // two cannot disagree about what exists.
     let sheetAttacks: DerivedAttack[] = []
+    // Weapon name (lower-cased) → its catalogue rarity, so a magic blade gets
+    // through a "from nonmagical attacks" resistance and a rusted one does not.
+    const weaponRarity = new Map<string, string | null>()
     let casterSc: Spellcasting | null = null
     // Hoisted out of the block below because SNEAK ATTACK needs them at the
     // damage roll, three hundred lines down. `cs` itself is block-scoped and
@@ -1499,7 +1578,7 @@ async function handlePost(req: NextRequest) {
       casterExhaustion = normaliseExhaustion(cs?.exhaustion)
       casterProf = cs?.proficiency_bonus == null ? null : Number(cs.proficiency_bonus)
       const { data: inv } = await db.from("inventory_items")
-        .select("name,item_key,item_type,equippable_slot,items(item_type,properties,equippable_slot)")
+        .select("name,item_key,item_type,equippable_slot,items(item_type,properties,equippable_slot,rarity)")
         .eq("character_id", caster.character_id)
       // WHAT IS IN THEIR HANDS, not what is in their pack. Sam: "This should
       // just trigger as a standard attack as long as it is equipped."
@@ -1516,6 +1595,9 @@ async function handlePost(req: NextRequest) {
         inv as Parameters<typeof equippedWeapons>[0],
         doll as Parameters<typeof equippedWeapons>[1],
       )
+      for (const r of (inHand ?? []) as { name?: string | null; items?: { rarity?: string | null } | null }[]) {
+        if (r?.name) weaponRarity.set(r.name.toLowerCase(), r.items?.rarity ?? null)
+      }
       sheetAttacks = attacksFromInventory(inHand as Parameters<typeof attacksFromInventory>[0], {
         strScore: cs?.str_score,
         dexScore: cs?.dex_score,
@@ -1876,6 +1958,16 @@ async function handlePost(req: NextRequest) {
         let anyHit = false
         let anyCrit = false
         let best = -Infinity
+        // Each dart or ray is its own instance of damage, so resistance
+        // halves each one (rounding down each time), as the SRD reads.
+        const volleyDef = lost ? {} : await defencesOf(db, t)
+        const volleySrc: DamageSource = { type: entry.damage, magical: true }
+        let volleyWhy: string | null = null
+        const landShot = (raw: number) => {
+          const m = mitigate(raw, volleySrc, volleyDef)
+          if (m.why) volleyWhy = m.why
+          return m.amount
+        }
         if (!lost) {
           for (let i = 0; i < n; i++) {
             if (entry.resolve === "attack") {
@@ -1890,6 +1982,7 @@ async function handlePost(req: NextRequest) {
               if (hit) {
                 dmg = rollDice(entry.dice)
                 if (crit) dmg += rollDice(entry.dice)
+                dmg = landShot(dmg)
               }
               shots.push({ hit, crit, roll, total: tot, amount: dmg })
               words.push(`${showDice(thrown)}+${attackBonusV}=${tot} ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` (${dmg})` : ""}`)
@@ -1899,7 +1992,7 @@ async function handlePost(req: NextRequest) {
               best = Math.max(best, tot - ac)
             } else {
               // "Each dart hits a creature of your choice" — no roll to miss.
-              const dmg = rollDice(entry.dice)
+              const dmg = landShot(rollDice(entry.dice))
               shots.push({ hit: true, crit: false, roll: 0, total: 0, amount: dmg })
               amount += dmg
               anyHit = true
@@ -1907,6 +2000,7 @@ async function handlePost(req: NextRequest) {
           }
         }
 
+        if (volleyWhy) words.push(volleyWhy)
         let fell = false
         if (amount > 0) {
           const cur = t.hp_current ?? t.hp_max ?? 0
@@ -2212,11 +2306,16 @@ async function handlePost(req: NextRequest) {
           total = roll + saveMod
           saved = total >= dcArea
           amount = saved ? (entry.halfOnSave ? Math.floor(full / 2) : 0) : full
+          // Resistance after the save's halving: "after all other modifiers".
+          const landed = entry.heals ? { amount, note: "" } : await landDamage(db, t, amount, { type: entry.damage, magical: true })
+          amount = landed.amount
           parts.push(
-            `${t.label} ${roll}${saveMod >= 0 ? "+" : ""}${saveMod} vs DC ${dcArea} ${saved ? "saves" : "fails"}${amount ? ` (${amount})` : ""}`,
+            `${t.label} ${roll}${saveMod >= 0 ? "+" : ""}${saveMod} vs DC ${dcArea} ${saved ? "saves" : "fails"}${amount ? ` (${amount})` : ""}${landed.note}`,
           )
         } else {
-          parts.push(`${t.label} takes ${amount}`)
+          const landed = entry.heals ? { amount, note: "" } : await landDamage(db, t, amount, { type: entry.damage, magical: true })
+          amount = landed.amount
+          parts.push(`${t.label} takes ${amount}${landed.note}`)
         }
 
         // Hoisted out of the block below, where settleHitPoints lives: a
@@ -2663,6 +2762,18 @@ async function handlePost(req: NextRequest) {
     } else {
       amount = rollDice(entry.dice)
       line = `${caster.label} casts ${ability} on ${victim.label} for ${amount}.`
+    }
+
+    // RESISTANCE, VULNERABILITY, IMMUNITY — after every other modifier
+    // (crit dice, Sneak Attack), as the SRD orders it. A weapon's damage word
+    // comes off its own line ("1d6+1 Piercing"); it is magical when its
+    // catalogue rarity is above common. A fist is never magical. A spell is.
+    if (!entry.heals && amount > 0) {
+      const landed = await landDamage(db, victim, amount, weapon
+        ? { type: damageTypeOf(weapon.damage), magical: isMagicRarity(weaponRarity.get(weapon.name.toLowerCase())) }
+        : { type: entry.damage, magical: true })
+      line += landed.note
+      amount = landed.amount
     }
 
     // Hoisted for the same reason as the area path: settleHitPoints lives

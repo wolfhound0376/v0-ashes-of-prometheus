@@ -26,6 +26,7 @@
 // ============================================================================
 
 import { areaCells, type Cell } from "./aoe"
+import { listCovers } from "./damage-modifiers"
 
 /** The bestiary slug this file is about. */
 export const GAS_SPORE_SLUG = "gas-spore"
@@ -155,21 +156,12 @@ export function immuneToPoisoned(conditionImmunities: unknown): boolean {
 
 /**
  * Immune to this damage type, read from the free-text list the bestiary and
- * the sheet both keep.
- *
- * The SRD writes these in two parts: plain types, then after a semicolon the
- * conditional ones — "cold, poison; bludgeoning, piercing, and slashing from
- * nonmagical attacks that aren't silvered". Only the unconditional part
- * counts here: a clause that names its own exception ("from nonmagical
- * attacks") is a rule about weapons, not about a burst of spores.
+ * the sheet both keep. The reading itself is lib/damage-modifiers' — one
+ * parser for every damage list — asked as a magical source, because a burst
+ * of spores is no weapon: a "from nonmagical attacks" clause never covers it.
  */
 export function immuneToDamage(damageImmunities: unknown, damageType: string): boolean {
-  const text = Array.isArray(damageImmunities) ? damageImmunities.map(String).join(", ") : String(damageImmunities ?? "")
-  const word = new RegExp(`\\b${damageType.trim().toLowerCase()}\\b`, "i")
-  return text
-    .split(";")
-    .filter((part) => !/\b(from|nonmagical|except|that aren't|while)\b/i.test(part))
-    .some((part) => word.test(part))
+  return listCovers(damageImmunities, { type: damageType, magical: true })
 }
 
 /** A moment on the campaign clock. */
