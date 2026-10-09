@@ -76,14 +76,41 @@ spend. Pure SRD.
 
 **Changes:** the whole meaning of movement.
 
-### 2. Reactions that fire
-The panel lists Shield, Counterspell, Uncanny Dodge and does nothing. Make the
-list live: when an attack would hit and the target holds an eligible reaction,
-offer it before damage resolves.
+### 2. Reactions that fire — DEFER, and not because it is hard
 
-**Changes:** the board stops being dead on other people's turns. This is most of
-what "BG3 feel" actually is — a fight where everyone is present the whole time,
-not a queue of solo turns.
+**Correction, 2026-10-09, after building tiers 1, 3 and 4.** This was ranked
+second. It should be last, and the reason is a fact about the party rather
+than about the work.
+
+Measured against the live database:
+
+| Character | Class / level | Reaction spells known |
+|---|---|---|
+| Fifi | Rogue 1 | none (Uncanny Dodge is Rogue 5) |
+| Kenta | Sorcerer 1 | none |
+| Samson | Cleric 1 | none — the `shield` match is **Shield of Faith**, already shipped as a ward |
+| Scott | Bard 1 | none |
+| Bastet | Barbarian 5 | none |
+
+**Nobody in the party holds a single reaction spell.** Counterspell is 5th
+level. Uncanny Dodge is Rogue 5. *Shield* is wizard/sorcerer only and Kenta
+does not know it.
+
+So the party's entire reaction economy at these levels **is** the opportunity
+attack — which tier 1 now delivers. Building the async interrupt flow today
+means building a prompt that fires for nothing.
+
+On the monster side 11 of 126 bestiary rows carry a `reactions` blob, so there
+is *some* fuel, but an interrupt that only ever serves monsters is a system
+that takes agency away from players rather than giving it to them, which is the
+opposite of the BG3 feel this plan is chasing.
+
+**The trigger to build it:** the first character to reach level 5, or a
+sorcerer/wizard who learns *Shield*. At that point it is worth doing properly,
+including the one question that is genuinely Sam's to answer — whether combat
+PAUSES for a player's reaction prompt. For a live-play show, stopping the fight
+on every incoming attack to ask "Shield?" may cost more in pacing than the
+tactics are worth, and that is a show decision, not an engineering one.
 
 ### 3. Shove and jump
 Shove: Athletics vs Athletics/Acrobatics, 5 ft back or prone. Jump: distance off
@@ -127,15 +154,20 @@ Nothing to build. **Every Octopath-side item on this plan is done.**
 
 ## The honest summary
 
-Four items, not five — the turn-order strip turned out to be built already.
-One of the four, opportunity attacks, is worth more than the rest together,
-because until movement has a cost the grid is scenery. Two more (reactions,
-shove/jump) are pure SRD. One (cover) is wiring data that already exists.
+**Built in one sitting, 2026-10-09: tiers 1, 3 and 4.** Tier 5 turned out to
+exist already. Tier 1 — opportunity attacks — was worth more than the rest
+together, because until movement has a cost the grid is scenery.
 
-That the audit over-counted the gap twice — the stale SFX and hit-feedback
-entries, then this — is itself the finding: **this project is consistently
-further along than its own notes say.** Check `main` before believing a
-backlog, including this document.
+Tier 2 is deferred on evidence rather than effort: nobody in the party holds a
+reaction spell, so the interrupt flow would fire for nothing. It becomes worth
+building at level 5.
+
+That the audit over-counted the gap three times in one day — the stale SFX and
+hit-feedback entries, the turn-order strip, and then tier 2's whole premise —
+is itself the finding: **this project is consistently further along than its
+own notes say, and a plan is worth re-checking against the data before it is
+worth executing.** Check `main`, and check the live rows, before believing a
+backlog — including this document.
 
 None of it needs homebrew. None of it needs a schema change that is not already
 implied by `turn_state`. The project spent months making a hit feel good; this
