@@ -82,7 +82,7 @@ import { layBloodDecals, type BloodDecalHandle } from "./blood-decal"
 // The scenery: 191 pixel props scattered or hand-placed on the floor. Which
 // square each one stands on is decided in lib/map-props; this only draws.
 import { layMapProps, type PropDecorHandle } from "./map-prop-decor"
-import type { MapProp, PropPlacement } from "@/lib/map-props"
+import { blockedBy, difficultBy, type MapProp, type PropPlacement } from "@/lib/map-props"
 import { layGroundItems, type GroundItemHandle } from "./ground-item-props"
 import { withinReach, type GroundItemRow } from "@/lib/ground-items"
 import { defenceMotion } from "./defence-motion"
@@ -742,6 +742,16 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
   const bridgeRef = useRef<Set<string>>(new Set())
   // Difficult terrain (cells.difficult): walkable, but each square costs two.
   const difficultRef = useRef<Set<string>>(new Set())
+  // THE SCENERY, AS TERRAIN RATHER THAN WALLPAPER.
+  //
+  // The 191 props have carried `blocks_movement` and `difficult_terrain` since
+  // the library landed, and the board has drawn them and ignored them: you
+  // could walk through a boulder, and a patch of webs cost nothing. These two
+  // sets are what the movement flood-fill consults, kept separate from the
+  // cell-geometry sets above because they come from a different source and are
+  // re-read whenever the placements change.
+  const propBlockRef = useRef<Set<string>>(new Set())
+  const propDifficultRef = useRef<Set<string>>(new Set())
   const reachRef = useRef<{
     tokenId: string
     /** cost is PATH length in squares (around walls), not straight-line. */
@@ -5151,7 +5161,10 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               if (nx < 0 || ny < 0 || nx >= m.grid_width || ny >= m.grid_height) continue
               const nk = nx + "," + ny
               if (!passable(nk) || blockPass.has(nk)) continue
-              const nd = d + (difficultRef.current.has(nk) ? 2 : 1)
+              // A full-cover prop is a wall for movement purposes.
+              if (propBlockRef.current.has(nk)) continue
+              const slow = difficultRef.current.has(nk) || propDifficultRef.current.has(nk)
+              const nd = d + (slow ? 2 : 1)
               if (nd > dashBudget) continue
               if (dist.has(nk) && dist.get(nk)! <= nd) continue
               dist.set(nk, nd)
@@ -5539,7 +5552,15 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         // A map with no scenery is the normal case today — nothing has been
         // scattered yet — so a missing row set is silence, not an error.
         if (disposed || !placed.data?.length || !catalog.data?.length) return
-        props?.sync(placed.data as unknown as PropPlacement[], catalog.data as unknown as MapProp[])
+        const placements = placed.data as unknown as PropPlacement[]
+        const catalogue = catalog.data as unknown as MapProp[]
+        props?.sync(placements, catalogue)
+        // A boulder you cannot walk through, and webs that cost two. Derived
+        // with the same pure helpers the scatter itself uses, so the squares
+        // the renderer blocks and the squares the server would block can never
+        // drift apart.
+        propBlockRef.current = new Set(blockedBy(placements, catalogue).map(([x, y]) => x + "," + y))
+        propDifficultRef.current = new Set(difficultBy(placements, catalogue).map(([x, y]) => x + "," + y))
       })()
       // What is lying about. Read once here; kept live by the channel below.
       // Pixel icons by catalogue id; piles drawn before these arrive are redrawn once they do.
