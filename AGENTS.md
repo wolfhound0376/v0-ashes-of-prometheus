@@ -345,6 +345,12 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
 - **Portrait rule, non-negotiable**: character and NPC art is **never cropped through the
   head**. `object-fit: contain` for framed portraits; where a cover crop is unavoidable
   (circular avatars) anchor with `object-position: center 10–18%`. Everywhere art renders.
+- **Voice size rule (Sam's ruling, 2026-10-09)**: a creature's voice follows its body.
+  Gnomes (deep gnomes included) are small, with shorter vocal tracts, so they sound
+  high and childlike even as adults: "that's just physics and audio mechanics". When
+  choosing or designing a voice for a small creature, ask for a small, childlike voice
+  first and the personality second. Canon voices live in `NAMED_NPC_VOICES`
+  (`lib/tts.ts`) and must match `npc_encounters.voice_id`, which wins at runtime.
 - **Sprite height rule (Sam's ruling)**: a battle sprite's `ppu` (pixels per 5-ft square)
   is set so the figure stands at its real height, measured from the drawn figure in its
   `idle` sheet (`ppu = figure_px × 5 / feet`), never left at the default. Humans (and
