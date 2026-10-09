@@ -180,7 +180,7 @@ export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   // made for them (Sam, 2026-10-09); Turvy's also has a delivery profile in
   // lib/tts-model.ts (v3 + Romanian accent).
   { name: "Topsy", voiceId: "w03vWgAq1QMOM3DaeWzB", archetype: "hesitant, fearful young deep gnome twin", aliases: ["topsy", "tipsy"] },
-  { name: "Turvy", voiceId: "EC7ildPUimiMSKpYBrXY", archetype: "small, unconfident deep gnome twin, Romanian accent", aliases: ["turvy", "turvey"] },
+  { name: "Turvy", voiceId: "PpLQnDiYSGWjjPKTRC4C", archetype: "small, unconfident deep gnome twin, Romanian accent", aliases: ["turvy", "turvey"] },
   { name: "Eldeth", voiceId: "yZt09SSNiK1Vhjbf8Peq", archetype: "gruff, warm dwarf warrior", aliases: ["eldeth"] },
   { name: "Derendil", voiceId: "JwgGi9aLSpBIW7pVE2A8", archetype: "growling beast with regal elven diction", aliases: ["derendil"] },
   { name: "JimJar", voiceId: "3shyWw5cq1cr7y8xyeZg", archetype: "sly deep gnome gambler/rogue", aliases: ["jimjar"] },

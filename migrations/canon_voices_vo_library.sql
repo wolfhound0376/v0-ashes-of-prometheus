@@ -5,8 +5,9 @@
 -- Sam's request ("they were fine"). Net change against the morning:
 --   Topsy  — unchanged (w03vWgAq1QMOM3DaeWzB, "Topsy the Gnome")
 --   Turvy  — 21m00Tcm4TlvDq8ikWAM (Rachel, the generic fallback) →
---            EC7ildPUimiMSKpYBrXY ("Turvey the Dark Gnome", Sam's design)
-update npc_encounters set voice_id = 'EC7ildPUimiMSKpYBrXY' where name = 'Turvy';
+--            PpLQnDiYSGWjjPKTRC4C ("Turvey the Deep Gnome V2.0", Sam's design;
+--            replaced his first design, EC7ildPUimiMSKpYBrXY, the same day)
+update npc_encounters set voice_id = 'PpLQnDiYSGWjjPKTRC4C' where name = 'Turvy';
 
 -- ROLLBACK
 -- update npc_encounters set voice_id = '21m00Tcm4TlvDq8ikWAM' where name = 'Turvy';
