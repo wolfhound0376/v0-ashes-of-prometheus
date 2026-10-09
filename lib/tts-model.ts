@@ -85,9 +85,10 @@ export type VoiceDelivery = {
 }
 
 export const VOICE_DELIVERY: Record<string, VoiceDelivery> = {
-  // Turvy — "Turvey the Deep Gnome V2.0", Sam's design. Natural is the website's
-  // default for v3, which is what his design preview was heard on.
-  PpLQnDiYSGWjjPKTRC4C: { model: "eleven_v3", direction: "[strong Romanian accent]", stability: 0.5 },
+  // Empty. Turvy had { model: "eleven_v3", direction: "[strong Romanian
+  // accent]", stability: 0.5 } on his designed voice; an Instant Voice Clone of
+  // the design preview replaced it and needs none (Sam, 2026-10-09). Keep the
+  // mechanism for the next designed voice that drifts.
 }
 
 export function deliveryFor(voiceId: string | null | undefined): VoiceDelivery | null {

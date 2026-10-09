@@ -177,10 +177,11 @@ export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   { name: "Jorlan Duskryn", voiceId: "S9fXBozPl46ZX7nuL84Z", archetype: "bitter, aristocratic drow commander", aliases: ["jorlan", "duskryn"] },
   // Topsy and Turvy: the DB spells them "Topsy" / "Turvy". These entries used
   // to read "Tipsy" / "Turvey" and never matched. Their voices are the ones
-  // made for them (Sam, 2026-10-09); Turvy's also has a delivery profile in
-  // lib/tts-model.ts (v3 + Romanian accent).
+  // made for them (Sam, 2026-10-09). Turvy's is an Instant Voice Clone of his
+  // Voice Design preview: a designed voice lost its accent outside the design
+  // page; a clone of the preview keeps it on any model.
   { name: "Topsy", voiceId: "w03vWgAq1QMOM3DaeWzB", archetype: "hesitant, fearful young deep gnome twin", aliases: ["topsy", "tipsy"] },
-  { name: "Turvy", voiceId: "PpLQnDiYSGWjjPKTRC4C", archetype: "small, unconfident deep gnome twin, Romanian accent", aliases: ["turvy", "turvey"] },
+  { name: "Turvy", voiceId: "YewO1hdC7MZ2oDF0K8hX", archetype: "small, unconfident deep gnome twin, Romanian accent", aliases: ["turvy", "turvey"] },
   { name: "Eldeth", voiceId: "yZt09SSNiK1Vhjbf8Peq", archetype: "gruff, warm dwarf warrior", aliases: ["eldeth"] },
   { name: "Derendil", voiceId: "JwgGi9aLSpBIW7pVE2A8", archetype: "growling beast with regal elven diction", aliases: ["derendil"] },
   { name: "JimJar", voiceId: "3shyWw5cq1cr7y8xyeZg", archetype: "sly deep gnome gambler/rogue", aliases: ["jimjar"] },
