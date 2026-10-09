@@ -31,7 +31,7 @@ The backlog was stale in the project's favour. Measured against `main`:
 | Impact bursts, blood, death VFX, tombstones | **Built** |
 | Spell VFX: school runes, splash, target sigils | **Built** |
 | SFX in combat | **Built** (`lib/sfx.ts`, `lib/sfx-cues.ts`, referenced by the board) |
-| Turn-order strip | **Missing** — `turn-banner.tsx` announces one turn; nothing shows the queue |
+| Turn-order strip | **Built** — see the correction below |
 
 The old note "hit feedback mostly plumbed but unwired" and "the live bundle
 contains zero SFX references" are both **out of date**. Both landed.
@@ -101,12 +101,19 @@ The board draws them and ignores them. Make the movement overlay consult
 **Changes:** scenery stops being wallpaper. Cheapest real tactics on the list —
 the data is sitting there already, which is also why this one is embarrassing.
 
-### 5. Turn-order strip
-The only Octopath item. A persistent strip of who acts next, in order, with
-portraits. Everything else on that side is done.
+### 5. ~~Turn-order strip~~ — ALREADY BUILT
 
-**Changes:** lets a player plan two turns ahead instead of one — which is the
-actual mechanism behind why Octopath combat feels readable.
+**Correction, 2026-10-09, same day this plan was written.** The first draft
+called this missing. It is not. The rail is in `combat-hud.tsx`, top centre:
+the whole initiative order, `active={i === activeIndex}`, portraits, hit
+points, conditions, and allegiance colours, with a pinned card for a summoned
+hand.
+
+The error came from looking for a FILE named for it — `ls components/tactical/`
+shows `turn-banner.tsx` and no strip — rather than for the behaviour, which
+lives inside the HUD. A component is not missing because it lacks its own file.
+
+Nothing to build. **Every Octopath-side item on this plan is done.**
 
 ## What is deliberately NOT here
 
@@ -120,10 +127,15 @@ actual mechanism behind why Octopath combat feels readable.
 
 ## The honest summary
 
-Five items. One of them — opportunity attacks — is worth more than the other
-four together, because until movement has a cost the grid is scenery. Two more
-(reactions, shove/jump) are pure SRD. One (cover) is wiring data that already
-exists. One (turn strip) is the only Octopath item left standing.
+Four items, not five — the turn-order strip turned out to be built already.
+One of the four, opportunity attacks, is worth more than the rest together,
+because until movement has a cost the grid is scenery. Two more (reactions,
+shove/jump) are pure SRD. One (cover) is wiring data that already exists.
+
+That the audit over-counted the gap twice — the stale SFX and hit-feedback
+entries, then this — is itself the finding: **this project is consistently
+further along than its own notes say.** Check `main` before believing a
+backlog, including this document.
 
 None of it needs homebrew. None of it needs a schema change that is not already
 implied by `turn_state`. The project spent months making a hit feel good; this
