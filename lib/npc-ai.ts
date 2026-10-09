@@ -307,7 +307,7 @@ export type Decision =
 /** INT and WIS both ≤ 12 means this creature is handled here, per Sam's rule. */
 export const usesAlgorithm = (s: StatBlock) => (s.int ?? 10) <= 12 && (s.wis ?? 10) <= 12
 
-function resolveAttack(self: Combatant, target: Combatant, attack: Attack, rng: () => number) {
+export function resolveAttack(self: Combatant, target: Combatant, attack: Attack, rng: () => number) {
   // WHAT THE TARGET'S CONDITION DOES TO THIS ROLL - lib/helpless. A drow
   // standing over an unconscious Kenta rolls with advantage and any hit is a
   // critical, which costs him two death saves. Until this line it rolled as
@@ -409,4 +409,52 @@ export function decideTurn(args: {
     return { kind: "none", narration: `${self.label} snarls, unable to reach anyone.` }
   }
   return { kind: "move", to, narration: `${self.label} advances on ${target.label}.` }
+}
+
+// ------------------------------------------------- opportunity attacks ----
+
+/**
+ * How far this creature can reach with its best melee attack, in feet.
+ *
+ * Read off the stat block's own prose rather than assumed: "Melee Weapon
+ * Attack: +5 to hit, reach 10 ft." is already parsed into `Attack.reachFt`,
+ * so a glaive or a Large brute threatens two squares for free and a dagger
+ * threatens one. Falls back to 5 ft when the block has no melee attack at
+ * all, which is also the only sane default.
+ */
+export function meleeReachFt(actions: unknown): number {
+  const melee = parseAttacks(actions).find((a) => !a.ranged)
+  return melee?.reachFt && melee.reachFt > 0 ? melee.reachFt : 5
+}
+
+/**
+ * One opportunity attack, resolved.
+ *
+ * Deliberately routed through the SAME `resolveAttack` as every other swing
+ * rather than given its own dice: an opportunity attack against an unconscious
+ * target must still roll with advantage and auto-crit (lib/helpless), a
+ * natural 1 must still miss, and a natural 20 must still crit. Writing a
+ * second, simpler resolver here is how those rules quietly stop applying to
+ * one kind of attack, and nobody notices for months.
+ *
+ * Returns null when the creature has no melee attack to make — a crossbow is
+ * not an opportunity attack, and a token with no stat block swings nothing.
+ */
+export function opportunityAttack(args: {
+  self: Combatant
+  /** The attacker's bestiary `actions` blob. */
+  actions: unknown
+  target: Combatant
+  rng?: () => number
+}): { attack: Attack; roll: number; total: number; hit: boolean; crit: boolean; damage: number; narration: string } | null {
+  const melee = parseAttacks(args.actions).find((a) => !a.ranged)
+  if (!melee) return null
+  const r = resolveAttack(args.self, args.target, melee, args.rng ?? Math.random)
+  return {
+    attack: melee,
+    ...r,
+    // Named as what it is, so the combat log never reads like the creature
+    // simply took a turn out of order.
+    narration: `Opportunity attack — ${r.narration}`,
+  }
 }

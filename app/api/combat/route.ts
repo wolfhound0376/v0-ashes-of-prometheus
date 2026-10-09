@@ -1,5 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import {
+  clearReactionAtTurnStart,
+  hasReaction,
+  forbidsReactions,
+  provokers,
+  spendReaction,
+  type OaCombatant,
+  type TurnOrderEntry,
+} from "@/lib/opportunity"
+import { meleeReachFt, opportunityAttack } from "@/lib/npc-ai"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
 import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasting } from "@/lib/spellbook"
@@ -41,7 +51,7 @@ import {
   rollInitiative, resolveSurprise, SURPRISED_CONDITION, type CheckResult, type SurpriseVerdict,
 } from "@/lib/game-context"
 import {
-  dexScoreOf, sideOf, sheetFromCharacter, sheetFromBestiary, surprisePairings,
+  campOf, dexScoreOf, sideOf, sheetFromCharacter, sheetFromBestiary, surprisePairings,
   type CharacterRow, type BestiaryRow, type StartToken,
 } from "@/lib/combat-start"
 // Sanctuary and Shield of Faith: the protections that ride on a token until
@@ -1087,6 +1097,119 @@ async function handlePost(req: NextRequest) {
       )
     }
 
+    // OPPORTUNITY ATTACKS — the toll on leaving someone's reach.
+    //
+    // SRD: "You can make an opportunity attack when a hostile creature that
+    // you can see moves out of your reach... The attack occurs right before
+    // the creature leaves your reach." So this runs BEFORE the token is
+    // written to its destination, and a mover dropped to 0 by the swing never
+    // arrives — it falls where it stood, which is both the rule and the more
+    // dramatic reading.
+    //
+    // Rules live in lib/opportunity.ts (pure, 24 tests). This block is the
+    // plumbing: who is on the board, who may swing, resolve, pay, narrate.
+    //
+    // THE LEDGER IS ON `turn_order`, NOT `turn_state`. A reaction here is
+    // spent by a creature whose turn it is NOT, and `turn_state` is the
+    // ACTIVE combatant's economy — replaced wholesale on every turn change.
+    // `turn_order` is already jsonb and already per-combatant, so the ledger
+    // rides along with ZERO schema change. The regain happens at the start of
+    // that creature's own turn ("next"), not at the top of the round.
+    const oaBoard = await loadBoard(db, map.id)
+    const moverC = oaBoard.combatants.find((c) => c.token_id === token_id)
+    const orderEntries = (combat.turn_order ?? []) as TurnOrderEntry[]
+    const byToken = new Map(orderEntries.map((e) => [e.token_id, e]))
+    const moverCamp = campOf(moverC?.allegiance ?? null)
+
+    const watchers: OaCombatant[] = oaBoard.combatants
+      .filter((c) => c.token_id !== token_id && (c.hp_current ?? 1) > 0)
+      .map((c) => {
+        const stat = (oaBoard.beast.get(c.bestiary_id ?? "") ?? {}) as Record<string, unknown>
+        return {
+          token_id: c.token_id,
+          grid_x: c.x,
+          grid_y: c.y,
+          camp: campOf(c.allegiance),
+          reach_ft: meleeReachFt(stat.actions),
+          reacted: !hasReaction(byToken.get(c.token_id), combat.round),
+          incapacitated: forbidsReactions(c.conditions ?? []),
+          // Sight is not modelled on this board yet, so this is permissive by
+          // design and flagged rather than faked: a blinded drow currently
+          // still swings. Wiring it to the existing sight cones is a separate
+          // idea, and pretending otherwise here would be inventing a rule.
+          can_see: true,
+        }
+      })
+
+    const swingers = moverC
+      ? provokers({
+          mover: { token_id, camp: moverCamp },
+          from: { grid_x: token.grid_x ?? gx, grid_y: token.grid_y ?? gy },
+          to: { grid_x: gx, grid_y: gy },
+          others: watchers,
+          disengaged: state.disengaged === true,
+        })
+      : []
+
+    let orderAfterOa = orderEntries
+    let stoppedShort = false
+    for (const w of swingers) {
+      const self = oaBoard.combatants.find((c) => c.token_id === w.token_id)
+      if (!self || !moverC) continue
+      const stat = (oaBoard.beast.get(self.bestiary_id ?? "") ?? {}) as Record<string, unknown>
+      const swing = opportunityAttack({ self, actions: stat.actions, target: moverC })
+      // No melee attack on the stat block means no opportunity attack, and
+      // crucially no reaction spent — a crossbowman does not burn its
+      // reaction failing to swing.
+      if (!swing) continue
+
+      orderAfterOa = spendReaction(orderAfterOa, w.token_id, combat.round)
+      await narrate(db, swing.narration)
+
+      if (swing.hit && swing.damage > 0) {
+        const settled = await settleHitPoints(db, {
+          characterId: token.character_id ?? null,
+          tokenId: token_id,
+          label: moverC.label,
+          cur: moverC.hp_current ?? 0,
+          max: moverC.hp_max ?? 0,
+          amount: swing.damage,
+          heals: false,
+          crit: swing.crit,
+          by: "opportunity-attack",
+        })
+        if (settled.note) await narrate(db, settled.note)
+        moverC.hp_current = settled.hp
+        if (settled.hp <= 0) {
+          // Dropped before they got clear. The move does not happen.
+          stoppedShort = true
+          break
+        }
+      }
+    }
+
+    if (orderAfterOa !== orderEntries) {
+      await db.from("combat_state")
+        .update({ turn_order: orderAfterOa, updated_at: new Date().toISOString() })
+        .eq("id", combat.id)
+    }
+
+    if (stoppedShort) {
+      // The movement is forfeited along with the destination: they spent the
+      // effort and went down mid-stride.
+      const halted = { ...state, moved_ft: usedFt + feet }
+      await db.from("combat_state")
+        .update({ turn_state: halted, updated_at: new Date().toISOString() })
+        .eq("id", combat.id)
+      return NextResponse.json({
+        ok: true,
+        turn_state: halted,
+        opportunity_attacks: swingers.length,
+        stopped_short: true,
+        note: "dropped by an opportunity attack before leaving reach",
+      })
+    }
+
     // YOU FACE WHERE YOU WALKED.
     //
     // rotation_y existed as a column and was written NOWHERE — it was 0 on
@@ -1132,7 +1255,7 @@ async function handlePost(req: NextRequest) {
       .update({ turn_state: next, updated_at: new Date().toISOString() })
       .eq("id", combat.id)
     if (stateErr) return NextResponse.json({ error: stateErr.message }, { status: 500 })
-    return NextResponse.json({ ok: true, turn_state: next })
+    return NextResponse.json({ ok: true, turn_state: next, opportunity_attacks: swingers.length })
   }
 
   if (action === "spend" || action === "ack") {
@@ -1149,6 +1272,18 @@ async function handlePost(req: NextRequest) {
       // you cannot un-spend a bonus action you never took is a turn that
       // makes the tracker a liability rather than a help.
       next[kind] = !state[kind]
+
+      // DISENGAGE HAS TO LEAVE A MARK.
+      //
+      // Until opportunity attacks existed, Disengage was a button that set
+      // nothing: it spent your action and changed no rule, because no rule
+      // cared. Now one does, and a Disengage that does not actually stop the
+      // drow swinging is worse than no button at all.
+      //
+      // The slug is optional and every other action ignores it, so nothing
+      // that already calls this handler has to change. The toggle above still
+      // governs, so un-spending the action takes the immunity back with it.
+      if (body?.slug === "disengage") next.disengaged = next[kind] === true
     }
     const { error } = await db
       .from("combat_state")
@@ -3267,10 +3402,27 @@ async function handlePost(req: NextRequest) {
     const clearing = (combat.turn_order as { token_id: string; surprised?: boolean }[])
       .map((e, i) => ({ e, i }))
       .filter(({ e, i }) => e.surprised && (i === combat.active_index || roundTurned))
-    const turnOrder = clearing.length
+    const surpriseCleared = clearing.length
       ? (combat.turn_order as { surprised?: boolean }[]).map((e, i) =>
           clearing.some((c) => c.i === i) ? { ...e, surprised: false } : e)
       : undefined
+
+    // YOU REGAIN YOUR REACTION AT THE START OF YOUR TURN.
+    //
+    // SRD, exactly: "You regain a spent reaction at the start of each of your
+    // turns." At the start of YOUR turn — not at the top of the round. Using
+    // the round boundary instead would hand a creature acting late in the
+    // order a reaction it had burned moments earlier, and a drow that gets two
+    // opportunity attacks between its turns is a drow the players will
+    // (correctly) call cheating.
+    //
+    // The incoming combatant is the one whose turn is beginning, so that is
+    // the entry cleared — nobody else's.
+    const incoming = (combat.turn_order as TurnOrderEntry[])[nextIndex]
+    const base = (surpriseCleared ?? combat.turn_order) as TurnOrderEntry[]
+    const turnOrder = incoming
+      ? clearReactionAtTurnStart(base, incoming.token_id)
+      : surpriseCleared
     await clearSurprised(db, clearing.map((c) => c.e.token_id))
     const { error } = await db
       .from("combat_state")
