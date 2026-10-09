@@ -206,10 +206,11 @@ export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   { name: "Ront", voiceId: "QzD8JR9v8A4kqCDL8XD4", archetype: "vicious, hungry orc bully", aliases: ["ront"] },
   { name: "Buppido", voiceId: "ouL9IsyrSnUkCmfnD02u", archetype: "chirpy, unsettling derro", aliases: ["buppido"] },
   { name: "Stool", voiceId: "fjgAVa6FpNYGo4UpjqML", archetype: "cute little myconid sprout", aliases: ["stool"] },
-  // Topsy and Turvy are not in the VO library; these are their own canon
-  // voices. The DB spells them "Topsy" / "Turvy" — the old aliases "tipsy" /
-  // "turvey" never matched either, so the twins fell through to generic voices.
-  { name: "Topsy", voiceId: "9k8qSCg5OCUsf7lkNEc8", archetype: "giddy, sing-song deep gnome twin", aliases: ["topsy", "tipsy"] },
+  // Topsy and Turvy are not in the VO library. The DB spells them "Topsy" /
+  // "Turvy"; the old aliases "tipsy" / "turvey" never matched, so the twins
+  // fell through to whatever voice_id their row held. Topsy's is the custom
+  // ElevenLabs voice "Topsy the Gnome" — canon (Sam, 2026-10-09).
+  { name: "Topsy", voiceId: "w03vWgAq1QMOM3DaeWzB", archetype: "hesitant, fearful young deep gnome twin", aliases: ["topsy", "tipsy"] },
   { name: "Turvy", voiceId: "PpgkkvljpSnwEaGm6ybH", archetype: "woozy, nervous deep gnome twin", aliases: ["turvy", "turvey"] },
   { name: "Drow Matron", voiceId: "AaYuthhtZkIbXwIXDdTi", archetype: "cold, seductive noble drow", aliases: ["matron"] },
   { name: "Deep Gnome (Svirfneblin)", voiceId: "Eja1uLaoEhh7YwasRYmL", archetype: "wary, secretive Underdark gnome", aliases: ["svirfneblin", "deepgnome"] },

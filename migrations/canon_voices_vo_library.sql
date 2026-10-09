@@ -20,7 +20,7 @@ update npc_encounters set voice_id = 'OKqOM06abBsLyb8k3fXw' where name = 'Shuush
 update npc_encounters set voice_id = 'jhBzyKbsdeM6F66SZCaK' where name = 'Prince Derendil';
 update npc_encounters set voice_id = 'fjgAVa6FpNYGo4UpjqML' where name = 'Stool';
 update npc_encounters set voice_id = 'acrqYoDVmcpJemOxjC39' where name = 'Malachar';
-update npc_encounters set voice_id = '9k8qSCg5OCUsf7lkNEc8' where name = 'Topsy';
+update npc_encounters set voice_id = 'w03vWgAq1QMOM3DaeWzB' where name = 'Topsy'; -- "Topsy the Gnome", kept
 update npc_encounters set voice_id = 'PpgkkvljpSnwEaGm6ybH' where name = 'Turvy';
 
 update characters set voice_id = 'xHxp1c5pQOzhWjBqV78M' where id = 'be060806-9938-4afd-9cf6-ad298d9eaa97'; -- Samson
