@@ -1,7 +1,15 @@
 # Repair, Mend & Upgrade — module spec
 
-Status: **rules approved by Sam 2026-10-01 (§9 items 1-5 YES).** `lib/repair.ts` and
-its tests are PR 1. The migration in §7 is NOT applied — it is applied by hand.
+Status: **built and on `main`.** Rules approved by Sam 2026-10-01 (§9 items 1-5 YES).
+`lib/repair.ts` + tests (PR #649) and `app/api/camp/repair/route.ts` (PR #652) are
+merged; the bench screen is PR #664. **The §7 migration WAS applied 2026-10-01** —
+`inventory_items` carries `condition`/`condition_note`/`upgrades`/`maintained_at` and
+`item_events` exists with RLS on, anon SELECT only, no insert policy. Do not re-apply it.
+
+Still unwired: **upgrade** (no catalog row carries `properties.fitting`, so there is
+nothing to apply), **armour repair** (no row carries `properties.repair.tools`, and the
+material cannot be read off an `items` row — `repairToolFor()` refuses to guess), and the
+**neglect clock** (`neglectDue()` is ready; nothing calls it at long rest).
 Author: Claude, 2026-10-01. Verified against live `main` (`e77d0ab`) and the live
 Supabase project `ppadxmvvvxmnnejeaoer` on the day of writing.
 
@@ -259,6 +267,13 @@ mirroring `craft` exactly. Absent → derive from §4's table. And
 3. **YES** — mundane repair restores the body but never the enchantment. → flagged by `repairSpec()`
 4. **YES** — mastercraft is immunity to neglect + a name + value, not +1 to hit. → `planUpgrade()`, `neglectDue()`
 5. **YES** — repairing a rusted weapon past `damaged` swaps it to the clean catalog row. → `cleanSlugFor()`
+
+**Who may repair (Sam, 2026-10-08).** Eldeth Feldrun and any character holding a smithing
+tool proficiency. Until that ruling **no character in the database had one** — not a PC,
+not an NPC — so the bench was correct and unreachable. Eldeth's `sheet_proficiencies.tools`
+now holds `Smith's Tools`; this is Sam's ruling, **not** her OotA stat block, which gives
+her no tool proficiency. Nothing in code changed: `hasTool()` already answered the general
+half of the rule.
 
 Each is asserted in `lib/repair.test.ts`, so a later session cannot quietly undo one.
 

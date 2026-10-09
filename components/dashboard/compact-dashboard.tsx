@@ -33,6 +33,7 @@ import { CAMP_ACTIONS_NOT_YET, CRAFT_CATEGORIES, CRAFT_CATEGORY_LABEL, type Camp
 import { SRD_SKILLS } from "@/lib/roll-requests"
 import { cn } from "@/lib/utils"
 import { AlchemyBench } from "@/components/alchemy/alchemy-bench"
+import { RepairBench } from "@/components/repair/repair-bench"
 import type { Character } from "@/lib/types/database"
 
 // The phone / camp view. Same page state as the full dashboard — same
@@ -74,7 +75,9 @@ const CAMP_MENU: { id: CampAction; label: string; icon: LucideIcon; hint: string
   { id: "investigate", label: "Identify", icon: Search, hint: "Study a magic item", line: "I spend my camp action studying an item to identify it." },
   { id: "decipher", label: "Decipher", icon: BookOpen, hint: "Arcana on writing", line: "I spend my camp action trying to decipher writing I found." },
   { id: "attune", label: "Attune", icon: Sparkles, hint: "Bond with an item", line: "I spend my camp action attuning to a magic item." },
-  { id: "mend", label: "Mend", icon: Wrench, hint: "Repair gear", line: "I spend my camp action mending my gear." },
+  // Opens the repair bench (docs/claude_Repair_Mend_Upgrade.md). Until
+  // 2026-10-08 this sent a chat line and Malachar improvised the repair.
+  { id: "mend", label: "Mend", icon: Wrench, hint: "Maintain, mend or repair your gear", line: "" },
   { id: "trade", label: "Trade", icon: HandCoins, hint: "Only if a merchant came", line: "I spend my camp action trading with the merchant at camp." },
   { id: "level_up", label: "Level up", icon: Shield, hint: "When you have the XP", line: "I spend my camp action to level up." },
   { id: "train", label: "Train", icon: GraduationCap, hint: "Learn a skill from a master", line: "I spend my camp action training." },
@@ -133,6 +136,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
   const [trainTeacher, setTrainTeacher] = useState<string | null>(null)
   const [craftOpen, setCraftOpen] = useState(false)
   const [benchOpen, setBenchOpen] = useState(false)
+  const [repairOpen, setRepairOpen] = useState(false)
   // The camp at the fire hands over here. The bench needs the claimed
   // character, so it waits until there is one.
   useEffect(() => {
@@ -265,7 +269,9 @@ export function CompactDashboard(props: CompactDashboardProps) {
                             ? (setTrainTeacher(null), setTrainOpen(true))
                             : a.id === "artifice"
                               ? setCraftOpen(true)
-                              : send(a.line)
+                              : a.id === "mend"
+                                ? setRepairOpen(true)
+                                : send(a.line)
                       }
                       className={cn(
                         "flex items-start gap-2.5 rounded-sm border p-3 text-left transition-colors",
@@ -287,6 +293,7 @@ export function CompactDashboard(props: CompactDashboardProps) {
             </section>
             {craftOpen && <CraftMenuPanel characterId={me?.id ?? null} onClose={() => setCraftOpen(false)} onCraft={send} busy={!!isThinking} onOpenBench={() => setBenchOpen(true)} />}
             {benchOpen && me?.id && <AlchemyBench characterId={me.id} onClose={() => { setBenchOpen(false); props.onBenchClosed?.() }} />}
+            {repairOpen && me?.id && <RepairBench characterId={me.id} onClose={() => setRepairOpen(false)} />}
           </div>
         )}
 
