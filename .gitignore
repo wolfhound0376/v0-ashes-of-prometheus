@@ -26,3 +26,6 @@ next-env.d.ts
 # Python bytecode — 16 scripts in scripts/ and nothing was ignoring these
 __pycache__/
 *.py[cod]
+
+# Generated prop art awaiting review (scripts/props/regen_props_hd.py)
+scripts/props/out/
