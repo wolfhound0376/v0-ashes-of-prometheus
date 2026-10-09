@@ -5,7 +5,7 @@ import { deliveryFor } from "../tts-model"
 describe("Topsy and Turvy resolve by their DB spelling", () => {
   it("each twin has the voice made for them", () => {
     expect(resolveNamedNpcVoiceId("Topsy")).toBe("w03vWgAq1QMOM3DaeWzB")
-    expect(resolveNamedNpcVoiceId("Turvy")).toBe("YewO1hdC7MZ2oDF0K8hX")
+    expect(resolveNamedNpcVoiceId("Turvy")).toBe("yZ94ol1u2PFSbLQdCTzB")
   })
 })
 
