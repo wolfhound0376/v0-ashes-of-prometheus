@@ -29,7 +29,9 @@ describe("canon voices match the VO library", () => {
   it("Malachar, players and the system voice", () => {
     expect(MALACHAR_VOICE_ID).toBe(cast.malachar.voice_id)
     expect(SYSTEM_VOICE_ID).toBe(cast.system.voice_id)
-    for (const key of ["samson", "kenta", "fifi", "scott"]) {
+    // Fifi keeps her own voice rather than the library's (Sam, 2026-10-09).
+    expect(PLAYER_CHARACTER_VOICES.fifi).toBe("18wg9KD0IXuWezuJNyJV")
+    for (const key of ["samson", "kenta", "scott"]) {
       expect(PLAYER_CHARACTER_VOICES[key]).toBe(cast[key].voice_id)
     }
   })

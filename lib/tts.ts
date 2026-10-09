@@ -173,7 +173,8 @@ export const MALACHAR_VOICE_ID = "acrqYoDVmcpJemOxjC39"
 export const PLAYER_CHARACTER_VOICES: Record<string, string> = {
   samson: "xHxp1c5pQOzhWjBqV78M", // Garrison - Rugged and Stoic
   kenta: "Qgg2Tb3UNSkQVZcrV4H0", // Kieran - Energetic and Dynamic
-  fifi: "o9B86nZP8mMLaT5FBEzP", // Kathie - Sassy & Playful
+  // Fifi keeps her own voice, not the library's "Kathie" (Sam, 2026-10-09).
+  fifi: "18wg9KD0IXuWezuJNyJV",
   scott: "jiJOsq5SEyngSDmtW0UP", // Julian Ross - The Radio Host
 }
 

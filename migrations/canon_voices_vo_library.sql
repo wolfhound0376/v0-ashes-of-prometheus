@@ -25,7 +25,7 @@ update npc_encounters set voice_id = 'EC7ildPUimiMSKpYBrXY' where name = 'Turvy'
 
 update characters set voice_id = 'xHxp1c5pQOzhWjBqV78M' where id = 'be060806-9938-4afd-9cf6-ad298d9eaa97'; -- Samson
 update characters set voice_id = 'Qgg2Tb3UNSkQVZcrV4H0' where id = '51e4202d-b4d5-4658-a9c1-6102713e77f1'; -- Kenta
-update characters set voice_id = 'o9B86nZP8mMLaT5FBEzP' where id = 'd00aa5b8-ced1-477d-9ec8-0861cca55498'; -- Fifi
+update characters set voice_id = '18wg9KD0IXuWezuJNyJV' where id = 'd00aa5b8-ced1-477d-9ec8-0861cca55498'; -- Fifi keeps her own voice (Sam)
 update characters set voice_id = 'jiJOsq5SEyngSDmtW0UP' where id = '88cc9dd1-b0fe-4e62-9829-f84aafe3c066'; -- Scott
 
 -- ROLLBACK — the values these rows held before (measured 2026-10-09):
