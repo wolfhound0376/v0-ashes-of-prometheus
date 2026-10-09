@@ -48,6 +48,18 @@
       "frames": 9,
       "fps": 10,
       "loop": true
+    },
+    "ward": {
+      "sheet": "ward.png",
+      "frames": 9,
+      "fps": 12,
+      "loop": false
+    },
+    "dodge": {
+      "sheet": "dodge.png",
+      "frames": 9,
+      "fps": 12,
+      "loop": false
     }
   }
 }

@@ -35,6 +35,18 @@
       "frames": 1,
       "fps": 5,
       "loop": true
+    },
+    "hurt": {
+      "sheet": "hurt.png",
+      "frames": 7,
+      "fps": 10,
+      "loop": false
+    },
+    "dead": {
+      "sheet": "dead.png",
+      "frames": 9,
+      "fps": 8,
+      "loop": false
     }
   }
 }
