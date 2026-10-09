@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { resolveVoice, resolveNamedNpcVoiceId, sanitizeForTTS } from "@/lib/tts"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback } from "@/lib/tts-model"
+import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback, deliveryFor } from "@/lib/tts-model"
 
 /**
  * Text-to-speech for a named NPC line.
@@ -93,8 +93,16 @@ export async function POST(request: NextRequest) {
     let response: Response | null = null
     let errorText = ""
     let usedModel = ""
-    for (const model of [TTS_MODEL, TTS_FALLBACK_MODEL]) {
+    // A designed voice with a delivery profile (lib/tts-model.ts) speaks on
+    // its own model, with its own direction and stability; everyone else on v4.
+    const delivery = deliveryFor(resolvedVoiceId)
+    for (const model of [delivery?.model ?? TTS_MODEL, TTS_FALLBACK_MODEL]) {
       usedModel = model
+      const onProfile = !!delivery && model === delivery.model
+      const text = onProfile && delivery.direction ? `${delivery.direction} ${clean}` : clean
+      const voiceSettings = onProfile
+        ? { stability: delivery.stability, use_speaker_boost: settings.use_speaker_boost }
+        : settingsFor(model, settings)
       response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${resolvedVoiceId}`, {
         method: "POST",
         headers: {
@@ -102,7 +110,7 @@ export async function POST(request: NextRequest) {
           "Content-Type": "application/json",
           "xi-api-key": apiKey,
         },
-        body: JSON.stringify({ text: clean, model_id: model, voice_settings: settingsFor(model, settings) }),
+        body: JSON.stringify({ text, model_id: model, voice_settings: voiceSettings }),
       })
       if (response.ok) break
       errorText = await response.text()

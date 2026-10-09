@@ -44,3 +44,14 @@ describe("Topsy and Turvy resolve by their DB spelling", () => {
     expect(topsy).not.toBe(turvy)
   })
 })
+
+describe("Turvy's delivery profile", () => {
+  it("speaks on v3 with the accent direction, at a stability v3 accepts", async () => {
+    const { deliveryFor } = await import("../tts-model")
+    const turvy = deliveryFor(resolveNamedNpcVoiceId("Turvy"))
+    expect(turvy?.model).toBe("eleven_v3")
+    expect(turvy?.direction).toMatch(/romanian accent/i)
+    expect([0, 0.5, 1]).toContain(turvy?.stability)
+    expect(deliveryFor(resolveNamedNpcVoiceId("Ront"))).toBeNull()
+  })
+})
