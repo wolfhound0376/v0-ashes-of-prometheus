@@ -21,7 +21,7 @@ update npc_encounters set voice_id = 'jhBzyKbsdeM6F66SZCaK' where name = 'Prince
 update npc_encounters set voice_id = 'fjgAVa6FpNYGo4UpjqML' where name = 'Stool';
 update npc_encounters set voice_id = 'acrqYoDVmcpJemOxjC39' where name = 'Malachar';
 update npc_encounters set voice_id = 'w03vWgAq1QMOM3DaeWzB' where name = 'Topsy'; -- "Topsy the Gnome", kept
-update npc_encounters set voice_id = 'PpgkkvljpSnwEaGm6ybH' where name = 'Turvy';
+update npc_encounters set voice_id = 'EC7ildPUimiMSKpYBrXY' where name = 'Turvy'; -- "Turvey the Dark Gnome", Sam's design
 
 update characters set voice_id = 'xHxp1c5pQOzhWjBqV78M' where id = 'be060806-9938-4afd-9cf6-ad298d9eaa97'; -- Samson
 update characters set voice_id = 'Qgg2Tb3UNSkQVZcrV4H0' where id = '51e4202d-b4d5-4658-a9c1-6102713e77f1'; -- Kenta

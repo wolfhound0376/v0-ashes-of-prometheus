@@ -211,7 +211,9 @@ export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   // fell through to whatever voice_id their row held. Topsy's is the custom
   // ElevenLabs voice "Topsy the Gnome" — canon (Sam, 2026-10-09).
   { name: "Topsy", voiceId: "w03vWgAq1QMOM3DaeWzB", archetype: "hesitant, fearful young deep gnome twin", aliases: ["topsy", "tipsy"] },
-  { name: "Turvy", voiceId: "PpgkkvljpSnwEaGm6ybH", archetype: "woozy, nervous deep gnome twin", aliases: ["turvy", "turvey"] },
+  // Turvy's is "Turvey the Dark Gnome", designed by Sam to the voice size rule
+  // (AGENTS.md §7): small and childlike, Romanian accent, unconfident.
+  { name: "Turvy", voiceId: "EC7ildPUimiMSKpYBrXY", archetype: "small, childlike, unconfident deep gnome twin, Romanian accent", aliases: ["turvy", "turvey"] },
   { name: "Drow Matron", voiceId: "AaYuthhtZkIbXwIXDdTi", archetype: "cold, seductive noble drow", aliases: ["matron"] },
   { name: "Deep Gnome (Svirfneblin)", voiceId: "Eja1uLaoEhh7YwasRYmL", archetype: "wary, secretive Underdark gnome", aliases: ["svirfneblin", "deepgnome"] },
   { name: "Malachar", voiceId: MALACHAR_VOICE_ID, archetype: "dark fantasy storyteller lich", aliases: ["lich", "malachar"] },
