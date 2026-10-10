@@ -31,7 +31,8 @@ type Facing = "south" | "north" | "east" | "west"
 type NodeRow = {
   id: string
   node_key: string
-  name: string
+  /** Null in the player view until the party learns the name. */
+  name: string | null
   node_type: "region" | "location" | "tactical_map" | "waypoint"
   edge_id: string | null
   edge_position: number | null
@@ -734,7 +735,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                   paintOrder="stroke"
                   style={{ fontSize: 15 * kk, fontWeight: 700, letterSpacing: 1 }}
                 >
-                  {n.name.toUpperCase()}
+                  {(n.name ?? "???").toUpperCase()}
                 </text>
               </g>
             )
@@ -764,7 +765,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
             <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 text-center max-w-[38ch]">
               <div className="text-[#9a8fb0] text-xs tracking-widest">MALACHAR ASKS</div>
               <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">
-                Send the party to {confirmNode.name}?
+                Send the party to {confirmNode.name ?? "this place"}?
               </div>
               <div className="text-[#9a8fb0] text-xs mt-2">
                 They will walk every marker on the road, stopping at each.
@@ -799,7 +800,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
 
         {arrivedAt && !confirmNode && !halt && (
           <div className="absolute left-1/2 -translate-x-1/2 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-4 py-2 text-xs text-[#f5c34d] tracking-widest">
-            ARRIVED: {arrivedAt.name.toUpperCase()}
+            ARRIVED: {(arrivedAt.name ?? "???").toUpperCase()}
           </div>
         )}
 
@@ -854,7 +855,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
         {sel ? (
           <>
             <div className="text-[#f5c34d] font-bold tracking-widest">
-              {sel.name.toUpperCase()}
+              {(sel.name ?? "???").toUpperCase()}
               {partyNode?.id === sel.id && <span className="text-xs ml-3">&#9670; PARTY IS HERE</span>}
             </div>
             {sel.description && <div className="text-[#9a8fb0] mt-1">{sel.description}</div>}
@@ -866,7 +867,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                 const days = e.metadata?.days_normal_pace
                 return (
                   <span key={e.id} className="border border-[#3a2c56] bg-[#231a38] rounded px-2 py-1 text-xs">
-                    &rarr; <b className="text-[#f5c34d]">{o.name}</b>
+                    &rarr; <b className="text-[#f5c34d]">{o.name ?? "???"}</b>
                     {days ? ` · ${days} days` : ""} · {Number(e.distance_miles)} mi ·{" "}
                     <span className="text-[#e05555]">danger {e.danger_level}</span>
                   </span>
