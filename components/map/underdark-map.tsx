@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
+import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/vessels"
 
 const MAP_W = 1672
 const MAP_H = 941
@@ -95,8 +96,10 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   } | null>(null)
   const resumeRef = useRef<(() => void) | null>(null)
   const lastNodeKey = useRef<string | null>(null)
-  // No boat yet: the Darklake crossings stay closed until one is earned.
-  const hasBoat = false
+  // The party's boats (party_vessels, lost_at null). The Darklake crossings
+  // stay closed until one is earned in the fiction and recorded by the DM.
+  const [vessels, setVessels] = useState<VesselRow[]>([])
+  const hasBoat = vessels.length > 0
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -113,6 +116,15 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   useEffect(() => {
     if (dmKey) setLantern(false)
   }, [dmKey])
+
+  async function boatAction(body: { op: "acquire"; kind: VesselKind } | { op: "lose"; vessel_id: string }) {
+    await fetch("/api/travel", {
+      method: "POST",
+      headers: { ...dmHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "vessel", ...body }),
+    }).catch(() => {})
+    setRefresh((r) => r + 1)
+  }
 
   async function dmAction(action: "reveal" | "reveal_name" | "move", nodeKey: string) {
     await fetch("/api/travel", {
@@ -137,6 +149,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
             setNodes((g.nodes ?? []) as NodeRow[])
             setEdges((g.edges ?? []) as EdgeRow[])
             setParty((g.party as PartyRow) ?? null)
+            setVessels((g.vessels ?? []) as VesselRow[])
             setLoaded(true)
             return
           }
@@ -144,13 +157,15 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           /* fall through to the player path */
         }
       }
-      const [n, e, p] = await Promise.all([
+      const [n, e, p, v] = await Promise.all([
         // Players read the masked view: discovered rows, names only once learned.
         supabase.from("travel_nodes_player").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at,name_known"),
         supabase.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata"),
         supabase.from("party_position").select("campaign_run_id,node_id,arrived_at").limit(1),
+        supabase.from("party_vessels").select("id,kind,name,hp_current,hp_max,crew,passengers,speed_mph,lost_at").is("lost_at", null),
       ])
       if (!alive) return
+      if (v.data) setVessels(v.data as VesselRow[])
       if (n.data) setNodes(n.data as NodeRow[])
       if (e.data) setEdges(e.data as EdgeRow[])
       if (p.data) setParty((p.data[0] as PartyRow) ?? null)
@@ -164,6 +179,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
       .on("postgres_changes", { event: "*", schema: "public", table: "party_position" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "travel_nodes" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "travel_edges" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "party_vessels" }, load)
       .subscribe()
     return () => {
       alive = false
@@ -350,8 +366,8 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
 
     const route = routeBetween(prev, party.node_id)
     if (route.length < 2) {
-      // No known road. The party is where the DM put them; we refuse to draw a
-      // journey that does not exist. (Boat routes will land here as water edges.)
+      // No known road (or no boat for the water between). The party is where
+      // the DM put them; we refuse to draw a journey that does not exist.
       setArrivedAt(byId.get(party.node_id) ?? null)
       rerender()
       return
@@ -753,6 +769,13 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
               <div className="text-[#9a8fb0] text-xs mt-2">
                 They will walk every marker on the road, stopping at each.
               </div>
+              {party && routeBetween(party.node_id, confirmNode.id).length < 2 && (
+                <div className="text-[#e0a35c] text-xs mt-2">
+                  {hasBoat
+                    ? "No road or boat lane reaches it from here. They will be placed there, not walked."
+                    : "No road reaches it on foot, and the party has no boat. They will be placed there, not walked."}
+                </div>
+              )}
               <div className="flex gap-2 justify-center mt-4">
                 <button
                   onClick={() => {
@@ -890,6 +913,49 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           </div>
         )}
       </div>
+
+      {/* The party's boats. Without one, the Darklake lanes stay closed. */}
+      {loaded && (dmKey || hasBoat) && (
+        <div
+          className={
+            embedded
+              ? "mt-2 flex flex-wrap items-center gap-2 rounded border border-[#2b4a52] bg-[#0f1a20ee] p-2 text-[11px]"
+              : "mt-2 flex flex-wrap items-center gap-2 rounded-lg border-2 border-[#2b4a52] bg-[#0f1a20ee] px-4 py-2 text-xs"
+          }
+        >
+          <span className="tracking-widest text-[#5cc8e0]">BOATS</span>
+          {vessels.length === 0 && <span className="text-[#7f9aa3]">None. The Darklake is closed to them.</span>}
+          {vessels.map((v) => (
+            <span key={v.id} className="flex items-center gap-1 rounded border border-[#2b4a52] bg-[#14252d] px-2 py-1 text-[#cfe9ef]">
+              {v.name || VESSELS[v.kind]?.label || v.kind} · {v.hp_current}/{v.hp_max} hp
+              {dmKey && (
+                <button
+                  onClick={() => boatAction({ op: "lose", vessel_id: v.id })}
+                  className="ml-1 rounded px-1 text-[#e08a8a] hover:bg-[#3a1c1c]"
+                  title="Sunk, stolen or left behind"
+                >
+                  LOST
+                </button>
+              )}
+            </span>
+          ))}
+          {vessels.length > 0 && <span className="text-[#7f9aa3]">· seats {seats(vessels)}</span>}
+          {dmKey && (
+            <span className="ml-auto flex flex-wrap gap-1">
+              {(["keelboat", "coracle", "barrel"] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => boatAction({ op: "acquire", kind: k })}
+                  className="rounded border border-[#2b4a52] bg-[#14252d] px-2 py-1 text-[#5cc8e0] hover:border-[#5cc8e0]"
+                  title={VESSELS[k].source}
+                >
+                  + {VESSELS[k].label.toUpperCase()}
+                </button>
+              ))}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

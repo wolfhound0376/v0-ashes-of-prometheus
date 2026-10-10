@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { resolveArrival, rollDie, type EncounterRow, type EncounterTable, type NodeEvent } from "@/lib/travel/arrival"
+import { VESSELS, fleetSpeed, isVesselKind } from "@/lib/travel/vessels"
 
 // /api/travel — Malachar's hands on the travel graph.
 //
@@ -22,6 +23,11 @@ import { resolveArrival, rollDie, type EncounterRow, type EncounterTable, type N
 //                       lib/travel/arrival.ts for the order of precedence.
 //     action "continue"→ clear the open halt so the party walks on. The DM's
 //                       hand, always: nothing resumes a stopped march by itself.
+//   POST {action: "vessel", op: "acquire", kind, name?}
+//                    → the party gains a boat (keelboat | coracle | barrel), stats
+//                      copied from lib/travel/vessels.ts. node_key not needed.
+//   POST {action: "vessel", op: "lose", vessel_id, reason?}
+//                    → the boat is sunk, stolen or left behind. Never deleted.
 //
 // AUTHORIZATION mirrors /api/asset-media: x-dm-key must carry DM_ACCESS_CODE
 // when that env var is set; with it unset the route stays open (fail-open,
@@ -46,10 +52,11 @@ function authorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   const db = createAdminClient()
-  const [n, e, p] = await Promise.all([
+  const [n, e, p, v] = await Promise.all([
     db.from("travel_nodes").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at,name_known_at"),
     db.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata,discovered_at"),
     db.from("party_position").select("campaign_run_id,node_id,arrived_at").limit(1),
+    db.from("party_vessels").select("id,kind,name,hp_current,hp_max,crew,passengers,speed_mph,lost_at").is("lost_at", null),
   ])
   const err = n.error || e.error || p.error
   if (err) return NextResponse.json({ error: err.message }, { status: 500 })
@@ -62,7 +69,7 @@ export async function GET(req: NextRequest) {
     .is("resolved_at", null)
     .limit(1)
     .maybeSingle()
-  return NextResponse.json({ nodes: n.data, edges: e.data, party: p.data?.[0] ?? null, halt: open ?? null })
+  return NextResponse.json({ nodes: n.data, edges: e.data, party: p.data?.[0] ?? null, halt: open ?? null, vessels: v.data ?? [] })
 }
 
 /** Every road node and segment the party crossed becomes known. */
@@ -185,28 +192,28 @@ async function legMiles(
   fromKey: string | null,
   toId: string,
   toEdgeId: string | null,
-): Promise<number> {
+): Promise<{ miles: number; sail: boolean }> {
   const edgeId = toEdgeId ?? (fromKey ? (await db.from("travel_nodes").select("edge_id").eq("node_key", fromKey).maybeSingle()).data?.edge_id ?? null : null)
 
   if (edgeId) {
     const [{ data: edge }, { count }] = await Promise.all([
-      db.from("travel_edges").select("distance_miles").eq("id", edgeId).maybeSingle(),
+      db.from("travel_edges").select("distance_miles,metadata").eq("id", edgeId).maybeSingle(),
       db.from("travel_nodes").select("id", { count: "exact", head: true }).eq("edge_id", edgeId),
     ])
     const gaps = (count ?? 0) + 1
-    return edge ? Number(edge.distance_miles) / gaps : 0
+    return edge ? { miles: Number(edge.distance_miles) / gaps, sail: edge.metadata?.mode === "sail" } : { miles: 0, sail: false }
   }
 
-  if (!fromKey) return 0
+  if (!fromKey) return { miles: 0, sail: false }
   const { data: from } = await db.from("travel_nodes").select("id").eq("node_key", fromKey).maybeSingle()
-  if (!from) return 0
+  if (!from) return { miles: 0, sail: false }
   const { data: edge } = await db
     .from("travel_edges")
-    .select("distance_miles")
+    .select("distance_miles,metadata")
     .or(`and(from_node_id.eq.${from.id},to_node_id.eq.${toId}),and(from_node_id.eq.${toId},to_node_id.eq.${from.id})`)
     .limit(1)
     .maybeSingle()
-  return edge ? Number(edge.distance_miles) : 0
+  return edge ? { miles: Number(edge.distance_miles), sail: edge.metadata?.mode === "sail" } : { miles: 0, sail: false }
 }
 
 async function activeRunId(db: ReturnType<typeof createAdminClient>): Promise<string | null> {
@@ -225,8 +232,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue"]
-  if (!KNOWN.includes(action) || (!nodeKey && action !== "continue")) {
+  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel"]
+  if (!KNOWN.includes(action) || (!nodeKey && action !== "continue" && action !== "vessel")) {
     return NextResponse.json({ error: `expected { action: ${KNOWN.join("|")}, node_key }` }, { status: 400 })
   }
 
@@ -245,6 +252,53 @@ export async function POST(req: NextRequest) {
     await db0.from("travel_arrivals").update({ resolved_at: new Date().toISOString() }).eq("id", open.id)
     return NextResponse.json({ ok: true, action, resumed: open.id })
   }
+  if (action === "vessel") {
+    // The party's boats. The DM's hand: a boat is earned in the fiction
+    // (bought or stolen in Sloobludop, carved from a zurkhwood cap), then
+    // recorded here.
+    const dbv = createAdminClient()
+    if (body?.op === "acquire") {
+      if (!isVesselKind(body?.kind)) {
+        return NextResponse.json({ error: "kind must be keelboat | coracle | barrel" }, { status: 400 })
+      }
+      const st = VESSELS[body.kind as keyof typeof VESSELS]
+      const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim().slice(0, 80) : null
+      const { data, error: verr } = await dbv
+        .from("party_vessels")
+        .insert({
+          campaign_run_id: await activeRunId(dbv),
+          kind: st.kind,
+          name,
+          ac: st.ac,
+          hp_max: st.hp_max,
+          hp_current: st.hp_max,
+          damage_threshold: st.damage_threshold,
+          crew: st.crew,
+          passengers: st.passengers,
+          speed_mph: st.speed_mph,
+          source: st.source,
+        })
+        .select("id,kind,name")
+        .single()
+      if (verr) return NextResponse.json({ error: verr.message }, { status: 500 })
+      return NextResponse.json({ ok: true, action, op: "acquire", vessel: data })
+    }
+    if (body?.op === "lose") {
+      const id = typeof body?.vessel_id === "string" ? body.vessel_id : ""
+      if (!id) return NextResponse.json({ error: "vessel_id required" }, { status: 400 })
+      const reason = typeof body?.reason === "string" ? body.reason.slice(0, 200) : null
+      const { data, error: verr } = await dbv
+        .from("party_vessels")
+        .update({ lost_at: new Date().toISOString(), lost_reason: reason })
+        .eq("id", id)
+        .is("lost_at", null)
+        .select("id")
+      if (verr) return NextResponse.json({ error: verr.message }, { status: 500 })
+      return NextResponse.json({ ok: true, action, op: "lose", lost: (data ?? []).length })
+    }
+    return NextResponse.json({ error: "op must be acquire | lose" }, { status: 400 })
+  }
+
   const db = createAdminClient()
   let prevNodeId: string | null = null
   const { data: node, error } = await db
@@ -266,14 +320,20 @@ export async function POST(req: NextRequest) {
       .eq("id", node.id)
       .single()
 
-    const [tablesRes, rowsRes, eventsRes, firedRes, marchRes, miles] = await Promise.all([
+    const [tablesRes, rowsRes, eventsRes, firedRes, marchRes, leg, boatsRes] = await Promise.all([
       db.from("encounter_tables").select("table_key,die,title,source"),
       db.from("encounter_table_rows").select("table_key,roll_min,roll_max,result,detail"),
       db.from("travel_node_events").select("id,kind,title,body,payload,fires_once,priority").eq("node_id", node.id),
       db.from("travel_arrivals").select("event_id").not("event_id", "is", null),
-      db.from("travel_march").select("miles_since_check,day_miles,checks_made").eq("campaign_run_id", runId).maybeSingle(),
+      db.from("travel_march").select("miles_since_check,day_miles,checks_made,water_hours_since_check").eq("campaign_run_id", runId).maybeSingle(),
       legMiles(db, fromKey, node.id, full?.edge_id ?? null),
+      db.from("party_vessels").select("speed_mph,lost_at").is("lost_at", null),
     ])
+    const miles = leg.miles
+    // A crossing is rowed at the fleet's pace. With no boat on record (the DM
+    // moved them across anyway) the book's slowest water speed applies:
+    // drifting with the current at 1 mph (ch.3).
+    const speed = fleetSpeed((boatsRes.data ?? []) as { speed_mph: number; lost_at: string | null }[]) ?? 1
 
     // An event that fires once and already has an arrival against it is spent.
     const spent = new Set((firedRes.data ?? []).map((r: { event_id: string | null }) => r.event_id))
@@ -287,6 +347,9 @@ export async function POST(req: NextRequest) {
       tables: (tablesRes.data ?? []) as EncounterTable[],
       rows: (rowsRes.data ?? []) as EncounterRow[],
       roll: rollDie,
+      water: leg.sail
+        ? { hours: miles / speed, carryHours: Number(marchRes.data?.water_hours_since_check) || 0 }
+        : undefined,
     })
 
     await db.from("travel_march").upsert({
@@ -294,6 +357,7 @@ export async function POST(req: NextRequest) {
       miles_since_check: outcome.march.miles_since_check,
       day_miles: outcome.march.day_miles,
       checks_made: outcome.march.checks_made,
+      ...(outcome.water ? { water_hours_since_check: outcome.water.carryAfter } : {}),
       last_check_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -315,6 +379,7 @@ export async function POST(req: NextRequest) {
             rolls: outcome.rolls,
             source: outcome.source,
             miles_walked: miles,
+            ...(outcome.water ? { water: outcome.water } : {}),
           },
         })
         .select("id")
