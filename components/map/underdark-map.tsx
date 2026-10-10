@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/vessels"
+import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
 
 const MAP_W = 1672
 const MAP_H = 941
@@ -101,6 +102,16 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   // stay closed until one is earned in the fiction and recorded by the DM.
   const [vessels, setVessels] = useState<VesselRow[]>([])
   const hasBoat = vessels.length > 0
+  // The day (lib/travel/march.ts): pace, hours on the road, who leads. Read
+  // from /api/travel (DM) and refreshed from every arrival's reply.
+  const [march, setMarch] = useState<DayState & { day_miles: number; navigator: Navigator | null }>({ ...FRESH_DAY, day_miles: 7, navigator: null })
+  const [guides, setGuides] = useState<Guide[]>([])
+  const [pcs, setPcs] = useState<{ id: string; name: string }[]>([])
+  // The departure sheet's choices. "guide:<key>" | "pc:<id>" | "none".
+  const [pace, setPace] = useState<Pace>("normal")
+  const [navSel, setNavSel] = useState<string>("none")
+  const [pcFamiliar, setPcFamiliar] = useState(false)
+  const [pcHasMap, setPcHasMap] = useState(false)
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -136,6 +147,43 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     setRefresh((r) => r + 1)
   }
 
+  /**
+   * Setting out: the pace and the navigator are declared BEFORE the first
+   * step (OotA-Enc p.24-25), then the party moves. Both yes-buttons and the
+   * Enter key come through here so the two paths cannot drift apart.
+   */
+  async function setOut(dest: NodeRow) {
+    const navigator =
+      navSel.startsWith("guide:") ? { kind: "guide", key: navSel.slice(6) }
+      : navSel.startsWith("pc:") ? { kind: "pc", character_id: navSel.slice(3), familiar: pcFamiliar, has_map: pcHasMap }
+      : null
+    try {
+      const res = await fetch("/api/travel", {
+        method: "POST",
+        headers: { ...dmHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "depart", pace, navigator }),
+      })
+      const out = res.ok ? await res.json() : null
+      if (out?.day) setMarch((m) => ({ ...m, ...out.day, navigator: out.navigator ?? null }))
+    } catch {
+      /* the walk still happens; the day just will not count */
+    }
+    setConfirmNode(null)
+    await dmAction("move", dest.node_key)
+  }
+
+  /** Miles along a route of node ids, summed over the road edges that join them. */
+  function routeMiles(ids: string[]): number {
+    let m = 0
+    for (let i = 0; i + 1 < ids.length; i++) {
+      const e = edges.find(
+        (x) => (x.from_node_id === ids[i] && x.to_node_id === ids[i + 1]) || (x.from_node_id === ids[i + 1] && x.to_node_id === ids[i]),
+      )
+      m += Number(e?.distance_miles) || 0
+    }
+    return m
+  }
+
   // ---------- data ----------
   useEffect(() => {
     const supabase = createClient()
@@ -151,6 +199,21 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
             setEdges((g.edges ?? []) as EdgeRow[])
             setParty((g.party as PartyRow) ?? null)
             setVessels((g.vessels ?? []) as VesselRow[])
+            if (g.march) {
+              setMarch((m) => ({ ...m, ...g.march }))
+              setPace((p) => (p === "normal" && g.march.pace ? g.march.pace : p))
+            }
+            if (Array.isArray(g.guides)) {
+              setGuides(g.guides as Guide[])
+              // Default the picker to whoever led last time.
+              const led = g.march?.navigator?.name
+              const hit = led ? (g.guides as Guide[]).find((x) => x.name === led) : null
+              if (hit) setNavSel((s) => (s === "none" ? `guide:${hit.key}` : s))
+            }
+            // Player characters, for the navigator picker. Read-only, names only.
+            const { data: chars } = await supabase.from("characters").select("id,name").order("name")
+            if (!alive) return
+            if (chars) setPcs(chars as { id: string; name: string }[])
             setLoaded(true)
             return
           }
@@ -474,6 +537,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           out = null
         }
         lastNodeKey.current = n.node_key
+        if (out?.day) setMarch((m) => ({ ...m, ...out.day }))
         if (out?.halt) {
           setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source })
           walkingRef.current = false
@@ -503,8 +567,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
       if (confirmNode) {
         if (ev.key === "Enter") {
           ev.preventDefault()
-          dmAction("move", confirmNode.node_key)
-          setConfirmNode(null)
+          void setOut(confirmNode)
         } else if (ev.key === "Escape") {
           setConfirmNode(null)
         }
@@ -551,7 +614,8 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dmKey, selected, party?.node_id, edges.length, confirmNode])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dmKey, selected, party?.node_id, edges.length, confirmNode, pace, navSel, pcFamiliar, pcHasMap])
 
   // ---------- render ----------
   const kk = Math.max(0.45, Math.min(1, cam.current.w / MAP_W))
@@ -760,32 +824,112 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           )}
         </svg>
 
-        {confirmNode && (
-          <div className="absolute inset-0 grid place-items-center bg-[#05030acc]">
-            <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 text-center max-w-[38ch]">
+        {confirmNode && (() => {
+          // The departure sheet. Pace and navigator are declared before the
+          // first step (OotA-Enc ch.2 p.24-25); the road's length at each pace
+          // comes from the route the party will actually walk.
+          const routeIds = party ? routeBetween(party.node_id, confirmNode.id) : []
+          const miles = routeMiles(routeIds)
+          const summary = paceSummary(miles, march.day_miles)
+          const chosenGuide = navSel.startsWith("guide:") ? guides.find((g) => g.key === navSel.slice(6)) ?? null : null
+          const navUnfamiliar =
+            navSel === "none" || (chosenGuide ? chosenGuide.familiarWith === "none" : navSel.startsWith("pc:") && !pcFamiliar && !pcHasMap)
+          return (
+          <div className="absolute inset-0 grid place-items-center bg-[#05030acc] p-3">
+            <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 w-full max-w-[52ch] max-h-full overflow-y-auto">
               <div className="text-[#9a8fb0] text-xs tracking-widest">MALACHAR ASKS</div>
               <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">
-                Send the party to {confirmNode.name ?? "this place"}?
+                Set out for {confirmNode.name ?? "this place"}?
               </div>
-              <div className="text-[#9a8fb0] text-xs mt-2">
-                They will walk every marker on the road, stopping at each.
+              <div className="text-[#9a8fb0] text-xs mt-1">
+                {routeIds.length >= 2
+                  ? `${Math.round(miles * 10) / 10} miles by road. They will walk every marker, stopping at each, and camp when the day's ${MARCH_HOURS_PER_DAY} hours are spent.`
+                  : "They will walk every marker on the road, stopping at each."}
               </div>
-              {party && routeBetween(party.node_id, confirmNode.id).length < 2 && (
+              {party && routeIds.length < 2 && (
                 <div className="text-[#e0a35c] text-xs mt-2">
                   {hasBoat
                     ? "No road or boat lane reaches it from here. They will be placed there, not walked."
                     : "No road reaches it on foot, and the party has no boat. They will be placed there, not walked."}
                 </div>
               )}
+
+              {/* PACE — OotA-Enc ch.2 p.24 */}
+              <div className="mt-4 text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">Pace</div>
+              <div className="mt-1 grid gap-1">
+                {summary.map((s) => (
+                  <label
+                    key={s.pace}
+                    className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-left text-xs ${
+                      pace === s.pace ? "border-[#f5c34d] bg-[#2a1f10] text-[#f5c34d]" : "border-[#3a2c56] bg-[#221936] text-[#c9bcd8] hover:border-[#7a5c2b]"
+                    }`}
+                  >
+                    <input type="radio" name="pace" className="mt-0.5 accent-[#f5c34d]" checked={pace === s.pace} onChange={() => setPace(s.pace)} />
+                    <span>
+                      <b className="tracking-widest">{s.pace.toUpperCase()}</b>
+                      {routeIds.length >= 2 && <span className="ml-2 text-[#e4d8bf]">{Math.round(s.days * 10) / 10} days</span>}
+                      <div className="mt-0.5 text-[11px] text-[#9a8fb0]">
+                        {s.pace === "fast" ? "−5 passive Perception, no foraging, −5 to hold the route" : s.pace === "slow" ? "Improved foraging or Stealth, +5 to hold the route" : "The book's default: forage, no modifiers"}
+                      </div>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {/* NAVIGATOR — p.22 (the guides), p.25 (becoming lost) */}
+              <div className="mt-4 text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">Who leads</div>
+              <select
+                value={navSel}
+                onChange={(e) => setNavSel(e.target.value)}
+                className="mt-1 w-full rounded border border-[#3a2c56] bg-[#221936] px-2 py-2 text-xs text-[#e4d8bf]"
+              >
+                <option value="none">No navigator</option>
+                <optgroup label="Guides (OotA-Enc p.22)">
+                  {guides.map((g) => (
+                    <option key={g.key} value={`guide:${g.key}`}>
+                      {g.name} — {g.familiarWith === "none" ? "can't navigate" : g.familiarWith === "any" ? "knows the whole map" : `knows ${g.familiarWith}`}
+                      {g.survivalBonus ? ` (+${g.survivalBonus} Survival)` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+                {pcs.length > 0 && (
+                  <optgroup label="Player characters">
+                    {pcs.map((c) => (
+                      <option key={c.id} value={`pc:${c.id}`}>{c.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {navSel.startsWith("pc:") && (
+                <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-[#c9bcd8]">
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" className="accent-[#f5c34d]" checked={pcFamiliar} onChange={(e) => setPcFamiliar(e.target.checked)} />
+                    knows this region (DM ruling)
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input type="checkbox" className="accent-[#f5c34d]" checked={pcHasMap} onChange={(e) => setPcHasMap(e.target.checked)} />
+                    has a map of this route
+                  </label>
+                </div>
+              )}
+              {chosenGuide && <div className="mt-2 text-[11px] italic text-[#9a8fb0]">{chosenGuide.note}</div>}
+              {navUnfamiliar && (
+                <div className="mt-2 rounded border border-[#7a2b2b] bg-[#2a1216] px-3 py-2 text-[11px] text-[#e08a8a]">
+                  No one who knows these tunnels is leading. Strangers to a region of the Underdark are automatically lost, wandering 4 hours at a time (OotA-Enc p.25).
+                </div>
+              )}
+              {!navUnfamiliar && (
+                <div className="mt-2 text-[11px] text-[#9a8fb0]">
+                  DC 10 Wisdom (Survival) to hold the route, each day and after every rest{pace === "slow" ? " (+5 at slow pace)" : pace === "fast" ? " (−5 at fast pace)" : ""}. A failure loses 1d6 hours.
+                </div>
+              )}
+
               <div className="flex gap-2 justify-center mt-4">
                 <button
-                  onClick={() => {
-                    dmAction("move", confirmNode.node_key)
-                    setConfirmNode(null)
-                  }}
+                  onClick={() => void setOut(confirmNode)}
                   className="text-xs px-4 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] font-bold"
                 >
-                  YES — SET OUT ⏎
+                  SET OUT ⏎
                 </button>
                 <button
                   onClick={() => setConfirmNode(null)}
@@ -796,7 +940,8 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {arrivedAt && !confirmNode && !halt && (
           <div className="absolute left-1/2 -translate-x-1/2 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-4 py-2 text-xs text-[#f5c34d] tracking-widest">
@@ -804,15 +949,44 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           </div>
         )}
 
+        {/* The day, Malachar's eyes only: players never see the day number or
+            the hours (same rule as /api/game-clock). */}
+        {dmKey && loaded && (
+          <div className="absolute left-3 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-3 py-2 text-[11px] text-[#c9bcd8]">
+            <div className="tracking-[.2em] text-[#f5c34d]">
+              DAY {march.days_marched + 1} · {march.pace.toUpperCase()} PACE
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="relative inline-block h-1.5 w-24 overflow-hidden rounded bg-[#2a2140]">
+                <span className="absolute inset-y-0 left-0 bg-[#f5c34d]" style={{ width: `${Math.min(100, (march.hours_today / MARCH_HOURS_PER_DAY) * 100)}%` }} />
+              </span>
+              <span>{Math.round(march.hours_today * 10) / 10} / {MARCH_HOURS_PER_DAY} h on the road</span>
+            </div>
+            <div className="mt-1 text-[#9a8fb0]">
+              {march.navigator ? `${march.navigator.name} leads${march.navigator.familiar ? "" : " (unfamiliar)"}` : "No navigator"}
+              {march.lost_hours_total > 0 ? ` · ${Math.round(march.lost_hours_total * 10) / 10} h lost` : ""}
+              {march.navigation_due ? " · check owed" : ""}
+            </div>
+          </div>
+        )}
+
         {/* The march has stopped. Nothing resumes it but the DM. */}
         {halt && (
           <div className="absolute inset-0 grid place-items-center bg-[#0a0612cc] p-4">
-            <div className="w-full max-w-md rounded-lg border-2 border-[#7a2b2b] bg-[#1a1020] p-4 shadow-[0_0_40px_#000]">
-              <div className="text-[10px] uppercase tracking-[.22em] text-[#c96a6a]">
-                {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : "The party stops"}
+            <div className={`w-full max-w-md rounded-lg border-2 ${halt.kind === "camp" ? "border-[#7a5c2b]" : "border-[#7a2b2b]"} bg-[#1a1020] p-4 shadow-[0_0_40px_#000]`}>
+              <div className={`text-[10px] uppercase tracking-[.22em] ${halt.kind === "camp" ? "text-[#e0a35c]" : "text-[#c96a6a]"}`}>
+                {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : halt.kind === "camp" ? "Nightfall — make camp" : "The party stops"}
               </div>
               <div className="mt-1 font-serif text-lg leading-snug text-[#f5c34d]">{halt.title}</div>
-              {halt.body && <p className="mt-2 text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
+              {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
+              {halt.kind === "camp" && (
+                <a
+                  href="/camp"
+                  className="mt-3 block rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#e0a35c] hover:border-[#e0a35c]"
+                >
+                  TO CAMP AT THE FIRE →
+                </a>
+              )}
 
               {halt.rolls.length > 0 && (
                 <ul className="mt-3 space-y-1 border-t border-[#3a2c56] pt-3">
@@ -834,17 +1008,22 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                 onClick={() => {
                   const go = resumeRef.current
                   resumeRef.current = null
+                  const wasCamp = halt.kind === "camp"
                   void fetch("/api/travel", {
                     method: "POST",
                     headers: { "content-type": "application/json", "x-dm-key": dmKey },
                     body: JSON.stringify({ action: "continue", node_key: arrivedAt?.node_key ?? "" }),
                   }).catch(() => {})
+                  // Breaking camp starts a new day on the server; mirror it here
+                  // so the HUD does not show yesterday's eight hours until the
+                  // next arrival answers.
+                  if (wasCamp) setMarch((m) => ({ ...m, hours_today: 0, navigation_due: true }))
                   if (go) go()
                   else setHalt(null)
                 }}
                 className="mt-4 w-full rounded border border-[#7a5c2b] bg-[#2a1f10] py-2 text-xs tracking-[.2em] text-[#f5c34d] hover:bg-[#3a2b16]"
               >
-                CONTINUE THE MARCH
+                {halt.kind === "camp" ? "BREAK CAMP — WALK ON" : "CONTINUE THE MARCH"}
               </button>
             </div>
           </div>
