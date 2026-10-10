@@ -3,8 +3,36 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { resolveArrival, rollDie, type EncounterRow, type EncounterTable, type NodeEvent } from "@/lib/travel/arrival"
 import { VESSELS, fleetSpeed, isVesselKind } from "@/lib/travel/vessels"
+import {
+  GUIDES,
+  depart as departDay,
+  guideByKey,
+  isPace,
+  navigatorFromGuide,
+  navigatorFromSheet,
+  newDay,
+  normaliseDay,
+  walkLeg,
+  type DayState,
+  type Navigator,
+} from "@/lib/travel/march"
+import { logTimeEvent } from "@/lib/time-tracking"
+import type { SheetSlice } from "@/lib/game-context"
 
 // /api/travel — Malachar's hands on the travel graph.
+//
+//   THE DAY (lib/travel/march.ts). A march has a pace, a navigator and a clock:
+//     action "depart" {pace, navigator} → the party sets out. Pace is the
+//                       book's fast|normal|slow; navigator is either a guide
+//                       from p.22 ({kind:"guide", key}) or a player character
+//                       ({kind:"pc", character_id, familiar?, has_map?}).
+//                       A navigation check is owed on the first leg.
+//     every "arrive"  → walks the leg: rolls navigation when owed, charges the
+//                       in-game minutes to the campaign clock (time_log event
+//                       `travel_march`, minutes explicit), and when the day's
+//                       eight hours are spent HALTS with kind "camp" — the
+//                       party must make camp where it stands.
+//     "continue" after a camp halt → a new day begins; navigation owed again.
 //
 //   GET               → the FULL graph (all nodes/edges + party), DM eyes only.
 //                       Players never call this; their view is anon + RLS.
@@ -62,14 +90,71 @@ export async function GET(req: NextRequest) {
   if (err) return NextResponse.json({ error: err.message }, { status: 500 })
   // A halt survives a reload: the march is stopped in the database, not in a
   // browser tab. Refreshing the page must not walk the party past an ambush.
-  const { data: open } = await db
-    .from("travel_arrivals")
-    .select("id,node_id,outcome,arrived_at")
-    .eq("halted", true)
-    .is("resolved_at", null)
-    .limit(1)
-    .maybeSingle()
-  return NextResponse.json({ nodes: n.data, edges: e.data, party: p.data?.[0] ?? null, halt: open ?? null, vessels: v.data ?? [] })
+  const [{ data: open }, { data: marchRow }] = await Promise.all([
+    db
+      .from("travel_arrivals")
+      .select("id,node_id,outcome,arrived_at")
+      .eq("halted", true)
+      .is("resolved_at", null)
+      .limit(1)
+      .maybeSingle(),
+    db.from("travel_march").select("*").limit(1).maybeSingle(),
+  ])
+  const march = marchRow as Record<string, unknown> | null
+  return NextResponse.json({
+    nodes: n.data,
+    edges: e.data,
+    party: p.data?.[0] ?? null,
+    halt: open ?? null,
+    vessels: v.data ?? [],
+    // The day as it stands, for the departure sheet and the HUD.
+    march: {
+      ...normaliseDay(march),
+      day_miles: Number(march?.day_miles) || 7,
+      navigator: (march?.navigator as Navigator | null) ?? null,
+    },
+    guides: GUIDES,
+  })
+}
+
+/**
+ * The campaign clock is kept per session (lib/time-tracking). Resolve the
+ * session the way /api/game-clock does: the active one, else the newest.
+ */
+async function clockSessionId(db: ReturnType<typeof createAdminClient>): Promise<string | null> {
+  const { data } = await db.from("sessions").select("id,status,started_at").order("started_at", { ascending: false })
+  const rows = (data ?? []) as { id: string; status: string | null }[]
+  return (rows.find((s) => s.status === "active") ?? rows[0])?.id ?? null
+}
+
+/**
+ * Write the day's columns on travel_march. Best-effort on purpose: until the
+ * `travel_march_day` migration has been applied these columns do not exist,
+ * and a march must still be able to walk and roll encounters without them.
+ */
+async function saveDay(db: ReturnType<typeof createAdminClient>, runId: string, day: DayState, navigator?: Navigator | null) {
+  const { error } = await db
+    .from("travel_march")
+    .update({
+      pace: day.pace,
+      hours_today: day.hours_today,
+      navigation_due: day.navigation_due,
+      lost_hours_total: day.lost_hours_total,
+      days_marched: day.days_marched,
+      ...(navigator !== undefined ? { navigator } : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("campaign_run_id", runId)
+  if (error) console.warn("[travel] day columns not saved (migration travel_march_day applied?):", error.message)
+  return !error
+}
+
+/** The navigator the DM named on departure, rebuilt from its stored shape. */
+function readNavigator(raw: unknown): Navigator | null {
+  if (!raw || typeof raw !== "object") return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.name !== "string") return null
+  return { name: r.name, survivalBonus: Number(r.survivalBonus) || 0, familiar: !!r.familiar, hasMap: !!r.hasMap }
 }
 
 /** Every road node and segment the party crossed becomes known. */
@@ -232,9 +317,46 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel"]
-  if (!KNOWN.includes(action) || (!nodeKey && action !== "continue" && action !== "vessel")) {
+  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart"]
+  const NO_NODE = ["continue", "vessel", "depart"]
+  if (!KNOWN.includes(action) || (!nodeKey && !NO_NODE.includes(action))) {
     return NextResponse.json({ error: `expected { action: ${KNOWN.join("|")}, node_key }` }, { status: 400 })
+  }
+
+  if (action === "depart") {
+    // The party sets out. The DM names the pace and who leads (p.24-25).
+    const dbd = createAdminClient()
+    const runId = await activeRunId(dbd)
+    if (!runId) return NextResponse.json({ error: "no active campaign run" }, { status: 409 })
+    const pace = body?.pace
+    if (!isPace(pace)) return NextResponse.json({ error: "pace must be fast | normal | slow" }, { status: 400 })
+    const nv = body?.navigator ?? null
+    let navigator: Navigator | null = null
+    if (nv?.kind === "guide") {
+      const g = guideByKey(typeof nv.key === "string" ? nv.key : null)
+      if (!g) return NextResponse.json({ error: `unknown guide; one of ${GUIDES.map((x) => x.key).join(", ")}` }, { status: 400 })
+      navigator = navigatorFromGuide(g)
+    } else if (nv?.kind === "pc") {
+      const id = typeof nv.character_id === "string" ? nv.character_id : ""
+      const { data: sheet } = await dbd
+        .from("characters")
+        .select("id,name,level,str_score,dex_score,con_score,int_score,wis_score,cha_score,proficiency_bonus,passive_perception,sheet_skill_proficiencies")
+        .eq("id", id)
+        .maybeSingle()
+      if (!sheet) return NextResponse.json({ error: "unknown character_id" }, { status: 404 })
+      navigator = navigatorFromSheet(sheet as unknown as SheetSlice, { familiar: !!nv.familiar, hasMap: !!nv.has_map })
+    } else if (nv != null) {
+      return NextResponse.json({ error: "navigator must be {kind:'guide', key} or {kind:'pc', character_id}" }, { status: 400 })
+    }
+    // Make sure the accumulator row exists before writing the day onto it.
+    const { data: existing } = await dbd.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle()
+    if (!existing) {
+      const { error: ierr } = await dbd.from("travel_march").insert({ campaign_run_id: runId })
+      if (ierr) return NextResponse.json({ error: ierr.message }, { status: 500 })
+    }
+    const day = departDay(normaliseDay(existing as Record<string, unknown> | null), pace)
+    const saved = await saveDay(dbd, runId, day, navigator)
+    return NextResponse.json({ ok: true, action, day, navigator, saved, ...(saved ? {} : { warning: "travel_march day columns missing - apply migration travel_march_day" }) })
   }
 
   if (action === "continue") {
@@ -243,14 +365,22 @@ export async function POST(req: NextRequest) {
     const db0 = createAdminClient()
     const { data: open } = await db0
       .from("travel_arrivals")
-      .select("id")
+      .select("id,outcome")
       .eq("halted", true)
       .is("resolved_at", null)
       .limit(1)
       .maybeSingle()
     if (!open) return NextResponse.json({ ok: true, action, nothing_to_resume: true })
     await db0.from("travel_arrivals").update({ resolved_at: new Date().toISOString() }).eq("id", open.id)
-    return NextResponse.json({ ok: true, action, resumed: open.id })
+    // Continuing past nightfall is breaking camp: a new day, navigation owed.
+    let newDayStarted = false
+    const kind = (open.outcome as { kind?: string } | null)?.kind
+    if (kind === "camp") {
+      const runId = await activeRunId(db0)
+      const { data: m } = runId ? await db0.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle() : { data: null }
+      if (runId && m) newDayStarted = await saveDay(db0, runId, newDay(normaliseDay(m as Record<string, unknown>)))
+    }
+    return NextResponse.json({ ok: true, action, resumed: open.id, new_day: newDayStarted })
   }
   if (action === "vessel") {
     // The party's boats. The DM's hand: a boat is earned in the fiction
@@ -325,7 +455,7 @@ export async function POST(req: NextRequest) {
       db.from("encounter_table_rows").select("table_key,roll_min,roll_max,result,detail"),
       db.from("travel_node_events").select("id,kind,title,body,payload,fires_once,priority").eq("node_id", node.id),
       db.from("travel_arrivals").select("event_id").not("event_id", "is", null),
-      db.from("travel_march").select("miles_since_check,day_miles,checks_made,water_hours_since_check").eq("campaign_run_id", runId).maybeSingle(),
+      db.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle(),
       legMiles(db, fromKey, node.id, full?.edge_id ?? null),
       db.from("party_vessels").select("speed_mph,lost_at").is("lost_at", null),
     ])
@@ -362,10 +492,52 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     })
 
+    // THE DAY. A land leg costs hours at the chosen pace and may need the
+    // navigator to find the way; a water leg costs the hours the crossing
+    // took (rafts travel round the clock - guide p.12 - so no nightfall).
+    const dayBefore = normaliseDay(marchRes.data as Record<string, unknown> | null)
+    const navigator = readNavigator((marchRes.data as Record<string, unknown> | null)?.navigator)
+    const normalDayMiles = Number(marchRes.data?.day_miles) || outcome.march.day_miles || 7
+    let dayAfter = dayBefore
+    let minutes = 0
+    let legNote: string | null = null
+    let navigation: ReturnType<typeof walkLeg>["navigation"] = null
+    let nightfall = false
+    if (leg.sail) {
+      minutes = Math.round((miles / speed) * 60)
+    } else if (miles > 0) {
+      const walked = walkLeg(dayBefore, miles, normalDayMiles, navigator, Math.random)
+      dayAfter = walked.day
+      minutes = walked.minutes
+      legNote = walked.note
+      navigation = walked.navigation
+      nightfall = walked.nightfall
+      await saveDay(db, runId, dayAfter)
+    }
+    if (minutes > 0) {
+      await logTimeEvent(db, await clockSessionId(db), {
+        eventType: "travel_march",
+        minutesAdvanced: minutes,
+        ...(navigation?.roll != null
+          ? { hiddenRoll: { die: "d20", result: navigation.roll, purpose: `navigation (${navigation.navigator}) vs DC ${navigation.dc}`, source: navigation.source } }
+          : {}),
+      })
+    }
+
+    // Nightfall is a halt of its own when nothing else stopped them. If an
+    // encounter did, it is the halt and the day's end rides along in the body;
+    // "continue" still starts the new day because hours_today says so.
+    const haltKind: string = outcome.halt ? outcome.kind : nightfall ? "camp" : "none"
+    const halt = outcome.halt || nightfall
+    const title = outcome.halt ? outcome.title : `Nightfall at ${full?.name ?? node.node_key} - make camp`
+    const bodyParts = [outcome.body, navigation?.lost ? navigation.note : null, nightfall ? `Day ${dayAfter.days_marched} of the march is done after ${Math.round(dayAfter.hours_today * 10) / 10} hours. The party camps here; Continue breaks camp tomorrow.` : null].filter(Boolean)
+    const haltBody = bodyParts.length ? bodyParts.join("\n\n") : null
+    const source = outcome.halt ? outcome.source : "Travel pace: 8 hours of travel a day (SRD / PHB ch.8); OotA-Enc ch.2 p.24"
+
     // Quiet nodes are not written to the log. Fifty-one rows saying "nothing
     // happened" would bury the two that matter.
     let arrivalId: string | null = null
-    if (outcome.halt) {
+    if (halt) {
       const { data: row, error: aerr } = await db
         .from("travel_arrivals")
         .insert({
@@ -373,12 +545,15 @@ export async function POST(req: NextRequest) {
           event_id: outcome.eventId,
           halted: true,
           outcome: {
-            kind: outcome.kind,
-            title: outcome.title,
-            body: outcome.body,
+            kind: haltKind,
+            title,
+            body: haltBody,
             rolls: outcome.rolls,
-            source: outcome.source,
+            source,
             miles_walked: miles,
+            minutes,
+            day: dayAfter,
+            ...(navigation ? { navigation } : {}),
             ...(outcome.water ? { water: outcome.water } : {}),
           },
         })
@@ -394,7 +569,24 @@ export async function POST(req: NextRequest) {
     }
 
     await revealNode(db, node.id)
-    return NextResponse.json({ ok: true, action, node_key: node.node_key, arrival_id: arrivalId, ...outcome })
+    return NextResponse.json({
+      ok: true,
+      action,
+      node_key: node.node_key,
+      arrival_id: arrivalId,
+      ...outcome,
+      // The day overrides what the encounter alone would have said.
+      halt,
+      kind: haltKind,
+      title,
+      body: haltBody,
+      source,
+      day: dayAfter,
+      minutes,
+      navigation,
+      nightfall,
+      leg_note: legNote,
+    })
   }
 
   if (action === "reveal_name") {
