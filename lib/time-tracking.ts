@@ -43,6 +43,10 @@ export const TIME_EVENT_TYPES = [
   // Earned proficiency (lib/camp.ts §17): hours of instruction at camp. No
   // rule row — the minutes are the hours banked, passed explicitly.
   "training",
+  // The march (lib/travel/march.ts): a leg of road at the chosen pace, plus
+  // hours lost to wandering. Minutes are explicit — a rule row cannot know the
+  // leg's length — so the trigger never has to guess.
+  "travel_march",
 ] as const
 
 /** Event types that take no time and are logged with an explicit 0. */
@@ -51,7 +55,7 @@ export const ZERO_MINUTE_EVENTS: ReadonlySet<TimeEventType> = new Set<TimeEventT
 export type TimeEventType = (typeof TIME_EVENT_TYPES)[number]
 
 /** Event types that require an explicit minutes_advanced value on insert. */
-export const MINUTES_REQUIRED: ReadonlySet<TimeEventType> = new Set<TimeEventType>(["cinematic_cut", "training"])
+export const MINUTES_REQUIRED: ReadonlySet<TimeEventType> = new Set<TimeEventType>(["cinematic_cut", "training", "travel_march"])
 
 /** A hidden roll recorded against a story-advancement event. Never shown to players. */
 export interface HiddenRoll {
