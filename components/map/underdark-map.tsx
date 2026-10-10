@@ -981,10 +981,10 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
               {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
               {halt.kind === "camp" && (
                 <a
-                  href="/"
+                  href="/camp"
                   className="mt-3 block rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#e0a35c] hover:border-[#e0a35c]"
                 >
-                  TO THE CAMPFIRE (DASHBOARD) →
+                  TO CAMP AT THE FIRE →
                 </a>
               )}
 
