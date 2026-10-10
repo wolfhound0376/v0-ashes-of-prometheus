@@ -10,6 +10,7 @@ import {
   type TurnOrderEntry,
 } from "@/lib/opportunity"
 import { meleeReachFt, opportunityAttack } from "@/lib/npc-ai"
+import { resolveJump, resolveShove } from "@/lib/shove"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
 import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasting } from "@/lib/spellbook"
@@ -3086,6 +3087,155 @@ async function handlePost(req: NextRequest) {
     const spent = { ...state, action: true }
     await db.from("combat_state").update({ turn_state: spent, updated_at: stamp }).eq("id", combat.id)
     return NextResponse.json({ ok: true, line, stable: check.success, roll, total: check.total, turn_state: spent })
+  }
+
+  if (action === "shove" || action === "jump") {
+    // SHOVE AND JUMP — the two verbs that make a room feel like a place
+    // rather than a spreadsheet. Tier 3 of the Octopath/BG3 plan.
+    //
+    // Both are plain SRD and neither existed. Shove in particular is the one
+    // that pays off on the sandbox map: Sam ruled the river rapids difficult
+    // terrain on 2026-09-27, so pushing a drow into them is a real tactical
+    // act and not a flourish.
+    //
+    // Rules live in lib/shove.ts (pure, 20 tests). This is the plumbing.
+    const token_id = String(body?.token_id ?? "")
+    const order = combat.turn_order as { token_id: string; kind: string }[]
+    const entry = order[combat.active_index]
+    if (!entry || entry.token_id !== token_id) {
+      return NextResponse.json({ error: "not this combatant's turn" }, { status: 409 })
+    }
+
+    const { data: tok } = await db
+      .from("vtt_tokens").select("id,label,character_id,bestiary_id,grid_x,grid_y,allegiance,token_size")
+      .eq("id", token_id).maybeSingle()
+    if (!tok) return NextResponse.json({ error: "token missing" }, { status: 409 })
+    const { data: selfChar } = tok.character_id
+      ? await db.from("characters")
+          .select("id,name,level,str_score,dex_score,con_score,int_score,wis_score,cha_score,dex_modifier,proficiency_bonus,sheet_skill_proficiencies,speed")
+          .eq("id", tok.character_id).maybeSingle()
+      : { data: null }
+
+    // ---------------------------------------------------------------- JUMP
+    //
+    // Reported rather than executed. A jump in 5e is movement, not a separate
+    // action — "each foot you clear costs a foot of movement" — so the board
+    // already owns moving the token; what the player is missing is the NUMBER,
+    // which is the thing the rule is actually about and the thing nobody can
+    // be bothered to look up mid-fight.
+    //
+    // Making this a teleport instead would have to re-implement the movement
+    // budget, difficult terrain and opportunity attacks, all of which `move`
+    // already does correctly.
+    if (action === "jump") {
+      const out = resolveJump({
+        name: tok.label ?? "Someone",
+        strengthScore: selfChar?.str_score ?? 10,
+        runUp: body?.run_up === true,
+      })
+      await narrate(db, out.narration)
+      return NextResponse.json({ ok: true, jump: out })
+    }
+
+    // --------------------------------------------------------------- SHOVE
+    //
+    // SRD: a shove REPLACES one attack of the Attack action, so it costs the
+    // action here. A character who has already acted cannot shove.
+    const state = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
+    if (state.action === true) {
+      return NextResponse.json({ error: "your action is already spent" }, { status: 409 })
+    }
+
+    const target_id = String(body?.target_id ?? "")
+    const outcome = body?.outcome === "prone" ? "prone" : "push"
+    const { data: tgt } = await db
+      .from("vtt_tokens").select("id,label,character_id,bestiary_id,grid_x,grid_y,allegiance,token_size,hp_current")
+      .eq("id", target_id).maybeSingle()
+    if (!tgt) return NextResponse.json({ error: "no such target" }, { status: 404 })
+    if (tgt.id === token_id) return NextResponse.json({ error: "you cannot shove yourself" }, { status: 400 })
+    if ((tgt.hp_current ?? 1) <= 0) return NextResponse.json({ error: "it is already down" }, { status: 409 })
+
+    // Reach: a shove replaces an attack, so it needs the same adjacency.
+    const apart = Math.max(
+      Math.abs((tok.grid_x ?? 0) - (tgt.grid_x ?? 0)),
+      Math.abs((tok.grid_y ?? 0) - (tgt.grid_y ?? 0)),
+    )
+    if (apart > 1) return NextResponse.json({ error: "too far away to shove" }, { status: 409 })
+
+    const { data: tgtChar } = tgt.character_id
+      ? await db.from("characters")
+          .select("id,name,level,str_score,dex_score,con_score,int_score,wis_score,cha_score,dex_modifier,proficiency_bonus,sheet_skill_proficiencies")
+          .eq("id", tgt.character_id).maybeSingle()
+      : { data: null }
+    const { data: tgtBeast } = tgt.bestiary_id
+      ? await db.from("bestiary").select("id,name,str,dex,con,int,wis,cha,skills,size,cr").eq("id", tgt.bestiary_id).maybeSingle()
+      : { data: null }
+    const { data: selfBeast } = tok.bestiary_id
+      ? await db.from("bestiary").select("id,name,str,dex,con,int,wis,cha,skills,size,cr").eq("id", tok.bestiary_id).maybeSingle()
+      : { data: null }
+
+    const shoverSheet = selfChar
+      ? sheetFromCharacter(selfChar as CharacterRow, tok.label ?? "Someone")
+      : sheetFromBestiary(selfBeast as BestiaryRow | undefined, token_id, tok.label ?? "Someone")
+    const targetSheet = tgtChar
+      ? sheetFromCharacter(tgtChar as CharacterRow, tgt.label ?? "It")
+      : sheetFromBestiary(tgtBeast as BestiaryRow | undefined, target_id, tgt.label ?? "It")
+
+    const { data: dims } = await db
+      .from("vtt_maps").select("grid_width,grid_height").eq("id", map.id).maybeSingle()
+    // Nobody shares a square, so every other body is a wall for the push.
+    const { data: bodies } = await db
+      .from("vtt_tokens").select("id,grid_x,grid_y").eq("map_id", map.id).eq("is_visible", true)
+    const blocked = new Set(
+      (bodies ?? []).filter((b) => b.id !== target_id).map((b) => `${b.grid_x},${b.grid_y}`),
+    )
+
+    const result = resolveShove({
+      shover: { ...shoverSheet, size: (selfBeast as { size?: string } | null)?.size ?? tok.token_size ?? "medium" },
+      target: { ...targetSheet, size: (tgtBeast as { size?: string } | null)?.size ?? tgt.token_size ?? "medium" },
+      from: { grid_x: tok.grid_x ?? 0, grid_y: tok.grid_y ?? 0 },
+      targetAt: { grid_x: tgt.grid_x ?? 0, grid_y: tgt.grid_y ?? 0 },
+      outcome,
+      rng: Math.random,
+      width: dims?.grid_width ?? 12,
+      height: dims?.grid_height ?? 12,
+      blocked,
+    })
+
+    await narrate(db, result.narration)
+
+    if (result.success && outcome === "push" &&
+        (result.to.grid_x !== tgt.grid_x || result.to.grid_y !== tgt.grid_y)) {
+      await db.from("vtt_tokens")
+        .update({ grid_x: result.to.grid_x, grid_y: result.to.grid_y, updated_by: "shove", updated_at: new Date().toISOString() })
+        .eq("id", target_id)
+    }
+    if (result.success && outcome === "prone") {
+      // Prone is a condition, and the conditions live in different places for
+      // a PC and a monster — the sheet for one, the encounter row for the
+      // other. Both paths go through the same normalisation the rest of the
+      // route uses, so the word is spelled the way the board expects.
+      if (tgt.character_id) {
+        const { data: row } = await db.from("characters").select("conditions").eq("id", tgt.character_id).maybeSingle()
+        const next = normalizeConditions(row?.conditions)
+        if (!next.includes("prone")) next.push("prone")
+        await db.from("characters").update({ conditions: next, updated_at: new Date().toISOString() }).eq("id", tgt.character_id)
+      } else {
+        const { data: row } = await db.from("npc_encounters").select("conditions").eq("name", tgt.label ?? "").maybeSingle()
+        const next = normalizeConditions(row?.conditions)
+        if (!next.includes("prone")) next.push("prone")
+        await db.from("npc_encounters").update({ conditions: next }).eq("name", tgt.label ?? "")
+      }
+    }
+
+    // The action is spent whether or not the contest was won — a failed shove
+    // is still a spent attack, the same as a missed swing.
+    const next = { ...state, action: true }
+    await db.from("combat_state")
+      .update({ turn_state: next, updated_at: new Date().toISOString() })
+      .eq("id", combat.id)
+
+    return NextResponse.json({ ok: true, shove: result, turn_state: next })
   }
 
   if (action === "hide") {
