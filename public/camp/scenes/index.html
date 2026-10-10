@@ -1,0 +1,634 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><script src="/camp/claude-shim.js" data-app="scenes"></script></head><body>
+<title>Underdark Scenes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* layout: one painted scene, full width; a slim title row and biome tabs above, a key below — a window into the cave */
+:root{
+  --ground:#07060b; --panel:#0f0d16; --line:#4a3c28; --gold:#e3b95c; --ink:#ece2cc; --dim:#9d9281; --walk:#5cf08a; --occ:#ff5ac8;
+  --gold-2:#9c7a3a; --display:'Cinzel',Georgia,'Times New Roman',serif; --body:'Crimson Text',Georgia,'Times New Roman',serif;
+  color-scheme:dark;
+}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:17px;padding-inline:16px;padding-block:16px 24px}
+.wrap{max-width:1280px;margin:0 auto;display:grid;gap:12px}
+.bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:baseline;justify-content:space-between}
+h1{margin:0;font-family:var(--display);font-weight:700;font-size:1.05rem;letter-spacing:.22em;color:var(--gold);text-wrap:balance;text-transform:uppercase}
+h1 small{font-weight:500;letter-spacing:.14em;color:var(--dim);font-size:.72rem;margin-left:10px}
+.toggles,.tabs{display:flex;flex-wrap:wrap;gap:8px}
+button{font-family:var(--display);font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:7px 12px;cursor:pointer}
+button[aria-pressed="true"],.tabs button[aria-selected="true"]{border-color:var(--gold);color:var(--gold)}
+button:hover{border-color:var(--dim)}
+button:focus-visible,canvas:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.stage{position:relative;width:100%;max-width:100%;aspect-ratio:1280/714;border:1px solid var(--line);background:#000}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+.loading[hidden],.prompt[hidden]{display:none}
+.loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);letter-spacing:.2em;font-size:.75rem;color:var(--dim)}
+.prompt{position:absolute;left:50%;bottom:6%;transform:translateX(-50%);width:min(420px,calc(100% - 32px));background:rgba(10,8,16,.92);border:1px solid var(--gold);padding:14px 16px;display:grid;gap:10px;text-align:center}
+.prompt h2{margin:0;font-family:var(--display);font-size:.85rem;letter-spacing:.18em;color:var(--gold);text-transform:uppercase}
+.prompt p{margin:0;font-size:1rem;line-height:1.35}
+.prompt .row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.prompt.dead{border-color:#b04a6a}
+.prompt.dead h2{color:#e07a9a}
+/* the outing: the camp field game's bar and result card (styles from the Camp at the Fire page) */
+.out{display:grid;gap:10px;border:1px solid var(--line);background:var(--panel);padding:12px 14px}
+.out .go{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.out .go .tile{display:grid;gap:2px;text-align:left;padding:9px 14px;max-width:340px}
+.out .go .tile span{font-family:var(--body);text-transform:none;letter-spacing:0;color:var(--dim);font-size:.9rem}
+.out .go label{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:.95rem;margin-left:auto}
+.fhead{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+.fhead h2{margin:0;font-family:var(--display);color:var(--gold);letter-spacing:.22em;font-size:.95rem}
+.fhead .sup{margin-left:auto;color:var(--dim);font-variant-numeric:tabular-nums}
+.fhead .sup b{color:var(--ink)}
+.fsub{color:var(--dim);font-size:.95rem;line-height:1.45}
+.fsub b{color:var(--gold);font-weight:600}
+.fbar{display:flex;gap:10px;flex-wrap:wrap}
+.fbar small{opacity:.6}
+.fbar button[disabled]{opacity:.45;cursor:default}
+.dev{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:.9rem;color:var(--dim)}
+.dev select{background:#15121a;color:#e8d9b0;border:1px solid #6b5530;font-family:var(--body)}
+.malbox{border-left:3px solid #7a2a2a;background:rgba(40,10,14,.55);padding:8px 12px;margin:6px 0;text-align:left;border-radius:4px}
+.malbox b{display:block;font-family:var(--display);letter-spacing:.2em;font-size:11px;color:#c0505a}
+.malbox i{color:#e8d9b0;font-size:15px;line-height:1.4}
+.dmx{display:block;margin-top:6px;color:#a89a7a;font-size:13px;border-top:1px dashed #5a4a2a;padding-top:6px}
+.fres{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(620px,calc(100% - 32px));max-height:calc(100% - 24px);overflow:auto;background:linear-gradient(180deg,rgba(18,15,28,.96),rgba(8,7,13,.98));border:1px solid var(--gold-2);padding:14px 18px;color:var(--ink);line-height:1.5}
+.fres[hidden]{display:none}
+.fres h4{font-family:var(--display);color:var(--gold);letter-spacing:.14em;margin:0 0 6px;font-weight:600}
+.fres p{margin:4px 0}.fres b{color:var(--gold)}.fres .dim{color:var(--dim)}
+.fres .flags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.fres .flags span{font-size:.75rem;color:var(--dim);border:1px dashed rgba(156,122,58,.5);padding:2px 7px}
+.fres button{margin:6px 8px 0 0}
+.caught{font-family:var(--display);letter-spacing:.2em;color:#ff6a4a;font-size:1.1rem;text-align:center;margin:10px 0;border:1px solid #7a2a1a;padding:8px;background:rgba(80,10,5,.35)}
+.caught.dm{color:var(--gold);border-color:var(--gold-2);background:none}
+.fbanner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-family:var(--display);font-size:1.5rem;letter-spacing:.2em;color:var(--gold);text-shadow:0 0 18px rgba(0,0,0,.9),0 2px 0 #000;text-align:center;padding:0 24px}
+.fbanner.hostile{color:#ff7a5a}
+.fbanner[hidden]{display:none}
+.out [hidden]{display:none}
+.logs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 18px}
+@media (max-width:760px){.logs{grid-template-columns:1fr}}
+.logs ol{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:220px;overflow:auto;font-size:.95rem;line-height:1.4}
+.logs li b{color:var(--gold);font-family:var(--display);font-size:.72rem;letter-spacing:.12em;display:block}
+.logs .lbl{font-family:var(--display);font-size:.6rem;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin-bottom:6px;display:block}
+.pack{display:flex;flex-wrap:wrap;gap:6px}
+.pack span{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);padding:2px 8px 2px 2px;font-size:.9rem}
+.pack img{width:24px;height:24px;image-rendering:pixelated}
+/* the map maker: a 12×12 board of painting thumbnails Sam arranges himself */
+.mapper{display:grid;gap:12px;border:1px solid var(--gold-2);background:var(--panel);padding:14px}
+.mapper[hidden]{display:none}
+.mhead{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline}
+.mhead h2{margin:0;font-family:var(--display);color:var(--gold);letter-spacing:.2em;font-size:.95rem;text-transform:uppercase}
+.mstat{margin-left:auto;color:var(--dim);font-size:.95rem}
+.mstat.warn{color:#ffb070}
+.mhelp{margin:0;color:var(--dim);font-size:.98rem;line-height:1.45;max-width:90ch}
+.mhelp b{color:var(--ink);font-weight:600}
+.mbody{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+@media (max-width:900px){.mbody{grid-template-columns:1fr}}
+.mgridwrap{overflow-x:auto;min-width:0}
+.mgrid{display:grid;grid-template-columns:repeat(12,minmax(38px,1fr));gap:5px;min-width:520px;padding:4px}
+.mcell{position:relative;aspect-ratio:16/9;border:1px dashed #2c2536;background:#0b0a10;padding:0;cursor:pointer;overflow:visible}
+.mcell:hover{border-color:var(--dim)}
+.mcell .pic{position:absolute;inset:0;background-size:cover;background-position:center}
+.mcell .pic.flip{transform:scaleX(-1)}
+.mcell.room{border:1px solid #3a3146}
+.mcell.cut{opacity:.38;border-style:dashed}
+.mcell.sel{outline:2px solid var(--gold);outline-offset:1px;z-index:3}
+.mcell .tag{position:absolute;left:2px;top:1px;font-family:var(--display);font-size:.55rem;letter-spacing:.06em;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000;pointer-events:none}
+.mcell .in{position:absolute;right:2px;top:0;color:var(--gold);font-size:.8rem;text-shadow:0 0 3px #000;pointer-events:none}
+.mcell .ed{position:absolute;pointer-events:none;z-index:2}
+.mcell .ed.e{right:-6px;top:30%;height:40%;width:7px}
+.mcell .ed.s{bottom:-6px;left:35%;width:30%;height:7px}
+.mcell .ed.ok{background:#5cf08a}
+.mcell .ed.no{background:repeating-linear-gradient(45deg,#ff5a5a 0 3px,#3a0d0d 3px 6px)}
+.mside{display:grid;gap:12px;min-width:0}
+.mlbl{font-family:var(--display);font-size:.6rem;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+.mpal{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:420px;overflow:auto;padding-right:2px}
+.mpal button{display:grid;gap:3px;padding:4px;text-align:left;text-transform:none;letter-spacing:0;font-family:var(--body);font-size:.85rem;line-height:1.2}
+.mpal button img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}
+.mpal button small{color:var(--dim);font-size:.75rem}
+.mpal button[aria-pressed="true"]{border-color:var(--gold);background:#1a1520}
+.minsp{display:grid;gap:8px;border:1px solid var(--line);padding:10px;font-size:.95rem}
+.minsp .row{display:flex;flex-wrap:wrap;gap:6px}
+.minsp p{margin:0;color:var(--dim)}
+.minsp b{color:var(--ink)}
+.mrow{display:flex;flex-wrap:wrap;gap:8px}
+.mrow .primary{border-color:var(--gold);color:var(--gold)}
+.key{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 20px;color:var(--dim);font-size:.95rem;min-width:0}
+.key b{color:var(--ink);font-weight:600}
+.key i{font-style:normal;display:inline-block;width:10px;height:10px;margin-right:6px}
+</style>
+<div class="wrap">
+  <div class="bar"><h1><span id="scene-name">Darklake Shore</span> <small>Underdark painted scenes</small></h1>
+    <div class="toggles"><button id="t-walk" aria-pressed="false">Show walk area</button><button id="t-light" aria-pressed="true">Lantern light</button><button id="t-map" aria-pressed="false" title="Arrange the paintings yourself on a 12×12 map">Map maker</button><button id="t-magic" aria-pressed="false" title="Lends Fifi Jump, Misty Step, Fly and Dimension Door so you can try them. Not on her real sheet.">Test magic</button></div></div>
+  <div class="tabs" role="tablist" aria-label="Biome" id="tabs"></div>
+  <div class="stage"><canvas id="c" tabindex="0" aria-label="A painted Underdark scene. Fifi walks with WASD, the arrow keys, or a click."></canvas><div class="loading" id="loading">Lighting the lantern…</div><div class="prompt" id="prompt" hidden role="dialog" aria-live="polite"><h2 id="p-title"></h2><p id="p-text"></p><div class="row" id="p-buttons"></div></div><div class="fbanner" id="banner" hidden></div><div class="fres" id="fldres" hidden></div></div>
+  <section class="mapper" id="mapper" hidden aria-label="Map maker">
+    <div class="mhead"><h2>Map maker · <span id="mm-name"></span></h2><span class="mstat" id="mm-status"></span></div>
+    <p class="mhelp"><b>Pick a painting</b> on the right, then click squares to lay rooms down. <b>Click a room</b> to select it: flip it, change its light, make it the way in, or take it out. Rooms side by side are joined: <b style="color:#5cf08a">green</b> where both paintings have a way through, <b style="color:#ff7a7a">red</b> where one of them is walled (the rockfall has no back passage, say). Faded rooms can't be reached from the way in ★. <b>Save map</b> makes it canon for everyone and replaces the random arrangement for this area.</p>
+    <div class="mbody">
+      <div class="mgridwrap"><div class="mgrid" id="mm-grid" role="grid" aria-label="12 by 12 map"></div></div>
+      <div class="mside">
+        <div><div class="mlbl">Paintings</div><div class="mpal" id="mm-pal"></div></div>
+        <div class="minsp" id="mm-insp"></div>
+        <div class="mrow"><button class="primary" id="mm-save" type="button">Save map</button><button id="mm-walk" type="button">Walk it</button><button id="mm-clear" type="button">Clear</button></div>
+      </div>
+    </div>
+  </section>
+  <section class="out" aria-label="Forage and hunt">
+    <div class="go" id="fldstart">
+      <button class="tile" id="go-forage" type="button">✿ Forage<span>Gather food and fungi before the lantern burns down. Survival, DC 15.</span></button>
+      <button class="tile" id="go-hunt" type="button">➹ Hunt<span>Stalk something that can be eaten. Stay still when it looks — noise brings other hunters.</span></button>
+      <label><input type="checkbox" id="dmview"> DM view</label>
+    </div>
+    <div id="fld" hidden>
+      <div class="fhead"><h2 id="fldtitle">FORAGE</h2><span class="sup">Rations <b id="sup">20</b></span></div>
+      <div class="fsub" id="fldsub"></div>
+      <div class="fbar"><button class="obtn" id="fldatk" hidden>⚔ Attack <small>(space)</small></button><button class="obtn" id="fldforage" hidden>✿ Forage <small>(hold space)</small></button><button class="obtn" id="fldcast" hidden>✦ Cast</button><button class="obtn" id="fldspec" hidden>✦ Special</button><button class="obtn" id="fldsearch" hidden>⌕ Search this room</button><button class="obtn" id="fldback" hidden>Return to camp</button><button class="obtn" id="fldgo" hidden>Head back to camp</button><button class="obtn" id="fldx" aria-label="End the outing">✕ End outing</button></div>
+      <div class="dev" id="flddev" hidden><label>Try as <select id="fldcls"><option value="">— own class —</option><option value="barbarian">Barbarian</option><option value="bard">Bard</option><option value="cleric">Cleric</option><option value="druid">Druid</option><option value="fighter">Fighter</option><option value="monk">Monk</option><option value="paladin">Paladin</option><option value="ranger">Ranger</option><option value="rogue">Rogue</option><option value="sorcerer">Sorcerer</option><option value="warlock">Warlock</option><option value="wizard">Wizard</option></select></label><label>Survival <select id="fldsurv"><option value="">— sheet —</option><option value="none">untrained</option><option value="proficient">proficient</option><option value="expertise">expertise</option></select></label><label><input type="checkbox" id="fldadv"> advantage (a companion helps)</label><label>Gear <select id="fldgear"><option value="">— pack only —</option><option value="spear">spear</option><option value="net">net</option><option value="fishing-tackle">fishing rod</option></select></label><span>mock only · uses this character's own numbers</span></div>
+    </div>
+    <div class="logs"><div><span class="lbl">Log</span><ol id="logrows"><li class="empty">Nothing yet.</li></ol></div><div><span class="lbl">Pack (the camp mock's)</span><div class="pack" id="h-pack"></div></div></div>
+  </section>
+  <div class="key">
+    <span><b>Walk</b> — WASD, arrow keys, or click / tap where to go. <b>Zoom</b> — mouse wheel, or + and −.</span>
+    <span><b>Depth</b> — walk behind the crystals, pillars, rocks and mushrooms; they stay in front of her. <b>Chasms</b> — walk to the edge to cross: jump (Athletics, or she falls), or Jump, Misty Step, Fly or Dimension Door if her sheet has them. “Test magic” lends them for a try.</span>
+    <span><b>Forage and Hunt</b> — the camp's field game on this painting: WASD to walk · hold Space to forage (or butcher a body) · click or E to strike, hold for the class power · right click or F for the bow or cantrip · Q for the special. ✕ ends the outing early and the haul still counts.</span>
+    <span><b>The Wastes go on</b> — walk out by the dark passage at the back, the western edge or the south. The room beyond is rolled the first time anyone finds it (theme, light, air, signs, props) and then stays that way for everyone.</span>
+    <span><i style="background:var(--walk)"></i>walk area &nbsp;<i style="background:#50a0ff"></i>way out &nbsp;<i style="background:#ff9a2a"></i>solid &nbsp;<i style="background:#ff4b4b"></i>chasm &nbsp;<i style="background:var(--occ)"></i>foreground layer (with “Show walk area”)</span>
+  </div>
+</div>
+<script src="field-rules.js"></script>
+<script src="field-assets.js"></script>
+<script src="field-game.js"></script>
+<script>
+(async function(){
+const cv=document.getElementById("c"), g=cv.getContext("2d");
+const [DATA,ACT]=await Promise.all([fetch("scenes.json").then(r=>r.json()),fetch("actors.json").then(r=>r.json())]);
+const W=DATA.W, H=DATA.H;
+let dpr=1; function fit(){ dpr=Math.min(2,Math.max(1,window.devicePixelRatio||1))*1.2; cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); } fit(); addEventListener("resize",fit);
+const img=(src)=>{ const i=new Image(); i.src=src; return i; };
+const fifiIdle=img(ACT.fifi.idle), fifiWalk=img(ACT.fifi.walk), rothe=ACT.rothe.e.map(img);
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Each scene's plate and cut-outs load once, the first time it is shown.
+const SCENES=DATA.scenes.map(s=>({...s,_plate:null,_occ:null}));
+const ROTHE_IN=new Set(["shore","fungal","tunnels","wastes"]);
+let SC=null;
+function ready(s){ if(!s._plate){ s._plate=img(s.plate); s._occ=s.occ.map(o=>({...o,im:img(o.img)})); } return s; }
+// The paintings Sam approved for a biome (Tunnels Pilot, round 1, 2026-10-08). Each is a whole room of its own: its floor,
+// ways out, cut-outs and lights traced from that painting. The biome's first painting stays in the pool as "the plate".
+const PAINTS={}; for(const s of SCENES) if(s.paints){ PAINTS[s.key]=[{...s,id:"plate",paintName:null,kind:"variant"},
+  ...s.paints.map(p=>({...s,...p,key:s.key,name:s.name,paintName:p.name,_plate:null,_occ:null}))]; }
+
+function inPoly(x,y,P){ let c=false; for(let i=0,j=P.length-1;i<P.length;j=i++){ const [xi,yi]=P[i],[xj,yj]=P[j]; if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi) c=!c; } return c; }
+const areaAt=(x,y)=>SC.floor.findIndex(P=>inPoly(x,y,P));
+const inEllipse=(x,y,[cx,cy,rx,ry])=>((x-cx)/rx)**2+((y-cy)/ry)**2<1;
+// Painted objects and standing props are solid where they meet the floor (Sam, 2026-10-08:
+// "Shouldn't be able to walk through objects").
+function solidAt(x,y){ for(const o of SC._occ) if(o.foot&&inEllipse(x,y,o.foot)) return true;
+  for(const p of (SC.props||[])) if(p.block&&inEllipse(x,y,[p.x,p.y-6,p.r,p.r*.5])) return true; return false; }
+// Nowhere to stand where a painted cut-out would slice through her body but leave her feet showing — a mushroom cap
+// or a rock lip at waist height (Sam, 2026-10-08: "Characters shouldn't be able to walk off into mushroom and have
+// their torso cut off"). Measured from the cut-outs' own pixels once they load: on an 8-px grid, any spot where more
+// than a fifth of her torso is covered by a cut-out she stands behind while her feet stay clear is closed off.
+function noStandCans(sc){ if(sc._nsc) return sc._nsc; if(!sc._occ.every(o=>o.im.complete&&o.im.naturalWidth)) return null;
+  return sc._nsc=sc._occ.map(o=>{ const c=document.createElement("canvas"); c.width=Math.max(1,Math.round(o.w)); c.height=Math.max(1,Math.round(o.h)); const cg=c.getContext("2d");
+    if(o.flip){ cg.translate(c.width,0); cg.scale(-1,1); } cg.drawImage(o.im,0,0,c.width,c.height); return {o,w:c.width,h:c.height,d:cg.getImageData(0,0,c.width,c.height).data}; }); }
+function slicedAt(sc,cans,x,y){ const s=depthFor(sc,y), sz=128*s*.92, fw=sz*.28;
+  const cover=(c,x0,x1,y0,y1)=>{ let hit=0,n=0; for(let yy=y0;yy<y1;yy+=3) for(let xx=x0;xx<x1;xx+=3){ n++; const lx=Math.floor(xx-c.o.x), ly=Math.floor(yy-c.o.y); if(lx>=0&&ly>=0&&lx<c.w&&ly<c.h&&c.d[(ly*c.w+lx)*4+3]>128) hit++; } return n?hit/n:0; };
+  for(const c of cans){ if(c.o.base<=y) continue; if(c.o.x>x+fw||c.o.x+c.w<x-fw||c.o.y>y||c.o.y+c.h<y-sz) continue;
+    if(cover(c,x-fw/2,x+fw/2,y-sz*.75,y-sz*.2)>.2&&cover(c,x-fw/2,x+fw/2,y-sz*.15,y)<.3) return true; } return false; }
+// Checked lazily on a 4-px grid, the spot and its four neighbours, and remembered per scene.
+function noStand(x,y){ const cans=noStandCans(SC); if(!cans) return false; const m=SC._nsm||(SC._nsm=new Map()), cx=Math.round(x/4), cy=Math.round(y/4);
+  for(const [dx,dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]){ const k=(cx+dx)+","+(cy+dy); let v=m.get(k); if(v===undefined){ v=slicedAt(SC,cans,(cx+dx)*4,(cy+dy)*4); m.set(k,v); } if(v) return true; } return false; }
+const inside=(x,y)=>areaAt(x,y)>=0&&!solidAt(x,y)&&!noStand(x,y);
+const inChasm=(x,y)=>(SC.chasms||[]).some(P=>inPoly(x,y,P));
+// Farther toward the back of the painting = smaller.
+const depth=(y)=>.72+Math.max(0,Math.min(1,(y-SC.back)/(H-SC.back)))*.34;
+const dirFrom=(dx,dy)=>((Math.round((Math.PI/2-Math.atan2(dy,dx))/(Math.PI/4))%8)+8)%8;
+const F={x:0,y:0,dir:4,frame:0,ft:0,moving:false,tx:null,ty:null,state:"walk",run:0,lastDir:null,air:0,jump:null,fall:null,hold:0};
+// characters row: Fifi of Copperas Cove, level 1 rogue, STR 8 (−1), Athletics proficient (+2); no spellcasting,
+// inventory Rags / Tattered Journal / Small Quill. The magic crossings below unlock only from her sheet.
+const HERO={name:"Fifi",str:8,athletics:1,spells:[],items:["Rags","Tattered Journal","Small Quill"],test:false};
+// Other ways over a chasm (Sam, 2026-10-08: "This should be jumpable or flying or misty step or portal there").
+// 2014 PHB ranges. Each needs the spell on her sheet or the item in her pack; "Test magic" lends them all.
+const CROSS=[
+  {k:"jumpspell",name:"Jump spell",what:"1st-level spell, or a Ring of Jumping: triples her jump distance",spell:"Jump",item:"Ring of Jumping"},
+  {k:"misty",name:"Misty Step",what:"2nd-level spell, bonus action: teleport up to 30 ft to a spot she can see",spell:"Misty Step",range:30},
+  {k:"fly",name:"Fly",what:"3rd-level spell, concentration: fly speed 60 ft",spell:"Fly",range:60},
+  {k:"door",name:"Dimension Door",what:"4th-level spell: a portal to a spot up to 500 ft away",spell:"Dimension Door",range:500}];
+const has=(c)=>HERO.test||HERO.spells.includes(c.spell)||(c.item&&HERO.items.includes(c.item));
+const PX_PER_FT=(y)=>20*depth(y);                    // her 3.8-ft figure is ~76 px tall at full scale
+const prompt=document.getElementById("prompt"), pTitle=document.getElementById("p-title"), pText=document.getElementById("p-text"), pButtons=document.getElementById("p-buttons");
+function ask(title,text,buttons,dead){ pTitle.textContent=title; pText.textContent=text; pButtons.replaceChildren(...buttons.map(([label,fn,off])=>{ const b=document.createElement("button"); b.type="button"; b.textContent=label; if(off){ b.disabled=true; b.title=off; b.style.opacity=".45"; b.style.cursor="not-allowed"; } else b.onclick=fn; return b; })); prompt.classList.toggle("dead",!!dead); prompt.hidden=false; const first=pButtons.querySelector("button:not([disabled])"); first&&first.focus({preventScroll:true}); }
+function closePrompt(){ prompt.hidden=true; cv.focus({preventScroll:true}); }
+// Find the far side: walk the line from the edge until there is floor again (in another area), up to ~16 ft.
+function landingFrom(x,y,vx,vy,maxFt=60){ const n=Math.hypot(vx,vy)||1, ux=vx/n, uy=vy/n, from=areaAt(x,y); let sawChasm=false;
+  for(let d=4; d<=maxFt*PX_PER_FT(y); d+=3){ const px=x+ux*d, py=y+uy*d; if(inChasm(px,py)) sawChasm=true; const a=areaAt(px,py); if(sawChasm&&a>=0&&a!==from){ return {x:px+ux*10,y:py+uy*10,gapPx:d}; } }
+  return null; }
+function offerJump(vx,vy){
+  F.tx=null; keys.clear(); F.state="ask";
+  const land=landingFrom(F.x,F.y,vx,vy);
+  const back=()=>{ F.state="walk"; F.hold=0.6; closePrompt(); };
+  if(!land){ ask("The edge","Nothing on the other side to land on from here. Try another spot along the edge.",[["Step back",back]]); return; }
+  const gap=Math.max(1,Math.round(land.gapPx/PX_PER_FT(F.y))), running=F.run>=10, reach=running?HERO.str:Math.floor(HERO.str/2);
+  const dcFor=(r)=>10+Math.max(0,gap-r)*2;
+  const dc=dcFor(reach), sign=HERO.athletics>=0?"+":"";
+  const why=running?`a ${reach}-ft running jump`:`a ${reach}-ft standing jump (take a 10-ft run-up for ${HERO.str} ft)`;
+  // A natural 20 is the best she can roll; a DC past that is a jump she cannot make.
+  const jumpOff=dc>20+HERO.athletics?`DC ${dc}: more than she can roll`:"";
+  const btns=[[`Jump (DC ${dc})`,()=>doJump(land,dc,vx,vy,"jump"),jumpOff]], locked=[];
+  for(const c of CROSS){ const ok=has(c);
+    if(c.k==="jumpspell"){ const d3=dcFor(reach*3); btns.push([`${c.name} (DC ${d3})`,()=>doJump(land,d3,vx,vy,"jumpspell",c),ok?(d3>20+HERO.athletics?`DC ${d3}: still too far`:""):`needs ${c.spell} or a ${c.item}`]); }
+    else btns.push([c.name,()=>doJump(land,0,vx,vy,c.k,c),!ok?`needs the ${c.spell} spell`:(gap>c.range?`only ${c.range} ft`:"")]);
+    if(!ok) locked.push(c.name); }
+  btns.push(["Step back",back]);
+  const lockNote=locked.length?` ${HERO.name} is a 1st-level rogue with no spells or flying gear, so ${locked.length>1?locked.slice(0,-1).join(", ")+" and "+locked.at(-1):locked[0]} ${locked.length>1?"are":"is"} locked until her sheet has them (or turn on “Test magic”).`:"";
+  ask("Cross the chasm?",`About ${gap} ft across; ${HERO.name} has ${why}. Athletics DC ${dc} (${sign}${HERO.athletics}). Fail and she falls.${lockNote}`,btns);
+}
+function doJump(land,dc,vx,vy,mode,c){ F.dir=dirFrom(vx,vy); closePrompt(); F.state="jump";
+  const base={x0:F.x,y0:F.y,x1:land.x,y1:land.y,t:0,mode};
+  if(mode==="misty"){ F.jump={...base,dur:.9,note:`Misty Step: a 2nd-level slot and her bonus action. She steps through silver mist and out the far side.`}; return; }
+  if(mode==="fly"){ F.jump={...base,dur:1.6,note:`Fly: a 3rd-level slot, concentration for 10 minutes. She floats across.`}; return; }
+  if(mode==="door"){ F.jump={...base,dur:1.3,note:`Dimension Door: a 4th-level slot. A portal opens on each side and she steps through.`}; return; }
+  const die=1+Math.floor(Math.random()*20), total=die+HERO.athletics, ok=total>=dc, pre=mode==="jumpspell"?(HERO.items.includes("Ring of Jumping")&&!HERO.spells.includes("Jump")?"Ring of Jumping, bonus action. ":"Jump spell, 1st-level slot. "):"";
+  if(ok){ F.jump={...base,dur:mode==="jumpspell"?.95:.75,note:`${pre}Rolled ${die} + ${HERO.athletics} = ${total} vs DC ${dc}. She makes it.`}; }
+  else { F.jump={...base,x1:F.x+(land.x-F.x)*.5,y1:F.y+(land.y-F.y)*.5,dur:.45,fail:true,note:`${pre}Rolled ${die} + ${HERO.athletics} = ${total} vs DC ${dc}.`}; }
+}
+function die(note){ F.state="dead";
+  ask(`${HERO.name} fell into the abyss`,`${note} The violet light swallows her, and the chasm goes quiet. In the game this is death; there is no saving throw for the bottom of the Underdark.`,[["Try again",()=>{ closePrompt(); show(SC.key,false); }]],true); }
+const R={x:0,y:0,face:true,tx:0,ty:0,wait:1,flee:0,alarm:0,moving:false,on:false};
+function pickSpot(){ for(let k=0;k<60;k++){ const x=100+Math.random()*1080, y=SC.back+Math.random()*(H-SC.back); if(inside(x,y)&&Math.hypot(x-F.x,y-F.y)>220) return [x,y]; } return [R.x,R.y]; }
+const keys=new Set();
+addEventListener("keydown",e=>{ const k=e.key.toLowerCase(); if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"].includes(k)&&document.activeElement===cv&&F.state==="walk"){ keys.add(k); F.tx=null; F.path=null; e.preventDefault(); } });
+addEventListener("keyup",e=>keys.delete(e.key.toLowerCase()));
+const CAM={z:1,zT:1,x:W/2,y:H/2};
+const toScene=(e)=>{ const r=cv.getBoundingClientRect(); const sx=(e.clientX-r.left)/r.width*W, sy=(e.clientY-r.top)/r.height*H; return [CAM.x+(sx-W/2)/CAM.z, CAM.y+(sy-H/2)/CAM.z]; };
+let ping=null;
+cv.addEventListener("pointerdown",e=>{ if(F.state!=="walk") return; const [x,y]=toScene(e); walkTo(x,y); cv.focus(); ping={x,y,t:0,ok:inside(x,y)}; });
+// A* over an 8-px grid of where she can stand, then pulled tight so she walks straight wherever the way is clear. A spot she
+// cannot walk to (across a chasm with no bridge) falls back to the straight line, so the edge still offers the jump.
+const PG=8;
+function walkGrid(sc){ if(sc._wg) return sc._wg; const w=Math.ceil(W/PG)+1, h=Math.ceil(H/PG)+1, g=new Uint8Array(w*h);
+  for(let j=0;j<h;j++) for(let i=0;i<w;i++) g[j*w+i]=inside(i*PG,j*PG)?1:0; return sc._wg={w,h,g}; }
+function clearLine(ax,ay,bx,by){ const n=Math.ceil(Math.hypot(bx-ax,by-ay)/4); for(let k=1;k<=n;k++){ const t=k/n; if(!inside(ax+(bx-ax)*t,ay+(by-ay)*t)) return false; } return true; }
+function findPath(x0,y0,x1,y1){ const {w,h,g}=walkGrid(SC), near=(x,y,r)=>{ let best=null,bd=1e9; const ci=Math.round(x/PG), cj=Math.round(y/PG);
+    for(let j=cj-r;j<=cj+r;j++) for(let i=ci-r;i<=ci+r;i++){ if(i<0||j<0||i>=w||j>=h||!g[j*w+i]) continue; const d=Math.hypot(i*PG-x,j*PG-y); if(d<bd){ bd=d; best=j*w+i; } } return best; };
+  const s0=near(x0,y0,3), s1=near(x1,y1,6); if(s0==null||s1==null) return null; if(s0===s1) return [[x1,y1]];
+  const G=new Float32Array(w*h).fill(1e9), from=new Int32Array(w*h).fill(-1), open=[[0,s0]], done=new Uint8Array(w*h); G[s0]=0;
+  const hx=(a)=>{ const ai=a%w, aj=(a/w)|0, bi=s1%w, bj=(s1/w)|0, dx=Math.abs(ai-bi), dy=Math.abs(aj-bj); return Math.max(dx,dy)+.414*Math.min(dx,dy); };
+  const N=[[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.414],[1,-1,1.414],[-1,1,1.414],[-1,-1,1.414]]; let it=0;
+  while(open.length&&it++<40000){ let bi=0; for(let k=1;k<open.length;k++) if(open[k][0]<open[bi][0]) bi=k; const [,c]=open.splice(bi,1)[0]; if(done[c]) continue; done[c]=1; if(c===s1) break;
+    const ci=c%w, cj=(c/w)|0; for(const [dx,dy,cost] of N){ const ni=ci+dx, nj=cj+dy; if(ni<0||nj<0||ni>=w||nj>=h) continue; const n=nj*w+ni; if(!g[n]||done[n]) continue;
+      if(dx&&dy&&(!g[cj*w+ni]||!g[nj*w+ci])) continue; const ng=G[c]+cost; if(ng<G[n]){ G[n]=ng; from[n]=c; open.push([ng+hx(n),n]); } } }
+  if(from[s1]<0&&s1!==s0) return null;
+  const pts=[]; for(let c=s1;c!==-1&&c!==s0;c=from[c]) pts.push([(c%w)*PG,((c/w)|0)*PG]); pts.reverse(); if(inside(x1,y1)) pts.push([x1,y1]);
+  const out=[]; let ax=x0, ay=y0, i=0; while(i<pts.length){ let j=pts.length-1; while(j>i&&!clearLine(ax,ay,pts[j][0],pts[j][1])) j--; out.push(pts[j]); [ax,ay]=pts[j]; i=j+1; } return out; }
+function walkTo(x,y){ const path=inside(F.x,F.y)?findPath(F.x,F.y,x,y):null; if(path&&path.length){ F.path=path; [F.tx,F.ty]=F.path.shift(); } else { F.path=null; F.tx=x; F.ty=y; } }
+function stepWalker(o,vx,vy,dt,speed){ const n=Math.hypot(vx,vy); if(!n) return false; const s=speed*depth(o.y)*dt, dx=vx/n*s, dy=vy/n*s;
+  if(inside(o.x+dx,o.y+dy)){ o.x+=dx; o.y+=dy; } else if(inside(o.x+dx,o.y)){ o.x+=dx; } else if(inside(o.x,o.y+dy)){ o.y+=dy; } else return false;
+  o.dir=dirFrom(vx,vy); return true; }
+function zoomBy(steps){ CAM.zT=Math.max(1,Math.min(2,CAM.zT*Math.pow(1.15,steps))); }
+cv.addEventListener("wheel",e=>{ e.preventDefault(); zoomBy(e.deltaY<0?1:-1); },{passive:false});
+addEventListener("keydown",e=>{ if(document.activeElement!==cv) return; if(e.key==="+"||e.key==="=") zoomBy(1); if(e.key==="-"||e.key==="_") zoomBy(-1); });
+function camStep(dt){ const k=reduce?1:Math.min(1,dt*6); CAM.z+=(CAM.zT-CAM.z)*k; const hw=W/2/CAM.z, hh=H/2/CAM.z;
+  const tx=Math.max(hw,Math.min(W-hw,F.x)), ty=Math.max(hh,Math.min(H-hh,F.y-40)); CAM.x+=(tx-CAM.x)*k; CAM.y+=(ty-CAM.y)*k;
+  CAM.x=Math.max(hw,Math.min(W-hw,CAM.x)); CAM.y=Math.max(hh,Math.min(H-hh,CAM.y)); }
+let showWalk=false, lantern=true, t=0, last=performance.now(), SPORES=[], flash=null, flashT=0;
+const tb=(id,on)=>document.getElementById(id).setAttribute("aria-pressed",on);
+document.getElementById("t-walk").onclick=()=>{ showWalk=!showWalk; tb("t-walk",showWalk); };
+document.getElementById("t-light").onclick=()=>{ lantern=!lantern; tb("t-light",lantern); };
+document.getElementById("t-magic").onclick=()=>{ HERO.test=!HERO.test; tb("t-magic",HERO.test); };
+
+// ---- Nodes: a chain of painted rooms for every biome (Sam, 2026-10-08: "There should be a string of daisy chained
+// painted scenes that I can explore for each biome"). Each biome is a node of 12×12 rooms. The maze is the camp's own
+// Explore map — Field.buildExploreMap: every room reachable, a few loops, about 40% of rooms carrying a row of OotA's
+// Terrain Encounters table — seeded by the biome, so a node is the same for everyone: canon. The Crystal Chamber, the
+// Wastes and the Lair use the tunnels' tables (Sam, 2026-10-08). Each room is the biome's painting, mirrored and tinted so
+// it never matches the room beside it, dressed with the camp's props for its terrain and the biome's ground cover: at
+// most 8, none twice in a room (Sam, 2026-10-08). New paintings join a biome's pool as Sam approves them.
+const NODE_SIZE={w:12,h:12}, NODES={};
+const TINTS=[null,"hue-rotate(-14deg) saturate(.9) brightness(.96)","hue-rotate(16deg) saturate(1.06) brightness(.93)"];
+const TABLES=(key)=>({shore:"shore",fungal:"fungal"})[key]||"tunnels";
+const FLAT=/carpet|cracked|footprints|spores|scorch|claw|web-floor|pale-flowers|crystal-violet-floor|slime|muck|rubble|sinkhole|lava|bridge/;
+let DB=null, dbState="pending", NODE=null, ROOM=null;
+(window.claude&&window.claude.use?window.claude.use("db"):Promise.resolve(null)).then(async d=>{ DB=d; dbState=d?"on":"off"; if(d&&NODE) loadFound(NODE);
+  if(d){ await loadLayouts(); for(const k of Object.keys(LAYOUTS)){ delete NODES[k]; } if(SC&&LAYOUTS[SC.key]&&!outing&&F.state==="walk") show(SC.key,false); if(window.__mm) window.__mm.refresh(); } }).catch(()=>{ dbState="off"; });
+// Sam's own maps (Map maker): saved per biome in the shared database, canon for everyone. A biome with a saved map is
+// that map; one without keeps the generated maze until he lays one down.
+const LAYOUTS={}, DRAFTS={};
+const paintsFor=(key)=>PAINTS[key]||[{...SCENES.find(s=>s.key===key),id:"plate",paintName:null,kind:"variant"}];
+const thumbOf=(key,p)=>p.id==="plate"?`thumbs/plate-${key}.jpg`:`thumbs/${p.id}.jpg`;
+const wayOf=(paint,m,d)=>!!paint.doors[m&&d==="e"?"w":m&&d==="w"?"e":d];
+const SIDES=[["n",0,-1,"s"],["e",1,0,"w"],["s",0,1,"n"],["w",-1,0,"e"]];
+async function loadLayouts(){ if(!DB) return; try{ const q=await DB.collection("layouts").get(); for(const d of q.docs){ const v=d.data(); if(v&&v.key&&Array.isArray(v.rooms)) LAYOUTS[v.key]=v; } }catch(e){} }
+function layoutNode(key,L){ const Fd=window.Field, gen=Fd.buildExploreMap("node-"+key,FIELD.rows(),NODE_SIZE), pool=paintsFor(key), byXY={};
+  const camp=(L.camp&&L.rooms.some(c=>c.x===L.camp[0]&&c.y===L.camp[1]))?L.camp:[L.rooms[0].x,L.rooms[0].y];
+  const rooms=L.rooms.map(c=>{ const g=gen.rooms[c.y*gen.w+c.x]||{}, t=c.t||0, m=!!c.m;
+    const r={x:c.x,y:c.y,paint:pool.find(p=>p.id===c.p)||pool[0],mirror:m,tint:t,look:t*2+(m?1:0),terrain:g.terrain,terrainNote:g.terrainNote,
+      rothe:Fd.seededRng(`${key}:${c.x},${c.y}:look`)()<.35,isCamp:c.x===camp[0]&&c.y===camp[1],doors:{}}; byXY[c.x+","+c.y]=r; return r; });
+  for(const r of rooms) for(const [d,dx,dy,o] of SIDES){ const q=byXY[(r.x+dx)+","+(r.y+dy)]; r.doors[d]=!!(q&&wayOf(r.paint,r.mirror,d)&&wayOf(q.paint,q.mirror,o)); }
+  const node={key,map:{w:NODE_SIZE.w,h:NODE_SIZE.h,rooms,camp:{x:camp[0],y:camp[1]}},at:(x,y)=>byXY[x+","+y]||null,found:new Set(),loaded:false,custom:true};
+  NODES[key]=node; if(DB) loadFound(node); return node; }
+function nodeFor(key){ if(NODES[key]) return NODES[key]; if(LAYOUTS[key]&&LAYOUTS[key].rooms.length) return layoutNode(key,LAYOUTS[key]); const Fd=window.Field, map=Fd.buildExploreMap("node-"+key,FIELD.rows(),NODE_SIZE);
+  const at=(x,y)=>x>=0&&y>=0&&x<map.w&&y<map.h?map.rooms[y*map.w+x]:null;
+  // looks: mirror × tint — six — never the same as the room to the north or the west
+  for(const r of map.rooms){ const rnd=Fd.seededRng(`${key}:${r.x},${r.y}:look`), taken=new Set([at(r.x,r.y-1),at(r.x-1,r.y)].filter(Boolean).map(q=>q.look));
+    let c=Math.floor(rnd()*6); for(let k=0;k<6&&taken.has(c);k++) c=(c+1)%6; r.look=c; r.mirror=c%2===1; r.tint=Math.floor(c/2); r.rothe=rnd()<.35; }
+  if(PAINTS[key]) placePaints(key,map,at);
+  const node={key,map,at,found:new Set(),loaded:false}; NODES[key]=node; if(DB) loadFound(node); return node; }
+// Which painting each room is (only biomes with approved paintings). A room may only be a painting that has every way out
+// the room needs (mirroring swaps east and west). The way in is the plate. One room, away from the way in, is the landmark;
+// border rooms may show the edge of the next biome on their own side — west: the fungal grove, north: the Darklake, east:
+// the crystal chamber (a house choice of sides, not the book's); about one interior room in six is a hazard; the rest are
+// the room paintings. No room is the same painting as the room to its north or west.
+function placePaints(key,map,at){ const pool=PAINTS[key], Fd=window.Field, by=k=>pool.filter(p=>p.kind===k);
+  const fits=(p,r,m)=>["n","e","s","w"].every(d=>!r.doors[d]||!!p.doors[m&&d==="e"?"w":m&&d==="w"?"e":d]);
+  const near=(r)=>new Set([at(r.x,r.y-1),at(r.x-1,r.y),at(r.x,r.y+1),at(r.x+1,r.y)].filter(q=>q&&q.paint).map(q=>q.paint.id));
+  const pick=(r,cands,rnd,only)=>{ const no=near(r); const ok=[]; for(const p of cands){ if(no.has(p.id)) continue; for(const m of (only!=null?[only]:[r.mirror,!r.mirror])) if(fits(p,r,m)){ ok.push([p,m]); break; } }
+    if(!ok.length) return false; const [p,m]=ok[Math.floor(rnd()*ok.length)]; r.paint=p; if(m!==r.mirror){ r.mirror=m; r.look=r.tint*2+(m?1:0); } return true; };
+  const camp=map.rooms.find(q=>q.isCamp); if(camp) camp.paint=pool[0];
+  const lm=by("landmark")[0];
+  if(lm){ const rnd=Fd.seededRng(`${key}:landmark`), far=map.rooms.filter(r=>!r.isCamp&&camp&&Math.abs(r.x-camp.x)+Math.abs(r.y-camp.y)>=6);
+    for(let k=0;k<200&&far.length;k++){ const r=far[Math.floor(rnd()*far.length)]; if(pick(r,[lm],rnd)) break; } }
+  const side=(r)=>r.x===0?"fungal":r.y===0?"shore":r.x===map.w-1?"crystal":null;
+  // the grove and the crystals are painted on the right: mirrored on the west edge so they face out, as painted on the east
+  const faceOut={fungal:true,crystal:false,shore:null};
+  for(const r of map.rooms){ if(r.paint) continue; const rnd=Fd.seededRng(`${key}:${r.x},${r.y}:paint`), s=side(r);
+    if(s&&rnd()<.4&&pick(r,by("edge").filter(p=>p.toward===s),rnd,faceOut[s])) continue;
+    if(!s&&r.y<map.h-1&&rnd()<.17&&pick(r,by("hazard"),rnd)) continue;
+    if(!pick(r,[...by("variant"),...by("layout")],rnd)) r.paint=pool[0]; } }
+// who has been where: a room is written down the first time anyone walks into it, and the map shows it to everyone after
+async function loadFound(node){ if(node.loaded||!DB) return; node.loaded=true; try{ const q=await DB.collection("found").where("node","==",node.key).get(); for(const d of q.docs){ const v=d.data(); node.found.add(v.x+","+v.y); } }catch(e){} }
+async function markFound(node,r){ const k=r.x+","+r.y; const fresh=!node.found.has(k); node.found.add(k); if(fresh&&DB){ try{ await DB.doc(`found/${node.key}_${r.x}_${r.y}`).set({node:node.key,x:r.x,y:r.y,terrain:r.terrain||null,at:new Date().toISOString()}); }catch(e){} } return fresh; }
+function dressRoom(node,r,sc){ if(r.props) return r.props; const rnd=window.Field.seededRng(`${node.key}:${r.x},${r.y}:props`), want=[], used=new Set();
+  for(const [slug,,h] of (r.terrain?(FIELD.terrainProps()[r.terrain]||[]):[])) if(!used.has(slug)){ used.add(slug); want.push({slug,h}); }
+  const pool=[...new Set(FIELD.decor(TABLES(node.key)))];
+  // the camp lists 8 ground-cover props a biome; a room takes 5–7 of them until the 12-prop biome library is painted
+  const cap=Math.min(8,want.length+5+Math.floor(rnd()*3));
+  while(want.length<cap&&pool.length){ const slug=pool.splice(Math.floor(rnd()*pool.length),1)[0]; if(used.has(slug)) continue; used.add(slug); want.push({slug,h:/stalagmite|boulder|stump|log|reeds/.test(slug)?54+rnd()*26:40+rnd()*20}); }
+  const ok=(x,y)=>{ if(!sc.floor.some(P=>inPoly(x,y,P))) return false; for(const e of sc.doors){ if(Math.hypot(x-e.arrive[0],y-e.arrive[1])<110||inPoly(x,y,e.zone)) return false; }
+    for(const c of sc.chasms){ if(inPoly(x+50,y,c)||inPoly(x-50,y,c)||inPoly(x,y+30,c)) return false; }
+    for(const o of sc._occ){ if(o.foot&&Math.hypot(x-o.foot[0],y-o.foot[1])<o.foot[2]+60) return false; }
+    if(Math.hypot(x-sc.start[0],y-sc.start[1])<90) return false;
+    return out.every(p=>Math.hypot(x-p.x,(y-p.y)*1.6)>95); };
+  const out=[];
+  for(const w of want){ for(let k=0;k<80;k++){ const x=60+rnd()*(W-120), y=sc.back+20+rnd()*(H-sc.back-40); if(ok(x,y)){ out.push({slug:w.slug,h:Math.round(w.h),x:Math.round(x),y:Math.round(y)}); break; } } }
+  return r.props=out; }
+function roomScene(node,r){ const base=ready(r.paint||SCENES.find(s=>s.key===node.key)), m=r.mirror, fx=x=>m?W-x:x, fp=P=>P.map(([x,y])=>[fx(x),y]);
+  const painted={n:"n",s:"s",e:m?"w":"e",w:m?"e":"w"};   // which painted way out serves each compass door, mirrored or not
+  const doors=["n","e","s","w"].filter(d=>r.doors[d]).map(d=>{ const pd=base.doors[painted[d]]; return {key:d,zone:fp(pd.zone),arrive:[fx(pd.arrive[0]),pd.arrive[1]]}; });
+  const sc={...base,node,room:r,mirror:m,filter:TINTS[r.tint],title:`${base.name} · ${r.x+1},${r.y+1}`,floor:base.floor.map(fp),chasms:(base.chasms||[]).map(fp),doors,
+    glows:base.glows.map(([x,y,rr,c])=>[fx(x),y,rr,c]),start:[fx(base.start[0]),base.start[1]],
+    _occ:base._occ.map(o=>({...o,x:m?W-o.x-o.w:o.x,flip:m,foot:o.foot&&[fx(o.foot[0]),o.foot[1],o.foot[2],o.foot[3]]}))};
+  sc.props=dressRoom(node,r,sc).map(p=>{ const flat=FLAT.test(p.slug), sz=depthFor(sc,p.y)*1.08; return {...p,cls:flat?"decal":"bill",block:!flat,r:Math.max(14,FIELD.propWidth(p.slug,p.h)*sz*.36)}; });
+  return sc; }
+let fade=0, fadeDir=0, banner=null, bannerT=0;
+const depthFor=(sc,y)=>.72+Math.max(0,Math.min(1,(y-sc.back)/(H-sc.back)))*.34;
+function setScene(sc,arrive,face){
+  SC=sc;
+  for(const b of tabs.children) b.setAttribute("aria-selected", b.id==="tab-"+SC.key);
+  document.getElementById("scene-name").textContent=SC.title||SC.name;
+  [F.x,F.y]=arrive||SC.start; F.tx=null; F.path=null; F.dir=face??4; F.state="walk"; F.run=0; F.air=0; F.hold=.8; prompt.hidden=true; CAM.zT=1; CAM.z=1; CAM.x=W/2; CAM.y=H/2;
+  R.on=ROTHE_IN.has(SC.key)&&!!(SC.room&&SC.room.rothe); if(R.on){ [R.x,R.y]=pickSpot(); R.tx=R.x; R.ty=R.y; R.wait=1; R.flee=0; }
+  const tint=SC.key==="crystal"?["150,240,255","255,170,200"]:SC.key==="lair"?["120,255,170","170,255,200"]:SC.key==="wastes"?["180,150,255","160,160,190"]:["150,255,220","200,150,255"];
+  SPORES=Array.from({length:reduce?0:42},()=>({x:Math.random()*W,y:SC.back+Math.random()*(H-SC.back),v:6+Math.random()*14,a:Math.random()*6.3,c:tint[Math.random()<.5?0:1]}));
+}
+const FACE_IN={n:0,s:4,e:6,w:2}, OPPD={n:"s",s:"n",e:"w",w:"e"}, STEP={n:[0,-1],s:[0,1],e:[1,0],w:[-1,0]};
+function enterRoom(node,r,cameIn){ NODE=node; ROOM=r; const sc=roomScene(node,r), d=cameIn&&sc.doors.find(q=>q.key===cameIn);
+  setScene(sc,d?d.arrive:null,d?FACE_IN[cameIn]:4);
+  const known=node.found.has(r.x+","+r.y); markFound(node,r);
+  const ways=sc.doors.map(q=>({n:"north",e:"east",s:"south",w:"west"})[q.key]).join(", ");
+  banner=[r.isCamp?`${sc.name} — the way in`:`${sc.name} — room ${r.x+1},${r.y+1} of ${node.map.w}×${node.map.h}`,
+    r.terrain?`Terrain (OotA p.30): ${r.terrain}${r.terrainNote?` — ${r.terrainNote}`:""}`:"No feature here on the Terrain table.",
+    ...(sc.paintName?[`${sc.paintName}${sc.note?` — ${sc.note}`:""}`]:[]),
+    `Ways on: ${ways}. ${known?"Found before — canon.":dbState==="on"?"Found for the first time — now on everyone's map.":"Found for the first time."}`]; bannerT=6; }
+function leaveBy(door){ if(F.state!=="walk") return; const [dx,dy]=STEP[door.key], nb=NODE.at(ROOM.x+dx,ROOM.y+dy); if(!nb) return;
+  F.state="travel"; fadeDir=1; const node=NODE; setTimeout(()=>{ enterRoom(node,nb,OPPD[door.key]); fadeDir=-1; },320); }
+// the node map, top right: the rooms found so far, their doors, the way in, and where she is
+function drawMini(){ if(!NODE) return; const m=NODE.map, c=9, ox=W-m.w*c-18, oy=14;
+  g.fillStyle="rgba(6,5,10,.82)"; g.fillRect(ox-6,oy-6,m.w*c+12,m.h*c+12); g.strokeStyle="#9c7a3a"; g.strokeRect(ox-5.5,oy-5.5,m.w*c+11,m.h*c+11);
+  for(const r of m.rooms){ if(!NODE.found.has(r.x+","+r.y)&&r!==ROOM) continue; const x=ox+r.x*c, y=oy+r.y*c;
+    g.fillStyle=r===ROOM?"#e3b95c":r.terrain?"#6a5e7e":"#4a4458"; g.fillRect(x+1,y+1,c-2,c-2);
+    g.fillStyle=r===ROOM?"#e3b95c":"#4a4458"; if(r.doors.e) g.fillRect(x+c-1,y+3,2,c-6); if(r.doors.s) g.fillRect(x+3,y+c-1,c-6,2);
+    if(r.isCamp){ g.fillStyle="#ff9a3a"; g.fillRect(x+3,y+3,3,3); } } }
+
+// ---- Forage and Hunt: the camp's field game (field-game.js — the Camp at the Fire page's own code and assets), played
+// on this painting. Sam, 2026-10-08: "keep the functionality that is present in the forage and hunt game. Don't invent
+// something here." This page only lends it the painted floor, the camera and the light.
+const logEl=document.getElementById("logrows"), bannerEl=document.getElementById("banner");
+let outing=false, bannerTimer=null;
+const FIELD=window.AOPField({canvas:cv, ctx:g, W, H,
+  toWorld:(e)=>{ const [x,y]=toScene(e); return {x,y}; },
+  biome:()=>({shore:"shore",fungal:"fungal"})[SC.key]||"tunnels",
+  sceneId:()=>NODE&&ROOM?`${NODE.key}:${ROOM.x},${ROOM.y}`:SC.key, sceneName:()=>SC.title||SC.name,
+  heroStart:()=>({x:F.x,y:F.y}),
+  inside:(x,y)=>inside(x,y), back:()=>SC.back, zs:(y)=>depth(y)*1.08,
+  tileAt:(x,y,T)=>solidAt(x,y)?T.WALL:inChasm(x,y)?T.CHASM:areaAt(x,y)>=0?T.FLOOR:T.WALL,
+  floorPoint:(r)=>{ for(let k=0;k<60;k++){ const x=40+r()*(W-80), y=SC.back+10+r()*(H-SC.back-20); if(inside(x,y)) return {x,y}; } return null; },
+  // the Darklake's edge: the back of the shore's floor, where the water is
+  shorePoint:(r)=>{ let best=null; for(let k=0;k<14;k++){ const x=40+r()*(W-80), y=SC.back+10+r()*(H-SC.back-20); if(inside(x,y)&&(!best||y<best.y)) best={x,y}; } return best; },
+  hasWater:()=>SC.key==="shore",
+  // what a hand can forage wild: the grove's painted mushrooms, and any growing thing among a room's props
+  plants:()=>SC.key==="fungal"?SC._occ.filter(o=>o.foot).map(o=>({x:o.foot[0],y:o.foot[1]+o.foot[3],k:"fungi"})):(SC.props||[]).filter(p=>/fern|moss|flowers|reeds|stump|fungi|lichen|spores|log/.test(p.slug)).map(p=>({x:p.x,y:p.y,k:p.slug})),
+  heroImg:{idle:fifiIdle,walk:fifiWalk},
+  speak:(html)=>{ logEl.querySelector(".empty")?.remove(); const li=document.createElement("li"); li.innerHTML=html.replace(/<\/b>\n/,"</b>"); logEl.prepend(li); },
+  flash:(text,hostile)=>{ bannerEl.textContent=text; bannerEl.classList.toggle("hostile",!!hostile); bannerEl.hidden=false; clearTimeout(bannerTimer); bannerTimer=setTimeout(()=>bannerEl.hidden=true,hostile?6000:4500); },
+  opened:()=>{ bannerT=0;  outing=true; F.state="outing"; F.tx=null; keys.clear(); R.on=false; prompt.hidden=true; document.getElementById("fldstart").hidden=true; for(const b of tabs.children) b.disabled=true; cv.focus({preventScroll:true}); },
+  closed:(at)=>{ outing=false; if(at){ F.x=at.x; F.y=at.y; } F.state="walk"; F.hold=.6; document.getElementById("fldstart").hidden=false; for(const b of tabs.children) b.disabled=false; R.on=ROTHE_IN.has(SC.key)&&!!(SC.room&&SC.room.rothe); if(R.on){ [R.x,R.y]=pickSpot(); R.tx=R.x; R.ty=R.y; R.wait=1; R.flee=0; } renderPack(); }});
+document.getElementById("go-forage").onclick=()=>{ if(F.state==="walk") FIELD.start("forage"); };
+document.getElementById("go-hunt").onclick=()=>{ if(F.state==="walk") FIELD.start("hunt"); };
+document.getElementById("dmview").onchange=(e)=>FIELD.setDm(e.target.checked);
+function renderPack(){ const el=document.getElementById("h-pack"), P=FIELD.pack(), FA=window.AOP_FA||{items:{}}; const rows=Object.entries(P).filter(([,n])=>n>0);
+  el.replaceChildren(...rows.map(([slug,n])=>{ const s=document.createElement("span"); if(FA.items[slug]){ const i=new Image(); i.src=FA.items[slug]; i.alt=""; s.append(i); } s.append(`${n}× ${slug.replace(/-/g," ")}`); return s; })); }
+renderPack(); setInterval(()=>{ if(outing) renderPack(); },1000);
+
+// ---- biome tabs
+const tabs=document.getElementById("tabs");
+SCENES.forEach(s=>{ const b=document.createElement("button"); b.type="button"; b.role="tab"; b.id="tab-"+s.key; b.textContent=s.name; b.onclick=()=>show(s.key,true); tabs.appendChild(b); });
+function show(key,remember){
+  const base=ready(SCENES.find(s=>s.key===key)||SCENES[0]);
+  const node=nodeFor(base.key); enterRoom(node,node.at(node.map.camp.x,node.map.camp.y),null);
+  if(remember){ try{ localStorage.setItem("aop-scene",SC.key); }catch(e){} history.replaceState(null,"","#"+SC.key); }
+  cv.focus({preventScroll:true});
+}
+// ---- Map maker
+(function(){
+  const box=document.getElementById("mapper"), grid=document.getElementById("mm-grid"), pal=document.getElementById("mm-pal"), insp=document.getElementById("mm-insp"),
+        stat=document.getElementById("mm-status"), btn=document.getElementById("t-map");
+  let key=null, tool=null, sel=null, dirty=false;
+  const draft=()=>DRAFTS[key]||(DRAFTS[key]=LAYOUTS[key]?JSON.parse(JSON.stringify({rooms:LAYOUTS[key].rooms,camp:LAYOUTS[key].camp})):{rooms:[],camp:null});
+  const cellAt=(x,y)=>draft().rooms.find(c=>c.x===x&&c.y===y);
+  const paintOf=(c)=>{ const pool=paintsFor(key); return pool.find(p=>p.id===c.p)||pool[0]; };
+  const label=(p)=>p.paintName||(p.id==="plate"?`${p.name} (original)`:p.name);
+  function joined(c,d){ const [,dx,dy,o]=SIDES.find(q=>q[0]===d), q=cellAt(c.x+dx,c.y+dy); if(!q) return null;
+    return wayOf(paintOf(c),!!c.m,d)&&wayOf(paintOf(q),!!q.m,o); }
+  function reach(){ const D=draft(), camp=D.camp&&cellAt(D.camp[0],D.camp[1])?D.camp:(D.rooms[0]?[D.rooms[0].x,D.rooms[0].y]:null), seen=new Set();
+    if(!camp) return seen; const st=[camp]; seen.add(camp.join()); while(st.length){ const [x,y]=st.pop(), c=cellAt(x,y);
+      for(const [d,dx,dy] of SIDES){ const k=(x+dx)+","+(y+dy); if(!seen.has(k)&&joined(c,d)){ seen.add(k); st.push([x+dx,y+dy]); } } } return seen; }
+  function setStatus(){ const D=draft(), n=D.rooms.length, r=reach(), cut=n-r.size;
+    stat.className="mstat"+(dirty||cut?" warn":"");
+    stat.textContent=!n?"No rooms yet — this area still uses the random maze.":`${n} room${n>1?"s":""}${cut?` · ${cut} can't be reached`:""} · ${dirty?"not saved yet":LAYOUTS[key]?"saved, canon":"not saved yet"}${DB?"":" · sign in to save"}`; }
+  function renderGrid(){ const D=draft(), r=reach(), camp=D.camp||(D.rooms[0]?[D.rooms[0].x,D.rooms[0].y]:null); grid.replaceChildren();
+    for(let y=0;y<NODE_SIZE.h;y++) for(let x=0;x<NODE_SIZE.w;x++){ const c=cellAt(x,y), b=document.createElement("button"); b.type="button"; b.className="mcell"; b.dataset.x=x; b.dataset.y=y;
+      if(c){ const p=paintOf(c); b.classList.add("room"); if(!r.has(x+","+y)) b.classList.add("cut"); if(sel&&sel[0]===x&&sel[1]===y) b.classList.add("sel");
+        const pic=document.createElement("span"); pic.className="pic"+(c.m?" flip":""); pic.style.backgroundImage=`url(${thumbOf(key,p)})`; if(TINTS[c.t||0]) pic.style.filter=TINTS[c.t||0]; b.append(pic);
+        const tg=document.createElement("span"); tg.className="tag"; tg.textContent=p.id==="plate"?"":p.id.replace(/-\d$/,""); b.append(tg);
+        if(camp&&camp[0]===x&&camp[1]===y){ const s=document.createElement("span"); s.className="in"; s.textContent="★"; b.append(s); }
+        for(const d of ["e","s"]){ const j=joined(c,d); if(j===null) continue; const e=document.createElement("i"); e.className=`ed ${d} ${j?"ok":"no"}`; b.append(e); }
+        b.setAttribute("aria-label",`${label(p)} at ${x+1},${y+1}${c.m?", flipped":""}`); }
+      else b.setAttribute("aria-label",`empty ${x+1},${y+1}`);
+      b.onclick=()=>clickCell(x,y); grid.append(b); }
+    setStatus(); }
+  function renderPal(){ pal.replaceChildren(); const pool=paintsFor(key);
+    const mk=(id,img,name,sub)=>{ const b=document.createElement("button"); b.type="button"; b.setAttribute("aria-pressed",String(tool===id));
+      if(img){ const i=new Image(); i.src=img; i.alt=""; b.append(i); } const t=document.createElement("span"); t.textContent=name; b.append(t); if(sub){ const s=document.createElement("small"); s.textContent=sub; b.append(s); }
+      b.onclick=()=>{ tool=tool===id?null:id; renderPal(); }; pal.append(b); };
+    for(const p of pool){ const ways=["n","e","s","w"].filter(d=>p.doors[d]).map(d=>({n:"N",e:"E",s:"S",w:"W"})[d]).join(" ");
+      mk(p.id,thumbOf(key,p),label(p),`${({edge:"edge",hazard:"hazard",landmark:"landmark"})[p.kind]||"room"} · ways ${ways}`); }
+    mk("erase",null,"✕ Eraser","take rooms out"); }
+  function renderInsp(){ const c=sel&&cellAt(sel[0],sel[1]); insp.replaceChildren();
+    if(!c){ const p=document.createElement("p"); p.textContent=tool?"Click squares to place it. Click a room to select it.":"Pick a painting, or click a room to change it."; insp.append(p); return; }
+    const p=paintOf(c), D=draft(), isIn=D.camp&&D.camp[0]===c.x&&D.camp[1]===c.y;
+    const h=document.createElement("p"); h.innerHTML=`<b></b> — square ${c.x+1},${c.y+1}`; h.firstChild.textContent=label(p); insp.append(h);
+    const ways=SIDES.map(([d])=>{ const j=joined(c,d); return j===null?null:`${({n:"north",e:"east",s:"south",w:"west"})[d]} ${j?"open":"walled"}`; }).filter(Boolean);
+    const w=document.createElement("p"); w.textContent=ways.length?ways.join(" · "):"Not joined to anything yet."; insp.append(w);
+    const row=document.createElement("div"); row.className="row";
+    const b=(t,f,pr)=>{ const e=document.createElement("button"); e.type="button"; e.textContent=t; if(pr!=null) e.setAttribute("aria-pressed",String(pr)); e.onclick=f; row.append(e); };
+    b("Flip",()=>{ c.m=!c.m; touch(); },!!c.m);
+    ["Plain","Cool","Warm"].forEach((n,i)=>b(n,()=>{ c.t=i; touch(); },(c.t||0)===i));
+    b(isIn?"★ The way in":"Make the way in",()=>{ D.camp=[c.x,c.y]; touch(); },!!isIn);
+    b("Remove",()=>{ D.rooms=D.rooms.filter(q=>q!==c); if(isIn) D.camp=null; sel=null; touch(); });
+    insp.append(row); }
+  function touch(){ dirty=true; renderGrid(); renderInsp(); }
+  function clickCell(x,y){ const D=draft(), c=cellAt(x,y);
+    if(tool==="erase"){ if(c){ D.rooms=D.rooms.filter(q=>q!==c); if(D.camp&&D.camp[0]===x&&D.camp[1]===y) D.camp=null; if(sel&&sel[0]===x&&sel[1]===y) sel=null; touch(); } return; }
+    if(tool&&(!c||c.p!==tool)){ if(c) c.p=tool; else { D.rooms.push({x,y,p:tool,m:false,t:0}); if(!D.camp) D.camp=[x,y]; } sel=[x,y]; touch(); return; }
+    sel=c?[x,y]:null; renderGrid(); renderInsp(); }
+  function open(k){ key=k; sel=null; tool=null; dirty=false; document.getElementById("mm-name").textContent=SCENES.find(s=>s.key===k).name; renderPal(); renderGrid(); renderInsp(); }
+  function apply(L){ if(L&&L.rooms.length) LAYOUTS[key]=L; else delete LAYOUTS[key]; delete NODES[key]; }
+  document.getElementById("mm-save").onclick=async()=>{ const D=draft();
+    if(!DB){ stat.className="mstat warn"; stat.textContent="Can't save here."; return; }
+    const doc={key,rooms:D.rooms.map(c=>({x:c.x,y:c.y,p:c.p,m:!!c.m,t:c.t||0})),camp:D.camp||(D.rooms[0]?[D.rooms[0].x,D.rooms[0].y]:null),at:new Date().toISOString()};
+    stat.textContent="Saving…";
+    try{ await DB.doc("layouts/"+key).set(doc); apply(doc); dirty=false; setStatus(); if(SC.key===key&&F.state==="walk"&&!outing) show(key,false); }
+    catch(e){ stat.className="mstat warn"; stat.textContent="Couldn't save: "+((e&&e.code)||"error"); } };
+  document.getElementById("mm-walk").onclick=()=>{ const D=draft(); if(!D.rooms.length||outing||F.state!=="walk") return;
+    apply({key,rooms:D.rooms,camp:D.camp}); const node=nodeFor(key), at=sel&&node.at(sel[0],sel[1]);
+    enterRoom(node,at||node.at(node.map.camp.x,node.map.camp.y),null); if(dirty){ stat.className="mstat warn"; stat.textContent="Walking your draft — not saved yet."; }
+    document.querySelector(".stage").scrollIntoView({behavior:"smooth",block:"center"}); cv.focus({preventScroll:true}); };
+  document.getElementById("mm-clear").onclick=()=>{ const D=draft(); D.rooms=[]; D.camp=null; sel=null; touch(); };
+  btn.onclick=()=>{ const on=box.hidden; box.hidden=!on; btn.setAttribute("aria-pressed",String(on)); if(on){ open(SC.key); box.scrollIntoView({behavior:"smooth",block:"start"}); } };
+  window.__mm={refresh:()=>{ if(!box.hidden&&key) open(key); },open,get key(){ return key; },draft:()=>draft(),click:clickCell,setTool:(t)=>{ tool=t; renderPal(); }};
+  for(const b of tabs.children) b.addEventListener("click",()=>{ if(!box.hidden) open(SC.key); });
+})();
+let first=(location.hash||"").slice(1); if(!SCENES.some(s=>s.key===first)){ try{ first=localStorage.getItem("aop-scene")||"shore"; }catch(e){ first="shore"; } }
+show(first,false);
+document.getElementById("loading").hidden=true;
+
+function update(dt){ t+=dt;
+  let vx=(keys.has("d")||keys.has("arrowright"))-(keys.has("a")||keys.has("arrowleft")), vy=(keys.has("s")||keys.has("arrowdown"))-(keys.has("w")||keys.has("arrowup"));
+  if(!vx&&!vy&&F.tx!=null){ vx=F.tx-F.x; vy=F.ty-F.y; if(Math.hypot(vx,vy)<4){ if(F.path&&F.path.length){ [F.tx,F.ty]=F.path.shift(); vx=F.tx-F.x; vy=F.ty-F.y; } else { F.tx=null; F.path=null; vx=vy=0; } } }
+  if(F.state==="walk"){
+    if(F.hold>0){ F.hold-=dt; }
+    const ox=F.x, oy=F.y;
+    F.moving=stepWalker(F,vx,vy,dt,175);
+    const n=Math.hypot(vx,vy);
+    if(n&&F.hold<=0){ const ux=vx/n, uy=vy/n, probe=26*depth(F.y);
+      // the step was blocked (or only slid) and the ground just ahead drops away: offer the jump
+      const moved=Math.hypot(F.x-ox,F.y-oy), want=175*depth(F.y)*dt;
+      if(moved<want*.7&&inChasm(F.x+ux*probe,F.y+uy*probe)){ offerJump(vx,vy); }
+    }
+    // run-up: feet travelled in roughly one direction, reset by stopping or turning hard
+    if(F.moving&&n){ const d=dirFrom(vx,vy); if(F.lastDir!=null&&Math.abs(((d-F.lastDir+12)%8)-4)>=2){ F.run=0; } F.lastDir=d; F.run+=Math.hypot(F.x-ox,F.y-oy)/PX_PER_FT(F.y); } else if(!F.moving){ F.run=Math.max(0,F.run-dt*20); }
+    if(!F.moving&&F.tx!=null&&(vx||vy)&&F.state==="walk"){ F.tx=null; F.path=null; }
+    if(F.moving&&F.hold<=0&&SC.doors) for(const e of SC.doors){ if(inPoly(F.x,F.y,e.zone)){ leaveBy(e); break; } }
+  } else if(F.state==="jump"){ const J=F.jump; J.t+=dt; const k=Math.min(1,J.t/J.dur); F.alpha=1;
+    if(J.mode==="misty"||J.mode==="door"){ const out=J.mode==="misty"?.45:.4, back=J.mode==="misty"?.55:.62, there=k>=out;
+      F.x=there?J.x1:J.x0; F.y=there?J.y1:J.y0; F.air=0; F.moving=false;
+      F.alpha=k<out?1-k/out:(k<back?0:Math.min(1,(k-back)/(1-back))); }
+    else if(J.mode==="fly"){ const e=k*k*(3-2*k); F.x=J.x0+(J.x1-J.x0)*e; F.y=J.y0+(J.y1-J.y0)*e; F.air=(Math.sin(Math.PI*k)*80+Math.sin(t*6)*4*Math.sin(Math.PI*k))*depth(F.y); F.moving=true; }
+    else { F.x=J.x0+(J.x1-J.x0)*k; F.y=J.y0+(J.y1-J.y0)*k; F.air=Math.sin(Math.PI*Math.min(1,k*(J.fail?.8:1)))*(J.mode==="jumpspell"?70:46)*depth(F.y); F.moving=true; }
+    if(k>=1){ F.air=0; F.alpha=1; if(J.fail){ F.state="fall"; F.fall={t:0,note:J.note}; } else { F.state="walk"; F.run=0; F.hold=.4; ping={x:F.x,y:F.y,t:0,ok:true}; flash=J.note; flashT=3; } } }
+  else if(F.state==="fall"){ F.fall.t+=dt; F.moving=false; if(F.fall.t>1.6&&F.state==="fall") die(F.fall.note); }
+  F.ft+=dt; const fps=F.moving?10:5; if(F.ft>1/fps){ F.ft=0; F.frame++; }
+  if(outing){ FIELD.tick(dt); const h=FIELD.hero(); if(h){ F.x=h.x; F.y=h.y; } }
+  if(R.on){ const d=Math.hypot(F.x-R.x,F.y-R.y);
+    if(d<170&&R.flee<=0){ R.flee=2.6; R.alarm=1.2; }
+    if(R.flee>0){ R.flee-=dt; R.alarm=Math.max(0,R.alarm-dt); R.moving=stepWalker(R,R.x-F.x,R.y-F.y,dt,190)||stepWalker(R,-(R.y-F.y),R.x-F.x,dt,190); if(R.moving) R.face=R.x>F.x; if(R.flee<=0) R.wait=2; }
+    else if(R.wait>0){ R.wait-=dt; R.moving=false; if(R.wait<=0) [R.tx,R.ty]=pickSpot(); }
+    else { const vx2=R.tx-R.x, vy2=R.ty-R.y; if(Math.hypot(vx2,vy2)<6||!stepWalker(R,vx2,vy2,dt,42)){ R.wait=2+Math.random()*4; R.moving=false; } else { R.moving=true; R.face=vx2>0; } } }
+  for(const s of SPORES){ s.y-=s.v*dt; s.x+=Math.sin(t*.6+s.a)*8*dt; if(s.y<SC.back-60){ s.y=H; s.x=Math.random()*W; } }
+  if(ping){ ping.t+=dt; if(ping.t>.6) ping=null; } }
+
+function drawFifi(){ if(F.state==="dead") return; const s=depth(F.y), sheet=F.moving?fifiWalk:fifiIdle; if(!sheet.width) return; const n=Math.max(1,Math.round(sheet.width/128)), col=F.frame%n;
+  let sz=128*s*.92, lift=F.air, alpha=F.state==="jump"&&F.alpha!=null?F.alpha:1;
+  if(F.state==="fall"){ const k=Math.min(1,F.fall.t/1.4); sz*=1-.85*k; lift=-k*140*s; alpha=1-k; }
+  if(F.state!=="fall"){ g.fillStyle=`rgba(0,0,0,${.45*alpha*Math.max(.3,1-F.air/60)})`; g.beginPath(); g.ellipse(F.x,F.y+1,22*s*(1-F.air/120),7*s*(1-F.air/120),0,0,7); g.fill(); }
+  g.save(); g.globalAlpha=alpha; g.imageSmoothingEnabled=false; g.drawImage(sheet,col*128,F.dir*128,128,128,F.x-sz/2,F.y-lift-sz*(124/128),sz,sz); g.restore(); }
+function drawRothe(){ if(!R.on) return; const s=depth(R.y), fr=R.moving?rothe[Math.floor(t*(R.flee>0?13:8))%rothe.length]:rothe[0]; if(!fr||!fr.width) return; const h=96*s, w=fr.width*h/fr.height;
+  g.fillStyle="rgba(0,0,0,.45)"; g.beginPath(); g.ellipse(R.x,R.y+1,w*.36,8*s,0,0,7); g.fill();
+  g.save(); g.translate(R.x,R.y+2); if(!R.face) g.scale(-1,1); g.imageSmoothingEnabled=false; g.drawImage(fr,-w/2,-h,w,h); g.restore();
+  if(R.alarm>0){ g.font="700 22px Cinzel, Georgia, serif"; g.textAlign="center"; g.fillStyle="#e3b95c"; g.fillText("!",R.x,R.y-h-8); } }
+
+function frame(now){ const dt=Math.min(.05,(now-last)/1000); last=now; update(dt); camStep(dt);
+  g.setTransform(dpr,0,0,dpr,0,0); g.fillStyle="#000"; g.fillRect(0,0,W,H);
+  g.setTransform(dpr*CAM.z,0,0,dpr*CAM.z,dpr*(W/2-CAM.x*CAM.z),dpr*(H/2-CAM.y*CAM.z));
+  if(SC.filter) g.filter=SC.filter;
+  if(SC._plate.width){ g.imageSmoothingEnabled=true; if(SC.mirror){ g.save(); g.translate(W,0); g.scale(-1,1); g.drawImage(SC._plate,0,0,W,H); g.restore(); } else g.drawImage(SC._plate,0,0,W,H); }
+  // the ways out: a worn, faintly lit path and a gold arrow, brighter as she nears (Sam, 2026-10-08: "Create a path into that tunnel")
+  for(const e of (SC.doors||[])){ const zx=e.zone.reduce((a,p)=>a+p[0],0)/e.zone.length, zy=e.zone.reduce((a,p)=>a+p[1],0)/e.zone.length;
+    const near=Math.max(0,1-Math.hypot(F.x-zx,F.y-zy)/420), pulse=.6+.4*Math.sin(t*2.2), [ax,ay]=e.arrive;
+    g.save(); g.globalCompositeOperation="lighter";
+    for(let k=0;k<=6;k++){ const u=k/6, px=ax+(zx-ax)*u, py=ay+(zy-ay)*u, r=(26+10*(1-u))*depth(py); const gr=g.createRadialGradient(px,py,1,px,py,r); gr.addColorStop(0,`rgba(255,196,120,${(.05+.10*near)*(.6+.4*u)})`); gr.addColorStop(1,"rgba(255,196,120,0)"); g.fillStyle=gr; g.fillRect(px-r,py-r,r*2,r*2); }
+    g.restore();
+    if(near>.05){ const ang=Math.atan2(zy-ay,zx-ax), cx=ax+(zx-ax)*.62, cy=ay+(zy-ay)*.62, z=16*depth(cy);
+      g.save(); g.translate(cx,cy); g.rotate(ang); g.globalAlpha=Math.min(1,near*1.4)*pulse; g.strokeStyle="#e3b95c"; g.lineWidth=3; g.lineCap="round";
+      g.beginPath(); g.moveTo(-z*.6,-z); g.lineTo(z*.4,0); g.lineTo(-z*.6,z); g.moveTo(-z*1.4,-z); g.lineTo(-z*.4,0); g.lineTo(-z*1.4,z); g.stroke(); g.restore(); } }
+  // floor marks from the prop library lie flat under everyone
+  g.filter="none";
+  for(const p of (SC.props||[])) if(p.cls==="decal") FIELD.drawProp(p.slug,p.x,p.y,p.h);
+  FIELD.drawFloor(dt);
+  if(SC.key==="shore"&&!reduce){ g.save(); g.globalCompositeOperation="lighter"; g.globalAlpha=.10+.05*Math.sin(t*.9); const lg=g.createLinearGradient(0,170,0,340); lg.addColorStop(0,"rgba(90,110,255,0)"); lg.addColorStop(.6,"rgba(120,120,255,.5)"); lg.addColorStop(1,"rgba(90,110,255,0)"); g.fillStyle=lg; g.fillRect(300,170,640,170); g.restore(); }
+  // everything that stands, painted in order of where its feet are: the nearer, the later
+  const items=[...(outing?FIELD.sortables():[{y:F.y,draw:drawFifi},{y:R.y,draw:drawRothe}]),...SC._occ.map(o=>({y:o.base,draw:()=>{ if(o.im.width){ g.imageSmoothingEnabled=true; g.filter=SC.filter||"none"; if(o.flip){ g.save(); g.translate(o.x+o.w,0); g.scale(-1,1); g.drawImage(o.im,0,o.y,o.w,o.h); g.restore(); } else g.drawImage(o.im,o.x,o.y,o.w,o.h); } }})),
+    ...(SC.props||[]).filter(p=>p.cls!=="decal").map(p=>({y:p.y,draw:()=>FIELD.drawProp(p.slug,p.x,p.y,p.h)}))];
+  items.sort((a,b)=>a.y-b.y).forEach(i=>{ i.draw(); g.filter="none"; });
+  g.save(); g.globalCompositeOperation="lighter";
+  for(const [x,y,r,c] of SC.glows){ const p=.55+.45*Math.sin(t*1.3+x*.01); const gr=g.createRadialGradient(x,y,2,x,y,r); gr.addColorStop(0,`rgba(${c},${.22*p*(SC.lightK||1)})`); gr.addColorStop(1,`rgba(${c},0)`); g.fillStyle=gr; g.fillRect(x-r,y-r,r*2,r*2); }
+  if(lantern&&!outing){ const lx=F.x, ly=F.y-38*depth(F.y), fl=1+.04*Math.sin(t*9)+.03*Math.sin(t*23); const gr=g.createRadialGradient(lx,ly,6,lx,ly,200*fl); gr.addColorStop(0,"rgba(255,176,90,.30)"); gr.addColorStop(.5,"rgba(255,150,70,.10)"); gr.addColorStop(1,"rgba(255,150,70,0)"); g.fillStyle=gr; g.fillRect(lx-220,ly-220,440,440); }
+  for(const s of SPORES){ const a=.35+.35*Math.sin(t*2+s.a); g.fillStyle=`rgba(${s.c},${a})`; g.fillRect(s.x,s.y,2,2); }
+  g.restore();
+  if(outing) FIELD.drawOver(dt);
+  if(lantern&&!outing){ const v=g.createRadialGradient(F.x,F.y-40,120,F.x,F.y-40,760); v.addColorStop(0,"rgba(0,0,0,0)"); v.addColorStop(1,"rgba(0,0,0,.42)"); g.fillStyle=v; g.fillRect(0,0,W,H); }
+  if(F.state==="fall"){ const k=Math.min(1,F.fall.t/1.4); const gr=g.createRadialGradient(F.x,F.y,4,F.x,F.y,180); gr.addColorStop(0,`rgba(190,120,255,${.5*(1-k)})`); gr.addColorStop(1,"rgba(190,120,255,0)"); g.save(); g.globalCompositeOperation="lighter"; g.fillStyle=gr; g.fillRect(F.x-180,F.y-180,360,360); g.restore(); }
+  // the magic crossings: silver mist for Misty Step, a pair of violet portals for Dimension Door, a pale updraft for Fly
+  if(F.state==="jump"&&F.jump.mode&&F.jump.mode!=="jump"){ const J=F.jump, k=Math.min(1,J.t/J.dur);
+    g.save(); g.globalCompositeOperation="lighter";
+    if(J.mode==="misty"){ for(const [x,y,c] of [[J.x0,J.y0,k/.55],[J.x1,J.y1,(k-.4)/.6]]){ if(c<=0||c>=1.4) continue; const a=Math.sin(Math.PI*Math.min(1,c)), s=depth(y);
+        for(let i=0;i<9;i++){ const ang=i*0.7+t*1.5, rr=(18+c*40)*s, px=x+Math.cos(ang)*rr, py=y-40*s+Math.sin(ang)*rr*.55; const gr=g.createRadialGradient(px,py,1,px,py,26*s); gr.addColorStop(0,`rgba(215,225,255,${.35*a})`); gr.addColorStop(1,"rgba(215,225,255,0)"); g.fillStyle=gr; g.fillRect(px-26*s,py-26*s,52*s,52*s); } } }
+    if(J.mode==="door"){ const open=Math.sin(Math.PI*Math.min(1,k*1.05)); for(const [x,y] of [[J.x0,J.y0],[J.x1,J.y1]]){ const s=depth(y), h=62*s*open, w=26*s*open; if(h<1) continue;
+        const gr=g.createRadialGradient(x,y-44*s,2,x,y-44*s,h*1.3); gr.addColorStop(0,`rgba(170,110,255,${.45*open})`); gr.addColorStop(1,"rgba(170,110,255,0)"); g.fillStyle=gr; g.fillRect(x-h*1.3,y-44*s-h*1.3,h*2.6,h*2.6);
+        g.strokeStyle=`rgba(225,190,255,${.9*open})`; g.lineWidth=3; g.beginPath(); g.ellipse(x,y-44*s,w,h*.75,0,0,7); g.stroke(); } }
+    if(J.mode==="fly"){ const s=depth(F.y), gr=g.createRadialGradient(F.x,F.y-F.air-40*s,2,F.x,F.y-F.air-40*s,70*s); gr.addColorStop(0,"rgba(200,230,255,.22)"); gr.addColorStop(1,"rgba(200,230,255,0)"); g.fillStyle=gr; g.fillRect(F.x-70*s,F.y-F.air-110*s,140*s,140*s); }
+    g.restore(); }
+  if(ping){ g.strokeStyle=ping.ok?`rgba(227,185,92,${1-ping.t/.6})`:`rgba(255,90,90,${1-ping.t/.6})`; g.lineWidth=2; g.beginPath(); g.ellipse(ping.x,ping.y,10+ping.t*30,4+ping.t*12,0,0,7); g.stroke(); }
+  if(showWalk){ g.save(); g.fillStyle="rgba(92,240,138,.16)"; g.strokeStyle="#5cf08a"; g.lineWidth=2; g.beginPath(); for(const P of SC.floor){ g.beginPath(); P.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y)); g.closePath(); g.fill(); g.stroke(); }
+    g.fillStyle="rgba(80,160,255,.18)"; g.strokeStyle="#50a0ff"; for(const e of (SC.doors||[])){ g.beginPath(); e.zone.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y)); g.closePath(); g.fill(); g.stroke(); }
+    g.strokeStyle="#ff9a2a"; for(const o of SC._occ) if(o.foot){ g.beginPath(); g.ellipse(o.foot[0],o.foot[1],o.foot[2],o.foot[3],0,0,7); g.stroke(); } for(const p of (SC.props||[])) if(p.block){ g.beginPath(); g.ellipse(p.x,p.y-6,p.r,p.r*.5,0,0,7); g.stroke(); }
+    if(!SC._nsAll&&noStandCans(SC)){ SC._nsAll=[]; for(let y=SC.back;y<H;y+=4) for(let x=0;x<W;x+=4) if(areaAt(x,y)>=0&&noStand(x,y)) SC._nsAll.push([x,y]); }
+    if(SC._nsAll){ g.fillStyle="rgba(255,154,42,.35)"; for(const [x,y] of SC._nsAll) g.fillRect(x-2,y-2,4,4); }
+    g.fillStyle="rgba(255,75,75,.16)"; g.strokeStyle="#ff4b4b"; for(const P of (SC.chasms||[])){ g.beginPath(); P.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y)); g.closePath(); g.fill(); g.stroke(); }
+    g.strokeStyle="#ff5ac8"; g.setLineDash([6,4]); for(const o of SC._occ){ g.strokeRect(o.x,o.y,o.w,o.h); g.beginPath(); g.moveTo(o.x-8,o.base); g.lineTo(o.x+o.w+8,o.base); g.stroke(); } g.restore(); }
+  if(fadeDir){ fade=Math.max(0,Math.min(1,fade+fadeDir*dt*3.2)); if(fade<=0&&fadeDir<0) fadeDir=0; }
+  if(fade>0){ g.setTransform(dpr,0,0,dpr,0,0); g.fillStyle=`rgba(0,0,0,${fade})`; g.fillRect(0,0,W,H); }
+  if(banner&&bannerT>0&&!fade){ bannerT-=dt; g.setTransform(dpr,0,0,dpr,0,0); const a=Math.min(1,bannerT); const bh=20+banner.length*24; g.fillStyle=`rgba(7,6,11,${.72*a})`; g.fillRect(0,H-bh,W,bh);
+    g.textAlign="center"; banner.forEach((line,i)=>{ const y=H-bh+30+i*24;
+      if(i===0){ g.fillStyle=`rgba(227,185,92,${a})`; g.font="700 18px Cinzel, Georgia, serif"; }
+      else { g.fillStyle=i===banner.length-1?`rgba(157,146,129,${a})`:`rgba(236,226,204,${a})`; g.font="400 16px 'Crimson Text', Georgia, serif"; }
+      g.fillText(line,W/2,y); }); }
+  if(flash&&flashT>0){ flashT-=dt; g.setTransform(dpr,0,0,dpr,0,0); g.font="600 18px 'Crimson Text', Georgia, serif"; g.textAlign="center"; g.fillStyle=`rgba(227,185,92,${Math.min(1,flashT)})`; g.fillText(flash,W/2,40); }
+  g.setTransform(dpr,0,0,dpr,0,0); if(!fade) drawMini(); if(outing) FIELD.hud();
+  requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+window.__scene={F,R,CAM,HERO,FIELD,show,inChasm,areaAt,inside:(x,y)=>inside(x,y),get key(){ return SC.key; },get room(){ return ROOM; },get node(){ return NODE; },leaveBy,enterRoom,nodeFor,get sc(){ return SC; },get dbState(){ return dbState; }};
+})().catch(err=>{ const l=document.getElementById("loading"); l.hidden=false; l.textContent="The scenes did not load. Reload the page to try again."; console.error(err); });
+</script>
+
+</body></html>
