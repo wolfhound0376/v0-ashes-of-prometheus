@@ -11,6 +11,15 @@ import {
 } from "@/lib/opportunity"
 import { meleeReachFt, opportunityAttack } from "@/lib/npc-ai"
 import { resolveJump, resolveShove } from "@/lib/shove"
+import {
+  advanceQueue,
+  buildPrompt,
+  currentWatcher,
+  mayAnswer,
+  promptNarration,
+  type PendingReaction,
+  type Watcher,
+} from "@/lib/reaction-prompt"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { decideTurn, walkableFrom, key as cellKey, stepToEdge, speedSquares, usesAlgorithm, type Combatant } from "@/lib/npc-ai"
 import { spellEntry, rollDice, knowsSpell, phaseCost, slotsLeft, type Spellcasting } from "@/lib/spellbook"
@@ -835,7 +844,7 @@ async function handlePost(req: NextRequest) {
   // Ungated means the player may ASK, not that the answer is yes. Every
   // handler still fences server-side: only the ACTIVE turn's own PC token
   // moves, and only within its speed budget.
-  const PLAYER_VERBS = ["spend", "ack", "move", "cast", "hide", "summon", STABILIZE]
+  const PLAYER_VERBS = ["spend", "ack", "move", "cast", "hide", "summon", "shove", "jump", "reaction", STABILIZE]
   const DM_VERBS = ["start", "next", "end", "npc-turn"]
   if (!PLAYER_VERBS.includes(action) && !authorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 403 })
@@ -1356,6 +1365,117 @@ async function handlePost(req: NextRequest) {
       self, stats, hostiles, walkable: board.walkable, blocked,
       width: board.width, height: board.height,
     })
+
+    // THE PAUSE — combat stops and asks. Sam's ruling, 2026-10-10:
+    // "combat pauses like Baldur's Gate 3 for reactions like shield."
+    //
+    // This is the other half of opportunity attacks, and the half that was
+    // missing. `move` is a PLAYER verb, so until now an NPC walking out of
+    // Fifi's reach wrote its new square right here with no provoke check: the
+    // drow swung at the party and the party never swung back.
+    //
+    // A player's opportunity attack is a CHOICE, so the request cannot decide
+    // it — it has to stop, ask, and wait. The decision is carried in the
+    // prompt and applied once everyone has answered, with the dice it already
+    // rolled, because re-rolling on resume would let a reaction choice
+    // silently re-roll the drow's attack.
+    if (decision.kind === "move" || decision.kind === "move-attack" || decision.kind === "flee") {
+      const npcOrder = (combat.turn_order ?? []) as TurnOrderEntry[]
+      const npcByToken = new Map(npcOrder.map((e) => [e.token_id, e]))
+      const npcWatchers: OaCombatant[] = board.combatants
+        .filter((c) => c.token_id !== self.token_id && (c.hp_current ?? 1) > 0)
+        .map((c) => {
+          const st = (board.beast.get(c.bestiary_id ?? "") ?? {}) as Record<string, unknown>
+          return {
+            token_id: c.token_id,
+            grid_x: c.x,
+            grid_y: c.y,
+            camp: campOf(c.allegiance),
+            reach_ft: c.character_id ? 5 : meleeReachFt(st.actions),
+            reacted: !hasReaction(npcByToken.get(c.token_id), combat.round),
+            incapacitated: forbidsReactions(c.conditions ?? []),
+            can_see: true,
+          }
+        })
+      const provoked = provokers({
+        mover: { token_id: self.token_id, camp: campOf(self.allegiance) },
+        from: { grid_x: self.x, grid_y: self.y },
+        to: { grid_x: decision.to.x, grid_y: decision.to.y },
+        others: npcWatchers,
+      })
+      const asWatchers: Watcher[] = provoked.map((w) => {
+        const c = board.combatants.find((b) => b.token_id === w.token_id)
+        return {
+          token_id: w.token_id,
+          label: c?.label ?? "Someone",
+          character_id: c?.character_id ?? null,
+        }
+      })
+      const prompt = buildPrompt({
+        watchers: asWatchers,
+        mover_token: self.token_id,
+        mover_label: self.label,
+        from: { grid_x: self.x, grid_y: self.y },
+        to: { grid_x: decision.to.x, grid_y: decision.to.y },
+        resume: decision,
+      })
+      if (prompt) {
+        // STOP. Nothing is written but the prompt: the NPC has not moved, has
+        // not attacked, and its turn has not ended. `turn_state` is the right
+        // home precisely because the turn change already clears it, so a
+        // prompt can never outlive the turn that raised it.
+        const paused = { ...(combat.turn_state as Record<string, unknown> ?? {}), pending_reaction: prompt }
+        await db.from("combat_state")
+          .update({ turn_state: paused, updated_at: new Date().toISOString() })
+          .eq("id", combat.id)
+        await narrate(db, promptNarration(prompt))
+        return NextResponse.json({
+          ok: true,
+          paused: true,
+          pending_reaction: prompt,
+          note: "waiting on a reaction",
+        })
+      }
+      // Nobody to ask — monsters provoked here are resolved inline, the same
+      // way tier 1 resolves them against a moving player.
+      let npcOrderAfter = npcOrder
+      for (const w of provoked) {
+        const watcher = board.combatants.find((c) => c.token_id === w.token_id)
+        const mover = board.combatants.find((c) => c.token_id === self.token_id)
+        if (!watcher || !mover) continue
+        const st = (board.beast.get(watcher.bestiary_id ?? "") ?? {}) as Record<string, unknown>
+        const swing = opportunityAttack({ self: watcher, actions: st.actions, target: mover })
+        if (!swing) continue
+        npcOrderAfter = spendReaction(npcOrderAfter, w.token_id, combat.round)
+        await narrate(db, swing.narration)
+        if (swing.hit && swing.damage > 0) {
+          const settled = await settleHitPoints(db, {
+            characterId: null,
+            tokenId: self.token_id,
+            label: mover.label,
+            cur: mover.hp_current ?? 0,
+            max: mover.hp_max ?? 0,
+            amount: swing.damage,
+            heals: false,
+            crit: swing.crit,
+            by: "opportunity-attack",
+          })
+          if (settled.note) await narrate(db, settled.note)
+          mover.hp_current = settled.hp
+          if (settled.hp <= 0) {
+            await db.from("combat_state")
+              .update({ turn_order: npcOrderAfter, updated_at: new Date().toISOString() })
+              .eq("id", combat.id)
+            return NextResponse.json({ ok: true, decision: { kind: "none" }, note: "dropped leaving reach" })
+          }
+        }
+      }
+      if (npcOrderAfter !== npcOrder) {
+        await db.from("combat_state")
+          .update({ turn_order: npcOrderAfter, updated_at: new Date().toISOString() })
+          .eq("id", combat.id)
+      }
+    }
 
     // Apply. Movement and damage are the only two things this writes.
     if (decision.kind === "move" || decision.kind === "move-attack" || decision.kind === "flee") {
@@ -3236,6 +3356,116 @@ async function handlePost(req: NextRequest) {
       .eq("id", combat.id)
 
     return NextResponse.json({ ok: true, shove: result, turn_state: next })
+  if (action === "reaction") {
+    // ANSWERING THE PAUSE. Sam, 2026-10-10: combat stops like BG3 and asks.
+    //
+    //   POST {action:"reaction", decision:"take"|"pass", character_id?}
+    //
+    // The prompt itself is raised in `npc-turn`; this is the other end of it.
+    // Whoever is at the head of the queue answers, the swing resolves or does
+    // not, and when the queue empties the interrupted NPC decision is applied
+    // with the dice it already rolled.
+    const state = (combat as { turn_state?: Record<string, unknown> }).turn_state ?? {}
+    const pending = state.pending_reaction as PendingReaction | undefined
+    if (!pending) return NextResponse.json({ error: "nothing is waiting on a reaction" }, { status: 409 })
+
+    const isDm = authorized(req)
+    const characterId = body?.character_id ? String(body.character_id) : null
+    if (!mayAnswer(pending, { characterId, isDm })) {
+      return NextResponse.json({ error: "that is not your reaction to spend" }, { status: 403 })
+    }
+
+    const watcher = currentWatcher(pending)
+    if (!watcher) return NextResponse.json({ error: "the queue is empty" }, { status: 409 })
+    const take = body?.decision === "take"
+
+    const board = await loadBoard(db, map.id)
+    const mover = board.combatants.find((c) => c.token_id === pending.mover_token)
+    const swinger = board.combatants.find((c) => c.token_id === watcher.token_id)
+    let orderNow = (combat.turn_order ?? []) as TurnOrderEntry[]
+    let moverDown = false
+
+    if (take && mover && swinger) {
+      // A PC's opportunity attack uses the character's own weapon, so it is
+      // resolved from the sheet rather than from a bestiary `actions` blob —
+      // which a player character does not have. parseAttacks reads the same
+      // shape either way, so sheet_attacks slots straight in.
+      const { data: sheet } = swinger.character_id
+        ? await db.from("characters").select("sheet_attacks").eq("id", swinger.character_id).maybeSingle()
+        : { data: null }
+      const st = (board.beast.get(swinger.bestiary_id ?? "") ?? {}) as Record<string, unknown>
+      const swing = opportunityAttack({
+        self: swinger,
+        actions: (sheet as { sheet_attacks?: unknown } | null)?.sheet_attacks ?? st.actions,
+        target: mover,
+      })
+      if (!swing) {
+        // Nothing to swing with. The reaction is NOT burned — the same rule
+        // the NPC path already keeps for a crossbowman.
+        await narrate(db, `${swinger.label} has nothing to swing with.`)
+      } else {
+        orderNow = spendReaction(orderNow, watcher.token_id, combat.round)
+        await narrate(db, swing.narration)
+        if (swing.hit && swing.damage > 0) {
+          const settled = await settleHitPoints(db, {
+            characterId: mover.character_id ?? null,
+            tokenId: mover.token_id,
+            label: mover.label,
+            cur: mover.hp_current ?? 0,
+            max: mover.hp_max ?? 0,
+            amount: swing.damage,
+            heals: false,
+            crit: swing.crit,
+            by: "opportunity-attack",
+          })
+          if (settled.note) await narrate(db, settled.note)
+          moverDown = settled.hp <= 0
+        }
+      }
+    } else if (!take) {
+      await narrate(db, `${watcher.label} lets ${pending.mover_label} go.`)
+    }
+
+    // A dropped mover ends the queue: there is nothing left to swing at, and
+    // asking the next player would be asking about a corpse.
+    const nextPrompt = moverDown ? null : advanceQueue(pending)
+
+    if (nextPrompt) {
+      const held = { ...state, pending_reaction: nextPrompt }
+      await db.from("combat_state")
+        .update({ turn_state: held, turn_order: orderNow, updated_at: new Date().toISOString() })
+        .eq("id", combat.id)
+      await narrate(db, promptNarration(nextPrompt))
+      return NextResponse.json({ ok: true, paused: true, pending_reaction: nextPrompt })
+    }
+
+    // QUEUE EMPTY — the turn resumes. The decision was carried through the
+    // pause unchanged, so the move lands with the numbers rolled before
+    // anyone was asked.
+    const resume = pending.resume as { kind?: string; to?: { x: number; y: number } } | undefined
+    const cleared = { ...state }
+    delete cleared.pending_reaction
+    await db.from("combat_state")
+      .update({ turn_state: cleared, turn_order: orderNow, updated_at: new Date().toISOString() })
+      .eq("id", combat.id)
+
+    if (!moverDown && resume?.to &&
+        (resume.kind === "move" || resume.kind === "move-attack" || resume.kind === "flee")) {
+      await db.from("vtt_tokens")
+        .update({ grid_x: resume.to.x, grid_y: resume.to.y, updated_by: "npc-ai", updated_at: new Date().toISOString() })
+        .eq("id", pending.mover_token)
+    }
+
+    return NextResponse.json({
+      ok: true,
+      paused: false,
+      resumed: !moverDown,
+      mover_down: moverDown,
+      // The caller re-runs npc-turn to finish the attack half of a
+      // move-attack. Said explicitly rather than left for the client to
+      // infer, because a half-applied turn is the worst possible state.
+      note: moverDown ? "the mover went down leaving reach" : "reaction resolved; the turn may continue",
+    })
   }
 
   if (action === "hide") {
