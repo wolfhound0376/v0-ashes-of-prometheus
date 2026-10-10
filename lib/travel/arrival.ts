@@ -79,7 +79,28 @@ export interface ArrivalOutcome {
   eventId: string | null
   /** The march accumulator as it stands after this arrival. */
   march: MarchState
+  /** Set when the leg just finished was a Darklake crossing. */
+  water?: WaterLeg
 }
+
+/**
+ * A leg rowed across the Darklake. The book checks by TIME on the water, not
+ * by miles walked: "Every 4 hours that the characters are on the Darklake,
+ * roll a d20 and consult the Darklake Random Encounters table" (ch.3).
+ */
+export interface WaterLeg {
+  /** Hours this crossing took. */
+  hours: number
+  /** Hours on the water since the last check, before this leg. */
+  carryHours: number
+  /** Checks rolled on this arrival. */
+  checks: number
+  /** Hours carried forward to the next crossing. */
+  carryAfter: number
+}
+
+export const WATER_CHECK_HOURS = 4
+export const DARKLAKE_SOURCE = "Out of the Abyss - D&D Encounters, ch.3 (The Darklake): a check every 4 hours on the water"
 
 /** Injectable so tests are deterministic; production passes a real d20. */
 export type Roll = (die: number) => number
@@ -146,12 +167,26 @@ export function resolveArrival(input: {
   tables: EncounterTable[]
   rows: EncounterRow[]
   roll?: Roll
+  /**
+   * The leg was a Darklake crossing. Its miles do NOT count toward the land
+   * march (they are rowed, not walked); its hours count toward the Darklake
+   * check instead.
+   */
+  water?: { hours: number; carryHours: number }
 }): ArrivalOutcome {
   const roll = input.roll ?? rollDie
   const march: MarchState = {
-    miles_since_check: Number(input.march.miles_since_check) + Number(input.milesWalked || 0),
+    miles_since_check: Number(input.march.miles_since_check) + (input.water ? 0 : Number(input.milesWalked || 0)),
     day_miles: Number(input.march.day_miles) || 7,
     checks_made: Number(input.march.checks_made) || 0,
+  }
+  let water: WaterLeg | undefined
+  if (input.water) {
+    const hours = Math.max(0, Number(input.water.hours) || 0)
+    const carryHours = Math.max(0, Number(input.water.carryHours) || 0)
+    // Same floating-point tolerance as the land march below.
+    const checks = Math.floor((carryHours + hours) / WATER_CHECK_HOURS + 1e-6)
+    water = { hours, carryHours, checks, carryAfter: Math.max(0, carryHours + hours - checks * WATER_CHECK_HOURS) }
   }
 
   // 1. Authored canon first. Highest priority, ties broken stably by id.
@@ -168,6 +203,40 @@ export function resolveArrival(input: {
       source: "authored for this node",
       eventId: authored.id,
       march,
+      // Authored canon pre-empts the dice; the hours stay owed, not lost.
+      water: water && { ...water, checks: 0, carryAfter: water.carryHours + water.hours },
+    }
+  }
+
+  // 2w. On the water: one Darklake check per 4 hours afloat.
+  if (water) {
+    const rolls: RolledStep[] = []
+    for (let k = 0; k < water.checks; k++) rolls.push(...rollChain(input.tables, input.rows, "darklake_random", roll))
+    const hits = rolls.filter((r) => r.table_key !== "darklake_random" || r.result !== "No encounter")
+    const hrs = Math.round(water.hours * 10) / 10
+    if (!hits.length) {
+      return {
+        halt: false,
+        kind: "none",
+        title: input.nodeName + " - the water stays quiet",
+        body: null,
+        rolls,
+        source: DARKLAKE_SOURCE,
+        eventId: null,
+        march,
+        water,
+      }
+    }
+    return {
+      halt: true,
+      kind: "encounter",
+      title: hits.map((r) => r.result).join(" - "),
+      body: `${hrs} hours on the Darklake: ${water.checks} check${water.checks === 1 ? "" : "s"} rolled.`,
+      rolls,
+      source: DARKLAKE_SOURCE,
+      eventId: null,
+      march,
+      water,
     }
   }
 
