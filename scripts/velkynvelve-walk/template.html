@@ -1111,7 +1111,7 @@ $("talkGo").onclick = (e) => {
   e.preventDefault();
   const npc = talkNpc, nm = SPR[npc.id].json.name, said = $("talkLine").querySelector(".said")?.textContent?.replace(/^“|”$/g, "") || "";
   closeTalk(true); saveWalk();
-  const q = new URLSearchParams({view: "compact", from: "map", talk: nm, return: "/velkynvelve"});
+  const q = new URLSearchParams({view: "compact", from: "map", talk: nm, return: "/velkynvelve", scene: `${ASSET}img/${node.slug}.jpg`, area: node.name});
   if (said) q.set("line", said.slice(0, 280));
   window.top.location.href = "/?" + q.toString();
 };
