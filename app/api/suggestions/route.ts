@@ -12,7 +12,8 @@ const anthropic = createAnthropic({
 /**
  * Per-player action suggestions. (PR-3)
  *
- * Given the latest narration beat and ONE character's sheet summary, ask Haiku
+ * Given the latest exchange (narration + NPC lines, oldest first), who the
+ * character is talking to, and ONE character's sheet summary, ask Haiku
  * (extraction-flavored work — deliberately not Opus) for 2–4 diegetic action
  * suggestions. The client renders them as chips; clicking one sends the text
  * as that player's message through the normal player-message path.
@@ -34,8 +35,15 @@ interface SuggestionPayload {
   }
   inventory?: string[]
   sceneText?: string
+  /** Who the character is in conversation with, if anyone. */
+  talkingTo?: string | null
+  /** Named NPCs who just spoke or are on stage. */
+  present?: string[]
   location?: string
 }
+
+const cleanName = (value: unknown): string | null =>
+  typeof value === "string" ? value.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
 
 export async function POST(request: NextRequest) {
   try {
@@ -50,6 +58,11 @@ export async function POST(request: NextRequest) {
       ? body.inventory.filter((name): name is string => typeof name === "string" && !!name.trim()).slice(0, 25)
       : []
     const conditions = Array.isArray(character.conditions) ? character.conditions.filter(Boolean) : []
+    const talkingTo = cleanName(body.talkingTo)
+    const present = Array.isArray(body.present)
+      ? body.present.map(cleanName).filter((name): name is string => !!name).slice(0, 8)
+      : []
+    if (talkingTo && !present.includes(talkingTo)) present.unshift(talkingTo)
 
     // === FILMED MOMENTS ===
     // Some actions in a location have a cinematic shot for them. A player can
@@ -123,6 +136,18 @@ worse than no chip: the player picks it, the DM has to refuse it, and the turn
 is wasted. If the scene gives three passages, act on THOSE passages; do not
 offer business from a room they have left.
 
+- WHO IS IN THIS EXCHANGE. ${talkingTo
+      ? `${character.name} is in conversation with ${talkingTo}. The exchange below
+  is that conversation. At least two entries must engage ${talkingTo} directly —
+  answer them, press them, read them, bargain, lie, refuse, walk away — and
+  must make sense as a reply to the LAST thing ${talkingTo} said.`
+      : `Nobody is singled out; read the exchange for who, if anyone, just spoke to
+  ${character.name} and answer that.`}
+  Named people here right now: ${present.length ? present.join(", ") : "none named"}.
+  Never direct an action at someone who is not in this exchange and not in the
+  scene as written. A name from earlier in the night is not a target now; a
+  chip about a third person while ${talkingTo ?? "someone"} is waiting for an
+  answer is a wasted turn.
 - Ground each entry in THIS character. Their class, their listed skill
   proficiencies and their carried items are what they have to work with — a
   rogue's options are not a cleric's. Prefer actions their proficiencies
@@ -144,10 +169,12 @@ offer business from a room they have left.
   when none applies.
 - Respect active conditions. A manacled character cannot walk away; a poisoned
   one is not at their best.
-- React to the scene beat below; do not restate it.
+- React to the exchange below — above all to its LAST line; do not restate it.
 ${filmedBlock}
 
-Scene (latest DM narration): ${sceneText.slice(-1200)}
+Exchange (oldest first; "Narration" is the DM, every other name is who said it):
+${sceneText.slice(-1600)}
+In conversation with: ${talkingTo ?? "no one in particular"}
 Location: ${body.location ?? "Unknown"}
 Character: ${character.name}, ${character.class} ${character.level ?? 1}
 Skill proficiencies: ${character.skills || "none recorded"}

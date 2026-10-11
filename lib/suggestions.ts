@@ -44,6 +44,94 @@ export function ensureObserveChip(suggestions: Suggestion[]): Suggestion[] {
   return [...others.slice(0, 3), observe ?? OBSERVE_FALLBACK]
 }
 
+/** One row of the shared dialogue feed, as the chips see it. */
+export interface ExchangeLine {
+  id?: string
+  speaker: string
+  text: string
+}
+
+export type SpeakerKind = "dm" | "player" | "npc"
+
+/** What the suggester is told about the moment, built from the feed. */
+export interface SuggestionContext {
+  /** Regeneration key: the id (or text) of the latest DM-or-NPC row. */
+  beatKey: string | null
+  /** The recent exchange, oldest first, "Speaker: text" per line. */
+  sceneText: string
+  /** Who the character is in conversation with, if anyone. */
+  talkingTo: string | null
+  /** Named NPCs who have just spoken or are on stage. */
+  present: string[]
+}
+
+const EXCHANGE_MAX_LINES = 6
+const EXCHANGE_MAX_CHARS = 1600
+
+/**
+ * Build the scene the suggester reasons from.
+ *
+ * The chat route splits one Malachar reply into separate rows — each quoted
+ * NPC line is stored under the NPC's own name, and only the narration between
+ * the quotes stays under "Malachar". So the "latest DM narration" is usually
+ * the prose AROUND what an NPC said, never the line itself. Verified in the
+ * `dialogue` table 2026-10-11: Eldeth's "That sound. It's been coming closer
+ * every night" sat as its own row while the chips were built from the
+ * Malachar row before it, which was about Jorlan at the gate — so a player
+ * talking to Eldeth was offered "whistle to Jorlan".
+ *
+ * Two consequences this function fixes:
+ *  - The beat is the latest DM-OR-NPC row, so an NPC speaking regenerates the
+ *    chips, and the row they spoke is in the text the suggester reads.
+ *  - The suggester sees the last few lines in order (player lines included,
+ *    because they say who was addressed), plus who the character is talking
+ *    to, so the options can engage THAT person.
+ *
+ * `classify` is injected rather than imported: lib/tts.ts holds browser-side
+ * voice state and this helper must stay importable from the API route.
+ */
+export function buildSuggestionContext(
+  dialogue: ExchangeLine[],
+  classify: (speaker?: string | null) => SpeakerKind,
+  opts: { talkWith?: string | null; onStage?: string | null } = {},
+): SuggestionContext {
+  const rows = dialogue.filter((row) => row.text?.trim())
+  let beatIndex = -1
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (classify(rows[i].speaker) !== "player") {
+      beatIndex = i
+      break
+    }
+  }
+  if (beatIndex < 0) return { beatKey: null, sceneText: "", talkingTo: null, present: [] }
+
+  const beat = rows[beatIndex]
+  const window = rows.slice(Math.max(0, beatIndex - (EXCHANGE_MAX_LINES - 1)), beatIndex + 1)
+
+  // Oldest first, trimmed from the FRONT so the newest line always survives.
+  const lines = window.map((row) => {
+    const kind = classify(row.speaker)
+    const who = kind === "dm" ? "Narration" : row.speaker.trim() || "Someone"
+    return `${who}: ${row.text.trim()}`
+  })
+  while (lines.length > 1 && lines.join("\n").length > EXCHANGE_MAX_CHARS) lines.shift()
+  const sceneText = lines.join("\n").slice(-EXCHANGE_MAX_CHARS)
+
+  const npcSpeakers: string[] = []
+  for (const row of window) {
+    const name = row.speaker.trim()
+    if (name && classify(name) === "npc" && !npcSpeakers.includes(name)) npcSpeakers.push(name)
+  }
+  const talkWith = (opts.talkWith ?? "").trim()
+  const talkingTo = talkWith || [...npcSpeakers].reverse()[0] || null
+
+  const present = [...npcSpeakers]
+  const onStage = (opts.onStage ?? "").trim()
+  if (onStage && !present.includes(onStage)) present.push(onStage)
+
+  return { beatKey: beat.id ?? beat.text, sceneText, talkingTo, present }
+}
+
 /** Strict-ish parse of the model reply: fenced or bare JSON array → 2–4 chips. */
 export function parseSuggestions(raw: string): Suggestion[] {
   try {

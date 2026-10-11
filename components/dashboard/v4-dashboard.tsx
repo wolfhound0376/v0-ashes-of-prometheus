@@ -967,6 +967,8 @@ export function V4Dashboard(props: V4DashboardProps) {
           dialogue={dialogue}
           inventory={props.inventory}
           location={props.environment.name}
+          talkWith={talkPartner?.kind === "npc" ? talkPartner.npc.name : talkPartner?.kind === "player" ? talkPartner.player.name : null}
+          onStage={shownNpc?.name ?? null}
           fallback={quickReplies}
           disabled={!!props.isThinking}
           onPick={(text, isObserve) => {
