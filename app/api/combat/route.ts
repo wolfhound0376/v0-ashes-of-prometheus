@@ -3356,6 +3356,8 @@ async function handlePost(req: NextRequest) {
       .eq("id", combat.id)
 
     return NextResponse.json({ ok: true, shove: result, turn_state: next })
+  }
+
   if (action === "reaction") {
     // ANSWERING THE PAUSE. Sam, 2026-10-10: combat stops like BG3 and asks.
     //
