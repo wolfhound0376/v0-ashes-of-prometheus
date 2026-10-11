@@ -1208,15 +1208,25 @@ async function openTalk(npc){
   portrait(npc.id, $("talkPortrait"), 128);
   $("talkWho").textContent = nm;
   $("talkLine").innerHTML = '<span class="thinking">…</span>';
-  $("talkGo").href = `https://ashes.playacartagena.com/?view=compact&from=camp&talk=${encodeURIComponent(nm)}`;
+  $("talkGo").href = talkUrl(npc, "");
   $("talk").hidden = false; $("talkGo").focus();
   talkNpc = npc;
   const {narration, line} = await npcOpening(npc);
   if (talkNpc !== npc || $("talk").hidden) return;
   $("talkLine").innerHTML = `<p class="narr">${esc(narration)}</p><p class="said">“${esc(line)}”</p>`;
+  $("talkGo").href = talkUrl(npc, line);
   bark(npc, line, 7000, {talk: true}); speak(npc.id, line);
 }
 let talkNpc = null;
+// The way into the dashboard for this conversation. The game opens it in place; the stand-alone preview
+// (no game around it) opens the live game in a new tab. Both go to the full dashboard as map talk, never
+// to the camp's talk window (Sam, 2026-10-11: "still goes to camp UI").
+const PLATES = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/";
+function talkUrl(npc, said){
+  const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: "/velkynvelve", scene: `${PLATES}img/${node.slug}.jpg`, area: node.name});
+  if (said) q.set("line", said.slice(0, 280));
+  return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
+}
 function closeTalk(talked){
   if (!talkNpc) return;
   try { if (!talked) window.speechSynthesis.cancel(); } catch (e) {}
@@ -1227,11 +1237,10 @@ function closeTalk(talked){
 $("talkGo").onclick = (e) => {
   if (!APP){ setTimeout(() => closeTalk(true), 50); return; }
   e.preventDefault();
-  const npc = talkNpc, nm = SPR[npc.id].json.name, said = $("talkLine").querySelector(".said")?.textContent?.replace(/^“|”$/g, "") || "";
+  const npc = talkNpc, said = $("talkLine").querySelector(".said")?.textContent?.replace(/^“|”$/g, "") || "";
+  const url = talkUrl(npc, said);
   closeTalk(true); saveWalk();
-  const q = new URLSearchParams({view: "full", from: "map", talk: nm, return: "/velkynvelve", scene: `${ASSET}img/${node.slug}.jpg`, area: node.name});
-  if (said) q.set("line", said.slice(0, 280));
-  window.top.location.href = "/?" + q.toString();
+  window.top.location.href = url;
 };
 // The walk survives a trip to the dashboard and back: where everyone stood, who has been talked to, the gate.
 function saveWalk(){
