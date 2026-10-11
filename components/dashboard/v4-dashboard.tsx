@@ -415,17 +415,20 @@ export function V4Dashboard(props: V4DashboardProps) {
   // room the party was last in (Sam, 2026-09-27). The camp link may name the
   // plate outright (?plate=fungal); otherwise the location name picks it.
   const [plateParam, setPlateParam] = useState<string | null>(null)
-  // Talking on the painted map happens in front of that area's own plate (?scene=, our storage only).
-  const [mapScene, setMapScene] = useState<{ url: string; area: string } | null>(null)
+  // Talking on the painted map: the area name rides along for the caption. The pictures do NOT come
+  // from the map. The dashboard only ever shows the high-definition photoreal painting of where the
+  // party is (Sam, 2026-10-11: "for dashboard UI we ONLY use high def, 4K, photorealistic backgrounds
+  // that represent where we are"), so the map's pixel plate is never used here.
+  const [mapScene, setMapScene] = useState<{ area: string } | null>(null)
   useEffect(() => {
     if (!talkMode) return
     const q = new URLSearchParams(window.location.search)
     setPlateParam(q.get("plate"))
-    const scene = q.get("scene")
-    if (scene && scene.startsWith("https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/")) setMapScene({ url: scene, area: (q.get("area") ?? "").slice(0, 60) })
+    const area = q.get("area")?.trim()
+    if (area) setMapScene({ area: area.slice(0, 60) })
   }, [talkMode])
   const talkBiome = talkMode && props.talkFrom !== "map" ? campBiome(props.environment.name, plateParam) : null
-  const talkPlate = talkBiome ? CAMP_PLATES[talkBiome] : talkMode && props.talkFrom === "map" ? mapScene?.url ?? null : null
+  const talkPlate = talkBiome ? CAMP_PLATES[talkBiome] : null
   const stageBackdrop = talkPlate ?? props.environment.npcBackdropUrl
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   // Restart Campaign DOES clear the dialogue table — the reason it looked like
