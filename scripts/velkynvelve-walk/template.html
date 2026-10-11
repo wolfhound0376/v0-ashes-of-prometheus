@@ -1012,10 +1012,13 @@ let voiceAudio = null;
 async function speakCanon(id, text){         // the game's ElevenLabs route: canon voices by NPC name (Eldeth, Ront...)
   const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: SPR[id].json.name})});
   if (!res.ok) throw new Error("tts " + res.status);
-  const url = URL.createObjectURL(await res.blob());
-  if (voiceAudio) voiceAudio.pause();
-  voiceAudio = new Audio(url); voiceAudio.onplay = () => { speaking = true; }; voiceAudio.onended = voiceAudio.onerror = () => { speaking = false; URL.revokeObjectURL(url); };
-  await voiceAudio.play();
+  // WebAudio, not an <audio> element: the game found <audio> silently mute in some Chromium builds.
+  const ctx = speakCanon.ctx || (speakCanon.ctx = new (window.AudioContext || window.webkitAudioContext)());
+  if (ctx.state === "suspended") await ctx.resume();
+  const buf = await ctx.decodeAudioData(await res.arrayBuffer());
+  if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+  src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
 }
 function speak(id, text){
   if (APP){ speakCanon(id, text).catch(() => speakBrowser(id, text)); return; }
