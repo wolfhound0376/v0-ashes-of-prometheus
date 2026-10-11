@@ -1492,6 +1492,18 @@ requestAnimationFrame(frame);
 
 // ---------- player view + budget
 let ME=0; const budget=[2,2,2,2]; const done=new Set(); let supplies=20, resolved=false;
+// REAL FOOD AND PACKS (2026-10-10). The pool and each player's pack come from the game (/api/camp/haul,
+// party_supplies + inventory_items) when it answers; `supplies=20` and the sample pack below are only what
+// the page shows until it does. Every outing's haul and every rest's charge is posted back the same way.
+// Nothing is invented on the way in: the server keeps only catalog slugs and says which it refused.
+const HAUL_API="/api/camp/haul"; let HAUL_LIVE=false; const HAUL_IDS={};
+function haulKey(){ try{ return localStorage.getItem("aop_forge_key")||""; }catch(e){ return ""; } }
+function postHaul(mode,delta,items,note){ if(!HAUL_LIVE) return Promise.resolve(null); const who=HAUL_IDS[PARTY[ME].name]||PARTY[ME].name;
+  return fetch(HAUL_API,{method:"POST",headers:{"content-type":"application/json","x-dm-key":haulKey()},body:JSON.stringify({who,mode,supplies_delta:delta,items,note:note||null})})
+    .then(r=>r.json().then(j=>{ if(!r.ok) throw new Error(j.error||("haul "+r.status)); if(typeof j.supplies==="number"){ supplies=j.supplies; const s=$("sup"); if(s) s.textContent=supplies; }
+      if(j.rejected&&j.rejected.length) speak(`<b>THE PACK</b>\nNot in the catalog, so not kept: ${j.rejected.map(x=>x.slug).join(", ")}. The DM decides what that was.`); return j; }))
+    .catch(e=>{ console.warn("[camp] haul not saved:",e.message); speak(`<b>THE PACK</b>\nThe game did not record that (${e.message}). It lives in this page only until it does.`); return null; }); }
+function packDiff(before,after){ const out=[]; new Set([...Object.keys(before),...Object.keys(after)]).forEach(s=>{ const d=(after[s]||0)-(before[s]||0); if(d>0) out.push({slug:s,quantity:d}); }); return out; }
 const $=(id)=>document.getElementById(id);
 function refresh(){ $("acts").textContent=`${budget[ME]}/2`; $("acts").classList.toggle("zero",budget[ME]===0); $("subacts").textContent=budget[ME]; $("open").disabled=done.has(ME)||resolved; $("talkbtn").disabled=done.has(ME)||resolved; $("sleeplbl").textContent=done.has(ME)?`Waiting (${4-done.size})`:"Sleep"; $("sleep").hidden=resolved; }
 // Results go to the log under the scene (Sam, 9/27), newest first — never over the painting.
@@ -2811,7 +2823,7 @@ function startWorld(mode){ const p=PARTY[ME], f=me();
   const preySlug=mode==="hunt"&&extra.prey&&MAL_INTRO.prey[extra.prey.slug]?extra.prey.slug:null; fOpen(mode,mode.toUpperCase(),MALBOX(preySlug?MAL_INTRO.prey[preySlug]:MAL_INTRO[mode])+(dmView?`<span class="dmx">${sub} Rivers cross only at fords, the chasm only on its bridges. <b>Get back to the fire before the lantern dies.</b></span>`:"")); setTimeout(()=>fMalVoice(preySlug?"hunt_"+preySlug:"intro_"+mode),250);
   const camp={x:W.camp.x*VPX,y:W.camp.y*VPX};
   const occ=F.lairOccupant(FROWS,rng);
-  FLD={mode,...extra,t:0,pops:[],fx:[],foes:[],screenFoes:N.screenFoes,hp:p.hp,hpMax:p.hpMax,oil:F.LANTERN_WORLD_SECONDS,hour:0,hourT:F.HOUR_SECONDS,W,occ,lairState:null,
+  FLD={mode,haulSnap:{supplies:supplies,pack:{...PACK}},...extra,t:0,pops:[],fx:[],foes:[],screenFoes:N.screenFoes,hp:p.hp,hpMax:p.hpMax,oil:F.LANTERN_WORLD_SECONDS,hour:0,hourT:F.HOUR_SECONDS,W,occ,lairState:null,
     sc:{x:Math.floor(W.camp.x/SCW),y:Math.floor(W.camp.y/SCH)},seen:N.seen,searched:N.searched,hero:fHero(camp.x,camp.y+120),finds:[],ended:false,log:[],busy:false,scroll:null,screens:{},
     // world <-> screen
     ox(){ return this.sc.x*SCW*VPX; }, oy(){ return this.sc.y*SCH*VPX+YOFF; },
@@ -2982,6 +2994,7 @@ function endWorld(caught,lead){ const L=FLD; if(!L||L.ended) return; L.ended=tru
   if(L.wildFound&&L.wildFound.length) lines.push(`Picked out of the scrub: ${L.wildFound.join(", ")}.`);
   if(L.won&&L.won.length) lines.push(`Won ${L.won.length} fight${L.won.length===1?"":"s"} (${L.won.join(", ")}) — XP is the DM's to award.`);
   const dm=L.log.filter(x=>/^FOR THE DM/.test(x)); if(dm.length) lines.push(dm.join(" "));
+  if(L.haulSnap){ const dS=supplies-L.haulSnap.supplies, dI=packDiff(L.haulSnap.pack,PACK); if(dS>0||dI.length) postHaul(L.mode==="forage"||L.mode==="hunt"||L.mode==="explore"?L.mode:"wild",Math.max(0,dS),dI,lines.join(" ")); L.haulSnap=null; }
   const sum=`${lead?lead+" ":""}${p.name} walked ${L.seen.size} of ${screens} screens over ${L.hour+1} hour${L.hour?"s":""}${L.slain?`, killing ${L.slain} vermin`:""}. ${lines.join(" ")}${p.exhaustion?` Exhaustion: ${p.exhaustion}.`:""}`;
   const mal=fMalSummary(L,false); speak(`<b>MALACHAR</b>\n${mal.text}`); if(dmView) speak(`<b>${L.mode.toUpperCase()} — DM</b>\n${sum}`); fMalVoice("c_"+mal.key); if(caught){ fClose(); return; }
   const fl=L.W.flags.concat(L.flagsExtra||[]).concat(L.field?L.field.flags:[]).concat(L.huntFlags||[]);
@@ -2991,13 +3004,21 @@ $("fldgo").onclick=()=>{};
 $("fldx").onclick=()=>{ if(!FLD){ $("fld").hidden=true; return; } if(FLD.ended||FLD.down) { fClose(); return; } if(!FLD.busy) endWorld(false,FLD.atCamp?"":"(Closed early — in the game you would still have to walk back.)"); else fClose(); };
 
 
+// Read the real pool and packs once the page is up. The sample numbers stay if the game is unreachable.
+(function loadHaul(){ fetch(HAUL_API,{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>{ if(!j||!j.characters) return; HAUL_LIVE=true;
+    supplies=Math.max(0,Number(j.supplies)||0); const s=$("sup"); if(s) s.textContent=supplies;
+    PARTY.forEach((m,i)=>{ if(!m.pc) return; const c=j.characters.find(x=>x.short.toLowerCase()===m.name.toLowerCase()||x.name.toLowerCase()===m.name.toLowerCase()); if(!c) return; HAUL_IDS[m.name]=c.id;
+      const pk=Object.assign({},j.packs[c.id]||{}); PACKS[i]=pk; if(i===ME){ Object.keys(PACK).forEach(k=>delete PACK[k]); Object.assign(PACK,pk); } });
+    if(!j.pool_exists) console.warn("[camp] party_supplies has no row yet; the first haul creates it");
+    try{ refresh(); }catch(e){} }).catch(e=>console.warn("[camp] haul read failed:",e.message)); })();
+
 let othersTimer=null;
 function checkAllDone(){
   if(done.has(ME)&&!othersTimer){ othersTimer=setInterval(()=>{ const n=[0,1,2,3].find(i=>i!==ME&&!done.has(i)); if(n==null){ clearInterval(othersTimer); othersTimer=null; resolveNight(); return; } done.add(n); budget[n]=0; const f=figures[n]; leave(f); goTo(f,"bed",[BEDS[n][0],BEDS[n][1]+30],"south"); refresh(); },3200); }
   if(!done.has(ME)&&othersTimer){ clearInterval(othersTimer); othersTimer=null; }
 }
 function resolveNight(){ resolved=true; refresh();
-  const pe=C.passiveCampEncounter({name:BIOMES[biome].name,metadata:{safe:false}},rng); const cost=C.fullRestRations(4); supplies=Math.max(0,supplies-cost); $("sup").textContent=supplies; merchant=!!pe.merchantPresent;
+  const pe=C.passiveCampEncounter({name:BIOMES[biome].name,metadata:{safe:false}},rng); const cost=C.fullRestRations(4); supplies=Math.max(0,supplies-cost); $("sup").textContent=supplies; postHaul("rest",-cost,[],`Full rest at the fire: ${cost} rations.`); merchant=!!pe.merchantPresent;
   if(pe.hostile){ flash(`${(pe.visitor||"someone").toUpperCase()} IN THE DARK — ROLL INITIATIVE`,true); figures.forEach(leave); STATIONS.fire.spots.forEach((s,k)=>{const f=figures[k]; if(f){occupied.add("fire"+k);f.spot="fire"+k;goTo(f,"fire",s,DIRS[dirFrom(FIRE.x-s[0],FIRE.y-s[1])]);}}); speak(`<b>THE NIGHT</b>\n${pe.note}\nSurprise: each watcher's passive Perception against their Stealth, then initiative.`); }
   else { sleeping=true; figures.forEach(f=>{ if(f.seated) return; leave(f); chooseStation(f); }); flash(pe.visitor?`${(pe.who||pe.visitor).toUpperCase()} COMES TO THE FIRE`:"THE NIGHT PASSES"); speak(`<b>THE NIGHT</b>\n${pe.note}\nFull rest: ${cost} rations spent, ${supplies} left. At dawn: all hit points, half the Hit Dice, every slot${figures.slice(0,4).some(f=>(f.hp??1)<=0)?` — but not for ${figures.slice(0,4).filter(f=>(f.hp??1)<=0).map(f=>f.name).join(" and ")}: a long rest needs at least 1 hit point (SRD)`:""}.`); }
 }
