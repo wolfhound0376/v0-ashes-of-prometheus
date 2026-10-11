@@ -288,6 +288,10 @@ export default function DashboardPage() {
   const [talkFrom, setTalkFrom] = useState<"camp" | "map">("camp")
   // The map area the talk is happening in ("Slave Pen"), so Malachar plays it there, not by the fire.
   const [talkArea, setTalkArea] = useState<string | null>(null)
+  // Who the player was walking as on the map (?as=Kenta). The dashboard plays as that character for the
+  // conversation (Sam, 2026-10-11: "populate ONLY the character that is playing"). Only for a browser
+  // that holds no claim: a claimed seat always stays its own character.
+  const [talkAs, setTalkAs] = useState<string | null>(null)
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
   // straight into the talk mini-dashboard with that person, no intro screens.
   useEffect(() => {
@@ -299,6 +303,8 @@ export default function DashboardPage() {
       setTalkFrom("map")
       const area = url.searchParams.get("area")?.trim()
       if (area) setTalkArea(area.slice(0, 60))
+      const as = url.searchParams.get("as")?.trim()
+      if (as) setTalkAs(as.slice(0, 60))
     }
     // Only a same-site path may be a way back (never another site, never //host).
     const back = url.searchParams.get("return")
@@ -309,6 +315,7 @@ export default function DashboardPage() {
     url.searchParams.delete("talk")
     url.searchParams.delete("line")
     url.searchParams.delete("return")
+    url.searchParams.delete("as")
     window.history.replaceState(null, "", url.pathname + url.search + url.hash)
   }, [])
   // The camp scene's Alchemy tile links here as /?view=compact&from=camp&bench=1
@@ -1052,6 +1059,16 @@ if (error) {
   // the same seat. It is NEVER written to sessions.active_character_id — that
   // pointer is the DM-only "spotlight" and writing it here is exactly the bug
   // that made the last picker the speaker for everyone.
+  // Map talk: play as whoever was walking on the map, for this visit only (not saved as this browser's
+  // character). Never over a claim, and never when there is a claim token to honour.
+  useEffect(() => {
+    if (!talkAs || claimLocked || claimToken) return
+    const want = talkAs.toLowerCase()
+    const pc = players.find((c) => c.name.toLowerCase() === want)
+      ?? players.find((c) => c.name.toLowerCase().split(/\s+/)[0] === want.split(/\s+/)[0])
+    if (pc && pc.id !== selectedCharacterId) setSelectedCharacterId(pc.id)
+  }, [talkAs, claimLocked, claimToken, players, selectedCharacterId])
+
   const handleCharacterSelect = (characterId: string) => {
     setSelectedCharacterId(characterId)
     if (typeof window !== 'undefined') {

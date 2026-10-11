@@ -1272,12 +1272,14 @@ async function openTalk(npc, opts = {}){
   bark(npc, line, 7000, {talk: true}); speak(npc.id, line);
 }
 let talkNpc = null;
+// The game character each walker is (the dashboard plays as whoever is moving when the talk starts).
+const PLAYS_AS = {kenta: "Kenta", samson: "Samson", scott: "Scott", freia: "Fifi of Copperas Cove"};
 // The way into the dashboard for this conversation. The game opens it in place; the stand-alone preview
 // (no game around it) opens the live game in a new tab. Both go to the full dashboard as map talk, never
 // to the camp's talk window (Sam, 2026-10-11: "still goes to camp UI").
 const PLATES = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/";
 function talkUrl(npc, said){
-  const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: "/velkynvelve", scene: `${PLATES}img/${node.slug}.jpg`, area: node.name});
+  const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: "/velkynvelve", scene: `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
   if (said) q.set("line", said.slice(0, 280));
   return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
 }
