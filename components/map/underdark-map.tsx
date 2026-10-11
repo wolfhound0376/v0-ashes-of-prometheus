@@ -980,12 +980,23 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
               <div className="mt-1 font-serif text-lg leading-snug text-[#f5c34d]">{halt.title}</div>
               {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
               {halt.kind === "camp" && (
-                <a
-                  href="/camp"
-                  className="mt-3 block rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#e0a35c] hover:border-[#e0a35c]"
-                >
-                  TO CAMP AT THE FIRE →
-                </a>
+                <>
+                  <a
+                    href="/camp"
+                    className="mt-3 block rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#e0a35c] hover:border-[#e0a35c]"
+                  >
+                    TO CAMP AT THE FIRE →
+                  </a>
+                  {/* p.25: food and water can be gathered at a normal or slow pace, never fast.
+                      The camp's Forage / Hunt tiles post their haul to the real pool and packs. */}
+                  {PACES[march.pace].canForage ? (
+                    <div className="mt-2 text-center text-[11px] text-[#9a8fb0]">
+                      {march.pace === "slow" ? "Slow pace: improved foraging tonight." : "Normal pace: the party may forage and hunt at camp."}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-center text-[11px] text-[#c96a6a]">Fast pace: no foraging today (OotA-Enc p.24).</div>
+                  )}
+                </>
               )}
 
               {halt.rolls.length > 0 && (
