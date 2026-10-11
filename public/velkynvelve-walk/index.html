@@ -100,6 +100,13 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .log p{margin:0;background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:6px 10px;line-height:1.35;transition:opacity 1s ease}
 .log p.old{opacity:.55}
 .log p em{color:var(--ember);font-style:normal}
+/* what the people around you are doing (not saying): a quiet strip in the black under the painting */
+.acts{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;width:min(620px,calc(100% - 260px));display:grid;gap:2px;pointer-events:none;text-align:center}
+.acts p{margin:0;font-style:italic;font-size:13px;line-height:1.35;color:#b9adc9;text-shadow:0 1px 2px #000;transition:opacity 1.2s ease}
+.acts p.old{opacity:.5}
+.acts p.gone{opacity:0}
+.acts.over p{background:rgba(9,7,13,.78);border-radius:4px;padding:2px 10px;justify-self:center}   /* no black band: a dark backing so it reads over the painting */
+@media (max-width:700px){.acts{width:calc(100% - 24px);bottom:56px}}
 
 .zoom{position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:4px}
 .zoom button{width:32px;height:32px;border:0;background:transparent;color:var(--ink);font-size:1.1rem;border-radius:4px;cursor:pointer}
@@ -216,6 +223,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="toast" id="toast" hidden></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
+    <div class="acts" id="acts" aria-live="polite"></div>
     <div class="zoom">
       <button id="zOut" aria-label="Zoom out">−</button>
       <button class="fit" id="zFit">Fit</button>
@@ -308,7 +316,7 @@ let actors = [], party = [], npcs = [], foes = [];
 let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
-const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}};
+const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}};
 let now = performance.now();
 
 function mkActor(id, x, y, kind, extra = {}){
@@ -429,7 +437,15 @@ function clampView(v){
   v.ty = h <= r.height ? (r.height - h) / 2 : Math.min(0, Math.max(r.height - h, v.ty));
 }
 let sliding = false;
-function applyView(){ if (!sliding) clampView(view); world.style.transform = `translate(${view.tx}px,${view.ty}px) scale(${base * view.z})`; }
+function applyView(){ if (!sliding) clampView(view); world.style.transform = `translate(${view.tx}px,${view.ty}px) scale(${base * view.z})`; placeActs(); }
+// The narration strip sits in the black band under the painting when there is one; otherwise low over it.
+function placeActs(){
+  const el = $("acts"); if (!el) return;
+  const h = stage.clientHeight, bottom = view.ty + NAT_H * base * view.z, band = h - bottom;
+  const inBand = band >= 34; el.classList.toggle("over", !inBand);
+  if (inBand){ el.style.top = Math.round(bottom + Math.min(14, band * .18)) + "px"; el.style.bottom = "auto"; }
+  else { el.style.top = "auto"; el.style.bottom = ""; }
+}
 function resize(){
   const r = stage.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1);
   cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
@@ -551,9 +567,31 @@ function drawChain(c){
 }
 
 // ---------- bubbles, tooltips, log ----------
+// Sam, 2026-10-11: "Only when someone talks should they have a talking bubble." What people DO goes to
+// the narration strip under the painting; a balloon is only for words actually said (or shouted).
+// An important line is spoken aloud in their voice the first time it comes up.
 const bubbles = []; let lastAnyBark = -1e9;
+function narrate(a, text){
+  if (!text) return;
+  const el = $("acts"), p = document.createElement("p"); p.textContent = text.replace(/^\(|\)$/g, ""); el.appendChild(p);
+  [...el.children].forEach((c, i, all) => c.classList.toggle("old", i < all.length - 1));
+  while (el.children.length > 3) el.firstChild.remove();
+  setTimeout(() => { p.classList.add("gone"); setTimeout(() => p.remove(), 1300); }, 8000);
+  if (a){ a.lastBark = now; lastAnyBark = now; }
+}
+// A character's idle line: narration unless it is written as speech (opens with a quotation mark).
+function ambient(a){
+  const line = a && a.barks && a.barks.length ? a.barks[Math.floor(Math.random() * a.barks.length)] : "";
+  if (!line) return;
+  if (/^["“]/.test(line)) bark(a, line.replace(/^["“]|["”]$/g, "")); else narrate(a, line);
+}
 function bark(a, text, ms = 4200, opts = {}){
   if (!a) return;
+  if (/^\(.*\)$/.test(text.trim())){ narrate(a, text); return; }     // "(hiss)" is a sound described, not words
+  if (opts.voice){                                                     // important: heard in their own voice, once
+    const key = a.id + ":" + text;
+    if (!state.voiced[key]){ state.voiced[key] = true; speak(a.id, text); }
+  }
   bubbles.filter(b => b.a === a).forEach(b => b.until = 0);
   const el = document.createElement("div"); el.className = "bubble" + (a.kind === "foe" ? " foe" : "");
   const full = SPR[a.id].json.name, short = SHORT[a.id] || full, first = full.split(" ")[0];
@@ -1016,7 +1054,7 @@ function openGate(){
       j.path = [{x: 812, y: 812, s: .95, jump: true}, {x: 790, y: 900, s: 1}];
       j.onArrive = () => {
         j.face = faceOf(leader.x - j.x, leader.y - j.y);
-        bark(j, "Go. Quickly, before the next watch.", 3600);       // placeholder line, not book text
+        bark(j, "Go. Quickly, before the next watch.", 3600, {voice: true});       // placeholder line, not book text
         setTimeout(() => {
           j.path = [{x: 812, y: 812, s: .95, out: true}, {x: 540, y: 700, s: fs * room(700), jump: true}, {x: j.post.x, y: j.post.y, s: fs * room(j.post.y)}];
           j.onArrive = () => { j.static = true; j.face = 2; j.fixedScale = fs; j.big = 1; };
@@ -1312,7 +1350,7 @@ function click(w){
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
     const n = hitActor(npcs, w);
-    if (n){ if (n.talk && !state.talked[n.id]){ walkTo(nearNpc(n), () => openTalk(n)); } else if (n.talk){ openTalk(n); } else { bark(n, n.barks[Math.floor(Math.random() * n.barks.length)] || "…"); } return; }
+    if (n){ if (n.talk && !state.talked[n.id]){ walkTo(nearNpc(n), () => openTalk(n)); } else if (n.talk){ openTalk(n); } else { ambient(n); } return; }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat" && !combatBusy){
     const a = activeActor(); if (!a || a.kind !== "pc") return;
@@ -1345,7 +1383,7 @@ function interact(){
   const n = npcs.map(a => [a, Math.hypot(a.x - leader.x, a.y - leader.y)]).filter(([, d]) => d < 190 * node.scale).sort((a, b) => a[1] - b[1])[0];
   if (!n){ log("No one close enough. Walk up to someone and press <em>E</em>."); return; }
   const a = n[0];
-  if (a.talk) openTalk(a); else bark(a, a.barks[Math.floor(Math.random() * a.barks.length)] || "…");
+  if (a.talk) openTalk(a); else ambient(a);
 }
 addEventListener("resize", resize);
 // the stage can change size without the window doing so (fonts, the party bar); keep the canvas matched to it,
@@ -1367,7 +1405,7 @@ $("dmTalk").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   const n = npcs.find(a => a.talk);
   if (n){ state.talked[n.id] = false; state.declined[n.id] = false; openTalk(n); }
   else log("Nobody here wants to talk. The pen (Area 11) has Eldeth."); };
-$("dmBark").onclick = () => { toggleDm(false); const n = npcs.filter(a => a.barks && a.barks.length); if (n.length){ const a = n[Math.floor(Math.random() * n.length)]; bark(a, a.barks[Math.floor(Math.random() * a.barks.length)]); } else log("No one here to comment."); };
+$("dmBark").onclick = () => { toggleDm(false); const n = npcs.filter(a => a.barks && a.barks.length); if (n.length) ambient(n[Math.floor(Math.random() * n.length)]); else log("No one here to comment."); };
 $("dmReset").onclick = () => { toggleDm(false); state.cleared = {}; log("Ambushes reset."); };
 
 // ---------- keyboard ----------
@@ -1516,12 +1554,12 @@ function update(dt){
       if (n.talk && !state.talked[n.id] && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){
         leader.path = []; openTalk(n);
       } else if (!n.talk && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && n.barks.length){
-        bark(n, n.barks[Math.floor(Math.random() * n.barks.length)]); n.face = faceOf(leader.x - n.x, leader.y - n.y);
+        ambient(n); n.face = faceOf(leader.x - n.x, leader.y - n.y);
       }
     }
     if (now > nextAmbient && npcs.length){
       const pool = npcs.filter(n => n.barks.length && now - n.lastBark > 15000);
-      if (pool.length){ const a = pool[Math.floor(Math.random() * pool.length)]; bark(a, a.barks[Math.floor(Math.random() * a.barks.length)]); }
+      if (pool.length) ambient(pool[Math.floor(Math.random() * pool.length)]);
       nextAmbient = now + 14000 + Math.random() * 10000;
     }
   }
