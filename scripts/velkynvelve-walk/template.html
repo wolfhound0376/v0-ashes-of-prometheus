@@ -1073,10 +1073,11 @@ $("talkGo").onclick = (e) => {
 };
 // The walk survives a trip to the dashboard and back: where everyone stood, who has been talked to, the gate.
 function saveWalk(){
+  if (!leader || !party.length || !leader.x) return;
   try { sessionStorage.setItem("aop_walk_state", JSON.stringify({cur, leader: leader && leader.id, party: party.map(p => ({id: p.id, x: Math.round(p.x), y: Math.round(p.y), face: p.face})), state})); } catch (e) {}
 }
 function loadWalk(){
-  try { const s = JSON.parse(sessionStorage.getItem("aop_walk_state") || "null"); return s && SPEC[s.cur] ? s : null; } catch (e) { return null; }
+  try { const s = JSON.parse(sessionStorage.getItem("aop_walk_state") || "null"); return s && SPEC[s.cur] && Array.isArray(s.party) && s.party.length ? s : null; } catch (e) { return null; }
 }
 addEventListener("pagehide", () => { if (mode !== "load") saveWalk(); });
 $("talkNo").onclick = () => closeTalk(false);
