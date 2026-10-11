@@ -4201,24 +4201,35 @@ Rules:
       // supply per mouth — never both — and decides whether the long rest
       // gives anything at all (lib/camp.ts `campRest`). Outside a camp the
       // SRD night below runs exactly as before.
-      const camp: CampRestDecision | null = campingAtRest ? campRest("full", before, partySize) : null
-      const cost = camp ? camp.cost : suppliesForParty(partySize)
-      const fed = camp ? camp.allowed : before >= cost && cost > 0
+      //
+      // Sam, 2026-10-10: "Retire chat charge" — Camp at the Fire (/camp) is the
+      // camp. Its SLEEP charges the full rest's rations through /api/camp/haul,
+      // so AT CAMP this route charges nothing and gates nothing on rations;
+      // charging here too fed the party twice. `campRest` still decides what
+      // the night would cost, for the note. Outside a camp nothing changes.
+      const priced: CampRestDecision | null = campingAtRest ? campRest("full", before, partySize) : null
+      // The decision the rest of this block reads: at camp the night is always
+      // allowed here (the fire already settled it) and costs nothing here.
+      const camp: CampRestDecision | null = priced ? { ...priced, allowed: true, cost: 0 } : null
+      const cost = camp ? 0 : suppliesForParty(partySize)
+      const fed = camp ? true : before >= cost && cost > 0
       let after = before
       const refusedAtCamp = (name: string, hp: number | null, dice: number | null): RestOutcome => ({
         benefited: false, hp: Math.max(0, hp ?? 0), hitDiceRemaining: dice, slots: null,
         slotsRestored: 0, hitDiceBack: 0, clearTemp: false,
         note: `${name} gains nothing from the night — the rations did not buy a long rest.`,
       })
-      if (fed) after = await chargePartyRations(timeAdmin, rations, cost)
+      if (fed && cost > 0) after = await chargePartyRations(timeAdmin, rations, cost)
 
       const notes: string[] = []
       notes.push(
-        fed
-          ? `The party eats: ${cost} supplies spent, ${after} left.`
-          : `NOBODY EATS — ${before} supplies for ${partySize} mouths.`,
+        camp
+          ? `At camp: rations are charged at the fire (Camp at the Fire → SLEEP), not here. Pool now ${before}.`
+          : fed
+            ? `The party eats: ${cost} supplies spent, ${after} left.`
+            : `NOBODY EATS — ${before} supplies for ${partySize} mouths.`,
       )
-      if (camp) notes.push(`Camp: ${camp.note}`, ...camp.flags)
+      if (priced) notes.push(`Camp (for the DM): the fire prices this night at ${priced.cost} rations — ${priced.note}`, ...priced.flags)
       // Sam, 2026-09-27: "Dawn items charge at long rest" — no dawn down here.
       if (!camp || camp.allowed) {
         try {
@@ -4411,10 +4422,11 @@ Rules:
     // AT CAMP the rations price the partial rest too (camp doc §10).
     let shortCamp: CampRestDecision | null = null
     if (shortRestArgs && campingAtRest) {
+      // Sam, 2026-10-10: the fire charges rations, chat does not. The partial
+      // rest is priced for the DM's note and always allowed here.
       const rations = await readPartyRations(admin)
       const size = await countPartyForCamp()
-      shortCamp = campRest("partial", rations.total, size)
-      if (shortCamp.allowed && shortCamp.cost > 0) await chargePartyRations(admin, rations, shortCamp.cost)
+      shortCamp = { ...campRest("partial", rations.total, size), allowed: true, cost: 0 }
       if (shortCamp.allowed) await setCampBudgets(0)
       else await reopenCamp("the short rest was refused; food must be found before anyone rests.")
       if (!shortCamp.allowed) {
