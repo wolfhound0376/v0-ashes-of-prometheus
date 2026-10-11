@@ -1002,9 +1002,9 @@ function openGate(){
   state.gateOpen = true; state.doorShut = false;                 // saved now; the door itself swings when he gets there
   log("Someone is at the lock. <em>Jorlan's gambit.</em>");
   j.static = false; j.patrol = null; stopActivity(j);
-  const room = y => 1 / (node.scale * depthAt(y));
-  j.big = j.fixedScale * room(j.y); j.fixedScale = 0;
-  j.path = [{x: 540, y: 700, s: .82 * room(700), out: true}];
+  const room = y => 1 / (node.scale * depthAt(y)), fs = j.fixedScale || 1.35;   // his size on the landing = Sarith's
+  j.big = fs * room(j.y); j.fixedScale = 0;
+  j.path = [{x: 540, y: 700, s: fs * room(700), out: true}];
   j.onArrive = () => {
     sfx("lock-picked", .9);
     setTimeout(() => { setDoor(true); sfx("door-open", .85); }, 600);
@@ -1014,8 +1014,8 @@ function openGate(){
         j.face = faceOf(leader.x - j.x, leader.y - j.y);
         bark(j, "Go. Quickly, before the next watch.", 3600);       // placeholder line, not book text
         setTimeout(() => {
-          j.path = [{x: 812, y: 812, s: .95, out: true}, {x: 540, y: 700, s: .82 * room(700), jump: true}, {x: j.post.x, y: j.post.y, s: .82 * room(j.post.y)}];
-          j.onArrive = () => { j.static = true; j.face = 2; j.fixedScale = .82; j.big = 1; };
+          j.path = [{x: 812, y: 812, s: .95, out: true}, {x: 540, y: 700, s: fs * room(700), jump: true}, {x: j.post.x, y: j.post.y, s: fs * room(j.post.y)}];
+          j.onArrive = () => { j.static = true; j.face = 2; j.fixedScale = fs; j.big = 1; };
         }, 4200);
         const r = npcs.find(n => n.id === "ront"); if (r) bark(r, "Finally.", 3000);
       };

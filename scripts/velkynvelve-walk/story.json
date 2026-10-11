@@ -43,7 +43,7 @@
     "y": 465,
     "face": 6,
     "backdrop": true,
-    "fixedScale": 0.8,
+    "fixedScale": 1.35,
     "patrol": [
      [
       70,
@@ -62,7 +62,7 @@
     "y": 555,
     "face": 2,
     "backdrop": true,
-    "fixedScale": 0.8,
+    "fixedScale": 1.35,
     "patrol": [
      [
       345,
@@ -82,7 +82,7 @@
     "face": 2,
     "backdrop": true,
     "static": true,
-    "fixedScale": 0.82,
+    "fixedScale": 1.35,
     "barks": []
    }
   ],
