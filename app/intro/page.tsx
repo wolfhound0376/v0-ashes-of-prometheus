@@ -31,6 +31,8 @@ export default function IntroPage() {
     // Seen once per browser session — the dashboard checks this before
     // sending anyone back here.
     window.sessionStorage.setItem("aop_intro_seen", "1")
+    // ...and remembered for good: the dashboard skips the intro for this browser from now on.
+    try { window.localStorage.setItem("aop_intro_seen_ever", "1") } catch { /* storage blocked */ }
     // A browser that already holds a seat (or the DM screen) re-enters its
     // own dashboard; strangers go to the code door.
     const role = window.localStorage.getItem("aop_access_role")

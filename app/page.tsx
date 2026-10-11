@@ -281,6 +281,11 @@ export default function DashboardPage() {
   // Who the player sat down with at camp. While set, the compact view steps
   // aside and the dashboard shows only the NPC / DM window for the conversation.
   const [campTalkWith, setCampTalkWith] = useState<string | null>(null)
+  // Map talk: /?view=compact&from=map&talk=<name>&line=<opener>&return=/velkynvelve. The painted map
+  // hands over the NPC and the line they opened with; "Back to the map" returns to `return`.
+  const [talkReturn, setTalkReturn] = useState<string | null>(null)
+  const [talkOpening, setTalkOpening] = useState<string | null>(null)
+  const [talkFrom, setTalkFrom] = useState<"camp" | "map">("camp")
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
   // straight into the talk mini-dashboard with that person, no intro screens.
   useEffect(() => {
@@ -288,8 +293,16 @@ export default function DashboardPage() {
     const talk = url.searchParams.get("talk")?.trim()
     if (!talk) return
     setCampTalkWith(talk.slice(0, 60))
-    // Drop it from the address so a refresh after "Back to camp" stays at camp.
+    if (url.searchParams.get("from") === "map") setTalkFrom("map")
+    // Only a same-site path may be a way back (never another site, never //host).
+    const back = url.searchParams.get("return")
+    if (back && back.startsWith("/") && !back.startsWith("//")) setTalkReturn(back.slice(0, 200))
+    const opening = url.searchParams.get("line")?.trim()
+    if (opening) setTalkOpening(opening.slice(0, 280))
+    // Drop them from the address so a refresh after "Back to camp" stays at camp.
     url.searchParams.delete("talk")
+    url.searchParams.delete("line")
+    url.searchParams.delete("return")
     window.history.replaceState(null, "", url.pathname + url.search + url.hash)
   }, [])
   // The camp scene's Alchemy tile links here as /?view=compact&from=camp&bench=1
@@ -613,8 +626,13 @@ export default function DashboardPage() {
       // Coming back from the camp scene is not a new arrival: the player is
       // mid-session, so the intro ceremony is skipped (and stays skipped for
       // this session). The claim checks below still run exactly as before.
-      if (params.get("from") === "camp") window.sessionStorage.setItem("aop_intro_seen", "1")
-      if (!window.sessionStorage.getItem("aop_intro_seen")) {
+      // The same goes for the painted map (from=map). And once a browser has
+      // sat through the intro it is not shown again (Sam, 2026-10-11: "It's
+      // annoying to have to do that every time"); /intro itself still plays it.
+      if (params.get("from") === "camp" || params.get("from") === "map") window.sessionStorage.setItem("aop_intro_seen", "1")
+      let introSeenEver = false
+      try { introSeenEver = window.localStorage.getItem("aop_intro_seen_ever") === "1" } catch { /* storage blocked */ }
+      if (!window.sessionStorage.getItem("aop_intro_seen") && !introSeenEver) {
         window.location.replace("/intro")
         return
       }
@@ -1726,7 +1744,13 @@ if (error) {
         isThinking={lichLoading}
         claimLocked={claimLocked}
         talkWith={campTalkWith}
-        onEndTalk={() => setCampTalkWith(null)}
+        talkFrom={talkFrom}
+        talkOpening={talkOpening}
+        onEndTalk={() => {
+          if (talkReturn) { window.location.href = talkReturn; return }
+          setCampTalkWith(null)
+          setTalkOpening(null)
+        }}
       />
   )}
 
