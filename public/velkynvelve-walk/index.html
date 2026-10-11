@@ -1,0 +1,1441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Velkynvelve</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Comic+Neue:wght@700&family=Bangers&display=swap">
+<style>
+/* A dark play room: one full-bleed stage for the painted plate, party roster beneath.
+   Single dark theme by choice, same as the plate viewer: the paintings are dark and read best on near-black. */
+:root{
+  color-scheme: dark;
+  --room:#0b0a10; --stage:#06050a; --panel:rgba(16,14,24,.9); --panel-solid:#100e18;
+  --ink:#ebe6f5; --ink-dim:#a39cb8; --rule:#2c2740;
+  --ember:#e8a24a; --fungus:#62e3c6; --blood:#d0453a;
+  --parch:#efe4cc; --parch-ink:#2a2018;
+  --face-display:"IM Fell English SC","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --face-body:"Alegreya Sans","Gill Sans","Segoe UI",system-ui,sans-serif;
+  --face-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --s-1:.78rem; --s0:.92rem; --s1:1.05rem; --s2:1.35rem; --s3:2rem; --s4:3.1rem;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--room);color:var(--ink);font-family:var(--face-body);font-size:var(--s0);overflow:hidden}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr auto;padding:10px 16px;gap:10px}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
+.brand{display:flex;align-items:baseline;gap:12px;min-width:0}
+.brand h1{font-family:var(--face-display);font-weight:400;font-size:var(--s2);margin:0;letter-spacing:.02em}
+.brand .sub{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand .sub b{color:var(--ember);font-weight:500}
+.tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tbtn{background:none;border:1px solid var(--rule);color:var(--ink-dim);border-radius:4px;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.06em;padding:4px 10px;cursor:pointer}
+.tbtn:hover{color:var(--ink);border-color:var(--ink-dim)}
+.tbtn[aria-pressed="true"],.tbtn[aria-expanded="true"]{color:var(--fungus);border-color:var(--fungus)}
+input[type=range]{width:84px;accent-color:var(--fungus)}
+
+.stage{position:relative;background:var(--stage);border:1px solid var(--rule);border-radius:6px;overflow:hidden;min-height:0;touch-action:none;user-select:none;-webkit-user-select:none;cursor:crosshair}
+.stage.pointer{cursor:pointer}
+.stage.dragging{cursor:grabbing}
+.world{position:absolute;left:0;top:0;width:2400px;height:1339px;transform-origin:0 0;will-change:transform;pointer-events:none}
+.world img.plate{position:absolute;inset:0;width:2400px;height:1339px;max-width:none}
+#cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated}
+.over{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+
+/* FX layer, carried over from the plate viewer */
+.fx{position:absolute;inset:0;overflow:hidden}
+.fx[hidden]{display:none}
+.fire{position:absolute;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:screen;background:radial-gradient(circle,rgba(255,214,140,.62) 0%,rgba(255,150,50,.30) 26%,rgba(255,110,30,.10) 50%,transparent 70%);animation:flick var(--d,1.3s) steps(1,end) infinite;animation-delay:var(--dl,0s)}
+@keyframes flick{0%{opacity:.55;scale:1}9%{opacity:.9;scale:1.04}17%{opacity:.62}28%{opacity:1;scale:1.06}36%{opacity:.48;scale:.95}47%{opacity:.82}58%{opacity:.6;scale:1}66%{opacity:.95;scale:1.05}78%{opacity:.5;scale:.96}88%{opacity:.86;scale:1.02}100%{opacity:.55;scale:1}}
+.cool{position:absolute;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:screen;background:radial-gradient(circle,rgba(170,248,235,.68) 0%,rgba(110,215,235,.30) 30%,rgba(90,160,255,.10) 52%,transparent 70%);animation:pulse var(--d,4s) ease-in-out infinite alternate;animation-delay:var(--dl,0s)}
+@keyframes pulse{from{opacity:.3;scale:.9}to{opacity:1;scale:1.12}}
+.cool.flare{animation-name:flare;animation-timing-function:ease-in-out;animation-direction:normal}
+@keyframes flare{0%,62%,100%{opacity:.35;scale:.95}74%{opacity:1;scale:1.3}84%{opacity:.7;scale:1.1}}
+.glint{position:absolute;transform:translate(-50%,-50%) rotate(var(--rot,0deg));mix-blend-mode:screen;background:radial-gradient(circle,rgba(255,255,255,.95) 0%,rgba(200,250,255,.5) 6%,transparent 14%),linear-gradient(90deg,transparent 0%,rgba(210,250,255,0) 30%,rgba(225,252,255,.9) 50%,rgba(210,250,255,0) 70%,transparent 100%) center/100% 3px no-repeat,linear-gradient(0deg,transparent 0%,rgba(210,250,255,0) 30%,rgba(225,252,255,.9) 50%,rgba(210,250,255,0) 70%,transparent 100%) center/3px 100% no-repeat;animation:glint var(--d,5s) ease-out infinite;animation-delay:var(--dl,0s);opacity:0}
+@keyframes glint{0%,70%,100%{opacity:0;scale:.3}76%{opacity:1;scale:1}88%{opacity:0;scale:.6}}
+.fall{position:absolute;overflow:hidden;mix-blend-mode:screen;-webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+.fall .sheet{position:absolute;left:0;right:0;top:-512px;bottom:0;background-repeat:repeat;will-change:transform;animation:flow var(--d,1s) linear infinite}
+.fall .sheet.mid{opacity:.8}
+.fall .sheet.slow{opacity:.55;filter:blur(2px)}
+.fall .boost{position:absolute;inset:0;background:linear-gradient(180deg,rgba(220,240,255,.35),rgba(235,248,255,.55));animation:surge 1.7s ease-in-out infinite alternate}
+@keyframes flow{from{transform:translateY(0)}to{transform:translateY(512px)}}
+@keyframes surge{from{opacity:.35}to{opacity:.8}}
+.mist{position:absolute;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:screen;background:radial-gradient(ellipse at center,rgba(230,242,255,.62) 0%,rgba(195,220,252,.28) 40%,transparent 70%);animation:mist var(--d,7s) ease-in-out infinite alternate;animation-delay:var(--dl,0s)}
+@keyframes mist{from{opacity:.45;scale:.9;translate:-4% 0}to{opacity:1;scale:1.2;translate:4% -3%}}
+.spray{position:absolute;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:screen;background:radial-gradient(circle,rgba(245,250,255,.85) 0%,rgba(215,235,255,.40) 30%,transparent 68%);animation:spray var(--d,1.6s) ease-out infinite;animation-delay:var(--dl,0s)}
+@keyframes spray{0%{opacity:0;scale:.35;translate:0 0}15%{opacity:1}100%{opacity:0;scale:1.6;translate:var(--dx,0) -38%}}
+
+/* combat: the plate blows up, edges bleed */
+.vignette{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .7s ease;background:radial-gradient(ellipse at center,transparent 45%,rgba(60,0,0,.35) 75%,rgba(20,0,0,.8) 100%)}
+.vignette.on{opacity:1}
+.fade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .35s ease}
+.fade.on{opacity:1}
+.titlecard{position:absolute;left:50%;top:16%;transform:translateX(-50%);text-align:center;pointer-events:none;opacity:0;transition:opacity .6s ease;text-shadow:0 2px 14px #000,0 0 3px #000}
+.titlecard.on{opacity:1}
+.titlecard .no{font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.2em;color:var(--ember);text-transform:uppercase}
+.titlecard h2{font-family:var(--face-display);font-weight:400;font-size:clamp(1.8rem,4vw,3.2rem);margin:.1em 0 0}
+
+/* speech bubbles: barks said in the plate or in combat */
+/* comic-book speech balloons, lifted well above the speaker on a long tail so faces and the scene stay clear */
+.bubble{position:absolute;transform:translate(-50%,calc(-100% - 70px));max-width:250px;background:#fffdf6;color:#14110f;
+  border:2.5px solid #14110f;border-radius:48% 52% 50% 50% / 46% 48% 52% 54%;padding:12px 20px 13px;text-align:center;
+  font-family:"Comic Neue","Comic Sans MS",var(--face-body);font-weight:700;font-size:.95rem;line-height:1.22;
+  box-shadow:4px 4px 0 rgba(0,0,0,.45);animation:pop .18s ease-out;text-wrap:balance}
+.bubble::before,.bubble::after{content:"";position:absolute;left:50%;width:0;height:0;border-style:solid}
+.bubble::before{bottom:-66px;margin-left:-11px;border-width:66px 6px 0 9px;border-color:#14110f transparent transparent transparent;transform:skewX(-8deg);transform-origin:top}
+.bubble::after{bottom:-58px;margin-left:-7px;border-width:60px 3px 0 6px;border-color:#fffdf6 transparent transparent transparent;transform:skewX(-8deg);transform-origin:top}
+.bubble b{display:block;font-family:"Bangers","Impact",var(--face-display);font-weight:400;font-size:.9rem;letter-spacing:.06em;color:#8a1f12;margin-bottom:1px}
+.bubble.foe{background:#fff1ec;border-color:#5a0d06;color:#3a0a05}
+.bubble.foe::after{border-top-color:#fff1ec}
+.bubble.foe b{color:#b3200f}
+.bubble.said{max-width:280px}
+@keyframes pop{from{opacity:0;scale:.85}to{opacity:1;scale:1}}
+.tip{position:absolute;transform:translate(14px,14px);background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:4px 8px;font-size:var(--s-1);white-space:nowrap;color:var(--ink)}
+.tip.locked{border-color:var(--blood)}
+.nametag{position:absolute;transform:translate(-50%,6px);font-family:var(--face-mono);font-size:.68rem;letter-spacing:.06em;color:var(--ink);background:rgba(10,8,16,.75);padding:1px 6px;border-radius:3px;white-space:nowrap}
+
+.log{position:absolute;left:12px;bottom:12px;max-width:min(460px,calc(100% - 24px));display:grid;gap:4px;pointer-events:none}
+.log p{margin:0;background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:6px 10px;line-height:1.35;transition:opacity 1s ease}
+.log p.old{opacity:.55}
+.log p em{color:var(--ember);font-style:normal}
+
+.zoom{position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:4px}
+.zoom button{width:32px;height:32px;border:0;background:transparent;color:var(--ink);font-size:1.1rem;border-radius:4px;cursor:pointer}
+.zoom button:hover{background:var(--rule)}
+.zoom .fit{width:auto;padding:0 10px;font-family:var(--face-mono);font-size:var(--s-1)}
+
+.combatbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(30,10,12,.92);border:1px solid var(--blood);border-radius:6px;padding:6px 8px;max-width:calc(100% - 24px);flex-wrap:wrap;justify-content:center}
+.combatbar[hidden]{display:none}
+.combatbar .lbl{font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.06em;padding:0 4px}
+.turns{display:flex;gap:4px;flex-wrap:wrap}
+.turn{font:inherit;font-size:var(--s-1);background:transparent;color:var(--ink-dim);border:1px solid var(--rule);border-radius:999px;padding:2px 9px;cursor:pointer}
+.turn.foe{color:#f0b8b0}
+.turn[aria-current="true"]{color:var(--ink);border-color:var(--ember);background:rgba(232,162,74,.12)}
+.turn.down{text-decoration:line-through;opacity:.5}
+.combatbar .note{font-family:var(--face-mono);font-size:.66rem;color:var(--ink-dim);flex-basis:100%;text-align:center}
+
+/* dialogs and the DM drawer */
+.dialog{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);padding:16px}
+.dialog[hidden]{display:none}
+.card{background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:18px 20px;max-width:440px;width:100%;display:grid;gap:12px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+.card h3{font-family:var(--face-display);font-weight:400;font-size:var(--s2);margin:0}
+.card p{margin:0;line-height:1.45;color:var(--ink)}
+.card .src{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{font:inherit;background:transparent;color:var(--ink);border:1px solid var(--rule);border-radius:5px;padding:7px 12px;cursor:pointer}
+.btn:hover{border-color:var(--ember);color:var(--ember)}
+.btn.primary{border-color:var(--ember);color:var(--ember)}
+.btn.danger{border-color:var(--blood);color:#ff9b8f}
+
+.dm{position:absolute;top:10px;right:12px;width:min(300px,calc(100% - 24px));background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:10px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.dm[hidden]{display:none}
+.dm h4{margin:0;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);font-weight:500}
+.dm select{font:inherit;background:var(--stage);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:6px}
+.dm .btn{text-align:left}
+
+/* talk: hand off to the dashboard */
+.talk{position:absolute;inset:auto 0 18px 0;display:flex;justify-content:center;padding:0 16px;pointer-events:none}
+.talk[hidden]{display:none}
+.tcard{pointer-events:auto;width:min(560px,100%);background:var(--panel-solid);border:1px solid var(--ember);border-radius:10px;display:grid;grid-template-columns:120px 1fr;gap:14px;padding:14px;box-shadow:0 16px 50px rgba(0,0,0,.7);animation:slide .3s ease-out}
+@keyframes slide{from{transform:translateY(18px);opacity:0}to{transform:none;opacity:1}}
+.tcard .who{display:grid;gap:6px;justify-items:center;align-content:start}
+.tcard canvas{width:112px;height:112px;image-rendering:pixelated;background:radial-gradient(circle at 50% 62%,#24203a,#0b0a10);border:1px solid var(--rule);border-radius:8px}
+.tcard .name{font-family:var(--face-display);font-size:var(--s1);text-align:center;line-height:1.05}
+.tcard .story{display:grid;gap:8px;align-content:start;min-width:0}
+.tcard .narr{margin:0;color:var(--ink-dim);font-style:italic;line-height:1.4}
+.tcard .said{margin:0;font-size:var(--s1);line-height:1.4}
+.tcard .thinking{color:var(--ink-dim);font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.08em}
+
+footer.party{display:flex;gap:8px;overflow-x:auto;min-width:0;align-items:stretch}
+.pc{flex:0 0 auto;display:flex;align-items:center;gap:8px;background:var(--stage);border:1px solid var(--rule);border-radius:6px;padding:4px 10px 4px 4px;cursor:pointer;color:var(--ink-dim);font:inherit}
+.pc canvas{width:44px;height:44px;image-rendering:pixelated}
+.pc .nm{display:grid;text-align:left;line-height:1.15}
+.pc .nm b{color:var(--ink);font-weight:500}
+.pc .nm small{font-family:var(--face-mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase}
+.pc[aria-pressed="true"]{border-color:var(--ember)}
+.pc[aria-pressed="true"] small{color:var(--ember)}
+.help{margin-left:auto;align-self:center;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);white-space:nowrap;padding-left:8px}
+button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outline-offset:2px}
+.loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--face-mono);color:var(--ink-dim);letter-spacing:.1em}
+
+/* drow ward sigil cut into the pen wall: a dark chiselled groove (multiplied into the rock), a faint lip of lantern light,
+   and violet light living inside the grooves that breathes, with runes shimmering in turn */
+.marks{position:absolute;inset:0;pointer-events:none}
+.ward{position:absolute;transform:translate(-50%,-50%) rotate(var(--rot,0deg)) scaleX(var(--sx,1)) skewY(var(--sk,0deg))}
+.ward svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ward.groove{mix-blend-mode:multiply;opacity:.85}
+.ward.light{mix-blend-mode:screen}
+.ward .bloom{position:absolute;inset:-20%;border-radius:50%;background:radial-gradient(circle,rgba(170,110,255,.14) 0%,rgba(140,80,230,.05) 45%,transparent 70%);animation:wardbreath 6.5s ease-in-out infinite}
+.ward .glow{animation:wardbreath 6.5s ease-in-out infinite}
+.ward .lines{animation:wardbreath 6.5s ease-in-out infinite}
+.ward .rune{animation:rune 7s ease-in-out infinite;animation-delay:var(--rd,0s)}
+.ward .core{animation:wardcore 6.5s ease-in-out infinite}
+@keyframes wardbreath{0%,100%{opacity:.4}50%{opacity:.66}}
+@keyframes rune{0%,70%,100%{opacity:.3}80%{opacity:1}}
+@keyframes wardcore{0%,100%{opacity:.45}50%{opacity:.95}}
+.ward.flicker .lines,.ward.flicker .glow{animation:none;opacity:.08}
+.marks.still *{animation:none!important}
+.toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--ember);color:var(--ink);border-radius:6px;padding:8px 14px;line-height:1.4;text-align:center;pointer-events:none;animation:fadein .2s ease}
+.toast[hidden]{display:none}
+.cool.violet{background:radial-gradient(circle,rgba(225,200,255,.62) 0%,rgba(175,130,255,.28) 30%,rgba(140,100,255,.10) 52%,transparent 70%)}
+@media (max-width:700px){
+  .brand .sub{max-width:44vw}
+  .tcard{grid-template-columns:84px 1fr}
+  .tcard canvas{width:80px;height:80px}
+  .help{display:none}
+  .log{bottom:58px}
+  input[type=range]{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><h1>Velkynvelve</h1><span class="sub" id="areaSub">Area <b id="areaNo">11</b> · <span id="areaName">Slave Pen</span></span></div>
+    <div class="tools">
+      <button class="tbtn" id="musicBtn" aria-pressed="true" title="Music (M)">♪ Music on</button>
+      <input type="range" id="vol" min="0" max="100" value="40" aria-label="Music volume">
+      <button class="tbtn" id="motionBtn" aria-pressed="true">Motion on</button>
+      <button class="tbtn" id="dmBtn" aria-expanded="false">DM tools</button>
+    </div>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="world" id="world">
+      <img class="plate" id="plate" alt="">
+      <img class="plate" id="plate2" alt="" hidden>
+      <div class="marks" id="marks"></div>
+      <div class="fx" id="fx"></div>
+    </div>
+    <canvas id="cv"></canvas>
+    <div class="vignette" id="vignette"></div>
+    <div class="over" id="over"></div>
+    <div class="fade" id="fade"></div>
+    <div class="toast" id="toast" hidden></div>
+    <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
+    <div class="log" id="log" aria-live="polite"></div>
+    <div class="zoom">
+      <button id="zOut" aria-label="Zoom out">−</button>
+      <button class="fit" id="zFit">Fit</button>
+      <button id="zIn" aria-label="Zoom in">+</button>
+    </div>
+    <div class="combatbar" id="combatbar" hidden>
+      <span class="lbl">Combat</span>
+      <div class="turns" id="turns"></div>
+      <button class="btn" id="nextTurn">Next turn</button>
+      <button class="btn danger" id="endCombat">End combat</button>
+      <div class="note">Turn order is a placeholder. Initiative, hits and damage come from the DM core.</div>
+    </div>
+    <div class="dm" id="dm" hidden>
+      <h4>Jump to area</h4>
+      <select id="jump" aria-label="Jump to area"></select>
+      <h4>World</h4>
+      <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
+      <button class="btn" id="dmCombat">Start a fight here</button>
+      <button class="btn" id="dmTalk">An NPC wants to talk</button>
+      <button class="btn" id="dmBark">Make an NPC comment</button>
+      <button class="btn" id="dmReset">Reset ambushes</button>
+    </div>
+    <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
+    <div class="talk" id="obj" hidden>
+      <div class="tcard" role="dialog" aria-labelledby="objWho">
+        <div class="who"><canvas id="objPic" width="128" height="128"></canvas><div class="name" id="objWho"></div></div>
+        <div class="story"><p class="narr" id="objText"></p><div class="btns" id="objBtns"></div></div>
+      </div>
+    </div>
+    <div class="talk" id="talk" hidden>
+      <div class="tcard" role="dialog" aria-labelledby="talkWho">
+        <div class="who"><canvas id="talkPortrait" width="128" height="128"></canvas><div class="name" id="talkWho"></div></div>
+        <div class="story">
+          <div id="talkLine"></div>
+          <div class="btns">
+            <a class="btn primary" id="talkGo" href="https://ashes.playacartagena.com" target="_blank" rel="noopener">Talk</a>
+            <button class="btn" id="talkNo">Decline</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="loading" id="loading">Loading the outpost…</div>
+  </div>
+
+  <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
+</div>
+
+<audio id="mExplore" loop preload="auto"></audio>
+<audio id="mCombat" loop preload="auto"></audio>
+
+<script>
+// APP: true when served inside the game at /velkynvelve (assets from Supabase storage, sprites from /sprites,
+// the NPC opener from /api/npc-opener, voices from /api/npc-tts). false for the stand-alone preview.
+const APP = true;
+const ASSET = APP ? "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/" : "";
+const SPRITE_BASE = APP ? "/sprites/" : "sprites/";
+const SPEC = {"1":{"slug":"node-01-southern-watch-post","name":"Southern Watch Post","scale":1.0,"floors":[{"poly":[[1100,140],[1300,140],[1320,470],[1380,500],[1640,520],[1860,580],[1960,690],[1880,840],[1660,860],[1440,940],[1400,1000],[1380,1339],[1020,1339],[1000,1000],[960,940],[760,860],[540,820],[460,690],[560,600],[780,580],[880,520],[1080,470]]}],"obstacles":[],"zones":[{"rect":[1110,140,1290,330],"to":[2],"label":"Stair up into the outpost"},{"rect":[1030,1230,1370,1339],"to":[],"kind":"leave","label":"South passage (leaves Velkynvelve)"}]},"2":{"slug":"node-02-barracks","name":"Barracks","scale":1.05,"floors":[{"poly":[[840,720],[1000,700],[1090,880],[1320,890],[1400,940],[1320,1040],[1200,1120],[1280,1220],[1120,1339],[800,1339],[760,1200],[800,1080],[720,1000],[600,940],[760,840]]}],"obstacles":[],"zones":[{"rect":[1090,840,1200,905],"to":[3],"label":"Timber stair to the upper walkways"},{"rect":[1200,840,1310,905],"to":[4],"label":"Timber stair to the upper walkways"},{"rect":[800,1290,1120,1339],"to":[1],"label":"Passage out of the barracks"}]},"3":{"slug":"node-03-main-hall","name":"Main Hall","scale":0.9,"floors":[{"poly":[[760,560],[1000,510],[1400,500],[1700,540],[1800,600],[1780,720],[1880,800],[1840,940],[1740,1060],[1600,1160],[1400,1200],[1200,1230],[940,1180],[660,1040],[520,900],[500,760],[600,660]]}],"obstacles":[{"cx":890,"cy":670,"rx":120,"ry":70},{"cx":1350,"cy":660,"rx":120,"ry":70},{"cx":850,"cy":890,"rx":120,"ry":70},{"cx":1350,"cy":890,"rx":120,"ry":70},{"cx":1500,"cy":470,"rx":90,"ry":50}],"zones":[{"rect":[490,730,590,920],"to":[2],"label":"Rope walkway west"},{"rect":[1790,660,1900,960],"to":[8],"label":"Walkway east"},{"rect":[600,560,720,690],"to":[5],"label":"Passage to the lift"}]},"4":{"slug":"node-04-elite-barracks","name":"Elite Barracks","scale":0.85,"floors":[{"ellipse":[670,610,370,165]},{"ellipse":[1730,610,370,165]},{"rect":[1030,570,1370,660]}],"obstacles":[{"cx":680,"cy":560,"rx":55,"ry":40},{"cx":1730,"cy":560,"rx":55,"ry":40}],"zones":[{"rect":[630,740,730,790],"to":[2],"label":"Ladder down (west tower)"},{"rect":[1690,740,1790,790],"to":[8],"label":"Ladder down (east tower)"}]},"5":{"slug":"node-05-lift","name":"Lift","scale":0.95,"floors":[{"poly":[[740,640],[960,580],[1280,600],[1480,640],[1520,720],[1490,940],[1440,1040],[1200,1120],[940,1120],[700,1040],[640,940],[660,820],[700,740]]},{"rect":[160,750,720,860]}],"obstacles":[{"cx":1140,"cy":690,"rx":150,"ry":80}],"zones":[{"rect":[150,740,260,870],"to":[3],"label":"Walkway to the main hall"},{"rect":[1440,820,1530,960],"to":[],"kind":"leave","label":"The lift basket: DC 18 Strength to crank, 4 rounds to the cavern floor (leaves Velkynvelve)"}]},"6":{"slug":"node-06-shrine","name":"Shrine to Lolth","scale":1.0,"floors":[{"ellipse":[1200,750,620,250]},{"rect":[1010,980,1390,1339]},{"rect":[420,650,620,790]},{"rect":[1790,680,1980,820]}],"obstacles":[{"cx":1200,"cy":665,"rx":200,"ry":95},{"cx":780,"cy":665,"rx":60,"ry":35},{"cx":1610,"cy":665,"rx":60,"ry":35}],"zones":[{"rect":[1020,1260,1380,1339],"to":[7],"label":"Stair down the priestess tower"},{"rect":[420,640,500,800],"to":[10],"label":"Rope bridge west"}],"hazard":{"poly":[[900,500],[1500,500],[1520,560],[880,560]],"kind":"ambush","foes":["giant-spider"],"label":"Something shifts among the cushions"}},"7":{"slug":"node-07-ilvara-quarters","name":"Ilvara's Quarters","scale":1.0,"floors":[{"poly":[[660,660],[840,480],[1120,430],[1400,460],[1680,480],[1800,600],[1860,760],[1800,880],[1680,960],[1400,1000],[1120,1000],[840,940],[640,820]]},{"rect":[520,760,680,900]}],"obstacles":[{"cx":920,"cy":600,"rx":200,"ry":110},{"cx":1080,"cy":770,"rx":140,"ry":55},{"cx":1640,"cy":550,"rx":140,"ry":75},{"cx":1520,"cy":865,"rx":130,"ry":60}],"zones":[{"rect":[1130,425,1250,500],"to":[6],"label":"Hatch up to the shrine"},{"rect":[1120,960,1360,1010],"to":[8],"label":"Stair down to Shoor's chamber"},{"rect":[520,750,600,910],"to":[10],"label":"Rope bridge west"}]},"8":{"slug":"node-08-shoor-quarters","name":"Shoor's Quarters","scale":1.0,"floors":[{"poly":[[760,480],[920,380],[1120,420],[1300,360],[1520,400],[1660,520],[1720,640],[1700,800],[1560,900],[1320,940],[1080,940],[860,880],[740,760],[720,600]]},{"rect":[1080,900,1300,1000]}],"obstacles":[{"cx":1390,"cy":710,"rx":105,"ry":60},{"cx":1400,"cy":410,"rx":110,"ry":55}],"zones":[{"rect":[1110,330,1250,420],"to":[7],"label":"Ladder up to Ilvara's quarters"},{"rect":[700,690,790,775],"to":[3],"label":"Rope bridge west"},{"rect":[700,775,790,860],"to":[4],"label":"Rope bridge west"},{"rect":[1080,950,1300,1000],"to":[9],"label":"Stair down toward the waterfall"}]},"9":{"slug":"node-09-waterfall","name":"Waterfall","scale":0.85,"floors":[{"poly":[[320,660],[520,580],[800,580],[880,660],[880,800],[760,840],[500,840],[280,820],[240,740]]},{"rect":[870,670,1550,800]},{"poly":[[1540,640],[1760,600],[2000,680],[2120,800],[2000,860],[1720,860],[1560,800]]}],"obstacles":[],"zones":[{"rect":[240,790,420,870],"to":[8],"label":"Rope bridge down-left"},{"rect":[1990,800,2140,900],"to":[10],"label":"Rope bridge down-right"},{"rect":[1100,760,1320,805],"to":[14],"kind":"water","label":"Drop into the waterfall: you land in the pool for no damage"}]},"10":{"slug":"node-10-guard-tower","name":"Guard Tower","scale":0.9,"floors":[{"poly":[[1060,700],[1240,640],[1600,660],[1860,680],[1920,800],[1900,940],[1760,1020],[1400,1040],[1120,980],[1040,860]]},{"poly":[[320,760],[1060,800],[1060,960],[320,900]]},{"rect":[0,660,340,940]},{"rect":[1890,780,2400,940]}],"obstacles":[{"cx":1480,"cy":880,"rx":140,"ry":60},{"cx":1780,"cy":870,"rx":60,"ry":40}],"zones":[{"rect":[0,640,110,747],"to":[6],"label":"Ledge west, toward the priestess tower and the falls"},{"rect":[0,747,110,853],"to":[7],"label":"Ledge west, toward the priestess tower and the falls"},{"rect":[0,853,110,960],"to":[9],"label":"Ledge west, toward the priestess tower and the falls"},{"rect":[2300,760,2400,960],"to":[11],"label":"Rope bridge east to the slave pen"}],"npcs":[{"id":"drow-guard-male","x":1250,"y":800,"face":2,"hostile":true,"barks":["(a drow guard scans the bridges)"]},{"id":"drow-guard-female","x":1720,"y":830,"face":6,"hostile":true,"barks":["(a drow guard leans on the rail, watching the pen)"]},{"id":"drow-guard-male","x":1580,"y":990,"face":0,"hostile":true,"barks":["(a drow guard checks the crossbow on the rack)"]}],"hostileLabel":"The drow guards in the tower see you coming.","cross":{}},"11":{"slug":"node-11-slave-pen","name":"Slave Pen","scale":1.25,"floors":[{"poly":[[960,740],[1120,700],[1400,560],[1700,500],[2000,480],[2200,560],[2300,700],[2360,940],[2300,1200],[2200,1339],[900,1339],[760,1200],[620,1000],[640,900],[800,860],[920,780]]}],"obstacles":[],"zones":[{"rect":[620,760,900,1000],"to":[10,12],"kind":"gate","label":"The pen gate: heavy iron bolted into the stone. Locked: DC 20 to pick or force (OotA p.18)","crossBy":{"10":[[690,880,1],[600,800,0.95],[470,705,0.85],[330,600,0.7],[150,505,0.58],[-150,420,0.5]],"12":[[830,880,1],[640,800,0.95],[480,722,0.85],[432,850,0.8],[400,1100,0.75],[380,1500,0.72]]},"interact":{"name":"The pen gate","poly":[[605,150],[960,140],[968,745],[605,905]],"locked":"Heavy iron bars bolted into the stone. Locked. Picking or forcing it is a DC 20 check (OotA p.18).","open":"The gate stands open. Beyond it, the balcony: a rope bridge to the guard tower, and stairs down the cliff.","routes":{"10":"Out across the rope bridge to the Guard Tower","12":"Down the cliff stairs to the Quaggoth Den"}}}],"npcs":[{"id":"ront","x":1700,"y":760,"face":2,"talk":false,"barks":["Ront mutters something about orc blood and drow throats."]},{"id":"eldeth","x":1300,"y":1000,"face":6,"talk":true,"talkLine":"Eldeth Feldrun catches your eye. She wants a word."},{"id":"derendil","x":2050,"y":900,"face":2,"talk":false,"barks":["Derendil reminds everyone, again, that he is a prince of Nelrindenvane."]},{"id":"sarith","x":1500,"y":1220,"face":4,"talk":false,"barks":["Sarith stares at nothing and does not answer."]},{"id":"buppido","x":1100,"y":1180,"face":5,"talk":false,"barks":["Buppido hums to himself, smiling too much."]},{"id":"jimjar","x":1840,"y":1130,"face":3,"talk":false,"barks":["Jimjar offers odds on which of you the drow will feed to the spiders first."]},{"id":"topsy","x":1980,"y":1220,"face":2,"talk":false,"barks":["The twins whisper to each other, then go quiet when you look over."]},{"id":"turvy","x":2050,"y":1190,"face":2,"talk":false,"barks":["Turvy nudges Topsy and points at the gate."]},{"id":"shuushar","x":1300,"y":780,"face":0,"talk":false,"barks":["Shuushar sits still, breathing slowly, as calm as deep water."]},{"id":"stool","x":1640,"y":1060,"face":4,"talk":false,"barks":["Stool's cap sways. A faint, friendly haze of spores drifts your way."]},{"id":"drow-guard-female","x":120,"y":465,"face":6,"backdrop":true,"fixedScale":0.8,"patrol":[[70,440],[300,555]],"barks":[]},{"id":"drow-guard-male","x":300,"y":555,"face":2,"backdrop":true,"fixedScale":0.8,"patrol":[[345,578],[140,475]],"barks":[]},{"id":"jorlan","x":445,"y":650,"face":2,"backdrop":true,"static":true,"fixedScale":0.82,"barks":[]}],"chains":[{"pts":[[1163,476],[1160,560],[1167,640],[1180,668],[1212,688],[1240,698]],"cuffs":[[1252,701],[1284,711]]},{"pts":[[1466,450],[1468,540],[1463,610],[1478,638],[1506,652]],"cuffs":[[1518,657],[1546,667]]},{"pts":[[2266,760],[2262,840],[2250,902],[2218,932],[2184,946]],"cuffs":[[2170,951],[2142,957]]},{"pts":[[1004,1116],[1022,1124],[1040,1128]],"cuffs":[[1000,1114],[1046,1130]]},{"pts":[[1858,1206],[1874,1214],[1892,1216]],"cuffs":[[1852,1204],[1898,1217]]}],"interact":{"gate":{"name":"The pen gate","poly":[[605,150],[960,140],[968,745],[605,905]],"locked":"Heavy iron bars bolted into the stone. Locked. Picking or forcing it is a DC 20 check (OotA p.18).","open":"The gate stands open. Beyond it, the balcony: a rope bridge to the guard tower, and stairs down the cliff.","routes":{"10":"Out across the rope bridge to the Guard Tower","12":"Down the cliff stairs to the Quaggoth Den"}}},"cross":{"10":[[690,880,1],[600,800,0.95],[470,705,0.85],[330,600,0.7],[150,505,0.58],[-150,420,0.5]],"12":[[830,880,1],[640,800,0.95],[480,722,0.85],[432,850,0.8],[400,1100,0.75],[380,1500,0.72]]}},"12":{"slug":"node-12-quaggoth-den","name":"Quaggoth Den","scale":0.75,"floors":[{"poly":[[520,460],[960,300],[1280,240],[1720,280],[2000,400],[2200,660],[2120,1040],[1800,1200],[1240,1180],[800,1120],[320,1000],[180,840],[280,600]]},{"rect":[1260,0,1440,280]},{"rect":[880,1140,1200,1339]}],"obstacles":[{"cx":700,"cy":540,"rx":95,"ry":55},{"cx":1020,"cy":420,"rx":95,"ry":55},{"cx":1260,"cy":520,"rx":95,"ry":55},{"cx":1540,"cy":410,"rx":95,"ry":55},{"cx":1760,"cy":530,"rx":95,"ry":55},{"cx":660,"cy":700,"rx":95,"ry":55},{"cx":1000,"cy":640,"rx":95,"ry":55},{"cx":1420,"cy":660,"rx":95,"ry":55},{"cx":1870,"cy":700,"rx":95,"ry":55},{"cx":1120,"cy":850,"rx":95,"ry":55},{"cx":1540,"cy":820,"rx":95,"ry":55},{"cx":660,"cy":930,"rx":95,"ry":55},{"cx":1920,"cy":880,"rx":95,"ry":55},{"cx":1380,"cy":1010,"rx":95,"ry":55},{"cx":1860,"cy":1140,"rx":95,"ry":55}],"zones":[{"rect":[880,1260,1200,1339],"to":[11],"label":"Stone steps up toward the slave pen"},{"rect":[1260,0,1440,120],"to":[13],"label":"Perimeter walkway north to the watch post"}],"hazard":{"poly":[[620,500],[1900,440],[2040,700],[1880,1080],[720,1060],[480,800]],"kind":"ambush","foes":["quaggoth","quaggoth","quaggoth"],"label":"The quaggoths rise from their nests. You are not drow."}},"13":{"slug":"node-13-northern-watch-post","name":"Northern Watch Post","scale":1.0,"floors":[{"poly":[[540,720],[840,700],[1040,660],[1400,660],[1520,720],[1760,700],[1920,740],[1860,840],[1720,900],[1400,940],[1380,1020],[1320,1080],[1320,1339],[1080,1339],[1060,1080],[1000,1000],[960,940],[660,940],[520,840]]}],"obstacles":[{"cx":1540,"cy":800,"rx":120,"ry":60},{"cx":840,"cy":740,"rx":35,"ry":25}],"zones":[{"rect":[1080,1260,1320,1339],"to":[12],"label":"Walkway down to the den perimeter"},{"rect":[1080,640,1320,700],"to":[],"kind":"leave","label":"North tunnel (leaves Velkynvelve). Two sentries, passive Perception 12, and a warning horn."}]},"14":{"slug":"node-14-pool-river","name":"Pool / Underground River","scale":0.9,"floors":[{"poly":[[300,840],[640,790],[940,820],[1120,880],[1400,860],[1520,940],[1640,1120],[1760,1280],[1760,1339],[400,1339],[300,1120]]},{"poly":[[1640,660],[1900,580],[2120,640],[2200,800],[2080,940],[1800,940],[1600,860]]},{"poly":[[1400,840],[1600,800],[1640,920],[1520,960]]}],"obstacles":[],"zones":[{"rect":[800,790,1120,860],"to":[9],"kind":"water","label":"Climb the wet rock beside the fall (disadvantage on the climb)"},{"rect":[2140,660,2240,900],"to":[],"kind":"leave","label":"The underground river runs on toward the Darklake (leaves Velkynvelve)"}]}};
+const FX = {"node-01-southern-watch-post":{"fires":[{"x":1615,"y":655,"r":119},{"x":999,"y":1176,"r":91},{"x":775,"y":634,"r":77},{"x":1357,"y":413,"r":76},{"x":1043,"y":400,"r":65},{"x":1402,"y":1168,"r":63},{"x":759,"y":783,"r":50},{"x":1636,"y":785,"r":48},{"x":1381,"y":454,"r":44},{"x":833,"y":551,"r":41},{"x":1620,"y":687,"r":40},{"x":1876,"y":789,"r":33},{"x":750,"y":599,"r":30},{"x":1026,"y":379,"r":30},{"x":793,"y":518,"r":28},{"x":1661,"y":542,"r":28},{"x":738,"y":539,"r":28},{"x":1041,"y":346,"r":28},{"x":1405,"y":920,"r":28},{"x":1385,"y":1217,"r":28},{"x":728,"y":579,"r":28},{"x":1333,"y":376,"r":28},{"x":1356,"y":343,"r":28},{"x":1043,"y":438,"r":28},{"x":830,"y":478,"r":28},{"x":1450,"y":1216,"r":28},{"x":780,"y":800,"r":28},{"x":992,"y":931,"r":28},{"x":819,"y":616,"r":28},{"x":1419,"y":384,"r":28},{"x":1069,"y":407,"r":28},{"x":1041,"y":503,"r":28},{"x":1654,"y":578,"r":28},{"x":1983,"y":655,"r":28},{"x":992,"y":963,"r":28}],"cools":[{"x":2073,"y":402,"r":125},{"x":1410,"y":195,"r":79},{"x":2352,"y":428,"r":76},{"x":987,"y":211,"r":74},{"x":175,"y":237,"r":71},{"x":115,"y":922,"r":49},{"x":1435,"y":246,"r":43},{"x":2031,"y":432,"r":36},{"x":2394,"y":416,"r":36},{"x":115,"y":975,"r":36},{"x":148,"y":275,"r":36},{"x":1470,"y":212,"r":36},{"x":2095,"y":440,"r":36},{"x":2346,"y":555,"r":36},{"x":2357,"y":513,"r":36},{"x":265,"y":253,"r":36},{"x":5,"y":495,"r":36},{"x":2382,"y":468,"r":36},{"x":715,"y":188,"r":36},{"x":53,"y":563,"r":36},{"x":914,"y":227,"r":36},{"x":44,"y":522,"r":36},{"x":551,"y":266,"r":36},{"x":2396,"y":580,"r":36}],"falls":[],"mists":[]},"node-02-barracks":{"fires":[{"x":555,"y":1086,"r":122},{"x":1900,"y":796,"r":87},{"x":455,"y":761,"r":85},{"x":589,"y":683,"r":76},{"x":537,"y":758,"r":74},{"x":2104,"y":1039,"r":74},{"x":2014,"y":1084,"r":63},{"x":2066,"y":1130,"r":63},{"x":957,"y":153,"r":63},{"x":2115,"y":1005,"r":60},{"x":1459,"y":843,"r":58},{"x":2194,"y":968,"r":54},{"x":919,"y":152,"r":52},{"x":2064,"y":990,"r":47},{"x":406,"y":819,"r":47},{"x":1441,"y":812,"r":47},{"x":1998,"y":282,"r":47},{"x":1898,"y":768,"r":45},{"x":2015,"y":312,"r":42},{"x":629,"y":1088,"r":35},{"x":1410,"y":776,"r":33},{"x":434,"y":738,"r":31},{"x":1925,"y":694,"r":30},{"x":1997,"y":1124,"r":28},{"x":2028,"y":1148,"r":28},{"x":1413,"y":833,"r":28},{"x":1979,"y":307,"r":28},{"x":2069,"y":1041,"r":28},{"x":2039,"y":253,"r":28},{"x":675,"y":680,"r":28},{"x":938,"y":189,"r":28},{"x":468,"y":599,"r":28},{"x":1467,"y":818,"r":28},{"x":1410,"y":732,"r":28},{"x":904,"y":200,"r":28},{"x":1468,"y":875,"r":28},{"x":522,"y":1067,"r":28},{"x":537,"y":575,"r":28},{"x":566,"y":735,"r":28},{"x":399,"y":763,"r":28}],"cools":[{"x":991,"y":621,"r":120},{"x":1386,"y":260,"r":87},{"x":2016,"y":1227,"r":85},{"x":1331,"y":32,"r":84},{"x":2280,"y":479,"r":82},{"x":1275,"y":50,"r":81},{"x":566,"y":66,"r":81},{"x":2072,"y":1249,"r":67},{"x":958,"y":650,"r":66},{"x":1964,"y":1260,"r":59},{"x":227,"y":1035,"r":55},{"x":138,"y":363,"r":54},{"x":1219,"y":22,"r":50},{"x":1785,"y":144,"r":50},{"x":522,"y":57,"r":48},{"x":736,"y":192,"r":48},{"x":282,"y":1021,"r":42},{"x":2007,"y":1296,"r":40},{"x":1645,"y":620,"r":36},{"x":262,"y":1073,"r":36},{"x":1707,"y":88,"r":36},{"x":92,"y":359,"r":36},{"x":2055,"y":1288,"r":36},{"x":2281,"y":530,"r":36}],"falls":[],"mists":[]},"node-03-main-hall":{"fires":[{"x":854,"y":888,"r":131},{"x":1359,"y":653,"r":120},{"x":1504,"y":442,"r":95},{"x":850,"y":1133,"r":94},{"x":1350,"y":871,"r":93},{"x":601,"y":666,"r":90},{"x":1193,"y":1257,"r":90},{"x":890,"y":647,"r":85},{"x":1562,"y":1187,"r":84},{"x":509,"y":832,"r":82},{"x":1702,"y":1058,"r":81},{"x":2226,"y":687,"r":76},{"x":1755,"y":585,"r":75},{"x":2107,"y":1046,"r":74},{"x":742,"y":524,"r":73},{"x":331,"y":536,"r":73},{"x":2089,"y":584,"r":73},{"x":2373,"y":511,"r":70},{"x":2221,"y":969,"r":69},{"x":877,"y":470,"r":68},{"x":1357,"y":909,"r":65},{"x":2063,"y":846,"r":59},{"x":1495,"y":312,"r":54},{"x":1757,"y":357,"r":54},{"x":890,"y":683,"r":52},{"x":2062,"y":817,"r":50},{"x":481,"y":447,"r":45},{"x":1504,"y":282,"r":36},{"x":1322,"y":900,"r":35},{"x":1707,"y":1025,"r":35},{"x":1779,"y":391,"r":30},{"x":1526,"y":322,"r":28},{"x":606,"y":704,"r":28},{"x":2191,"y":882,"r":28},{"x":776,"y":532,"r":28},{"x":845,"y":503,"r":28},{"x":1321,"y":859,"r":28},{"x":1511,"y":407,"r":28},{"x":1366,"y":612,"r":28},{"x":1754,"y":620,"r":28}],"cools":[{"x":387,"y":280,"r":92},{"x":1108,"y":194,"r":74},{"x":2290,"y":508,"r":56},{"x":1063,"y":193,"r":48},{"x":1115,"y":151,"r":46},{"x":2262,"y":556,"r":36},{"x":1250,"y":161,"r":36},{"x":404,"y":363,"r":36},{"x":487,"y":392,"r":36},{"x":1146,"y":209,"r":36},{"x":556,"y":228,"r":36},{"x":601,"y":218,"r":36}],"falls":[],"mists":[]},"node-04-elite-barracks":{"fires":[{"x":505,"y":426,"r":71},{"x":1049,"y":589,"r":70},{"x":1699,"y":808,"r":70},{"x":311,"y":590,"r":68},{"x":135,"y":1034,"r":67},{"x":2084,"y":591,"r":67},{"x":606,"y":809,"r":67},{"x":1814,"y":810,"r":67},{"x":724,"y":809,"r":66},{"x":1373,"y":591,"r":65},{"x":2263,"y":1036,"r":65},{"x":1007,"y":417,"r":47},{"x":1486,"y":399,"r":37},{"x":980,"y":440,"r":29},{"x":1736,"y":843,"r":28},{"x":1780,"y":807,"r":28},{"x":685,"y":846,"r":28},{"x":1733,"y":807,"r":28},{"x":130,"y":1005,"r":28},{"x":968,"y":404,"r":28},{"x":532,"y":437,"r":28},{"x":690,"y":803,"r":28},{"x":1042,"y":555,"r":28},{"x":1776,"y":772,"r":28},{"x":1769,"y":844,"r":28},{"x":1752,"y":865,"r":28},{"x":723,"y":776,"r":28},{"x":638,"y":822,"r":28}],"cools":[{"x":1687,"y":192,"r":112},{"x":726,"y":136,"r":89},{"x":2175,"y":269,"r":63},{"x":54,"y":687,"r":59},{"x":2354,"y":820,"r":58},{"x":669,"y":155,"r":57},{"x":190,"y":325,"r":54},{"x":766,"y":119,"r":46},{"x":172,"y":366,"r":46},{"x":362,"y":921,"r":45},{"x":436,"y":324,"r":41},{"x":918,"y":964,"r":36},{"x":64,"y":736,"r":36},{"x":676,"y":98,"r":36},{"x":2341,"y":874,"r":36},{"x":845,"y":203,"r":36},{"x":725,"y":87,"r":36},{"x":768,"y":68,"r":36},{"x":127,"y":804,"r":36},{"x":992,"y":904,"r":36},{"x":679,"y":49,"r":36},{"x":994,"y":860,"r":36}],"falls":[],"mists":[]},"node-05-lift":{"fires":[{"x":1358,"y":1043,"r":79},{"x":734,"y":1005,"r":74},{"x":1511,"y":698,"r":69},{"x":1299,"y":571,"r":67},{"x":625,"y":827,"r":66},{"x":679,"y":698,"r":64},{"x":1475,"y":926,"r":63},{"x":1517,"y":208,"r":35},{"x":651,"y":706,"r":28},{"x":1296,"y":533,"r":28},{"x":1473,"y":888,"r":28},{"x":1319,"y":549,"r":28},{"x":614,"y":803,"r":28},{"x":1505,"y":865,"r":28},{"x":1504,"y":926,"r":28}],"cools":[{"x":583,"y":455,"r":91},{"x":2120,"y":1209,"r":80},{"x":153,"y":851,"r":74},{"x":536,"y":474,"r":65},{"x":182,"y":881,"r":54},{"x":2073,"y":1240,"r":47},{"x":512,"y":437,"r":37},{"x":2110,"y":1274,"r":37},{"x":687,"y":426,"r":36},{"x":124,"y":901,"r":36},{"x":750,"y":449,"r":36},{"x":48,"y":712,"r":36},{"x":2161,"y":1224,"r":36},{"x":1032,"y":845,"r":36},{"x":259,"y":974,"r":36},{"x":376,"y":537,"r":36},{"x":1030,"y":284,"r":36},{"x":93,"y":790,"r":36},{"x":152,"y":997,"r":36},{"x":1107,"y":119,"r":36},{"x":1306,"y":714,"r":36},{"x":1134,"y":834,"r":36},{"x":237,"y":1057,"r":36},{"x":366,"y":459,"r":36}],"falls":[{"x0":1975,"y0":20,"x1":2095,"y1":1190,"mask":"fx/node-05-lift-fall0.png"}],"mists":[]},"node-06-shrine":{"fires":[{"x":1619,"y":645,"r":139},{"x":798,"y":634,"r":117},{"x":754,"y":660,"r":70},{"x":1566,"y":650,"r":46},{"x":1643,"y":350,"r":38},{"x":1583,"y":365,"r":38},{"x":754,"y":351,"r":37},{"x":1397,"y":656,"r":35},{"x":1372,"y":687,"r":35},{"x":780,"y":362,"r":28},{"x":795,"y":497,"r":28},{"x":786,"y":669,"r":28},{"x":741,"y":630,"r":28},{"x":1880,"y":510,"r":28},{"x":779,"y":568,"r":28},{"x":1633,"y":380,"r":28},{"x":1595,"y":600,"r":28},{"x":1580,"y":678,"r":28}],"cools":[{"x":1682,"y":177,"r":107},{"x":257,"y":428,"r":91},{"x":2312,"y":960,"r":83},{"x":2146,"y":144,"r":83},{"x":2265,"y":430,"r":74},{"x":2235,"y":463,"r":70},{"x":202,"y":433,"r":64},{"x":1730,"y":189,"r":54},{"x":260,"y":481,"r":50},{"x":2293,"y":1004,"r":41},{"x":2117,"y":103,"r":40},{"x":194,"y":476,"r":39},{"x":2292,"y":472,"r":38},{"x":2246,"y":517,"r":36}],"falls":[],"mists":[]},"node-07-ilvara-quarters":{"fires":[{"x":1451,"y":1297,"r":50},{"x":969,"y":1308,"r":44},{"x":616,"y":669,"r":39},{"x":1512,"y":894,"r":38},{"x":1579,"y":841,"r":36},{"x":1556,"y":483,"r":32},{"x":1804,"y":575,"r":32},{"x":967,"y":1282,"r":31},{"x":1453,"y":481,"r":30},{"x":1666,"y":609,"r":30},{"x":794,"y":748,"r":30},{"x":984,"y":993,"r":30},{"x":1434,"y":990,"r":29},{"x":1431,"y":1017,"r":28},{"x":1563,"y":556,"r":28},{"x":1550,"y":519,"r":28},{"x":1669,"y":580,"r":28},{"x":972,"y":1020,"r":28},{"x":1590,"y":811,"r":28},{"x":1207,"y":439,"r":28},{"x":600,"y":557,"r":28},{"x":776,"y":975,"r":28},{"x":1508,"y":857,"r":28}],"cools":[{"x":2296,"y":569,"r":43},{"x":2157,"y":446,"r":38},{"x":599,"y":1277,"r":36},{"x":2195,"y":424,"r":36},{"x":2210,"y":359,"r":36},{"x":2317,"y":359,"r":36},{"x":224,"y":240,"r":36}],"falls":[],"mists":[]},"node-08-shoor-quarters":{"fires":[{"x":781,"y":430,"r":88},{"x":1064,"y":1278,"r":85},{"x":706,"y":666,"r":84},{"x":1635,"y":497,"r":78},{"x":1610,"y":926,"r":46},{"x":1066,"y":1307,"r":28},{"x":789,"y":402,"r":28}],"cools":[{"x":2090,"y":1194,"r":95},{"x":2045,"y":602,"r":64},{"x":2078,"y":378,"r":63},{"x":2093,"y":649,"r":62},{"x":2037,"y":1230,"r":56},{"x":2034,"y":763,"r":52},{"x":2078,"y":1267,"r":50},{"x":2084,"y":759,"r":37},{"x":2137,"y":1213,"r":36},{"x":2182,"y":315,"r":36},{"x":2124,"y":409,"r":36},{"x":2038,"y":702,"r":36},{"x":2033,"y":1276,"r":36},{"x":2100,"y":586,"r":36},{"x":208,"y":596,"r":36},{"x":2056,"y":533,"r":36},{"x":2114,"y":548,"r":36},{"x":123,"y":644,"r":36},{"x":194,"y":772,"r":36}],"falls":[{"x0":1950,"y0":230,"x1":2140,"y1":1185,"mask":"fx/node-08-shoor-quarters-fall0.png"}],"mists":[{"x":2050,"y":1150,"r":120}]},"node-09-waterfall":{"fires":[{"x":164,"y":1123,"r":92},{"x":587,"y":727,"r":80},{"x":1972,"y":796,"r":80},{"x":1789,"y":570,"r":79},{"x":1593,"y":557,"r":76},{"x":608,"y":454,"r":74},{"x":375,"y":586,"r":70},{"x":1851,"y":397,"r":65},{"x":393,"y":752,"r":47},{"x":1588,"y":682,"r":42},{"x":584,"y":847,"r":28},{"x":540,"y":386,"r":28},{"x":1592,"y":718,"r":28},{"x":2015,"y":797,"r":28},{"x":1846,"y":428,"r":28},{"x":1566,"y":647,"r":28},{"x":171,"y":1166,"r":28},{"x":345,"y":586,"r":28},{"x":605,"y":417,"r":28},{"x":1774,"y":694,"r":28},{"x":1986,"y":418,"r":28},{"x":1768,"y":586,"r":28},{"x":372,"y":626,"r":28},{"x":587,"y":692,"r":28},{"x":1965,"y":758,"r":28},{"x":677,"y":483,"r":28},{"x":515,"y":795,"r":28}],"cools":[{"x":1701,"y":1029,"r":108},{"x":71,"y":444,"r":98},{"x":487,"y":185,"r":70},{"x":782,"y":822,"r":69},{"x":2024,"y":239,"r":65},{"x":162,"y":704,"r":64},{"x":666,"y":134,"r":58},{"x":717,"y":1135,"r":54},{"x":2011,"y":279,"r":48},{"x":1648,"y":1289,"r":46},{"x":705,"y":1087,"r":45},{"x":1649,"y":1222,"r":45},{"x":451,"y":229,"r":43},{"x":1680,"y":527,"r":42},{"x":179,"y":789,"r":41},{"x":741,"y":1174,"r":40},{"x":224,"y":756,"r":38},{"x":2297,"y":768,"r":37},{"x":672,"y":1143,"r":36},{"x":134,"y":764,"r":36},{"x":27,"y":469,"r":36},{"x":100,"y":476,"r":36},{"x":771,"y":1126,"r":36},{"x":2242,"y":799,"r":36}],"falls":[{"x0":980,"y0":0,"x1":1330,"y1":600,"mask":"fx/node-09-waterfall-fall0.png"}],"mists":[{"x":1150,"y":690,"r":260},{"x":980,"y":720,"r":190},{"x":1330,"y":720,"r":190}]},"node-10-guard-tower":{"fires":[{"x":307,"y":646,"r":63},{"x":1439,"y":300,"r":61},{"x":1812,"y":963,"r":61},{"x":2147,"y":365,"r":59},{"x":1866,"y":652,"r":58},{"x":238,"y":780,"r":56},{"x":1120,"y":641,"r":53},{"x":1422,"y":871,"r":47},{"x":1181,"y":955,"r":41},{"x":1755,"y":568,"r":28},{"x":1386,"y":520,"r":28},{"x":1155,"y":623,"r":28}],"cools":[{"x":136,"y":525,"r":67},{"x":106,"y":617,"r":45},{"x":101,"y":490,"r":42},{"x":108,"y":938,"r":36},{"x":193,"y":941,"r":36},{"x":41,"y":516,"r":36},{"x":176,"y":897,"r":36},{"x":207,"y":542,"r":36},{"x":207,"y":489,"r":36},{"x":72,"y":550,"r":36}],"falls":[{"x0":660,"y0":210,"x1":850,"y1":715,"mask":"fx/node-10-guard-tower-fall0.png"}],"mists":[{"x":750,"y":1270,"r":110}]},"node-11-slave-pen":{"fires":[{"x":295,"y":164,"r":30},{"x":327,"y":168,"r":29},{"x":357,"y":158,"r":28},{"x":138,"y":784,"r":28}],"cools":[{"x":1279,"y":329,"r":136},{"x":736,"y":968,"r":113},{"x":770,"y":1030,"r":108},{"x":962,"y":48,"r":103},{"x":1866,"y":219,"r":103},{"x":2118,"y":104,"r":90},{"x":2209,"y":1060,"r":90},{"x":2153,"y":663,"r":85},{"x":1842,"y":461,"r":76},{"x":664,"y":979,"r":75},{"x":2119,"y":433,"r":71},{"x":2005,"y":57,"r":62},{"x":2174,"y":1140,"r":60},{"x":2118,"y":742,"r":42},{"x":1280,"y":401,"r":36},{"x":1340,"y":631,"r":36},{"x":933,"y":1294,"r":36}],"violets":[{"x":1480,"y":34,"r":160},{"x":2364,"y":980,"r":121},{"x":2324,"y":1046,"r":111},{"x":2199,"y":471,"r":72},{"x":2182,"y":382,"r":70},{"x":986,"y":1233,"r":67},{"x":2272,"y":517,"r":36},{"x":220,"y":814,"r":36}],"falls":[],"mists":[]},"node-11-slave-pen-alt":{"fires":[{"x":362,"y":152,"r":30},{"x":332,"y":165,"r":28},{"x":170,"y":798,"r":28},{"x":275,"y":153,"r":28},{"x":299,"y":166,"r":28}],"cools":[{"x":1241,"y":333,"r":112},{"x":1864,"y":227,"r":99},{"x":1292,"y":329,"r":87},{"x":1867,"y":273,"r":36},{"x":1245,"y":397,"r":36},{"x":1239,"y":287,"r":36}],"falls":[],"mists":[]},"node-12-quaggoth-den":{"fires":[{"x":1117,"y":1185,"r":93},{"x":870,"y":1183,"r":92},{"x":145,"y":933,"r":87},{"x":705,"y":320,"r":78},{"x":1696,"y":258,"r":75},{"x":2039,"y":400,"r":72},{"x":300,"y":713,"r":68},{"x":2113,"y":548,"r":63},{"x":972,"y":259,"r":63},{"x":1401,"y":187,"r":61},{"x":889,"y":1124,"r":53},{"x":1247,"y":180,"r":52},{"x":418,"y":450,"r":49},{"x":326,"y":558,"r":49},{"x":1131,"y":1130,"r":48},{"x":2013,"y":454,"r":47},{"x":711,"y":375,"r":35},{"x":2062,"y":420,"r":35},{"x":2089,"y":602,"r":33},{"x":430,"y":501,"r":30},{"x":964,"y":320,"r":28},{"x":2262,"y":663,"r":28},{"x":125,"y":897,"r":28},{"x":326,"y":774,"r":28},{"x":1679,"y":306,"r":28},{"x":689,"y":346,"r":28},{"x":167,"y":1008,"r":28},{"x":270,"y":748,"r":28},{"x":294,"y":766,"r":28},{"x":262,"y":778,"r":28},{"x":136,"y":856,"r":28},{"x":1710,"y":280,"r":28},{"x":355,"y":593,"r":28},{"x":113,"y":942,"r":28},{"x":157,"y":969,"r":28},{"x":142,"y":996,"r":28},{"x":885,"y":1090,"r":28}],"cools":[],"falls":[],"mists":[]},"node-13-northern-watch-post":{"fires":[{"x":669,"y":822,"r":140},{"x":1742,"y":808,"r":140},{"x":1337,"y":987,"r":116},{"x":1058,"y":986,"r":115},{"x":1666,"y":633,"r":84},{"x":1043,"y":574,"r":77},{"x":541,"y":647,"r":76},{"x":735,"y":637,"r":76},{"x":1698,"y":859,"r":50},{"x":1875,"y":641,"r":48},{"x":1402,"y":551,"r":43},{"x":517,"y":616,"r":40},{"x":1068,"y":918,"r":37},{"x":1891,"y":613,"r":34},{"x":1786,"y":850,"r":33},{"x":1057,"y":1067,"r":30},{"x":1329,"y":534,"r":29},{"x":619,"y":879,"r":29},{"x":706,"y":890,"r":28},{"x":1324,"y":917,"r":28},{"x":513,"y":783,"r":28},{"x":572,"y":814,"r":28},{"x":680,"y":901,"r":28},{"x":1826,"y":812,"r":28},{"x":1361,"y":558,"r":28},{"x":1070,"y":537,"r":28},{"x":484,"y":640,"r":28},{"x":1889,"y":781,"r":28},{"x":1875,"y":698,"r":28},{"x":1038,"y":622,"r":28},{"x":1331,"y":1120,"r":28},{"x":1066,"y":1122,"r":28},{"x":511,"y":643,"r":28},{"x":527,"y":700,"r":28},{"x":836,"y":604,"r":28},{"x":647,"y":847,"r":28},{"x":1466,"y":546,"r":28},{"x":735,"y":854,"r":28},{"x":1738,"y":846,"r":28},{"x":1658,"y":799,"r":28}],"cools":[{"x":348,"y":1102,"r":91},{"x":268,"y":1038,"r":51},{"x":323,"y":1143,"r":36},{"x":1820,"y":298,"r":36},{"x":375,"y":1181,"r":36}],"falls":[],"mists":[]},"node-14-pool-river":{"fires":[],"cools":[{"x":2094,"y":1188,"r":90},{"x":403,"y":1024,"r":88},{"x":334,"y":1048,"r":68},{"x":1673,"y":257,"r":62},{"x":1505,"y":417,"r":59},{"x":2048,"y":489,"r":54},{"x":2150,"y":685,"r":54},{"x":441,"y":1081,"r":53},{"x":2043,"y":1228,"r":47},{"x":2074,"y":378,"r":45},{"x":2068,"y":528,"r":40},{"x":1513,"y":1203,"r":37},{"x":2008,"y":503,"r":36},{"x":2141,"y":1207,"r":36},{"x":215,"y":439,"r":36},{"x":339,"y":1106,"r":36},{"x":386,"y":817,"r":36},{"x":2129,"y":738,"r":36},{"x":2183,"y":372,"r":36},{"x":2306,"y":449,"r":36},{"x":2257,"y":777,"r":36},{"x":2343,"y":475,"r":36},{"x":562,"y":949,"r":36},{"x":2037,"y":1271,"r":36}],"falls":[{"x0":870,"y0":0,"x1":1115,"y1":430,"mask":"fx/node-14-pool-river-fall0.png"}],"mists":[{"x":990,"y":445,"r":210},{"x":860,"y":470,"r":140},{"x":1130,"y":470,"r":140}]}};
+const SPR_META = {"kenta":{"json":{"version":1,"name":"Kenta","cell":[128,128],"pivot":[64,126],"ppu":96,"animations":{"attack":{"sheet":"attack.png","frames":6,"fps":12,"loop":false,"hit":0.75},"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true}}},"sheets":["idle","walk","attack","sit","eat","sleep"]},"samson":{"json":{"version":1,"name":"Samson","cell":[128,128],"pivot":[64,126],"ppu":97,"animations":{"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":6,"fps":10,"loop":true},"attack":{"sheet":"attack.png","frames":6,"fps":12,"loop":false,"hit":0.75},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true}}},"sheets":["idle","walk","attack","sit","eat","sleep"]},"scott":{"json":{"version":1,"name":"Scott","cell":[128,128],"pivot":[64,126],"ppu":95,"animations":{"attack":{"sheet":"attack.png","frames":6,"fps":12,"loop":false,"hit":0.75},"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true},"perform":{"sheet":"perform.png","frames":9,"fps":8,"loop":true}}},"sheets":["idle","walk","attack","sit","eat","sleep","perform"]},"freia":{"json":{"version":1,"name":"Fre\u00eda la Fey","cell":[128,128],"pivot":[64,126],"ppu":151,"animations":{"attack":{"sheet":"attack.png","frames":6,"fps":12,"loop":false,"hit":0.75},"walk":{"sheet":"walk.png","frames":6,"fps":10,"loop":true},"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true}}},"sheets":["idle","walk","attack","sit","eat","sleep"]},"ront":{"json":{"version":1,"name":"Ront","cell":[128,128],"pivot":[64,126],"ppu":79,"animations":{"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true}}},"sheets":["idle","walk","sit","eat","sleep"]},"eldeth":{"json":{"version":1,"name":"Eldeth Feldrun","cell":[128,128],"pivot":[64,126],"ppu":137,"animations":{"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true}}},"sheets":["idle","walk","sit","eat","sleep"]},"derendil":{"json":{"version":1,"name":"Prince Derendil","cell":[128,128],"pivot":[64,126],"ppu":63,"animations":{"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true}}},"sheets":["idle","walk","sit","eat","sleep"]},"sarith":{"json":{"version":1,"name":"Sarith Kzekarit","cell":[128,128],"pivot":[64,126],"ppu":93,"animations":{"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"eat":{"sheet":"eat.png","frames":7,"fps":6,"loop":true},"sit":{"sheet":"sit.png","frames":5,"fps":4,"loop":true},"sleep":{"sheet":"sleep.png","frames":5,"fps":3,"loop":true}}},"sheets":["idle","walk","sit","eat","sleep"]},"buppido":{"json":{"version":1,"name":"Buppido","cell":[128,128],"pivot":[64,126],"ppu":166,"animations":{"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true}}},"sheets":["idle","walk"]},"jimjar":{"json":{"version":1,"name":"Jimjar","cell":[128,128],"pivot":[64,126],"ppu":192,"animations":{"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true}}},"sheets":["idle","walk"]},"topsy":{"json":{"version":1,"name":"Topsy","cell":[128,128],"pivot":[64,126],"ppu":197,"animations":{"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true}}},"sheets":["idle","walk"]},"turvy":{"json":{"version":1,"name":"Turvy","cell":[128,128],"pivot":[64,126],"ppu":200,"animations":{"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true}}},"sheets":["idle","walk"]},"shuushar":{"json":{"version":1,"name":"Shuushar the Awakened","cell":[128,128],"pivot":[64,126],"ppu":96,"animations":{"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true}}},"sheets":["idle","walk"]},"stool":{"json":{"version":1,"name":"Stool","cell":[128,128],"pivot":[64,107],"ppu":147,"animations":{"walk":{"sheet":"walk.png","frames":8,"fps":10,"loop":true},"idle":{"sheet":"idle.png","frames":4,"fps":5,"loop":true}}},"sheets":["idle","walk"]},"jorlan":{"json":{"version":1,"name":"Jorlan Duskryn","cell":[128,128],"pivot":[64,126],"ppu":103,"animations":{"idle":{"sheet":"idle.png","frames":1,"fps":5,"loop":true},"walk":{"sheet":"walk.png","frames":7,"fps":10,"loop":true},"attack":{"sheet":"attack.png","frames":9,"fps":12,"loop":false,"hit":0.6},"dodge":{"sheet":"dodge.png","frames":9,"fps":12,"loop":false}}},"sheets":["idle","walk","attack","dodge"]},"drow-guard-male":{"json":{"version":1,"name":"Drow Guard (male)","cell":[128,128],"pivot":[64,126],"ppu":103,"animations":{"walk":{"sheet":"walk.png","frames":6,"fps":10,"loop":true},"attack":{"sheet":"attack.png","frames":9,"fps":12,"loop":false,"hit":0.75},"dodge":{"sheet":"dodge.png","frames":9,"fps":12,"loop":false},"idle":{"sheet":"idle.png","frames":1,"fps":5,"loop":true}}},"sheets":["idle","walk","attack","dodge"]},"drow-guard-female":{"json":{"version":1,"name":"Drow Guard (female)","cell":[128,128],"pivot":[64,126],"ppu":101,"animations":{"walk":{"sheet":"walk.png","frames":6,"fps":10,"loop":true},"attack":{"sheet":"attack.png","frames":9,"fps":12,"loop":false,"hit":0.75},"dodge":{"sheet":"dodge.png","frames":9,"fps":12,"loop":false},"idle":{"sheet":"idle.png","frames":1,"fps":5,"loop":true}}},"sheets":["idle","walk","attack","dodge"]},"quaggoth":{"json":{"version":1,"name":"Quaggoth","cell":[128,128],"pivot":[64,126],"ppu":66,"animations":{"walk":{"sheet":"walk.png","frames":9,"fps":10,"loop":true},"attack":{"sheet":"attack.png","frames":9,"fps":12,"loop":false,"hit":0.75},"dodge":{"sheet":"dodge.png","frames":9,"fps":12,"loop":false},"idle":{"sheet":"idle.png","frames":1,"fps":5,"loop":true}}},"sheets":["idle","walk","attack","dodge"]},"giant-spider":{"json":{"version":1,"name":"Giant Spider","cell":[160,160],"pivot":[80,150],"ppu":76,"animations":{"attack":{"sheet":"attack.png","frames":9,"fps":12,"loop":false,"hit":0.75},"walk":{"sheet":"walk.png","frames":9,"fps":10,"loop":true},"dodge":{"sheet":"dodge.png","frames":9,"fps":12,"loop":false},"idle":{"sheet":"idle.png","frames":1,"fps":5,"loop":true}}},"sheets":["idle","walk","attack","dodge"]}};
+const LANDY = {"node-09-waterfall":690, "node-10-guard-tower":1275};
+
+const NAT_W = 2400, NAT_H = 1339, CELL = 20, GW = Math.ceil(NAT_W / CELL), GH = Math.ceil(NAT_H / CELL);
+const PARTY = ["kenta", "samson", "scott", "freia"];
+const SHORT = {jorlan: "Jorlan", "drow-guard-male": "Drow guard", "drow-guard-female": "Drow guard", freia: "Fifi", derendil: "Derendil", eldeth: "Eldeth", sarith: "Sarith", ront: "Ront", buppido: "Buppido", shuushar: "Shuushar", "giant-spider": "Giant spider", quaggoth: "Quaggoth"};
+const FOE_BARK = {quaggoth: ["Hrrraagh!", "Grrrhh…"], "giant-spider": ["(chittering)", "(hiss)"]};   // sounds, not dialogue
+const BASE = 1.15, SPACING = 58, SPEED = 210;
+
+const $ = id => document.getElementById(id);
+const stage = $("stage"), world = $("world"), plateImg = $("plate"), fxEl = $("fx"), cv = $("cv"), ctx = cv.getContext("2d"), over = $("over");
+
+// ---------- sprites ----------
+const SPR = {};
+function loadImg(src){ return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(src); i.src = src; }); }
+async function loadSprites(){
+  const jobs = [];
+  for (const [id, m] of Object.entries(SPR_META)){
+    SPR[id] = {json: m.json, img: {}};
+    for (const a of m.sheets) jobs.push(loadImg(`${SPRITE_BASE}${id}/${a}.png`).then(i => SPR[id].img[a] = i));
+  }
+  await Promise.all(jobs);
+}
+// sheet rows run S, SE, E, NE, N, NW, W, SW (checked by eye on Kenta, Jimjar, quaggoth, Fifi)
+const ROW_OF = [2, 1, 0, 7, 6, 5, 4, 3];  // screen angle octant (E, SE, S, SW, W, NW, N, NE) -> sheet row
+function faceOf(dx, dy){ return ROW_OF[((Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) % 8) + 8) % 8]; }
+
+// ---------- state ----------
+let cur = 11, node = SPEC[11];
+let grid = new Uint8Array(GW * GH), depthMin = 0, depthMax = NAT_H, centroid = {x: 1200, y: 700};
+let actors = [], party = [], npcs = [], foes = [];
+let leader = null, trail = [];
+let mode = "load";            // explore | combat | talk | dialog | travel
+let ackZone = null;
+const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}};
+let now = performance.now();
+
+function mkActor(id, x, y, kind, extra = {}){
+  return Object.assign({id, x, y, kind, face: 0, anim: "idle", t0: now, path: [], alpha: 1, flash: 0, once: null, repath: 0, lastBark: -1e9}, extra);
+}
+function setAnim(a, n){ if (a.anim !== n){ a.anim = n; a.t0 = now; } }
+function playOnce(a, n, cb){
+  const an = SPR[a.id].json.animations[n];
+  if (!an || !SPR[a.id].img[n]){ cb && cb(); return; }
+  a.anim = n; a.t0 = now; a.once = {end: now + an.frames / an.fps * 1000, cb, hitAt: now + (an.hit || .6) * an.frames / an.fps * 1000};
+}
+
+// ---------- walk grid ----------
+function inPoly(poly, x, y){
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++){
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+function inFloor(f, x, y){
+  if (f.poly) return inPoly(f.poly, x, y);
+  if (f.ellipse){ const [cx, cy, rx, ry] = f.ellipse; return ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1; }
+  if (f.rect){ const [x0, y0, x1, y1] = f.rect; return x >= x0 && x <= x1 && y >= y0 && y <= y1; }
+  return false;
+}
+const inRect = (r, x, y) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+function buildGrid(){
+  grid = new Uint8Array(GW * GH);
+  let sx = 0, sy = 0, n = 0; depthMin = 1e9; depthMax = -1e9;
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++){
+    const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
+    const inside = node.floors.some(f => inFloor(f, x, y)) || node.zones.some(z => inRect(z.rect, x, y));
+    const blocked = (node.obstacles || []).some(o => ((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1);
+    if (inside && !blocked){ grid[cy * GW + cx] = 1; sx += x; sy += y; n++; depthMin = Math.min(depthMin, y); depthMax = Math.max(depthMax, y); }
+  }
+  centroid = n ? {x: sx / n, y: sy / n} : {x: 1200, y: 700};
+  if (depthMax - depthMin < 200){ depthMin -= 100; depthMax += 100; }
+}
+function walkable(x, y){
+  const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+  return cx >= 0 && cy >= 0 && cx < GW && cy < GH && grid[cy * GW + cx] === 1;
+}
+function nearestWalkable(x, y, avoid){
+  const ok = (px, py) => walkable(px, py) && !(avoid && avoid.some(p => Math.hypot(p.x - px, p.y - py) < 30));
+  if (ok(x, y)) return {x, y};
+  const cx0 = Math.floor(x / CELL), cy0 = Math.floor(y / CELL);
+  for (let r = 1; r < 70; r++){
+    let best = null, bd = 1e9;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++){
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const px = (cx0 + dx) * CELL + CELL / 2, py = (cy0 + dy) * CELL + CELL / 2;
+      if (!ok(px, py)) continue;
+      const d = Math.hypot(px - x, py - y);
+      if (d < bd){ bd = d; best = {x: px, y: py}; }
+    }
+    if (best) return best;
+  }
+  return {x: centroid.x, y: centroid.y};
+}
+function los(a, b){
+  const d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.ceil(d / 6);
+  for (let k = 1; k <= n; k++){ const t = k / n; if (!walkable(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false; }
+  return true;
+}
+function findPath(from, to){
+  if (los(from, to)) return [{x: to.x, y: to.y}];
+  const cell = p => Math.min(GW - 1, Math.max(0, Math.floor(p.x / CELL))) + Math.min(GH - 1, Math.max(0, Math.floor(p.y / CELL))) * GW;
+  const s = cell(from), t = cell(to), N = GW * GH;
+  const g = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1), closed = new Uint8Array(N);
+  const heap = []; const push = (f, i) => { heap.push([f, i]); let k = heap.length - 1; while (k > 0){ const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length){ heap[0] = last; let k = 0; for (;;){ const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+  const tx = t % GW, ty = (t / GW) | 0, h = i => { const dx = Math.abs(i % GW - tx), dy = Math.abs(((i / GW) | 0) - ty); return Math.max(dx, dy) + .414 * Math.min(dx, dy); };
+  g[s] = 0; push(h(s), s);
+  const D = [[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.414],[1,-1,1.414],[-1,1,1.414],[-1,-1,1.414]];
+  let found = false;
+  while (heap.length){
+    const [, i] = pop(); if (closed[i]) continue; closed[i] = 1;
+    if (i === t){ found = true; break; }
+    const x = i % GW, y = (i / GW) | 0;
+    for (const [dx, dy, c] of D){
+      const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+      const j = ny * GW + nx; if (!grid[j] || closed[j]) continue;
+      if (dx && dy && (!grid[y * GW + nx] || !grid[ny * GW + x])) continue;
+      const ng = g[i] + c; if (ng < g[j]){ g[j] = ng; came[j] = i; push(ng + h(j), j); }
+    }
+  }
+  if (!found) return [];
+  const cells = []; for (let i = t; i !== -1 && i !== s; i = came[i]) cells.push(i);
+  cells.reverse();
+  const pts = cells.map(i => ({x: (i % GW) * CELL + CELL / 2, y: ((i / GW) | 0) * CELL + CELL / 2}));
+  if (pts.length) pts[pts.length - 1] = {x: to.x, y: to.y};
+  const out = []; let anchor = from, k = 0;      // string-pull
+  while (k < pts.length){
+    let far = k; for (let m = pts.length - 1; m > k; m--) if (los(anchor, pts[m])){ far = m; break; }
+    out.push(pts[far]); anchor = pts[far]; k = far + 1;
+  }
+  return out;
+}
+
+// ---------- scale & drawing ----------
+function depthAt(y){ return 0.8 + 0.32 * Math.min(1, Math.max(0, (y - depthMin) / (depthMax - depthMin))); }
+function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE * a.fixedScale * (96 / m.ppu); return BASE * node.scale * depthAt(a.y) * (96 / m.ppu) * (a.big || 1); }
+function frameOf(a){
+  const sp = SPR[a.id], an = sp.json.animations[a.anim] && sp.img[a.anim] ? sp.json.animations[a.anim] : sp.json.animations.idle;
+  const name = sp.json.animations[a.anim] && sp.img[a.anim] ? a.anim : "idle";
+  const el = (now - a.t0) / 1000 * an.fps;
+  const f = an.loop === false ? Math.min(an.frames - 1, Math.floor(el)) : Math.floor(el) % an.frames;
+  return {img: sp.img[name], f};
+}
+
+let view = {z: 1, tx: 0, ty: 0}, base = 1, dpr = 1, camTween = null, userPanAt = -1e9;
+function fitScale(){ const r = stage.getBoundingClientRect(); return Math.min(r.width / NAT_W, r.height / NAT_H); }
+function clampView(v){
+  const r = stage.getBoundingClientRect(), s = base * v.z, w = NAT_W * s, h = NAT_H * s;
+  v.tx = w <= r.width ? (r.width - w) / 2 : Math.min(0, Math.max(r.width - w, v.tx));
+  v.ty = h <= r.height ? (r.height - h) / 2 : Math.min(0, Math.max(r.height - h, v.ty));
+}
+let sliding = false;
+function applyView(){ if (!sliding) clampView(view); world.style.transform = `translate(${view.tx}px,${view.ty}px) scale(${base * view.z})`; }
+function resize(){
+  const r = stage.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  base = fitScale(); applyView();
+}
+function w2s(x, y){ const s = base * view.z; return [view.tx + x * s, view.ty + y * s]; }
+function s2w(cx, cy){ const r = stage.getBoundingClientRect(), s = base * view.z; return {x: (cx - r.left - view.tx) / s, y: (cy - r.top - view.ty) / s}; }
+function camTo(z, cx, cy, ms){
+  const r = stage.getBoundingClientRect(), s = base * z;
+  const to = {z, tx: r.width / 2 - cx * s, ty: r.height / 2 - cy * s}; clampView(to);
+  camTween = {from: {...view}, to, t0: now, ms};
+}
+function zoomAt(px, py, f){
+  const nz = Math.min(4, Math.max(1, view.z * f)); if (nz === view.z) return;
+  const s0 = base * view.z, s1 = base * nz, wx = (px - view.tx) / s0, wy = (py - view.ty) / s0;
+  view.z = nz; view.tx = px - wx * s1; view.ty = py - wy * s1; camTween = null; userPanAt = now; applyView();
+}
+
+function draw(){
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  const s = base * view.z * dpr;
+  ctx.setTransform(s, 0, 0, s, view.tx * dpr, view.ty * dpr);
+  ctx.imageSmoothingEnabled = false;
+  // exits: soft glows so players can see the ways out
+  if (mode === "explore" || mode === "dialog"){
+    const pulse = .5 + .5 * Math.sin(now / 520);
+    for (const z of node.zones){
+      const [x0, y0, x1, y1] = z.rect, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      if (z.interact){                        // things you can use light up when you are in reach, or point at them
+        const lit = hoverObj === z || hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale);
+        if (!lit) continue;
+        const col = state.gateOpen ? "98,227,198" : "240,170,80", pts = z.interact.poly;
+        ctx.save(); ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+        ctx.fillStyle = `rgba(${col},${.06 + .05 * pulse})`; ctx.fill();
+        ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = 24; ctx.lineJoin = "round";
+        ctx.strokeStyle = `rgba(${col},${.55 + .35 * pulse})`; ctx.lineWidth = 5; ctx.stroke();
+        ctx.shadowBlur = 0; ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,240,210,${.5 + .3 * pulse})`; ctx.stroke(); ctx.restore();
+        continue;
+      }
+      const locked = z.kind === "gate" && !state.gateOpen;
+      const col = locked ? "208,69,58" : z.kind === "water" ? "140,190,255" : z.kind === "leave" ? "232,162,74" : "98,227,198";
+      const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      g.addColorStop(0, `rgba(${col},${.30 + .25 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, rad, rad * .55, 0, 0, Math.PI * 2); ctx.fill();
+      if (hoverZone === z){
+        ctx.save(); ctx.setLineDash([10, 8]); ctx.lineWidth = 3 / (base * view.z); ctx.strokeStyle = `rgba(${col},.9)`;
+        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.restore();
+      }
+    }
+  }
+  // click target marker
+  if (marker && now - marker.t < 600){
+    const k = (now - marker.t) / 600; ctx.strokeStyle = `rgba(232,162,74,${1 - k})`; ctx.lineWidth = 3 / (base * view.z);
+    ctx.beginPath(); ctx.ellipse(marker.x, marker.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  for (const c of node.chains || []) drawChain(c);
+  const list = actors.filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
+  for (const a of list){
+    const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
+    if (a.fall || a.fallIn) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
+    if (a === leader && mode === "explore"){
+      ctx.globalAlpha = .55 + .2 * Math.sin(now / 300); ctx.strokeStyle = "#e8a24a"; ctx.lineWidth = 2 / (base * view.z);
+      ctx.beginPath(); ctx.ellipse(a.x, a.y, 30 * sc, 11 * sc, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (mode === "combat" && a === activeActor()){
+      ctx.globalAlpha = .8; ctx.strokeStyle = a.kind === "foe" ? "#ff6b5e" : "#e8a24a"; ctx.lineWidth = 3 / (base * view.z);
+      ctx.beginPath(); ctx.ellipse(a.x, a.y, 34 * sc * (cw / 128), 12 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = a.alpha;
+    const {img, f} = frameOf(a);
+    let fy = 0;
+    if (a.fall){ const k = Math.min(1, (now - a.fall) / 900); fy = k * k * 800; ctx.globalAlpha = a.alpha * (1 - k); }
+    if (a.fallIn){ const k = 1 - Math.min(1, (now - a.fallIn) / 700); fy = -k * k * 700; if (k <= 0) a.fallIn = 0; }
+    const dw = cw * sc, dh = ch * sc, dx = a.x - px * sc, dy = a.y - py * sc + fy;
+    ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
+    if (a.flash > now){
+      ctx.globalAlpha = .55 * a.alpha;
+      // tint by redrawing through a temp canvas
+      tint.width = cw; tint.height = ch; const tc = tint.getContext("2d");
+      tc.clearRect(0, 0, cw, ch); tc.drawImage(img, f * cw, a.face * ch, cw, ch, 0, 0, cw, ch);
+      tc.globalCompositeOperation = "source-in"; tc.fillStyle = a.flashCol || "#fff"; tc.fillRect(0, 0, cw, ch); tc.globalCompositeOperation = "source-over";
+      ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
+    }
+    if (a.talk && !state.talked[a.id] && mode === "explore"){
+      ctx.globalAlpha = 1; const bob = Math.sin(now / 260) * 6, top = dy + dh * .18 - 26 + bob;
+      ctx.fillStyle = "#e8a24a"; ctx.strokeStyle = "#1a0f05"; ctx.lineWidth = 4;
+      ctx.font = "bold 44px 'IM Fell English SC', Georgia, serif"; ctx.textAlign = "center";
+      ctx.strokeText("!", a.x, top); ctx.fillText("!", a.x, top);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+const tint = document.createElement("canvas");
+// human-scale iron chains and manacles, drawn on the floor under everyone (a link is ~5 px; a cuff ~14 px across, wrist size)
+function drawChain(c){
+  const pts = c.pts; ctx.save(); ctx.lineCap = "round";
+  let carry = 0, k = 0;
+  for (let i = 1; i < pts.length; i++){
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], L = Math.hypot(x1 - x0, y1 - y0), ang = Math.atan2(y1 - y0, x1 - x0);
+    for (let t = carry; t < L; t += 4.6, k++){
+      const x = x0 + (x1 - x0) * t / L, y = y0 + (y1 - y0) * t / L;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+      ctx.strokeStyle = "#1c1820"; ctx.lineWidth = 2.6;
+      if (k % 2){ ctx.beginPath(); ctx.moveTo(-2.6, 0); ctx.lineTo(2.6, 0); ctx.stroke(); ctx.strokeStyle = "#6e6676"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-2, -.4); ctx.lineTo(2, -.4); ctx.stroke(); }
+      else { ctx.beginPath(); ctx.ellipse(0, 0, 3, 1.9, 0, 0, Math.PI * 2); ctx.stroke(); ctx.strokeStyle = "#7a7182"; ctx.lineWidth = .9; ctx.beginPath(); ctx.ellipse(0, -.3, 2.4, 1.3, 0, Math.PI, Math.PI * 2); ctx.stroke(); }
+      ctx.restore();
+    }
+    carry = (carry + Math.ceil((L - carry) / 4.6) * 4.6) - L;
+  }
+  for (const [x, y] of c.cuffs || []){
+    ctx.strokeStyle = "#1c1820"; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 7, 4, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = "#8a8090"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(x, y - .6, 6, 3.2, 0, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+    ctx.fillStyle = "#5a4a40"; ctx.fillRect(x + 5, y - 1.5, 3, 3);       // hinge, a touch of rust
+  }
+  ctx.restore();
+}
+
+// ---------- bubbles, tooltips, log ----------
+const bubbles = []; let lastAnyBark = -1e9;
+function bark(a, text, ms = 4200, opts = {}){
+  if (!a) return;
+  bubbles.filter(b => b.a === a).forEach(b => b.until = 0);
+  const el = document.createElement("div"); el.className = "bubble" + (a.kind === "foe" ? " foe" : "");
+  const full = SPR[a.id].json.name, short = SHORT[a.id] || full, first = full.split(" ")[0];
+  const named = [short, first, full].some(n => n && text.toLowerCase().includes(n.toLowerCase()));
+  if (!named){ const who = document.createElement("b"); who.textContent = short; el.appendChild(who); }   // never say the name twice
+  if (opts.talk) el.classList.add("said");
+  el.appendChild(document.createTextNode(text)); over.appendChild(el);
+  bubbles.push({a, el, until: now + ms}); a.lastBark = now; lastAnyBark = now;
+}
+function updateOverlay(){
+  for (let i = bubbles.length - 1; i >= 0; i--){
+    const b = bubbles[i];
+    if (now > b.until || !actors.includes(b.a)){ b.el.remove(); bubbles.splice(i, 1); continue; }
+    const m = SPR[b.a.id].json, sc = actorScale(b.a), top = b.a.y - m.pivot[1] * sc + m.cell[1] * sc * .16;
+    const [sx, sy] = w2s(b.a.x, top); b.el.style.left = sx + "px"; b.el.style.top = sy + "px";
+  }
+  if (nameTag){
+    if (hoverActor && mode !== "talk"){
+      const [sx, sy] = w2s(hoverActor.x, hoverActor.y); nameTag.hidden = false; nameTag.style.left = sx + "px"; nameTag.style.top = sy + "px";
+      nameTag.textContent = (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" : "");
+    } else nameTag.hidden = true;
+  }
+}
+const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; over.appendChild(tip);
+const nameTag = document.createElement("div"); nameTag.className = "nametag"; nameTag.hidden = true; over.appendChild(nameTag);
+function log(html){
+  const el = $("log"); const p = document.createElement("p"); p.innerHTML = html; el.appendChild(p);
+  [...el.children].forEach((c, i, all) => c.classList.toggle("old", i < all.length - 1));
+  while (el.children.length > 3) el.firstChild.remove();
+  clearTimeout(log.t); log.t = setTimeout(() => { [...el.children].forEach(c => c.style.opacity = 0); setTimeout(() => el.innerHTML = "", 1000); }, 9000);
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+
+// ---------- FX (from the plate viewer) ----------
+const STREAKS = (() => {
+  const c = document.createElement("canvas"); c.width = 96; c.height = 512; const g = c.getContext("2d");
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 230; i++){
+    const x = rnd() * 96, len = 60 + rnd() * 260, y = rnd() * 512, w = 1 + rnd() * 3.6, a = 0.3 + rnd() * 0.6;
+    for (const dy of [0, -512, 512]){
+      const gr = g.createLinearGradient(0, y + dy, 0, y + dy + len);
+      gr.addColorStop(0, "rgba(220,240,255,0)"); gr.addColorStop(.5, `rgba(235,246,255,${a})`); gr.addColorStop(1, "rgba(220,240,255,0)");
+      g.fillStyle = gr; g.fillRect(x, y + dy, w, len);
+    }
+  }
+  return c.toDataURL("image/png");
+})();
+function buildFx(slug){
+  fxEl.innerHTML = ""; const d = FX[slug]; if (!d) return;
+  let s = slug.length * 977; const r = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  const frag = document.createDocumentFragment();
+  d.fires.forEach(p => { const e = document.createElement("div"); e.className = "fire"; const size = Math.max(70, p.r * 2.6);
+    e.style.cssText = `left:${p.x}px;top:${p.y}px;width:${size}px;height:${size}px;--d:${(0.9 + r() * 0.9).toFixed(2)}s;--dl:-${(r() * 2).toFixed(2)}s`; frag.appendChild(e); });
+  (d.violets || []).forEach((p, k) => { const e = document.createElement("div"); e.className = "cool violet" + (k % 2 ? "" : " flare"); const size = Math.max(100, p.r * 2.8);
+    e.style.cssText = `left:${p.x}px;top:${p.y}px;width:${size}px;height:${size}px;--d:${(3.5 + r() * 4).toFixed(2)}s;--dl:-${(r() * 8).toFixed(2)}s`; frag.appendChild(e); });
+  d.cools.forEach((p, k) => { const e = document.createElement("div"); const flare = k % 3 === 0; e.className = flare ? "cool flare" : "cool"; const size = Math.max(110, p.r * 3.2);
+    e.style.cssText = `left:${p.x}px;top:${p.y}px;width:${size}px;height:${size}px;--d:${flare ? (4 + r() * 4).toFixed(2) : (2.6 + r() * 3).toFixed(2)}s;--dl:-${(r() * 8).toFixed(2)}s`; frag.appendChild(e);
+    if (flare || k % 4 === 1){ const gl = document.createElement("div"); gl.className = "glint"; const gs = Math.max(70, p.r * 1.8);
+      gl.style.cssText = `left:${p.x + (r() - .5) * p.r * .5}px;top:${p.y - p.r * .25}px;width:${gs}px;height:${gs}px;--rot:${Math.round(r() * 40 - 20)}deg;--d:${(3.5 + r() * 5).toFixed(2)}s;--dl:-${(r() * 8).toFixed(2)}s`; frag.appendChild(gl); } });
+  d.falls.forEach(f => { const e = document.createElement("div"); e.className = "fall"; const w = f.x1 - f.x0, h = f.y1 - f.y0;
+    e.style.cssText = `left:${f.x0}px;top:${f.y0}px;width:${w}px;height:${h}px;-webkit-mask-image:url(${ASSET}img/${f.mask});mask-image:url(${ASSET}img/${f.mask})`;
+    const boost = document.createElement("div"); boost.className = "boost"; e.appendChild(boost);
+    const k = Math.max(0.7, Math.min(1.4, h / 700));
+    [["sheet fast", 0.42 / k, "80px 512px"], ["sheet mid", 0.7 / k, "112px 512px"], ["sheet slow", 1.25 / k, "160px 512px"]].forEach(([cls, dur, size]) => {
+      const sh = document.createElement("div"); sh.className = cls; sh.style.cssText = `background-image:url(${STREAKS});background-size:${size};background-position:${Math.round(r() * 80)}px 0;--d:${dur.toFixed(2)}s`; e.appendChild(sh); });
+    frag.appendChild(e);
+    const landY = LANDY[slug] ?? f.y1, cx = (f.x0 + f.x1) / 2, n = Math.max(4, Math.round(w / 45));
+    for (let i = 0; i < n; i++){ const sp = document.createElement("div"); sp.className = "spray"; const sz = w * (0.55 + r() * 0.5);
+      sp.style.cssText = `left:${cx + (r() - .5) * w * .9}px;top:${landY - 10}px;width:${sz}px;height:${sz * .75}px;--dx:${Math.round((r() - .5) * 40)}%;--d:${(1.1 + r() * 0.9).toFixed(2)}s;--dl:-${(r() * 2).toFixed(2)}s`; frag.appendChild(sp); } });
+  (d.mists || []).forEach(p => { const e = document.createElement("div"); e.className = "mist";
+    e.style.cssText = `left:${p.x}px;top:${p.y}px;width:${p.r * 2.4}px;height:${p.r * 1.5}px;--d:${(5 + r() * 4).toFixed(2)}s;--dl:-${(r() * 6).toFixed(2)}s`; frag.appendChild(e); });
+  fxEl.appendChild(frag);
+}
+
+// ---------- marks painted in light on the walls ----------
+// The drow ward over the pen (house rule: no spellcasting in Velkynvelve until the party reaches the tunnels).
+const MARKS = {"node-11-slave-pen": [{type: "ward", x: 1300, y: 508, r: 84, sx: .86, sk: 7, rot: -2,
+  tip: "Drow ward sigil: while it holds, no one in Velkynvelve can cast spells"}]};
+function wardBody(){
+  const C = 100, P = (r, a) => [C + r * Math.cos(a), C + r * Math.sin(a)].map(v => v.toFixed(1)).join(",");
+  let runes = "";
+  for (let i = 0; i < 16; i++){                  // angular drow-style rune marks around the ring
+    const a = i / 16 * Math.PI * 2 - Math.PI / 2, a2 = a + .12, k = i % 4;
+    const shape = k === 0 ? `M${P(82, a)} L${P(92, a)} M${P(87, a - .06)} L${P(87, a + .1)}`
+      : k === 1 ? `M${P(82, a)} L${P(92, a2)} L${P(82, a2 + .06)}`
+      : k === 2 ? `M${P(84, a)} L${P(91, a)} M${P(84, a + .1)} L${P(91, a + .1)}`
+      : `M${P(82, a)} L${P(87, a + .08)} L${P(92, a)}`;
+    runes += `<path class="rune" style="--rd:${(i * 7 / 16).toFixed(2)}s" d="${shape}"/>`;
+  }
+  const star = Array.from({length: 8}, (_, i) => P(72, i / 8 * Math.PI * 2 - Math.PI / 2));
+  const oct = [0, 3, 6, 1, 4, 7, 2, 5].map(i => star[i]).join(" ");
+  let legs = "";
+  for (let i = 0; i < 8; i++){                   // eight bent legs around the core: the spider queen's mark
+    const s = i < 4 ? -1 : 1, j = i % 4, y0 = C - 9 + j * 6, y1 = C - 22 + j * 14;
+    legs += `<path d="M${C + s * 6},${y0} L${C + s * 18},${y0 - 8 + j * 3} L${C + s * 27},${y1}"/>`;
+  }
+  return `<circle cx="${C}" cy="${C}" r="98"/><circle cx="${C}" cy="${C}" r="78"/>
+    <polygon points="${oct}"/><circle cx="${C}" cy="${C}" r="36"/>
+    <line x1="${C - 36}" y1="${C + 36}" x2="${C + 36}" y2="${C - 36}"/>
+    ${runes}<g>${legs}</g>
+    <ellipse class="core" cx="${C}" cy="${C - 2}" rx="7" ry="10"/><circle class="core" cx="${C}" cy="${C + 12}" r="4"/>`;
+}
+// rough chisel edges and worn patches, so the lines read as cut stone rather than a stamp
+const WARD_DEFS = `<defs>
+  <filter id="chisel" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="1.6"/></filter>
+  <filter id="wear"><feTurbulence type="fractalNoise" baseFrequency=".045" numOctaves="3" seed="9"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.6 -0.25"/></filter>
+  <mask id="worn" maskUnits="userSpaceOnUse" x="-20" y="-20" width="240" height="240"><rect x="-20" y="-20" width="240" height="240" filter="url(#wear)"/></mask>
+  <radialGradient id="edgefade"><stop offset=".8" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></radialGradient>
+</defs>`;
+function buildMarks(slug){
+  const el = $("marks"); el.innerHTML = "";
+  for (const m of MARKS[slug] || []){
+    const pos = `left:${m.x}px;top:${m.y}px;width:${m.r * 2}px;height:${m.r * 2}px;--sx:${m.sx || 1};--sk:${m.sk || 0}deg;--rot:${m.rot || 0}deg`;
+    const body = wardBody();
+    const g = document.createElement("div"); g.className = "ward groove"; g.style.cssText = pos;
+    g.innerHTML = `<svg viewBox="0 0 200 200" fill="none" stroke-linecap="round" stroke-linejoin="round">${WARD_DEFS}
+      <g mask="url(#worn)" filter="url(#chisel)"><g stroke="#2a1d3a" stroke-width="3.6">${body}</g></g></svg>`;
+    const l = document.createElement("div"); l.className = "ward light"; l.style.cssText = pos;
+    l.innerHTML = `<div class="bloom"></div><svg viewBox="0 0 200 200" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <g mask="url(#worn)" filter="url(#chisel)">
+        <g transform="translate(.9,1.1)" stroke="#b9d6e6" stroke-width=".9" opacity=".22">${body}</g>
+        <g class="glow" stroke="#a35cff" stroke-width="3.2" style="filter:blur(2.4px)">${body}</g>
+        <g class="lines" stroke="#d9b8ff" stroke-width="1.1">${body}</g>
+      </g></svg>`;
+    el.appendChild(g); el.appendChild(l); m.el = l;
+  }
+}
+// the ward stutters now and then: magic pushing against it
+setInterval(() => { if (!motionOn) return; for (const m of MARKS[node.slug] || []){ if (!m.el || Math.random() > .35) continue;
+  m.el.classList.add("flicker"); setTimeout(() => m.el.classList.remove("flicker"), 90 + Math.random() * 120); } }, 4000);
+const markAt = w => (MARKS[node.slug] || []).find(m => Math.hypot(w.x - m.x, (w.y - m.y) * 1.1) < m.r);
+
+// ---------- music ----------
+const music = {explore: $("mExplore"), combat: $("mCombat")};
+music.explore.src = ASSET + "audio/explore.mp3"; music.combat.src = ASSET + "audio/combat.mp3";
+let musicOn = true, vol = .4, track = "explore", audioUnlocked = false;
+try { const v = localStorage.getItem("vk-music"); if (v === "off" || (APP && localStorage.getItem("aop_music_off"))) musicOn = false; const vv = localStorage.getItem("vk-vol"); if (vv) vol = +vv; } catch (e) {}
+$("vol").value = Math.round(vol * 100);
+const LEVEL = {explore: .55, combat: .7};   // explore sits low under play; combat a touch hotter, still under everything
+function unlockAudio(){ if (audioUnlocked) return; audioUnlocked = true; if (musicOn) music[track].play().catch(() => {}); }
+function setTrack(t){ track = t; if (musicOn && audioUnlocked){ const a = music[t]; if (a.paused){ a.volume = 0; a.play().catch(() => {}); } } }
+function tickMusic(dt){
+  for (const [name, a] of Object.entries(music)){
+    let target = musicOn && audioUnlocked && name === track ? vol * LEVEL[name] : 0;
+    if (mode === "talk" || speaking) target *= .35;
+    a.volume = Math.max(0, Math.min(1, a.volume + (target - a.volume) * Math.min(1, dt * 1.6)));
+    if (target === 0 && a.volume < .01 && !a.paused) a.pause();
+  }
+}
+function renderMusicBtn(){ $("musicBtn").setAttribute("aria-pressed", String(musicOn)); $("musicBtn").textContent = musicOn ? "♪ Music on" : "♪ Music off"; }
+$("musicBtn").onclick = () => { musicOn = !musicOn; try { localStorage.setItem("vk-music", musicOn ? "on" : "off"); } catch (e) {} renderMusicBtn(); audioUnlocked = true; if (musicOn) setTrack(track); };
+$("vol").oninput = e => { vol = e.target.value / 100; try { localStorage.setItem("vk-vol", vol); } catch (e) {} };
+renderMusicBtn();
+
+let motionOn = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+function setMotion(on){ motionOn = on; fxEl.hidden = !on; $("marks").classList.toggle("still", !on); $("motionBtn").setAttribute("aria-pressed", String(on)); $("motionBtn").textContent = on ? "Motion on" : "Motion off"; }
+$("motionBtn").onclick = () => setMotion(!motionOn);
+
+// ---------- party roster ----------
+function portrait(id, canvas, size){
+  const m = SPR[id].json, img = SPR[id].img.idle, [cw, ch] = m.cell, c = canvas.getContext("2d");
+  canvas.width = size; canvas.height = size; c.imageSmoothingEnabled = false; c.clearRect(0, 0, size, size);
+  const k = Math.min(1.9, 96 / m.ppu * 1.25) * size / cw;      // larger folk fill more of the frame
+  const w = cw * k, h = ch * k; c.drawImage(img, 0, 0, cw, ch, (size - w) / 2, size - h * .98 + (size * .02), w, h);
+}
+function renderParty(){
+  const el = $("party"); el.querySelectorAll(".pc").forEach(n => n.remove());
+  const help = el.querySelector(".help");
+  PARTY.forEach(id => {
+    const a = party.find(p => p.id === id); if (!a) return;
+    const b = document.createElement("button"); b.className = "pc"; b.setAttribute("aria-pressed", String(a === leader));
+    const c = document.createElement("canvas"); portrait(id, c, 64); b.appendChild(c);
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>${a === leader ? "Moving" : "Waiting"}</small>`;
+    b.appendChild(nm); b.onclick = () => setLeader(a); el.insertBefore(b, help);
+  });
+}
+function setLeader(a){
+  if (mode === "combat"){ const i = turnOrder.indexOf(a); if (i >= 0){ turnIdx = i; renderTurns(); } return; }
+  if (leader && leader !== a) leader.home = {x: leader.x, y: leader.y};
+  stopActivity(a); a.path = []; a.actUntil = 0;
+  leader = a; trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: a.x, y: a.y}]);
+  renderParty(); log(`Now moving <em>${esc(SHORT[a.id] || SPR[a.id].json.name)}</em>. The others stay put until the party leaves.`);
+}
+const followers = () => party.filter(p => p !== leader);
+function followOrder(){ return followers().sort((a, b) => Math.hypot(a.x - leader.x, a.y - leader.y) - Math.hypot(b.x - leader.x, b.y - leader.y)); }
+
+// ---------- travel ----------
+const zoneCenter = z => ({x: (z.rect[0] + z.rect[2]) / 2, y: (z.rect[1] + z.rect[3]) / 2});
+function norm(v){ const d = Math.hypot(v.x, v.y) || 1; return {x: v.x / d, y: v.y / d}; }
+function zoneAt(x, y){ return node.zones.find(z => inRect(z.rect, x, y)) || null; }
+
+async function enterNode(n, opts = {}){
+  const from = cur, fromScale = node.scale;
+  mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
+  $("combatbar").hidden = true; $("vignette").classList.remove("on");
+  bubbles.forEach(b => b.until = 0);
+  if (!opts.slide) await new Promise(r => setTimeout(r, 360));
+  cur = n; node = SPEC[n];
+  plateImg.src = `${ASSET}img/${node.slug}.jpg`;
+  try { await plateImg.decode(); } catch (e) {}
+  buildFx(node.slug); buildMarks(node.slug); buildGrid();
+  // spawn: the arrival zone in this plate that links back to where we came from
+  let spawn, entryDir = {x: 0, y: 1}, arrival = null;
+  if (opts.from != null) arrival = node.zones.find(z => z.to.includes(opts.from)) || null;
+  if (arrival){
+    const zc = zoneCenter(arrival); entryDir = norm({x: centroid.x - zc.x, y: centroid.y - zc.y});
+    spawn = nearestWalkable(zc.x + entryDir.x * 210 * node.scale, zc.y + entryDir.y * 210 * node.scale);
+    if (zoneAt(spawn.x, spawn.y)) spawn = nearestWalkable(zc.x + entryDir.x * 300, zc.y + entryDir.y * 300);
+  } else if (opts.spawn){ spawn = nearestWalkable(opts.spawn.x, opts.spawn.y); }
+  else spawn = nearestWalkable(centroid.x, centroid.y);
+  // formation: keep how the party stood when they left, turned to face the new way in
+  const offs = opts.offs || PARTY.map((id, i) => ({id, dx: [0, -60, 55, -10][i], dy: [0, 40, 45, 85][i]}));
+  const theta = opts.exitDir && arrival ? Math.atan2(entryDir.y, entryDir.x) - Math.atan2(opts.exitDir.y, opts.exitDir.x) : 0;
+  const ratio = node.scale / (opts.fromScale || node.scale);
+  const leadId = leader ? leader.id : PARTY[0];
+  actors = []; party = []; foes = []; npcs = [];
+  const placed = [];
+  const L = mkActor(leadId, spawn.x, spawn.y, "pc"); party.push(L); placed.push(spawn);
+  for (const o of offs){
+    if (o.id === leadId) continue;
+    const c = Math.cos(theta), s = Math.sin(theta);
+    const rx = (o.dx * c - o.dy * s) * ratio, ry = (o.dx * s + o.dy * c) * ratio;
+    const p = nearestWalkable(spawn.x + rx, spawn.y + ry, placed); placed.push(p);
+    party.push(mkActor(o.id, p.x, p.y, "pc"));
+  }
+  if (!party.find(p => p.id === leadId)) party.unshift(L);
+  leader = L;
+  const face = arrival ? faceOf(entryDir.x, entryDir.y) : 0;
+  party.forEach(p => p.face = face);
+  party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 3000 + Math.random() * 6000; });
+  party.sort((a, b) => PARTY.indexOf(a.id) - PARTY.indexOf(b.id));
+  for (const np of node.npcs || []){
+    if (np.hostile && state.cleared[n]) continue;
+    const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
+      hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
+    a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
+  }
+  actors = [...party, ...npcs];
+  trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: L.x, y: L.y}]);
+  ackZone = arrival; hoverZone = null;
+  sliding = false; view = {z: 1, tx: 0, ty: 0}; camTween = null; applyView(); $("plate2").hidden = true;
+  if (opts.slide){                     // walk in from the edge they came through (or drop in from above)
+    party.forEach((p, i) => {
+      const fx = p.x, fy = p.y;
+      if (opts.drop){ p.fallIn = now + i * 220; p.waitUntil = 0; }
+      else { const back = 520 + i * 70; p.x = fx - entryDir.x * back; p.y = fy - entryDir.y * back; p.path = [{x: fx, y: fy}]; p.waitUntil = now + i * 260; p.walkIn = true; p.onArrive = () => { p.walkIn = false; }; }
+    });
+  }
+  $("areaNo").textContent = n; $("areaName").textContent = node.name; $("jump").value = n;
+  renderParty();
+  $("fade").classList.remove("on");
+  $("tcNo").textContent = `Area ${n}`; $("tcName").textContent = node.name;
+  $("titlecard").classList.add("on"); clearTimeout(enterNode.t); enterNode.t = setTimeout(() => $("titlecard").classList.remove("on"), 1900);
+  mode = "explore"; setTrack("explore");
+  if (opts.note) log(opts.note);
+  nextAmbient = now + 6000 + Math.random() * 6000;
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+// Leaving a plate: the party walks out along the exit (across the bridge, down the stairs, off the edge),
+// the camera slides to the neighbouring plate, and they walk in from its matching edge.
+async function travel(to, z){
+  if (mode === "travel") return;
+  mode = "travel"; hoverZone = null; tip.hidden = true; bubbles.forEach(b => b.until = 0);
+  const zc = zoneCenter(z), exitDir = norm({x: zc.x - centroid.x, y: zc.y - centroid.y});
+  const offs = party.map(p => { let dx = p.x - leader.x, dy = p.y - leader.y; const d = Math.hypot(dx, dy), cap = 170 * node.scale;
+    if (d > cap){ dx *= cap / d; dy *= cap / d; } return {id: p.id, dx, dy}; });
+  const drop = z.kind === "water" && cur === 9;
+  const cr = z.cross || (z.crossBy && z.crossBy[String(to)]);
+  const route = cr ? cr.map(([x, y, s]) => ({x, y, s}))
+    : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 900, y: zc.y + exitDir.y * 900}];
+  const order = [leader, ...followOrder()];
+  order.forEach((a, i) => {
+    stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
+    if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
+    else a.path = route.map(p => ({...p}));
+  });
+  const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
+  await wait(drop ? 1900 : cr ? 2600 : 1500);
+  await slideTo(to, dir);
+  const verb = drop ? "The party drops through the falls" : z.kind === "water" ? "The party climbs" : "The party crosses";
+  await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, note: `${verb} to <em>${esc(SPEC[to].name)}</em>.`});
+}
+async function slideTo(to, dir){
+  const p2 = $("plate2"); p2.src = `${ASSET}img/${SPEC[to].slug}.jpg`;
+  try { await p2.decode(); } catch (e) {}
+  p2.style.inset = "auto"; p2.style.left = dir.x * NAT_W + "px"; p2.style.top = dir.y * NAT_H + "px"; p2.hidden = false;
+  const r = stage.getBoundingClientRect(), s = base;
+  const to2 = {z: 1, tx: (r.width - NAT_W * s) / 2 - dir.x * NAT_W * s, ty: (r.height - NAT_H * s) / 2 - dir.y * NAT_H * s};
+  sliding = true; camTween = {from: {...view}, to: to2, t0: performance.now(), ms: 1100};
+  await wait(1180);
+}
+function toast(text, ms = 3200){
+  const t = $("toast"); t.textContent = text; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, ms);
+}
+
+// ---------- dialogs ----------
+function showDialog({title, body, src = "", buttons}){
+  const prev = mode; mode = "dialog";
+  $("dlgTitle").textContent = title; $("dlgBody").textContent = body; $("dlgSrc").textContent = src; $("dlgSrc").hidden = !src;
+  const bx = $("dlgBtns"); bx.innerHTML = "";
+  buttons.forEach(b => { const e = document.createElement("button"); e.className = "btn" + (b.primary ? " primary" : "") + (b.danger ? " danger" : ""); e.textContent = b.label;
+    e.onclick = () => { $("dialog").hidden = true; if (mode === "dialog") mode = prev === "dialog" ? "explore" : prev; b.fn && b.fn(); }; bx.appendChild(e); });
+  $("dialog").hidden = false; bx.firstChild && bx.firstChild.focus();
+}
+function chooseDestination(z){
+  if (z.to.length === 1){ travel(z.to[0], z); return; }
+  showDialog({title: z.label.split(":")[0], body: "Where does the party head?", buttons: [
+    ...z.to.map(t => ({label: `${t} · ${SPEC[t].name}`, primary: true, fn: () => travel(t, z)})),
+    {label: "Stay here"}]});
+}
+function triggerZone(z){
+  leader.path = [];
+  if (z.interact){ openInteract(z); return; }
+  if (z.kind === "leave"){ toast(z.label + ". That way leaves Velkynvelve, beyond this proof for now."); return; }
+  travel(z.to[0], z);
+}
+// ---------- things you can use (the template: lit when in reach, a card of options when used) ----------
+let hoverObj = null;
+function interactAt(w){ return node.zones.find(z => z.interact && inPoly(z.interact.poly, w.x, w.y)) || null; }
+function openInteract(z){
+  const it = z.interact; if (!it || mode !== "explore") return;
+  mode = "dialog"; leader.path = []; tip.hidden = true;
+  // picture: the object itself, cut from the painting
+  const c = $("objPic"), g = c.getContext("2d"), xs = it.poly.map(p => p[0]), ys = it.poly.map(p => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), sz = Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0);
+  const k = plateImg.naturalWidth / NAT_W; g.clearRect(0, 0, 128, 128);
+  try { g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = it.name;
+  $("objText").textContent = state.gateOpen ? it.open : it.locked;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const close = () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
+  if (!state.gateOpen){
+    const check = (what) => () => { close(); toast(`${what}: a DC 20 check (OotA p.18). Roll it with the DM on the dashboard; on a success the DM opens the gate.`, 5200); };
+    add("Pick the lock", check("Picking the lock"), "primary");
+    add("Force it", check("Forcing the gate"));
+    if (!APP || isDm()) add("DM: Jorlan opens it", () => { close(); openGate(); setTimeout(() => openInteract(z), 1200); });
+    add("Step back", close);
+  } else {
+    for (const t of z.to) add(it.routes?.[t] || `To ${SPEC[t].name}`, () => { $("obj").hidden = true; mode = "explore"; travel(t, z); }, "primary");
+    add("Stay inside", close);
+  }
+  $("obj").hidden = false; box.firstChild?.focus();
+}
+function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
+function openGate(){
+  if (state.gateOpen) return; state.gateOpen = true;
+  log("The pen gate grinds open. <em>Jorlan's gambit.</em>");
+  if (cur === 11 && mode === "explore"){
+    const j = npcs.find(n => n.id === "jorlan");
+    if (j){
+      j.static = false; j.patrol = null; stopActivity(j);
+      j.big = j.fixedScale / (node.scale * depthAt(j.y)); j.fixedScale = 0;   // from the far landing into the pen: grow into the room's scale
+      j.path = [{x: 560, y: 760, s: .8}, {x: 660, y: 845, s: 1}];
+      j.onArrive = () => {
+        j.face = faceOf(leader.x - j.x, leader.y - j.y);
+        bark(j, "Go. Quickly, before the next watch.", 3600);       // placeholder line, not book text
+        setTimeout(() => { j.path = [{x: 560, y: 760, s: .8}, {x: j.post.x, y: j.post.y, s: .82 / (node.scale * depthAt(j.post.y))}];
+          j.onArrive = () => { j.static = true; j.face = 2; j.fixedScale = .82; j.big = 1; }; }, 4200);
+      };
+    }
+  }
+  const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) bark(r, "Finally.", 3000);
+}
+
+// ---------- combat ----------
+let turnOrder = [], turnIdx = 0, combatBusy = false;
+const activeActor = () => turnOrder[turnIdx];
+function startCombat(foeIds, label){
+  if (mode !== "explore") return;
+  mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
+  hoverZone = null; tip.hidden = true;
+  const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
+  let dir;
+  if (foeIds.length && typeof foeIds[0] === "object"){ const fc = foeIds.reduce((s, f) => ({x: s.x + f.x / foeIds.length, y: s.y + f.y / foeIds.length}), {x: 0, y: 0}); dir = norm({x: fc.x - pc.x, y: fc.y - pc.y}); }
+  else if (node.hazard){ const hp = node.hazard.poly; const hc = hp.reduce((s, p) => ({x: s.x + p[0] / hp.length, y: s.y + p[1] / hp.length}), {x: 0, y: 0}); dir = norm({x: hc.x - pc.x, y: hc.y - pc.y}); }
+  if (!dir || !isFinite(dir.x) || (Math.abs(dir.x) < .01 && Math.abs(dir.y) < .01)) dir = norm({x: centroid.x - pc.x || 1, y: centroid.y - pc.y});
+  const perp = {x: -dir.y, y: dir.x}, L = {x: leader.x, y: leader.y}, sc = node.scale;
+  // the party closes ranks around the leader, a step back from the threat
+  const placed = [L];
+  followOrder().forEach((f, i) => {
+    const k = [-1, 1, 0][i % 3], back = i < 2 ? 75 : 150;
+    const slot = nearestWalkable(L.x - dir.x * back * sc + perp.x * k * 85 * sc, L.y - dir.y * back * sc + perp.y * k * 85 * sc, placed); placed.push(slot);
+    f.path = findPath(f, slot);
+  });
+  foes = foeIds.map((id, i) => {
+    const k = i - (foeIds.length - 1) / 2;
+    let f, start;
+    if (typeof id === "object"){                 // someone already on the plate turns hostile
+      f = id; f.kind = "foe"; f.alpha = 1; f.hostile = false; f.path = []; stopActivity(f); start = {x: f.x, y: f.y};
+      npcs = npcs.filter(n => n !== f);
+    } else {
+      start = nearestWalkable(L.x + dir.x * 560 * sc + perp.x * k * 200 * sc, L.y + dir.y * 560 * sc + perp.y * k * 200 * sc, placed);
+      f = mkActor(id, start.x, start.y, "foe", {alpha: 0, hp: 1});
+    }
+    const stop = nearestWalkable(L.x + dir.x * 300 * sc + perp.x * k * 190 * sc, L.y + dir.y * 300 * sc + perp.y * k * 190 * sc, placed); placed.push(stop);
+    f.path = findPath(start, stop); f.stop = stop; return f;
+  });
+  actors = [...party, ...npcs, ...foes];
+  party.forEach(p => p.face = faceOf(dir.x, dir.y));
+  const all = [L, ...placed];
+  const xs = all.map(a => a.x), ys = all.map(a => a.y);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2 - 40;
+  const r = stage.getBoundingClientRect(), spanX = Math.max(...xs) - Math.min(...xs) + 500, spanY = Math.max(...ys) - Math.min(...ys) + 420;
+  const z = Math.max(1.4, Math.min(2.4, Math.min(r.width / (spanX * base), r.height / (spanY * base))));
+  camTo(z, cx, cy, 900);
+  $("vignette").classList.add("on"); setTrack("combat");
+  turnOrder = [...party, ...foes]; turnIdx = 0; $("combatbar").hidden = false; renderTurns();
+  log(`<em>${esc(label || "Steel comes out.")}</em>`);
+  setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f)) bark(f, b[i % b.length], 2600); }, i * 500)), 700);
+}
+function renderTurns(){
+  const el = $("turns"); el.innerHTML = "";
+  turnOrder.forEach((a, i) => { const b = document.createElement("button"); b.className = "turn" + (a.kind === "foe" ? " foe" : "") + (a.down ? " down" : "");
+    b.textContent = SHORT[a.id] || SPR[a.id].json.name; b.setAttribute("aria-current", String(i === turnIdx));
+    b.onclick = () => { if (!combatBusy && !a.down){ turnIdx = i; renderTurns(); } }; el.appendChild(b); });
+}
+function nextTurn(){
+  if (combatBusy) return;
+  for (let k = 0; k < turnOrder.length; k++){ turnIdx = (turnIdx + 1) % turnOrder.length; if (!turnOrder[turnIdx].down) break; }
+  renderTurns();
+  const a = activeActor(); if (a && a.kind === "foe") foeTurn(a);
+}
+function attack(att, tgt, done){
+  combatBusy = true;
+  const sc = actorScale(tgt), reach = 70 * sc * (SPR[tgt.id].json.cell[0] / 128) + 40 * actorScale(att);
+  const d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
+  const strike = () => {
+    att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
+    playOnce(att, "attack", () => { setAnim(att, "idle"); combatBusy = false; done && done(); });
+    att.once && (att.once.hit = () => { tgt.flash = now + 220; tgt.flashCol = att.kind === "foe" ? "#ff5040" : "#fff4d8";
+      if (SPR[tgt.id].img.dodge) playOnce(tgt, "dodge", () => setAnim(tgt, "idle")); });
+  };
+  if (d <= reach + 10){ strike(); return; }
+  const k = (d - reach) / d, goal = nearestWalkable(att.x + (tgt.x - att.x) * k, att.y + (tgt.y - att.y) * k);
+  att.path = findPath(att, goal); att.onArrive = strike;
+  if (!att.path.length) strike();
+}
+function foeTurn(f){
+  const tgt = party.slice().sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  if (!tgt) return;
+  setTimeout(() => { if (mode === "combat" && actors.includes(f)) attack(f, tgt, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .5) bark(f, b[1], 1800); }); }, 350);
+}
+function endCombat(){
+  if (mode !== "combat") return;
+  mode = "travel"; state.cleared[cur] = true;
+  foes.forEach(f => f.fading = true);
+  $("combatbar").hidden = true; $("vignette").classList.remove("on");
+  setTimeout(() => {
+    actors = actors.filter(a => a.kind !== "foe"); foes = [];
+    camTo(1, NAT_W / 2, NAT_H / 2, 800);
+    trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
+    party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
+    mode = "explore"; setTrack("explore"); log("The fight is over. The DM core settles who is standing.");
+  }, 700);
+}
+$("nextTurn").onclick = nextTurn; $("endCombat").onclick = endCombat;
+
+// ---------- talk: hand off to the dashboard ----------
+// Someone wants a word: Malachar writes their opener (in the NPC's own voice, addressing the speaker by name if
+// they would know it, otherwise by race or a gesture); it is said in a balloon and a small card offers Talk / Decline.
+const PCS = {kenta: {name: "Kenta", race: "half-elf", cls: "sorcerer"}, samson: {name: "Samson", race: "human", cls: "cleric"},
+  scott: {name: "Scott", race: "half-elf", cls: "bard"}, freia: {name: "Fifi of Copperas Cove", race: "human", cls: "rogue"}};   // live characters table, 2026-10-11
+const BRIEF = {   // the project's own prisoner summaries (lib/world-ai/campaigns.ts)
+  eldeth: "Eldeth Feldrun, a shield dwarf scout; loyal", stool: "Stool, a myconid sprout who speaks only through telepathic rapport spores",
+  sarith: "Sarith Kzekarit, a drow prisoner", buppido: "Buppido, a derro", derendil: "Prince Derendil, a quaggoth who believes he is a cursed elf prince",
+  topsy: "Topsy, a deep gnome twin", turvy: "Turvy, a deep gnome twin", jimjar: "Jimjar, a deep gnome gambler",
+  ront: "Ront, a cowardly orc bully", shuushar: "Shuushar the Awakened, a pacifist kuo-toa"};
+let samplePromise = (window.claude && claude.use) ? claude.use("sample").catch(() => null) : Promise.resolve(null);
+async function npcOpening(npc){
+  const nm = SPR[npc.id].json.name, pc = PCS[leader.id] || {name: SHORT[leader.id] || "the prisoner", race: "", cls: ""};
+  const fallback = {narration: `${nm} catches your eye and edges closer.`, line: npc.talkLine && !npc.talkLine.includes(nm) ? npc.talkLine : "A word, if you've a moment."};
+  if (APP){
+    try {
+      const res = await fetch("/api/npc-opener", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, pc})});
+      const r = await res.json();
+      if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim()};
+    } catch (e) {}
+    return fallback;
+  }
+  const sample = await samplePromise;
+  if (!sample) return fallback;
+  const prompt = `You are Malachar, the lich who narrates an Out of the Abyss D&D 5e campaign: theatrical, sly, darkly funny, a little cruel.
+Write how one NPC opens a conversation with a player character.
+Scene: ${node.name} in Velkynvelve, the drow outpost. The prisoners have shared the slave pen for several days.
+NPC: ${BRIEF[npc.id] || nm}.
+Player character: ${pc.name}, a ${pc.race} ${pc.cls}.
+Decide whether the NPC would know ${pc.name}'s name by now. If yes, use it. If not, address them by their race or with a gesture.
+The line is spoken in the NPC's own voice and manner, under 25 words. Do not invent facts about the campaign.
+The narration is one short sentence, present tense, describing how the NPC approaches (no dialogue in it).
+Reply with only JSON: {"narration": "...", "line": "..."}`;
+  try {
+    const r = await sample.json(prompt, {modelTier: "quick", cache: false});
+    if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim().replace(/^["“]|["”]$/g, "")};
+  } catch (e) { if (e && (e.code === "not_granted" || e.code === "sampling_disabled")) samplePromise = Promise.resolve(null); }
+  return fallback;
+}
+// Spoken aloud. This page can't reach ElevenLabs, so it uses the browser's own voices, matched roughly to the
+// speaker; inside the game the same line goes through /api/npc-tts and Eldeth gets her canon ElevenLabs voice.
+const VOICE = {eldeth: {f: true, pitch: .85, rate: .95}, topsy: {f: true, pitch: 1.35, rate: 1.08}, turvy: {f: false, pitch: 1.3, rate: 1.08},
+  jimjar: {f: false, pitch: 1.25, rate: 1.1}, ront: {f: false, pitch: .6, rate: .95}, derendil: {f: false, pitch: .75, rate: .9},
+  sarith: {f: false, pitch: .9, rate: .9}, buppido: {f: false, pitch: 1.15, rate: 1.0}, shuushar: {f: false, pitch: .8, rate: .85},
+  jorlan: {f: false, pitch: .8, rate: .95}};
+let speaking = false;
+let voiceAudio = null;
+async function speakCanon(id, text){         // the game's ElevenLabs route: canon voices by NPC name (Eldeth, Ront...)
+  const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: SPR[id].json.name})});
+  if (!res.ok) throw new Error("tts " + res.status);
+  // WebAudio, not an <audio> element: the game found <audio> silently mute in some Chromium builds.
+  const ctx = speakCanon.ctx || (speakCanon.ctx = new (window.AudioContext || window.webkitAudioContext)());
+  if (ctx.state === "suspended") await ctx.resume();
+  const buf = await ctx.decodeAudioData(await res.arrayBuffer());
+  if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+  src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
+}
+function speak(id, text){
+  if (APP){ speakCanon(id, text).catch(() => speakBrowser(id, text)); return; }
+  speakBrowser(id, text);
+}
+function speakBrowser(id, text){
+  try {
+    const ss = window.speechSynthesis; if (!ss) return;
+    ss.cancel();
+    const v = VOICE[id] || {f: false, pitch: 1, rate: 1};
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = ss.getVoices().filter(x => /^en/i.test(x.lang));
+    const fem = /female|samantha|victoria|karen|moira|tessa|fiona|zira|susan|serena|libby|sonia|hazel|aria|jenny/i;
+    u.voice = voices.find(x => v.f ? fem.test(x.name) : !fem.test(x.name)) || voices[0] || null;
+    u.pitch = v.pitch; u.rate = v.rate; u.volume = 1;
+    u.onstart = () => { speaking = true; }; u.onend = u.onerror = () => { speaking = false; };
+    ss.speak(u);
+  } catch (e) {}
+}
+async function openTalk(npc){
+  if (!npc || mode === "talk") return;
+  mode = "talk"; party.forEach(p => { p.path = []; setAnim(p, "idle"); });
+  stopActivity(npc); npc.path = []; npc.face = faceOf(leader.x - npc.x, leader.y - npc.y);
+  const nm = SPR[npc.id].json.name;
+  portrait(npc.id, $("talkPortrait"), 128);
+  $("talkWho").textContent = nm;
+  $("talkLine").innerHTML = '<span class="thinking">…</span>';
+  $("talkGo").href = `https://ashes.playacartagena.com/?view=compact&from=camp&talk=${encodeURIComponent(nm)}`;
+  $("talk").hidden = false; $("talkGo").focus();
+  talkNpc = npc;
+  const {narration, line} = await npcOpening(npc);
+  if (talkNpc !== npc || $("talk").hidden) return;
+  $("talkLine").innerHTML = `<p class="narr">${esc(narration)}</p><p class="said">“${esc(line)}”</p>`;
+  bark(npc, line, 7000, {talk: true}); speak(npc.id, line);
+}
+let talkNpc = null;
+function closeTalk(talked){
+  if (!talkNpc) return;
+  try { if (!talked) window.speechSynthesis.cancel(); } catch (e) {}
+  if (talked){ state.talked[talkNpc.id] = true; state.declined[talkNpc.id] = false; }
+  else state.declined[talkNpc.id] = true;            // the "!" stays over their head until you go back to them
+  $("talk").hidden = true; talkNpc = null; mode = "explore";
+}
+$("talkGo").onclick = (e) => {
+  if (!APP){ setTimeout(() => closeTalk(true), 50); return; }
+  e.preventDefault();
+  const npc = talkNpc, nm = SPR[npc.id].json.name, said = $("talkLine").querySelector(".said")?.textContent?.replace(/^“|”$/g, "") || "";
+  closeTalk(true); saveWalk();
+  const q = new URLSearchParams({view: "compact", from: "map", talk: nm, return: "/velkynvelve", scene: `${ASSET}img/${node.slug}.jpg`, area: node.name});
+  if (said) q.set("line", said.slice(0, 280));
+  window.top.location.href = "/?" + q.toString();
+};
+// The walk survives a trip to the dashboard and back: where everyone stood, who has been talked to, the gate.
+function saveWalk(){
+  if (!leader || !party.length || !leader.x) return;
+  try { sessionStorage.setItem("aop_walk_state", JSON.stringify({cur, leader: leader && leader.id, party: party.map(p => ({id: p.id, x: Math.round(p.x), y: Math.round(p.y), face: p.face})), state})); } catch (e) {}
+}
+function loadWalk(){
+  try { const s = JSON.parse(sessionStorage.getItem("aop_walk_state") || "null"); return s && SPEC[s.cur] && Array.isArray(s.party) && s.party.length ? s : null; } catch (e) { return null; }
+}
+addEventListener("pagehide", () => { if (mode !== "load") saveWalk(); });
+$("talkNo").onclick = () => closeTalk(false);
+
+// ---------- input ----------
+let ptr = null, hoverZone = null, hoverActor = null, marker = null;
+function hitActor(list, w){
+  let best = null, bd = 1e9;
+  for (const a of list){
+    const m = SPR[a.id].json, sc = actorScale(a), hw = 34 * sc * (m.cell[0] / 128), hh = 105 * sc * (m.cell[1] / 128);
+    if (w.x > a.x - hw && w.x < a.x + hw && w.y > a.y - hh && w.y < a.y + 10){ const d = Math.abs(w.y - (a.y - hh / 2)); if (d < bd){ bd = d; best = a; } }
+  }
+  return best;
+}
+stage.addEventListener("pointerdown", e => {
+  if (e.target.closest(".dm,.dialog,.talk,.zoom,.combatbar")) return;
+  unlockAudio();
+  ptr = {id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false};
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", e => {
+  if (ptr && e.pointerId === ptr.id){
+    const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
+    if (!ptr.moved && Math.hypot(dx, dy) > 6 && view.z > 1.01){ ptr.moved = true; stage.classList.add("dragging"); }
+    if (ptr.moved){ view.tx = ptr.tx + dx; view.ty = ptr.ty + dy; camTween = null; userPanAt = now; applyView(); }
+    return;
+  }
+  if (e.target.closest(".dm,.dialog,.talk,.zoom,.combatbar")){ tip.hidden = true; return; }
+  const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect();
+  hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? hitActor(foes, w) : null;
+  hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
+  hoverZone = mode === "explore" && !hoverActor && !hoverObj ? zoneAt(w.x, w.y) : null;
+  if (hoverObj){
+    tip.textContent = `${hoverObj.interact.name}${state.gateOpen ? "" : " (locked)"}: click to use`;
+    tip.className = "tip" + (state.gateOpen ? "" : " locked"); tip.hidden = false;
+    tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px";
+    stage.classList.add("pointer"); return;
+  }
+  const mk = mode === "explore" && !hoverActor && !hoverZone ? markAt(w) : null;
+  if (mk){ tip.textContent = mk.tip; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; return; }
+  if (hoverZone){
+    const locked = hoverZone.kind === "gate" && !state.gateOpen;
+    tip.textContent = hoverZone.interact ? `${hoverZone.interact.name}${locked ? " (locked)" : ""}` : hoverZone.to.length ? `${hoverZone.label.split(":")[0]} → ${hoverZone.to.map(t => SPEC[t].name).join(" / ")}${locked ? " (locked)" : ""}` : hoverZone.label;
+    tip.className = "tip" + (locked ? " locked" : ""); tip.hidden = false;
+    tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px";
+  } else tip.hidden = true;
+  stage.classList.toggle("pointer", !!(hoverZone || hoverActor));
+});
+function endPtr(e){
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const wasDrag = ptr.moved; ptr = null; stage.classList.remove("dragging");
+  if (wasDrag || e.type === "pointercancel") return;
+  click(s2w(e.clientX, e.clientY));
+}
+stage.addEventListener("pointerup", endPtr); stage.addEventListener("pointercancel", endPtr);
+stage.addEventListener("wheel", e => { e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
+function click(w){
+  if (mode === "explore"){
+    const me = hitActor(party, w);
+    if (me && me !== leader){ setLeader(me); return; }
+    const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
+    if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
+    const n = hitActor(npcs, w);
+    if (n){ if (n.talk && !state.talked[n.id]){ walkTo(nearNpc(n), () => openTalk(n)); } else if (n.talk){ openTalk(n); } else { bark(n, n.barks[Math.floor(Math.random() * n.barks.length)] || "…"); } return; }
+    const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
+  } else if (mode === "combat" && !combatBusy){
+    const a = activeActor(); if (!a || a.kind !== "pc") return;
+    const f = hitActor(foes, w);
+    if (f){ attack(a, f); return; }
+    const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; a.path = findPath(a, p);
+  }
+}
+function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); return nearestWalkable(n.x + d.x * 80, n.y + d.y * 80); }
+function walkTo(p, cb){ stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+$("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
+$("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
+$("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyView(); };
+addEventListener("keydown", e => {
+  if (e.target.closest && e.target.closest("input,select")) return;
+  if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
+  if (e.key === "m" || e.key === "M") $("musicBtn").click();
+  if (MOVE_KEYS.has(e.code) && (mode === "explore" || mode === "combat")){ keys.add(e.code); e.preventDefault(); unlockAudio(); }
+  if (mode === "explore"){
+    if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) setLeader(a); }
+    if (e.code === "Tab"){ e.preventDefault(); const i = party.indexOf(leader); setLeader(party[(i + (e.shiftKey ? party.length - 1 : 1)) % party.length]); }
+    if (e.code === "KeyE" || e.code === "Space"){ e.preventDefault(); interact(); }
+  } else if (mode === "combat" && e.code === "Enter" && !e.target.closest("button")) nextTurn();
+  if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
+  if (e.key === "-" || e.key === "_"){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.2); }
+});
+addEventListener("keyup", e => keys.delete(e.code));
+addEventListener("blur", () => keys.clear());
+function interact(){
+  const n = npcs.map(a => [a, Math.hypot(a.x - leader.x, a.y - leader.y)]).filter(([, d]) => d < 190 * node.scale).sort((a, b) => a[1] - b[1])[0];
+  if (!n){ log("No one close enough. Walk up to someone and press <em>E</em>."); return; }
+  const a = n[0];
+  if (a.talk) openTalk(a); else bark(a, a.barks[Math.floor(Math.random() * a.barks.length)] || "…");
+}
+addEventListener("resize", resize);
+
+// ---------- DM drawer ----------
+function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); }
+$("dmBtn").onclick = () => toggleDm($("dm").hidden);
+Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
+$("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
+  const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
+  enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
+$("dmGate").onclick = () => { toggleDm(false); openGate(); };
+$("dmCombat").onclick = () => { toggleDm(false); if (mode !== "explore") return;
+  const ids = node.hazard ? node.hazard.foes : cur === 12 ? ["quaggoth", "quaggoth"] : ["quaggoth", "giant-spider"];
+  startCombat(ids, node.hazard ? node.hazard.label : "The DM calls for initiative."); };
+$("dmTalk").onclick = () => { toggleDm(false); if (mode !== "explore") return;
+  const n = npcs.find(a => a.talk);
+  if (n){ state.talked[n.id] = false; state.declined[n.id] = false; openTalk(n); }
+  else log("Nobody here wants to talk. The pen (Area 11) has Eldeth."); };
+$("dmBark").onclick = () => { toggleDm(false); const n = npcs.filter(a => a.barks && a.barks.length); if (n.length){ const a = n[Math.floor(Math.random() * n.length)]; bark(a, a.barks[Math.floor(Math.random() * a.barks.length)]); } else log("No one here to comment."); };
+$("dmReset").onclick = () => { toggleDm(false); state.cleared = {}; log("Ambushes reset."); };
+
+// ---------- keyboard ----------
+const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD"]);
+const keys = new Set();
+function keyDir(){
+  let x = 0, y = 0;
+  if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
+  if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
+  if (keys.has("ArrowUp") || keys.has("KeyW")) y -= 1;
+  if (keys.has("ArrowDown") || keys.has("KeyS")) y += 1;
+  return x || y ? {x, y} : null;
+}
+function keyboardMove(a, dt){
+  if (!a || a.kind !== "pc" || a.once) return;
+  const kd = keyDir();
+  if (!kd){ if (a.kbd){ a.kbd = false; if (a.anim === "walk") setAnim(a, "idle"); } return; }
+  stopActivity(a); a.path = []; a.onArrive = null; a.kbd = true;
+  const n = norm(kd), sp = SPEED * node.scale * depthAt(a.y) * dt;
+  let nx = a.x + n.x * sp, ny = a.y + n.y * sp * .8;
+  if (!walkable(nx, ny)){ if (walkable(nx, a.y)) ny = a.y; else if (walkable(a.x, ny)) nx = a.x; else { nx = a.x; ny = a.y; } }
+  const moved = nx !== a.x || ny !== a.y;
+  a.x = nx; a.y = ny; a.face = faceOf(n.x, n.y); setAnim(a, moved ? "walk" : "idle");
+}
+
+// ---------- idle life ----------
+// Characters who aren't being moved (and aren't fighting) wander a little near where they were left,
+// sit, eat, doze, or (Scott) play. Each picks a new thing every few seconds.
+const ACTS = [
+  {kind: "wander", w: 4},
+  {kind: "look", w: 2},
+  {kind: "sit", w: 3, anim: "sit", dur: [7000, 15000]},
+  {kind: "eat", w: 1.5, anim: "eat", dur: [5000, 9000]},
+  {kind: "sleep", w: 1, anim: "sleep", dur: [9000, 18000]},
+  {kind: "perform", w: 2, anim: "perform", dur: [8000, 14000]},
+];
+function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
+function idleLife(a){
+  if (a === leader || a.once || a.fading) return;
+  if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
+    if (a.path.length) return;
+    if (now < (a.actUntil || 0)) return;
+    a.leg = (a.leg || 0) ^ 1; const [px, py] = a.patrol[a.leg];
+    a.path = [{x: px, y: py}]; a.slow = true; a.onArrive = () => { a.actUntil = now + 2500 + Math.random() * 3500; };
+    return;
+  }
+  if (a.static){ if (now > (a.actUntil || 0)){ a.face = [0, 1, 2, 7, 6][Math.floor(Math.random() * 5)]; a.actUntil = now + 3000 + Math.random() * 5000; } return; }
+  if (a.path.length) return;                         // still strolling
+  if (a.act === "wander"){ a.act = null; a.actUntil = now + 2500 + Math.random() * 4000; return; }
+  if (now < (a.actUntil || 0)) return;
+  if (a.act){ stopActivity(a); a.actUntil = now + 3000 + Math.random() * 6000; return; }
+  if (bubbles.some(b => b.a === a)) return;          // don't wander off mid-sentence
+  const sp = SPR[a.id];
+  const pool = ACTS.filter(x => !x.anim || (sp.img[x.anim] && sp.json.animations[x.anim]));
+  let r = Math.random() * pool.reduce((s, x) => s + x.w, 0), pick = pool[0];
+  for (const x of pool){ r -= x.w; if (r <= 0){ pick = x; break; } }
+  const home = a.home || {x: a.x, y: a.y};
+  if (pick.kind === "wander"){
+    for (let k = 0; k < 6; k++){
+      const ang = Math.random() * Math.PI * 2, d = (50 + Math.random() * 110) * node.scale;
+      const t = {x: home.x + Math.cos(ang) * d, y: home.y + Math.sin(ang) * d * .7};
+      if (!walkable(t.x, t.y) || zoneAt(t.x, t.y)) continue;
+      if (node.hazard && inPoly(node.hazard.poly, t.x, t.y)) continue;
+      const path = findPath(a, t); if (!path.length || path.length > 3) continue;
+      a.path = path; a.slow = true; a.act = "wander"; return;
+    }
+    a.actUntil = now + 2000; return;
+  }
+  if (pick.kind === "look"){ a.face = [0, 1, 7, 2, 6, 3, 5][Math.floor(Math.random() * 7)]; a.actUntil = now + 2500 + Math.random() * 4000; return; }
+  a.act = pick.kind; setAnim(a, pick.anim); a.t0 = now - Math.random() * 400;
+  a.actUntil = now + pick.dur[0] + Math.random() * (pick.dur[1] - pick.dur[0]);
+}
+
+// ---------- simulation ----------
+let nextAmbient = 0;
+function trailPoint(dist){
+  let acc = 0, prev = {x: leader.x, y: leader.y};
+  for (let i = trail.length - 1; i >= 0; i--){
+    const p = trail[i], d = Math.hypot(p.x - prev.x, p.y - prev.y);
+    if (acc + d >= dist){ const t = (dist - acc) / (d || 1); return {x: prev.x + (p.x - prev.x) * t, y: prev.y + (p.y - prev.y) * t}; }
+    acc += d; prev = p;
+  }
+  return prev;
+}
+function step(a, dt, speed){
+  if (a.once){
+    if (a.once.hit && now >= a.once.hitAt){ const h = a.once.hit; a.once.hit = null; h(); }
+    if (now >= a.once.end){ const cb = a.once.cb; a.once = null; cb && cb(); }
+    return;
+  }
+  if (a.waitUntil && now < a.waitUntil) return;
+  if (!a.path.length){ if (a.anim === "walk" && !a.kbd) setAnim(a, "idle"); return; }
+  if (a.path[0].s != null) a.big = (a.big || 1) + (a.path[0].s - (a.big || 1)) * Math.min(1, dt * 2.5);
+  const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), sp = speed * node.scale * depthAt(a.y) * dt;
+  if (d <= sp){ a.x = p.x; a.y = p.y; a.path.shift();
+    if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); } }
+  else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
+}
+function update(dt){
+  if (camTween){
+    const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+    view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
+    view.tx = camTween.from.tx + (camTween.to.tx - camTween.from.tx) * e;
+    view.ty = camTween.from.ty + (camTween.to.ty - camTween.from.ty) * e;
+    applyView(); if (k >= 1) camTween = null;
+  } else if (mode === "explore" && view.z > 1.02 && leader && now - userPanAt > 2500){
+    const r = stage.getBoundingClientRect(), s = base * view.z;
+    const tx = r.width / 2 - leader.x * s, ty = r.height / 2 - leader.y * s;
+    view.tx += (tx - view.tx) * Math.min(1, dt * 3); view.ty += (ty - view.ty) * Math.min(1, dt * 3); applyView();
+  }
+  if (mode === "explore" || mode === "combat" || mode === "dialog"){
+    for (const a of actors){
+      if (a.fading){ a.alpha = Math.max(0, a.alpha - dt * 1.6); continue; }
+      if (a.kind === "foe" && a.alpha < 1) a.alpha = Math.min(1, a.alpha + dt * 2.5);
+      step(a, dt, a.kind === "foe" ? SPEED * .9 : (a.slow && a !== leader && mode === "explore") ? SPEED * .42 : SPEED);
+    }
+  } else if (mode === "travel"){ for (const a of actors){ if (a.fading){ a.alpha = Math.max(0, a.alpha - dt * 1.6); continue; } if (a.kind === "pc") step(a, dt, SPEED); } }
+  if (mode === "explore" && leader){
+    const last = trail[trail.length - 1];
+    if (!last || Math.hypot(leader.x - last.x, leader.y - last.y) > 6){ trail.push({x: leader.x, y: leader.y}); if (trail.length > 500) trail.shift(); }
+    keyboardMove(leader, dt);
+    // the rest of the party stays where they were put; they only come along when the party leaves the plate
+    // exits
+    const z = mode === "explore" && !leader.walkIn ? zoneAt(leader.x, leader.y) : null;
+    if (z && z !== ackZone){ ackZone = z; triggerZone(z); }
+    else if (!z && !leader.walkIn) ackZone = null;
+    // ambush
+    const hz = node.hazard;
+    if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))) startCombat(hz.foes, hz.label);
+    // drow who are on watch
+    if (mode === "explore" && !state.cleared[cur]){
+      const watch = npcs.filter(n => n.hostile);
+      if (watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
+    }
+    // NPC comments and the one who wants to talk
+    for (const n of npcs){
+      const d = Math.hypot(n.x - leader.x, n.y - leader.y);
+      if (n.talk && !state.talked[n.id] && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){
+        leader.path = []; openTalk(n);
+      } else if (!n.talk && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && n.barks.length){
+        bark(n, n.barks[Math.floor(Math.random() * n.barks.length)]); n.face = faceOf(leader.x - n.x, leader.y - n.y);
+      }
+    }
+    if (now > nextAmbient && npcs.length){
+      const pool = npcs.filter(n => n.barks.length && now - n.lastBark > 15000);
+      if (pool.length){ const a = pool[Math.floor(Math.random() * pool.length)]; bark(a, a.barks[Math.floor(Math.random() * a.barks.length)]); }
+      nextAmbient = now + 14000 + Math.random() * 10000;
+    }
+  }
+  // in a fight, bodies keep their distance
+  if (mode === "combat"){
+    const bodies = actors.filter(a => a.kind !== "npc" && !a.fading);
+    for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
+      const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale;
+      if (d > 0 && d < min){ const push = Math.min(4, (min - d) / 2), ux = dx / d, uy = dy / d;
+        if (!b.once && walkable(b.x + ux * push, b.y + uy * push)){ b.x += ux * push; b.y += uy * push; }
+        if (!a.once && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
+    }
+  }
+  if (mode === "combat" && !combatBusy) keyboardMove(activeActor(), dt);
+  // idle life: whoever you're not moving potters about, like at camp
+  if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
+}
+let lastT = performance.now();
+function frame(t){
+  now = t; const dt = Math.min(.05, (t - lastT) / 1000); lastT = t;
+  if (mode !== "load"){ update(dt); draw(); updateOverlay(); }
+  tickMusic(dt);
+  requestAnimationFrame(frame);
+}
+
+// ---------- boot ----------
+(async () => {
+  setMotion(motionOn);
+  resize();
+  try { await loadSprites(); } catch (e) { $("loading").textContent = "Could not load sprite: " + e; return; }
+  $("loading").remove();
+  leader = null;
+  const saved = APP ? loadWalk() : null;
+  if (saved){
+    Object.assign(state, saved.state || {});
+    const L = saved.party.find(p => p.id === saved.leader) || saved.party[0];
+    leader = {id: L.id};
+    await enterNode(saved.cur, {spawn: {x: L.x, y: L.y}, offs: saved.party.map(p => ({id: p.id, dx: p.x - L.x, dy: p.y - L.y}))});
+    for (const p of party){ const s = saved.party.find(q => q.id === p.id); if (s){ p.x = s.x; p.y = s.y; p.face = s.face || 0; p.home = {x: s.x, y: s.y}; } }
+  } else {
+    await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
