@@ -1,3 +1,4 @@
+import os
 """Walk spec for the Velkynvelve exploration proof.
 All coordinates are viewer-plate pixels (2400 x 1339). Traced by eye over gridded plates, 2026-10-10.
 floors: shapes the party may stand on (poly / ellipse / rect).  obstacles: circles/ellipses inside floors that block.
@@ -68,7 +69,7 @@ NODES = {
  11: dict(slug="node-11-slave-pen", name="Slave Pen", scale=1.25,
    floors=[dict(poly=P((960,740),(1120,700),(1400,560),(1700,500),(2000,480),(2200,560),(2300,700),(2360,940),(2300,1200),(2200,1339),(900,1339),(760,1200),(620,1000),(640,900),(800,860),(920,780)))],
    obstacles=[],  # table and stool removed from the plate (take 35)
-   zones=[dict(rect=[620,760,900,1000], to=[10,12], kind="gate", label="The pen gate: heavy iron bolted into the stone. Locked: DC 20 to pick or force (OotA p.18)")],
+   zones=[dict(rect=[730,790,915,940], to=[10,12], kind="gate", label="The pen gate: heavy iron bolted into the stone. Locked: DC 20 to pick or force (OotA p.18)")],
    npcs=[dict(id="ront",x=1700,y=760,face=2,talk=False,barks=["Ront mutters something about orc blood and drow throats."]),
          dict(id="eldeth",x=1300,y=1000,face=6,talk=True,talkLine="Eldeth Feldrun catches your eye. She wants a word."),
          dict(id="derendil",x=2050,y=900,face=2,talk=False,barks=["Derendil reminds everyone, again, that he is a prince of Nelrindenvane."]),
@@ -105,4 +106,4 @@ for n, node in NODES.items():
     for t in REG[n]:
         assert n in REG[t], (n, t)
 print("all", sum(len(v) for v in REG.values()) // 2, "connections have zones on both sides")
-json.dump({str(k): v for k, v in NODES.items()}, open('/tmp/claude-0/-home-claude/de542ee4-310b-5ad8-a10a-8266cacdf469/scratchpad/walk/spec.json', 'w'), separators=(',', ':'))
+json.dump({str(k): v for k, v in NODES.items()}, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'spec.json'), 'w'), separators=(',', ':'))

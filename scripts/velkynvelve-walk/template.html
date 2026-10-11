@@ -453,6 +453,7 @@ function draw(){
   const s = base * view.z * dpr;
   ctx.setTransform(s, 0, 0, s, view.tx * dpr, view.ty * dpr);
   ctx.imageSmoothingEnabled = false;
+  drawDoor();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -754,7 +755,7 @@ async function enterNode(n, opts = {}){
   cur = n; node = SPEC[n];
   plateImg.src = `${ASSET}img/${node.slug}.jpg`;
   try { await plateImg.decode(); } catch (e) {}
-  buildFx(node.slug); buildMarks(node.slug); buildGrid();
+  buildFx(node.slug); buildMarks(node.slug); buildGrid(); buildDoor();
   // spawn: the arrival zone in this plate that links back to where we came from
   let spawn, entryDir = {x: 0, y: 1}, arrival = null;
   if (opts.from != null) arrival = node.zones.find(z => z.to.includes(opts.from)) || null;
@@ -822,7 +823,7 @@ async function travel(to, z){
     if (d > cap){ dx *= cap / d; dy *= cap / d; } return {id: p.id, dx, dy}; });
   const drop = z.kind === "water" && cur === 9;
   const cr = z.cross || (z.crossBy && z.crossBy[String(to)]);
-  const route = cr ? cr.map(([x, y, s]) => ({x, y, s}))
+  const route = cr ? cr.map(([x, y, s, f]) => ({x, y, s, out: f === "out", jump: f === "jump"}))
     : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 900, y: zc.y + exitDir.y * 900}];
   const order = [leader, ...followOrder()];
   order.forEach((a, i) => {
@@ -870,10 +871,75 @@ function triggerZone(z){
   if (z.kind === "leave"){ toast(z.label + ". That way leaves Velkynvelve, beyond this proof for now."); return; }
   travel(z.to[0], z);
 }
+// ---------- sound effects (door, lock) ----------
+// WebAudio like the voices: decoded once, played instantly. Files live beside the plates (sfx/*.mp3).
+const SFX = {};
+function audioCtx(){ return speakCanon.ctx || (speakCanon.ctx = new (window.AudioContext || window.webkitAudioContext)()); }
+function loadSfx(name){
+  return SFX[name] || (SFX[name] = fetch(`${ASSET}sfx/${name}.mp3`).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
+}
+async function sfx(name, gain = .8){
+  try {
+    const ctx = audioCtx(); if (ctx.state === "suspended") await ctx.resume();
+    const buf = await loadSfx(name); if (!buf) return;
+    const src = ctx.createBufferSource(), g = ctx.createGain(); g.gain.value = gain;
+    src.buffer = buf; src.connect(g); g.connect(ctx.destination); src.start();
+  } catch (e) {}
+}
+const DOOR_SFX = ["door-open", "door-close", "door-locked", "lock-picked", "lock-pick-fail"];
+
+// ---------- the pen door: a real leaf that swings ----------
+// The leaf is cut from the painting and swung on its hinge edge (left), away from the room, onto the balcony.
+// Everything is clipped to the doorway, so as it turns it slides behind the stone; the gap shows the dark beyond.
+const door = {k: 0, target: 0, leaf: null, img: null};
+function doorGate(){ return node.zones.find(z => z.interact && z.interact.leaf) || null; }
+function buildDoor(){
+  const z = doorGate(); door.leaf = z ? z.interact.leaf : null; door.img = null;
+  door.k = door.target = state.gateOpen && !state.doorShut ? 1 : 0;
+  if (!door.leaf) return;
+  DOOR_SFX.forEach(loadSfx);
+  const L = door.leaf, xs = [L.hb[0], L.ht[0], L.fb[0], L.ft[0]], ys = [L.hb[1], L.ht[1], L.fb[1], L.ft[1]];
+  const bx = Math.floor(Math.min(...xs)) - 2, by = Math.floor(Math.min(...ys)) - 2;
+  const bw = Math.ceil(Math.max(...xs)) + 2 - bx, bh = Math.ceil(Math.max(...ys)) + 2 - by;
+  const c = document.createElement("canvas"); c.width = bw; c.height = bh; const g = c.getContext("2d");
+  g.beginPath(); [L.hb, L.fb, L.ft, L.ht].forEach(([x, y], i) => i ? g.lineTo(x - bx, y - by) : g.moveTo(x - bx, y - by)); g.closePath(); g.clip();
+  const k = plateImg.naturalWidth / NAT_W;
+  try { g.drawImage(plateImg, bx * k, by * k, bw * k, bh * k, 0, 0, bw, bh); } catch (e) {}
+  door.img = c; door.bx = bx; door.by = by;
+}
+function setDoor(open){ door.target = open ? 1 : 0; }
+function tickDoor(dt){
+  if (door.k === door.target) return;
+  const sp = door.target > door.k ? dt / 1.5 : dt / 1.0;           // a heavy swing open, a quicker clang shut
+  door.k = door.target > door.k ? Math.min(door.target, door.k + sp) : Math.max(door.target, door.k - sp);
+}
+function drawDoor(){
+  if (!door.leaf || !door.img || door.k <= 0) return;               // closed: the painting already shows it
+  const L = door.leaf, e = door.k < .5 ? 2 * door.k * door.k : 1 - (-2 * door.k + 2) ** 2 / 2, a = e * 1.75;
+  const W = {x: L.fb[0] - L.hb[0], y: L.fb[1] - L.hb[1]}, H = {x: L.ht[0] - L.hb[0], y: L.ht[1] - L.hb[1]};
+  const len = Math.hypot(W.x, W.y), N = {x: -.82 * len * .62, y: -.48 * len * .62};   // "into the wall", foreshortened
+  const W2 = {x: W.x * Math.cos(a) + N.x * Math.sin(a), y: W.y * Math.cos(a) + N.y * Math.sin(a)};
+  ctx.save();
+  ctx.beginPath(); [L.hb, L.fb, L.ft, L.ht].forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.clip();
+  const gr = ctx.createLinearGradient(L.ht[0], L.ht[1], L.fb[0], L.fb[1]);   // the gap: dark, with a little cave-light beyond
+  gr.addColorStop(0, "#07060c"); gr.addColorStop(.7, "#141525"); gr.addColorStop(1, "#22243a");
+  ctx.fillStyle = gr; ctx.fill();
+  // leaf: affine map of the cut-out from its painted parallelogram (W, H) to the swung one (W2, H)
+  const det = W.x * H.y - W.y * H.x, ia = H.y / det, ib = -W.y / det, ic = -H.x / det, id = W.x / det;
+  const A = W2.x * ia + H.x * ib, B = W2.y * ia + H.y * ib, C = W2.x * ic + H.x * id, D = W2.y * ic + H.y * id;
+  const ox = L.hb[0] - door.bx, oy = L.hb[1] - door.by;
+  ctx.transform(A, B, C, D, L.hb[0] - (A * ox + C * oy), L.hb[1] - (B * ox + D * oy));
+  ctx.drawImage(door.img, 0, 0);
+  ctx.globalAlpha = .55 * e; ctx.fillStyle = "#05040a";              // turning away from the lamps, it falls into shadow
+  ctx.beginPath(); [L.hb, L.fb, L.ft, L.ht].forEach(([x, y], i) => i ? ctx.lineTo(x - door.bx, y - door.by) : ctx.moveTo(x - door.bx, y - door.by)); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
 // ---------- things you can use (the template: lit when in reach, a card of options when used) ----------
 let hoverObj = null;
 function interactAt(w){ return node.zones.find(z => z.interact && inPoly(z.interact.poly, w.x, w.y)) || null; }
-function openInteract(z){
+function openInteract(z, opts = {}){
   const it = z.interact; if (!it || mode !== "explore") return;
   mode = "dialog"; leader.path = []; tip.hidden = true;
   // picture: the object itself, cut from the painting
@@ -886,37 +952,75 @@ function openInteract(z){
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
   const close = () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
+  const isDoor = !!it.leaf;
   if (!state.gateOpen){
-    const check = (what) => () => { close(); toast(`${what}: a DC 20 check (OotA p.18). Roll it with the DM on the dashboard; on a success the DM opens the gate.`, 5200); };
-    add("Pick the lock", check("Picking the lock"), "primary");
-    add("Force it", check("Forcing the gate"));
-    if (!APP || isDm()) add("DM: Jorlan opens it", () => { close(); openGate(); setTimeout(() => openInteract(z), 1200); });
+    if (isDoor && !opts.again) sfx("door-locked", .7);             // you try the bars: locked fast
+    // No dice here: the roll is made on the dashboard with the one dice roller; the player says how it went.
+    const ask = (what, onWin, onLose) => () => {
+      $("objText").textContent = `${what}: roll it on the dashboard (DC 20, OotA p.18). What did it come to?`;
+      box.innerHTML = "";
+      add("20 or more", () => { close(); onWin(); }, "primary");
+      add("Under 20", () => { close(); onLose(); });
+      add("Back", () => { close(); openInteract(z, {again: true}); });
+      box.firstChild?.focus();
+    };
+    add("Pick the lock", ask("Picking the lock", () => {
+      sfx("lock-picked", .9); log("The lock gives with a soft click.");
+      setTimeout(() => unlockGate(), 650);
+    }, () => { sfx("lock-pick-fail", .8); toast("The pick slips in the wards. The lock holds.", 3200); }), "primary");
+    add("Force it", ask("Forcing the gate", () => {
+      log("The bolt tears from the stone."); unlockGate(1);
+    }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }));
+    if (!APP || isDm()) add("DM: Jorlan opens it", () => { close(); openGate(); });
+    add("Step back", close);
+  } else if (state.doorShut){
+    $("objText").textContent = "The gate is shut, but no longer locked.";
+    add("Open it", () => { close(); state.doorShut = false; setDoor(true); sfx("door-open"); setTimeout(() => openInteract(z), 1500); }, "primary");
     add("Step back", close);
   } else {
     for (const t of z.to) add(it.routes?.[t] || `To ${SPEC[t].name}`, () => { $("obj").hidden = true; mode = "explore"; travel(t, z); }, "primary");
+    if (isDoor) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); setTimeout(() => sfx("door-close"), 650); });
     add("Stay inside", close);
   }
   $("obj").hidden = false; box.firstChild?.focus();
 }
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
+// the gate comes open: the lock is beaten, the leaf swings, the way out is lit
+function unlockGate(forced){
+  if (state.gateOpen) return;
+  state.gateOpen = true; state.doorShut = false;
+  if (cur === 11){ setDoor(true); sfx("door-open", forced ? 1 : .85); }
+  log("The pen gate swings open.");
+  const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
+  const z = doorGate(); if (z) setTimeout(() => { if (mode === "explore") openInteract(z); }, 1700);
+}
 function openGate(){
-  if (state.gateOpen) return; state.gateOpen = true;
-  log("The pen gate grinds open. <em>Jorlan's gambit.</em>");
-  if (cur === 11 && mode === "explore"){
-    const j = npcs.find(n => n.id === "jorlan");
-    if (j){
-      j.static = false; j.patrol = null; stopActivity(j);
-      j.big = j.fixedScale / (node.scale * depthAt(j.y)); j.fixedScale = 0;   // from the far landing into the pen: grow into the room's scale
-      j.path = [{x: 560, y: 760, s: .8}, {x: 660, y: 845, s: 1}];
+  if (state.gateOpen) return;
+  const j = cur === 11 && mode === "explore" ? npcs.find(n => n.id === "jorlan") : null;
+  if (!j){ unlockGate(); return; }
+  // Jorlan leaves his post on the landing, goes round behind the pillar, unlocks the door from outside and steps in.
+  state.gateOpen = true; state.doorShut = false;                 // saved now; the door itself swings when he gets there
+  log("Someone is at the lock. <em>Jorlan's gambit.</em>");
+  j.static = false; j.patrol = null; stopActivity(j);
+  const room = y => 1 / (node.scale * depthAt(y));
+  j.big = j.fixedScale * room(j.y); j.fixedScale = 0;
+  j.path = [{x: 540, y: 700, s: .82 * room(700), out: true}];
+  j.onArrive = () => {
+    sfx("lock-picked", .9);
+    setTimeout(() => { setDoor(true); sfx("door-open", .85); }, 600);
+    setTimeout(() => {
+      j.path = [{x: 812, y: 812, s: .95, jump: true}, {x: 790, y: 900, s: 1}];
       j.onArrive = () => {
         j.face = faceOf(leader.x - j.x, leader.y - j.y);
         bark(j, "Go. Quickly, before the next watch.", 3600);       // placeholder line, not book text
-        setTimeout(() => { j.path = [{x: 560, y: 760, s: .8}, {x: j.post.x, y: j.post.y, s: .82 / (node.scale * depthAt(j.post.y))}];
-          j.onArrive = () => { j.static = true; j.face = 2; j.fixedScale = .82; j.big = 1; }; }, 4200);
+        setTimeout(() => {
+          j.path = [{x: 812, y: 812, s: .95, out: true}, {x: 540, y: 700, s: .82 * room(700), jump: true}, {x: j.post.x, y: j.post.y, s: .82 * room(j.post.y)}];
+          j.onArrive = () => { j.static = true; j.face = 2; j.fixedScale = .82; j.big = 1; };
+        }, 4200);
+        const r = npcs.find(n => n.id === "ront"); if (r) bark(r, "Finally.", 3000);
       };
-    }
-  }
-  const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) bark(r, "Finally.", 3000);
+    }, 1500);
+  };
 }
 
 // ---------- combat ----------
@@ -1228,6 +1332,9 @@ function interact(){
   if (a.talk) openTalk(a); else bark(a, a.barks[Math.floor(Math.random() * a.barks.length)] || "…");
 }
 addEventListener("resize", resize);
+// the stage can change size without the window doing so (fonts, the party bar); keep the canvas matched to it,
+// or everything drawn on it drifts off the painting
+if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 
 // ---------- DM drawer ----------
 function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); }
@@ -1335,15 +1442,23 @@ function step(a, dt, speed){
     if (now >= a.once.end){ const cb = a.once.cb; a.once = null; cb && cb(); }
     return;
   }
+  if (a.fadeIn){ a.alpha = Math.min(1, a.alpha + dt * 2.5); if (a.alpha >= 1) a.fadeIn = false; }
   if (a.waitUntil && now < a.waitUntil) return;
   if (!a.path.length){ if (a.anim === "walk" && !a.kbd) setAnim(a, "idle"); return; }
+  if (a.path[0].jump){                  // through a doorway: reappear on the far side
+    const q = a.path.shift(); a.x = q.x; a.y = q.y; if (q.s != null) a.big = q.s; a.fadeIn = true;
+    if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); }
+    return;
+  }
   if (a.path[0].s != null) a.big = (a.big || 1) + (a.path[0].s - (a.big || 1)) * Math.min(1, dt * 2.5);
   const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), sp = speed * node.scale * depthAt(a.y) * dt;
-  if (d <= sp){ a.x = p.x; a.y = p.y; a.path.shift();
+  if (p.out) a.alpha = Math.min(a.alpha, Math.max(0, (d - 4) / 70));   // walking into a doorway: gone by the threshold
+  if (d <= sp){ a.x = p.x; a.y = p.y; a.path.shift(); if (p.out) a.alpha = 0;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); } }
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
 }
 function update(dt){
+  tickDoor(dt);
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
