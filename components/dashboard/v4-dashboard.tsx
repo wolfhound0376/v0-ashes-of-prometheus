@@ -410,12 +410,17 @@ export function V4Dashboard(props: V4DashboardProps) {
   // room the party was last in (Sam, 2026-09-27). The camp link may name the
   // plate outright (?plate=fungal); otherwise the location name picks it.
   const [plateParam, setPlateParam] = useState<string | null>(null)
+  // Talking on the painted map happens in front of that area's own plate (?scene=, our storage only).
+  const [mapScene, setMapScene] = useState<{ url: string; area: string } | null>(null)
   useEffect(() => {
     if (!talkMode) return
-    setPlateParam(new URLSearchParams(window.location.search).get("plate"))
+    const q = new URLSearchParams(window.location.search)
+    setPlateParam(q.get("plate"))
+    const scene = q.get("scene")
+    if (scene && scene.startsWith("https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/")) setMapScene({ url: scene, area: (q.get("area") ?? "").slice(0, 60) })
   }, [talkMode])
-  const talkBiome = talkMode ? campBiome(props.environment.name, plateParam) : null
-  const talkPlate = talkBiome ? CAMP_PLATES[talkBiome] : null
+  const talkBiome = talkMode && props.talkFrom !== "map" ? campBiome(props.environment.name, plateParam) : null
+  const talkPlate = talkBiome ? CAMP_PLATES[talkBiome] : talkMode && props.talkFrom === "map" ? mapScene?.url ?? null : null
   const stageBackdrop = talkPlate ?? props.environment.npcBackdropUrl
   const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
   // Restart Campaign DOES clear the dialogue table — the reason it looked like
@@ -531,8 +536,9 @@ export function V4Dashboard(props: V4DashboardProps) {
   // stage, and reusing it here would mean one number serving two different
   // shots. A player borrowing the window keeps the untouched framing.
   const npcFrame = npcWindowStyle(speakingPlayer ? undefined : ((speakingRow ?? shownNpc) as StageFramingRow | undefined))
-  const lastNpcLine = [...dialogue].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160)
-    ?? (talkMode && talkPartner?.kind === "npc" ? props.talkOpening?.slice(0, 160) : null) ?? null
+  // On the map the opener is the line that matters right now; otherwise their last line in the feed.
+  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? props.talkOpening.slice(0, 160) : null)
+    ?? [...dialogue].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160) ?? null
   // Map talk (Sam, 2026-10-11: "the character you engage with should be at the NPC window and
   // talking"): the opener the NPC said on the map is said again here, in their canon voice through
   // /api/npc-tts, and they hold the floor — talking loop on — while it plays. If the browser blocks
@@ -922,7 +928,7 @@ export function V4Dashboard(props: V4DashboardProps) {
             ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
             : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
           ) : <div className="absolute bottom-0 left-1/2 h-[78%] w-[23%] -translate-x-1/2 rounded-t-[48%] bg-gradient-to-b from-[#6d5531] via-[#2c2115] to-[#080604] opacity-90 shadow-[0_0_35px_#c5993d22]" />}
-          <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">{talkMode ? "By the fire" : "Point of view"}</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {talkBiome ? CAMP_BIOME_LABEL[talkBiome] : props.environment.name}</b></div>
+          <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">{talkMode ? (props.talkFrom === "map" ? "In Velkynvelve" : "By the fire") : "Point of view"}</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {talkBiome ? CAMP_BIOME_LABEL[talkBiome] : props.talkFrom === "map" && mapScene?.area ? mapScene.area : props.environment.name}</b></div>
         </> : <>
           <MapPanel initial="location" onBack={() => setStageMode("scene")} />
           {/* The battle board is a PLACE, not a panel. Rendering it inside
