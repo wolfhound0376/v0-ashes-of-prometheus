@@ -281,7 +281,7 @@ export default function DashboardPage() {
   // Who the player sat down with at camp. While set, the compact view steps
   // aside and the dashboard shows only the NPC / DM window for the conversation.
   const [campTalkWith, setCampTalkWith] = useState<string | null>(null)
-  // Map talk: /?view=compact&from=map&talk=<name>&line=<opener>&return=/velkynvelve. The painted map
+  // Map talk: /?view=full&from=map&talk=<name>&line=<opener>&return=/velkynvelve. The painted map
   // hands over the NPC and the line they opened with; "Back to the map" returns to `return`.
   const [talkReturn, setTalkReturn] = useState<string | null>(null)
   const [talkOpening, setTalkOpening] = useState<string | null>(null)
@@ -1697,7 +1697,8 @@ if (error) {
           playing the camp music. Mounting the room's track here as well put
           the slave pen's jail ambience under Camp Embers (Sam, 2026-09-27),
           so the talk window plays nothing of its own. */}
-      {campTalkWith ? null : <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} className="static bottom-auto right-auto z-auto" />}
+      {/* Map talk is the full dashboard in the room the party stands in, so the room's music plays. */}
+      {campTalkWith && talkFrom !== "map" ? null : <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} className="static bottom-auto right-auto z-auto" />}
       <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
     </>
   }
