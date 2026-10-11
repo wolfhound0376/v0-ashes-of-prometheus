@@ -63,11 +63,18 @@ fix; it is not done here because it is a separate idea.
 
 ## Running it
 
-```bash
-export PIXELLAB_API_KEY=...            # from pixellab.ai
-export SUPABASE_URL=https://ppadxmvvvxmnnejeaoer.supabase.co
-export SUPABASE_SERVICE_ROLE_KEY=...
+On Witchdoctor this normally needs **no setup**. `PIXELLAB_API_KEY` is already
+a user environment variable there — it is what `.mcp.json` interpolates into
+its Authorization header — and the script reads `.env.local` at the repo root
+for the Supabase pair, accepting `NEXT_PUBLIC_SUPABASE_URL` as well as
+`SUPABASE_URL`. If `.env.local` is missing, `vercel env pull .env.local`
+fetches it. Nothing already exported is overridden.
 
+The key is deliberately **not** in Vercel: it is only ever used at build time
+from Sam's machine, never by a deployed route, so the deployment has no reason
+to hold it.
+
+```bash
 python scripts/props/regen_props_hd.py plan              # no spend; prints the bill
 python scripts/props/regen_props_hd.py plan --show boulder
 python scripts/props/regen_props_hd.py generate --limit 8   # small first run

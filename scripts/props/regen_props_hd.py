@@ -66,11 +66,52 @@ SIZE = 128
 MAX_INFLIGHT = 4
 
 
+def _load_env_local() -> None:
+    """Read .env.local from the repo root, without overriding the real environment.
+
+    PIXELLAB_API_KEY is already a user environment variable on Sam's machine —
+    that is what .mcp.json interpolates into its Authorization header — and the
+    Supabase pair already lives in .env.local, which is the repo's documented
+    convention. Reading both means this script normally needs no setup at all
+    on the machine it is meant to run on.
+
+    Deliberately does NOT override anything already exported, so a one-off
+    `SUPABASE_URL=... python regen_props_hd.py` still wins.
+    """
+    root = Path(__file__).resolve().parents[2]
+    f = root / ".env.local"
+    if not f.exists():
+        return
+    for line in f.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if k and k not in os.environ:
+            os.environ[k] = v
+
+
+_load_env_local()
+
+# The Supabase URL is spelled NEXT_PUBLIC_SUPABASE_URL everywhere else in this
+# repo. Accept either rather than making the caller re-export it under a second
+# name for one script.
+ALIASES = {"SUPABASE_URL": ("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL")}
+
+
 def env(name: str) -> str:
-    v = os.environ.get(name)
-    if not v:
-        sys.exit(f"missing {name} in the environment")
-    return v
+    for candidate in ALIASES.get(name, (name,)):
+        v = os.environ.get(candidate)
+        if v:
+            return v
+    tried = " or ".join(ALIASES.get(name, (name,)))
+    sys.exit(
+        f"missing {tried}.\n"
+        f"Looked in the environment and in .env.local at the repo root.\n"
+        f"PIXELLAB_API_KEY is already a user env var on Witchdoctor; the Supabase pair\n"
+        f"is in Vercel -> Settings -> Environment Variables, or `vercel env pull .env.local`."
+    )
 
 
 def api(method: str, path: str, body: dict | None = None, base: str = PIXELLAB) -> dict:
