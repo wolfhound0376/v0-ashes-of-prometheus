@@ -15,6 +15,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { takeVoicedElsewhere } from "@/lib/voiced-elsewhere"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled, setPlayerVoiceEnabled, setKnownPlayerNames } from "@/lib/tts"
@@ -389,7 +390,8 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
       return
     }
 
-    const unheard = voicedLines.filter((line) => fresh.has(line))
+    // A line the dashboard already said itself (a map opener) is not said again.
+    const unheard = voicedLines.filter((line) => fresh.has(line) && !takeVoicedElsewhere(line.speaker, line.text))
 
     if (!primedRef.current) {
       // Don't burn the priming pass on an empty first paint.

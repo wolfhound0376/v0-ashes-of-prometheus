@@ -437,10 +437,12 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null } = await req.json()
   // Camp talk partner, sent by the talk mini-dashboard. A name only — letters,
   // spaces, apostrophes, hyphens — so it can never smuggle instructions in.
   const talkWith = typeof talkWithRaw === "string" ? talkWithRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
+  // Where a map talk is happening ("Slave Pen"): set only by the painted map. Absent = by the camp fire.
+  const talkWhere = talkWith && typeof talkWhereRaw === "string" ? talkWhereRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
 
   /**
    * A DIRECTION IS NOT A LINE.
@@ -1356,14 +1358,17 @@ ${combatantRows
   // A talk by the fire is a conversation, not a new arrival. The slave-pen
   // stage line tells Malachar to run the scavenging roll and introduce the
   // prisoners, so every camp talk from the mini dashboard restarted the intro.
-  const campTalk = Boolean(talkWith) || /\bcamp action\b.*\btalking\b/i.test(String(message ?? ""))
+  const campTalk = (Boolean(talkWith) && !talkWhere) || /\bcamp action\b.*\btalking\b/i.test(String(message ?? ""))
   if (campingBefore || campTalk) {
     stageContext = `CURRENT STAGE: At camp in ${currentLocation}. The introduction is OVER — do NOT ask for the scavenging roll, do NOT re-describe waking in the pen, do NOT re-introduce the prisoners. Play only the conversation the player started, in the voice of the one they sat down with.`
   }
   // The talk window names the partner outright, so Malachar never has to guess
   // who is by the fire. Their lines must be attributed to that exact name —
   // the narration voices a quote by the NPC it is attributed to.
-  if (talkWith) {
+  if (talkWith && talkWhere) {
+    // From the painted map: not at camp, so none of the fire. Still one conversation, one voice.
+    stageContext += ` The player is talking with ${talkWith} in ${talkWhere}, not at camp. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
+  } else if (talkWith) {
     stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
   }
 

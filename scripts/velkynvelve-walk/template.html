@@ -1238,8 +1238,19 @@ function speakBrowser(id, text){
     ss.speak(u);
   } catch (e) {}
 }
-async function openTalk(npc){
+// Who starts it matters (Sam, 2026-10-11): someone who wants a word speaks first, here and again on the
+// dashboard. When YOU go up to someone, they stay quiet until you say something.
+const wantsWord = n => !!(n && n.talk && !state.talked[n.id]);
+const canTalkTo = n => !!(n && n.kind === "npc" && !n.backdrop && !n.hostile);
+function approach(n){
+  if (wantsWord(n)) return openTalk(n);
+  if (canTalkTo(n)) return openTalk(n, {quiet: true});
+  ambient(n);
+}
+let talkQuiet = false;
+async function openTalk(npc, opts = {}){
   if (!npc || mode === "talk") return;
+  talkQuiet = !!opts.quiet; $("talkNo").textContent = talkQuiet ? "Leave" : "Decline";
   mode = "talk"; party.forEach(p => { p.path = []; setAnim(p, "idle"); });
   stopActivity(npc); npc.path = []; npc.face = faceOf(leader.x - npc.x, leader.y - npc.y);
   const nm = SPR[npc.id].json.name;
@@ -1249,6 +1260,11 @@ async function openTalk(npc){
   $("talkGo").href = talkUrl(npc, "");
   $("talk").hidden = false; $("talkGo").focus();
   talkNpc = npc;
+  if (talkQuiet){                                   // you came to them: no opener, no voice, they wait for you
+    const look = npc.barks && npc.barks.length ? npc.barks[Math.floor(Math.random() * npc.barks.length)] : `${nm} waits for you to speak first.`;
+    $("talkLine").innerHTML = `<p class="narr">${esc(look.replace(/^\(|\)$/g, ""))}</p>`;
+    return;
+  }
   const {narration, line} = await npcOpening(npc);
   if (talkNpc !== npc || $("talk").hidden) return;
   $("talkLine").innerHTML = `<p class="narr">${esc(narration)}</p><p class="said">“${esc(line)}”</p>`;
@@ -1269,7 +1285,7 @@ function closeTalk(talked){
   if (!talkNpc) return;
   try { if (!talked) window.speechSynthesis.cancel(); } catch (e) {}
   if (talked){ state.talked[talkNpc.id] = true; state.declined[talkNpc.id] = false; }
-  else state.declined[talkNpc.id] = true;            // the "!" stays over their head until you go back to them
+  else if (!talkQuiet) state.declined[talkNpc.id] = true;   // turning down someone who wanted a word: the "!" stays over their head
   $("talk").hidden = true; talkNpc = null; mode = "explore";
 }
 $("talkGo").onclick = (e) => {
@@ -1350,7 +1366,7 @@ function click(w){
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
     const n = hitActor(npcs, w);
-    if (n){ if (n.talk && !state.talked[n.id]){ walkTo(nearNpc(n), () => openTalk(n)); } else if (n.talk){ openTalk(n); } else { ambient(n); } return; }
+    if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat" && !combatBusy){
     const a = activeActor(); if (!a || a.kind !== "pc") return;
@@ -1383,7 +1399,7 @@ function interact(){
   const n = npcs.map(a => [a, Math.hypot(a.x - leader.x, a.y - leader.y)]).filter(([, d]) => d < 190 * node.scale).sort((a, b) => a[1] - b[1])[0];
   if (!n){ log("No one close enough. Walk up to someone and press <em>E</em>."); return; }
   const a = n[0];
-  if (a.talk) openTalk(a); else ambient(a);
+  approach(a);
 }
 addEventListener("resize", resize);
 // the stage can change size without the window doing so (fonts, the party bar); keep the canvas matched to it,

@@ -286,6 +286,8 @@ export default function DashboardPage() {
   const [talkReturn, setTalkReturn] = useState<string | null>(null)
   const [talkOpening, setTalkOpening] = useState<string | null>(null)
   const [talkFrom, setTalkFrom] = useState<"camp" | "map">("camp")
+  // The map area the talk is happening in ("Slave Pen"), so Malachar plays it there, not by the fire.
+  const [talkArea, setTalkArea] = useState<string | null>(null)
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
   // straight into the talk mini-dashboard with that person, no intro screens.
   useEffect(() => {
@@ -293,7 +295,11 @@ export default function DashboardPage() {
     const talk = url.searchParams.get("talk")?.trim()
     if (!talk) return
     setCampTalkWith(talk.slice(0, 60))
-    if (url.searchParams.get("from") === "map") setTalkFrom("map")
+    if (url.searchParams.get("from") === "map") {
+      setTalkFrom("map")
+      const area = url.searchParams.get("area")?.trim()
+      if (area) setTalkArea(area.slice(0, 60))
+    }
     // Only a same-site path may be a way back (never another site, never //host).
     const back = url.searchParams.get("return")
     if (back && back.startsWith("/") && !back.startsWith("//")) setTalkReturn(back.slice(0, 200))
@@ -1161,7 +1167,7 @@ if (error) {
 
           // Send to Lich, carrying THIS browser's character + claim token.
           // In the camp talk window, name the partner so Malachar answers as them.
-          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith } : undefined)
+          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : undefined)
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1197,7 +1203,7 @@ if (error) {
             // Refresh character data to pick up any XP or items from the Lich
             await fetchCharacterData()
           }
-  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith])
+  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith, talkFrom, talkArea])
 
   // Typed messages cannot impersonate the app. "[Dice Roll]" and the 🎲 prefix
   // are reserved for rolls the physics engine actually resolved; "[Reaction]"

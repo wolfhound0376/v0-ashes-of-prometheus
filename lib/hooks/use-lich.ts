@@ -53,7 +53,7 @@ export function useLich(campaignId: string = "abyss") {
     message: string,
     characterId?: string | null,
     claimToken?: string | null,
-    opts?: { director?: boolean; talkWith?: string | null },
+    opts?: { director?: boolean; talkWith?: string | null; talkWhere?: string | null },
   ): Promise<LichResponse> => {
     setIsLoading(true)
 
@@ -77,7 +77,7 @@ export function useLich(campaignId: string = "abyss") {
           response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, campaignId, characterId, claimToken, director: opts?.director === true, talkWith: opts?.talkWith ?? null }),
+            body: JSON.stringify({ message, campaignId, characterId, claimToken, director: opts?.director === true, talkWith: opts?.talkWith ?? null, talkWhere: opts?.talkWhere ?? null }),
           })
           // The server answered — success or failure, that is the answer.
           break
