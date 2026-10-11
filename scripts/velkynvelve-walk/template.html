@@ -788,7 +788,7 @@ async function enterNode(n, opts = {}){
   for (const np of node.npcs || []){
     if (np.hostile && state.cleared[n]) continue;
     const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
-      hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0});
+      hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
   }
   actors = [...party, ...npcs];
@@ -903,11 +903,18 @@ function openGate(){
   if (state.gateOpen) return; state.gateOpen = true;
   log("The pen gate grinds open. <em>Jorlan's gambit.</em>");
   if (cur === 11 && mode === "explore"){
-    const j = mkActor("jorlan", 660, 850, "npc", {face: 2, barks: [], static: true});
-    j.alpha = 0; npcs.push(j); actors.push(j);
-    const fadeIn = setInterval(() => { j.alpha = Math.min(1, j.alpha + .1); if (j.alpha >= 1) clearInterval(fadeIn); }, 40);
-    setTimeout(() => bark(j, "Go. Quickly, before the next watch.", 3600), 400);       // placeholder line, not book text
-    setTimeout(() => { j.static = false; j.path = [{x: 600, y: 800}, {x: 470, y: 705, s: .85}]; j.onArrive = () => { j.fading = true; }; }, 4200);
+    const j = npcs.find(n => n.id === "jorlan");
+    if (j){
+      j.static = false; j.patrol = null; stopActivity(j);
+      j.big = j.fixedScale / (node.scale * depthAt(j.y)); j.fixedScale = 0;   // from the far landing into the pen: grow into the room's scale
+      j.path = [{x: 560, y: 760, s: .8}, {x: 660, y: 845, s: 1}];
+      j.onArrive = () => {
+        j.face = faceOf(leader.x - j.x, leader.y - j.y);
+        bark(j, "Go. Quickly, before the next watch.", 3600);       // placeholder line, not book text
+        setTimeout(() => { j.path = [{x: 560, y: 760, s: .8}, {x: j.post.x, y: j.post.y, s: .82 / (node.scale * depthAt(j.post.y))}];
+          j.onArrive = () => { j.static = true; j.face = 2; j.fixedScale = .82; j.big = 1; }; }, 4200);
+      };
+    }
   }
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) bark(r, "Finally.", 3000);
 }
@@ -1277,6 +1284,13 @@ const ACTS = [
 function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
 function idleLife(a){
   if (a === leader || a.once || a.fading) return;
+  if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
+    if (a.path.length) return;
+    if (now < (a.actUntil || 0)) return;
+    a.leg = (a.leg || 0) ^ 1; const [px, py] = a.patrol[a.leg];
+    a.path = [{x: px, y: py}]; a.slow = true; a.onArrive = () => { a.actUntil = now + 2500 + Math.random() * 3500; };
+    return;
+  }
   if (a.static){ if (now > (a.actUntil || 0)){ a.face = [0, 1, 2, 7, 6][Math.floor(Math.random() * 5)]; a.actUntil = now + 3000 + Math.random() * 5000; } return; }
   if (a.path.length) return;                         // still strolling
   if (a.act === "wander"){ a.act = null; a.actUntil = now + 2500 + Math.random() * 4000; return; }
