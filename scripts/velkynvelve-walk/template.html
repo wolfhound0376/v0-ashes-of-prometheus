@@ -239,6 +239,12 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmReset">Reset ambushes</button>
     </div>
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
+    <div class="talk" id="obj" hidden>
+      <div class="tcard" role="dialog" aria-labelledby="objWho">
+        <div class="who"><canvas id="objPic" width="128" height="128"></canvas><div class="name" id="objWho"></div></div>
+        <div class="story"><p class="narr" id="objText"></p><div class="btns" id="objBtns"></div></div>
+      </div>
+    </div>
     <div class="talk" id="talk" hidden>
       <div class="tcard" role="dialog" aria-labelledby="talkWho">
         <div class="who"><canvas id="talkPortrait" width="128" height="128"></canvas><div class="name" id="talkWho"></div></div>
@@ -452,6 +458,17 @@ function draw(){
     const pulse = .5 + .5 * Math.sin(now / 520);
     for (const z of node.zones){
       const [x0, y0, x1, y1] = z.rect, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      if (z.interact){                        // things you can use light up when you are in reach, or point at them
+        const lit = hoverObj === z || hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale);
+        if (!lit) continue;
+        const col = state.gateOpen ? "98,227,198" : "240,170,80", pts = z.interact.poly;
+        ctx.save(); ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+        ctx.fillStyle = `rgba(${col},${.06 + .05 * pulse})`; ctx.fill();
+        ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = 24; ctx.lineJoin = "round";
+        ctx.strokeStyle = `rgba(${col},${.55 + .35 * pulse})`; ctx.lineWidth = 5; ctx.stroke();
+        ctx.shadowBlur = 0; ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,240,210,${.5 + .3 * pulse})`; ctx.stroke(); ctx.restore();
+        continue;
+      }
       const locked = z.kind === "gate" && !state.gateOpen;
       const col = locked ? "208,69,58" : z.kind === "water" ? "140,190,255" : z.kind === "leave" ? "232,162,74" : "98,227,198";
       const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8));
@@ -804,7 +821,8 @@ async function travel(to, z){
   const offs = party.map(p => { let dx = p.x - leader.x, dy = p.y - leader.y; const d = Math.hypot(dx, dy), cap = 170 * node.scale;
     if (d > cap){ dx *= cap / d; dy *= cap / d; } return {id: p.id, dx, dy}; });
   const drop = z.kind === "water" && cur === 9;
-  const route = z.cross ? z.cross.map(([x, y, s]) => ({x, y, s}))
+  const cr = z.cross || (z.crossBy && z.crossBy[String(to)]);
+  const route = cr ? cr.map(([x, y, s]) => ({x, y, s}))
     : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 900, y: zc.y + exitDir.y * 900}];
   const order = [leader, ...followOrder()];
   order.forEach((a, i) => {
@@ -813,7 +831,7 @@ async function travel(to, z){
     else a.path = route.map(p => ({...p}));
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
-  await wait(drop ? 1900 : z.cross ? 2600 : 1500);
+  await wait(drop ? 1900 : cr ? 2600 : 1500);
   await slideTo(to, dir);
   const verb = drop ? "The party drops through the falls" : z.kind === "water" ? "The party climbs" : "The party crosses";
   await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, note: `${verb} to <em>${esc(SPEC[to].name)}</em>.`});
@@ -848,13 +866,39 @@ function chooseDestination(z){
 }
 function triggerZone(z){
   leader.path = [];
-  if (z.kind === "gate" && !state.gateOpen){
-    toast("The pen gate is locked: heavy iron bolted into the stone. Picking or forcing it is a DC 20 check (OotA p.18). DM tools can open it.", 4200);
-    return;
-  }
+  if (z.interact){ openInteract(z); return; }
   if (z.kind === "leave"){ toast(z.label + ". That way leaves Velkynvelve, beyond this proof for now."); return; }
   travel(z.to[0], z);
 }
+// ---------- things you can use (the template: lit when in reach, a card of options when used) ----------
+let hoverObj = null;
+function interactAt(w){ return node.zones.find(z => z.interact && inPoly(z.interact.poly, w.x, w.y)) || null; }
+function openInteract(z){
+  const it = z.interact; if (!it || mode !== "explore") return;
+  mode = "dialog"; leader.path = []; tip.hidden = true;
+  // picture: the object itself, cut from the painting
+  const c = $("objPic"), g = c.getContext("2d"), xs = it.poly.map(p => p[0]), ys = it.poly.map(p => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), sz = Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0);
+  const k = plateImg.naturalWidth / NAT_W; g.clearRect(0, 0, 128, 128);
+  try { g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = it.name;
+  $("objText").textContent = state.gateOpen ? it.open : it.locked;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const close = () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
+  if (!state.gateOpen){
+    const check = (what) => () => { close(); toast(`${what}: a DC 20 check (OotA p.18). Roll it with the DM on the dashboard; on a success the DM opens the gate.`, 5200); };
+    add("Pick the lock", check("Picking the lock"), "primary");
+    add("Force it", check("Forcing the gate"));
+    if (!APP || isDm()) add("DM: Jorlan opens it", () => { close(); openGate(); setTimeout(() => openInteract(z), 1200); });
+    add("Step back", close);
+  } else {
+    for (const t of z.to) add(it.routes?.[t] || `To ${SPEC[t].name}`, () => { $("obj").hidden = true; mode = "explore"; travel(t, z); }, "primary");
+    add("Stay inside", close);
+  }
+  $("obj").hidden = false; box.firstChild?.focus();
+}
+function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
 function openGate(){
   if (state.gateOpen) return; state.gateOpen = true;
   log("The pen gate grinds open. <em>Jorlan's gambit.</em>");
@@ -1108,12 +1152,19 @@ stage.addEventListener("pointermove", e => {
   if (e.target.closest(".dm,.dialog,.talk,.zoom,.combatbar")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect();
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? hitActor(foes, w) : null;
-  hoverZone = mode === "explore" && !hoverActor ? zoneAt(w.x, w.y) : null;
+  hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
+  hoverZone = mode === "explore" && !hoverActor && !hoverObj ? zoneAt(w.x, w.y) : null;
+  if (hoverObj){
+    tip.textContent = `${hoverObj.interact.name}${state.gateOpen ? "" : " (locked)"}: click to use`;
+    tip.className = "tip" + (state.gateOpen ? "" : " locked"); tip.hidden = false;
+    tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px";
+    stage.classList.add("pointer"); return;
+  }
   const mk = mode === "explore" && !hoverActor && !hoverZone ? markAt(w) : null;
   if (mk){ tip.textContent = mk.tip; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; return; }
   if (hoverZone){
     const locked = hoverZone.kind === "gate" && !state.gateOpen;
-    tip.textContent = hoverZone.to.length ? `${hoverZone.label.split(":")[0]} → ${hoverZone.to.map(t => SPEC[t].name).join(" / ")}${locked ? " (locked)" : ""}` : hoverZone.label;
+    tip.textContent = hoverZone.interact ? `${hoverZone.interact.name}${locked ? " (locked)" : ""}` : hoverZone.to.length ? `${hoverZone.label.split(":")[0]} → ${hoverZone.to.map(t => SPEC[t].name).join(" / ")}${locked ? " (locked)" : ""}` : hoverZone.label;
     tip.className = "tip" + (locked ? " locked" : ""); tip.hidden = false;
     tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px";
   } else tip.hidden = true;
@@ -1131,6 +1182,8 @@ function click(w){
   if (mode === "explore"){
     const me = hitActor(party, w);
     if (me && me !== leader){ setLeader(me); return; }
+    const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
+    if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
     const n = hitActor(npcs, w);
     if (n){ if (n.talk && !state.talked[n.id]){ walkTo(nearNpc(n), () => openTalk(n)); } else if (n.talk){ openTalk(n); } else { bark(n, n.barks[Math.floor(Math.random() * n.barks.length)] || "…"); } return; }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
@@ -1148,7 +1201,7 @@ $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.wi
 $("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyView(); };
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
-  if (e.key === "Escape"){ if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
+  if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
   if (MOVE_KEYS.has(e.code) && (mode === "explore" || mode === "combat")){ keys.add(e.code); e.preventDefault(); unlockAudio(); }
   if (mode === "explore"){

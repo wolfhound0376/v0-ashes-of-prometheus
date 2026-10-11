@@ -2,27 +2,316 @@
  "_note": "Story layer on top of the walk spec: who stands where, scripted crossings, props. Coordinates in 2400x1339 plate pixels. Bark lines are placeholders, not book text.",
  "10": {
   "npcs": [
-   {"id": "drow-guard-male", "x": 1250, "y": 800, "face": 2, "hostile": true, "barks": ["(a drow guard scans the bridges)"]},
-   {"id": "drow-guard-female", "x": 1720, "y": 830, "face": 6, "hostile": true, "barks": ["(a drow guard leans on the rail, watching the pen)"]},
-   {"id": "drow-guard-male", "x": 1580, "y": 990, "face": 0, "hostile": true, "barks": ["(a drow guard checks the crossbow on the rack)"]}
+   {
+    "id": "drow-guard-male",
+    "x": 1250,
+    "y": 800,
+    "face": 2,
+    "hostile": true,
+    "barks": [
+     "(a drow guard scans the bridges)"
+    ]
+   },
+   {
+    "id": "drow-guard-female",
+    "x": 1720,
+    "y": 830,
+    "face": 6,
+    "hostile": true,
+    "barks": [
+     "(a drow guard leans on the rail, watching the pen)"
+    ]
+   },
+   {
+    "id": "drow-guard-male",
+    "x": 1580,
+    "y": 990,
+    "face": 0,
+    "hostile": true,
+    "barks": [
+     "(a drow guard checks the crossbow on the rack)"
+    ]
+   }
   ],
   "hostileLabel": "The drow guards in the tower see you coming."
  },
  "11": {
   "npcs": [
-   {"id": "drow-guard-male", "x": 300, "y": 858, "face": 2, "static": true, "backdrop": true, "fixedScale": 0.34, "barks": []},
-   {"id": "drow-guard-female", "x": 352, "y": 872, "face": 2, "static": true, "backdrop": true, "fixedScale": 0.34, "barks": []}
+   {
+    "id": "drow-guard-male",
+    "x": 300,
+    "y": 858,
+    "face": 2,
+    "static": true,
+    "backdrop": true,
+    "fixedScale": 0.34,
+    "barks": []
+   },
+   {
+    "id": "drow-guard-female",
+    "x": 352,
+    "y": 872,
+    "face": 2,
+    "static": true,
+    "backdrop": true,
+    "fixedScale": 0.34,
+    "barks": []
+   }
   ],
   "cross": {
-   "10": [[690, 880, 1], [600, 800, 0.95], [470, 705, 0.85], [330, 600, 0.7], [150, 505, 0.58], [-150, 420, 0.5]],
-   "12": [[830, 880, 1], [640, 800, 0.95], [480, 722, 0.85], [432, 850, 0.8], [400, 1100, 0.75], [380, 1500, 0.72]]
+   "10": [
+    [
+     690,
+     880,
+     1
+    ],
+    [
+     600,
+     800,
+     0.95
+    ],
+    [
+     470,
+     705,
+     0.85
+    ],
+    [
+     330,
+     600,
+     0.7
+    ],
+    [
+     150,
+     505,
+     0.58
+    ],
+    [
+     -150,
+     420,
+     0.5
+    ]
+   ],
+   "12": [
+    [
+     830,
+     880,
+     1
+    ],
+    [
+     640,
+     800,
+     0.95
+    ],
+    [
+     480,
+     722,
+     0.85
+    ],
+    [
+     432,
+     850,
+     0.8
+    ],
+    [
+     400,
+     1100,
+     0.75
+    ],
+    [
+     380,
+     1500,
+     0.72
+    ]
+   ]
   },
   "chains": [
-   {"pts": [[1163, 476], [1160, 560], [1167, 640], [1180, 668], [1212, 688], [1240, 698]], "cuffs": [[1252, 701], [1284, 711]]},
-   {"pts": [[1466, 450], [1468, 540], [1463, 610], [1478, 638], [1506, 652]], "cuffs": [[1518, 657], [1546, 667]]},
-   {"pts": [[2266, 760], [2262, 840], [2250, 902], [2218, 932], [2184, 946]], "cuffs": [[2170, 951], [2142, 957]]},
-   {"pts": [[1004, 1116], [1022, 1124], [1040, 1128]], "cuffs": [[1000, 1114], [1046, 1130]]},
-   {"pts": [[1858, 1206], [1874, 1214], [1892, 1216]], "cuffs": [[1852, 1204], [1898, 1217]]}
-  ]
+   {
+    "pts": [
+     [
+      1163,
+      476
+     ],
+     [
+      1160,
+      560
+     ],
+     [
+      1167,
+      640
+     ],
+     [
+      1180,
+      668
+     ],
+     [
+      1212,
+      688
+     ],
+     [
+      1240,
+      698
+     ]
+    ],
+    "cuffs": [
+     [
+      1252,
+      701
+     ],
+     [
+      1284,
+      711
+     ]
+    ]
+   },
+   {
+    "pts": [
+     [
+      1466,
+      450
+     ],
+     [
+      1468,
+      540
+     ],
+     [
+      1463,
+      610
+     ],
+     [
+      1478,
+      638
+     ],
+     [
+      1506,
+      652
+     ]
+    ],
+    "cuffs": [
+     [
+      1518,
+      657
+     ],
+     [
+      1546,
+      667
+     ]
+    ]
+   },
+   {
+    "pts": [
+     [
+      2266,
+      760
+     ],
+     [
+      2262,
+      840
+     ],
+     [
+      2250,
+      902
+     ],
+     [
+      2218,
+      932
+     ],
+     [
+      2184,
+      946
+     ]
+    ],
+    "cuffs": [
+     [
+      2170,
+      951
+     ],
+     [
+      2142,
+      957
+     ]
+    ]
+   },
+   {
+    "pts": [
+     [
+      1004,
+      1116
+     ],
+     [
+      1022,
+      1124
+     ],
+     [
+      1040,
+      1128
+     ]
+    ],
+    "cuffs": [
+     [
+      1000,
+      1114
+     ],
+     [
+      1046,
+      1130
+     ]
+    ]
+   },
+   {
+    "pts": [
+     [
+      1858,
+      1206
+     ],
+     [
+      1874,
+      1214
+     ],
+     [
+      1892,
+      1216
+     ]
+    ],
+    "cuffs": [
+     [
+      1852,
+      1204
+     ],
+     [
+      1898,
+      1217
+     ]
+    ]
+   }
+  ],
+  "interact": {
+   "gate": {
+    "name": "The pen gate",
+    "poly": [
+     [
+      605,
+      150
+     ],
+     [
+      960,
+      140
+     ],
+     [
+      968,
+      745
+     ],
+     [
+      605,
+      905
+     ]
+    ],
+    "locked": "Heavy iron bars bolted into the stone. Locked. Picking or forcing it is a DC 20 check (OotA p.18).",
+    "open": "The gate stands open. Beyond it, the balcony: a rope bridge to the guard tower, and stairs down the cliff.",
+    "routes": {
+     "10": "Out across the rope bridge to the Guard Tower",
+     "12": "Down the cliff stairs to the Quaggoth Den"
+    }
+   }
+  }
  }
 }

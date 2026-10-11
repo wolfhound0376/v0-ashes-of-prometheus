@@ -45,14 +45,14 @@ story = json.load(open(os.path.join(HERE, 'story.json')))
 for k, v in story.items():
     if k.startswith('_'): continue
     n = spec[k]; n['npcs'] = n.get('npcs', []) + v.get('npcs', [])
-    for f in ('chains', 'hostileLabel'):
+    for f in ('chains', 'hostileLabel', 'interact'):
         if f in v: n[f] = v[f]
     n['cross'] = v.get('cross', {})
 # exits that lead to several places become one strip per destination, split across the way out
 for k, n in spec.items():
     out = []
     for z in n['zones']:
-        if len(z['to']) <= 1: out.append(z); continue
+        if len(z['to']) <= 1 or z.get('kind') == 'gate': out.append(z); continue
         x0, y0, x1, y1 = z['rect']; m = len(z['to'])
         xs, ys = [], []
         for f in n['floors']:
@@ -68,7 +68,8 @@ for k, n in spec.items():
             out.append(dict(z, rect=[round(c) for c in r], to=[t]))
     n['zones'] = out
     for z in n['zones']:
-        if z['to'] and str(z['to'][0]) in n.get('cross', {}): z['cross'] = n['cross'][str(z['to'][0])]
+        if z.get('kind') == 'gate': z['crossBy'] = n.get('cross', {}); z['interact'] = n.get('interact', {}).get('gate')
+        elif z['to'] and str(z['to'][0]) in n.get('cross', {}): z['cross'] = n['cross'][str(z['to'][0])]
 
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
