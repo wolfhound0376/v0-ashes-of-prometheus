@@ -22,7 +22,14 @@
  *
  *   npc    someone in the room fills the gap. In character, cheap, and often
  *          enough on its own — a bark from Jimjar restarts a conversation.
- *   lich   Malachar leans in and names somebody. Harder to ignore.
+ *          NPCs are the ones allowed to move the story: an offer, a rumour, a
+ *          demand, a reminder that the clock is running.
+ *   lich   Malachar leans in and names somebody — if, and only if, their
+ *          silence amuses him. He never helps. Sam, 2026-10-11: "Malachar
+ *          shouldn't be trying to give hints; he is actively hoping we all
+ *          die or suffer. He is enjoying toying with us. Other NPCs can talk
+ *          to us to get the story moving along. Even occasionally Malachar
+ *          but only if he feels it will keep him entertained."
  *   world  a guard passes, something moves in the tunnel. Pressure that is
  *          not addressed to anyone and cannot be answered with silence.
  *
@@ -122,9 +129,9 @@ export function onSceneChange(s: PacingState, now: number): PacingState {
 export function nudgePrompt(kind: NudgeKind): string {
   switch (kind) {
     case "npc":
-      return "[PACING] The room has gone quiet. Have ONE npc present say something short and in character — a question, a complaint, an offer, an opinion about what was just discussed. Do not advance the plot and do not address the party as a group. Two sentences at most."
+      return "[PACING] The room has gone quiet. Have ONE npc present say something short and in character — a question, a complaint, an offer, a rumour, a demand, an opinion about what was just discussed. The NPC may give the party somewhere to go or something to want; that is how the story moves. Do not address the party as a group. Malachar does not speak. Two sentences at most."
     case "lich":
-      return "[PACING] The party is still silent. Malachar leans in and needles them directly: name one character, ask what they are actually doing, and make the hesitation itself the joke. Stay cruel and funny. Do not resolve anything for them. Three sentences at most."
+      return "[PACING] The party is still silent. If their silence amuses Malachar, he leans in and needles ONE named character about the hesitation itself — the silence is the joke, nothing else. He wants them to fail: he names no stat, skill, item, opening, distracted guard, or thing they could do, and he does not resolve anything for them. If nothing about it amuses him, he says nothing and an NPC speaks instead. Three sentences at most."
     case "world":
       return "[PACING] Nobody has moved. Something happens TO them instead: a patrol passes, a sound in the tunnel, a light changes, a guard looks over. No one addresses the party. Make it raise the stakes slightly and demand a response. Three sentences at most."
   }
