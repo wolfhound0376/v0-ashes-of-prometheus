@@ -1,0 +1,40 @@
+{
+ "version": 1,
+ "name": "Jorlan Duskryn",
+ "cell": [
+  128,
+  128
+ ],
+ "pivot": [
+  64,
+  126
+ ],
+ "ppu": 103,
+ "animations": {
+  "idle": {
+   "sheet": "idle.png",
+   "frames": 1,
+   "fps": 5,
+   "loop": true
+  },
+  "walk": {
+   "sheet": "walk.png",
+   "frames": 7,
+   "fps": 10,
+   "loop": true
+  },
+  "attack": {
+   "sheet": "attack.png",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.6
+  },
+  "dodge": {
+   "sheet": "dodge.png",
+   "frames": 9,
+   "fps": 12,
+   "loop": false
+  }
+ }
+}
