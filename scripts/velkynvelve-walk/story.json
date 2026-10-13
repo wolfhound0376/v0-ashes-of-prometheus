@@ -391,6 +391,7 @@
     "anim": "walk",
     "big": 1
    }
-  }
+  },
+  "wards": "The wards cut into the pen's walls smother any spell cast inside it; a spell cast from outside still reaches in."
  }
 }

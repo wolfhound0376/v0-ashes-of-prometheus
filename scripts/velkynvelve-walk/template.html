@@ -545,6 +545,7 @@ function draw(){
   }
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround();
+  if (mode === "combat") drawFxLayer(true);
   const list = actors.filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
   for (const a of list){
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
@@ -581,6 +582,7 @@ function draw(){
       ctx.strokeText("!", a.x, top); ctx.fillText("!", a.x, top);
     }
   }
+  if (mode === "combat") drawFxLayer(false);
   drawCombatFx();
   ctx.globalAlpha = 1;
 }
@@ -1000,11 +1002,16 @@ function audioCtx(){ return speakCanon.ctx || (speakCanon.ctx = new (window.Audi
 // voice/sfx context on every such gesture until it is running, so NPC voices are ready when they speak.
 function wakeAudio(){ try { const c = audioCtx(); if (c.state !== "running") c.resume().catch(() => {}); } catch (e) {} }
 ["pointerdown", "keydown", "touchstart"].forEach(ev => addEventListener(ev, wakeAudio, {capture: true, passive: true}));
+// Sam's sound bank (lib/sfx.ts): 93 effects in vtt-assets/sfx, named "bank:combat/melee_hit_flesh" here.
+// The structure is the structure of a spell — <family>_windup / _release / _tail, impact_<type> — so the
+// audio drives the pacing of a cast rather than being sprinkled on afterwards.
+const SFX_BANK = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/sfx/";
 function loadSfx(name){
-  const dir = name.startsWith("arrive-") ? "audio" : "sfx";
-  return SFX[name] || (SFX[name] = fetch(`${ASSET}${dir}/${name}.mp3`).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+  const url = name.startsWith("bank:") ? `${SFX_BANK}${name.slice(5)}.ogg` : `${ASSET}${name.startsWith("arrive-") ? "audio" : "sfx"}/${name}.mp3`;
+  return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
+const bank = (name, gain = .8) => sfx("bank:" + name, gain);
 async function sfx(name, gain = .8){
   try {
     const ctx = audioCtx(); if (ctx.state === "suspended") await ctx.resume();
@@ -1149,6 +1156,67 @@ function openGate(){
   };
 }
 
+// ---------- the effects library (public/vfx, Sam's sheets) ----------
+// The board's spell choreography (lib/target-sigil.ts, lib/spell-school-vfx.ts) on the painted plate: a
+// rune ring over the caster's hands while the spell winds up, a sigil ring laid flat under the target
+// turning clockwise with its plume rising through the body, the release, the bolt, the impact sheet by
+// damage type, the sigil bursting (taken) or shattering (saved). Sam, 2026-10-13: "Where are all the
+// cool magical effects, sigils, Area of Effect animations I created?" — here.
+const VFX_BASE = APP ? "/vfx/" : "vfx/";
+let VFX_META = null; const VFX_IMG = {}; const fx = [];
+async function vfxLoad(name){
+  try {
+    if (!VFX_META) VFX_META = await (await fetch(VFX_BASE + "manifest.json", {cache: "force-cache"})).json();
+    const m = VFX_META[name]; if (!m) return null;
+    if (!VFX_IMG[name]) VFX_IMG[name] = loadImg(VFX_BASE + m.file).catch(() => null);
+    const img = await VFX_IMG[name]; return img ? {m, img} : null;
+  } catch (e) { return null; }
+}
+// spawn a sheet: at an actor (follows it) or a point; `sq` = width in 5-ft squares; flat = laid on the ground
+async function spawnFx(name, o){
+  const v = await vfxLoad(name); if (!v || !cbt) return null;
+  const e = Object.assign({name, m: v.m, img: v.img, t0: now, sq: 2, flat: false, spin: 0, lift: 0, alpha: 1, loop: v.m.loop && !o.once}, o);
+  fx.push(e); return e;
+}
+function fxPos(e){ const a = e.at; if (a && a.id){ const sc = actorScale(a), m = SPR[a.id].json; return {x: a.x, y: a.y, top: a.y - m.pivot[1] * sc, mid: a.y - m.pivot[1] * sc * .55, ref: a}; } return {x: e.x, y: e.y, top: e.y - 40, mid: e.y - 20, ref: null}; }
+function drawFxLayer(flat){
+  for (let i = fx.length - 1; i >= 0; i--){
+    const e = fx[i]; if (!!e.flat !== flat) continue;
+    const m = e.m, el = (now - e.t0) / 1000 * m.fps; let f = Math.floor(el);
+    if (e.until && now > e.until){ fx.splice(i, 1); continue; }
+    if (f >= m.frames){ if (e.loop) f = f % m.frames; else { fx.splice(i, 1); if (e.then){ const fn = e.then; e.then = null; fn(); } continue; } }
+    const P = fxPos(e), px = (P.ref ? ftPx(P.ref) : 96 * BASE * node.scale * depthAt(P.y) / 5) * 5;   // one square, in plate px
+    const cw = e.img.width / m.cols, ch = e.img.height / m.rows, w = e.sq * px, h = w * ch / cw;
+    const sx = (f % m.cols) * cw, sy = Math.floor(f / m.cols) * ch;
+    ctx.save(); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1);
+    if (e.flat){ ctx.translate(P.x, P.y + 2); ctx.scale(1, .5); if (e.spin) ctx.rotate((now - e.t0) / 1000 * e.spin); ctx.drawImage(e.img, sx, sy, cw, ch, -w / 2, -w / 2, w, w); }
+    else { const y = e.anchor === "feet" ? P.y : e.anchor === "top" ? P.top : P.mid; ctx.drawImage(e.img, sx, sy, cw, ch, P.x - w / 2 + (e.dx || 0) * px, y - h / 2 - e.lift * px, w, h); }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+// which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
+const SCHOOL_OF = {"Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
+  "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment"};
+const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
+const RUNE_SCHOOL = {abjuration: "runeAbjuration", conjuration: "runeConjuration", divination: "runeDivination", enchantment: "runeEnchantment", evocation: "runeEvocation", illusion: "runeIllusion", necromancy: "runeNecromancy", transmutation: "runeTransmutation"};
+const SIGIL_OF = {necromancy: ["sigilNecroticRing", "sigilNecroticPlume"], enchantment: ["sigilEnchantmentRing", "sigilEnchantmentPlume"], evocation: ["sigilEvocationRing", "sigilEvocationPlume"],
+  abjuration: ["sigilAbjurationRing", "sigilAbjurationPlume"], illusion: ["sigilIllusionRing", "sigilIllusionPlume"], transmutation: ["sigilTransmutationRing", "sigilTransmutationPlume"]};
+const BOLT_OF = {cold: "pxIce", fire: "pxFireball", lightning: "pxArc", necrotic: "pxGhost", psychic: "pxPsychic", radiant: "pxMissile", force: "pxMissile", acid: "pxPoison", poison: "pxPoison"};
+const IMPACT_OF = {cold: "frostImpact", fire: "fireImpact", lightning: "lightningStrike", necrotic: "necroImpact", psychic: "psychicImpact", radiant: "radiantColumn", force: "forceHit", acid: "acidImpact", poison: "poisonCloud", thunder: "thunderImpact"};
+const GROUND_OF = {cold: "groundFrost", fire: "groundScorch", lightning: "groundShock", necrotic: "groundGloom", radiant: "groundHallowed", acid: "groundAcid", poison: "groundMiasma", psychic: "groundArcane", force: "groundArcane"};
+const FAMILY_OF = {cold: "cold", fire: "fire", lightning: "arcane", necrotic: "necrotic", psychic: "psychic", radiant: "holy", force: "arcane", acid: "nature", poison: "nature", heal: "holy", abjuration: "arcane", enchantment: "psychic"};
+const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: "creature/hurt_quaggoth", death: "creature/death_quaggoth"},
+  "giant-spider": {call: "creature/creature_spider_hiss", hurt: "creature/hurt_spider", death: "creature/death_spider"},
+  "gray-ooze": {hurt: "creature/hurt_beast", death: "creature/death_beast"},
+  "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, jorlan: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}};
+const CLASS_TURN = {Sorcerer: "ui/turn_sorcerer", Cleric: "ui/turn_cleric", Bard: "ui/turn_bard", Rogue: "ui/turn_rogue"};
+function weaponSfx(atk){ const n = atk.name.toLowerCase(); return n.includes("dagger") ? {swing: "combat/dagger_stab", hit: "combat/dagger_stab"} : n.includes("unarmed") ? {swing: "combat/melee_swing_light", hit: "combat/unarmed_hit"} : /claw|bite|pseudopod/.test(n) ? {swing: "combat/melee_swing_heavy", hit: "combat/melee_hit_flesh"} : {swing: "combat/melee_swing_light", hit: "combat/melee_hit_flesh"}; }
+function strikeSheet(atk, sneak){ const n = atk.name.toLowerCase(); return sneak ? "strikeSneak" : n.includes("unarmed") ? "strikePunch" : n.includes("claw") || n.includes("bite") ? "strikeSpecial" : "physicalImpact"; }
+// Wards (lib/world-ai/campaigns.ts: "Magical wards block spells cast inside pen (but not from outside)"):
+// in a warded area the Cast command is shut, and the reason is said.
+const wardsHere = () => node.wards || null;
+
 // ---------- combat (HD-2D) ----------
 // The fight runs on the painted plate with the party's own sprites, presented the Octopath way (Sam,
 // 2026-10-12: "have the combat run visually like this octopath system but use the DND system we have
@@ -1275,6 +1343,8 @@ function startCombat(foeIds, label){
   cbt = {order, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
   $("combat").hidden = false; $("cbtMenu").hidden = true; renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
+  bank("ui/initiative_start", .8);
+  for (const nm of ["physicalImpact", "strikePunch", "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
   setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f)) bark(f, b[i % b.length], 2600); }, i * 500)), 700);
   setTimeout(() => { if (cbt) nextTurn(true); }, 1400);
 }
@@ -1329,7 +1399,8 @@ function nextTurn(first){
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
-  if (a.kind === "foe"){ foeTurn(a); return; }
+  if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
+  bank(CLASS_TURN[a.c.sheet.cls] || "ui/turn_chime", .7);
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
   openMenu(a);
 }
@@ -1342,13 +1413,14 @@ function openMenu(a, sub){
     for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
     add("Back", "", () => openMenu(a));
   } else if (sub === "cast"){
-    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, () => aim(a, {spell: nm})); }
-    for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const ok = (c.slots[sp.lvl] || 0) > 0 && (!sp.bonus || c.bonus);
-      add(nm, `level ${sp.lvl}${sp.bonus ? " · bonus action" : ""} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, ok ? () => aim(a, {spell: nm}) : null); }
+    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · no slot · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, () => aim(a, {spell: nm})); }
+    for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const left = c.slots[sp.lvl] || 0, ok = left > 0 && (!sp.bonus || c.bonus);
+      add(nm, `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left${sp.bonus ? " · bonus action" : ""} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, ok ? () => aim(a, {spell: nm}) : null); }
     add("Back", "", () => openMenu(a));
   } else {
     add("Attack", s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
-    if (s.magic) add("Cast", `DC ${s.magic.dc} · +${s.magic.hit}`, c.action || c.bonus ? () => openMenu(a, "cast") : null);
+    if (s.magic){ const w = wardsHere(); add("Cast", w ? "the wards smother any spell cast in here" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, !w && (c.action || c.bonus) ? () => openMenu(a, "cast") : null);
+      if (w && !cbt.wardSaid){ cbt.wardSaid = true; log(`<em>${esc(w)}</em>`); } }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
     add("End turn", "Enter", () => nextTurn());
@@ -1400,12 +1472,19 @@ function attackWith(att, tgt, atk, done){
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
   approachThen(att, tgt, reach, () => {
     pushCam(att, tgt);
+    const ws = weaponSfx(atk), cs = CREATURE_SFX[att.id];
+    if (cs && cs.call && Math.random() < .5) bank(cs.call, .7);
+    bank(ws.swing, .6);
     strike(att, tgt, () => {
       const adv = advantageOn(att, tgt), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + atk.hit >= targetAc(tgt)); att.c.conds.delete("mocked");
       const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
-      if (!hit){ miss(tgt); log(`${why} — miss.`); return; }
+      if (r === 1) bank("ui/nat1", .7);
+      if (!hit){ miss(tgt); bank("combat/melee_miss", .7); log(`${why} — miss.`); return; }
+      const sneak = !!(atk.sneak && standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5));
+      bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
+      spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: crit ? 2.6 : 2});
       let dmg = roll(atk.dmg, crit), parts = [`${dmg.total} ${atk.type}`];
-      if (atk.sneak && standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
+      if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
       damage(tgt, dmg.total, atk.type, crit, att);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
@@ -1422,20 +1501,38 @@ function castSpell(caster, tgt, name, done){
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
   if (tgt.id) pushCam(caster, tgt);
+  // the choreography (lib/target-sigil.ts): rune ring at the hands while it winds up, the sigil forming
+  // flat under the target with its plume rising, then release, bolt, impact, and the sigil bursts or shatters
+  const school = SCHOOL_OF[name] || "evocation", dtype = sp.kind === "heal" ? "heal" : sp.type || school, family = FAMILY_OF[dtype] || FAMILY_OF[school] || "arcane";
+  const sig = SIGIL_OF[school] || SIGIL_OF.evocation, rune = RUNE_OF[dtype] || RUNE_SCHOOL[school] || "runeEvocation";
+  bank(`magic/${family}_windup`, .55);
+  const ring = spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
+  const marks = [];
+  const markTarget = (tg) => { if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); if (sig[1]) marks.push(spawnFx(sig[1], {at: tg, sq: 1.8, anchor: "feet", lift: .7, loop: true, alpha: .85})); };
+  if (sp.area) spawnFx(school === "enchantment" ? "pxPlumeMotes" : "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: school !== "enchantment", loop: true, until: now + 2600, alpha: .8});
+  else if (tgt.id) markTarget(tgt);
+  const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now; })); spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
   playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
   caster.once && (caster.once.hit = () => {
+    ring.then(e => { if (e) e.until = now; });
+    bank(`magic/${family}_release`, .7);
+    if (tgt.id && BOLT_OF[dtype]) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
     spellBolt(caster, at, sp.fx, () => {
       const m = c.sheet.magic;
+      const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
         const adv = advantageOn(caster, tgt), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + m.hit >= targetAc(tgt));
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
-        if (!hit){ miss(tgt); log(`${why} — miss.`); return; }
+        if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
+        if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
+        land(tgt, true, sp.type);
         const d = roll(sp.dmg, crit); damage(tgt, d.total, sp.type, crit, caster); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
       } else if (sp.kind === "heal"){
         const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
+        sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300); spawnFx("healingShimmer", {at: tgt, sq: 2, anchor: "mid"});
         popText(tgt, `+${d}`, "#9ff2c8"); burst(tgt, "#9ff2c8", 14); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
-      } else if (sp.kind === "buff"){ addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
+      } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6); spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8}); spawnFx("sigilAbjurationPlume", {at: tgt, sq: 2, anchor: "feet", lift: .9}); addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else {                                                                    // a save
         const targets = sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt];
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
@@ -1444,6 +1541,10 @@ function castSpell(caster, tgt, name, done){
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
           const s = d20() + (t.c.sheet.saves[sp.save] || 0), ok = s >= m.dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s} vs DC ${m.dc}: ${ok ? "saves" : "fails"}`;
+          if (sp.area && !marks.length) markTarget(t);
+          if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .7); spawnFx("pxPlumeMotes", {at: t, sq: 1.2, anchor: "top", loop: true, until: now + 2400}); } else bank("magic/spell_fizzle", .5); }
+          else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
+          else land(t, !ok, sp.type || "psychic");
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); if (sp.cond === "asleep") t.c.sleptDc = m.dc; }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
@@ -1468,12 +1569,14 @@ function damage(t, n, type, crit, from){
   popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
   t.c.conds.delete("asleep");
+  if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   renderParty();
 }
 function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
 function fall(t){
   t.down = true; t.path = []; t.c.conds.clear();
+  const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_downed" : cs && cs.death ? cs.death : "creature/death_beast", .85);
   if (SPR[t.id].img.dead) playOnce(t, "dead", () => {}); else { t.fading = true; }
   log(`<b>${fname(t)}</b> ${t.kind === "pc" ? "goes down." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
@@ -1506,14 +1609,14 @@ function foeTurn(f){
 }
 function checkEnd(){
   if (!cbt) return true;
-  if (!standing(foes).length){ setTimeout(() => endCombat(true), 600); return true; }
+  if (!standing(foes).length){ bank("ui/victory", .8); setTimeout(() => endCombat(true), 600); return true; }
   if (!standing(party).length){ log("<b>The party falls.</b> The DM core decides what the drow do with the bodies."); setTimeout(() => endCombat(false), 1200); return true; }
   return false;
 }
 function endCombat(won){
   if (mode !== "combat") return;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
-  closeMenu(); cbt = null; combatBusy = false;
+  closeMenu(); cbt = null; combatBusy = false; fx.length = 0;
   foes.forEach(f => f.fading = true);
   $("combat").hidden = true; $("vignette").classList.remove("on");
   setTimeout(() => {
