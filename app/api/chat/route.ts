@@ -108,6 +108,55 @@ const NPC_CANON_FIELDS = [
 // from the most recent row that has any. A brand-new row is seeded from this so
 // generation never re-synthesizes a face/voice that already exists on an older
 // row (the Jimjar bug). Returns nulls when the NPC has never been seen.
+// ---------------------------------------------------------------------------
+// Narration and the world must agree (Sam, 2026-10-12: "the narrator brought up a
+// gray ooze that was climbing up. This should have triggered a cinematic and
+// then a sprite based creature entering the area. Narration and sprite mapping
+// must always match"). Malachar is told to emit [NPC_ENCOUNTER:] for every
+// creature that enters; when he describes one from the bestiary and forgets the
+// tag, the tag is written for him from the bestiary row, so the creature is
+// registered, gets its real stats, and every screen (NPC window, map, film)
+// knows it is here. Only bestiary creatures: nothing is invented.
+// ---------------------------------------------------------------------------
+type BestiaryStub = { name: string; cr: string | null; xp: number | null; creature_type: string | null; portrait_url: string | null }
+let bestiaryStubs: { at: number; rows: BestiaryStub[] } | null = null
+async function loadBestiaryStubs(supabase: any): Promise<BestiaryStub[]> {
+  if (bestiaryStubs && Date.now() - bestiaryStubs.at < 5 * 60_000) return bestiaryStubs.rows
+  const { data } = await supabase.from("bestiary").select("name, cr, xp, creature_type, portrait_url")
+  bestiaryStubs = { at: Date.now(), rows: (data ?? []) as BestiaryStub[] }
+  return bestiaryStubs.rows
+}
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+/** Bestiary creatures named in the prose (not inside tags), with the sentence that names them. */
+function creaturesNamedInProse(text: string, rows: BestiaryStub[]): { row: BestiaryStub; sentence: string }[] {
+  const prose = text.replace(/\[[A-Z_]+:[^\]]*\]/g, " ")
+  const out: { row: BestiaryStub; sentence: string }[] = []
+  for (const row of rows) {
+    if (!row.name || row.name.length < 4) continue
+    const re = new RegExp(`\\b${escapeRe(row.name)}s?\\b`, "i")
+    const m = prose.match(re)
+    if (!m || m.index == null) continue
+    const start = prose.lastIndexOf(".", m.index) + 1
+    const end = prose.indexOf(".", m.index + m[0].length)
+    out.push({ row, sentence: prose.slice(start, end < 0 ? undefined : end + 1).trim().slice(0, 160) })
+  }
+  return out
+}
+/** [NPC_ENCOUNTER:] tags for creatures Malachar described but did not tag. */
+function missingCreatureTags(text: string, rows: BestiaryStub[], activeNames: Set<string>): string[] {
+  const tagged = new Set([...text.matchAll(/\[NPC_ENCOUNTER:\s*([^|\]]+)/gi)].map((m) => m[1].trim().toLowerCase()))
+  const left = new Set([...text.matchAll(/\[NPC_LEAVE:\s*([^\]]+)\]/gi)].map((m) => m[1].trim().toLowerCase()))
+  const tags: string[] = []
+  for (const { row, sentence } of creaturesNamedInProse(text, rows)) {
+    const key = row.name.toLowerCase()
+    if (tagged.has(key) || left.has(key) || activeNames.has(key)) continue
+    const crNum = row.cr ? (row.cr.includes("/") ? Number(row.cr.split("/")[0]) / Number(row.cr.split("/")[1]) : Number(row.cr)) : 0
+    const desc = (sentence || `A ${row.name.toLowerCase()}`).replace(/[|\[\]]/g, " ")
+    tags.push(`[NPC_ENCOUNTER: ${row.name} | ${desc} | ${row.name}, bestiary portrait | CR=${Number.isFinite(crNum) ? crNum : 0} | XP=${row.xp ?? 0} | type=${row.creature_type ?? "monster"}]`)
+  }
+  return tags
+}
+
 async function fetchNpcCanonByName(
   supabase: any,
   name: string,
@@ -2026,7 +2075,23 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     )
   }
 
-  const rawText = result.text || ""
+  let rawText = result.text || ""
+  // Who was already on stage before this turn: anyone encountered now who was not, has just arrived.
+  const activeNamesBefore = new Set<string>()
+  // A bestiary creature described in the prose but not tagged is tagged for him (see missingCreatureTags).
+  try {
+    const stubs = await loadBestiaryStubs(supabase)
+    const { data: activeRows } = await supabase.from("npc_encounters").select("name").eq("is_active", true)
+    for (const r of activeRows ?? []) activeNamesBefore.add(String((r as { name: string }).name).toLowerCase())
+    const activeNames = activeNamesBefore
+    const autoTags = missingCreatureTags(rawText, stubs, activeNames)
+    if (autoTags.length) {
+      console.log("[v0] creatures described without a tag — registered from the bestiary:", autoTags.map((x) => x.slice(16, x.indexOf("|")).trim()))
+      rawText += "\n" + autoTags.join(" ")
+    }
+  } catch (e) {
+    console.error("[v0] creature auto-registration skipped:", e)
+  }
 
   // === WARNING LOG: Detect when Malachar describes state changes without tags ===
   const hasDamageTag = /\[DAMAGE:/i.test(rawText)
@@ -2772,6 +2837,12 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
       // A canon portrait is the source of truth and must never be replaced by a
       // freshly generated fal.media image.
       const { canon } = await fetchNpcCanonByName(supabase, canonicalName)
+      // A bestiary creature's approved portrait is its canon face: never generate one live for it
+      // (Sam's art rule: nothing is generated at runtime without his supervision).
+      if (!(canon.portrait_url && String(canon.portrait_url).trim())) {
+        const stub = (await loadBestiaryStubs(supabase)).find((r) => r.name.toLowerCase() === canonicalName.toLowerCase())
+        if (stub?.portrait_url) canon.portrait_url = stub.portrait_url
+      }
       const hasCanonPortrait = !!(canon.portrait_url && String(canon.portrait_url).trim())
 
       // SHARED, SINGLE-TRUTH ROW: find ANY existing row for the canonical name
@@ -4665,6 +4736,17 @@ Rules:
         console.warn(
           `[cinematics] ignoring unknown cue "${named}" (available: ${availableCinematicCues.join(", ")})`,
         )
+      }
+    }
+    // A creature's ARRIVAL has its own film: a cue named "<creature>-arrives" fires the first turn that
+    // creature is on stage, whether or not Malachar remembered the tag (Sam, 2026-10-12: narration and
+    // what the players see must always match). Only when he named no cue himself.
+    if (!cinematicCue) {
+      for (const name of encounteredThisTurn) {
+        if (activeNamesBefore.has(name.toLowerCase())) continue
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+        const arrival = availableCinematicCues.find((c) => c.toLowerCase() === `${slug}-arrives`)
+        if (arrival) { cinematicCue = arrival; console.log("[cinematics] arrival cue fired for", name, "->", arrival); break }
       }
     }
 

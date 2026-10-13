@@ -961,7 +961,8 @@ function audioCtx(){ return speakCanon.ctx || (speakCanon.ctx = new (window.Audi
 function wakeAudio(){ try { const c = audioCtx(); if (c.state !== "running") c.resume().catch(() => {}); } catch (e) {} }
 ["pointerdown", "keydown", "touchstart"].forEach(ev => addEventListener(ev, wakeAudio, {capture: true, passive: true}));
 function loadSfx(name){
-  return SFX[name] || (SFX[name] = fetch(`${ASSET}sfx/${name}.mp3`).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+  const dir = name.startsWith("arrive-") ? "audio" : "sfx";
+  return SFX[name] || (SFX[name] = fetch(`${ASSET}${dir}/${name}.mp3`).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
 async function sfx(name, gain = .8){
@@ -1200,6 +1201,89 @@ function endCombat(){
   }, 700);
 }
 $("nextTurn").onclick = nextTurn; $("endCombat").onclick = endCombat;
+
+// ---------- creatures Malachar brings in ----------
+// Narration and the map must agree (Sam, 2026-10-12). The game registers every creature Malachar brings
+// on stage (npc_encounters, from the bestiary); the map polls /api/map-creatures and walks each one in
+// from where it would come (the node's `arrivals` in story.json, else the way the party came), keeps it
+// while it is on stage, and takes it off when it leaves or dies. A creature needs a sprite at
+// /sprites/<slug>/sprite.json; one without art is logged, not invented.
+const creatures = new Map();          // slug -> actor
+const spriteMissing = new Set();
+async function loadSpriteManifest(slug){
+  if (SPR[slug]) return true;
+  if (spriteMissing.has(slug)) return false;
+  try {
+    const m = await (await fetch(`${SPRITE_BASE}${slug}/sprite.json`, {cache: "force-cache"})).json();
+    const entry = {json: m, img: {}};
+    await Promise.all(Object.entries(m.animations).map(([name, an]) => loadImg(`${SPRITE_BASE}${slug}/${an.sheet || name + ".png"}`).then(i => entry.img[name] = i)));
+    SPR[slug] = entry; return true;
+  } catch (e) { spriteMissing.add(slug); console.warn("no sprite for creature", slug, e); return false; }
+}
+function arrivalFor(slug){
+  const arr = (node.arrivals || {})[slug] || (node.arrivals || {}).default;
+  if (arr) return {from: {x: arr.from[0], y: arr.from[1]}, to: {x: arr.to[0], y: arr.to[1]}, anim: arr.anim || "walk", big: arr.big || 1};
+  // no arrival written for this plate: in through the exit the party last used, toward the room's middle
+  const z = node.zones[0] ? zoneCenter(node.zones[0]) : {x: centroid.x, y: centroid.y - 200};
+  return {from: z, to: nearestWalkable(centroid.x, centroid.y), anim: "walk", big: 1};
+}
+function creatureArrives(c){
+  if (creatures.has(c.slug) || mode === "load" || mode === "travel") return;
+  const a = arrivalFor(c.slug);
+  const f = mkActor(c.slug, a.from.x, a.from.y, "foe", {alpha: 0, hp: c.hp ?? 1, hpMax: c.hpMax ?? 1, creature: c, slow: true, big: a.big});   // not `hostile`: that is the guards-on-watch trigger; a creature closes in on its own (tickCreatures)
+  f.fadeIn = true; f.face = faceOf(a.to.x - a.from.x, a.to.y - a.from.y);
+  creatures.set(c.slug, f); npcs.push(f); actors = [...party, ...npcs, ...foes];
+  const land = nearestWalkable(a.to.x, a.to.y);
+  if (a.anim !== "walk" && SPR[c.slug].img[a.anim]){        // e.g. "emerge": it heaves itself up over the edge first
+    f.anim = a.anim; f.t0 = now; f.alpha = 1; f.fadeIn = false; f.waitUntil = now + SPR[c.slug].json.animations[a.anim].frames / SPR[c.slug].json.animations[a.anim].fps * 1000;
+    f.path = [{x: land.x, y: land.y}];
+  } else f.path = findPath(f, land);
+  f.onArrive = () => { setAnim(f, "idle"); f.home = {x: f.x, y: f.y}; };
+  narrate(f, `${c.name} comes in${a.anim === "emerge" ? ", heaving itself up over the edge" : ""}.`);
+  // the entrance is a moment: its own music sting (audio/arrive-<slug>.mp3, the film's cue) and the camera
+  // pushing in on it, then easing back to the room once it is in
+  sfx(`arrive-${c.slug}`, .9);
+  const hold = a.anim !== "walk" && SPR[c.slug].json.animations[a.anim] ? SPR[c.slug].json.animations[a.anim].frames / SPR[c.slug].json.animations[a.anim].fps * 1000 : 1800;
+  userPanAt = now; camTo(1.7, a.from.x + (a.to.x - a.from.x) * .3, a.from.y + (a.to.y - a.from.y) * .3 - 40, 1100);
+  setTimeout(() => { if (mode === "explore") camTo(1, NAT_W / 2, NAT_H / 2, 1400); }, hold + 1600);
+}
+function creatureLeaves(slug, dead){
+  const f = creatures.get(slug); if (!f) return;
+  creatures.delete(slug);
+  const gone = () => { f.fading = true; setTimeout(() => { npcs = npcs.filter(n => n !== f); foes = foes.filter(n => n !== f); actors = actors.filter(n => n !== f); }, 1200); };
+  if (dead){ f.path = []; f.down = true; playOnce(f, "dead", () => { setTimeout(gone, 2500); }); narrate(f, `${f.creature.name} is dead.`); return; }
+  const a = arrivalFor(slug); f.path = findPath(f, nearestWalkable(a.from.x, a.from.y)); f.onArrive = gone;
+  narrate(f, `${f.creature.name} slides away.`);
+}
+// A creature on the loose closes in on the party; when it is on top of them, the fight starts.
+function tickCreatures(){
+  if (mode !== "explore" || !leader) return;
+  for (const f of creatures.values()){
+    if (f.down || f.fading || f.waitUntil > now) continue;
+    const d = Math.hypot(f.x - leader.x, f.y - leader.y);
+    if (d < 150 * node.scale){ startCombat([f], `${f.creature.name} attacks!`); return; }
+    if (!f.path.length && !f.act && now > (f.actUntil || 0)){
+      const goal = nearestWalkable(f.x + (leader.x - f.x) * .3, f.y + (leader.y - f.y) * .3);   // a third of the way, then a pause: it creeps
+      f.path = findPath(f, goal); f.actUntil = now + 3500 + Math.random() * 3000;
+    }
+  }
+}
+let creaturesSeen = null;
+async function pollCreatures(){
+  if (!APP || timeStopped) return;
+  try {
+    const r = await fetch("/api/map-creatures", {cache: "no-store"}); const j = await r.json();
+    const list = Array.isArray(j.creatures) ? j.creatures : [];
+    const here = new Set(list.map(c => c.slug));
+    for (const c of list){
+      if (!creatures.has(c.slug) && await loadSpriteManifest(c.slug)) creatureArrives(c);
+      const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; }
+    }
+    for (const slug of [...creatures.keys()]) if (!here.has(slug)){ const f = creatures.get(slug); creatureLeaves(slug, (f.hp ?? 1) <= 0); }
+    creaturesSeen = here;
+  } catch (e) {}
+}
+if (APP){ setTimeout(pollCreatures, 2500); setInterval(pollCreatures, 5000); }
 
 // ---------- talk: hand off to the dashboard ----------
 // Someone wants a word: Malachar writes their opener (in the NPC's own voice, addressing the speaker by name if
@@ -1620,6 +1704,7 @@ function update(dt){
     const last = trail[trail.length - 1];
     if (!last || Math.hypot(leader.x - last.x, leader.y - last.y) > 6){ trail.push({x: leader.x, y: leader.y}); if (trail.length > 500) trail.shift(); }
     keyboardMove(leader, dt);
+    tickCreatures();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
     // exits
     const z = mode === "explore" && !leader.walkIn ? zoneAt(leader.x, leader.y) : null;

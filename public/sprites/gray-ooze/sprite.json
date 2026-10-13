@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "Gray Ooze",
+  "cell": [
+    128,
+    128
+  ],
+  "pivot": [
+    64,
+    108
+  ],
+  "ppu": 115,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 9,
+      "fps": 6,
+      "loop": true
+    },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 8,
+      "fps": 6,
+      "loop": true
+    },
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 11,
+      "fps": 10,
+      "loop": false,
+      "hit": 0.6
+    },
+    "hurt": {
+      "sheet": "hurt.png",
+      "frames": 7,
+      "fps": 10,
+      "loop": false
+    },
+    "dead": {
+      "sheet": "dead.png",
+      "frames": 9,
+      "fps": 8,
+      "loop": false
+    },
+    "emerge": {
+      "sheet": "emerge.png",
+      "frames": 12,
+      "fps": 7,
+      "loop": false
+    }
+  }
+}
