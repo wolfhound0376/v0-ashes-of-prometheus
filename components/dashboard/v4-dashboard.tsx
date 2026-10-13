@@ -19,6 +19,7 @@ import { DmNarration } from "./dm-narration"
 import { speakBlob } from "@/lib/speech-queue"
 import { unlockSpeechAudio } from "@/lib/speech-playback"
 import { markVoicedElsewhere } from "@/lib/voiced-elsewhere"
+import { TimeStoppedBanner } from "./time-stop"
 import { canSpeak } from "@/lib/tts"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
@@ -317,6 +318,10 @@ interface V4DashboardProps {
   /** The line the NPC opened with on the map (/?line=). Shown in the window
    *  and spoken in their voice, with their talking loop, as the scene opens. */
   talkOpening?: string | null
+  /** The DM has stopped time: the input is closed and a banner says so (components/dashboard/time-stop.tsx). */
+  timeStopped?: boolean
+  /** Who the NPC window is showing, as it changes: the one an unaddressed question is put to. */
+  onFacingChange?: (npcName: string | null) => void
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -540,6 +545,9 @@ export function V4Dashboard(props: V4DashboardProps) {
   // except the NPC herself.
   const onStage = speakingPlayer ?? shownNpc
   const npcName = speakingPlayer?.name ?? shownNpc?.name ?? "No one on stage"
+  const facingName = speakingPlayer ? null : shownNpc?.name ?? null
+  const onFacingChange = props.onFacingChange
+  useEffect(() => { onFacingChange?.(facingName) }, [facingName, onFacingChange])
   // A talking NPC gets talking_url when the row has one, so the animated head
   // switches to the speaking loop and back to idle on its own.
   const playerTalking = Boolean(speakingPlayer && speakingNpc?.id === speakingPlayer.id)
@@ -895,6 +903,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   }
 
   return <main style={talkPlate && narrowTalk ? { backgroundImage: `linear-gradient(#050403b3, #050403e6), url(${talkPlate})`, backgroundSize: "cover", backgroundPosition: "51% 64%" } : undefined} className={cn("aop-lich-dashboard min-h-0 flex-1 overflow-y-auto p-2", narrowTalk ? "flex flex-col items-center" : "grid grid-cols-1 gap-2 lg:grid-cols-[252px_minmax(490px,1fr)_310px] xl:grid-cols-[252px_minmax(620px,1fr)_310px]")}>
+    <TimeStoppedBanner stopped={Boolean(props.timeStopped)} isDm={Boolean(props.dmMode)} />
     <div className={cn("flex min-h-0 flex-col gap-2", narrowTalk && "hidden")}>
       <Frame title="Current Environment" className="shrink-0">
         <div className="p-2.5">
@@ -999,7 +1008,7 @@ export function V4Dashboard(props: V4DashboardProps) {
           }}
         />
       </div>
-      <div className="flex items-center gap-2 px-3 py-2 pb-3"><input value={props.dialogueInput} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder="Type your response or action…" className="aop-lich-input h-11 min-w-0 flex-1 px-3 text-[14px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button>{props.dmMode ? <button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button> : null}</div>
+      <div className="flex items-center gap-2 px-3 py-2 pb-3"><input value={props.dialogueInput} disabled={props.timeStopped} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder={props.timeStopped ? "Time is stopped. The world waits for the DM." : "Type your response or action…"} className="aop-lich-input h-11 min-w-0 flex-1 px-3 text-[14px]" /><button disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("aop-square-action h-8 w-8", micListening && "animate-pulse text-[#e05a64]", !micSupported && "opacity-50")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="m-auto h-3 w-3" /></button>{props.dmMode ? <button disabled={diceBusy} onClick={() => void rollInitiative()} className="aop-initiative-button flex h-10 items-center gap-1.5 whitespace-nowrap pr-3 text-[10px] disabled:opacity-60" title="Roll initiative with physics and report the result"><span className="h-9 w-11 shrink-0 bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: "66.666% 40%", clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }} /><span><b className="block font-serif text-[#ead39e]">{diceBusy ? "Rolling…" : "Roll Initiative"}</b><small className="block text-[7px] text-[#9f875d]">{signed(displayedInitiative)} modifier</small></span></button> : null}</div>
       <div className={cn("sticky bottom-0 z-20 max-h-[24vh] shrink-0 border-t border-[#4b3a19] bg-[#0b0a08]/95 px-3 py-1 shadow-[0_-8px_18px_rgba(0,0,0,0.45)]", narrowTalk && "hidden")}><div className="grid w-full grid-cols-3 gap-2 py-1 sm:grid-cols-6">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} large />)}</div></div>
     </Frame>
 

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { resolveVoice, resolveNamedNpcVoiceId, sanitizeForTTS } from "@/lib/tts"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { findNpcRow } from "@/lib/npc-acquaintance"
 import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback, deliveryFor } from "@/lib/tts-model"
 
 /**
@@ -36,7 +37,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 1) Resolve the voice.
-    const explicitVoiceId = typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : undefined
+    let explicitVoiceId = typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : undefined
+    // Sam, 2026-10-12: an NPC speaks in the ElevenLabs voice saved for them in the database, every time.
+    // Callers that only know the name (the painted map) used to fall through to the code table, which
+    // can differ from the saved voice. Look the saved one up first.
+    if (!explicitVoiceId && (npcId || npcName)) {
+      try {
+        const db = createAdminClient()
+        let row: { voice_id: string | null } | null = null
+        if (npcId) row = (await db.from("npc_encounters").select("voice_id").eq("id", npcId).maybeSingle()).data
+        if (!row?.voice_id && typeof npcName === "string" && npcName.trim()) {
+          const hit = await findNpcRow(db, npcName)
+          if (hit) row = (await db.from("npc_encounters").select("voice_id").eq("id", hit.id).maybeSingle()).data
+        }
+        if (row?.voice_id) explicitVoiceId = row.voice_id
+      } catch (e) {
+        console.log("[v0] npc-tts saved-voice lookup skipped:", (e as Error).message)
+      }
+    }
     let resolvedVoiceId: string
     // Only a genuine keyword match from THIS NPC's description may be persisted.
     let persistable = false

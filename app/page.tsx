@@ -25,13 +25,14 @@ import { DynamicMusic } from "@/components/dashboard/dynamic-music"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions, CANONICAL_START_LOCATION } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
-import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
+import { PEN_DOOR_OPEN, TIME_STOPPED, useWorldFlag } from "@/lib/world-flags"
 import { slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
 import { dmHeaders, ensureDmKey, hasDmKey } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
+import { TimeStopToggle, TimeStoppedBanner } from "@/components/dashboard/time-stop"
 import { useLich } from "@/lib/hooks/use-lich"
 import { emitCinematicCue } from "@/lib/cinematic-cue"
 import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
@@ -160,6 +161,12 @@ export default function DashboardPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
+  // Who is in the NPC window right now (the active NPC, as the dashboard shows it): the one a question
+  // with no named addressee is put to. Read at send time.
+  const facingRef = useRef<string | null>(null)
+  const facingShownRef = useRef(false)
+  const handleFacingChange = useCallback((name: string | null) => { facingRef.current = name; facingShownRef.current = Boolean(name) }, [])
+  const talkOptsRef = useRef<{ talkWith: string; talkWhere: string | null } | null>(null)
   const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; idle_url: string | null; talking_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: string | number | null; conditions: string[] | null }[]>([])
   // The WHOLE NPC roster, not just the active-on-stage one. `is_active` is a
   // stage/portrait flag and must not gate who is allowed a voice, so the
@@ -194,6 +201,8 @@ export default function DashboardPage() {
   // Set the moment the pen door is unlocked, picked, or opened from outside.
   // The NPC window swaps to the open-door painting for everyone at once.
   const penDoorOpen = useWorldFlag(PEN_DOOR_OPEN)
+  // The DM has stopped time: nobody acts, Malachar waits, the map freezes (components/dashboard/time-stop.tsx).
+  const timeStopped = useWorldFlag(TIME_STOPPED)
   // Player-safe vague time-of-day pushed by the chat route (derived from the
   // world clock). Takes precedence over the environment row's static value so
   // the scene header tracks the passage of time without exposing the DM clock.
@@ -292,6 +301,11 @@ export default function DashboardPage() {
   // conversation (Sam, 2026-10-11: "populate ONLY the character that is playing"). Only for a browser
   // that holds no claim: a claimed seat always stays its own character.
   const [talkAs, setTalkAs] = useState<string | null>(null)
+  // Read at send time by every path to Malachar (typed, quick replies): who you are talking with, or else
+  // who is in the NPC window.
+  talkOptsRef.current = campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : null
+  // The NPC window reports who it shows (onFacingChange); until it has, the active NPC.
+  if (!facingShownRef.current) facingRef.current = (npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
   // straight into the talk mini-dashboard with that person, no intro screens.
   useEffect(() => {
@@ -360,7 +374,7 @@ export default function DashboardPage() {
     async (text: string) => {
       const { characterId, claimToken: token } = claimRef.current
       try {
-        return await sendToLich(text, characterId, token)
+        return await sendToLich(text, characterId, token, talkOptsRef.current ?? { facing: facingRef.current })
       } catch (err) {
         if ((err as { claimRejected?: boolean })?.claimRejected) {
           handleClaimRejected()
@@ -1184,7 +1198,8 @@ if (error) {
 
           // Send to Lich, carrying THIS browser's character + claim token.
           // In the camp talk window, name the partner so Malachar answers as them.
-          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : undefined)
+          // Otherwise name whoever is in the NPC window: "who are you?" is said to them (Sam, 2026-10-12).
+          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current })
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1249,6 +1264,7 @@ if (error) {
   }, [])
 
   const handleDialogueSubmit = async () => {
+    if (timeStopped) return                       // time is stopped: the line stays in the box until it starts again
     if (dialogueInput.trim()) {
       const text = stripReservedPrefixes(dialogueInput.trim())
       setDialogueInput("")
@@ -1296,6 +1312,7 @@ if (error) {
   // (same optimistic insert + speaker attribution as typing it by hand).
   const handleQuickReply = useCallback(
     async (text: string) => {
+      if (timeStopped) return
       const playerName = selectedCharacter?.name || "Player"
       setDialogueInput("")
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
@@ -1318,7 +1335,7 @@ if (error) {
         await fetchCharacterData()
       }
     },
-    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure, captureRollRequest],
+    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure, captureRollRequest, timeStopped],
   )
 
   // Announce a completed sheet roll to the table. Every browser sees the roll
@@ -1579,7 +1596,7 @@ if (error) {
         campaignName={activeCampaign.name}
         // NPCs tab is DM-only. A claimed player browser is never the DM.
         isDM={dmMode && !claimLocked}
-  controlSlot={dmMode && !claimLocked ? <GameClockPanel refreshSignal={clockRefresh} /> : null}
+  controlSlot={dmMode && !claimLocked ? <><TimeStopToggle stopped={timeStopped} /><GameClockPanel refreshSignal={clockRefresh} /></> : null}
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // In DM Mode, the top-right NPCs button is the direct door to canon
@@ -1770,6 +1787,8 @@ if (error) {
         talkWith={campTalkWith}
         talkFrom={talkFrom}
         talkOpening={talkOpening}
+        timeStopped={timeStopped}
+        onFacingChange={handleFacingChange}
         onEndTalk={() => {
           if (talkReturn) { window.location.href = talkReturn; return }
           setCampTalkWith(null)

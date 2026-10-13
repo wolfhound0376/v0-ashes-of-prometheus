@@ -136,6 +136,11 @@ export async function logTimeEvent(admin: any, sessionId: string | null, event: 
     console.warn(`[time] skipped ${event.eventType}: requires an explicit minutes_advanced value`)
     return
   }
+  // The DM has stopped time: the clock does not move, whatever asked it to.
+  try {
+    const { data: stopped } = await admin.from("world_flags").select("key").eq("campaign_id", "ashes-of-prometheus").eq("key", "time-stopped").maybeSingle()
+    if (stopped) { console.log(`[time] ${event.eventType} not logged: time is stopped`); return }
+  } catch { /* if the flag cannot be read, keep time as before */ }
   const payload: Record<string, unknown> = { session_id: sessionId, event_type: event.eventType }
   if (typeof event.minutesAdvanced === "number") payload.minutes_advanced = Math.max(0, Math.round(event.minutesAdvanced))
   if (event.hiddenRoll) payload.hidden_roll = event.hiddenRoll
