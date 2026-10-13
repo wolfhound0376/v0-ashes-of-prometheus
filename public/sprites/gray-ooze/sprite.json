@@ -19,8 +19,8 @@
     },
     "walk": {
       "sheet": "walk.png",
-      "frames": 8,
-      "fps": 6,
+      "frames": 16,
+      "fps": 8,
       "loop": true
     },
     "attack": {
@@ -44,8 +44,8 @@
     },
     "emerge": {
       "sheet": "emerge.png",
-      "frames": 12,
-      "fps": 7,
+      "frames": 16,
+      "fps": 8,
       "loop": false
     }
   }
