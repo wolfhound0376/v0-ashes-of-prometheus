@@ -286,6 +286,12 @@ export default function DashboardPage() {
   const [talkReturn, setTalkReturn] = useState<string | null>(null)
   const [talkOpening, setTalkOpening] = useState<string | null>(null)
   const [talkFrom, setTalkFrom] = useState<"camp" | "map">("camp")
+  // The map area the talk is happening in ("Slave Pen"), so Malachar plays it there, not by the fire.
+  const [talkArea, setTalkArea] = useState<string | null>(null)
+  // Who the player was walking as on the map (?as=Kenta). The dashboard plays as that character for the
+  // conversation (Sam, 2026-10-11: "populate ONLY the character that is playing"). Only for a browser
+  // that holds no claim: a claimed seat always stays its own character.
+  const [talkAs, setTalkAs] = useState<string | null>(null)
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
   // straight into the talk mini-dashboard with that person, no intro screens.
   useEffect(() => {
@@ -293,7 +299,13 @@ export default function DashboardPage() {
     const talk = url.searchParams.get("talk")?.trim()
     if (!talk) return
     setCampTalkWith(talk.slice(0, 60))
-    if (url.searchParams.get("from") === "map") setTalkFrom("map")
+    if (url.searchParams.get("from") === "map") {
+      setTalkFrom("map")
+      const area = url.searchParams.get("area")?.trim()
+      if (area) setTalkArea(area.slice(0, 60))
+      const as = url.searchParams.get("as")?.trim()
+      if (as) setTalkAs(as.slice(0, 60))
+    }
     // Only a same-site path may be a way back (never another site, never //host).
     const back = url.searchParams.get("return")
     if (back && back.startsWith("/") && !back.startsWith("//")) setTalkReturn(back.slice(0, 200))
@@ -303,6 +315,7 @@ export default function DashboardPage() {
     url.searchParams.delete("talk")
     url.searchParams.delete("line")
     url.searchParams.delete("return")
+    url.searchParams.delete("as")
     window.history.replaceState(null, "", url.pathname + url.search + url.hash)
   }, [])
   // The camp scene's Alchemy tile links here as /?view=compact&from=camp&bench=1
@@ -1046,6 +1059,16 @@ if (error) {
   // the same seat. It is NEVER written to sessions.active_character_id — that
   // pointer is the DM-only "spotlight" and writing it here is exactly the bug
   // that made the last picker the speaker for everyone.
+  // Map talk: play as whoever was walking on the map, for this visit only (not saved as this browser's
+  // character). Never over a claim, and never when there is a claim token to honour.
+  useEffect(() => {
+    if (!talkAs || claimLocked || claimToken) return
+    const want = talkAs.toLowerCase()
+    const pc = players.find((c) => c.name.toLowerCase() === want)
+      ?? players.find((c) => c.name.toLowerCase().split(/\s+/)[0] === want.split(/\s+/)[0])
+    if (pc && pc.id !== selectedCharacterId) setSelectedCharacterId(pc.id)
+  }, [talkAs, claimLocked, claimToken, players, selectedCharacterId])
+
   const handleCharacterSelect = (characterId: string) => {
     setSelectedCharacterId(characterId)
     if (typeof window !== 'undefined') {
@@ -1161,7 +1184,7 @@ if (error) {
 
           // Send to Lich, carrying THIS browser's character + claim token.
           // In the camp talk window, name the partner so Malachar answers as them.
-          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith } : undefined)
+          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : undefined)
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1197,7 +1220,7 @@ if (error) {
             // Refresh character data to pick up any XP or items from the Lich
             await fetchCharacterData()
           }
-  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith])
+  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith, talkFrom, talkArea])
 
   // Typed messages cannot impersonate the app. "[Dice Roll]" and the 🎲 prefix
   // are reserved for rolls the physics engine actually resolved; "[Reaction]"

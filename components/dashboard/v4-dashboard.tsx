@@ -18,6 +18,7 @@ import MapPanel from "@/components/map/map-panel"
 import { DmNarration } from "./dm-narration"
 import { speakBlob } from "@/lib/speech-queue"
 import { unlockSpeechAudio } from "@/lib/speech-playback"
+import { markVoicedElsewhere } from "@/lib/voiced-elsewhere"
 import { canSpeak } from "@/lib/tts"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
@@ -513,6 +514,17 @@ export function V4Dashboard(props: V4DashboardProps) {
   const partnerPlayer = talkMode && talkPartner?.kind === "player" ? talkPartner.player : undefined
   const speakingPlayer = talkMode && talkPartner ? (partnerPlayer && speakingPlayerAny?.id === partnerPlayer.id ? speakingPlayerAny : undefined) ?? partnerPlayer : speakingPlayerAny
   const shownNpc = speakingRow ?? activeNpc
+  // In a conversation only two people are heard: the one you play and the one you are talking with
+  // (Sam, 2026-10-11: "talk to ONLY the character we are speaking to or is speaking to us"). Anyone
+  // else Malachar mentions is told, not voiced, and never takes the window (see speakingRow above).
+  const talkVoices = useMemo(() => {
+    const allNpcs = props.npcRoster?.length ? props.npcRoster : props.npcEncounters
+    if (!talkMode) return { npcs: allNpcs, players: livePlayers }
+    return {
+      npcs: talkPartner?.kind === "npc" ? [talkPartner.npc] : [],
+      players: livePlayers.filter((c) => c.id === selected?.id || (talkPartner?.kind === "player" && c.id === talkPartner.player.id)),
+    }
+  }, [talkMode, talkPartner, props.npcRoster, props.npcEncounters, livePlayers, selected?.id])
   // EMPTY STAGE IS A REAL STATE, NOT A FAILURE.
   //
   // restart-campaign sets every npc_encounters row to is_active:false
@@ -558,6 +570,13 @@ export function V4Dashboard(props: V4DashboardProps) {
     if (!talkMode || !line || !npc || openingSpoken.current) return
     openingSpoken.current = true
     const who = { id: npc.id, name: npc.name }
+    // They started this, so the conversation starts with them: the opener goes into the shared log as
+    // their line (everyone sees it, and Malachar reads it before he answers for them). It is spoken
+    // just below, once; DM Narration is told so it does not say it again when the row comes back.
+    // When the PLAYER walked up instead, there is no opener at all and they wait in silence.
+    markVoicedElsewhere(npc.name, line)
+    void createClient().from("dialogue").insert({ speaker: npc.name, speaker_type: "npc", channel: "dm", text: line })
+      .then((res: { error: { message: string } | null }) => { if (res.error) console.error("[map talk] opener not logged:", res.error.message) })
     let cancelled = false
     const hold = window.setTimeout(() => { if (!cancelled) setSpeakingNpc((s) => (s?.id === who.id ? null : s)) }, Math.max(2500, line.length * 70))
     setSpeakingNpc(who)
@@ -901,7 +920,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={dialogue} npcs={props.npcRoster?.length ? props.npcRoster : props.npcEncounters} players={livePlayers.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
+    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={dialogue} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
       {talkMode ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-[#4b3a19] px-3 py-2">
           <div className="min-w-0 flex-1">
