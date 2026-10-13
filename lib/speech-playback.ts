@@ -22,6 +22,9 @@
 // Callers get one shape back for both paths: a promise that settles when the
 // line is over, and a stop() for interrupting it.
 
+import { rapportChain } from "./rapport-voice"
+import { isRapportAudio } from "./rapport"
+
 /** How a spoken line finished. */
 export type SpeechEndReason =
   /** Played all the way through. */
@@ -96,7 +99,10 @@ export async function playSpeech(blob: Blob, offsetSeconds = 0): Promise<SpeechP
     return { finished: Promise.resolve<SpeechEndReason>("error"), stop: () => {} }
   }
 
-  const viaWebAudio = await playViaWebAudio(bytes, offsetSeconds)
+  // A myconid's rapport line (lib/rapport.ts) is heard in the listener's head: the route marks the
+  // audio and the WebAudio path runs it through the cave treatment. The element fallback cannot, so
+  // such a line plays plain there rather than not at all.
+  const viaWebAudio = await playViaWebAudio(bytes, offsetSeconds, isRapportAudio(blob))
   if (viaWebAudio) return viaWebAudio
 
   // decodeAudioData refused it, or there is no AudioContext at all.
@@ -104,7 +110,7 @@ export async function playSpeech(blob: Blob, offsetSeconds = 0): Promise<SpeechP
 }
 
 /** Returns null when WebAudio can't handle it, so the caller can fall back. */
-async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0): Promise<SpeechPlayback | null> {
+async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0, rapport = false): Promise<SpeechPlayback | null> {
   const ctx = getContext()
   if (!ctx) return null
 
@@ -129,7 +135,8 @@ async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0): Promise<S
 
   const source = ctx.createBufferSource()
   source.buffer = decoded
-  source.connect(ctx.destination)
+  const chain = rapport ? rapportChain(ctx) : null
+  source.connect(chain ? chain.input : ctx.destination)
 
   let settle: (reason: SpeechEndReason) => void = () => {}
   let done = false
@@ -142,6 +149,8 @@ async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0): Promise<S
       } catch {
         // Already torn down.
       }
+      // the cave's tail outlives the words; let it fade before the chain goes
+      if (chain) window.setTimeout(chain.dispose, reason === "ended" ? 2800 : 0)
       resolve(reason)
     }
   })

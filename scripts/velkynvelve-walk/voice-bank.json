@@ -37,7 +37,8 @@
  },
  "stool": {
   "line": "Friend? Friend. Stool is glad.",
-  "voice": "EXAVITQu4vr4xnSDxMaL"
+  "perListener": true,
+  "voice": "the listener's own (characters.voice_id); rapport spores, lib/rapport.ts"
  },
  "jorlan": {
   "line": "Go. Quickly, before the next watch.",
