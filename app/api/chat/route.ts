@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { applyStageEvents, type StageEvent } from "@/lib/stage-roster"
+import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
@@ -1626,6 +1627,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 - Emit it ONCE, at the moment it happens. If the door was already open, it stays open; do not re-emit, and never emit it for a door that is merely being examined, reached for, or discussed.
 - If the door is shut and barred again later, that is a different fact and there is no tag for it yet. Narrate it and tell the DM.
 
+12. WHEN COMBAT BEGINS (SRD, Combat Step by Step): the moment any creature attacks, or a hostile act is declared — a player says they strike, a guard draws on them, an ooze lunges — combat has begun and initiative is rolled. Emit [COMBAT_START: <Name>, <Name>] on its own line naming EVERY hostile creature in the fight, by its canonical name, each of them already brought on with [NPC_ENCOUNTER:] (emit that first if it is missing). From that line on you do NOT roll attacks or decide damage yourself: the dice engine resolves every exchange, the table sees it, and you narrate what it reports. Do not emit it for threats, posturing or a drawn blade nobody uses; do emit it before describing the first blow. When the fight is over — every foe dead, fled or yielded — emit [COMBAT_END] on its own line.
+
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
 === EXAMPLE OF CORRECT OUTPUT ===
@@ -1834,6 +1837,9 @@ JOURNAL:
 ${QUEST_TAG_RULES}
 
 WORLD FLAGS:
+- [COMBAT_START: name, name] — the moment a hostile act happens; every hostile creature in the fight, canonical names. The dice engine takes the rolls from here.
+  - Example: [COMBAT_START: Giant Spider, Quaggoth]
+- [COMBAT_END] — when the fight is over (dead, fled or yielded)
 - [FLAG: <key>] — when a permanent, table-wide fact becomes true
   - pen-door-open — the slave pen's door is open: unlocked, picked, forced, or opened by someone else
   - Emit once, at the moment it happens. Never invent a key that is not listed here.
@@ -3371,6 +3377,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     .replace(/\[JOURNAL:[^\]]*\]/gi, "")
     .replace(QUEST_STRIP_RE, "")
     .replace(/\[FLAG:[^\]]*\]/gi, "")
+    .replace(/\[COMBAT_START:[^\]]*\]/gi, "")
+    .replace(/\[COMBAT_END\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
     // somebody has to remember to add here — and forgetting means the tag is
     // printed to the table as raw text. This sweeps any [UPPERCASE_TAG: ...]
@@ -3852,6 +3860,23 @@ Rules:
       }
     }
   }
+
+  // Malachar's call that initiative is rolled (lib/combat-flag.ts). The names are resolved to canon and
+  // their current HP read from the shared rows, so the map opens the fight with exactly those creatures.
+  const combatStartMatch = rawText.match(/\[COMBAT_START:\s*([^\]]+)\]/i)
+  if (combatStartMatch) {
+    const foes: { name: string; aliases: string[]; hp: number | null; hpMax: number | null }[] = []
+    for (const raw of combatStartMatch[1].split(/[,;|]/).map((s) => s.trim()).filter(Boolean)) {
+      const resolved = await resolveNpcByName(supabase, raw)
+      const name = resolved?.name || raw
+      if (playerCharacter?.name && name.toLowerCase() === playerCharacter.name.toLowerCase()) continue
+      const row = await findSharedActiveEncounter(supabase, name)
+      foes.push({ name, aliases: resolved?.aliases ?? [], hp: row?.hp_current ?? null, hpMax: row?.hp_max ?? null })
+      stageEvents.push({ kind: "arrive", name, aliases: resolved?.aliases ?? null, hp: row?.hp_current ?? null, hpMax: row?.hp_max ?? null })
+    }
+    await startCombatFlag(timeAdmin, { foes, area: taggedLocationName ?? currentLocation ?? null, startedBy: playerCharacter?.name ?? null })
+  }
+  if (/\[COMBAT_END\]/i.test(rawText)) await endCombatFlag(timeAdmin)
 
   // The stage roster: one read, one write, after every tag has been handled (best-effort, never blocks the turn).
   await applyStageEvents(timeAdmin, stageEvents)
