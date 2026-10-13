@@ -3406,10 +3406,24 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     speechSegments = resolved.length ? resolved : null
   } else if (responseText && /[“”"„]/.test(responseText)) {
     try {
-      const { data: speechNpcRows } = await supabase
+      // ONLY THOSE ON STAGE MAY SPEAK. The segmenter used to be offered every NPC ever recorded, so a
+      // pronoun-led line ("she tilts her chin") could be filed under someone who is not in the room:
+      // on 2026-10-12 Kenta asked Eldeth "what's up" and the answer came out as Asha Vandree, a drow
+      // priestess who is nowhere near the pen (Sam: "Where did she enter?"). The roster is now the
+      // NPCs who are active, plus the one the player is talking with, plus anyone Malachar brought
+      // in this turn with [NPC_ENCOUNTER:]. Nobody else can be given a line.
+      const { data: allSpeechRows } = await supabase
         .from("npc_encounters")
-        .select("id, name, aliases, voice_id")
+        .select("id, name, aliases, voice_id, is_active")
         .order("created_at", { ascending: false })
+      const onStage = (npc: any) => {
+        const n = String(npc.name || "").toLowerCase()
+        if (npc.is_active) return true
+        if (talkWith && (n === talkWith.toLowerCase() || n.split(/\s+/)[0] === talkWith.toLowerCase().split(/\s+/)[0])) return true
+        for (const e of encounteredThisTurn) if (e.toLowerCase() === n) return true
+        return false
+      }
+      const speechNpcRows = (allSpeechRows || []).filter(onStage)
       const npcRosterForPrompt = (speechNpcRows || []).map((npc: any) => ({
         name: npc.name,
         aliases: Array.isArray(npc.aliases) ? npc.aliases : [],
@@ -3470,7 +3484,14 @@ Rules:
           resolvedSegments.push({ speaker: "NARRATOR", line, npc_id: null, voice_id: null })
           continue
         }
-        const resolved = await resolveNpcByName(supabase, rawSpeaker)
+        let resolved = await resolveNpcByName(supabase, rawSpeaker)
+        // Not on stage: in a conversation the line belongs to the partner (nobody else is talking);
+        // otherwise it is narration, never a voice for someone who is not here.
+        if (resolved && !(speechNpcRows || []).some((row: any) => row.id === resolved!.id)) {
+          console.warn("[v0] speech attributed to an NPC who is not on stage:", resolved.name, "-> reassigned")
+          const partner = talkWith ? (speechNpcRows || []).find((row: any) => onStage(row) && String(row.name).toLowerCase().split(/\s+/)[0] === talkWith.toLowerCase().split(/\s+/)[0]) : null
+          resolved = partner ? { id: partner.id, name: partner.name } as any : null
+        }
         if (!resolved) {
           resolvedSegments.push({ speaker: "NARRATOR", line, npc_id: null, voice_id: null })
           continue
