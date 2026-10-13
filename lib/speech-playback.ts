@@ -150,7 +150,7 @@ async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0, rapport = 
         // Already torn down.
       }
       // the cave's tail outlives the words; let it fade before the chain goes
-      if (chain) window.setTimeout(chain.dispose, reason === "ended" ? 2800 : 0)
+      if (chain) window.setTimeout(chain.dispose, reason === "ended" ? 4200 : 0)
       resolve(reason)
     }
   })
