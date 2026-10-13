@@ -8,6 +8,11 @@ import { createAdminClient } from "@/lib/supabase/admin"
 // one in, keeps it while it is active, and takes it off when Malachar sends it away or it dies.
 // Monsters only: the prisoners are placed by the map's own story. Anyone may read it — the players
 // can see the creature.
+//
+// Superseded by /api/map-stage (lib/stage-roster.ts), which the map reads now: is_active is the NPC
+// panel's spotlight and goes off whenever the party talks to someone else, and nearly every named
+// prisoner carries a bestiary_id, so this list also took Jimjar for a monster. Kept for one release
+// so an old map build still gets an answer.
 
 export const dynamic = "force-dynamic"
 

@@ -274,6 +274,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <h4>World</h4>
       <button class="btn" id="dmTime">Stop time</button>
       <button class="btn" id="dmOoze">A gray ooze comes in (preview)</button>
+      <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
@@ -632,7 +633,7 @@ const DOING = {
 };
 const PARTNER = {topsy: "turvy", turvy: "topsy"};
 function ambient(a){
-  if (!a) return;
+  if (!a || a.offStage) return;
   const S = SHORT[a.id] || SPR[a.id].json.name.split(" ")[0];
   const busy = a.act && DOING[a.act];
   let line = a.barks && a.barks.length ? a.barks[Math.floor(Math.random() * a.barks.length)] : "";
@@ -1586,7 +1587,7 @@ function combatTargetHint(){
 
 // ---------- creatures Malachar brings in ----------
 // Narration and the map must agree (Sam, 2026-10-12). The game registers every creature Malachar brings
-// on stage (npc_encounters, from the bestiary); the map polls /api/map-creatures and walks each one in
+// on stage (the stage roster, /api/map-stage); the map polls it and walks each one in
 // from where it would come (the node's `arrivals` in story.json, else the way the party came), keeps it
 // while it is on stage, and takes it off when it leaves or dies. A creature needs a sprite at
 // /sprites/<slug>/sprite.json; one without art is logged, not invented.
@@ -1650,22 +1651,60 @@ function tickCreatures(){
     }
   }
 }
-let creaturesSeen = null;
-async function pollCreatures(){
+// The stage roster (/api/map-stage, lib/stage-roster.ts): who Malachar has in the area, from his own tags.
+// Creatures on `present` come in; on `gone` they go (dead ones fall). The story's own cast — guards,
+// Jorlan, the prisoners — are placed by story.json, but when the game says one of them has gone out of
+// sight they walk off the plate, and back on when he brings them in again. Nothing here reads the NPC
+// panel's spotlight (is_active); that switches off whenever the party talks to someone else.
+const CAST = new Set(Object.keys(SPR_META));
+function stageMatch(entry, id){           // "jorlan-duskryn" is the map's "jorlan"; "drow-guard" is either guard
+  const names = [entry.slug, ...(entry.aliases || [])];
+  return names.some(s => s === id || id.startsWith(s + "-") || s.startsWith(id + "-") || s.split("-").some(tok => tok.length > 3 && id.split("-").includes(tok)));
+}
+let stageSeen = null;
+async function pollStage(){
   if (!APP || timeStopped) return;
   try {
-    const r = await fetch("/api/map-creatures", {cache: "no-store"}); const j = await r.json();
-    const list = Array.isArray(j.creatures) ? j.creatures : [];
-    const here = new Set(list.map(c => c.slug));
-    for (const c of list){
+    const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json();
+    const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
+    // creatures: anyone present who is not part of the story's cast
+    for (const c of present){
+      if ([...CAST].some(id => stageMatch(c, id))) continue;
       if (!creatures.has(c.slug) && await loadSpriteManifest(c.slug)) creatureArrives(c);
       const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; }
     }
-    for (const slug of [...creatures.keys()]) if (!here.has(slug)){ const f = creatures.get(slug); creatureLeaves(slug, (f.hp ?? 1) <= 0); }
-    creaturesSeen = here;
+    for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug)){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead)); }
+    // the cast: off the plate when the game says they have gone, back when it says they are here
+    for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature)){
+      const off = gone.some(g => stageMatch(g, n.id)) && !present.some(c => stageMatch(c, n.id));
+      if (off && !n.offStage) castLeaves(n, !!gone.find(g => stageMatch(g, n.id)).dead);
+      else if (!off && n.offStage) castReturns(n);
+    }
+    stageSeen = {present, gone};
   } catch (e) {}
 }
-if (APP){ setTimeout(pollCreatures, 2500); setInterval(pollCreatures, 5000); }
+// A cast member walks out of the picture by the nearest edge of the plate (a dead one falls where they
+// stand), and comes back in the same way to their post. Backdrop figures (the guards on the balcony)
+// keep their fixed size on the way.
+function plateEdge(a){
+  const c = [{x: -120, y: a.y}, {x: NAT_W + 120, y: a.y}, {x: a.x, y: -120}, {x: a.x, y: NAT_H + 120}];
+  return c.sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0];
+}
+function castLeaves(n, dead){
+  n.offStage = true; n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n); n.talk = false;
+  if (dead){ n.path = []; n.down = true; if (SPR[n.id].img.dead) playOnce(n, "dead", () => {}); else n.fading = true; narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} is dead.`); return; }
+  const e = plateEdge(n); n.path = [{x: e.x, y: e.y, out: true}]; n.slow = false;
+  n.onArrive = () => { n.alpha = 0; };
+  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} goes out of sight.`);
+}
+function castReturns(n){
+  n.offStage = false; n.down = false; n.fading = false;
+  const e = plateEdge(n.post); n.x = e.x; n.y = e.y; n.alpha = 0; n.fadeIn = true; setAnim(n, "idle");
+  n.path = [{x: n.post.x, y: n.post.y}]; n.slow = true;
+  n.onArrive = () => { if (n.keep){ n.patrol = n.keep.patrol; n.static = n.keep.static; } n.home = {x: n.x, y: n.y}; };
+  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} comes back into view.`);
+}
+if (APP){ setTimeout(pollStage, 2500); setInterval(pollStage, 5000); }
 
 // ---------- talk: hand off to the dashboard ----------
 // Someone wants a word: Malachar writes their opener (in the NPC's own voice, addressing the speaker by name if
@@ -1867,6 +1906,7 @@ let ptr = null, hoverZone = null, hoverActor = null, marker = null;
 function hitActor(list, w){
   let best = null, bd = 1e9;
   for (const a of list){
+    if (a.offStage || a.alpha < .05) continue;
     const m = SPR[a.id].json, sc = actorScale(a), hw = 34 * sc * (m.cell[0] / 128), hh = 105 * sc * (m.cell[1] / 128);
     if (w.x > a.x - hw && w.x < a.x + hw && w.y > a.y - hh && w.y < a.y + 10){ const d = Math.abs(w.y - (a.y - hh / 2)); if (d < bd){ bd = d; best = a; } }
   }
@@ -1967,6 +2007,7 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+$("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => n.offStage ? castReturns(n) : castLeaves(n, false)); };
 $("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
   if (on === timeStopped) return;
@@ -2035,7 +2076,7 @@ const ACTS = [
 ];
 function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
 function idleLife(a){
-  if (a === leader || a.once || a.fading) return;
+  if (a === leader || a.once || a.fading || a.offStage) return;
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
     if (now < (a.actUntil || 0)) return;
@@ -2137,7 +2178,7 @@ function update(dt){
     if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))) startCombat(hz.foes, hz.label);
     // drow who are on watch
     if (mode === "explore" && !state.cleared[cur]){
-      const watch = npcs.filter(n => n.hostile);
+      const watch = npcs.filter(n => n.hostile && !n.offStage);
       if (watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
     }
     // NPC comments and the one who wants to talk
