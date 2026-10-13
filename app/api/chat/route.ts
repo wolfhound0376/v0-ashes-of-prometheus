@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
+import { applyStageEvents, type StageEvent } from "@/lib/stage-roster"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
@@ -1602,7 +1603,7 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 5b. PHYSICAL AND SOCIAL ENGAGEMENT COUNTS. "Interaction" is not only conversation: attacking, shoving, grabbing, pickpocketing, handing something over, gesturing at, blocking, or being attacked BY a named NPC all REQUIRE the [NPC_ENCOUNTER:] tag for that NPC in the same response, even when nobody speaks. If the player's message engages a named NPC in ANY way, that NPC's tag must appear.
 
-6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends.
+6. NPC DEPARTURES: You MUST emit [NPC_LEAVE: <Name>] when an NPC/monster dies, flees, or the encounter ends — and whenever someone passes OUT OF THE PARTY'S SIGHT: a guard who walks off, a patrol gone round the corner, a creature that slips back into the water. The map shows exactly who is in the area; if you say "no guards in sight", every guard needs its tag. If they come back into view later, emit [NPC_ENCOUNTER:] again.
 
 6b. NPC DISPOSITION: Every NPC holds one attitude toward the party on a single axis, from worst to best: hostile, wary, neutral, warm, devoted. Emit [NPC_DISPOSITION: <Name> <value>] whenever an NPC's feeling toward the party FIRST becomes clear, and again every time it MOVES — a kindness, an insult, a betrayal, a shared danger, a lie they caught. Use ONLY those five words; anything else is discarded. Move one rung at a time unless something drastic happened (a murder in front of them can go straight to hostile). This is the NPC's private truth, not what they are showing: an NPC can be hostile while smiling. Do not announce the value in your prose — narrate the behaviour and let the tag carry the number.
 
@@ -2139,6 +2140,9 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
   // gets hidden from the panel below, so the player only sees who they're
   // actually interacting with (e.g. talking to Eldeth shows only Eldeth).
   const encounteredThisTurn = new Set<string>()
+  // Who came on and who went off THIS turn, for the stage roster the map reads (lib/stage-roster.ts).
+  // Written from the tags only; the panel-focus rule below never touches it.
+  const stageEvents: StageEvent[] = []
 
   // === ITEM TAG DIAGNOSTICS ===
   // Log every item-ish tag the narrator emitted (even malformed ones) so the
@@ -2865,6 +2869,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
       const isCombat = typeof cr === "number" && cr > 0
       const wantsHpBar = !stats.ally || isCombat
       const resolvedHpMax = wantsHpBar ? stats.hp : null
+      stageEvents.push({ kind: "arrive", name: canonicalName, aliases: resolvedNpc?.aliases ?? null,
+        hp: (existingNpc as { hp_current?: number | null } | null)?.hp_current ?? resolvedHpMax, hpMax: (existingNpc as { hp_max?: number | null } | null)?.hp_max ?? resolvedHpMax })
       // A non-combat ally/neutral gets CR/XP 0 so the dashboard never renders a
       // combat bar or awards XP for them. Combatants use the real/hinted values.
       const resolvedCr = wantsHpBar ? (cr ?? stats.cr ?? undefined) : 0
@@ -2991,6 +2997,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
         if (npc) {
           const newHp = Math.max(0, (npc.hp_current || 0) - amount)
           const isDefeated = newHp <= 0
+          if (isDefeated) stageEvents.push({ kind: "leave", name: canonicalName, dead: true })
 
           // Update the shared row by its id.
           const { error } = await supabase
@@ -3056,6 +3063,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
 
       // Fetch the SHARED active row (no character_id scope) to check defeat + XP.
       const npc = await findSharedActiveEncounter(supabase, name)
+      stageEvents.push({ kind: "leave", name, dead: !!npc && (npc.hp_current || 0) <= 0 })
 
       if (npc) {
         // Check if NPC is defeated narratively without HP reaching 0 (missing damage tags)
@@ -3212,6 +3220,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
   // not the image description — is the key curated art is filed under.
   const updateLocationMatch = rawText.match(/\[UPDATE_LOCATION:\s*([^\]]+)\]/)
   const taggedLocationName = updateLocationMatch ? updateLocationMatch[1].trim() : null
+  if (taggedLocationName) stageEvents.push({ kind: "move", area: taggedLocationName })
 
   // Parse LOCATION_IMAGE tag and resolve the scene image: existing art first,
   // Fal generation only when nothing curated matches.
@@ -3843,6 +3852,9 @@ Rules:
       }
     }
   }
+
+  // The stage roster: one read, one write, after every tag has been handled (best-effort, never blocks the turn).
+  await applyStageEvents(timeAdmin, stageEvents)
 
   // === TIME LOGGING ===
   // Every successful exchange advances the clock, then any explicit time tags
