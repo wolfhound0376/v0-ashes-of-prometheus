@@ -377,7 +377,31 @@
     "backdrop": true,
     "fixedScale": 1.35,
     "via": "along the rope bridge",
-    "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). The under-the-door emerge (from [812,812], anim emerge) is what the film shows; use it when he brings it through."
+    "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). `inside` is the chasm-side entry Malachar narrated (2026-10-13 21:28: it oozes up the stone wall from the pool below the pen) \u2014 it heaves up over the ledge at the pen's left rim, by the crystals. The approved film shows an under-the-bars entry instead; `insideGate` keeps that path for when he brings it through the gate.",
+    "inside": {
+     "from": [
+      700,
+      1240
+     ],
+     "to": [
+      1000,
+      1150
+     ],
+     "anim": "emerge",
+     "via": "heaving itself up over the ledge from the chasm"
+    },
+    "insideGate": {
+     "from": [
+      812,
+      812
+     ],
+     "to": [
+      900,
+      900
+     ],
+     "anim": "emerge",
+     "via": "squeezing under the bars"
+    }
    },
    "default": {
     "from": [
@@ -389,7 +413,19 @@
      930
     ],
     "anim": "walk",
-    "big": 1
+    "big": 1,
+    "inside": {
+     "from": [
+      812,
+      812
+     ],
+     "to": [
+      900,
+      930
+     ],
+     "anim": "walk",
+     "via": "through the gate"
+    }
    }
   },
   "wards": "The wards cut into the pen's walls smother any spell cast inside it; a spell cast from outside still reaches in."

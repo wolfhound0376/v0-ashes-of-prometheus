@@ -21,6 +21,10 @@ export type StageEntry = {
   hpMax: number | null
   since: string
   dead?: boolean
+  /** Where in the area Malachar last put them, in his words ("on the bridge", "inside the pen"). */
+  where?: string | null
+  /** Inside the party's own space (the pen) — the map's threshold. Set by [NPC_MOVE:] wording. */
+  inside?: boolean
 }
 export type Stage = {
   area: string | null
@@ -54,12 +58,26 @@ export type StageEvent =
   | { kind: "arrive"; name: string; aliases?: string[] | null; hp?: number | null; hpMax?: number | null }
   | { kind: "leave"; name: string; dead: boolean }
   | { kind: "move"; area: string }
+  | { kind: "place"; name: string; where: string }
+
+/** "inside the pen", "through the bars", "in the cell" → inside the party's space; "bridge", "outside", "beyond the gate" → not. */
+export function isInsideWording(where: string): boolean {
+  const w = where.toLowerCase()
+  if (/\b(outside|beyond|bridge|balcony|walkway|far side|other side)\b/.test(w)) return false
+  return /\b(inside|into|in the (pen|cell|cage|room)|through the (bars|gate|door)|among (you|the party|the prisoners)|in here)\b/.test(w)
+}
+
+/** Which present entries are inside now but were not before: the threshold crossings this turn. */
+export function crossedInside(before: Stage, after: Stage): string[] {
+  return Object.keys(after.present).filter((slug) => after.present[slug].inside && !before.present[slug]?.inside)
+}
 
 /** Apply a turn's events in order, in one read and one write. Best-effort: never throws. */
-export async function applyStageEvents(db: SupabaseClient | null, events: StageEvent[]) {
-  if (!db || !events.length) return
+export async function applyStageEvents(db: SupabaseClient | null, events: StageEvent[]): Promise<{ crossed: string[] }> {
+  if (!db || !events.length) return { crossed: [] }
   try {
     const stage = await readStage(db)
+    const before: Stage = JSON.parse(JSON.stringify(stage))
     const now = new Date().toISOString()
     for (const e of events) {
       if (e.kind === "move") {
@@ -69,6 +87,11 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
         continue
       }
       const slug = slugOf(e.name)
+      if (e.kind === "place") {
+        const entry = stage.present[slug] ?? stage.gone[slug]
+        if (entry) { entry.where = e.where; entry.inside = isInsideWording(e.where); delete stage.gone[slug]; stage.present[slug] = entry }
+        continue
+      }
       if (e.kind === "arrive") {
         const prev = stage.present[slug] ?? stage.gone[slug]
         delete stage.gone[slug]
@@ -77,6 +100,7 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
           aliases: Array.from(new Set([...(prev?.aliases ?? []), ...((e.aliases ?? []).map(slugOf))])).filter(Boolean),
           hp: e.hp ?? prev?.hp ?? null, hpMax: e.hpMax ?? prev?.hpMax ?? null,
           since: prev && stage.present[slug] ? prev.since : now,
+          where: prev?.where ?? null, inside: prev?.inside ?? false,
         }
       } else {
         const prev = stage.present[slug] ?? stage.gone[slug]
@@ -85,7 +109,9 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
       }
     }
     await writeStage(db, stage)
+    return { crossed: crossedInside(before, stage) }
   } catch (err) {
     console.error("[stage] apply failed:", err)
+    return { crossed: [] }
   }
 }

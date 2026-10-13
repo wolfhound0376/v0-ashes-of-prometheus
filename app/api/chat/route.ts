@@ -4,7 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
-import { applyStageEvents, type StageEvent } from "@/lib/stage-roster"
+import { applyStageEvents, readStage, type StageEvent } from "@/lib/stage-roster"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
@@ -1451,6 +1451,15 @@ ${combatantRows
     stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
   }
   stageContext += acquaintance
+  // The stage list (lib/stage-roster.ts): who is in the area and where Malachar last put them. Positions
+  // are his facts to keep (rule 13); the map draws exactly this.
+  try {
+    if (timeAdmin) {
+      const stage = await readStage(timeAdmin)
+      const here = Object.values(stage.present)
+      if (here.length) stageContext += ` ON STAGE NOW (keep these positions unless you move them with [NPC_MOVE:]): ${here.map((e) => `${e.name} — ${e.where || "position not stated"}${e.hp != null ? ` (${e.hp}/${e.hpMax ?? "?"} hp)` : ""}`).join("; ")}.`
+    }
+  } catch (e) { console.error("[stage] context skipped:", e) }
   // Not in a conversation, but someone is in the NPC window: a line that names no one ("who are you?",
   // "what do you want?") is said to them, and they answer it (Sam, 2026-10-12: "it should be implied I am
   // speaking to Buppido. The NPC needs to act smarter").
@@ -1627,7 +1636,9 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 - Emit it ONCE, at the moment it happens. If the door was already open, it stays open; do not re-emit, and never emit it for a door that is merely being examined, reached for, or discussed.
 - If the door is shut and barred again later, that is a different fact and there is no tag for it yet. Narrate it and tell the DM.
 
-12. WHEN COMBAT BEGINS (SRD, Combat Step by Step): the moment any creature attacks, or a hostile act is declared — a player says they strike, a guard draws on them, an ooze lunges — combat has begun and initiative is rolled. Emit [COMBAT_START: <Name>, <Name>] on its own line naming EVERY hostile creature in the fight, by its canonical name, each of them already brought on with [NPC_ENCOUNTER:] (emit that first if it is missing). From that line on you do NOT roll attacks or decide damage yourself: the dice engine resolves every exchange, the table sees it, and you narrate what it reports. Do not emit it for threats, posturing or a drawn blade nobody uses; do emit it before describing the first blow. When the fight is over — every foe dead, fled or yielded — emit [COMBAT_END] on its own line.
+12. WHEN COMBAT BEGINS (SRD, Combat Step by Step): the moment any creature attacks, or a hostile act is declared — a player says they strike, a guard draws on them, an ooze lunges — combat has begun and initiative is rolled. A predator that comes INTO the party's space (through the bars, into the pen, onto them) to attack IS attacking: that is [COMBAT_START:], in the same response as its [NPC_MOVE:], not a description of menace. Emit [COMBAT_START: <Name>, <Name>] on its own line naming EVERY hostile creature in the fight, by its canonical name, each of them already brought on with [NPC_ENCOUNTER:] (emit that first if it is missing). From that line on you do NOT roll attacks or decide damage yourself: the dice engine resolves every exchange, the table sees it, and you narrate what it reports. Do not emit it for threats, posturing or a drawn blade nobody uses; do emit it before describing the first blow. When the fight is over — every foe dead, fled or yielded — emit [COMBAT_END] on its own line.
+
+13. WHERE EVERYONE IS: a creature's position is a FACT, not flavour. The stage list below names where each creature on stage was last put; keep it there until you move it, and move it ONLY with [NPC_MOVE: <Name> | <where>] on its own line — "on the bridge", "at the gate, outside", "inside the pen", "through the bars". An ooze that was touching the bars from outside is still outside until you say [NPC_MOVE: Gray Ooze | inside the pen]. Never have an NPC describe a creature somewhere you have not moved it. The map shows exactly where you put them.
 
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
@@ -1840,6 +1851,8 @@ WORLD FLAGS:
 - [COMBAT_START: name, name] — the moment a hostile act happens; every hostile creature in the fight, canonical names. The dice engine takes the rolls from here.
   - Example: [COMBAT_START: Giant Spider, Quaggoth]
 - [COMBAT_END] — when the fight is over (dead, fled or yielded)
+- [NPC_MOVE: name | where] — a creature or NPC changes position in the area ("inside the pen", "on the bridge", "outside the gate"). Positions are facts: say it with the tag or it did not happen.
+  - Example: [NPC_MOVE: Gray Ooze | inside the pen]
 - [FLAG: <key>] — when a permanent, table-wide fact becomes true
   - pen-door-open — the slave pen's door is open: unlocked, picked, forced, or opened by someone else
   - Emit once, at the moment it happens. Never invent a key that is not listed here.
@@ -3383,6 +3396,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     .replace(/\[FLAG:[^\]]*\]/gi, "")
     .replace(/\[COMBAT_START:[^\]]*\]/gi, "")
     .replace(/\[COMBAT_END\]/gi, "")
+    .replace(/\[NPC_MOVE:[^\]]*\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
     // somebody has to remember to add here — and forgetting means the tag is
     // printed to the table as raw text. This sweeps any [UPPERCASE_TAG: ...]
@@ -3881,9 +3895,14 @@ Rules:
     await startCombatFlag(timeAdmin, { foes, area: taggedLocationName ?? currentLocation ?? null, startedBy: playerCharacter?.name ?? null })
   }
   if (/\[COMBAT_END\]/i.test(rawText)) await endCombatFlag(timeAdmin)
+  for (const m of rawText.matchAll(/\[NPC_MOVE:\s*([^|\]]+)\|\s*([^\]]+)\]/gi)) {
+    const resolved = await resolveNpcByName(supabase, m[1].trim())
+    stageEvents.push({ kind: "place", name: resolved?.name || m[1].trim(), where: m[2].trim().slice(0, 80) })
+  }
 
   // The stage roster: one read, one write, after every tag has been handled (best-effort, never blocks the turn).
-  await applyStageEvents(timeAdmin, stageEvents)
+  // A creature crossing INTO the party's space this turn is what the arrival film is for (see the cinematic block).
+  const { crossed: crossedInsideNow } = await applyStageEvents(timeAdmin, stageEvents)
 
   // === TIME LOGGING ===
   // Every successful exchange advances the clock, then any explicit time tags
@@ -4809,6 +4828,14 @@ Rules:
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
         const arrival = availableCinematicCues.find((c) => c.toLowerCase() === `${slug}-arrives`)
         if (arrival) { cinematicCue = arrival; console.log("[cinematics] arrival cue fired for", name, "->", arrival); break }
+      }
+    }
+    // ...and when a creature already on stage crosses INTO the party's space ([NPC_MOVE: … | inside the pen]):
+    // the film shows exactly that moment, so a creature registered before its film existed still gets it.
+    if (!cinematicCue) {
+      for (const slug of crossedInsideNow) {
+        const arrival = availableCinematicCues.find((c) => c.toLowerCase() === `${slug}-arrives`)
+        if (arrival) { cinematicCue = arrival; console.log("[cinematics] crossing cue fired for", slug, "->", arrival); break }
       }
     }
 
