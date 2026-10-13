@@ -22,8 +22,8 @@
 // Callers get one shape back for both paths: a promise that settles when the
 // line is over, and a stop() for interrupting it.
 
-import { rapportChain } from "./rapport-voice"
-import { isRapportAudio } from "./rapport"
+import { rapportChain, croakChain } from "./rapport-voice"
+import { voiceProfileOf } from "./rapport"
 
 /** How a spoken line finished. */
 export type SpeechEndReason =
@@ -102,7 +102,7 @@ export async function playSpeech(blob: Blob, offsetSeconds = 0): Promise<SpeechP
   // A myconid's rapport line (lib/rapport.ts) is heard in the listener's head: the route marks the
   // audio and the WebAudio path runs it through the cave treatment. The element fallback cannot, so
   // such a line plays plain there rather than not at all.
-  const viaWebAudio = await playViaWebAudio(bytes, offsetSeconds, isRapportAudio(blob))
+  const viaWebAudio = await playViaWebAudio(bytes, offsetSeconds, voiceProfileOf(blob))
   if (viaWebAudio) return viaWebAudio
 
   // decodeAudioData refused it, or there is no AudioContext at all.
@@ -110,7 +110,7 @@ export async function playSpeech(blob: Blob, offsetSeconds = 0): Promise<SpeechP
 }
 
 /** Returns null when WebAudio can't handle it, so the caller can fall back. */
-async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0, rapport = false): Promise<SpeechPlayback | null> {
+async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0, profile: "rapport" | "croak" | null = null): Promise<SpeechPlayback | null> {
   const ctx = getContext()
   if (!ctx) return null
 
@@ -135,7 +135,8 @@ async function playViaWebAudio(bytes: ArrayBuffer, offsetSeconds = 0, rapport = 
 
   const source = ctx.createBufferSource()
   source.buffer = decoded
-  const chain = rapport ? rapportChain(ctx) : null
+  const chain = profile === "rapport" ? rapportChain(ctx) : profile === "croak" ? croakChain(ctx) : null
+  if (chain?.playbackRate) source.playbackRate.value = chain.playbackRate
   source.connect(chain ? chain.input : ctx.destination)
 
   let settle: (reason: SpeechEndReason) => void = () => {}

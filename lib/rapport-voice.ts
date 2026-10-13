@@ -12,7 +12,7 @@
 //              right behind it, breathing with a slow tremolo
 // Everything is deterministic (the tails are seeded), so the same line sounds the same twice.
 
-export type RapportChain = { input: AudioNode; dispose: () => void }
+export type RapportChain = { input: AudioNode; dispose: () => void; /** play the source slower/deeper through this chain */ playbackRate?: number }
 
 const tails = new WeakMap<AudioContext, AudioBuffer>()
 
@@ -122,4 +122,38 @@ export function rapportChain(ctx: AudioContext, destination: AudioNode = ctx.des
     for (const node of [raw, drift, driftDepth, input, dryLp, dry, conv, wetLp, pre, wet, lfo, swell, swellLp, swellG, breathe, breatheDepth, ...pan, ...echoes, ...doubles]) { try { node.disconnect() } catch { /* torn down */ } }
   }
   return { input: raw, dispose }
+}
+
+// The kuo-toa throat (lib/rapport.ts CROAK): setting B of the three Sam auditioned on 2026-10-13.
+// The caller plays the source at `playbackRate` (deeper and slower); the chain adds a gurgle (the
+// voice ring-modulated against a 31 Hz tone), a 13 Hz flutter in the throat, a short hollow
+// resonance (a 9 ms comb), and rolls the top off at 2.1 kHz.
+export function croakChain(ctx: AudioContext, destination: AudioNode = ctx.destination): RapportChain {
+  const input = ctx.createGain(); input.gain.value = 1
+  const ring = ctx.createGain(); ring.gain.value = 0
+  const osc = ctx.createOscillator(); osc.frequency.value = 31; osc.connect(ring.gain); osc.start()
+  const ringMix = ctx.createGain(); ringMix.gain.value = 0.5
+  input.connect(ring).connect(ringMix)
+  const dry = ctx.createGain(); dry.gain.value = 0.7
+  input.connect(dry)
+  const sum = ctx.createGain(); ringMix.connect(sum); dry.connect(sum)
+  const trem = ctx.createGain(); trem.gain.value = 0.6
+  const tl = ctx.createOscillator(); tl.frequency.value = 13
+  const td = ctx.createGain(); td.gain.value = 0.4
+  tl.connect(td).connect(trem.gain); tl.start()
+  sum.connect(trem)
+  const comb = ctx.createDelay(0.05); comb.delayTime.value = 0.009
+  const fb = ctx.createGain(); fb.gain.value = 0.45
+  trem.connect(comb).connect(fb).connect(comb)
+  const mix = ctx.createGain(); mix.gain.value = 0.6
+  comb.connect(mix)
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2100
+  trem.connect(lp); mix.connect(lp)
+  const out = ctx.createGain(); out.gain.value = 0.9
+  lp.connect(out).connect(destination)
+  const dispose = () => {
+    for (const o of [osc, tl]) { try { o.stop() } catch { /* already stopped */ } }
+    for (const node of [input, ring, ringMix, dry, sum, trem, td, comb, fb, mix, lp, out]) { try { node.disconnect() } catch { /* torn down */ } }
+  }
+  return { input, dispose, playbackRate: 0.8 }
 }
