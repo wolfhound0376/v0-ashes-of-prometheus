@@ -146,7 +146,7 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .cbt-party .hp i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#c4432f,#ff7a5c);transition:width .35s ease-out}
 .cbt-party .hp span{position:absolute;inset:0;font-family:var(--face-mono);font-size:.56rem;line-height:9px;text-align:right;padding-right:3px;color:#fff;text-shadow:0 0 2px #000}
 .cbt-party .slots{font-size:.6rem;color:#b8a0ff;letter-spacing:.1em;margin-top:2px;display:block}
-.cbt-menu{position:absolute;display:flex;flex-direction:column;min-width:178px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:4px;box-shadow:0 8px 28px rgba(0,0,0,.6);z-index:3}
+.cbt-menu{position:absolute;left:12px;bottom:128px;display:flex;flex-direction:column;min-width:200px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:4px;box-shadow:0 8px 28px rgba(0,0,0,.6);z-index:3}
 .cbt-menu[hidden]{display:none}
 .cbt-menu button{all:unset;display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:5px 10px 5px 18px;border-radius:4px;cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:var(--s0);position:relative}
 .cbt-menu button small{font-family:var(--face-mono);font-size:.6rem;color:var(--ink-dim);letter-spacing:0}
@@ -154,6 +154,7 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .cbt-menu button:hover::before,.cbt-menu button:focus-visible::before{content:"▸";position:absolute;left:5px;color:var(--ember)}
 .cbt-menu button.primary{color:#ffd9a0}
 .cbt-menu button:disabled{opacity:.38;cursor:default}
+.fight .log{left:236px;max-width:min(400px,calc(100% - 700px))}   /* the log steps right of the docked command list during a fight */
 .cbt-hint{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);background:rgba(14,8,10,.9);border:1px solid var(--rule);border-radius:999px;padding:4px 14px;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink)}
 .cbt-hint[hidden]{display:none}
 @media (max-width:700px){.cbt-party{width:150px;bottom:62px}.cbt-top .lbl{display:none}}
@@ -872,7 +873,7 @@ function zoneAt(x, y){ return node.zones.find(z => inRect(z.rect, x, y)) || null
 async function enterNode(n, opts = {}){
   const from = cur, fromScale = node.scale;
   mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
-  $("combat").hidden = true; cbt = null; combatBusy = false; $("vignette").classList.remove("on");
+  $("combat").hidden = true; stage.classList.remove("fight"); cbt = null; combatBusy = false; $("vignette").classList.remove("on");
   bubbles.forEach(b => b.until = 0);
   if (!opts.slide) await new Promise(r => setTimeout(r, 360));
   cur = n; node = SPEC[n];
@@ -1002,6 +1003,9 @@ function audioCtx(){ return speakCanon.ctx || (speakCanon.ctx = new (window.Audi
 // voice/sfx context on every such gesture until it is running, so NPC voices are ready when they speak.
 function wakeAudio(){ try { const c = audioCtx(); if (c.state !== "running") c.resume().catch(() => {}); } catch (e) {} }
 ["pointerdown", "keydown", "touchstart"].forEach(ev => addEventListener(ev, wakeAudio, {capture: true, passive: true}));
+// The music too: it used to wait for a click on the painting itself, so starting a fight from DM tools
+// (a button, not the painting) left the combat track silent (Sam, 2026-10-13: "where is the music").
+["pointerdown", "keydown"].forEach(ev => addEventListener(ev, () => unlockAudio(), {capture: true, passive: true}));
 // Sam's sound bank (lib/sfx.ts): 93 effects in vtt-assets/sfx, named "bank:combat/melee_hit_flesh" here.
 // The structure is the structure of a spell — <family>_windup / _release / _tail, impact_<type> — so the
 // audio drives the pacing of a cast rather than being sprinkled on afterwards.
@@ -1341,7 +1345,7 @@ function startCombat(foeIds, label){
   for (const a of order){ a.c = a.c && a.kind === "pc" ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   cbt = {order, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
-  $("combat").hidden = false; $("cbtMenu").hidden = true; renderTurns(); renderParty();
+  $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
   bank("ui/initiative_start", .8);
   for (const nm of ["physicalImpact", "strikePunch", "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
@@ -1429,11 +1433,9 @@ function openMenu(a, sub){
 }
 function closeMenu(){ $("cbtMenu").hidden = true; hint(""); }
 function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
-function placeMenu(){
-  const a = activeActor(), m = $("cbtMenu"); if (!cbt || m.hidden || !a) return;
-  const sc = actorScale(a), mm = SPR[a.id].json, [sx, sy] = w2s(a.x + mm.cell[0] * sc * .42, a.y - mm.pivot[1] * sc * .9);
-  const r = stage.getBoundingClientRect(); m.style.left = Math.min(r.width - m.offsetWidth - 8, Math.max(8, sx)) + "px"; m.style.top = Math.min(r.height - m.offsetHeight - 8, Math.max(8, sy)) + "px";
-}
+// The command list is docked at the lower left, off the picture: beside the sprite it hid whoever stood
+// next to the one who was up (Sam, 2026-10-13). The active sprite is already ringed and framed by the camera.
+function placeMenu(){}
 // pick a target for an attack or a spell; the click handler finishes it
 function aim(a, what){
   closeMenu(); cbt.phase = "target"; cbt.pend = what;
@@ -1618,7 +1620,7 @@ function endCombat(won){
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0;
   foes.forEach(f => f.fading = true);
-  $("combat").hidden = true; $("vignette").classList.remove("on");
+  $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on");
   setTimeout(() => {
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
