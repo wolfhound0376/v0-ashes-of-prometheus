@@ -1026,6 +1026,28 @@ async function sfx(name, gain = .8){
     src.buffer = buf; src.connect(g); g.connect(ctx.destination); src.start();
   } catch (e) {}
 }
+// The lullaby for Sleep: a music box, synthesised here so it needs no file. An original eight-bar
+// tune in C, two bells per note (the strike and its octave), a slow swell, looping while anyone sleeps.
+const lullaby = {on: false, timer: 0, gain: null};
+const LULLABY_TUNE = [[76, 1], [79, 1], [76, 1], [72, 1], [74, 2], [72, 2], [76, 1], [79, 1], [81, 1], [79, 1], [76, 4],
+                      [74, 1], [77, 1], [74, 1], [71, 1], [72, 2], [74, 2], [76, 1], [74, 1], [72, 1], [71, 1], [72, 4]];
+function startLullaby(){
+  if (lullaby.on) return; lullaby.on = true; lullaby.since = now;
+  try {
+    const ctx = audioCtx(); if (ctx.state === "suspended") ctx.resume();
+    const g = ctx.createGain(); g.gain.value = 0; g.connect(ctx.destination); g.gain.linearRampToValueAtTime(.22, ctx.currentTime + 1.2); lullaby.gain = g;
+    const beat = .52;
+    const bell = (midi, at, dur) => { for (const [mult, lvl] of [[1, 1], [2, .35], [3, .12]]){ const o = ctx.createOscillator(), e = ctx.createGain(); o.type = "sine"; o.frequency.value = 440 * 2 ** ((midi - 69) / 12) * mult; e.gain.setValueAtTime(0, at); e.gain.linearRampToValueAtTime(lvl, at + .012); e.gain.exponentialRampToValueAtTime(.001, at + Math.max(.6, dur * beat * 1.6)); o.connect(e).connect(g); o.start(at); o.stop(at + dur * beat * 1.7 + .1); } };
+    const bar = () => { if (!lullaby.on) return; let t = ctx.currentTime + .05; for (const [n, d] of LULLABY_TUNE){ bell(n, t, d); if (d >= 2) bell(n - 12, t, d); t += d * beat; } lullaby.timer = setTimeout(bar, (t - ctx.currentTime) * 1000 - 50); };
+    bar();
+  } catch (e) {}
+}
+function stopLullaby(){
+  if (!lullaby.on) return; lullaby.on = false; clearTimeout(lullaby.timer);
+  try { const ctx = audioCtx(), g = lullaby.gain; g.gain.cancelScheduledValues(ctx.currentTime); g.gain.setValueAtTime(g.gain.value, ctx.currentTime); g.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5); setTimeout(() => g.disconnect(), 1700); } catch (e) {}
+}
+// it stops when the last sleeper wakes (or the fight ends)
+setInterval(() => { if (lullaby.on && !(cbt && [...party, ...foes].some(a => a.c && a.c.conds.has("asleep")))) { if (now - (lullaby.since || 0) > 3500) stopLullaby(); } else if (lullaby.on) lullaby.since = now; }, 500);
 const DOOR_SFX = ["door-open", "door-close", "door-locked", "lock-picked", "lock-pick-fail"];
 
 // ---------- the pen door: a real leaf that swings ----------
@@ -1540,19 +1562,22 @@ function castSpell(caster, tgt, name, done){
   // flat under the target with its plume rising, then release, bolt, impact, and the sigil bursts or shatters
   const school = SCHOOL_OF[name] || "evocation", dtype = sp.kind === "heal" ? "heal" : sp.type || school, family = FAMILY_OF[dtype] || FAMILY_OF[school] || "arcane";
   const sig = SIGIL_OF[school] || SIGIL_OF.evocation, rune = RUNE_OF[dtype] || RUNE_SCHOOL[school] || "runeEvocation";
-  bank(`magic/${family}_windup`, .55);
-  const ring = spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
+  // Sleep is the quiet one (Sam, 2026-10-13: "creates the sigil but doesn't need the flair"): the sigil
+  // forms under the target and a lullaby plays; no rune ring, no bolt, no burst. A failed save gets sheep.
+  const quiet = name === "Sleep";
+  if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
+  const ring = quiet ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
   const marks = [];
   const markTarget = (tg) => { if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); if (sig[1]) marks.push(spawnFx(sig[1], {at: tg, sq: 1.8, anchor: "feet", lift: .7, loop: true, alpha: .85})); };
-  if (sp.area) spawnFx(school === "enchantment" ? "pxPlumeMotes" : "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: school !== "enchantment", loop: true, until: now + 2600, alpha: .8});
+  if (sp.area && !quiet) spawnFx(school === "enchantment" ? "pxPlumeMotes" : "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: school !== "enchantment", loop: true, until: now + 2600, alpha: .8});
   else if (tgt.id) markTarget(tgt);
-  const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now; })); spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
+  const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
   playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
   caster.once && (caster.once.hit = () => {
     ring.then(e => { if (e) e.until = now; });
-    bank(`magic/${family}_release`, .7);
-    if (tgt.id && BOLT_OF[dtype]) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
-    spellBolt(caster, at, sp.fx, () => {
+    if (!quiet) bank(`magic/${family}_release`, .7);
+    if (tgt.id && BOLT_OF[dtype] && !quiet) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
+    (quiet ? (cb) => setTimeout(cb, 420) : (cb) => spellBolt(caster, at, sp.fx, cb))(() => {
       const m = c.sheet.magic;
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
@@ -1578,7 +1603,7 @@ function castSpell(caster, tgt, name, done){
           const s = d20() + (t.c.sheet.saves[sp.save] || 0), ok = s >= m.dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s} vs DC ${m.dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
-          if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .7); spawnFx("pxPlumeMotes", {at: t, sq: 1.2, anchor: "top", loop: true, until: now + 2400}); } else bank("magic/spell_fizzle", .5); }
+          if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
           else land(t, !ok, sp.type || "psychic");
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
@@ -1657,7 +1682,7 @@ function checkEnd(){
 function endCombat(won){
   if (mode !== "combat") return;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
-  closeMenu(); cbt = null; combatBusy = false; fx.length = 0;
+  closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby();
   foes.forEach(f => f.fading = true);
   $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on");
   setTimeout(() => {
@@ -1722,8 +1747,26 @@ function drawConds(a){
     ctx.fillStyle = a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
   }
   if (!a.c.conds.size) return;
+  if (a.c.conds.has("asleep")) drawSheep(a, top);
   for (const k of a.c.conds){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
     const x = a.x + (i - (a.c.conds.size - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
+}
+// Counting sheep (Sam, 2026-10-13): three little sheep circle a sleeper's head for as long as the spell holds.
+// Drawn by hand, not a sheet: a woolly body of white blocks, a dark face, two stubby legs, a bob as they trot.
+function drawSheep(a, top){
+  const sc = actorScale(a), cx = a.x, cy = top - 18 * sc, rx = 34 * sc, ry = 10 * sc, k = 2 * sc;
+  const t = (now - (a.sheepT0 || 0)) / 1000, order = [0, 1, 2].map(i => ({i, th: t * 1.6 + i * Math.PI * 2 / 3})).sort((p, q) => Math.sin(p.th) - Math.sin(q.th));
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  for (const {i, th} of order){
+    const depth = (Math.sin(th) + 1) / 2, s = k * (.75 + .35 * depth), x = cx + Math.cos(th) * rx, y = cy + Math.sin(th) * ry - Math.abs(Math.sin(t * 7 + i)) * 1.5 * s, dir = Math.cos(th + .01) - Math.cos(th) < 0 ? -1 : 1;
+    ctx.globalAlpha = .55 + .45 * depth;
+    const px = (ox, oy, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(Math.round(x + ox * dir * s - (dir < 0 ? w * s : 0)), Math.round(y + oy * s), Math.ceil(w * s), Math.ceil(h * s)); };
+    px(-4, -3, 8, 5, "#1a1410");                 // outline block
+    px(-3, -2, 6, 3, "#f3efe6"); px(-2, -3, 4, 1, "#f3efe6"); px(-2, 1, 4, 1, "#e6e0d2");   // wool
+    px(3, -2, 2, 2, "#2a211c"); px(4, -1, 1, 1, "#1a1410");                                 // face
+    px(-2, 2, 1, 2, "#2a211c"); px(1, 2, 1, 2, "#2a211c");                                  // legs
+  }
+  ctx.restore();
 }
 function combatTargetHint(){
   if (!cbt || cbt.phase !== "target" || !hoverActor || hoverActor.kind !== "foe") return null;
