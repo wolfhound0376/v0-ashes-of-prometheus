@@ -2283,7 +2283,11 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     }
     // Upsert, so a re-emitted flag is a no-op rather than an error. set_at
     // keeps the first time it happened; that is the moment worth recording.
-    const { error: flagErr } = await supabase
+    // Through the admin client: world_flags is RLS-protected and the cookie-bound anon client was
+    // refused ("new row violates row-level security policy"), so the pen door Malachar opened on
+    // 2026-10-12 never reached the map and stayed shut there.
+    if (!timeAdmin) { console.error("[v0] world flag not written (no admin client):", key); continue }
+    const { error: flagErr } = await timeAdmin
       .from("world_flags")
       .upsert(
         { campaign_id: "ashes-of-prometheus", key, value: true, set_by: "malachar" },
