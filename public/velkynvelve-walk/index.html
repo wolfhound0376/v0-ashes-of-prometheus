@@ -147,15 +147,21 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .cbt-party .hp i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#c4432f,#ff7a5c);transition:width .35s ease-out}
 .cbt-party .hp span{position:absolute;inset:0;font-family:var(--face-mono);font-size:.56rem;line-height:9px;text-align:right;padding-right:3px;color:#fff;text-shadow:0 0 2px #000}
 .cbt-party .slots{font-size:.6rem;color:#b8a0ff;letter-spacing:.1em;margin-top:2px;display:block}
-.cbt-menu{position:absolute;left:12px;bottom:128px;display:flex;flex-direction:column;min-width:200px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:4px;box-shadow:0 8px 28px rgba(0,0,0,.6);z-index:3}
+/* The command bar (Sam, 2026-10-13: "laid on neatly and organized on the bottom of the screen as to not
+   obscure the game"): one strip along the bottom edge, left of the party cards, chips in groups —
+   attacks · other actions · magic · bonus · movement · end turn — so the picture above stays clear. */
+.cbt-menu{position:absolute;left:12px;right:230px;bottom:58px;display:flex;flex-wrap:wrap;align-items:stretch;gap:4px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:5px;box-shadow:0 8px 28px rgba(0,0,0,.6);z-index:3}
 .cbt-menu[hidden]{display:none}
-.cbt-menu button{all:unset;display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:5px 10px 5px 18px;border-radius:4px;cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:var(--s0);position:relative}
-.cbt-menu button small{font-family:var(--face-mono);font-size:.6rem;color:var(--ink-dim);letter-spacing:0}
-.cbt-menu button:hover,.cbt-menu button:focus-visible{background:rgba(232,162,74,.16)}
-.cbt-menu button:hover::before,.cbt-menu button:focus-visible::before{content:"▸";position:absolute;left:5px;color:var(--ember)}
-.cbt-menu button.primary{color:#ffd9a0}
-.cbt-menu button:disabled{opacity:.38;cursor:default}
-.fight .log{left:236px;max-width:min(400px,calc(100% - 700px))}   /* the log steps right of the docked command list during a fight */
+.cbt-menu button{all:unset;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2px;width:104px;min-height:40px;padding:4px 6px;border-radius:4px;border:1px solid rgba(203,160,90,.16);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.78rem;line-height:1.1}
+.cbt-menu button small{font-family:var(--face-mono);font-size:.54rem;color:var(--ink-dim);letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:100%}
+.cbt-menu button:hover,.cbt-menu button:focus-visible{background:rgba(232,162,74,.16);border-color:var(--ember)}
+.cbt-menu button.primary{color:#ffd9a0;border-color:rgba(255,217,160,.45)}
+.cbt-menu button.end{margin-left:auto;border-color:rgba(255,155,143,.4);color:#ff9b8f}
+.cbt-menu button:disabled{opacity:.36;cursor:default}
+.cbt-menu .sep{width:1px;align-self:stretch;background:var(--rule);margin:3px 2px}
+.cbt-menu .grp{align-self:center;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--face-mono);font-size:.5rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);padding:2px 0;opacity:.8}
+.fight .log{bottom:152px;max-width:min(460px,calc(100% - 260px))}   /* the log sits above the command bar during a fight */
+.fight .cbt-hint{bottom:auto;top:84px}
 .cbt-hint{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);background:rgba(14,8,10,.9);border:1px solid var(--rule);border-radius:999px;padding:4px 14px;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink)}
 .cbt-hint[hidden]{display:none}
 @media (max-width:700px){.cbt-party{width:150px;bottom:62px}.cbt-top .lbl{display:none}}
@@ -1241,6 +1247,12 @@ function fxPos(e){ const a = e.at; if (a && a.id){ const sc = actorScale(a), m =
 function drawFxLayer(flat){
   for (let i = fx.length - 1; i >= 0; i--){
     const e = fx[i]; if (!!e.flat !== flat) continue;
+    if (e.drift){                                                      // travels: an orb from the caster's hands to the ally
+      const k = Math.min(1, (now - e.t0) / e.drift.ms), s = k * k * (3 - 2 * k), A = e.drift.from, B = e.drift.to;
+      const am = SPR[A.id].json, bm = SPR[B.id].json, ax = A.x, ay = A.y - am.pivot[1] * actorScale(A) * .6, bx = B.x, by = B.y - bm.pivot[1] * actorScale(B) * .55;
+      e.x = ax + (bx - ax) * s; e.y = ay + (by - ay) * s - Math.sin(s * Math.PI) * e.drift.arc; e.at = null;
+      if (k >= 1){ fx.splice(i, 1); if (e.then){ const fn = e.then; e.then = null; fn(); } continue; }
+    }
     const m = e.m, el = (now - e.t0) / 1000 * m.fps; let f = Math.floor(el);
     if (e.until && now > e.until){ fx.splice(i, 1); continue; }
     if (f >= m.frames){ if (e.loop) f = f % m.frames; else { fx.splice(i, 1); if (e.then){ const fn = e.then; e.then = null; fn(); } continue; } }
@@ -1506,9 +1518,10 @@ function nextTurn(first){
 function openMenu(a, sub){
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; b.innerHTML = `<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
+  const grp = (label) => { const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); if (label){ const g = document.createElement("b"); g.className = "grp"; g.textContent = label; m.appendChild(g); } };
   const c = a.c, s = c.sheet;
   if (sub === "attack"){
-    for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
+    for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
     add("Back", "", () => openMenu(a));
   } else if (sub === "shove"){
     add("Shove: knock prone", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "prone"}));
@@ -1527,22 +1540,27 @@ function openMenu(a, sub){
       add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
     add("Back", "", () => openMenu(a));
   } else {
-    add("Attack", s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
+    grp("attack");
+    const sa = s.attacks.find(k => k.sneak), ss = sa && sneakState(a, null, sa);
+    add("Attack", ss ? (c.sneakUsed ? "sneak attack used this turn" : `Sneak Attack ${ss.why}`) : s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
     const thrown = s.attacks.find(k => k.thrown);
     if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
-    add("Sneak (Hide)", c.conds.has("hidden") ? "you are hidden" : `Stealth +${(s.skills || {}).stealth ?? s.saves.dex} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
+    add("Sneak (Hide)", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
     add("Shove / Grapple", `unarmed · they save vs DC ${shoveDc(a)}`, c.action ? () => openMenu(a, "shove") : null);
+    grp("action");
     add("Dash", `+${s.speed} ft of movement`, c.action ? () => { c.action = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
     add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
-    add("Search", `Perception +${(s.skills || {}).perception ?? s.saves.wis}`, c.action ? () => doSearch(a) : null);
-    if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
-    if (s.magic){ const w = wardsHere(); add("Cast", w ? "the wards smother any spell cast in here" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, !w && (c.action || c.bonus) ? () => openMenu(a, "cast") : null);
-      if (w && !cbt.wardSaid){ cbt.wardSaid = true; log(`<em>${esc(w)}</em>`); } }
-    add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
+    add("Search", `Perception ${sgn((s.skills || {}).perception ?? s.saves.wis)}`, c.action ? () => doSearch(a) : null);
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
+    if (s.magic || s.innateSorcery) grp("magic");
+    if (s.magic){ const w = wardsHere(); add("Cast", w ? "the wards smother any spell cast in here" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, !w && (c.action || c.bonus) ? () => openMenu(a, "cast") : null, "primary");
+      if (w && !cbt.wardSaid){ cbt.wardSaid = true; log(`<em>${esc(w)}</em>`); } }
+    if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
+    grp("move");
+    add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     if (c.conds.has("prone")) add("Stand up", `half your speed (${Math.floor(s.speed / 2)} ft)`, c.move >= Math.floor(s.speed / 2) ? () => { c.move -= Math.floor(s.speed / 2); c.conds.delete("prone"); setAnim(a, "idle"); renderParty(); openMenu(a); } : null);
-    add("End turn", "Enter", () => nextTurn());
+    add("End turn", "Enter", () => nextTurn(), "end");
   }
   placeMenu();
 }
@@ -1558,7 +1576,8 @@ function aim(a, what){
   if (what.shove){ hint(`${what.shove === "grapple" ? "Grapple" : "Shove"}: click a foe within 5 ft. Esc to cancel.`); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(`${what.spell}: click a friend.`); return; }
   if (sp && sp.area){ hint(`${what.spell}: click where it lands (${sp.area}-ft area).`); return; }
-  hint(`${what.spell || what.atk.name}: click a foe. Esc to cancel.`);
+  const sn = what.atk && sneakState(a, null, what.atk);
+  hint(`${what.spell || what.atk.name}: click a foe. Esc to cancel.${sn ? ` Sneak Attack ${sn.why}.` : ""}`);
 }
 function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && cbt.phase === "move"){ openMenu(activeActor()); } }
 function combatClick(w){
@@ -1602,8 +1621,21 @@ function advantageOn(att, tgt, ranged){
   return Math.sign(adv);
 }
 // Attacking gives you away and spends the Help; both are one attack's worth.
+// Sneak Attack, as Fifi's row reads: a Finesse/ranged weapon, once a turn, with advantage OR an ally within
+// 5 ft of the target, and never with disadvantage. `why` is shown on the menu and the target hint.
+function sneakState(att, tgt, atk, ranged){
+  if (!atk || !atk.sneak) return null;
+  if (att.c.sneakUsed) return {on: false, why: "used this turn"};
+  if (!tgt) return {on: null, why: `+${atk.sneak} with advantage, or an ally next to the target`};
+  const adv = advantageOn(att, tgt, ranged), ally = standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5);
+  if (adv < 0) return {on: false, why: "no sneak attack at disadvantage"};
+  if (adv > 0) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (advantage)`};
+  if (ally) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (ally beside it)`};
+  return {on: false, why: "no sneak attack: get advantage, or an ally beside it"};
+}
 function afterAttackRoll(att){ if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); att.alpha = 1; } att.c.conds.delete("helped"); }
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
+const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
 function skillCheck(a, skill){ const r = d20(), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
 function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0); }
@@ -1671,7 +1703,13 @@ function castSpell(caster, tgt, name, done){
     ring.then(e => { if (e) e.until = now; });
     if (!quiet) bank(`magic/${family}_release`, .7);
     if (tgt.id && BOLT_OF[dtype] && !quiet) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
-    (quiet ? (cb) => setTimeout(cb, 420) : (cb) => spellBolt(caster, at, sp.fx, cb))(() => {
+    // Healing is carried by an orb (Sam, 2026-10-13: "healing word should not look like a projectile but an
+    // orb"): a soft glowing sphere leaves the caster's hands, arcs over to the ally and sinks into them;
+    // the shimmer and the halo follow. Everything else that flies is a bolt.
+    const carry = quiet ? (cb) => setTimeout(cb, 420)
+      : sp.kind === "heal" ? (cb) => healOrb(caster, tgt, cb)
+      : (cb) => spellBolt(caster, at, sp.fx, cb);
+    carry(() => {
       const m = c.sheet.magic;
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
@@ -1686,6 +1724,7 @@ function castSpell(caster, tgt, name, done){
       } else if (sp.kind === "heal"){
         const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300); spawnFx("healingShimmer", {at: tgt, sq: 2, anchor: "mid"});
+        spawnFx("pxGlow", {at: tgt, sq: 1.7, anchor: "mid", loop: true, until: now + 2600, alpha: .85});
         popText(tgt, `+${d}`, "#9ff2c8"); burst(tgt, "#9ff2c8", 14); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
       } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6); spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8}); addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else {                                                                    // a save
@@ -1886,12 +1925,30 @@ function swipeStyle(atk, crit){
   if (n.includes("unarmed") || n.includes("club") || n.includes("mace")) return {col: "#ffe2b0", core: "#ffffff", kind: "slash"};
   return {col: "#dfe7ff", core: "#ffffff", kind: "slash"};
 }
+// The healing orb: a soft sphere of light that leaves the caster's hands, arcs over and sinks into the
+// ally. Drawn (a radial glow with a hot core, motes trailing), not a sheet, so it is a ball and not a ring.
+function healOrb(from, to, then){
+  const m = SPR[from.id].json, sc = actorScale(from); sparks.push({orb: true, from, to, x: from.x, y: from.y - m.pivot[1] * sc * .6, col: "#9ff2c8", core: "#ffffff", t0: now, life: 760, arc: 70, then});
+}
+function drawOrb(s, k){
+  const e = k * k * (3 - 2 * k), A = s.from, B = s.to, am = SPR[A.id].json, bm = SPR[B.id].json;
+  const ax = A.x, ay = A.y - am.pivot[1] * actorScale(A) * .6, bx = B.x, by = B.y - bm.pivot[1] * actorScale(B) * .55;
+  const x = ax + (bx - ax) * e, y = ay + (by - ay) * e - Math.sin(e * Math.PI) * s.arc, r = 15 * actorScale(A) * (1 + .12 * Math.sin(now / 70));
+  if (Math.random() < .6) sparks.push({x: x + (Math.random() - .5) * 8, y: y + (Math.random() - .5) * 8, vx: (Math.random() - .5) * 30, vy: -20 - Math.random() * 30, col: s.col, t0: now, life: 380});
+  ctx.save(); ctx.globalAlpha = k > .9 ? 1 - (k - .9) / .1 : 1;
+  const halo = ctx.createRadialGradient(x, y, 0, x, y, r * 2.6); halo.addColorStop(0, "rgba(159,242,200,.55)"); halo.addColorStop(1, "rgba(159,242,200,0)");
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(x, y, r * 2.6, 0, Math.PI * 2); ctx.fill();
+  const ball = ctx.createRadialGradient(x - r * .3, y - r * .3, r * .1, x, y, r); ball.addColorStop(0, s.core); ball.addColorStop(.45, s.col); ball.addColorStop(1, "rgba(120,220,170,.15)");
+  ctx.shadowColor = s.col; ctx.shadowBlur = 24; ctx.fillStyle = ball; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
 function spellBolt(from, to, col, then){ const m = SPR[from.id].json, sc = actorScale(from); sparks.push({bolt: true, x: from.x, y: from.y - m.pivot[1] * sc * .6, tx: to.x, ty: to.y - (to.id ? SPR[to.id].json.pivot[1] * actorScale(to) * .5 : 0), col, t0: now, life: 260, then}); }
 function drawCombatFx(){
   for (let i = sparks.length - 1; i >= 0; i--){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
     if (s.swipe){ drawSwipe(s, k); continue; }
+    if (s.orb){ drawOrb(s, k); continue; }
     if (s.bolt){ const x = s.x + (s.tx - s.x) * k, y = s.y + (s.ty - s.y) * k; ctx.save(); ctx.shadowColor = s.col; ctx.shadowBlur = 24; ctx.fillStyle = s.col; ctx.globalAlpha = .95;
       ctx.beginPath(); ctx.ellipse(x, y, 9, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = .4; ctx.beginPath(); ctx.ellipse(x - (s.tx - s.x) * .06, y - (s.ty - s.y) * .06, 14, 6, Math.atan2(s.ty - s.y, s.tx - s.x), 0, Math.PI * 2); ctx.fill(); ctx.restore(); continue; }
     const t = (now - s.t0) / 1000, x = s.x + s.vx * t, y = s.y + s.vy * t + 180 * t * t;
@@ -1955,7 +2012,8 @@ function combatTargetHint(){
   if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}`;
   const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t), need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
   let p1 = (21 - need) / 20; if (adv > 0) p1 = 1 - (1 - p1) ** 2; else if (adv < 0) p1 = p1 ** 2;
-  return `${fname(t)} · AC ${ac} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft`;
+  const sn = p.atk ? sneakState(a, t, p.atk, feetBetween(a, t) > (p.atk.reach || 5) + 2) : null;
+  return `${fname(t)} · AC ${ac} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft${sn ? " · " + sn.why : ""}`;
 }
 
 // ---------- creatures Malachar brings in ----------
