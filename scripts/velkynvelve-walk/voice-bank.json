@@ -42,6 +42,19 @@
  },
  "jorlan": {
   "line": "Go. Quickly, before the next watch.",
-  "voice": "IKne3meq5aSn9XLyUdCD"
- }
+  "voice": "IKne3meq5aSn9XLyUdCD",
+  "taunts": [
+   "I know this pen better than you know your own hands.",
+   "Fast. Not fast enough."
+  ]
+ },
+ "drow-guard-male": {
+  "voice": "ttNi9wVM8M97tsxE7PFZ (Drow Guard row)",
+  "taunts": [
+   "Back in your cage, meat.",
+   "Lolth's spiders eat better than you fight.",
+   "Kneel, and I will make it quick."
+  ]
+ },
+ "_taunts_note": "Taunt lines are the project's own placeholders, not book text; files audio/voice/<id>-t<n>.mp3, rendered through /api/npc-tts in the row's saved voice. The female guard has no voice of her own on the row (Drow Guard is a male voice), so she taunts in text only until one is designed."
 }
