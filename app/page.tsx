@@ -1,5 +1,6 @@
 "use client"
 
+import { addressedNpc } from "@/lib/addressed-npc"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { freshScene, nextNudge, nudgePrompt, onNudged, onPlayerMessage, type PacingState } from "@/lib/pacing"
 import Link from "next/link"
@@ -290,6 +291,21 @@ export default function DashboardPage() {
   // Who the player sat down with at camp. While set, the compact view steps
   // aside and the dashboard shows only the NPC / DM window for the conversation.
   const [campTalkWith, setCampTalkWith] = useState<string | null>(null)
+  // The window turns to whoever you address, or whoever speaks to you (Sam, 2026-10-12: "talk to
+  // ONLY the character we are speaking to or is speaking to us"). "talk to ront, say hi" typed while
+  // facing Eldeth used to leave Ront faceless and voiceless: the window and the voice were locked to
+  // the first partner. Only someone ON STAGE (an active row) may take the window this way.
+  const campTalkWithRef = useRef<string | null>(null)
+  campTalkWithRef.current = campTalkWith
+  const npcEncountersRef = useRef<typeof npcEncounters>([])
+  npcEncountersRef.current = npcEncounters
+  const turnTo = useCallback((name: string) => {
+    if (!campTalkWithRef.current || name.toLowerCase() === campTalkWithRef.current.toLowerCase()) return false
+    const onStage = npcEncountersRef.current.find((n) => n.is_active && n.name.toLowerCase() === name.toLowerCase())
+    if (!onStage) return false
+    setCampTalkWith(onStage.name); setTalkOpening(null)
+    return true
+  }, [])
   // Map talk: /?view=full&from=map&talk=<name>&line=<opener>&return=/velkynvelve. The painted map
   // hands over the NPC and the line they opened with; "Back to the map" returns to `return`.
   const [talkReturn, setTalkReturn] = useState<string | null>(null)
@@ -844,6 +860,9 @@ if (error) {
           setDialogue(prev =>
             mergeDialogue(prev, newEntry),
           )
+          // Someone else on stage spoke up in the conversation: the window turns to them.
+          const row = payload.new as { speaker?: string; speaker_type?: string }
+          if (row.speaker_type === "npc" && row.speaker) turnTo(row.speaker)
         }
       )
       .subscribe()
@@ -1199,7 +1218,10 @@ if (error) {
           // Send to Lich, carrying THIS browser's character + claim token.
           // In the camp talk window, name the partner so Malachar answers as them.
           // Otherwise name whoever is in the NPC window: "who are you?" is said to them (Sam, 2026-10-12).
-          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current })
+          // Naming someone else who is in the room turns the conversation to them.
+          const named = campTalkWith ? addressedNpc(message, npcEncounters.filter((n) => n.is_active)) : null
+          const partner = named && turnTo(named) ? (npcEncounters.find((n) => n.name.toLowerCase() === named.toLowerCase())?.name ?? named) : campTalkWith
+          const response = await sendToLich(message, selectedCharacterId, claimToken, partner ? { talkWith: partner, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current })
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1235,7 +1257,7 @@ if (error) {
             // Refresh character data to pick up any XP or items from the Lich
             await fetchCharacterData()
           }
-  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith, talkFrom, talkArea])
+  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith, talkFrom, talkArea, npcEncounters, turnTo])
 
   // Typed messages cannot impersonate the app. "[Dice Roll]" and the 🎲 prefix
   // are reserved for rolls the physics engine actually resolved; "[Reaction]"
