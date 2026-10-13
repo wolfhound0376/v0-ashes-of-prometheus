@@ -580,10 +580,49 @@ function narrate(a, text){
   if (a){ a.lastBark = now; lastAnyBark = now; }
 }
 // A character's idle line: narration unless it is written as speech (opens with a quotation mark).
+// The strip and the sprites must agree (Sam, 2026-10-11: "make sure the sprites match what is happening
+// in the narration"). Two rules:
+//  1. Someone busy with something you can SEE (asleep, eating, sitting, playing) is narrated doing that,
+//     not given an idle line that contradicts the picture.
+//  2. When an idle line is narrated, the sprite acts it out: stops wandering or patrolling, sits if the
+//     line says so, turns to whoever the line is about, and holds it while the line is up.
+const DOING = {
+  sleep: s => `${s} is asleep, curled against the stone.`,
+  eat: s => `${s} eats from a clay bowl.`,
+  sit: s => `${s} sits on the cold floor.`,
+  perform: s => `${s} plays something quiet.`,
+};
+const PARTNER = {topsy: "turvy", turvy: "topsy"};
 function ambient(a){
-  const line = a && a.barks && a.barks.length ? a.barks[Math.floor(Math.random() * a.barks.length)] : "";
+  if (!a) return;
+  const S = SHORT[a.id] || SPR[a.id].json.name.split(" ")[0];
+  const busy = a.act && DOING[a.act];
+  let line = a.barks && a.barks.length ? a.barks[Math.floor(Math.random() * a.barks.length)] : "";
+  if (busy && !(a.act === "sit" && /\bsit/i.test(line))){ narrate(a, DOING[a.act](S)); return; }   // rule 1
   if (!line) return;
-  if (/^["“]/.test(line)) bark(a, line.replace(/^["“]|["”]$/g, "")); else narrate(a, line);
+  if (/^["“]/.test(line)){ bark(a, line.replace(/^["“]|["”]$/g, "")); return; }
+  enact(a, line); narrate(a, line);                                                      // rule 2
+}
+const faceTo = (a, b) => { if (b) a.face = faceOf(b.x - a.x, b.y - a.y); };
+function enact(a, line){
+  const hold = 7500;
+  a.path = []; a.onArrive = null; a.slow = false;
+  if (a.act) stopActivity(a);
+  a.actUntil = now + hold;                                   // patrols and wanderers pick up again after this
+  const sp = SPR[a.id];
+  if (/\bsits?\b|\bsitting\b/i.test(line) && sp.img.sit && sp.json.animations.sit){ a.act = "sit"; setAnim(a, "sit"); a.t0 = now; }
+  else { a.act = a.patrol || a.static ? null : "pose"; setAnim(a, "idle"); }
+  const partner = PARTNER[a.id] && npcs.find(n => n.id === PARTNER[a.id]);
+  if (/\bwhisper|\bnudges?\b/i.test(line) && partner){
+    faceTo(a, partner);
+    if (/to each other/i.test(line)){ faceTo(partner, a); partner.path = []; if (partner.act) stopActivity(partner); partner.act = "pose"; partner.actUntil = now + hold; }
+    if (/when you look/i.test(line)) setTimeout(() => { faceTo(a, leader); if (partner) faceTo(partner, leader); }, 2600);
+    if (/points? at the gate/i.test(line)){ const g = node.zones.find(z => z.kind === "gate"); if (g) setTimeout(() => faceTo(a, zoneCenter(g)), 1400); }
+  } else if (/stares at nothing/i.test(line)){
+    a.face = faceOf(a.x - leader.x, a.y - leader.y);       // turned away from you
+  } else if (/\byou\b|\byour\b|\beveryone\b/i.test(line)){
+    faceTo(a, leader);
+  }
 }
 function bark(a, text, ms = 4200, opts = {}){
   if (!a) return;
@@ -1572,7 +1611,7 @@ function update(dt){
       if (n.talk && !state.talked[n.id] && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){
         leader.path = []; openTalk(n);
       } else if (!n.talk && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && n.barks.length){
-        ambient(n); n.face = faceOf(leader.x - n.x, leader.y - n.y);
+        ambient(n);                                       // the line decides which way they look
       }
     }
     if (now > nextAmbient && npcs.length){
