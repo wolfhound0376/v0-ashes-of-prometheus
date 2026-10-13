@@ -78,7 +78,7 @@ NODES = {
          dict(id="jimjar",x=1840,y=1130,face=3,talk=False,barks=["Jimjar offers odds on which of you the drow will feed to the spiders first."]),
          dict(id="topsy",x=1980,y=1220,face=2,talk=False,barks=["The twins whisper to each other, then go quiet when you look over."]),
          dict(id="turvy",x=2050,y=1190,face=2,talk=False,barks=["Turvy nudges Topsy and points at the gate."]),
-         dict(id="shuushar",x=1300,y=780,face=0,talk=False,barks=["Shuushar sits still, breathing slowly, as calm as deep water."]),
+         dict(id="shuushar",x=1300,y=780,face=0,talk=False,barks=["Shuushar stands very still, breathing slowly, as calm as deep water."]),
          dict(id="stool",x=1640,y=1060,face=4,talk=False,barks=["Stool's cap sways. A faint, friendly haze of spores drifts your way."])]),
  12: dict(slug="node-12-quaggoth-den", name="Quaggoth Den", scale=0.75,
    floors=[dict(poly=P((520,460),(960,300),(1280,240),(1720,280),(2000,400),(2200,660),(2120,1040),(1800,1200),(1240,1180),(800,1120),(320,1000),(180,840),(280,600))),dict(rect=[1260,0,1440,280]),dict(rect=[880,1140,1200,1339])],
