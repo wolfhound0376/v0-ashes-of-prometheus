@@ -115,15 +115,45 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .zoom button:hover{background:var(--rule)}
 .zoom .fit{width:auto;padding:0 10px;font-family:var(--face-mono);font-size:var(--s-1)}
 
-.combatbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(30,10,12,.92);border:1px solid var(--blood);border-radius:6px;padding:6px 8px;max-width:calc(100% - 24px);flex-wrap:wrap;justify-content:center}
-.combatbar[hidden]{display:none}
-.combatbar .lbl{font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.06em;padding:0 4px}
-.turns{display:flex;gap:4px;flex-wrap:wrap}
-.turn{font:inherit;font-size:var(--s-1);background:transparent;color:var(--ink-dim);border:1px solid var(--rule);border-radius:999px;padding:2px 9px;cursor:pointer}
-.turn.foe{color:#f0b8b0}
-.turn[aria-current="true"]{color:var(--ink);border-color:var(--ember);background:rgba(232,162,74,.12)}
-.turn.down{text-decoration:line-through;opacity:.5}
-.combatbar .note{font-family:var(--face-mono);font-size:.66rem;color:var(--ink-dim);flex-basis:100%;text-align:center}
+/* combat: the Octopath-style frame over the plate. Nothing here is a board; it is HUD over the painting. */
+.combat{position:absolute;inset:0;pointer-events:none;font-family:var(--face-body)}
+.combat[hidden]{display:none}
+.combat .cbt-ui{pointer-events:auto}
+.cbt-top{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,rgba(26,10,12,.94),rgba(14,8,10,.9));border:1px solid var(--blood);border-radius:8px;padding:6px 10px;max-width:calc(100% - 24px);box-shadow:0 6px 24px rgba(0,0,0,.5)}
+.cbt-top .lbl{font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.08em;padding:0 4px}
+.cbt-top .round{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);min-width:60px;text-align:center}
+.cbt-top .btn{padding:4px 10px;font-size:var(--s-1)}
+.turns{display:flex;gap:6px;align-items:flex-end}
+.turn{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s}
+.turn canvas{width:40px;height:40px;image-rendering:pixelated;border-radius:50%;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));border:1px solid var(--rule)}
+.turn.foe canvas{border-color:#a2423a}
+.turn.now{width:64px;opacity:1;color:var(--ink)}
+.turn.now canvas{width:54px;height:54px;border:2px solid var(--ember);box-shadow:0 0 14px rgba(232,162,74,.55)}
+.turn.now.foe canvas{border-color:#ff6b5e;box-shadow:0 0 14px rgba(255,107,94,.5)}
+.turn.down{opacity:.35;filter:grayscale(1)}
+.turn span{max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cbt-party{position:absolute;right:10px;bottom:58px;display:flex;flex-direction:column;gap:5px;width:208px}
+.cbt-party .cpc{background:linear-gradient(90deg,rgba(26,14,10,.94),rgba(18,10,8,.82));border:1px solid var(--rule);border-left:3px solid var(--rule);border-radius:5px;padding:5px 8px 6px;transition:border-color .2s,transform .2s}
+.cbt-party .cpc.now{border-color:var(--ember);border-left-color:var(--ember);transform:translateX(-6px);box-shadow:0 0 14px rgba(232,162,74,.25)}
+.cbt-party .cpc.down{opacity:.5;filter:grayscale(1)}
+.cbt-party .nm{font-family:var(--face-display);font-size:var(--s0);color:var(--ink);display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.cbt-party .nm small{font-family:var(--face-mono);font-size:.62rem;color:var(--ink-dim);letter-spacing:0}
+.cbt-party .nm b{font-size:.8rem;margin-left:2px}
+.cbt-party .hp{position:relative;height:9px;margin-top:4px;background:#2a1612;border:1px solid #4a2420;border-radius:3px;overflow:hidden}
+.cbt-party .hp i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#c4432f,#ff7a5c);transition:width .35s ease-out}
+.cbt-party .hp span{position:absolute;inset:0;font-family:var(--face-mono);font-size:.56rem;line-height:9px;text-align:right;padding-right:3px;color:#fff;text-shadow:0 0 2px #000}
+.cbt-party .slots{font-size:.6rem;color:#b8a0ff;letter-spacing:.1em;margin-top:2px;display:block}
+.cbt-menu{position:absolute;display:flex;flex-direction:column;min-width:178px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:4px;box-shadow:0 8px 28px rgba(0,0,0,.6);z-index:3}
+.cbt-menu[hidden]{display:none}
+.cbt-menu button{all:unset;display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:5px 10px 5px 18px;border-radius:4px;cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:var(--s0);position:relative}
+.cbt-menu button small{font-family:var(--face-mono);font-size:.6rem;color:var(--ink-dim);letter-spacing:0}
+.cbt-menu button:hover,.cbt-menu button:focus-visible{background:rgba(232,162,74,.16)}
+.cbt-menu button:hover::before,.cbt-menu button:focus-visible::before{content:"▸";position:absolute;left:5px;color:var(--ember)}
+.cbt-menu button.primary{color:#ffd9a0}
+.cbt-menu button:disabled{opacity:.38;cursor:default}
+.cbt-hint{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);background:rgba(14,8,10,.9);border:1px solid var(--rule);border-radius:999px;padding:4px 14px;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink)}
+.cbt-hint[hidden]{display:none}
+@media (max-width:700px){.cbt-party{width:150px;bottom:62px}.cbt-top .lbl{display:none}}
 
 /* dialogs and the DM drawer */
 .dialog{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);padding:16px}
@@ -232,12 +262,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="fit" id="zFit">Fit</button>
       <button id="zIn" aria-label="Zoom in">+</button>
     </div>
-    <div class="combatbar" id="combatbar" hidden>
-      <span class="lbl">Combat</span>
-      <div class="turns" id="turns"></div>
-      <button class="btn" id="nextTurn">Next turn</button>
-      <button class="btn danger" id="endCombat">End combat</button>
-      <div class="note">Turn order is a placeholder. Initiative, hits and damage come from the DM core.</div>
+    <div class="combat" id="combat" hidden>
+      <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn danger" id="endCombat">End fight</button></div>
+      <div class="cbt-party cbt-ui" id="cbtParty"></div>
+      <div class="cbt-menu cbt-ui" id="cbtMenu" hidden></div>
+      <div class="cbt-hint" id="cbtHint" hidden></div>
     </div>
     <div class="dm" id="dm" hidden>
       <h4>Jump to area</h4>
@@ -472,7 +501,8 @@ function zoomAt(px, py, f){
 function draw(){
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
   const s = base * view.z * dpr;
-  ctx.setTransform(s, 0, 0, s, view.tx * dpr, view.ty * dpr);
+  const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
+  ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
   drawDoor();
   // exits: soft glows so players can see the ways out
@@ -509,6 +539,7 @@ function draw(){
     ctx.beginPath(); ctx.ellipse(marker.x, marker.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
   }
   for (const c of node.chains || []) drawChain(c);
+  drawCombatGround();
   const list = actors.filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
   for (const a of list){
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
@@ -537,6 +568,7 @@ function draw(){
       tc.globalCompositeOperation = "source-in"; tc.fillStyle = a.flashCol || "#fff"; tc.fillRect(0, 0, cw, ch); tc.globalCompositeOperation = "source-over";
       ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
     }
+    if (mode === "combat") drawConds(a);
     if (a.talk && !state.talked[a.id] && mode === "explore"){
       ctx.globalAlpha = 1; const bob = Math.sin(now / 260) * 6, top = dy + dh * .18 - 26 + bob;
       ctx.fillStyle = "#e8a24a"; ctx.strokeStyle = "#1a0f05"; ctx.lineWidth = 4;
@@ -544,6 +576,7 @@ function draw(){
       ctx.strokeText("!", a.x, top); ctx.fillText("!", a.x, top);
     }
   }
+  drawCombatFx();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -831,7 +864,7 @@ function zoneAt(x, y){ return node.zones.find(z => inRect(z.rect, x, y)) || null
 async function enterNode(n, opts = {}){
   const from = cur, fromScale = node.scale;
   mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
-  $("combatbar").hidden = true; $("vignette").classList.remove("on");
+  $("combat").hidden = true; cbt = null; combatBusy = false; $("vignette").classList.remove("on");
   bubbles.forEach(b => b.until = 0);
   if (!opts.slide) await new Promise(r => setTimeout(r, 360));
   cur = n; node = SPEC[n];
@@ -1110,9 +1143,86 @@ function openGate(){
   };
 }
 
-// ---------- combat ----------
-let turnOrder = [], turnIdx = 0, combatBusy = false;
-const activeActor = () => turnOrder[turnIdx];
+// ---------- combat (HD-2D) ----------
+// The fight runs on the painted plate with the party's own sprites, presented the Octopath way (Sam,
+// 2026-10-12: "have the combat run visually like this octopath system but use the DND system we have
+// been creating"): a turn strip across the top, the party's column down the left, the action menu beside
+// whoever is up, damage numbers, hit-stop, camera push-ins. The rules under it are 5e. This step resolves
+// them in the page from the party's real sheets and the bestiary rows so the look can be judged; step 2
+// hands every roll to the DM core (/api/combat) and this becomes presentation only. Nothing here is made
+// up: the sheets are the `characters` rows (snapshot 2026-10-12), the foes are `bestiary` rows, the
+// spells are SRD 5.2.1 at level 1.
+const SHEETS = {
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3},
+           attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
+           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: []}},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1},
+           attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
+           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3},
+           attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
+           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}},
+  freia:  {name: "Fifi", cls: "Rogue", hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1},
+           attacks: [{name: "Dagger", hit: 5, dmg: "1d4+3", type: "piercing", reach: 5, thrown: 60, sneak: "1d6"}, {name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
+           magic: null},
+};
+// Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
+// sheet_save_proficiencies is wired in step 2). Monster saves below are their ability modifiers, as the rows carry no save list.
+const FOE_BLOCKS = {
+  "drow-guard-male":   {name: "Drow guard", hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "drow-guard-female": {name: "Drow guard", hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  jorlan:              {name: "Jorlan", hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "giant-spider": {name: "Giant spider", hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
+                   attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d8", type: "poison", half: true}}]},
+  quaggoth: {name: "Quaggoth", hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
+             attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], multi: 2, woundedFury: 10},
+  "gray-ooze": {name: "Gray ooze", hp: 22, ac: 8, speed: 10, init: -2, saves: {str: 1, dex: -2, con: 3, int: -5, wis: -2, cha: -4}, resist: ["acid", "cold", "fire"],
+                immuneCond: ["blinded", "charmed", "deafened", "frightened", "prone"],
+                attacks: [{name: "Pseudopod", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5, extra: {dmg: "2d6", type: "acid"}}]},
+};
+// SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
+const SPELLS = {
+  "Ray of Frost":       {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "cold", fx: "#9fdcff", note: "speed −10 ft"},
+  "Shocking Grasp":     {lvl: 0, kind: "attack", range: 5, dmg: "1d8", type: "lightning", fx: "#fff27a", note: "no reactions"},
+  "Chill Touch":        {lvl: 0, kind: "attack", range: 5, dmg: "1d10", type: "necrotic", fx: "#8fd48f", note: "can't regain HP"},
+  "Toll the Dead":      {lvl: 0, kind: "save", save: "wis", range: 60, dmg: "1d8", dmgHurt: "1d12", type: "necrotic", fx: "#b39ddb"},
+  "Vicious Mockery":    {lvl: 0, kind: "save", save: "wis", range: 60, dmg: "1d6", type: "psychic", fx: "#ff9bd2", cond: "mocked"},
+  "Guiding Bolt":       {lvl: 1, kind: "attack", range: 120, dmg: "4d6", type: "radiant", fx: "#fff1b0", cond: "lit"},
+  "Healing Word":       {lvl: 1, kind: "heal", range: 60, dmg: "2d4", bonus: true, fx: "#9ff2c8"},
+  "Shield of Faith":    {lvl: 1, kind: "buff", range: 60, bonus: true, cond: "shielded", fx: "#cfe8ff"},
+  "Faerie Fire":        {lvl: 1, kind: "save", save: "dex", range: 60, area: 20, cond: "lit", fx: "#c8a2ff"},
+  "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff"},
+  "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
+};
+const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
+                    shielded: ["◇", "#cfe8ff", "+2 AC"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"]};
+
+// dice: "1d8+3", "2d6", "4" → {total, rolls}
+function roll(expr, crit){
+  let total = 0; const rolls = [];
+  for (const term of String(expr).replace(/\s+/g, "").match(/[+-]?[^+-]+/g) || []){
+    const sign = term[0] === "-" ? -1 : 1, t = term.replace(/^[+-]/, ""), m = t.match(/^(\d*)d(\d+)$/);
+    if (m){ const n = (+m[1] || 1) * (crit ? 2 : 1); for (let i = 0; i < n; i++){ const r = 1 + Math.floor(Math.random() * +m[2]); rolls.push(r); total += sign * r; } }
+    else total += sign * (+t || 0);
+  }
+  return {total: Math.max(0, total), rolls};
+}
+function d20(adv){ const a = 1 + Math.floor(Math.random() * 20); if (!adv) return a; const b = 1 + Math.floor(Math.random() * 20); return adv > 0 ? Math.max(a, b) : Math.min(a, b); }
+
+// one 5-ft square in plate pixels where this actor stands (the sprites are drawn at ppu px per square)
+function ftPx(a){ return 96 * BASE * node.scale * depthAt(a.y) * (a.big || 1) / 5; }
+function feetBetween(a, b){ return Math.hypot(b.x - a.x, b.y - a.y) / ftPx(a); }
+function reachPx(att, tgt, ft){ const m = SPR[tgt.id].json; return ft * ftPx(att) + 22 * actorScale(tgt) * (m.cell[0] / 128); }
+
+let cbt = null;                                   // the running fight
+const activeActor = () => cbt ? cbt.order[cbt.idx] : null;
+let combatBusy = false;
+function fighterFor(a){
+  const s = a.kind === "pc" ? SHEETS[a.id] : FOE_BLOCKS[a.id];
+  const hpMax = a.kind === "pc" ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = a.kind === "pc" ? s.hp : (a.hp ?? hpMax);
+  return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
+          hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
+}
 function startCombat(foeIds, label){
   if (mode !== "explore") return;
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
@@ -1138,7 +1248,7 @@ function startCombat(foeIds, label){
       npcs = npcs.filter(n => n !== f);
     } else {
       start = nearestWalkable(L.x + dir.x * 560 * sc + perp.x * k * 200 * sc, L.y + dir.y * 560 * sc + perp.y * k * 200 * sc, placed);
-      f = mkActor(id, start.x, start.y, "foe", {alpha: 0, hp: 1});
+      f = mkActor(id, start.x, start.y, "foe", {alpha: 0});
     }
     const stop = nearestWalkable(L.x + dir.x * 300 * sc + perp.x * k * 190 * sc, L.y + dir.y * 300 * sc + perp.y * k * 190 * sc, placed); placed.push(stop);
     f.path = findPath(start, stop); f.stop = stop; return f;
@@ -1152,56 +1262,327 @@ function startCombat(foeIds, label){
   const z = Math.max(1.4, Math.min(2.4, Math.min(r.width / (spanX * base), r.height / (spanY * base))));
   camTo(z, cx, cy, 900);
   $("vignette").classList.add("on"); setTrack("combat");
-  turnOrder = [...party, ...foes]; turnIdx = 0; $("combatbar").hidden = false; renderTurns();
-  log(`<em>${esc(label || "Steel comes out.")}</em>`);
+  // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
+  const order = [...party, ...foes].filter(a => !a.down);
+  for (const a of order){ a.c = a.c && a.kind === "pc" ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
+  order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
+  cbt = {order, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
+  $("combat").hidden = false; $("cbtMenu").hidden = true; renderTurns(); renderParty();
+  log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
   setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f)) bark(f, b[i % b.length], 2600); }, i * 500)), 700);
+  setTimeout(() => { if (cbt) nextTurn(true); }, 1400);
+}
+const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
+function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
+
+// ----- the strip and the column -----
+function faceCanvas(a, size){
+  const c = document.createElement("canvas"); c.width = c.height = size; const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+  const m = SPR[a.id].json, [cw, ch] = m.cell, img = SPR[a.id].img.idle, k = Math.min(1.9, 96 / m.ppu * 1.25) * size / cw;   // same crop as the party portraits
+  g.drawImage(img, 0, 0, cw, ch, (size - cw * k) / 2, size * .92 - m.pivot[1] * k, cw * k, ch * k); return c;
 }
 function renderTurns(){
+  if (!cbt) return;
   const el = $("turns"); el.innerHTML = "";
-  turnOrder.forEach((a, i) => { const b = document.createElement("button"); b.className = "turn" + (a.kind === "foe" ? " foe" : "") + (a.down ? " down" : "");
-    b.textContent = SHORT[a.id] || SPR[a.id].json.name; b.setAttribute("aria-current", String(i === turnIdx));
-    b.onclick = () => { if (!combatBusy && !a.down){ turnIdx = i; renderTurns(); } }; el.appendChild(b); });
+  const n = cbt.order.length;
+  for (let k = 0; k < n; k++){
+    const i = (Math.max(0, cbt.idx) + k) % n, a = cbt.order[i];
+    const b = document.createElement("div"); b.className = "turn" + (a.kind === "foe" ? " foe" : "") + (a.down ? " down" : "") + (i === cbt.idx ? " now" : "");
+    b.appendChild(faceCanvas(a, i === cbt.idx ? 54 : 40));
+    const s = document.createElement("span"); s.textContent = fname(a); b.appendChild(s); b.title = `${fname(a)} · initiative ${a.c.init}`;
+    el.appendChild(b);
+  }
+  $("cbtRound").textContent = cbt.round ? `Round ${cbt.round}` : "";
 }
-function nextTurn(){
-  if (combatBusy) return;
-  for (let k = 0; k < turnOrder.length; k++){ turnIdx = (turnIdx + 1) % turnOrder.length; if (!turnOrder[turnIdx].down) break; }
+function renderParty(){
+  const el = $("cbtParty"); el.innerHTML = "";
+  for (const p of party){
+    const c = p.c || fighterFor(p), row = document.createElement("div"); row.className = "cpc" + (p === activeActor() ? " now" : "") + (p.down ? " down" : "");
+    const slots = Object.entries(c.slots).map(([l, n]) => `<span class="slots" title="Level ${l} spell slots">${"●".repeat(n)}${"○".repeat(Math.max(0, (c.sheet.magic.slots[l] || 0) - n))}</span>`).join("");
+    const conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
+    row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}</div>
+      <div class="hp"><i style="width:${100 * c.hp / c.hpMax}%"></i><span>${c.hp} / ${c.hpMax}</span></div>${slots}`;
+    el.appendChild(row);
+  }
+}
+
+// ----- turns -----
+function nextTurn(first){
+  if (!cbt || (combatBusy && !first)) return;
+  closeMenu(); cbt.phase = "idle";
+  for (let k = 0; k < cbt.order.length; k++){
+    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0) cbt.round++;
+    const a = cbt.order[cbt.idx]; if (!a.down && actors.includes(a)) break;
+  }
+  const a = activeActor(); if (!a) return;
+  a.c.conds.delete("dodging");
+  renderTurns(); renderParty();
+  if (a.c.conds.has("asleep")){
+    const s = d20() + (a.c.sheet.saves.wis || 0);
+    if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
+    else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
+  }
+  a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
+  if (a.kind === "foe"){ foeTurn(a); return; }
+  camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
+  openMenu(a);
+}
+// the Octopath-style command list beside whoever is up
+function openMenu(a, sub){
+  const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
+  const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; b.innerHTML = `<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
+  const c = a.c, s = c.sheet;
+  if (sub === "attack"){
+    for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
+    add("Back", "", () => openMenu(a));
+  } else if (sub === "cast"){
+    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, () => aim(a, {spell: nm})); }
+    for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const ok = (c.slots[sp.lvl] || 0) > 0 && (!sp.bonus || c.bonus);
+      add(nm, `level ${sp.lvl}${sp.bonus ? " · bonus action" : ""} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, ok ? () => aim(a, {spell: nm}) : null); }
+    add("Back", "", () => openMenu(a));
+  } else {
+    add("Attack", s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
+    if (s.magic) add("Cast", `DC ${s.magic.dc} · +${s.magic.hit}`, c.action || c.bonus ? () => openMenu(a, "cast") : null);
+    add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
+    add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
+    add("End turn", "Enter", () => nextTurn());
+  }
+  placeMenu();
+}
+function closeMenu(){ $("cbtMenu").hidden = true; hint(""); }
+function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
+function placeMenu(){
+  const a = activeActor(), m = $("cbtMenu"); if (!cbt || m.hidden || !a) return;
+  const sc = actorScale(a), mm = SPR[a.id].json, [sx, sy] = w2s(a.x + mm.cell[0] * sc * .42, a.y - mm.pivot[1] * sc * .9);
+  const r = stage.getBoundingClientRect(); m.style.left = Math.min(r.width - m.offsetWidth - 8, Math.max(8, sx)) + "px"; m.style.top = Math.min(r.height - m.offsetHeight - 8, Math.max(8, sy)) + "px";
+}
+// pick a target for an attack or a spell; the click handler finishes it
+function aim(a, what){
+  closeMenu(); cbt.phase = "target"; cbt.pend = what;
+  const sp = what.spell && SPELLS[what.spell];
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(`${what.spell}: click a friend.`); return; }
+  if (sp && sp.area){ hint(`${what.spell}: click where it lands (${sp.area}-ft area).`); return; }
+  hint(`${what.spell || what.atk.name}: click a foe. Esc to cancel.`);
+}
+function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && cbt.phase === "move"){ openMenu(activeActor()); } }
+function combatClick(w){
+  if (!cbt || combatBusy) return;
+  const a = activeActor(); if (!a || a.kind !== "pc") return;
+  if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
+  if (cbt.phase !== "target") return;
+  const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(party, w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; } castSpell(a, t, p.spell); return; }
+  if (sp && sp.area){ castSpell(a, w, p.spell); return; }
+  const t = hitActor(foes, w); if (!t || t.down) return;
+  if (p.atk) attackWith(a, t, p.atk); else castSpell(a, t, p.spell);
+}
+// walk up to the movement left, deducting what is used
+function moveActor(a, w, done){
+  const p = nearestWalkable(w.x, w.y); let path = findPath(a, p); if (!path.length){ done && done(); return; }
+  const px = ftPx(a); let left = a.c.move * px, prev = a, cut = [];
+  for (const q of path){ const d = Math.hypot(q.x - prev.x, q.y - prev.y); if (d > left){ const k = left / d; cut.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); left = 0; break; } cut.push(q); left -= d; prev = q; }
+  a.c.move = Math.max(0, Math.round(left / px / 5) * 5); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
+  combatBusy = true; closeMenu(); a.path = cut; a.onArrive = () => { combatBusy = false; done && done(); };
+}
+
+// ----- resolving -----
+function advantageOn(att, tgt){ let adv = 0; if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep")) adv++; if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--; if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury) adv++; return Math.sign(adv); }
+function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0); }
+// a weapon attack: close to reach, swing, roll on the hit frame, then the number
+function attackWith(att, tgt, atk, done){
+  const c = att.c; if (att.kind === "pc"){ c.action = false; } closeMenu(); cbt.phase = "busy"; combatBusy = true;
+  const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
+  approachThen(att, tgt, reach, () => {
+    pushCam(att, tgt);
+    strike(att, tgt, () => {
+      const adv = advantageOn(att, tgt), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + atk.hit >= targetAc(tgt)); att.c.conds.delete("mocked");
+      const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
+      if (!hit){ miss(tgt); log(`${why} — miss.`); return; }
+      let dmg = roll(atk.dmg, crit), parts = [`${dmg.total} ${atk.type}`];
+      if (atk.sneak && standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
+      if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
+      damage(tgt, dmg.total, atk.type, crit, att);
+      if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
+      if (atk.rider && !tgt.down){ const s = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+        setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
+      log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
+    }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); });
+  });
+}
+function castSpell(caster, tgt, name, done){
+  const sp = SPELLS[name], c = caster.c; closeMenu(); cbt.phase = "busy"; combatBusy = true;
+  if (sp.bonus) c.bonus = false; else c.action = false;
+  if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
+  const at = tgt;                                                                // a point or an actor
+  if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
+  if (tgt.id) pushCam(caster, tgt);
+  playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
+  caster.once && (caster.once.hit = () => {
+    spellBolt(caster, at, sp.fx, () => {
+      const m = c.sheet.magic;
+      if (sp.kind === "attack"){
+        const adv = advantageOn(caster, tgt), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + m.hit >= targetAc(tgt));
+        const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
+        if (!hit){ miss(tgt); log(`${why} — miss.`); return; }
+        const d = roll(sp.dmg, crit); damage(tgt, d.total, sp.type, crit, caster); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
+        log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
+      } else if (sp.kind === "heal"){
+        const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
+        popText(tgt, `+${d}`, "#9ff2c8"); burst(tgt, "#9ff2c8", 14); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
+      } else if (sp.kind === "buff"){ addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
+      else {                                                                    // a save
+        const targets = sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt];
+        if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
+        const lines = [];
+        targets.forEach((t, i) => setTimeout(() => {
+          if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
+          const s = d20() + (t.c.sheet.saves[sp.save] || 0), ok = s >= m.dc;
+          let line = `${fname(t)} ${sp.save.toUpperCase()} ${s} vs DC ${m.dc}: ${ok ? "saves" : "fails"}`;
+          if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
+          if (sp.cond && !ok){ addCond(t, sp.cond); if (sp.cond === "asleep") t.c.sleptDc = m.dc; }
+          lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
+        }, i * 180));
+      }
+    });
+  });
+  setTimeout(() => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(caster, done); }, 1500);
+}
+function afterAction(a, done){
+  if (!cbt) return;
+  if (done){ done(); return; }
+  if (checkEnd()) return;
+  if (a.kind === "pc" && activeActor() === a){ if (a.c.action || a.c.bonus || a.c.move > 0) openMenu(a); else nextTurn(); }
+}
+function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(t, "immune", "#aaa"); return; } t.c.conds.add(k); popText(t, COND_GLYPH[k] ? COND_GLYPH[k][2].split(":")[0].toLowerCase() : k, COND_GLYPH[k] ? COND_GLYPH[k][1] : "#fff"); renderParty(); }
+function damage(t, n, type, crit, from){
+  const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
+  if ((s.resist || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resist", "#aaa"); }
+  t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
+  t.flash = now + 180; t.flashCol = "#fff";
+  popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
+  burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
+  t.c.conds.delete("asleep");
+  if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
+  renderParty();
+}
+function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
+function fall(t){
+  t.down = true; t.path = []; t.c.conds.clear();
+  if (SPR[t.id].img.dead) playOnce(t, "dead", () => {}); else { t.fading = true; }
+  log(`<b>${fname(t)}</b> ${t.kind === "pc" ? "goes down." : "is dead."}`);
+  if (t.creature) narrate(t, `${t.creature.name} is dead.`);
   renderTurns();
-  const a = activeActor(); if (a && a.kind === "foe") foeTurn(a);
 }
-function attack(att, tgt, done){
-  combatBusy = true;
-  const sc = actorScale(tgt), reach = 70 * sc * (SPR[tgt.id].json.cell[0] / 128) + 40 * actorScale(att);
-  const d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
-  const strike = () => {
-    att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
-    playOnce(att, "attack", () => { setAnim(att, "idle"); combatBusy = false; done && done(); });
-    att.once && (att.once.hit = () => { tgt.flash = now + 220; tgt.flashCol = att.kind === "foe" ? "#ff5040" : "#fff4d8";
-      if (SPR[tgt.id].img.dodge) playOnce(tgt, "dodge", () => setAnim(tgt, "idle")); });
-  };
-  if (d <= reach + 10){ strike(); return; }
-  const k = (d - reach) / d, goal = nearestWalkable(att.x + (tgt.x - att.x) * k, att.y + (tgt.y - att.y) * k);
-  att.path = findPath(att, goal); att.onArrive = strike;
-  if (!att.path.length) strike();
+// get within reach, then strike; the roll lands on the attack sheet's hit frame
+function approachThen(att, tgt, ft, then){
+  const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
+  if (d <= reach + 6){ then(); return; }
+  const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
+  const k = Math.min(need, budget) / d, goal = nearestWalkable(att.x + (tgt.x - att.x) * k, att.y + (tgt.y - att.y) * k);
+  att.c.move = Math.max(0, att.c.move - Math.round(Math.min(need, budget) / ftPx(att) / 5) * 5);
+  att.path = findPath(att, goal); att.onArrive = () => { if (Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 40 && att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; } then(); };
+  if (!att.path.length) then();
 }
+function strike(att, tgt, onHit, after){
+  att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
+  playOnce(att, "attack", () => { setAnim(att, "idle"); setTimeout(after, 320); });
+  att.once && (att.once.hit = onHit);
+}
+// the monster's turn: close on the nearest standing hero and use the block's attack(s)
 function foeTurn(f){
-  const tgt = party.slice().sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
-  if (!tgt) return;
-  setTimeout(() => { if (mode === "combat" && actors.includes(f)) attack(f, tgt, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .5) bark(f, b[1], 1800); }); }, 350);
+  if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
+  const tgt = standing(party).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  if (!tgt){ checkEnd(); return; }
+  camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
+  const atk = f.c.sheet.attacks[0], swings = f.c.sheet.multi || 1;
+  let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
+  setTimeout(go, 500);
 }
-function endCombat(){
+function checkEnd(){
+  if (!cbt) return true;
+  if (!standing(foes).length){ setTimeout(() => endCombat(true), 600); return true; }
+  if (!standing(party).length){ log("<b>The party falls.</b> The DM core decides what the drow do with the bodies."); setTimeout(() => endCombat(false), 1200); return true; }
+  return false;
+}
+function endCombat(won){
   if (mode !== "combat") return;
-  mode = "travel"; state.cleared[cur] = true;
+  mode = "travel"; if (won !== false) state.cleared[cur] = true;
+  closeMenu(); cbt = null; combatBusy = false;
   foes.forEach(f => f.fading = true);
-  $("combatbar").hidden = true; $("vignette").classList.remove("on");
+  $("combat").hidden = true; $("vignette").classList.remove("on");
   setTimeout(() => {
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
+    for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
+    party.forEach(p => { if (p.down){ p.down = false; setAnim(p, "idle"); if (p.c) p.c.hp = 1; } });
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
-    mode = "explore"; setTrack("explore"); log("The fight is over. The DM core settles who is standing.");
+    mode = "explore"; setTrack("explore"); log(won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
   }, 700);
 }
-$("nextTurn").onclick = nextTurn; $("endCombat").onclick = endCombat;
+$("endCombat").onclick = () => endCombat(false);
+
+// ----- presentation: numbers, bursts, hit-stop, shake, camera -----
+const pops = [], sparks = []; let hitstopUntil = 0, shakeAmt = 0, camPushed = null;
+function popText(a, text, col, size = 1){ const m = SPR[a.id].json, sc = actorScale(a); pops.push({x: a.x + (Math.random() - .5) * 20, y: a.y - m.pivot[1] * sc * .75, text, col, size, t0: now}); }
+function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y - m.pivot[1] * sc * .5; for (let i = 0; i < n; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: a.x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); } }
+function hitstop(ms){ hitstopUntil = Math.max(hitstopUntil, performance.now() + ms); }
+function shake(px){ shakeAmt = Math.max(shakeAmt, px); }
+function pushCam(a, b){ if (!cbt) return; camPushed = true; camTo(Math.min(2.8, cbt.home.z * 1.25), (a.x + b.x) / 2, (a.y + b.y) / 2 - 50, 420); }
+function settleCam(){ if (!cbt || !camPushed) return; camPushed = null; camTo(cbt.home.z, cbt.home.cx, cbt.home.cy, 700); }
+// a bolt of light from the caster to the target, then the hit
+function spellBolt(from, to, col, then){ const m = SPR[from.id].json, sc = actorScale(from); sparks.push({bolt: true, x: from.x, y: from.y - m.pivot[1] * sc * .6, tx: to.x, ty: to.y - (to.id ? SPR[to.id].json.pivot[1] * actorScale(to) * .5 : 0), col, t0: now, life: 260, then}); }
+function drawCombatFx(){
+  for (let i = sparks.length - 1; i >= 0; i--){
+    const s = sparks[i], k = (now - s.t0) / s.life;
+    if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
+    if (s.bolt){ const x = s.x + (s.tx - s.x) * k, y = s.y + (s.ty - s.y) * k; ctx.save(); ctx.shadowColor = s.col; ctx.shadowBlur = 24; ctx.fillStyle = s.col; ctx.globalAlpha = .95;
+      ctx.beginPath(); ctx.ellipse(x, y, 9, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = .4; ctx.beginPath(); ctx.ellipse(x - (s.tx - s.x) * .06, y - (s.ty - s.y) * .06, 14, 6, Math.atan2(s.ty - s.y, s.tx - s.x), 0, Math.PI * 2); ctx.fill(); ctx.restore(); continue; }
+    const t = (now - s.t0) / 1000, x = s.x + s.vx * t, y = s.y + s.vy * t + 180 * t * t;
+    ctx.globalAlpha = 1 - k; ctx.fillStyle = s.col; ctx.fillRect(x - 2, y - 2, 4, 4);
+  }
+  for (let i = pops.length - 1; i >= 0; i--){
+    const p = pops[i], k = (now - p.t0) / 900; if (k >= 1){ pops.splice(i, 1); continue; }
+    const rise = k < .25 ? -60 * (k / .25) * (2 - k / .25) : -60 + 30 * ((k - .25) / .75), sz = Math.round(30 * p.size * (k < .12 ? 1 + (.12 - k) * 4 : 1));
+    ctx.globalAlpha = k > .7 ? 1 - (k - .7) / .3 : 1; ctx.font = `700 ${sz}px 'Alegreya Sans', 'Gill Sans', system-ui, sans-serif`; ctx.textAlign = "center";
+    ctx.lineWidth = 5; ctx.strokeStyle = "#140a06"; ctx.fillStyle = p.col; ctx.strokeText(p.text, p.x, p.y + rise); ctx.fillText(p.text, p.x, p.y + rise);
+  }
+  ctx.globalAlpha = 1;
+}
+// the active hero's reach of movement, and what a hovered foe would take to hit
+function drawCombatGround(){
+  if (!cbt) return;
+  const a = activeActor(); if (!a) return;
+  if (a.kind === "pc" && (cbt.phase === "menu" || cbt.phase === "move") && a.c.move > 0){
+    const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9; ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
+    ctx.beginPath(); ctx.ellipse(a.x, a.y, r, r * .55, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
+  }
+  if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down){
+    const t = hoverActor, sc = actorScale(t), m = SPR[t.id].json, pulse = .5 + .5 * Math.sin(now / 160);
+    ctx.save(); ctx.strokeStyle = `rgba(255,107,94,${.6 + .4 * pulse})`; ctx.lineWidth = 3 / (base * view.z);
+    ctx.beginPath(); ctx.ellipse(t.x, t.y, 40 * sc * (m.cell[0] / 128), 14 * sc * (m.cell[0] / 128), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+}
+function drawConds(a){
+  if (!a.c || a.down) return;
+  const m = SPR[a.id].json, sc = actorScale(a), top = a.y - m.pivot[1] * sc - 10; let i = 0;
+  if (a.kind === "foe"){                       // a thin bar over each foe, the way the party sees a monster's state
+    const w = 44 * sc * (m.cell[0] / 128), h = 5, x = a.x - w / 2, y = top + 4;
+    ctx.fillStyle = "rgba(10,6,8,.85)"; ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillStyle = "#5a1f1a"; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
+  }
+  if (!a.c.conds.size) return;
+  for (const k of a.c.conds){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
+    const x = a.x + (i - (a.c.conds.size - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
+}
+function combatTargetHint(){
+  if (!cbt || cbt.phase !== "target" || !hoverActor || hoverActor.kind !== "foe") return null;
+  const a = activeActor(), p = cbt.pend, t = hoverActor, sp = p.spell && SPELLS[p.spell];
+  if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}`;
+  const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t), need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
+  let p1 = (21 - need) / 20; if (adv > 0) p1 = 1 - (1 - p1) ** 2; else if (adv < 0) p1 = p1 ** 2;
+  return `${fname(t)} · AC ${ac} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft`;
+}
 
 // ---------- creatures Malachar brings in ----------
 // Narration and the map must agree (Sam, 2026-10-12). The game registers every creature Malachar brings
@@ -1447,7 +1828,7 @@ function hitActor(list, w){
   return best;
 }
 stage.addEventListener("pointerdown", e => {
-  if (e.target.closest(".dm,.dialog,.talk,.zoom,.combatbar")) return;
+  if (e.target.closest(".dm,.dialog,.talk,.zoom,.cbt-ui")) return;
   unlockAudio();
   ptr = {id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false};
   stage.setPointerCapture(e.pointerId);
@@ -1459,10 +1840,12 @@ stage.addEventListener("pointermove", e => {
     if (ptr.moved){ view.tx = ptr.tx + dx; view.ty = ptr.ty + dy; camTween = null; userPanAt = now; applyView(); }
     return;
   }
-  if (e.target.closest(".dm,.dialog,.talk,.zoom,.combatbar")){ tip.hidden = true; return; }
+  if (e.target.closest(".dm,.dialog,.talk,.zoom,.cbt-ui")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect();
-  hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? hitActor(foes, w) : null;
+  hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(party, w)) : null;
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
+  const th = combatTargetHint();
+  if (th){ tip.textContent = th; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   hoverZone = mode === "explore" && !hoverActor && !hoverObj ? zoneAt(w.x, w.y) : null;
   if (hoverObj){
     tip.textContent = `${hoverObj.interact.name}${state.gateOpen ? "" : " (locked)"}: click to use`;
@@ -1498,12 +1881,7 @@ function click(w){
     const n = hitActor(npcs, w);
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
-  } else if (mode === "combat" && !combatBusy){
-    const a = activeActor(); if (!a || a.kind !== "pc") return;
-    const f = hitActor(foes, w);
-    if (f){ attack(a, f); return; }
-    const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; a.path = findPath(a, p);
-  }
+  } else if (mode === "combat"){ combatClick(w); }
 }
 function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); return nearestWalkable(n.x + d.x * 80, n.y + d.y * 80); }
 function walkTo(p, cb){ stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
@@ -1519,7 +1897,7 @@ addEventListener("keydown", e => {
     if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) setLeader(a); }
     if (e.code === "Tab"){ e.preventDefault(); const i = party.indexOf(leader); setLeader(party[(i + (e.shiftKey ? party.length - 1 : 1)) % party.length]); }
     if (e.code === "KeyE" || e.code === "Space"){ e.preventDefault(); interact(); }
-  } else if (mode === "combat" && e.code === "Enter" && !e.target.closest("button")) nextTurn();
+  } else if (mode === "combat"){ if (e.code === "Enter" && !e.target.closest("button")) nextTurn(); if (e.key === "Escape") cancelAim(); }
   if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
   if (e.key === "-" || e.key === "_"){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.2); }
 });
@@ -1754,8 +2132,9 @@ let timeStopped = false, pausedMs = 0;
 function frame(t){
   const raw = Math.min(50, t - lastT); lastT = t;
   if (timeStopped && mode !== "load"){ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
+  if (t < hitstopUntil && mode === "combat"){ pausedMs += raw; draw(); updateOverlay(); requestAnimationFrame(frame); return; }   // hit-stop: the world holds for a few frames on a blow
   now = t - pausedMs; const dt = raw / 1000;
-  if (mode !== "load"){ update(dt); draw(); updateOverlay(); }
+  if (mode !== "load"){ update(dt); draw(); updateOverlay(); if (mode === "combat") placeMenu(); }
   tickMusic(dt);
   requestAnimationFrame(frame);
 }
