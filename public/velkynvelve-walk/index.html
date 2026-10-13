@@ -275,6 +275,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmTime">Stop time</button>
       <button class="btn" id="dmOoze">A gray ooze comes in (preview)</button>
       <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
+      <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
@@ -1644,7 +1645,8 @@ function tickCreatures(){
   for (const f of creatures.values()){
     if (f.down || f.fading || f.waitUntil > now) continue;
     const d = Math.hypot(f.x - leader.x, f.y - leader.y);
-    if (d < 150 * node.scale){ startCombat([f], `${f.creature.name} attacks!`); return; }
+    if (!APP && d < 150 * node.scale){ startCombat([f], `${f.creature.name} attacks!`); return; }   // the game waits for Malachar's [COMBAT_START:]
+    if (APP && d < 90 * node.scale) continue;
     if (!f.path.length && !f.act && now > (f.actUntil || 0)){
       const goal = nearestWalkable(f.x + (leader.x - f.x) * .3, f.y + (leader.y - f.y) * .3);   // a third of the way, then a pause: it creeps
       f.path = findPath(f, goal); f.actUntil = now + 3500 + Math.random() * 3000;
@@ -2007,6 +2009,7 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+$("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
 $("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => n.offStage ? castReturns(n) : castLeaves(n, false)); };
 $("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
@@ -2017,7 +2020,35 @@ function setTimeStopped(on){
 }
 async function readTime(){
   if (!APP) return;
-  try { const r = await fetch("/api/world-flags", {cache: "no-store"}); const j = await r.json(); setTimeStopped((j.flags || []).some(f => f.key === "time-stopped")); } catch (e) {}
+  try { const r = await fetch("/api/world-flags", {cache: "no-store"}); const j = await r.json(); const flags = j.flags || [];
+    setTimeStopped(flags.some(f => f.key === "time-stopped"));
+    const cf = flags.find(f => f.key === "combat"); await followCombatFlag(cf ? cf.value : null); } catch (e) {}
+}
+// Malachar's call that initiative is rolled (lib/combat-flag.ts): the fight opens here with exactly the
+// creatures he named, and closes when he ends it. The map never starts a fight on its own in the game;
+// the proximity and guards-on-watch triggers are the preview's.
+let combatFlagSeen = null;
+async function followCombatFlag(flag){
+  if (flag && flag.status === "active"){
+    if (flag.startedAt === combatFlagSeen) return;
+    if (mode !== "explore") return;                     // once we are free, the next poll opens it
+    combatFlagSeen = flag.startedAt;
+    const picked = [];
+    for (const foe of flag.foes || []){
+      const onPlate = creatures.get(foe.slug);
+      if (onPlate){ picked.push(onPlate); continue; }
+      const cast = npcs.filter(n => CAST.has(n.id) && !n.offStage && !n.creature && stageMatch(foe, n.id));
+      if (cast.length){ picked.push(...cast); continue; }
+      if (await loadSpriteManifest(foe.slug)){ creatureArrives({slug: foe.slug, name: foe.name, hp: foe.hp, hpMax: foe.hpMax}); const f = creatures.get(foe.slug); if (f){ f.path = []; f.waitUntil = 0; picked.push(f); } }
+      else log(`<em>${esc(foe.name)}</em> joins the fight but has no sprite yet; the DM core still counts it.`);
+    }
+    if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is on this plate.`); return; }
+    for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
+    startCombat(picked, flag.label || "Malachar calls for initiative.");
+    if (cbt) cbt.fromFlag = true;
+  } else if (!flag && mode === "combat" && cbt && cbt.fromFlag){
+    endCombat(true);
+  }
 }
 if (APP){ readTime(); setInterval(readTime, 3000); }
 $("dmTime").onclick = async () => {
@@ -2179,7 +2210,7 @@ function update(dt){
     // drow who are on watch
     if (mode === "explore" && !state.cleared[cur]){
       const watch = npcs.filter(n => n.hostile && !n.offStage);
-      if (watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
+      if (!APP && watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
     }
     // NPC comments and the one who wants to talk
     for (const n of npcs){
