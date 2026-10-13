@@ -358,6 +358,12 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
   the row's, marked `audio/mpeg; profile=rapport` by `/api/npc-tts`, and played through
   `lib/rapport-voice.ts` (dashboard) / the same chain in the map. On the map it is a thought
   bubble, not speech. `lib/rapport.ts` holds the test and the mark.
+- **Kuo-toa throat (Sam's ruling, 2026-10-13)**: kuo-toa "are fish people and should sound
+  nothing like a human." Shuushar's lines keep the row's voice but are marked
+  `audio/mpeg; profile=croak` and played through `croakChain` (`lib/rapport-voice.ts`, setting B
+  of three auditioned): deeper and slower, a gurgle, a throat flutter, a hollow resonance.
+  Same chain in the map. The row's voice should be the designed kuo-toa voice
+  `Uzt8OVGqinnV0TMbbk28` (`NAMED_NPC_VOICES` has it; the row carried a stock narrator until Sam's SQL).
 - **Sprite height rule (Sam's ruling)**: a battle sprite's `ppu` (pixels per 5-ft square)
   is set so the figure stands at its real height, measured from the drawn figure in its
   `idle` sheet (`ppu = figure_px × 5 / feet`), never left at the default. Humans (and

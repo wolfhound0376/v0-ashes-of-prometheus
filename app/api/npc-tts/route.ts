@@ -3,7 +3,7 @@ import { resolveVoice, resolveNamedNpcVoiceId, sanitizeForTTS } from "@/lib/tts"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow } from "@/lib/npc-acquaintance"
 import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback, deliveryFor } from "@/lib/tts-model"
-import { isRapportSpeaker, RAPPORT_MIME } from "@/lib/rapport"
+import { isRapportSpeaker, isCroakSpeaker, RAPPORT_MIME, CROAK_MIME } from "@/lib/rapport"
 
 /**
  * Text-to-speech for a named NPC line.
@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
     // so the player runs it through the cave treatment. Without a listener it falls back to the row's
     // voice, still marked, so the sound at least says "in your head".
     const rapport = isRapportSpeaker(typeof npcName === "string" ? npcName : null)
+    const croak = !rapport && isCroakSpeaker(typeof npcName === "string" ? npcName : null)   // the kuo-toa throat, applied by the player
     if (rapport && (listenerCharacterId || listenerName)) {
       try {
         const db = createAdminClient()
@@ -165,9 +166,9 @@ export async function POST(request: NextRequest) {
     const audioBuffer = await response.arrayBuffer()
     return new NextResponse(audioBuffer, {
       headers: {
-        "Content-Type": rapport ? RAPPORT_MIME : "audio/mpeg",
+        "Content-Type": rapport ? RAPPORT_MIME : croak ? CROAK_MIME : "audio/mpeg",
         "Content-Length": audioBuffer.byteLength.toString(),
-        "X-Voice-Mode": rapport ? "rapport" : "voice",
+        "X-Voice-Mode": rapport ? "rapport" : croak ? "croak" : "voice",
         "X-Resolved-Voice": resolvedVoiceId || "",
         "X-TTS-Model": usedModel,
       },

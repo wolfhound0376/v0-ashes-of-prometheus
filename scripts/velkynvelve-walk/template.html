@@ -1764,6 +1764,21 @@ let voiceAudio = null;
 // below — detuned against itself, a stone tail under it, the top rolled off. The same chain as the
 // dashboard's (lib/rapport-voice.ts).
 const isRapport = id => id === "stool" || /myconid|basidia|phylo/.test(id || "");
+// The kuo-toa throat (Sam, 2026-10-13: "fish people and should sound nothing like a human"), setting B of
+// the three he heard: played deeper and slower, a gurgle from the voice beating against a 31 Hz tone, a
+// 13 Hz flutter in the throat, a short hollow resonance, the top rolled off. lib/rapport-voice.ts croakChain.
+const isCroak = id => id === "shuushar" || /kuo-?toa/.test(id || "");
+function croakChain(ctx){
+  const input = ctx.createGain(), out = ctx.destination;
+  const ring = ctx.createGain(); ring.gain.value = 0; const osc = ctx.createOscillator(); osc.frequency.value = 31; osc.connect(ring.gain); osc.start();
+  const ringMix = ctx.createGain(); ringMix.gain.value = .5; input.connect(ring).connect(ringMix); const dry = ctx.createGain(); dry.gain.value = .7; input.connect(dry);
+  const sum = ctx.createGain(); ringMix.connect(sum); dry.connect(sum);
+  const trem = ctx.createGain(); trem.gain.value = .6; const tl = ctx.createOscillator(); tl.frequency.value = 13; const td = ctx.createGain(); td.gain.value = .4; tl.connect(td).connect(trem.gain); tl.start(); sum.connect(trem);
+  const comb = ctx.createDelay(.05); comb.delayTime.value = .009; const fb = ctx.createGain(); fb.gain.value = .45; trem.connect(comb).connect(fb).connect(comb); const mix = ctx.createGain(); mix.gain.value = .6; comb.connect(mix);
+  const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2100; trem.connect(lp); mix.connect(lp); const g = ctx.createGain(); g.gain.value = .9; lp.connect(g).connect(out);
+  return input;
+}
+const profileFor = id => isRapport(id) ? "rapport" : isCroak(id) ? "croak" : null;
 let caveTailBuf = null;
 function caveTail(ctx){
   if (caveTailBuf) return caveTailBuf;
@@ -1802,15 +1817,18 @@ function rapportChain(ctx){
   breathe.connect(out);
   return raw;
 }
-function playVoice(ctx, buf, rapport){
+function playVoice(ctx, buf, profile){
   if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
-  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(rapport ? rapportChain(ctx) : ctx.destination);
+  if (profile === true) profile = "rapport";
+  const src = ctx.createBufferSource(); src.buffer = buf; if (profile === "croak") src.playbackRate.value = .8;
+  src.connect(profile === "rapport" ? rapportChain(ctx) : profile === "croak" ? croakChain(ctx) : ctx.destination);
   src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
 }
 async function speakCanon(id, text){         // the game's ElevenLabs route: the voice saved on the row (Eldeth, Ront...); a myconid in the listener's own
   const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: SPR[id].json.name, listenerName: PLAYS_AS[leader?.id] || undefined})});
   if (!res.ok) throw new Error("tts " + res.status);
-  const rapport = /profile=rapport/i.test(res.headers.get("content-type") || "") || isRapport(id);
+  const ct = res.headers.get("content-type") || "";
+  const rapport = /profile=rapport/i.test(ct) ? "rapport" : /profile=croak/i.test(ct) ? "croak" : profileFor(id);
   // WebAudio, not an <audio> element: the game found <audio> silently mute in some Chromium builds.
   const ctx = audioCtx();
   // An NPC can start talking on their own, with no click behind it, and a suspended context would
@@ -1829,7 +1847,7 @@ async function speakBank(id, text){
   if (ctx.state !== "running") return false;
   const file = b.perListener ? `audio/voice/${id}-${leader ? leader.id : PARTY[0]}.mp3` : `audio/voice/${id}.mp3`;   // a myconid: the listener's own voice
   const r = await fetch(file); if (!r.ok) return false;
-  playVoice(ctx, await ctx.decodeAudioData(await r.arrayBuffer()), isRapport(id)); return true;
+  playVoice(ctx, await ctx.decodeAudioData(await r.arrayBuffer()), profileFor(id)); return true;
 }
 function speak(id, text){
   // In the game it is always their saved ElevenLabs voice (Sam, 2026-10-12: "EVERYTIME"): one retry,
