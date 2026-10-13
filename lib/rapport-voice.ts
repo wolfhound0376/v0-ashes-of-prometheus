@@ -6,7 +6,11 @@
 //   doubles  — two copies a few milliseconds late, detuned a few cents each way by a slow LFO, so the
 //              voice is recognisably the listener's own but not quite theirs ("altered")
 //   cave     — a convolver with a synthesised 2.6-second stone-chamber tail, low-passed, under it all
-// Everything is deterministic (the tail is seeded), so the same line sounds the same twice.
+//   dream    — Sam, 2026-10-13 ("an altered feel as if it were dreamlike"): the whole voice drifts
+//              slowly in pitch (a 0.11 Hz wobble through a modulated delay), a soft reversed swell
+//              rises just before each sound (a pre-echo tail), and wide slow echoes drift left and
+//              right behind it, breathing with a slow tremolo
+// Everything is deterministic (the tails are seeded), so the same line sounds the same twice.
 
 export type RapportChain = { input: AudioNode; dispose: () => void }
 
@@ -37,8 +41,34 @@ function caveTail(ctx: AudioContext): AudioBuffer {
   return buf
 }
 
+const swells = new WeakMap<AudioContext, AudioBuffer>()
+/** A tail that rises instead of falling: played through a convolver it puts a soft swell BEFORE each sound. */
+function dreamSwell(ctx: AudioContext): AudioBuffer {
+  const have = swells.get(ctx)
+  if (have) return have
+  const seconds = 0.9, rate = ctx.sampleRate, n = Math.floor(seconds * rate)
+  const buf = ctx.createBuffer(2, n, rate)
+  let seed = 0x2545f491
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return ((seed >>> 0) / 4294967296) * 2 - 1 }
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch)
+    for (let i = 0; i < n; i++) { const k = i / n; d[i] = rnd() * k * k * 0.5 }
+    let acc = 0
+    for (let i = 0; i < n; i++) { acc += (d[i] - acc) * 0.12; d[i] = acc }
+  }
+  swells.set(ctx, buf)
+  return buf
+}
+
 export function rapportChain(ctx: AudioContext, destination: AudioNode = ctx.destination): RapportChain {
+  const raw = ctx.createGain(); raw.gain.value = 1
+  // dream: everything below hears a voice whose pitch drifts slowly, the way a voice does in sleep
+  const drift = ctx.createDelay(0.2); drift.delayTime.value = 0.03
+  const driftLfo = ctx.createOscillator(); driftLfo.type = "sine"; driftLfo.frequency.value = 0.11
+  const driftDepth = ctx.createGain(); driftDepth.gain.value = 0.012      // ±12 ms at 0.11 Hz ≈ a slow ±1.5 % pitch wander
+  driftLfo.connect(driftDepth).connect(drift.delayTime); driftLfo.start()
   const input = ctx.createGain(); input.gain.value = 1
+  raw.connect(drift).connect(input)
 
   // dry
   const dryLp = ctx.createBiquadFilter(); dryLp.type = "lowpass"; dryLp.frequency.value = 3600; dryLp.Q.value = 0.6
@@ -66,9 +96,30 @@ export function rapportChain(ctx: AudioContext, destination: AudioNode = ctx.des
   const wet = ctx.createGain(); wet.gain.value = 0.5
   input.connect(pre).connect(conv).connect(wetLp).connect(wet).connect(destination)
 
-  const dispose = () => {
-    try { lfo.stop() } catch { /* already stopped */ }
-    for (const node of [input, dryLp, dry, conv, wetLp, pre, wet, lfo, ...doubles]) { try { node.disconnect() } catch { /* torn down */ } }
+  // dream: a soft swell rising before each sound, and wide slow echoes that breathe
+  const swell = ctx.createConvolver(); swell.buffer = dreamSwell(ctx)
+  const swellLp = ctx.createBiquadFilter(); swellLp.type = "lowpass"; swellLp.frequency.value = 1800
+  const swellG = ctx.createGain(); swellG.gain.value = 0.22
+  input.connect(swell).connect(swellLp).connect(swellG).connect(destination)
+  const breathe = ctx.createGain(); breathe.gain.value = 0.26
+  const breatheLfo = ctx.createOscillator(); breatheLfo.frequency.value = 0.21
+  const breatheDepth = ctx.createGain(); breatheDepth.gain.value = 0.09
+  breatheLfo.connect(breatheDepth).connect(breathe.gain); breatheLfo.start()
+  const pan = [ctx.createStereoPanner(), ctx.createStereoPanner()]; pan[0].pan.value = -0.7; pan[1].pan.value = 0.7
+  const echoes: AudioNode[] = []
+  for (const [i, ms] of [[0, 310], [1, 470]] as const) {
+    const d = ctx.createDelay(1); d.delayTime.value = ms / 1000
+    const fb = ctx.createGain(); fb.gain.value = 0.28
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1600
+    input.connect(d).connect(lp).connect(fb).connect(d)          // feedback loop, darker each time round
+    lp.connect(pan[i]).connect(breathe)
+    echoes.push(d, fb, lp)
   }
-  return { input, dispose }
+  breathe.connect(destination)
+
+  const dispose = () => {
+    for (const o of [lfo, driftLfo, breatheLfo]) { try { o.stop() } catch { /* already stopped */ } }
+    for (const node of [raw, drift, driftDepth, input, dryLp, dry, conv, wetLp, pre, wet, lfo, swell, swellLp, swellG, breathe, breatheDepth, ...pan, ...echoes, ...doubles]) { try { node.disconnect() } catch { /* torn down */ } }
+  }
+  return { input: raw, dispose }
 }
