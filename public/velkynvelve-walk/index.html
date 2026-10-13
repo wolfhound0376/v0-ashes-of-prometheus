@@ -1309,6 +1309,8 @@ async function npcOpening(npc){
     } catch (e) {}
     return fallback;
   }
+  // The preview says the banked line (recorded in their real voice) rather than inventing one it cannot voice.
+  if (VOICE_BANK[npc.id]) return {narration: fallback.narration, line: VOICE_BANK[npc.id].line};
   const sample = await samplePromise;
   if (!sample) return fallback;
   const prompt = `You are Malachar, the lich who narrates an Out of the Abyss D&D 5e campaign: theatrical, sly, darkly funny, a little cruel.
@@ -1328,10 +1330,6 @@ Reply with only JSON: {"narration": "...", "line": "..."}`;
 }
 // Spoken aloud. This page can't reach ElevenLabs, so it uses the browser's own voices, matched roughly to the
 // speaker; inside the game the same line goes through /api/npc-tts and Eldeth gets her canon ElevenLabs voice.
-const VOICE = {eldeth: {f: true, pitch: .85, rate: .95}, topsy: {f: true, pitch: 1.35, rate: 1.08}, turvy: {f: false, pitch: 1.3, rate: 1.08},
-  jimjar: {f: false, pitch: 1.25, rate: 1.1}, ront: {f: false, pitch: .6, rate: .95}, derendil: {f: false, pitch: .75, rate: .9},
-  sarith: {f: false, pitch: .9, rate: .9}, buppido: {f: false, pitch: 1.15, rate: 1.0}, shuushar: {f: false, pitch: .8, rate: .85},
-  jorlan: {f: false, pitch: .8, rate: .95}};
 let speaking = false;
 let voiceAudio = null;
 async function speakCanon(id, text){         // the game's ElevenLabs route: canon voices by NPC name (Eldeth, Ront...)
@@ -1348,25 +1346,69 @@ async function speakCanon(id, text){         // the game's ElevenLabs route: can
   const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
   src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
 }
+// Lines said in the preview, pre-rendered in each NPC's own ElevenLabs voice (the game's /api/npc-tts,
+// the voice saved on their row). The preview cannot reach ElevenLabs itself, and the computer's own
+// voice is never used (Sam, 2026-10-12: "it's not using their voice but rather a generic one").
+const VOICE_BANK = {
+ "eldeth": {
+  "line": "A word, if you've a moment.",
+  "voice": "yZt09SSNiK1Vhjbf8Peq"
+ },
+ "ront": {
+  "line": "You. Keep away from my corner.",
+  "voice": "HPNUUUFNQiMEJN5oqMLX"
+ },
+ "jimjar": {
+  "line": "Care to make it interesting? I'll give you odds.",
+  "voice": "JBFqnCBsd6RMkjVDRZzb"
+ },
+ "buppido": {
+  "line": "Such interesting hands you have. Come, sit with me.",
+  "voice": "PpgkkvljpSnwEaGm6ybH"
+ },
+ "sarith": {
+  "line": "Don't look at me like that. I had my reasons.",
+  "voice": "cjVigY5qzO86Huf0OWal"
+ },
+ "derendil": {
+  "line": "You stand before a prince. Act accordingly.",
+  "voice": "JwgGi9aLSpBIW7pVE2A8"
+ },
+ "topsy": {
+  "line": "Shh. The guards listen. Come closer.",
+  "voice": "w03vWgAq1QMOM3DaeWzB"
+ },
+ "turvy": {
+  "line": "You're new. New ones get eaten first.",
+  "voice": "yZ94ol1u2PFSbLQdCTzB"
+ },
+ "shuushar": {
+  "line": "Peace, friend. Violence is a cage of its own.",
+  "voice": "nPczCjzI2devNBz1zQrb"
+ },
+ "stool": {
+  "line": "Friend? Friend. Stool is glad.",
+  "voice": "EXAVITQu4vr4xnSDxMaL"
+ },
+ "jorlan": {
+  "line": "Go. Quickly, before the next watch.",
+  "voice": "IKne3meq5aSn9XLyUdCD"
+ }
+};
+async function speakBank(id, text){
+  const b = VOICE_BANK[id]; if (!b || b.line !== text) return false;
+  const ctx = audioCtx(); if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]);
+  if (ctx.state !== "running") return false;
+  const buf = await ctx.decodeAudioData(await (await fetch(`audio/voice/${id}.mp3`)).arrayBuffer());
+  if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+  src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src; return true;
+}
 function speak(id, text){
   // In the game it is always their saved ElevenLabs voice (Sam, 2026-10-12: "EVERYTIME"): one retry,
-  // never the browser's stand-in voice. The stand-in is only for the preview, which has no ElevenLabs.
+  // never the browser's stand-in voice.
   if (APP){ speakCanon(id, text).catch(() => setTimeout(() => speakCanon(id, text).catch(e => console.warn("voice unavailable:", e)), 1200)); return; }
-  speakBrowser(id, text);
-}
-function speakBrowser(id, text){
-  try {
-    const ss = window.speechSynthesis; if (!ss) return;
-    ss.cancel();
-    const v = VOICE[id] || {f: false, pitch: 1, rate: 1};
-    const u = new SpeechSynthesisUtterance(text);
-    const voices = ss.getVoices().filter(x => /^en/i.test(x.lang));
-    const fem = /female|samantha|victoria|karen|moira|tessa|fiona|zira|susan|serena|libby|sonia|hazel|aria|jenny/i;
-    u.voice = voices.find(x => v.f ? fem.test(x.name) : !fem.test(x.name)) || voices[0] || null;
-    u.pitch = v.pitch; u.rate = v.rate; u.volume = 1;
-    u.onstart = () => { speaking = true; }; u.onend = u.onerror = () => { speaking = false; };
-    ss.speak(u);
-  } catch (e) {}
+  speakBank(id, text).catch(e => console.warn("voice bank:", e));
 }
 // Who starts it matters (Sam, 2026-10-11): someone who wants a word speaks first, here and again on the
 // dashboard. When YOU go up to someone, they stay quiet until you say something.
@@ -1415,7 +1457,7 @@ function talkUrl(npc, said){
 }
 function closeTalk(talked){
   if (!talkNpc) return;
-  try { if (!talked) window.speechSynthesis.cancel(); } catch (e) {}
+  if (!talked && voiceAudio) try { voiceAudio.stop(); } catch (e) {}
   if (talked){ state.talked[talkNpc.id] = true; state.declined[talkNpc.id] = false; }
   else if (!talkQuiet) state.declined[talkNpc.id] = true;   // turning down someone who wanted a word: the "!" stays over their head
   $("talk").hidden = true; talkNpc = null; mode = "explore";
@@ -1552,7 +1594,7 @@ function setTimeStopped(on){
   if (on === timeStopped) return;
   timeStopped = on; stage.classList.toggle("frozen", on); $("frozen").hidden = !on;
   $("dmTime").textContent = on ? "Start time" : "Stop time";
-  if (on){ keys.clear(); try { window.speechSynthesis.cancel(); } catch (e) {} }
+  if (on){ keys.clear(); if (voiceAudio) try { voiceAudio.stop(); } catch (e) {} }
 }
 async function readTime(){
   if (!APP) return;
