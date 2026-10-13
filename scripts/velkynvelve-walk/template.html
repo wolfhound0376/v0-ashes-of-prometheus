@@ -278,7 +278,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <select id="jump" aria-label="Jump to area"></select>
       <h4>World</h4>
       <button class="btn" id="dmTime">Stop time</button>
-      <button class="btn" id="dmOoze">A gray ooze comes in (preview)</button>
+      <button class="btn" id="dmOoze">Gray ooze: to the bridge → up from the chasm → away (preview)</button>
       <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
@@ -1752,8 +1752,9 @@ async function loadSpriteManifest(slug){
     SPR[slug] = entry; return true;
   } catch (e) { spriteMissing.add(slug); console.warn("no sprite for creature", slug, e); return false; }
 }
-function arrivalFor(slug){
-  const arr = (node.arrivals || {})[slug] || (node.arrivals || {}).default;
+function arrivalFor(slug, inside){
+  let arr = (node.arrivals || {})[slug] || (node.arrivals || {}).default;
+  if (arr && inside && arr.inside) arr = arr.inside;                 // the way INTO the party's space (under the bars, through the gate)
   if (arr) return {from: {x: arr.from[0], y: arr.from[1]}, to: {x: arr.to[0], y: arr.to[1]}, anim: arr.anim || "walk", big: arr.big || 1, backdrop: !!arr.backdrop, fixedScale: arr.fixedScale || 0, via: arr.via || ""};
   // no arrival written for this plate: in through the exit the party last used, toward the room's middle
   const z = node.zones[0] ? zoneCenter(node.zones[0]) : {x: centroid.x, y: centroid.y - 200};
@@ -1761,7 +1762,7 @@ function arrivalFor(slug){
 }
 function creatureArrives(c){
   if (creatures.has(c.slug) || mode === "load" || mode === "travel") return;
-  const a = arrivalFor(c.slug);
+  const a = arrivalFor(c.slug, !!c.inside);
   const f = mkActor(c.slug, a.from.x, a.from.y, "foe", {alpha: 0, hp: c.hp ?? 1, hpMax: c.hpMax ?? 1, creature: c, slow: true, big: a.big, backdrop: a.backdrop, fixedScale: a.fixedScale});   // not `hostile`: that is the guards-on-watch trigger; a creature closes in on its own (tickCreatures)
   f.fadeIn = true; f.face = faceOf(a.to.x - a.from.x, a.to.y - a.from.y);
   creatures.set(c.slug, f); npcs.push(f); actors = [...party, ...npcs, ...foes];
@@ -1771,14 +1772,34 @@ function creatureArrives(c){
     f.anim = a.anim; f.t0 = now; f.alpha = 1; f.fadeIn = false; f.waitUntil = now + SPR[c.slug].json.animations[a.anim].frames / SPR[c.slug].json.animations[a.anim].fps * 1000;
     f.path = [{x: land.x, y: land.y}];
   } else f.path = a.backdrop ? [{x: land.x, y: land.y}] : findPath(f, land);
+  f.inside = !!c.inside;
   f.onArrive = () => { setAnim(f, "idle"); f.home = {x: f.x, y: f.y}; };
-  narrate(f, `${c.name} comes in${a.anim === "emerge" ? ", heaving itself up over the edge" : a.via ? " " + a.via : ""}.`);
+  narrate(f, `${c.name} comes in${a.via ? " " + a.via : a.anim === "emerge" ? ", heaving itself up over the edge" : ""}.`);
   // the entrance is a moment: its own music sting (audio/arrive-<slug>.mp3, the film's cue) and the camera
   // pushing in on it, then easing back to the room once it is in
   sfx(`arrive-${c.slug}`, .9);
   const hold = a.anim !== "walk" && SPR[c.slug].json.animations[a.anim] ? SPR[c.slug].json.animations[a.anim].frames / SPR[c.slug].json.animations[a.anim].fps * 1000 : 1800;
   userPanAt = now; camTo(1.7, a.from.x + (a.to.x - a.from.x) * .3, a.from.y + (a.to.y - a.from.y) * .3 - 40, 1100);
   setTimeout(() => { if (mode === "explore") camTo(1, NAT_W / 2, NAT_H / 2, 1400); }, hold + 1600);
+}
+function creatureCrosses(slug){
+  const f = creatures.get(slug); if (!f || f.inside || f.down) return;
+  f.inside = true; const a = arrivalFor(slug, true); if (!node.arrivals || !((node.arrivals[slug] || node.arrivals.default || {}).inside)){ return; }
+  const outside = arrivalFor(slug, false);
+  f.path = [{x: outside.to.x, y: outside.to.y}]; f.slow = false; f.waitUntil = 0;
+  f.onArrive = () => {
+    // A far entry (the chasm rim, not the bars right by the gate): it slips out of sight first, then rises there.
+    const far = Math.hypot(a.from.x - outside.to.x, a.from.y - outside.to.y) > 250;
+    f.x = a.from.x; f.y = a.from.y; f.backdrop = false; f.fixedScale = 0; f.big = a.big; f.alpha = far ? 0 : 1; f.fadeIn = far;
+    const land = nearestWalkable(a.to.x, a.to.y);
+    if (a.anim !== "walk" && SPR[slug].img[a.anim]){ f.anim = a.anim; f.t0 = now; f.waitUntil = now + SPR[slug].json.animations[a.anim].frames / SPR[slug].json.animations[a.anim].fps * 1000; f.path = [{x: land.x, y: land.y}]; }
+    else f.path = findPath(f, land);
+    f.onArrive = () => { setAnim(f, "idle"); f.home = {x: f.x, y: f.y}; };
+    sfx(`arrive-${slug}`, .9); userPanAt = now; camTo(1.7, a.from.x, a.from.y - 40, 900);
+    setTimeout(() => { if (mode === "explore") camTo(1, NAT_W / 2, NAT_H / 2, 1400); }, 3200);
+    narrate(f, `${f.creature.name} comes in${a.via ? " " + a.via : ""}.`);
+  };
+  if (!f.path.length) f.onArrive();
 }
 function creatureLeaves(slug, dead){
   const f = creatures.get(slug); if (!f) return;
@@ -1822,7 +1843,7 @@ async function pollStage(){
     for (const c of present){
       if ([...CAST].some(id => stageMatch(c, id))) continue;
       if (!creatures.has(c.slug) && await loadSpriteManifest(c.slug)) creatureArrives(c);
-      const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; }
+      const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; if (c.inside && !f.inside) creatureCrosses(c.slug); }
     }
     for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug)){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead)); }
     // the cast: off the plate when the game says they have gone, back when it says they are here
@@ -2178,7 +2199,7 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
 $("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => n.offStage ? castReturns(n) : castLeaves(n, false)); };
-$("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
+$("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { const f = creatures.get("gray-ooze"); if (!f.inside) creatureCrosses("gray-ooze"); else creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
   if (on === timeStopped) return;
   timeStopped = on; stage.classList.toggle("frozen", on); $("frozen").hidden = !on;
@@ -2274,7 +2295,7 @@ const ACTS = [
 ];
 function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
 function idleLife(a){
-  if (a === leader || a.once || a.fading || a.offStage) return;
+  if (a === leader || a.once || a.fading || a.offStage || a.creature) return;   // creatures move by tickCreatures, not the idle wander
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
     if (now < (a.actUntil || 0)) return;
@@ -2384,12 +2405,12 @@ function update(dt){
       const d = Math.hypot(n.x - leader.x, n.y - leader.y);
       if (n.talk && !state.talked[n.id] && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){
         leader.path = []; openTalk(n);
-      } else if (!n.talk && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && n.barks.length){
+      } else if (!n.talk && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && (n.barks || []).length){
         ambient(n);                                       // the line decides which way they look
       }
     }
     if (now > nextAmbient && npcs.length){
-      const pool = npcs.filter(n => n.barks.length && now - n.lastBark > 15000);
+      const pool = npcs.filter(n => (n.barks || []).length && now - n.lastBark > 15000);   // creatures carry no barks; without the guard the ambient timer threw once one was on the plate
       if (pool.length) ambient(pool[Math.floor(Math.random() * pool.length)]);
       nextAmbient = now + 14000 + Math.random() * 10000;
     }
