@@ -123,17 +123,22 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .combat{position:absolute;inset:0;pointer-events:none;font-family:var(--face-body)}
 .combat[hidden]{display:none}
 .combat .cbt-ui{pointer-events:auto}
-.cbt-top{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,rgba(26,10,12,.94),rgba(14,8,10,.9));border:1px solid var(--blood);border-radius:8px;padding:6px 10px;max-width:calc(100% - 24px);box-shadow:0 6px 24px rgba(0,0,0,.5)}
+.cbt-top{position:absolute;top:2px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,rgba(26,10,12,.94),rgba(14,8,10,.9));border:1px solid var(--blood);border-radius:8px;padding:6px 10px;max-width:calc(100% - 24px);box-shadow:0 6px 24px rgba(0,0,0,.5)}
 .cbt-top .lbl{font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.08em;padding:0 4px}
 .cbt-top .round{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);min-width:60px;text-align:center}
 .cbt-top .btn{padding:4px 10px;font-size:var(--s-1)}
+/* The initiative order as player cards (Sam, 2026-10-13: "use player cards and not cut off the head"): the
+   party's medallions, the canon faces for the foes, whole — a card is never cropped through the head. */
 .turns{display:flex;gap:6px;align-items:flex-end}
-.turn{display:flex;flex-direction:column;align-items:center;gap:2px;width:48px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s}
-.turn canvas{width:40px;height:40px;image-rendering:pixelated;border-radius:50%;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));border:1px solid var(--rule)}
-.turn.foe canvas{border-color:#a2423a}
-.turn.now{width:64px;opacity:1;color:var(--ink)}
-.turn.now canvas{width:54px;height:54px;border:2px solid var(--ember);box-shadow:0 0 14px rgba(232,162,74,.55)}
-.turn.now.foe canvas{border-color:#ff6b5e;box-shadow:0 0 14px rgba(255,107,94,.5)}
+.turn{display:flex;flex-direction:column;align-items:center;gap:3px;width:52px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s}
+.turn .card{position:relative;width:46px;height:58px;border-radius:5px;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));border:1px solid var(--rule);overflow:hidden;transition:width .25s,height .25s}
+.turn .card img,.turn .card canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 12%;display:block}
+.turn .card img.whole{object-fit:contain;object-position:center}
+.turn .card canvas{image-rendering:pixelated}
+.turn.foe .card{border-color:#a2423a}
+.turn.now{width:68px;opacity:1;color:var(--ink)}
+.turn.now .card{width:62px;height:78px;border:2px solid var(--ember);box-shadow:0 0 14px rgba(232,162,74,.55)}
+.turn.now.foe .card{border-color:#ff6b5e;box-shadow:0 0 14px rgba(255,107,94,.5)}
 .turn.down{opacity:.35;filter:grayscale(1)}
 .turn span{max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cbt-party{position:absolute;right:10px;bottom:58px;display:flex;flex-direction:column;gap:5px;width:208px}
@@ -1461,6 +1466,17 @@ const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creatu
 function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
 
 // ----- the strip and the column -----
+// A card for the tracker: the party's medallion or the foe's canon face from velkynvelve-walk/cards (whole,
+// never cropped through the head); a creature with no card gets its sprite, head and shoulders, uncropped.
+const CARD_BASE = APP ? "/velkynvelve-walk/cards/" : "cards/";
+const CARDS = new Set(["kenta", "samson", "scott", "freia", "drow-guard-male", "drow-guard-female", "jorlan", "giant-spider", "gray-ooze"]);
+function cardFor(a){
+  const d = document.createElement("div"); d.className = "card";
+  if (CARDS.has(a.id)){ const im = new Image(); im.src = `${CARD_BASE}${a.id}.webp`; im.alt = ""; if (a.kind === "pc") im.className = "whole"; d.appendChild(im); return d; }
+  const c = document.createElement("canvas"); c.width = 60; c.height = 76; const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+  const m = SPR[a.id].json, [cw, ch] = m.cell, img = SPR[a.id].img.idle, k = Math.min(76 / ch, 60 / cw) * 1.5;   // top half of the figure, whole head
+  g.drawImage(img, 0, 0, cw, ch, (60 - cw * k) / 2, 6, cw * k, ch * k); d.appendChild(c); return d;
+}
 function faceCanvas(a, size){
   const c = document.createElement("canvas"); c.width = c.height = size; const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
   const m = SPR[a.id].json, [cw, ch] = m.cell, img = SPR[a.id].img.idle, k = Math.min(1.9, 96 / m.ppu * 1.25) * size / cw;   // same crop as the party portraits
@@ -1473,7 +1489,7 @@ function renderTurns(){
   for (let k = 0; k < n; k++){
     const i = (Math.max(0, cbt.idx) + k) % n, a = cbt.order[i];
     const b = document.createElement("div"); b.className = "turn" + (a.kind === "foe" ? " foe" : "") + (a.down ? " down" : "") + (i === cbt.idx ? " now" : "");
-    b.appendChild(faceCanvas(a, i === cbt.idx ? 54 : 40));
+    b.appendChild(cardFor(a));
     const s = document.createElement("span"); s.textContent = fname(a); b.appendChild(s); b.title = `${fname(a)} · initiative ${a.c.init}`;
     el.appendChild(b);
   }
