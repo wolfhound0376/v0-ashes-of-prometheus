@@ -1773,8 +1773,20 @@ function caveTail(ctx){
     let acc = 0; for (let i = 0; i < n; i++){ acc += (d[i] - acc) * .18; d[i] = acc; } }
   return caveTailBuf = buf;
 }
+let dreamSwellBuf = null;
+function dreamSwell(ctx){                   // a tail that rises: through a convolver it puts a soft swell BEFORE each sound
+  if (dreamSwellBuf) return dreamSwellBuf;
+  const rate = ctx.sampleRate, n = Math.floor(.9 * rate), buf = ctx.createBuffer(2, n, rate); let seed = 0x2545f491;
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return ((seed >>> 0) / 4294967296) * 2 - 1; };
+  for (let ch = 0; ch < 2; ch++){ const d = buf.getChannelData(ch); for (let i = 0; i < n; i++){ const k = i / n; d[i] = rnd() * k * k * .5; } let acc = 0; for (let i = 0; i < n; i++){ acc += (d[i] - acc) * .12; d[i] = acc; } }
+  return dreamSwellBuf = buf;
+}
 function rapportChain(ctx){
-  const input = ctx.createGain(), out = ctx.destination;
+  // dreamlike (Sam, 2026-10-13): the whole voice drifts slowly in pitch, a soft swell rises before each
+  // sound, and wide slow echoes breathe behind it
+  const raw = ctx.createGain(), out = ctx.destination, input = ctx.createGain();
+  const drift = ctx.createDelay(.2); drift.delayTime.value = .03; const driftLfo = ctx.createOscillator(); driftLfo.frequency.value = .11; const driftDepth = ctx.createGain(); driftDepth.gain.value = .012; driftLfo.connect(driftDepth).connect(drift.delayTime); driftLfo.start();
+  raw.connect(drift).connect(input);
   const dryLp = ctx.createBiquadFilter(); dryLp.type = "lowpass"; dryLp.frequency.value = 3600; const dry = ctx.createGain(); dry.gain.value = .55; input.connect(dryLp).connect(dry).connect(out);
   const lfo = ctx.createOscillator(); lfo.frequency.value = .35;
   for (const [ms, cents, ph] of [[14, 7, 1], [27, -9, -1]]){ const dl = ctx.createDelay(.1); dl.delayTime.value = ms / 1000; const depth = ctx.createGain(); depth.gain.value = (cents / 1200) * (ms / 1000) * .9 * ph; lfo.connect(depth).connect(dl.delayTime);
@@ -1782,7 +1794,12 @@ function rapportChain(ctx){
   lfo.start();
   const conv = ctx.createConvolver(); conv.buffer = caveTail(ctx); const wetLp = ctx.createBiquadFilter(); wetLp.type = "lowpass"; wetLp.frequency.value = 2400;
   const pre = ctx.createDelay(.1); pre.delayTime.value = .018; const wet = ctx.createGain(); wet.gain.value = .5; input.connect(pre).connect(conv).connect(wetLp).connect(wet).connect(out);
-  return input;
+  const swell = ctx.createConvolver(); swell.buffer = dreamSwell(ctx); const swellLp = ctx.createBiquadFilter(); swellLp.type = "lowpass"; swellLp.frequency.value = 1800; const swellG = ctx.createGain(); swellG.gain.value = .22; input.connect(swell).connect(swellLp).connect(swellG).connect(out);
+  const breathe = ctx.createGain(); breathe.gain.value = .26; const bl = ctx.createOscillator(); bl.frequency.value = .21; const bd = ctx.createGain(); bd.gain.value = .09; bl.connect(bd).connect(breathe.gain); bl.start();
+  [[310, -.7], [470, .7]].forEach(([ms, p]) => { const d = ctx.createDelay(1); d.delayTime.value = ms / 1000; const fb = ctx.createGain(); fb.gain.value = .28; const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1600; const pan = ctx.createStereoPanner(); pan.pan.value = p;
+    input.connect(d).connect(lp).connect(fb).connect(d); lp.connect(pan).connect(breathe); });
+  breathe.connect(out);
+  return raw;
 }
 function playVoice(ctx, buf, rapport){
   if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
