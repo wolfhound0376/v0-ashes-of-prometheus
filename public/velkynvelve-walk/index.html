@@ -244,6 +244,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <select id="jump" aria-label="Jump to area"></select>
       <h4>World</h4>
       <button class="btn" id="dmTime">Stop time</button>
+      <button class="btn" id="dmOoze">A gray ooze comes in (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
@@ -1230,7 +1231,7 @@ function arrivalFor(slug){
 function creatureArrives(c){
   if (creatures.has(c.slug) || mode === "load" || mode === "travel") return;
   const a = arrivalFor(c.slug);
-  const f = mkActor(c.slug, a.from.x, a.from.y, "foe", {alpha: 0, hp: c.hp ?? 1, hpMax: c.hpMax ?? 1, creature: c, hostile: true, slow: true, big: a.big});
+  const f = mkActor(c.slug, a.from.x, a.from.y, "foe", {alpha: 0, hp: c.hp ?? 1, hpMax: c.hpMax ?? 1, creature: c, slow: true, big: a.big});   // not `hostile`: that is the guards-on-watch trigger; a creature closes in on its own (tickCreatures)
   f.fadeIn = true; f.face = faceOf(a.to.x - a.from.x, a.to.y - a.from.y);
   creatures.set(c.slug, f); npcs.push(f); actors = [...party, ...npcs, ...foes];
   const land = nearestWalkable(a.to.x, a.to.y);
@@ -1261,10 +1262,10 @@ function tickCreatures(){
   for (const f of creatures.values()){
     if (f.down || f.fading || f.waitUntil > now) continue;
     const d = Math.hypot(f.x - leader.x, f.y - leader.y);
-    if (d < 200 * node.scale){ startCombat([f], `${f.creature.name} attacks!`); return; }
+    if (d < 150 * node.scale){ startCombat([f], `${f.creature.name} attacks!`); return; }
     if (!f.path.length && !f.act && now > (f.actUntil || 0)){
-      const goal = nearestWalkable(leader.x + (f.x - leader.x) * .35, leader.y + (f.y - leader.y) * .35);
-      f.path = findPath(f, goal); f.actUntil = now + 2500 + Math.random() * 2500;
+      const goal = nearestWalkable(f.x + (leader.x - f.x) * .3, f.y + (leader.y - f.y) * .3);   // a third of the way, then a pause: it creeps
+      f.path = findPath(f, goal); f.actUntil = now + 3500 + Math.random() * 3000;
     }
   }
 }
@@ -1546,6 +1547,7 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+$("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
   if (on === timeStopped) return;
   timeStopped = on; stage.classList.toggle("frozen", on); $("frozen").hidden = !on;

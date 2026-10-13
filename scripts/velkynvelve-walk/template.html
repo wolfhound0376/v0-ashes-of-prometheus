@@ -244,6 +244,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <select id="jump" aria-label="Jump to area"></select>
       <h4>World</h4>
       <button class="btn" id="dmTime">Stop time</button>
+      <button class="btn" id="dmOoze">A gray ooze comes in (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
@@ -1546,6 +1547,7 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+$("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
   if (on === timeStopped) return;
   timeStopped = on; stage.classList.toggle("frozen", on); $("frozen").hidden = !on;
