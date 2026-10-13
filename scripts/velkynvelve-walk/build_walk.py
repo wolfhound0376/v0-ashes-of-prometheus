@@ -23,10 +23,10 @@ F = ['quaggoth', 'giant-spider']
 
 meta = {}
 for i in P + N + F:
-    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep'] if i in P else []) + (['attack', 'dodge'] if i in F else [])
+    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead'] if i in F else [])
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep']
     if i == 'scott': sh.append('perform')
-    if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge']
+    if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     j = json.load(open(os.path.join(SPR, i, 'sprite.json')))
     sh = [s for s in sh if s in j['animations'] and os.path.exists(os.path.join(SPR, i, s + '.png'))]
     j['animations'] = {k: v for k, v in j['animations'].items() if k in sh}
