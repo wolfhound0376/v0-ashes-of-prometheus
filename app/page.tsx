@@ -364,6 +364,17 @@ export default function DashboardPage() {
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
   const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
+  // The player accepted an NPC's "a word" on the map and came over: ask Malachar for what the NPC
+  // wanted to say, as a stage direction (nobody at the table spoke), so her real first line is written
+  // and voiced here — not the opener again.
+  const handleOpenerAccepted = useCallback((npcName: string, opener: string) => {
+    const pc = characters.find((c) => c.id === selectedCharacterId)?.name || talkAs || "the character"
+    const where = talkArea ?? "Velkynvelve"
+    void sendToLich(
+      `${npcName} asked ${pc} for a word in the ${where} ("${opener}") and ${pc} has come over to listen. ${npcName} now says what they wanted to say, in their own words and voice, to ${pc} — the actual matter, not a greeting. One or two lines of theirs, with a sentence of how they say it. Do not repeat the opener.`,
+      selectedCharacterId, claimToken, { director: true, talkWith: npcName, talkWhere: talkFrom === "map" ? where : null },
+    ).catch((e) => console.error("[map talk] opener follow-up failed", e))
+  }, [sendToLich, characters, talkAs, talkArea, selectedCharacterId, claimToken, talkFrom])
 
   // The chat route returned 403: this browser's character claim is stale (e.g.
   // the character was deleted, or the token no longer matches). Surface it
@@ -1811,6 +1822,7 @@ if (error) {
         talkOpening={talkOpening}
         timeStopped={timeStopped}
         onFacingChange={handleFacingChange}
+        onOpenerAccepted={handleOpenerAccepted}
         onEndTalk={() => {
           if (talkReturn) { window.location.href = talkReturn; return }
           setCampTalkWith(null)

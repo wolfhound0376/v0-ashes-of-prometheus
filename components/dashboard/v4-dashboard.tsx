@@ -323,6 +323,9 @@ interface V4DashboardProps {
   timeStopped?: boolean
   /** Who the NPC window is showing, as it changes: the one an unaddressed question is put to. */
   onFacingChange?: (npcName: string | null) => void
+  /** Map talk: the player accepted the NPC's "a word" and came over. Fired once, after the opener is
+   *  logged, so the page can ask Malachar for what the NPC actually wanted to say. */
+  onOpenerAccepted?: (npcName: string, opener: string) => void
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -568,57 +571,26 @@ export function V4Dashboard(props: V4DashboardProps) {
   // On the map the opener is the line that matters right now; otherwise their last line in the feed.
   const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? props.talkOpening.slice(0, 160) : null)
     ?? [...dialogue].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160) ?? null
-  // Map talk (Sam, 2026-10-11: "the character you engage with should be at the NPC window and
-  // talking"): the opener the NPC said on the map is said again here, in their canon voice through
-  // /api/npc-tts, and they hold the floor — talking loop on — while it plays. If the browser blocks
-  // the audio (a fresh page has no click yet), the talking loop still runs for the length of the line.
+  // Map talk (Sam, 2026-10-13: "When Eldeth says 'a word' and you accept, she should say something on
+  // the UI. The UI should start with her in the idle loop and then transition to talking loop when she
+  // begins to speak"). The opener was already said on the map, so it is NOT said again here: it goes
+  // into the shared log as her line (once), and the page asks Malachar for what she actually wanted to
+  // say. She stands in her idle loop until that line's voice starts; DM Narration flips her to the
+  // talking loop as it plays (onSpeakingChange) and back when it ends. Saying the opener twice was the
+  // "dialogues are being repeated" of 2026-10-13. When the PLAYER walked up instead there is no opener
+  // and they wait in silence.
   const openingSpoken = useRef(false)
+  const onOpenerAccepted = props.onOpenerAccepted
   useEffect(() => {
     const line = props.talkOpening?.trim()
     const npc = talkPartner?.kind === "npc" ? talkPartner.npc : null
     if (!talkMode || !line || !npc || openingSpoken.current) return
     openingSpoken.current = true
-    const who = { id: npc.id, name: npc.name }
-    // They started this, so the conversation starts with them: the opener goes into the shared log as
-    // their line (everyone sees it, and Malachar reads it before he answers for them). It is spoken
-    // just below, once; DM Narration is told so it does not say it again when the row comes back.
-    // When the PLAYER walked up instead, there is no opener at all and they wait in silence.
     markVoicedElsewhere(npc.name, line)
     void createClient().from("dialogue").insert({ speaker: npc.name, speaker_type: "npc", channel: "dm", text: line })
       .then((res: { error: { message: string } | null }) => { if (res.error) console.error("[map talk] opener not logged:", res.error.message) })
-    let cancelled = false
-    const hold = window.setTimeout(() => { if (!cancelled) setSpeakingNpc((s) => (s?.id === who.id ? null : s)) }, Math.max(2500, line.length * 70))
-    setSpeakingNpc(who)
-    if (canSpeak(npc.name)) {
-      void (async () => {
-        try {
-          const row = npc as { voice_id?: string | null; voice_description?: string | null }
-          const res = await fetch("/api/npc-tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: line, npcName: npc.name, npcId: npc.id, voiceId: row.voice_id ?? undefined, voiceDescription: row.voice_id ? undefined : row.voice_description ?? undefined, listenerCharacterId: selected?.id ?? listenerCharacterId() }),
-          })
-          if (!res.ok || cancelled) return
-          const blob = await res.blob()
-          const say = () => speakBlob("npc", blob, { speaker: npc.name, onStart: () => setSpeakingNpc(who) }).finished
-          let ended = await say()
-          // Arriving from the map is a fresh page with no click on it yet, and browsers refuse sound until
-          // there is one. Keep the line and say it on the player's first click or key, not lose it.
-          if (ended === "blocked" && !cancelled) {
-            await new Promise<void>((resolve) => {
-              const go = () => { ["pointerdown", "keydown"].forEach((ev) => window.removeEventListener(ev, go, true)); unlockSpeechAudio(); resolve() }
-              ;["pointerdown", "keydown"].forEach((ev) => window.addEventListener(ev, go, true))
-            })
-            if (!cancelled) ended = await say()
-          }
-          if (!cancelled) setSpeakingNpc((s) => (s?.id === who.id ? null : s))
-        } catch {
-          /* voice unavailable: the talking loop and the written line still carry it */
-        }
-      })()
-    }
-    return () => { cancelled = true; window.clearTimeout(hold) }
-  }, [talkMode, props.talkOpening, talkPartner])
+      .then(() => onOpenerAccepted?.(npc.name, line))
+  }, [talkMode, props.talkOpening, talkPartner, onOpenerAccepted])
   const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
   // Layer 2 — the POV character's own animated idle. Prefer the loop; fall back
   // to the still portrait when a character has no idle_url yet. A talking loop
