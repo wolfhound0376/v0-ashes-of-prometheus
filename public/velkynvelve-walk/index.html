@@ -119,6 +119,7 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .zoom .fit{width:auto;padding:0 10px;font-family:var(--face-mono);font-size:var(--s-1)}
 
 /* combat: the Octopath-style frame over the plate. Nothing here is a board; it is HUD over the painting. */
+.vignette.hit{opacity:1;background:radial-gradient(ellipse at center,transparent 35%,rgba(200,30,20,.45) 70%,rgba(120,0,0,.9) 100%);transition:none}
 .combat{position:absolute;inset:0;pointer-events:none;font-family:var(--face-body)}
 .combat[hidden]{display:none}
 .combat .cbt-ui{pointer-events:auto}
@@ -565,7 +566,8 @@ function draw(){
     let fy = 0;
     if (a.fall){ const k = Math.min(1, (now - a.fall) / 900); fy = k * k * 800; ctx.globalAlpha = a.alpha * (1 - k); }
     if (a.fallIn){ const k = 1 - Math.min(1, (now - a.fallIn) / 700); fy = -k * k * 700; if (k <= 0) a.fallIn = 0; }
-    const dw = cw * sc, dh = ch * sc, dx = a.x - px * sc, dy = a.y - py * sc + fy;
+    if (a.kx || a.ky){ a.kx *= .82; a.ky *= .82; if (Math.abs(a.kx) < .3) a.kx = 0; if (Math.abs(a.ky) < .3) a.ky = 0; }
+    const dw = cw * sc, dh = ch * sc, dx = a.x - px * sc + (a.kx || 0), dy = a.y - py * sc + fy + (a.ky || 0);
     ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
     if (a.flash > now){
       ctx.globalAlpha = .55 * a.alpha;
@@ -1215,6 +1217,34 @@ const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: 
   "gray-ooze": {hurt: "creature/hurt_beast", death: "creature/death_beast"},
   "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, jorlan: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}};
 const CLASS_TURN = {Sorcerer: "ui/turn_sorcerer", Cleric: "ui/turn_cleric", Bard: "ui/turn_bard", Rogue: "ui/turn_rogue"};
+// Opponents speak (Sam, 2026-10-13: "Opponents can speak and taunt"). Placeholder lines, not book text: the
+// drow in their saved voices (the game renders them live through /api/npc-tts; the preview plays the banked
+// files), the beasts in their calls. The female guard has no voice on her row yet, so she taunts in text.
+const TAUNTS = {
+  "drow-guard-male": ["Back in your cage, meat.", "Lolth's spiders eat better than you fight.", "Kneel, and I will make it quick."],
+  "drow-guard-female": ["Back in your cage, meat.", "Lolth's spiders eat better than you fight.", "Kneel, and I will make it quick."],
+  jorlan: ["I know this pen better than you know your own hands.", "Fast. Not fast enough."],
+};
+const GLOATS = {"drow-guard-male": ["One less mouth to feed."], "drow-guard-female": ["One less mouth to feed."], jorlan: ["Stay down."]};
+function taunt(f, pool){
+  const ls = (pool || TAUNTS)[f.id]; if (!ls || !ls.length) return false;
+  const line = ls[Math.floor(Math.random() * ls.length)];
+  bark(f, line, 2600, {talk: true});
+  const b = VOICE_BANK[f.id], i = b && b.taunts ? b.taunts.indexOf(line) : -1;
+  if (APP) speak(f.id, line); else if (i >= 0) playBankFile(`audio/voice/${f.id}-t${i + 1}.mp3`, profileFor(f.id));
+  return true;
+}
+async function playBankFile(file, profile){ try { const ctx = audioCtx(); if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]); if (ctx.state !== "running") return; const r = await fetch(file); if (!r.ok) return; playVoice(ctx, await ctx.decodeAudioData(await r.arrayBuffer()), profile); } catch (e) {} }
+// Reactions: the one hit is knocked back a step and returns; the attacker lunges; a hit on a hero flashes the
+// edges red; a hero going down gets a shout from whoever is nearest; a beast bellows when it strikes.
+function knock(t, from, px){ const d = norm({x: t.x - from.x, y: t.y - from.y}); if (!isFinite(d.x)) return; t.kx = (t.kx || 0) + d.x * px; t.ky = (t.ky || 0) + d.y * px * .6; }
+function lunge(a, toward, px){ const d = norm({x: toward.x - a.x, y: toward.y - a.y}); if (!isFinite(d.x)) return; a.kx = (a.kx || 0) + d.x * px; a.ky = (a.ky || 0) + d.y * px * .6; }
+function redFlash(){ const v = $("vignette"); v.classList.add("hit"); setTimeout(() => v.classList.remove("hit"), 260); }
+function blowNarration(att, tgt, atk, n, crit){
+  const who = fname(att), whom = fname(tgt), w = atk.name.toLowerCase();
+  const verb = /claw/.test(w) ? "rakes" : /bite/.test(w) ? "sinks its fangs into" : /pseudopod/.test(w) ? "slaps a burning pseudopod across" : /dagger/.test(w) ? "drives the dagger into" : /unarmed/.test(w) ? "lands a fist on" : "strikes";
+  narrate(att, `${who} ${verb} ${whom}${crit ? " — a terrible blow" : ""}.`);
+}
 function weaponSfx(atk){ const n = atk.name.toLowerCase(); return n.includes("dagger") ? {swing: "combat/dagger_stab", hit: "combat/dagger_stab"} : n.includes("unarmed") ? {swing: "combat/melee_swing_light", hit: "combat/unarmed_hit"} : /claw|bite|pseudopod/.test(n) ? {swing: "combat/melee_swing_heavy", hit: "combat/melee_hit_flesh"} : {swing: "combat/melee_swing_light", hit: "combat/melee_hit_flesh"}; }
 function strikeSheet(atk, sneak){ const n = atk.name.toLowerCase(); return sneak ? "strikeSneak" : n.includes("unarmed") ? "strikePunch" : n.includes("claw") || n.includes("bite") ? "strikeSpecial" : "physicalImpact"; }
 // Wards (lib/world-ai/campaigns.ts: "Magical wards block spells cast inside pen (but not from outside)"):
@@ -1481,8 +1511,10 @@ function attackWith(att, tgt, atk, done){
       const adv = advantageOn(att, tgt), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + atk.hit >= targetAc(tgt)); att.c.conds.delete("mocked");
       const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
       if (r === 1) bank("ui/nat1", .7);
-      if (!hit){ miss(tgt); bank("combat/melee_miss", .7); log(`${why} — miss.`); return; }
+      lunge(att, tgt, 14 * actorScale(att));
+      if (!hit){ miss(tgt); bank("combat/melee_miss", .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       const sneak = !!(atk.sneak && standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5));
+      knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: crit ? 2.6 : 2});
       let dmg = roll(atk.dmg, crit), parts = [`${dmg.total} ${atk.type}`];
@@ -1493,6 +1525,7 @@ function attackWith(att, tgt, atk, done){
       if (atk.rider && !tgt.down){ const s = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
+      blowNarration(att, tgt, atk, dmg.total, crit);
     }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); });
   });
 }
@@ -1527,7 +1560,8 @@ function castSpell(caster, tgt, name, done){
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
-        land(tgt, true, sp.type);
+        land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
+        narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
         const d = roll(sp.dmg, crit); damage(tgt, d.total, sp.type, crit, caster); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
       } else if (sp.kind === "heal"){
@@ -1582,6 +1616,10 @@ function fall(t){
   if (SPR[t.id].img.dead) playOnce(t, "dead", () => {}); else { t.fading = true; }
   log(`<b>${fname(t)}</b> ${t.kind === "pc" ? "goes down." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
+  popText(t, t.kind === "pc" ? "down" : "slain", t.kind === "pc" ? "#ff6b5e" : "#ffd166", 1.3); hitstop(160); shake(10);
+  if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
+    const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
+  else narrate(t, `${fname(t)} falls.`);
   renderTurns();
 }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
@@ -1605,6 +1643,7 @@ function foeTurn(f){
   const tgt = standing(party).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
+  if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
   const atk = f.c.sheet.attacks[0], swings = f.c.sheet.multi || 1;
   let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
   setTimeout(go, 500);
@@ -1989,8 +2028,21 @@ const VOICE_BANK = {
  },
  "jorlan": {
   "line": "Go. Quickly, before the next watch.",
-  "voice": "IKne3meq5aSn9XLyUdCD"
- }
+  "voice": "IKne3meq5aSn9XLyUdCD",
+  "taunts": [
+   "I know this pen better than you know your own hands.",
+   "Fast. Not fast enough."
+  ]
+ },
+ "drow-guard-male": {
+  "voice": "ttNi9wVM8M97tsxE7PFZ (Drow Guard row)",
+  "taunts": [
+   "Back in your cage, meat.",
+   "Lolth's spiders eat better than you fight.",
+   "Kneel, and I will make it quick."
+  ]
+ },
+ "_taunts_note": "Taunt lines are the project's own placeholders, not book text; files audio/voice/<id>-t<n>.mp3, rendered through /api/npc-tts in the row's saved voice. The female guard has no voice of her own on the row (Drow Guard is a male voice), so she taunts in text only until one is designed."
 };
 async function speakBank(id, text){
   const b = VOICE_BANK[id]; if (!b || b.line !== text) return false;
