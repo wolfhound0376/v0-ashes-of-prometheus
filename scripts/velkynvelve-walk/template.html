@@ -1610,7 +1610,7 @@ async function loadSpriteManifest(slug){
 }
 function arrivalFor(slug){
   const arr = (node.arrivals || {})[slug] || (node.arrivals || {}).default;
-  if (arr) return {from: {x: arr.from[0], y: arr.from[1]}, to: {x: arr.to[0], y: arr.to[1]}, anim: arr.anim || "walk", big: arr.big || 1};
+  if (arr) return {from: {x: arr.from[0], y: arr.from[1]}, to: {x: arr.to[0], y: arr.to[1]}, anim: arr.anim || "walk", big: arr.big || 1, backdrop: !!arr.backdrop, fixedScale: arr.fixedScale || 0, via: arr.via || ""};
   // no arrival written for this plate: in through the exit the party last used, toward the room's middle
   const z = node.zones[0] ? zoneCenter(node.zones[0]) : {x: centroid.x, y: centroid.y - 200};
   return {from: z, to: nearestWalkable(centroid.x, centroid.y), anim: "walk", big: 1};
@@ -1618,16 +1618,17 @@ function arrivalFor(slug){
 function creatureArrives(c){
   if (creatures.has(c.slug) || mode === "load" || mode === "travel") return;
   const a = arrivalFor(c.slug);
-  const f = mkActor(c.slug, a.from.x, a.from.y, "foe", {alpha: 0, hp: c.hp ?? 1, hpMax: c.hpMax ?? 1, creature: c, slow: true, big: a.big});   // not `hostile`: that is the guards-on-watch trigger; a creature closes in on its own (tickCreatures)
+  const f = mkActor(c.slug, a.from.x, a.from.y, "foe", {alpha: 0, hp: c.hp ?? 1, hpMax: c.hpMax ?? 1, creature: c, slow: true, big: a.big, backdrop: a.backdrop, fixedScale: a.fixedScale});   // not `hostile`: that is the guards-on-watch trigger; a creature closes in on its own (tickCreatures)
   f.fadeIn = true; f.face = faceOf(a.to.x - a.from.x, a.to.y - a.from.y);
   creatures.set(c.slug, f); npcs.push(f); actors = [...party, ...npcs, ...foes];
-  const land = nearestWalkable(a.to.x, a.to.y);
+  // A backdrop arrival (the balcony, the bridge: off the walk grid, like the guards) goes straight to its mark.
+  const land = a.backdrop ? {x: a.to.x, y: a.to.y} : nearestWalkable(a.to.x, a.to.y);
   if (a.anim !== "walk" && SPR[c.slug].img[a.anim]){        // e.g. "emerge": it heaves itself up over the edge first
     f.anim = a.anim; f.t0 = now; f.alpha = 1; f.fadeIn = false; f.waitUntil = now + SPR[c.slug].json.animations[a.anim].frames / SPR[c.slug].json.animations[a.anim].fps * 1000;
     f.path = [{x: land.x, y: land.y}];
-  } else f.path = findPath(f, land);
+  } else f.path = a.backdrop ? [{x: land.x, y: land.y}] : findPath(f, land);
   f.onArrive = () => { setAnim(f, "idle"); f.home = {x: f.x, y: f.y}; };
-  narrate(f, `${c.name} comes in${a.anim === "emerge" ? ", heaving itself up over the edge" : ""}.`);
+  narrate(f, `${c.name} comes in${a.anim === "emerge" ? ", heaving itself up over the edge" : a.via ? " " + a.via : ""}.`);
   // the entrance is a moment: its own music sting (audio/arrive-<slug>.mp3, the film's cue) and the camera
   // pushing in on it, then easing back to the room once it is in
   sfx(`arrive-${c.slug}`, .9);
