@@ -1249,7 +1249,12 @@ function drawFxLayer(flat){
     const sx = (f % m.cols) * cw, sy = Math.floor(f / m.cols) * ch;
     ctx.save(); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1);
     if (e.flat){ ctx.translate(P.x, P.y + 2); ctx.scale(1, .5); if (e.spin) ctx.rotate((now - e.t0) / 1000 * e.spin); ctx.drawImage(e.img, sx, sy, cw, ch, -w / 2, -w / 2, w, w); }
-    else { const y = e.anchor === "feet" ? P.y : e.anchor === "top" ? P.top : P.mid; ctx.drawImage(e.img, sx, sy, cw, ch, P.x - w / 2 + (e.dx || 0) * px, y - h / 2 - e.lift * px, w, h); }
+    else {
+      const y = e.anchor === "feet" ? P.y : e.anchor === "top" ? P.top : P.mid; let dx = e.dx || 0, lift = e.lift, flip = false;
+      if (e.orbit){ const th = (now - e.t0) / 1000 * e.orbit.speed + e.orbit.phase; dx += Math.cos(th) * e.orbit.r; lift += Math.sin(th) * e.orbit.ry; flip = Math.sin(th + Math.PI / 2) < 0; ctx.globalAlpha *= .7 + .3 * (Math.sin(th) + 1) / 2; }
+      if (flip){ ctx.translate(P.x + dx * px, 0); ctx.scale(-1, 1); ctx.translate(-(P.x + dx * px), 0); }
+      ctx.drawImage(e.img, sx, sy, cw, ch, P.x - w / 2 + dx * px, y - h / 2 - lift * px, w, h);
+    }
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -1314,30 +1319,31 @@ const wardsHere = () => node.wards || null;
 // up: the sheets are the `characters` rows (snapshot 2026-10-12), the foes are `bestiary` rows, the
 // spells are SRD 5.2.1 at level 1.
 const SHEETS = {
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3},
+  // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: []}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {stealth: 2, athletics: 0, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}},
-  freia:  {name: "Fifi", cls: "Rogue", hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1},
+  freia:  {name: "Fifi", cls: "Rogue", hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
            attacks: [{name: "Dagger", hit: 5, dmg: "1d4+3", type: "piercing", reach: 5, thrown: 60, sneak: "1d6"}, {name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: null},
 };
 // Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
 // sheet_save_proficiencies is wired in step 2). Monster saves below are their ability modifiers, as the rows carry no save list.
 const FOE_BLOCKS = {
-  "drow-guard-male":   {name: "Drow guard", xp: 50, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  "drow-guard-female": {name: "Drow guard", xp: 50, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  jorlan:              {name: "Jorlan", xp: 50, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  "giant-spider": {name: "Giant spider", xp: 200, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
+  "drow-guard-male":   {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "drow-guard-female": {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  jorlan:              {name: "Jorlan", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "giant-spider": {name: "Giant spider", xp: 200, passive: 10, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
                    attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d8", type: "poison", half: true}}]},
-  quaggoth: {name: "Quaggoth", xp: 450, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
+  quaggoth: {name: "Quaggoth", xp: 450, passive: 11, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], multi: 2, woundedFury: 10},
-  "gray-ooze": {name: "Gray ooze", xp: 100, hp: 22, ac: 8, speed: 10, init: -2, saves: {str: 1, dex: -2, con: 3, int: -5, wis: -2, cha: -4}, resist: ["acid", "cold", "fire"],
+  "gray-ooze": {name: "Gray ooze", xp: 100, passive: 8, hp: 22, ac: 8, speed: 10, init: -2, saves: {str: 1, dex: -2, con: 3, int: -5, wis: -2, cha: -4}, resist: ["acid", "cold", "fire"],
                 immuneCond: ["blinded", "charmed", "deafened", "frightened", "prone"],
                 attacks: [{name: "Pseudopod", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5, extra: {dmg: "2d6", type: "acid"}}]},
 };
@@ -1356,7 +1362,10 @@ const SPELLS = {
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
 const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
-                    shielded: ["◇", "#cfe8ff", "+2 AC"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"]};
+                    shielded: ["◇", "#cfe8ff", "+2 AC"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
+                    hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
+                    grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
+                    sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], dodging: ["◈", "#cfe8ff", "Dodging"]};
 
 // dice: "1d8+3", "2d6", "4" → {total, rolls}
 function roll(expr, crit){
@@ -1478,7 +1487,7 @@ function nextTurn(first){
     const a = cbt.order[cbt.idx]; if (!a.down && actors.includes(a)) break;
   }
   const a = activeActor(); if (!a) return;
-  a.c.conds.delete("dodging");
+  a.c.conds.delete("dodging"); a.c.reactionUsed = false;
   renderTurns(); renderParty();
   if (a.c.conds.has("asleep")){
     const s = d20() + (a.c.sheet.saves.wis || 0);
@@ -1486,6 +1495,8 @@ function nextTurn(first){
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
+  a.c.conds.delete("disengaged"); a.c.sneakUsed = false; a.c.bonusSpell = false; a.c.leveledSpell = false;
+  if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   bank(CLASS_TURN[a.c.sheet.cls] || "ui/turn_chime", .7);
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
@@ -1499,17 +1510,38 @@ function openMenu(a, sub){
   if (sub === "attack"){
     for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
     add("Back", "", () => openMenu(a));
+  } else if (sub === "shove"){
+    add("Shove: knock prone", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "prone"}));
+    add("Shove: push 5 ft", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "push"}));
+    add("Grapple", `they save STR or DEX vs DC ${shoveDc(a)} · speed 0 while held`, () => aim(a, {shove: "grapple"}));
+    add("Back", "", () => openMenu(a));
   } else if (sub === "cast"){
-    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · no slot · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, () => aim(a, {spell: nm})); }
-    for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const left = c.slots[sp.lvl] || 0, ok = left > 0 && (!sp.bonus || c.bonus);
-      add(nm, `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left${sp.bonus ? " · bonus action" : ""} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, ok ? () => aim(a, {spell: nm}) : null); }
+    // One action, one bonus action (Sam, 2026-10-13). A cantrip or an action spell needs the action; a
+    // bonus-action spell needs the bonus action; and per the SRD, once you have cast a spell with a bonus
+    // action the only other spell you can cast this turn is a cantrip (and the reverse: a leveled action
+    // spell shuts the bonus-action spell for the turn).
+    if (!c.action) add("— action already used —", "only a bonus-action spell is left", null);
+    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
+    for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const left = c.slots[sp.lvl] || 0;
+      const why = left <= 0 ? "no slot left" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
+      add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
     add("Back", "", () => openMenu(a));
   } else {
     add("Attack", s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
+    const thrown = s.attacks.find(k => k.thrown);
+    if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
+    add("Sneak (Hide)", c.conds.has("hidden") ? "you are hidden" : `Stealth +${(s.skills || {}).stealth ?? s.saves.dex} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
+    add("Shove / Grapple", `unarmed · they save vs DC ${shoveDc(a)}`, c.action ? () => openMenu(a, "shove") : null);
+    add("Dash", `+${s.speed} ft of movement`, c.action ? () => { c.action = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
+    add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
+    add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
+    add("Search", `Perception +${(s.skills || {}).perception ?? s.saves.wis}`, c.action ? () => doSearch(a) : null);
+    if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     if (s.magic){ const w = wardsHere(); add("Cast", w ? "the wards smother any spell cast in here" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, !w && (c.action || c.bonus) ? () => openMenu(a, "cast") : null);
       if (w && !cbt.wardSaid){ cbt.wardSaid = true; log(`<em>${esc(w)}</em>`); } }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
+    if (c.conds.has("prone")) add("Stand up", `half your speed (${Math.floor(s.speed / 2)} ft)`, c.move >= Math.floor(s.speed / 2) ? () => { c.move -= Math.floor(s.speed / 2); c.conds.delete("prone"); setAnim(a, "idle"); renderParty(); openMenu(a); } : null);
     add("End turn", "Enter", () => nextTurn());
   }
   placeMenu();
@@ -1523,6 +1555,7 @@ function placeMenu(){}
 function aim(a, what){
   closeMenu(); cbt.phase = "target"; cbt.pend = what;
   const sp = what.spell && SPELLS[what.spell];
+  if (what.shove){ hint(`${what.shove === "grapple" ? "Grapple" : "Shove"}: click a foe within 5 ft. Esc to cancel.`); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(`${what.spell}: click a friend.`); return; }
   if (sp && sp.area){ hint(`${what.spell}: click where it lands (${sp.area}-ft area).`); return; }
   hint(`${what.spell || what.atk.name}: click a foe. Esc to cancel.`);
@@ -1534,9 +1567,12 @@ function combatClick(w){
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
+  if (p.help){ const t = hitActor(party, w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
+  if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(party, w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; } castSpell(a, t, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
+  if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
   if (p.atk) attackWith(a, t, p.atk); else castSpell(a, t, p.spell);
 }
 // walk up to the movement left, deducting what is used
@@ -1545,11 +1581,31 @@ function moveActor(a, w, done){
   const px = ftPx(a); let left = a.c.move * px, prev = a, cut = [];
   for (const q of path){ const d = Math.hypot(q.x - prev.x, q.y - prev.y); if (d > left){ const k = left / d; cut.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); left = 0; break; } cut.push(q); left -= d; prev = q; }
   a.c.move = Math.max(0, Math.round(left / px / 5) * 5); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
-  combatBusy = true; closeMenu(); a.path = cut; a.onArrive = () => { combatBusy = false; done && done(); };
+  // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as its reaction.
+  const end = cut[cut.length - 1], threat = a.kind === "pc" && !a.c.conds.has("disengaged") ? standing(foes).filter(f => !f.c.reactionUsed && feetBetween(a, f) <= 5 && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6) : [];
+  combatBusy = true; closeMenu(); a.path = cut;
+  a.onArrive = () => { combatBusy = false; done && done(); };
+  if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = []; log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
+    attackWith(f, a, f.c.sheet.attacks[0], () => { if (!a.down){ a.path = cut; a.onArrive = () => { combatBusy = false; done && done(); }; } else { combatBusy = false; done && done(); } }); }
 }
 
 // ----- resolving -----
-function advantageOn(att, tgt){ let adv = 0; if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep")) adv++; if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--; if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury) adv++; return Math.sign(adv); }
+function advantageOn(att, tgt, ranged){
+  let adv = 0;
+  if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep")) adv++;
+  if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--;
+  if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
+  if (tgt.c.conds.has("hidden")) adv--;                                       // swinging at where you think it is
+  if (tgt.c.conds.has("prone")) adv += ranged ? -1 : 1;                      // SRD: prone — melee advantage, ranged disadvantage
+  if (att.c.conds.has("prone")) adv--;
+  if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury) adv++;
+  return Math.sign(adv);
+}
+// Attacking gives you away and spends the Help; both are one attack's worth.
+function afterAttackRoll(att){ if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); att.alpha = 1; } att.c.conds.delete("helped"); }
+// SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
+const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
+function skillCheck(a, skill){ const r = d20(), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
 function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0); }
 // a weapon attack: close to reach, swing, roll on the hit frame, then the number
 function attackWith(att, tgt, atk, done){
@@ -1560,13 +1616,17 @@ function attackWith(att, tgt, atk, done){
     const ws = weaponSfx(atk), cs = CREATURE_SFX[att.id];
     if (cs && cs.call && Math.random() < .5) bank(cs.call, .7);
     bank(ws.swing, .6);
+    const ranged = feetBetween(att, tgt) > (atk.reach || 5) + 2;
     strike(att, tgt, () => {
-      const adv = advantageOn(att, tgt), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + atk.hit >= targetAc(tgt)); att.c.conds.delete("mocked");
+      const adv = advantageOn(att, tgt, ranged), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + atk.hit >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
       if (r === 1) bank("ui/nat1", .7);
       lunge(att, tgt, 14 * actorScale(att));
       if (!hit){ swipe(att, tgt, {...swipeStyle(atk, false), miss: true}); miss(tgt); bank("combat/melee_miss", .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
-      const sneak = !!(atk.sneak && standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5));
+      // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
+      // OR an ally is within 5 ft of the target and you do not have disadvantage.
+      const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)));
+      if (sneak) att.c.sneakUsed = true;
       knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       swipe(att, tgt, {...swipeStyle(atk, crit), crit}); if (crit) setTimeout(() => swipe(att, tgt, {...swipeStyle(atk, true), crit: true}), 90);
@@ -1585,7 +1645,7 @@ function attackWith(att, tgt, atk, done){
 }
 function castSpell(caster, tgt, name, done){
   const sp = SPELLS[name], c = caster.c; closeMenu(); cbt.phase = "busy"; combatBusy = true;
-  if (sp.bonus) c.bonus = false; else c.action = false;
+  if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
   if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
@@ -1615,7 +1675,7 @@ function castSpell(caster, tgt, name, done){
       const m = c.sheet.magic;
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
-        const adv = advantageOn(caster, tgt), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + m.hit >= targetAc(tgt));
+        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + m.hit >= targetAc(tgt)); afterAttackRoll(caster);
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
@@ -1634,11 +1694,12 @@ function castSpell(caster, tgt, name, done){
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
-          const s = d20() + (t.c.sheet.saves[sp.save] || 0), ok = s >= m.dc;
-          let line = `${fname(t)} ${sp.save.toUpperCase()} ${s} vs DC ${m.dc}: ${ok ? "saves" : "fails"}`;
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20() + (t.c.sheet.saves[sp.save] || 0), ok = s >= dc;
+          let line = `${fname(t)} ${sp.save.toUpperCase()} ${s} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
+          else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
           else land(t, !ok, sp.type || "psychic");
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); if (sp.cond === "asleep") t.c.sleptDc = m.dc; }
@@ -1648,6 +1709,41 @@ function castSpell(caster, tgt, name, done){
     });
   });
   setTimeout(() => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(caster, done); }, 1500);
+}
+// Hide: a Stealth check against the best passive Perception among the foes still standing (SRD: you must
+// be unseen; the map takes "not within 5 ft of a foe" as enough cover in a cave this cluttered).
+function doHide(a){
+  const c = a.c; const near = standing(foes).find(f => feetBetween(a, f) <= 5);
+  if (near){ toast(`${fname(near)} is right on top of you — step away first.`); return; }
+  c.action = false; const k = skillCheck(a, "stealth"), best = Math.max(10, ...standing(foes).map(f => f.c.sheet.passive || 10));
+  bank("combat/hide", .7);
+  if (k.total >= best){ addCond(a, "hidden"); log(`${fname(a)} hides: Stealth ${k.r} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); a.alpha = .55; }
+  else { log(`${fname(a)} tries to hide: Stealth ${k.r} + ${k.mod} = ${k.total} vs passive ${best} — spotted.`); popText(a, "spotted", "#c9c4b8"); }
+  openMenu(a);
+}
+function doSearch(a){
+  const c = a.c; c.action = false; const k = skillCheck(a, "perception");
+  const found = standing(foes).filter(f => f.c.conds.has("hidden") && k.total >= 10 + ((f.c.sheet.skills || {}).stealth ?? f.c.sheet.saves.dex ?? 0));
+  found.forEach(f => { f.c.conds.delete("hidden"); f.alpha = 1; popText(f, "found", "#ffe08a"); });
+  log(`${fname(a)} searches: Perception ${k.r} + ${k.mod} = ${k.total}${found.length ? ` — finds ${found.map(fname).join(", ")}` : " — nothing hidden here"}.`);
+  openMenu(a);
+}
+// Shove and Grapple (SRD 2024 Unarmed Strike options): the target saves STR or DEX, its choice, against
+// 8 + your STR mod + proficiency. The map rolls its better save. Needs the action.
+function doShove(a, t, what){
+  const c = a.c; c.action = false; closeMenu(); cbt.phase = "busy"; combatBusy = true;
+  approachThen(a, t, 5, () => {
+    strike(a, t, () => {
+      const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(), total = r + sv, dc = shoveDc(a), ok = total >= dc;
+      lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
+      if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
+      bank("combat/unarmed_hit", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
+      if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
+      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const to = nearestWalkable(t.x + d.x * ftPx(t) * 5, t.y + d.y * ftPx(t) * 5); t.x = to.x; t.y = to.y; narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
+      else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
+      log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>${what === "prone" ? "prone" : what === "push" ? "pushed 5 ft" : "grappled"}</b>.`);
+    }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(a); });
+  });
 }
 function afterAction(a, done){
   if (!cbt) return;
@@ -1663,7 +1759,7 @@ function damage(t, n, type, crit, from){
   t.flash = now + 180; t.flashCol = "#fff";
   popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
-  t.c.conds.delete("asleep");
+  t.c.conds.delete("asleep"); if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   renderParty();
@@ -1699,7 +1795,9 @@ function strike(att, tgt, onHit, after){
 // the monster's turn: close on the nearest standing hero and use the block's attack(s)
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
-  const tgt = standing(party).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
+  const seen = standing(party).filter(p => !p.c.conds.has("hidden"));
+  const tgt = (seen.length ? seen : standing(party)).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
@@ -1709,7 +1807,7 @@ function foeTurn(f){
 }
 function checkEnd(){
   if (!cbt) return true;
-  if (!standing(foes).length){ bank("ui/victory", .8); setTimeout(() => endCombat(true), 600); return true; }
+  if (!standing(foes).length){ setTimeout(() => endCombat(true), 600); return true; }
   if (!standing(party).length){ log("<b>The party falls.</b> The DM core decides what the drow do with the bodies."); setTimeout(() => endCombat(false), 1200); return true; }
   return false;
 }
