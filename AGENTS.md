@@ -351,6 +351,13 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
   choosing or designing a voice for a small creature, ask for a small, childlike voice
   first and the personality second. Canon voices live in `NAMED_NPC_VOICES`
   (`lib/tts.ts`) and must match `npc_encounters.voice_id`, which wins at runtime.
+- **Rapport spores rule (Sam's ruling, 2026-10-12)**: a myconid (Stool) "doesn't actually
+  talk, spores get released and you should be able to hear them in your mind. It might sound
+  like an altered version of your own voice, ethereal, and like that voice heard in a cave."
+  So a myconid line is rendered in the LISTENER's saved voice (`characters.voice_id`), never
+  the row's, marked `audio/mpeg; profile=rapport` by `/api/npc-tts`, and played through
+  `lib/rapport-voice.ts` (dashboard) / the same chain in the map. On the map it is a thought
+  bubble, not speech. `lib/rapport.ts` holds the test and the mark.
 - **Sprite height rule (Sam's ruling)**: a battle sprite's `ppu` (pixels per 5-ft square)
   is set so the figure stands at its real height, measured from the drawn figure in its
   `idle` sheet (`ppu = figure_px × 5 / feet`), never left at the default. Humans (and

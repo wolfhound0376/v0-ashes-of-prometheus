@@ -1,5 +1,6 @@
 "use client"
 
+import { listenerCharacterId } from "@/lib/rapport"
 import { useState, useEffect, useRef, useMemo } from "react"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { quickAbilities, getClassSpellcasting } from "@/lib/game-data"
@@ -769,6 +770,7 @@ function FeaturedSpeaker({ speaker, line, voiceId, caption, hasOthers = false, o
             voiceDescription: voiceId ? undefined : speaker.voice_description ?? undefined,
             npcName: speaker.name,
             npcId: speaker.id,
+            listenerCharacterId: listenerCharacterId(),
           }),
         })
         if (!res.ok || cancelled) return null

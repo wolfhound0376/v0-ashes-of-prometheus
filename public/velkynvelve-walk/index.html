@@ -87,6 +87,9 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .bubble::before{bottom:-66px;margin-left:-11px;border-width:66px 6px 0 9px;border-color:#14110f transparent transparent transparent;transform:skewX(-8deg);transform-origin:top}
 .bubble::after{bottom:-58px;margin-left:-7px;border-width:60px 3px 0 6px;border-color:#fffdf6 transparent transparent transparent;transform:skewX(-8deg);transform-origin:top}
 .bubble b{display:block;font-family:"Bangers","Impact",var(--face-display);font-weight:400;font-size:.9rem;letter-spacing:.06em;color:#8a1f12;margin-bottom:1px}
+.bubble.thought{background:#eef4f2;border-style:dashed;border-color:#3b5a52;color:#1d3a34;font-style:italic;font-weight:400;box-shadow:0 0 18px rgba(120,220,190,.35)}
+.bubble.thought::before,.bubble.thought::after{display:none}
+.bubble.thought i{display:block;font-family:var(--face-mono);font-style:normal;font-size:.6rem;letter-spacing:.1em;color:#5a7f76;margin-bottom:2px}
 .bubble.foe{background:#fff1ec;border-color:#5a0d06;color:#3a0a05}
 .bubble.foe::after{border-top-color:#fff1ec}
 .bubble.foe b{color:#b3200f}
@@ -672,10 +675,11 @@ function bark(a, text, ms = 4200, opts = {}){
     if (!state.voiced[key]){ state.voiced[key] = true; speak(a.id, text); }
   }
   bubbles.filter(b => b.a === a).forEach(b => b.until = 0);
-  const el = document.createElement("div"); el.className = "bubble" + (a.kind === "foe" ? " foe" : "");
+  const el = document.createElement("div"); el.className = "bubble" + (a.kind === "foe" ? " foe" : "") + (isRapport(a.id) ? " thought" : "");
   const full = SPR[a.id].json.name, short = SHORT[a.id] || full, first = full.split(" ")[0];
   const named = [short, first, full].some(n => n && text.toLowerCase().includes(n.toLowerCase()));
-  if (!named){ const who = document.createElement("b"); who.textContent = short; el.appendChild(who); }   // never say the name twice
+  if (isRapport(a.id)){ const who = document.createElement("i"); who.textContent = "in your head · " + short + "'s spores"; el.appendChild(who); }
+  else if (!named){ const who = document.createElement("b"); who.textContent = short; el.appendChild(who); }   // never say the name twice
   if (opts.talk) el.classList.add("said");
   el.appendChild(document.createTextNode(text)); over.appendChild(el);
   bubbles.push({a, el, until: now + ms}); a.lastBark = now; lastAnyBark = now;
@@ -1721,7 +1725,7 @@ const BRIEF = {   // the project's own prisoner summaries (lib/world-ai/campaign
 let samplePromise = (window.claude && claude.use) ? claude.use("sample").catch(() => null) : Promise.resolve(null);
 async function npcOpening(npc){
   const nm = SPR[npc.id].json.name, pc = PCS[leader.id] || {name: SHORT[leader.id] || "the prisoner", race: "", cls: ""};
-  const fallback = {narration: `${nm} catches your eye and edges closer.`, line: npc.talkLine && !npc.talkLine.includes(nm) ? npc.talkLine : "A word, if you've a moment."};
+  const fallback = {narration: isRapport(npc.id) ? `A puff of spores drifts from ${nm}'s cap, and a voice very like your own rises in your head.` : `${nm} catches your eye and edges closer.`, line: npc.talkLine && !npc.talkLine.includes(nm) ? npc.talkLine : "A word, if you've a moment."};
   if (APP){
     try {
       const res = await fetch("/api/npc-opener", {method: "POST", headers: {"Content-Type": "application/json"},
@@ -1754,19 +1758,48 @@ Reply with only JSON: {"narration": "...", "line": "..."}`;
 // speaker; inside the game the same line goes through /api/npc-tts and Eldeth gets her canon ElevenLabs voice.
 let speaking = false;
 let voiceAudio = null;
-async function speakCanon(id, text){         // the game's ElevenLabs route: canon voices by NPC name (Eldeth, Ront...)
-  const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: SPR[id].json.name})});
+// Rapport spores (Sam, 2026-10-12): a myconid does not talk. Its line is rendered in the LISTENER's own
+// saved voice (the route does that when told who is listening) and heard through the cave treatment
+// below — detuned against itself, a stone tail under it, the top rolled off. The same chain as the
+// dashboard's (lib/rapport-voice.ts).
+const isRapport = id => id === "stool" || /myconid|basidia|phylo/.test(id || "");
+let caveTailBuf = null;
+function caveTail(ctx){
+  if (caveTailBuf) return caveTailBuf;
+  const rate = ctx.sampleRate, n = Math.floor(2.6 * rate), buf = ctx.createBuffer(2, n, rate); let seed = 0x9e3779b1;
+  const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return ((seed >>> 0) / 4294967296) * 2 - 1; };
+  for (let ch = 0; ch < 2; ch++){ const d = buf.getChannelData(ch), taps = [.011, .023, .037, .052, .071, .094];
+    for (let i = 0; i < n; i++){ const tt = i / rate; let v = rnd() * Math.exp(-3.1 * tt) * .6; for (const tap of taps) if (Math.abs(tt - tap) < .0006) v += (ch ? -.5 : .5) * Math.exp(-6 * tap); d[i] = v; }
+    let acc = 0; for (let i = 0; i < n; i++){ acc += (d[i] - acc) * .18; d[i] = acc; } }
+  return caveTailBuf = buf;
+}
+function rapportChain(ctx){
+  const input = ctx.createGain(), out = ctx.destination;
+  const dryLp = ctx.createBiquadFilter(); dryLp.type = "lowpass"; dryLp.frequency.value = 3600; const dry = ctx.createGain(); dry.gain.value = .55; input.connect(dryLp).connect(dry).connect(out);
+  const lfo = ctx.createOscillator(); lfo.frequency.value = .35;
+  for (const [ms, cents, ph] of [[14, 7, 1], [27, -9, -1]]){ const dl = ctx.createDelay(.1); dl.delayTime.value = ms / 1000; const depth = ctx.createGain(); depth.gain.value = (cents / 1200) * (ms / 1000) * .9 * ph; lfo.connect(depth).connect(dl.delayTime);
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2800; const g = ctx.createGain(); g.gain.value = .32; input.connect(dl).connect(lp).connect(g).connect(out); }
+  lfo.start();
+  const conv = ctx.createConvolver(); conv.buffer = caveTail(ctx); const wetLp = ctx.createBiquadFilter(); wetLp.type = "lowpass"; wetLp.frequency.value = 2400;
+  const pre = ctx.createDelay(.1); pre.delayTime.value = .018; const wet = ctx.createGain(); wet.gain.value = .5; input.connect(pre).connect(conv).connect(wetLp).connect(wet).connect(out);
+  return input;
+}
+function playVoice(ctx, buf, rapport){
+  if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(rapport ? rapportChain(ctx) : ctx.destination);
+  src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
+}
+async function speakCanon(id, text){         // the game's ElevenLabs route: the voice saved on the row (Eldeth, Ront...); a myconid in the listener's own
+  const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: SPR[id].json.name, listenerName: PLAYS_AS[leader?.id] || undefined})});
   if (!res.ok) throw new Error("tts " + res.status);
+  const rapport = /profile=rapport/i.test(res.headers.get("content-type") || "") || isRapport(id);
   // WebAudio, not an <audio> element: the game found <audio> silently mute in some Chromium builds.
   const ctx = audioCtx();
   // An NPC can start talking on their own, with no click behind it, and a suspended context would
   // swallow the line. The first click or key anywhere wakes it (see wakeAudio); give that a moment.
   if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]);
   if (ctx.state !== "running") throw new Error("audio locked");
-  const buf = await ctx.decodeAudioData(await res.arrayBuffer());
-  if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
-  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
-  src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
+  playVoice(ctx, await ctx.decodeAudioData(await res.arrayBuffer()), rapport);
 }
 // Lines said in the preview, pre-rendered in each NPC's own ElevenLabs voice (the game's /api/npc-tts,
 // the voice saved on their row). The preview cannot reach ElevenLabs itself, and the computer's own
@@ -1810,7 +1843,8 @@ const VOICE_BANK = {
  },
  "stool": {
   "line": "Friend? Friend. Stool is glad.",
-  "voice": "EXAVITQu4vr4xnSDxMaL"
+  "perListener": true,
+  "voice": "the listener's own (characters.voice_id); rapport spores, lib/rapport.ts"
  },
  "jorlan": {
   "line": "Go. Quickly, before the next watch.",
@@ -1821,10 +1855,9 @@ async function speakBank(id, text){
   const b = VOICE_BANK[id]; if (!b || b.line !== text) return false;
   const ctx = audioCtx(); if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]);
   if (ctx.state !== "running") return false;
-  const buf = await ctx.decodeAudioData(await (await fetch(`audio/voice/${id}.mp3`)).arrayBuffer());
-  if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
-  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
-  src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src; return true;
+  const file = b.perListener ? `audio/voice/${id}-${leader ? leader.id : PARTY[0]}.mp3` : `audio/voice/${id}.mp3`;   // a myconid: the listener's own voice
+  const r = await fetch(file); if (!r.ok) return false;
+  playVoice(ctx, await ctx.decodeAudioData(await r.arrayBuffer()), isRapport(id)); return true;
 }
 function speak(id, text){
   // In the game it is always their saved ElevenLabs voice (Sam, 2026-10-12: "EVERYTIME"): one retry,

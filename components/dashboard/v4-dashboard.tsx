@@ -1,5 +1,6 @@
 "use client"
 
+import { listenerCharacterId } from "@/lib/rapport"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
 import { BookOpen, ChevronDown, ChevronUp, Compass, Crown, Dumbbell, Feather, ImagePlus, Map, Mic, Shield, TreeDeciduous, X, type LucideIcon } from "lucide-react"
@@ -595,7 +596,7 @@ export function V4Dashboard(props: V4DashboardProps) {
           const res = await fetch("/api/npc-tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: line, npcName: npc.name, npcId: npc.id, voiceId: row.voice_id ?? undefined, voiceDescription: row.voice_id ? undefined : row.voice_description ?? undefined }),
+            body: JSON.stringify({ text: line, npcName: npc.name, npcId: npc.id, voiceId: row.voice_id ?? undefined, voiceDescription: row.voice_id ? undefined : row.voice_description ?? undefined, listenerCharacterId: selected?.id ?? listenerCharacterId() }),
           })
           if (!res.ok || cancelled) return
           const blob = await res.blob()

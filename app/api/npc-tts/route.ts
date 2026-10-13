@@ -3,6 +3,7 @@ import { resolveVoice, resolveNamedNpcVoiceId, sanitizeForTTS } from "@/lib/tts"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow } from "@/lib/npc-acquaintance"
 import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback, deliveryFor } from "@/lib/tts-model"
+import { isRapportSpeaker, RAPPORT_MIME } from "@/lib/rapport"
 
 /**
  * Text-to-speech for a named NPC line.
@@ -24,7 +25,7 @@ import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback, deli
  */
 export async function POST(request: NextRequest) {
   try {
-    const { text, voiceId, voiceDescription, npcName, npcId } = await request.json()
+    const { text, voiceId, voiceDescription, npcName, npcId, listenerCharacterId, listenerName } = await request.json()
 
     const clean = sanitizeForTTS(text || "")
     if (!clean) {
@@ -38,6 +39,22 @@ export async function POST(request: NextRequest) {
 
     // 1) Resolve the voice.
     let explicitVoiceId = typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : undefined
+    // Rapport spores (lib/rapport.ts, Sam 2026-10-12): a myconid has no voice of its own. The line is
+    // rendered in the LISTENER's saved voice — the character it is spoken to — and the audio is marked
+    // so the player runs it through the cave treatment. Without a listener it falls back to the row's
+    // voice, still marked, so the sound at least says "in your head".
+    const rapport = isRapportSpeaker(typeof npcName === "string" ? npcName : null)
+    if (rapport && (listenerCharacterId || listenerName)) {
+      try {
+        const db = createAdminClient()
+        let q = db.from("characters").select("voice_id").eq("is_player", true).is("archived_at", null)
+        q = typeof listenerCharacterId === "string" && listenerCharacterId ? q.eq("id", listenerCharacterId) : q.ilike("name", String(listenerName))
+        const { data: who } = await q.limit(1).maybeSingle()
+        if (who?.voice_id) { explicitVoiceId = who.voice_id; console.log("[v0] npc-tts rapport: speaking in the listener's voice for", npcName) }
+      } catch (e) {
+        console.log("[v0] npc-tts rapport listener lookup skipped:", (e as Error).message)
+      }
+    }
     // Sam, 2026-10-12: an NPC speaks in the ElevenLabs voice saved for them in the database, every time.
     // Callers that only know the name (the painted map) used to fall through to the code table, which
     // can differ from the saved voice. Look the saved one up first.
@@ -88,7 +105,7 @@ export async function POST(request: NextRequest) {
     // write to exactly the NPC being resolved (by id when available, else name)
     // and only where voice_id is still empty so a canon voice is never replaced.
     // Best-effort: never fail playback if the DB write can't happen.
-    if (persistable && (npcId || npcName)) {
+    if (persistable && !rapport && (npcId || npcName)) {
       try {
         const admin = createAdminClient()
         let q = admin.from("npc_encounters").update({ voice_id: resolvedVoiceId }).is("voice_id", null)
@@ -148,8 +165,9 @@ export async function POST(request: NextRequest) {
     const audioBuffer = await response.arrayBuffer()
     return new NextResponse(audioBuffer, {
       headers: {
-        "Content-Type": "audio/mpeg",
+        "Content-Type": rapport ? RAPPORT_MIME : "audio/mpeg",
         "Content-Length": audioBuffer.byteLength.toString(),
+        "X-Voice-Mode": rapport ? "rapport" : "voice",
         "X-Resolved-Voice": resolvedVoiceId || "",
         "X-TTS-Model": usedModel,
       },

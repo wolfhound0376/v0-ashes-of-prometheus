@@ -14,6 +14,7 @@
 // Off, and the table reads.
 // ============================================================================
 
+import { listenerCharacterId } from "@/lib/rapport"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { takeVoicedElsewhere } from "@/lib/voiced-elsewhere"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
@@ -233,6 +234,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
           voiceDescription: u.npc.voice_id ? undefined : u.npc.voice_description ?? undefined,
           npcName: u.npc.name,
           npcId: u.npc.id,
+          listenerCharacterId: listenerCharacterId(),   // a myconid's line is heard in this player's own voice
         }]
     let res: Response
     try {
