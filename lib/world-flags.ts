@@ -14,6 +14,10 @@ import { createClient } from "@/lib/supabase/client"
 
 export const PEN_DOOR_OPEN = "pen-door-open"
 
+// Set while the DM has stopped time (components/dashboard/time-stop.tsx). The map freezes, the clock
+// does not move, nobody acts and Malachar takes no turns until it is cleared.
+export const TIME_STOPPED = "time-stopped"
+
 /**
  * True once the named flag has been set, live.
  *

@@ -105,6 +105,8 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .acts p{margin:0;font-style:italic;font-size:13px;line-height:1.35;color:#b9adc9;text-shadow:0 1px 2px #000;transition:opacity 1.2s ease}
 .acts p.old{opacity:.5}
 .acts p.gone{opacity:0}
+.stage.frozen *{animation-play-state:paused!important}
+.frozen-badge{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:rgba(7,22,20,.9);border:1px solid rgba(98,227,198,.6);color:#9ff0dc;border-radius:5px;padding:5px 14px;font-size:12px;letter-spacing:.2em;text-transform:uppercase;pointer-events:none;z-index:5}
 .acts.over p{background:rgba(9,7,13,.78);border-radius:4px;padding:2px 10px;justify-self:center}   /* no black band: a dark backing so it reads over the painting */
 @media (max-width:700px){.acts{width:calc(100% - 24px);bottom:56px}}
 
@@ -224,6 +226,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <div class="acts" id="acts" aria-live="polite"></div>
+    <div class="frozen-badge" id="frozen" role="status" hidden>Time is stopped</div>
     <div class="zoom">
       <button id="zOut" aria-label="Zoom out">−</button>
       <button class="fit" id="zFit">Fit</button>
@@ -240,6 +243,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <h4>Jump to area</h4>
       <select id="jump" aria-label="Jump to area"></select>
       <h4>World</h4>
+      <button class="btn" id="dmTime">Stop time</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
@@ -1401,6 +1405,7 @@ function endPtr(e){
 stage.addEventListener("pointerup", endPtr); stage.addEventListener("pointercancel", endPtr);
 stage.addEventListener("wheel", e => { e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
+  if (timeStopped) return;
   if (mode === "explore"){
     const me = hitActor(party, w);
     if (me && me !== leader){ setLeader(me); return; }
@@ -1455,6 +1460,26 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+function setTimeStopped(on){
+  if (on === timeStopped) return;
+  timeStopped = on; stage.classList.toggle("frozen", on); $("frozen").hidden = !on;
+  $("dmTime").textContent = on ? "Start time" : "Stop time";
+  if (on){ keys.clear(); try { window.speechSynthesis.cancel(); } catch (e) {} }
+}
+async function readTime(){
+  if (!APP) return;
+  try { const r = await fetch("/api/world-flags", {cache: "no-store"}); const j = await r.json(); setTimeStopped((j.flags || []).some(f => f.key === "time-stopped")); } catch (e) {}
+}
+if (APP){ readTime(); setInterval(readTime, 3000); }
+$("dmTime").onclick = async () => {
+  if (!APP){ setTimeStopped(!timeStopped); return; }       // the preview has no world: just freeze this page
+  const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })();
+  const h = key ? {"x-dm-key": key} : {};
+  const res = timeStopped ? await fetch("/api/world-flags?key=time-stopped", {method: "DELETE", headers: h})
+    : await fetch("/api/world-flags", {method: "POST", headers: {"Content-Type": "application/json", ...h}, body: JSON.stringify({key: "time-stopped", setBy: "dm", note: "DM stopped time (map)"})});
+  if (!res.ok){ toast(res.status === 403 ? "Stopping time needs the DM code. Enter it on the dashboard first." : "Could not change time."); return; }
+  setTimeStopped(!timeStopped); toggleDm(false);
+};
 $("dmCombat").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   const ids = node.hazard ? node.hazard.foes : cur === 12 ? ["quaggoth", "quaggoth"] : ["quaggoth", "giant-spider"];
   startCombat(ids, node.hazard ? node.hazard.label : "The DM calls for initiative."); };
@@ -1469,6 +1494,7 @@ $("dmReset").onclick = () => { toggleDm(false); state.cleared = {}; log("Ambushe
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD"]);
 const keys = new Set();
 function keyDir(){
+  if (timeStopped) return null;
   let x = 0, y = 0;
   if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
   if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
@@ -1636,8 +1662,13 @@ function update(dt){
   if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
 }
 let lastT = performance.now();
+// Stopped time (the DM's switch, the "time-stopped" world flag): the world's clock stands still, so
+// nobody moves, nothing animates, no line comes up and no timer runs out; the picture stays drawn.
+let timeStopped = false, pausedMs = 0;
 function frame(t){
-  now = t; const dt = Math.min(.05, (t - lastT) / 1000); lastT = t;
+  const raw = Math.min(50, t - lastT); lastT = t;
+  if (timeStopped && mode !== "load"){ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
+  now = t - pausedMs; const dt = raw / 1000;
   if (mode !== "load"){ update(dt); draw(); updateOverlay(); }
   tickMusic(dt);
   requestAnimationFrame(frame);

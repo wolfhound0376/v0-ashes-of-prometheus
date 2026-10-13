@@ -25,13 +25,14 @@ import { DynamicMusic } from "@/components/dashboard/dynamic-music"
 import { characterData, dialogueData, actionsData, inventoryData, environmentData, getClassActions, CANONICAL_START_LOCATION } from "@/lib/game-data"
 import { useTelemetry } from "@/lib/hooks/use-telemetry"
 import { createClient } from "@/lib/supabase/client"
-import { PEN_DOOR_OPEN, useWorldFlag } from "@/lib/world-flags"
+import { PEN_DOOR_OPEN, TIME_STOPPED, useWorldFlag } from "@/lib/world-flags"
 import { slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
 import { dmHeaders, ensureDmKey, hasDmKey } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
+import { TimeStopToggle, TimeStoppedBanner } from "@/components/dashboard/time-stop"
 import { useLich } from "@/lib/hooks/use-lich"
 import { emitCinematicCue } from "@/lib/cinematic-cue"
 import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
@@ -194,6 +195,8 @@ export default function DashboardPage() {
   // Set the moment the pen door is unlocked, picked, or opened from outside.
   // The NPC window swaps to the open-door painting for everyone at once.
   const penDoorOpen = useWorldFlag(PEN_DOOR_OPEN)
+  // The DM has stopped time: nobody acts, Malachar waits, the map freezes (components/dashboard/time-stop.tsx).
+  const timeStopped = useWorldFlag(TIME_STOPPED)
   // Player-safe vague time-of-day pushed by the chat route (derived from the
   // world clock). Takes precedence over the environment row's static value so
   // the scene header tracks the passage of time without exposing the DM clock.
@@ -1249,6 +1252,7 @@ if (error) {
   }, [])
 
   const handleDialogueSubmit = async () => {
+    if (timeStopped) return                       // time is stopped: the line stays in the box until it starts again
     if (dialogueInput.trim()) {
       const text = stripReservedPrefixes(dialogueInput.trim())
       setDialogueInput("")
@@ -1296,6 +1300,7 @@ if (error) {
   // (same optimistic insert + speaker attribution as typing it by hand).
   const handleQuickReply = useCallback(
     async (text: string) => {
+      if (timeStopped) return
       const playerName = selectedCharacter?.name || "Player"
       setDialogueInput("")
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
@@ -1318,7 +1323,7 @@ if (error) {
         await fetchCharacterData()
       }
     },
-    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure, captureRollRequest],
+    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure, captureRollRequest, timeStopped],
   )
 
   // Announce a completed sheet roll to the table. Every browser sees the roll
@@ -1579,7 +1584,7 @@ if (error) {
         campaignName={activeCampaign.name}
         // NPCs tab is DM-only. A claimed player browser is never the DM.
         isDM={dmMode && !claimLocked}
-  controlSlot={dmMode && !claimLocked ? <GameClockPanel refreshSignal={clockRefresh} /> : null}
+  controlSlot={dmMode && !claimLocked ? <><TimeStopToggle stopped={timeStopped} /><GameClockPanel refreshSignal={clockRefresh} /></> : null}
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
         onSection={(section) => {
           // In DM Mode, the top-right NPCs button is the direct door to canon
@@ -1770,6 +1775,7 @@ if (error) {
         talkWith={campTalkWith}
         talkFrom={talkFrom}
         talkOpening={talkOpening}
+        timeStopped={timeStopped}
         onEndTalk={() => {
           if (talkReturn) { window.location.href = talkReturn; return }
           setCampTalkWith(null)

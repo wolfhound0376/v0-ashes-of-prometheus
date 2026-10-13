@@ -438,6 +438,13 @@ const isPlayerCharacterRow = (
 
 export async function POST(req: Request) {
   const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null } = await req.json()
+  // The DM has stopped time (components/dashboard/time-stop.tsx): no turns, nothing written, nothing
+  // narrated, until it starts again. Checked first, before the player's line is persisted.
+  try {
+    const { data: stopped } = await createAdminClient().from("world_flags").select("key")
+      .eq("campaign_id", "ashes-of-prometheus").eq("key", "time-stopped").maybeSingle()
+    if (stopped) return Response.json({ error: "time-stopped", message: "Time is stopped. The world waits for the DM." }, { status: 423 })
+  } catch { /* flag unreadable: carry on as before rather than block the table */ }
   // Camp talk partner, sent by the talk mini-dashboard. A name only — letters,
   // spaces, apostrophes, hyphens — so it can never smuggle instructions in.
   const talkWith = typeof talkWithRaw === "string" ? talkWithRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
