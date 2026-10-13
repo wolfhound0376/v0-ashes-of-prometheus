@@ -320,6 +320,8 @@ interface V4DashboardProps {
   talkOpening?: string | null
   /** The DM has stopped time: the input is closed and a banner says so (components/dashboard/time-stop.tsx). */
   timeStopped?: boolean
+  /** Who the NPC window is showing, as it changes: the one an unaddressed question is put to. */
+  onFacingChange?: (npcName: string | null) => void
 }
 
 const previewDialogue: DialogueEntry[] = [
@@ -543,6 +545,9 @@ export function V4Dashboard(props: V4DashboardProps) {
   // except the NPC herself.
   const onStage = speakingPlayer ?? shownNpc
   const npcName = speakingPlayer?.name ?? shownNpc?.name ?? "No one on stage"
+  const facingName = speakingPlayer ? null : shownNpc?.name ?? null
+  const onFacingChange = props.onFacingChange
+  useEffect(() => { onFacingChange?.(facingName) }, [facingName, onFacingChange])
   // A talking NPC gets talking_url when the row has one, so the animated head
   // switches to the speaking loop and back to idle on its own.
   const playerTalking = Boolean(speakingPlayer && speakingNpc?.id === speakingPlayer.id)

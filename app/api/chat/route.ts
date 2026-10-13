@@ -3,6 +3,7 @@ import { addressedNpc, type RosterNpc } from "@/lib/addressed-npc"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
@@ -437,7 +438,7 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null } = await req.json()
   // The DM has stopped time (components/dashboard/time-stop.tsx): no turns, nothing written, nothing
   // narrated, until it starts again. Checked first, before the player's line is persisted.
   try {
@@ -1372,11 +1373,39 @@ ${combatantRows
   // The talk window names the partner outright, so Malachar never has to guess
   // who is by the fire. Their lines must be attributed to that exact name —
   // the narration voices a quote by the NPC it is attributed to.
+  // A name is learned, not assumed (lib/npc-acquaintance.ts). Saying it to them teaches it; until then
+  // they address the character by what they can see.
+  let acquaintance = ""
+  if (talkWith && playerCharacter) {
+    try {
+      const db = createAdminClient()
+      if (saysOwnName(String(message ?? ""), playerCharacter.name)) await learnName(db, talkWith, playerCharacter)
+      const known = await npcKnowsName(db, talkWith, playerCharacter.id)
+      const row = await findNpcRow(db, talkWith)
+      const standing = row ? await relationshipSummary(db, row.id, playerCharacter.id) : null
+      acquaintance = known
+        ? ` ${talkWith} knows ${playerName}'s name.`
+        : ` ${talkWith} does NOT know this character's name: ${talkWith} must never say "${playerName}" (or any name for them) until they are told it; address them by what ${talkWith} can see instead.`
+      acquaintance += standing
+        ? ` ${talkWith}'s standing toward them: ${standing}. Let it set how warm, wary or cold ${talkWith} is.`
+        : ` They have no history yet: ${talkWith} treats them as a fellow prisoner they do not know.`
+    } catch (e) {
+      console.error("[acquaintance] skipped:", e)
+    }
+  }
   if (talkWith && talkWhere) {
     // From the painted map: not at camp, so none of the fire. Still one conversation, one voice.
     stageContext += ` The player is talking with ${talkWith} in ${talkWhere}, not at camp. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
   } else if (talkWith) {
     stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
+  }
+  stageContext += acquaintance
+  // Not in a conversation, but someone is in the NPC window: a line that names no one ("who are you?",
+  // "what do you want?") is said to them, and they answer it (Sam, 2026-10-12: "it should be implied I am
+  // speaking to Buppido. The NPC needs to act smarter").
+  const facing = !talkWith && typeof facingRaw === "string" ? facingRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
+  if (facing) {
+    stageContext += ` The player is facing ${facing}, who is in front of them. Any question or remark that does not name someone else ("who are you?", "what do you want?", "are you all right?") is addressed to ${facing}, and ${facing} answers it in their own voice, quoted and attributed to ${facing} by name. Do not have anyone else answer for them.`
   }
 
   // === CINEMATIC CUES (closed whitelist) ===

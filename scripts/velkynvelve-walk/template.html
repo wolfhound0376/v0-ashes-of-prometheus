@@ -1218,7 +1218,7 @@ async function npcOpening(npc){
   if (APP){
     try {
       const res = await fetch("/api/npc-opener", {method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, pc})});
+        body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, pc: {...pc, name: PLAYS_AS[leader.id] || pc.name}})});
       const r = await res.json();
       if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim()};
     } catch (e) {}
@@ -1231,7 +1231,7 @@ Write how one NPC opens a conversation with a player character.
 Scene: ${node.name} in Velkynvelve, the drow outpost. The prisoners have shared the slave pen for several days.
 NPC: ${BRIEF[npc.id] || nm}.
 Player character: ${pc.name}, a ${pc.race} ${pc.cls}.
-Decide whether the NPC would know ${pc.name}'s name by now. If yes, use it. If not, address them by their race or with a gesture.
+The NPC does not know this character's name yet: never say "${pc.name}" or invent a name. Address them by their race, how they look, or with a gesture.
 The line is spoken in the NPC's own voice and manner, under 25 words. Do not invent facts about the campaign.
 The narration is one short sentence, present tense, describing how the NPC approaches (no dialogue in it).
 Reply with only JSON: {"narration": "...", "line": "..."}`;
@@ -1264,7 +1264,9 @@ async function speakCanon(id, text){         // the game's ElevenLabs route: can
   src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
 }
 function speak(id, text){
-  if (APP){ speakCanon(id, text).catch(() => speakBrowser(id, text)); return; }
+  // In the game it is always their saved ElevenLabs voice (Sam, 2026-10-12: "EVERYTIME"): one retry,
+  // never the browser's stand-in voice. The stand-in is only for the preview, which has no ElevenLabs.
+  if (APP){ speakCanon(id, text).catch(() => setTimeout(() => speakCanon(id, text).catch(e => console.warn("voice unavailable:", e)), 1200)); return; }
   speakBrowser(id, text);
 }
 function speakBrowser(id, text){

@@ -161,6 +161,12 @@ export default function DashboardPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [characterInventory, setCharacterInventory] = useState<InventoryItem[]>([])
   const [characterEquipment, setCharacterEquipment] = useState<EquipmentItem[]>([])
+  // Who is in the NPC window right now (the active NPC, as the dashboard shows it): the one a question
+  // with no named addressee is put to. Read at send time.
+  const facingRef = useRef<string | null>(null)
+  const facingShownRef = useRef(false)
+  const handleFacingChange = useCallback((name: string | null) => { facingRef.current = name; facingShownRef.current = Boolean(name) }, [])
+  const talkOptsRef = useRef<{ talkWith: string; talkWhere: string | null } | null>(null)
   const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; idle_url: string | null; talking_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: string | number | null; conditions: string[] | null }[]>([])
   // The WHOLE NPC roster, not just the active-on-stage one. `is_active` is a
   // stage/portrait flag and must not gate who is allowed a voice, so the
@@ -295,6 +301,11 @@ export default function DashboardPage() {
   // conversation (Sam, 2026-10-11: "populate ONLY the character that is playing"). Only for a browser
   // that holds no claim: a claimed seat always stays its own character.
   const [talkAs, setTalkAs] = useState<string | null>(null)
+  // Read at send time by every path to Malachar (typed, quick replies): who you are talking with, or else
+  // who is in the NPC window.
+  talkOptsRef.current = campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : null
+  // The NPC window reports who it shows (onFacingChange); until it has, the active NPC.
+  if (!facingShownRef.current) facingRef.current = (npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
   // straight into the talk mini-dashboard with that person, no intro screens.
   useEffect(() => {
@@ -363,7 +374,7 @@ export default function DashboardPage() {
     async (text: string) => {
       const { characterId, claimToken: token } = claimRef.current
       try {
-        return await sendToLich(text, characterId, token)
+        return await sendToLich(text, characterId, token, talkOptsRef.current ?? { facing: facingRef.current })
       } catch (err) {
         if ((err as { claimRejected?: boolean })?.claimRejected) {
           handleClaimRejected()
@@ -1187,7 +1198,8 @@ if (error) {
 
           // Send to Lich, carrying THIS browser's character + claim token.
           // In the camp talk window, name the partner so Malachar answers as them.
-          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : undefined)
+          // Otherwise name whoever is in the NPC window: "who are you?" is said to them (Sam, 2026-10-12).
+          const response = await sendToLich(message, selectedCharacterId, claimToken, campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current })
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1776,6 +1788,7 @@ if (error) {
         talkFrom={talkFrom}
         talkOpening={talkOpening}
         timeStopped={timeStopped}
+        onFacingChange={handleFacingChange}
         onEndTalk={() => {
           if (talkReturn) { window.location.href = talkReturn; return }
           setCampTalkWith(null)

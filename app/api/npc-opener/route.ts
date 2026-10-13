@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { findNpcRow, npcKnowsName, relationshipSummary } from "@/lib/npc-acquaintance"
 
 // Same direct-Anthropic provider as /api/chat and /api/suggestions.
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -32,12 +34,33 @@ export async function POST(req: NextRequest) {
     const pcRace = clip(pc.race, 30)
     const pcClass = clip(pc.cls, 30)
 
+    // What this NPC really knows and feels (lib/npc-acquaintance.ts): the name only once it was told,
+    // the standing from the gravity system, the personality from their own row.
+    let knowsName = false
+    let standing: string | null = null
+    let personality = ""
+    try {
+      const db = createAdminClient()
+      const npcRow = await findNpcRow(db, npcName)
+      if (npcRow) personality = [npcRow.description, npcRow.disposition ? `disposition: ${npcRow.disposition}` : ""].filter(Boolean).join("; ")
+      const { data: pcRows } = await db.from("characters").select("id, name").ilike("name", pcName).limit(1)
+      const pcRow = pcRows?.[0]
+      if (pcRow) {
+        knowsName = await npcKnowsName(db, npcName, pcRow.id)
+        if (npcRow) standing = await relationshipSummary(db, npcRow.id, pcRow.id)
+      }
+    } catch (e) {
+      console.error("[npc-opener] acquaintance lookup failed:", e)
+    }
+
     const prompt = `You are Malachar, the lich who narrates an Out of the Abyss D&D 5e campaign: theatrical, sly, darkly funny, a little cruel.
 Write how one NPC opens a conversation with a player character.
 Scene: ${area} in Velkynvelve, the drow outpost. The prisoners have shared the slave pen for several days.
 NPC: ${brief}.
 Player character: ${pcName}${pcRace || pcClass ? `, a ${[pcRace, pcClass].filter(Boolean).join(" ")}` : ""}.
-Decide whether the NPC would know ${pcName}'s name by now. If yes, use it. If not, address them by their race or with a gesture.
+${personality ? `Their personality and manner: ${personality}.` : ""}
+${knowsName ? `The NPC knows ${pcName}'s name and may use it.` : `The NPC does NOT know this character's name. Never say "${pcName}" or invent a name. Address them by what the NPC can see (that they are a ${pcRace || "stranger"}, how they look) or with a gesture.`}
+${standing ? `How the NPC feels about them (trust, fear, respect, affection, debt, resentment): ${standing}. Let that set how warm, wary or cold the line is.` : "They have no history together yet: a fellow prisoner the NPC has noticed but does not know."}
 The line is spoken in the NPC's own voice and manner, under 25 words. Do not invent facts about the campaign.
 The narration is one short sentence, present tense, describing how the NPC approaches (no dialogue in it).
 Reply with only JSON: {"narration": "...", "line": "..."}`
