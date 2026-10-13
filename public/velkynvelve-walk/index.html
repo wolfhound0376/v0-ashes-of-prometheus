@@ -232,6 +232,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   .log{bottom:58px}
   input[type=range]{display:none}
 }
+.victory{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;z-index:40;opacity:0}
+.victory.show{animation:victory 4.2s ease-out forwards}
+.victory .big{font-family:"Cinzel",Georgia,serif;font-size:56px;font-weight:700;color:#f3d68a;letter-spacing:.08em;text-shadow:0 0 18px rgba(243,214,138,.55),0 2px 0 #2a1a08,0 4px 14px rgba(0,0,0,.8)}
+.victory .small{font-family:"Crimson Text",Georgia,serif;font-size:19px;color:#e8dcc4;margin-top:6px;text-shadow:0 2px 6px rgba(0,0,0,.9)}
+@keyframes victory{0%{opacity:0;transform:translate(-50%,-40%) scale(.9)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}20%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-58%)}}
 </style>
 </head>
 <body>
@@ -288,6 +293,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmReset">Reset ambushes</button>
     </div>
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
+    <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
         <div class="who"><canvas id="objPic" width="128" height="128"></canvas><div class="name" id="objWho"></div></div>
@@ -699,7 +705,7 @@ function updateOverlay(){
   if (nameTag){
     if (hoverActor && mode !== "talk"){
       const [sx, sy] = w2s(hoverActor.x, hoverActor.y); nameTag.hidden = false; nameTag.style.left = sx + "px"; nameTag.style.top = sy + "px";
-      nameTag.textContent = (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" : "");
+      nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" : "");
     } else nameTag.hidden = true;
   }
 }
@@ -1011,7 +1017,10 @@ function wakeAudio(){ try { const c = audioCtx(); if (c.state !== "running") c.r
 // Sam's sound bank (lib/sfx.ts): 93 effects in vtt-assets/sfx, named "bank:combat/melee_hit_flesh" here.
 // The structure is the structure of a spell — <family>_windup / _release / _tail, impact_<type> — so the
 // audio drives the pacing of a cast rather than being sprinkled on afterwards.
-const SFX_BANK = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/sfx/";
+// In the game the bank is read straight from storage. The published preview runs on a sandboxed origin
+// that cannot fetch from it (every bank call failed silently there: "no magic sound effects", Sam,
+// 2026-10-13), so the preview carries its own copy of the bank under sfx/bank/.
+const SFX_BANK = APP ? "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/sfx/" : "sfx/bank/";
 function loadSfx(name){
   const url = name.startsWith("bank:") ? `${SFX_BANK}${name.slice(5)}.ogg` : `${ASSET}${name.startsWith("arrive-") ? "audio" : "sfx"}/${name}.mp3`;
   return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
@@ -1145,6 +1154,28 @@ function openInteract(z, opts = {}){
   }
   $("obj").hidden = false; box.firstChild?.focus();
 }
+function victoryBanner(big, small){
+  const el = $("victory"); el.querySelector(".big").textContent = big; el.querySelector(".small").textContent = small;
+  el.hidden = false; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  setTimeout(() => { el.hidden = true; }, 4200);
+}
+// A body on the floor: walk up and search it. The map does not decide what it carries — that is Layer 1's
+// (items are canon, never invented here), so the search is handed to the game and the body is marked.
+function openBody(b){
+  mode = "dialog"; party.forEach(p => { p.path = []; });
+  const name = fname(b), g = $("objPic").getContext("2d"); g.clearRect(0, 0, 128, 128);
+  try { const m = SPR[b.id].json, an = m.animations.dead, img = SPR[b.id].img.dead; g.imageSmoothingEnabled = false; g.drawImage(img, (an.frames - 1) * m.cell[0], 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = `${name}'s body`;
+  $("objText").textContent = b.searched ? `You have already been through ${name}'s things.` : `${name} lies where it fell.`;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const el = document.createElement("button"); el.className = "btn " + cls; el.textContent = label; el.onclick = fn; box.appendChild(el); };
+  const close = () => { $("obj").hidden = true; mode = "explore"; };
+  if (!b.searched) add("Search the body", () => { close(); b.searched = true; bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); if (APP) handOff(`${fname(leader)} searches ${name}'s body.`); else toast("What it carried is Malachar's to say — in the game this goes to him as your action.", 4200); }, "primary");
+  add("Leave it", close);
+  $("obj").hidden = false; box.firstChild?.focus();
+}
+// The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
+function handOff(text){ try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", text}, "*"); } catch (e) {} }
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
 function unlockGate(forced){
@@ -1299,14 +1330,14 @@ const SHEETS = {
 // Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
 // sheet_save_proficiencies is wired in step 2). Monster saves below are their ability modifiers, as the rows carry no save list.
 const FOE_BLOCKS = {
-  "drow-guard-male":   {name: "Drow guard", hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  "drow-guard-female": {name: "Drow guard", hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  jorlan:              {name: "Jorlan", hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  "giant-spider": {name: "Giant spider", hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
+  "drow-guard-male":   {name: "Drow guard", xp: 50, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "drow-guard-female": {name: "Drow guard", xp: 50, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  jorlan:              {name: "Jorlan", xp: 50, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "giant-spider": {name: "Giant spider", xp: 200, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
                    attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d8", type: "poison", half: true}}]},
-  quaggoth: {name: "Quaggoth", hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
+  quaggoth: {name: "Quaggoth", xp: 450, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], multi: 2, woundedFury: 10},
-  "gray-ooze": {name: "Gray ooze", hp: 22, ac: 8, speed: 10, init: -2, saves: {str: 1, dex: -2, con: 3, int: -5, wis: -2, cha: -4}, resist: ["acid", "cold", "fire"],
+  "gray-ooze": {name: "Gray ooze", xp: 100, hp: 22, ac: 8, speed: 10, init: -2, saves: {str: 1, dex: -2, con: 3, int: -5, wis: -2, cha: -4}, resist: ["acid", "cold", "fire"],
                 immuneCond: ["blinded", "charmed", "deafened", "frightened", "prone"],
                 attacks: [{name: "Pseudopod", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5, extra: {dmg: "2d6", type: "acid"}}]},
 };
@@ -1534,10 +1565,11 @@ function attackWith(att, tgt, atk, done){
       const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
       if (r === 1) bank("ui/nat1", .7);
       lunge(att, tgt, 14 * actorScale(att));
-      if (!hit){ miss(tgt); bank("combat/melee_miss", .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
+      if (!hit){ swipe(att, tgt, {...swipeStyle(atk, false), miss: true}); miss(tgt); bank("combat/melee_miss", .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       const sneak = !!(atk.sneak && standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5));
       knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
+      swipe(att, tgt, {...swipeStyle(atk, crit), crit}); if (crit) setTimeout(() => swipe(att, tgt, {...swipeStyle(atk, true), crit: true}), 90);
       spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: crit ? 2.6 : 2});
       let dmg = roll(atk.dmg, crit), parts = [`${dmg.total} ${atk.type}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
@@ -1568,8 +1600,10 @@ function castSpell(caster, tgt, name, done){
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
   const ring = quiet ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
   const marks = [];
-  const markTarget = (tg) => { if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); if (sig[1]) marks.push(spawnFx(sig[1], {at: tg, sq: 1.8, anchor: "feet", lift: .7, loop: true, alpha: .85})); };
-  if (sp.area && !quiet) spawnFx(school === "enchantment" ? "pxPlumeMotes" : "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: school !== "enchantment", loop: true, until: now + 2600, alpha: .8});
+  // Sigils only, no plumes (Sam, 2026-10-13: "use the sigils but NOT the plumes. I will tell you when the
+  // plume is appropriate"). sig[1] stays in the table for that day.
+  const markTarget = (tg) => { if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); };
+  if (sp.area && !quiet) spawnFx(sig[0] || "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: true, spin: .8, loop: true, until: now + 2600, alpha: .8});
   else if (tgt.id) markTarget(tgt);
   const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
   playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
@@ -1593,7 +1627,7 @@ function castSpell(caster, tgt, name, done){
         const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300); spawnFx("healingShimmer", {at: tgt, sq: 2, anchor: "mid"});
         popText(tgt, `+${d}`, "#9ff2c8"); burst(tgt, "#9ff2c8", 14); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
-      } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6); spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8}); spawnFx("sigilAbjurationPlume", {at: tgt, sq: 2, anchor: "feet", lift: .9}); addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
+      } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6); spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8}); addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else {                                                                    // a save
         const targets = sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt];
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
@@ -1683,9 +1717,21 @@ function endCombat(won){
   if (mode !== "combat") return;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby();
-  foes.forEach(f => f.fading = true);
+  // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
+  // whatever died. This way we can search the body."). Only the living, called off, walk away.
+  const slain = foes.filter(f => f.down && SPR[f.id].img.dead);
+  foes.forEach(f => { if (!slain.includes(f)) f.fading = true; });
   $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on");
+  if (won && slain.length){
+    // XP from the bestiary row on each block (Drow 50, Giant Spider 200, Quaggoth 450, Gray Ooze 100),
+    // split across the party; and a short triumphant sting (ui/victory in the bank).
+    const xp = slain.reduce((s, f) => s + (f.c.sheet.xp || 0), 0), live = party.filter(p => !p.down).length || party.length;
+    bank("ui/victory", .9);
+    setTimeout(() => victoryBanner(`${xp} XP`, `${slain.map(f => fname(f)).join(", ")} slain · ${Math.floor(xp / live)} each`), 300);
+    log(`<b>Victory.</b> ${xp} XP (${Math.floor(xp / live)} each).`);
+  }
   setTimeout(() => {
+    for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; npcs.push(f); }
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
@@ -1706,11 +1752,48 @@ function shake(px){ shakeAmt = Math.max(shakeAmt, px); }
 function pushCam(a, b){ if (!cbt) return; camPushed = true; camTo(Math.min(2.8, cbt.home.z * 1.25), (a.x + b.x) / 2, (a.y + b.y) / 2 - 50, 420); }
 function settleCam(){ if (!cbt || !camPushed) return; camPushed = null; camTo(cbt.home.z, cbt.home.cx, cbt.home.cy, 700); }
 // a bolt of light from the caster to the target, then the hit
+// The fighting-game swipe (Sam, 2026-10-13: "street fighter like swipes during melee attacks"): a thick
+// crescent that sweeps across the target in ~7 frames, a brighter core inside a coloured blade, with
+// motion-blur ghosts behind the leading edge. Steel for blades, bone for claws and bites, gold on a crit,
+// grey on a miss (the swing passes through air). Drawn, not a sheet, so it fits any sprite size.
+function swipe(att, tgt, opts = {}){
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), r = Math.max(44, m.cell[1] * sc * .48) * (opts.crit ? 1.4 : 1);
+  const dir = Math.sign(tgt.x - att.x) || 1, rot = (Math.random() - .5) * .9 + (opts.kind === "stab" ? 0 : .3);
+  sparks.push({swipe: true, x: tgt.x, y: tgt.y - m.pivot[1] * sc * .5, r, dir, rot, kind: opts.kind || "slash", col: opts.col || "#f4f6ff", core: opts.core || "#ffffff", t0: now, life: opts.crit ? 260 : 190, miss: !!opts.miss});
+}
+function drawSwipe(s, k){
+  const ease = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, span = Math.PI * 1.35, a0 = -span / 2 - .4, a1 = a0 + span * ease;
+  ctx.save(); ctx.translate(s.x, s.y); ctx.scale(s.dir, 1); ctx.rotate(s.rot); ctx.lineCap = "round";
+  const fade = k < .7 ? 1 : 1 - (k - .7) / .3;
+  if (s.kind === "stab"){                                                   // a thrust: a bright line driven in, then a ring
+    const len = s.r * 1.6 * ease; ctx.globalAlpha = fade * (s.miss ? .45 : .95); ctx.strokeStyle = s.col; ctx.lineWidth = 7; ctx.shadowColor = s.col; ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.moveTo(-len, 0); ctx.lineTo(len * .35, 0); ctx.stroke(); ctx.strokeStyle = s.core; ctx.lineWidth = 2.5; ctx.stroke();
+  } else {
+    for (let g = 3; g >= 0; g--){                                             // ghosts trail the edge
+      const lag = g * .09, ga = a0 + Math.max(0, span * (ease - lag)); if (ga <= a0) continue;
+      ctx.globalAlpha = fade * (s.miss ? .35 : .95) * (g ? .25 : 1); ctx.strokeStyle = s.col; ctx.lineWidth = (g ? 14 : 22) * (s.r / 50); ctx.shadowColor = s.col; ctx.shadowBlur = g ? 0 : 26;
+      ctx.beginPath(); ctx.arc(0, 0, s.r - g * 3, Math.max(a0, ga - span * .6), ga); ctx.stroke();
+      if (!g){ ctx.strokeStyle = s.core; ctx.lineWidth = 6 * (s.r / 50); ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, s.r, Math.max(a0, ga - span * .45), ga); ctx.stroke(); }
+    }
+    // the tip: a hot point on the leading edge
+    if (!s.miss && k < .8){ ctx.globalAlpha = fade; ctx.fillStyle = s.core; ctx.shadowColor = s.col; ctx.shadowBlur = 22; ctx.beginPath(); ctx.arc(Math.cos(a1) * s.r, Math.sin(a1) * s.r, 6 * (s.r / 40), 0, Math.PI * 2); ctx.fill(); }
+  }
+  ctx.restore();
+}
+function swipeStyle(atk, crit){
+  const n = atk.name.toLowerCase();
+  if (crit) return {col: "#ffcf5a", core: "#fff6d0", kind: n.includes("dagger") || n.includes("rapier") || n.includes("bite") ? "stab" : "slash"};
+  if (n.includes("dagger") || n.includes("rapier") || n.includes("shortsword") && Math.random() < .4) return {col: "#dfe7ff", core: "#ffffff", kind: "stab"};
+  if (n.includes("claw") || n.includes("bite") || n.includes("pseudopod")) return {col: n.includes("pseudopod") ? "#b7d96a" : "#ffd9c4", core: "#ffffff", kind: "slash"};
+  if (n.includes("unarmed") || n.includes("club") || n.includes("mace")) return {col: "#ffe2b0", core: "#ffffff", kind: "slash"};
+  return {col: "#dfe7ff", core: "#ffffff", kind: "slash"};
+}
 function spellBolt(from, to, col, then){ const m = SPR[from.id].json, sc = actorScale(from); sparks.push({bolt: true, x: from.x, y: from.y - m.pivot[1] * sc * .6, tx: to.x, ty: to.y - (to.id ? SPR[to.id].json.pivot[1] * actorScale(to) * .5 : 0), col, t0: now, life: 260, then}); }
 function drawCombatFx(){
   for (let i = sparks.length - 1; i >= 0; i--){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
+    if (s.swipe){ drawSwipe(s, k); continue; }
     if (s.bolt){ const x = s.x + (s.tx - s.x) * k, y = s.y + (s.ty - s.y) * k; ctx.save(); ctx.shadowColor = s.col; ctx.shadowBlur = 24; ctx.fillStyle = s.col; ctx.globalAlpha = .95;
       ctx.beginPath(); ctx.ellipse(x, y, 9, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = .4; ctx.beginPath(); ctx.ellipse(x - (s.tx - s.x) * .06, y - (s.ty - s.y) * .06, 14, 6, Math.atan2(s.ty - s.y, s.tx - s.x), 0, Math.PI * 2); ctx.fill(); ctx.restore(); continue; }
     const t = (now - s.t0) / 1000, x = s.x + s.vx * t, y = s.y + s.vy * t + 180 * t * t;
@@ -2256,6 +2339,7 @@ function click(w){
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
     const n = hitActor(npcs, w);
+    if (n && n.body){ walkTo(nearNpc(n), () => openBody(n)); return; }
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat"){ combatClick(w); }
@@ -2284,6 +2368,7 @@ function interact(){
   const n = npcs.map(a => [a, Math.hypot(a.x - leader.x, a.y - leader.y)]).filter(([, d]) => d < 190 * node.scale).sort((a, b) => a[1] - b[1])[0];
   if (!n){ log("No one close enough. Walk up to someone and press <em>E</em>."); return; }
   const a = n[0];
+  if (a.body){ openBody(a); return; }
   approach(a);
 }
 addEventListener("resize", resize);
@@ -2397,7 +2482,7 @@ const ACTS = [
 ];
 function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
 function idleLife(a){
-  if (a === leader || a.once || a.fading || a.offStage || a.creature) return;   // creatures move by tickCreatures, not the idle wander
+  if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body) return;   // creatures move by tickCreatures, not the idle wander
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
     if (now < (a.actUntil || 0)) return;
