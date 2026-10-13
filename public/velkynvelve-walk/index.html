@@ -24,7 +24,7 @@
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--room);color:var(--ink);font-family:var(--face-body);font-size:var(--s0);overflow:hidden}
-.app{height:100%;display:grid;grid-template-rows:auto 1fr auto;padding:10px 16px;gap:10px}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr auto auto;padding:10px 16px;gap:10px}
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
 .brand{display:flex;align-items:baseline;gap:12px;min-width:0}
 .brand h1{font-family:var(--face-display);font-weight:400;font-size:var(--s2);margin:0;letter-spacing:.02em}
@@ -147,21 +147,22 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .cbt-party .hp i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#c4432f,#ff7a5c);transition:width .35s ease-out}
 .cbt-party .hp span{position:absolute;inset:0;font-family:var(--face-mono);font-size:.56rem;line-height:9px;text-align:right;padding-right:3px;color:#fff;text-shadow:0 0 2px #000}
 .cbt-party .slots{font-size:.6rem;color:#b8a0ff;letter-spacing:.1em;margin-top:2px;display:block}
-/* The command bar (Sam, 2026-10-13: "laid on neatly and organized on the bottom of the screen as to not
-   obscure the game"): one strip along the bottom edge, left of the party cards, chips in groups —
-   attacks · other actions · magic · bonus · movement · end turn — so the picture above stays clear. */
-.cbt-menu{position:absolute;left:12px;right:230px;bottom:58px;display:flex;flex-wrap:wrap;align-items:stretch;gap:4px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:5px;box-shadow:0 8px 28px rgba(0,0,0,.6);z-index:3}
+/* The command bar (Sam, 2026-10-13: "needs to be below the game window and use the icons we already have in
+   the dashboard UI"): its own row under the picture, never over it, chips in labelled groups — attack ·
+   action · magic · move — each with the dashboard's painted action icon (public/icons/actions, 96 px copies). */
+.cbt-menu{display:flex;flex-wrap:wrap;align-items:stretch;gap:5px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.6)}
 .cbt-menu[hidden]{display:none}
-.cbt-menu button{all:unset;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2px;width:104px;min-height:40px;padding:4px 6px;border-radius:4px;border:1px solid rgba(203,160,90,.16);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.78rem;line-height:1.1}
-.cbt-menu button small{font-family:var(--face-mono);font-size:.54rem;color:var(--ink-dim);letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:100%}
+.cbt-menu button{all:unset;display:grid;grid-template-columns:38px 1fr;grid-template-rows:auto auto;column-gap:7px;align-items:center;width:168px;min-height:46px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
+.cbt-menu button .ico{grid-row:1/3;width:38px;height:38px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
+.cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:20px;color:var(--ember)}
+.cbt-menu button span{grid-column:2}
+.cbt-menu button small{grid-column:2;font-family:var(--face-mono);font-size:.54rem;color:var(--ink-dim);letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cbt-menu button:hover,.cbt-menu button:focus-visible{background:rgba(232,162,74,.16);border-color:var(--ember)}
 .cbt-menu button.primary{color:#ffd9a0;border-color:rgba(255,217,160,.45)}
 .cbt-menu button.end{margin-left:auto;border-color:rgba(255,155,143,.4);color:#ff9b8f}
 .cbt-menu button:disabled{opacity:.36;cursor:default}
 .cbt-menu .sep{width:1px;align-self:stretch;background:var(--rule);margin:3px 2px}
 .cbt-menu .grp{align-self:center;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--face-mono);font-size:.5rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);padding:2px 0;opacity:.8}
-.fight .log{bottom:152px;max-width:min(460px,calc(100% - 260px))}   /* the log sits above the command bar during a fight */
-.fight .cbt-hint{bottom:auto;top:84px}
 .cbt-hint{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);background:rgba(14,8,10,.9);border:1px solid var(--rule);border-radius:999px;padding:4px 14px;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink)}
 .cbt-hint[hidden]{display:none}
 @media (max-width:700px){.cbt-party{width:150px;bottom:62px}.cbt-top .lbl{display:none}}
@@ -281,7 +282,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="combat" id="combat" hidden>
       <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn danger" id="endCombat">End fight</button></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
-      <div class="cbt-menu cbt-ui" id="cbtMenu" hidden></div>
       <div class="cbt-hint" id="cbtHint" hidden></div>
     </div>
     <div class="dm" id="dm" hidden>
@@ -321,6 +321,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="loading" id="loading">Loading the outpost…</div>
   </div>
 
+  <div class="cbt-menu" id="cbtMenu" hidden></div>
   <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
 </div>
 
@@ -1517,11 +1518,12 @@ function nextTurn(first){
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
-  const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; b.innerHTML = `<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
+  const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
+    b.innerHTML = `${ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
   const grp = (label) => { const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); if (label){ const g = document.createElement("b"); g.className = "grp"; g.textContent = label; m.appendChild(g); } };
   const c = a.c, s = c.sheet;
   if (sub === "attack"){
-    for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
+    for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
     add("Back", "", () => openMenu(a));
   } else if (sub === "shove"){
     add("Shove: knock prone", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "prone"}));
@@ -1534,6 +1536,7 @@ function openMenu(a, sub){
     // action the only other spell you can cast this turn is a cantrip (and the reverse: a leveled action
     // spell shuts the bonus-action spell for the turn).
     if (!c.action) add("— action already used —", "only a bonus-action spell is left", null);
+    for (const nm of [...s.magic.cantrips, ...s.magic.prepared]) ACTION_ICON[nm] = "cast-spell";
     for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
     for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const left = c.slots[sp.lvl] || 0;
       const why = left <= 0 ? "no slot left" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
@@ -1565,6 +1568,11 @@ function openMenu(a, sub){
   placeMenu();
 }
 function closeMenu(){ $("cbtMenu").hidden = true; hint(""); }
+// The dashboard's painted action icons (public/icons/actions), 96 px copies under velkynvelve-walk/icons.
+const ICON_BASE = APP ? "/velkynvelve-walk/icons/" : "icons/";
+const ACTION_ICON = {Attack: "attack", Throw: "offhand-attack", "Sneak (Hide)": "hide", "Shove / Grapple": "opportunity-attack", Shove: "opportunity-attack", Grapple: "opportunity-attack",
+  Dash: "dash", Disengage: "disengage", Help: "help", Search: "search", Dodge: "dodge", Cast: "cast-spell", "Innate Sorcery": "cast-spell"};
+const ACTION_GLYPH = {Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
 function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
 // The command list is docked at the lower left, off the picture: beside the sprite it hid whoever stood
 // next to the one who was up (Sam, 2026-10-13). The active sprite is already ringed and framed by the camera.
@@ -2531,6 +2539,7 @@ addEventListener("resize", resize);
 // the stage can change size without the window doing so (fonts, the party bar); keep the canvas matched to it,
 // or everything drawn on it drifts off the painting
 if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
+if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
 function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); }
