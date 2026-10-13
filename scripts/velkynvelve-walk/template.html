@@ -1521,7 +1521,7 @@ function openMenu(a, sub){
   const grp = (label) => { const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); if (label){ const g = document.createElement("b"); g.className = "grp"; g.textContent = label; m.appendChild(g); } };
   const c = a.c, s = c.sheet;
   if (sub === "attack"){
-    for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
+    for (const atk of s.attacks) add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
     add("Back", "", () => openMenu(a));
   } else if (sub === "shove"){
     add("Shove: knock prone", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "prone"}));
@@ -1541,7 +1541,8 @@ function openMenu(a, sub){
     add("Back", "", () => openMenu(a));
   } else {
     grp("attack");
-    add("Attack", s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
+    const sa = s.attacks.find(k => k.sneak), ss = sa && sneakState(a, null, sa);
+    add("Attack", ss ? (c.sneakUsed ? "sneak attack used this turn" : `Sneak Attack ${ss.why}`) : s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
     const thrown = s.attacks.find(k => k.thrown);
     if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
     add("Sneak (Hide)", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
@@ -1575,7 +1576,8 @@ function aim(a, what){
   if (what.shove){ hint(`${what.shove === "grapple" ? "Grapple" : "Shove"}: click a foe within 5 ft. Esc to cancel.`); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(`${what.spell}: click a friend.`); return; }
   if (sp && sp.area){ hint(`${what.spell}: click where it lands (${sp.area}-ft area).`); return; }
-  hint(`${what.spell || what.atk.name}: click a foe. Esc to cancel.`);
+  const sn = what.atk && sneakState(a, null, what.atk);
+  hint(`${what.spell || what.atk.name}: click a foe. Esc to cancel.${sn ? ` Sneak Attack ${sn.why}.` : ""}`);
 }
 function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && cbt.phase === "move"){ openMenu(activeActor()); } }
 function combatClick(w){
@@ -1619,6 +1621,18 @@ function advantageOn(att, tgt, ranged){
   return Math.sign(adv);
 }
 // Attacking gives you away and spends the Help; both are one attack's worth.
+// Sneak Attack, as Fifi's row reads: a Finesse/ranged weapon, once a turn, with advantage OR an ally within
+// 5 ft of the target, and never with disadvantage. `why` is shown on the menu and the target hint.
+function sneakState(att, tgt, atk, ranged){
+  if (!atk || !atk.sneak) return null;
+  if (att.c.sneakUsed) return {on: false, why: "used this turn"};
+  if (!tgt) return {on: null, why: `+${atk.sneak} with advantage, or an ally next to the target`};
+  const adv = advantageOn(att, tgt, ranged), ally = standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5);
+  if (adv < 0) return {on: false, why: "no sneak attack at disadvantage"};
+  if (adv > 0) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (advantage)`};
+  if (ally) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (ally beside it)`};
+  return {on: false, why: "no sneak attack: get advantage, or an ally beside it"};
+}
 function afterAttackRoll(att){ if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); att.alpha = 1; } att.c.conds.delete("helped"); }
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
@@ -1998,7 +2012,8 @@ function combatTargetHint(){
   if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}`;
   const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t), need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
   let p1 = (21 - need) / 20; if (adv > 0) p1 = 1 - (1 - p1) ** 2; else if (adv < 0) p1 = p1 ** 2;
-  return `${fname(t)} · AC ${ac} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft`;
+  const sn = p.atk ? sneakState(a, t, p.atk, feetBetween(a, t) > (p.atk.reach || 5) + 2) : null;
+  return `${fname(t)} · AC ${ac} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft${sn ? " · " + sn.why : ""}`;
 }
 
 // ---------- creatures Malachar brings in ----------
