@@ -366,15 +366,18 @@
   "arrivals": {
    "gray-ooze": {
     "from": [
-     812,
-     812
+     30,
+     425
     ],
     "to": [
-     900,
-     900
+     690,
+     750
     ],
-    "anim": "emerge",
-    "big": 1
+    "anim": "walk",
+    "backdrop": true,
+    "fixedScale": 1.35,
+    "via": "along the rope bridge",
+    "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). The under-the-door emerge (from [812,812], anim emerge) is what the film shows; use it when he brings it through."
    },
    "default": {
     "from": [
