@@ -13,8 +13,11 @@
  *  - Per-player only. Chips are generated for the selected character in this
  *    browser and never shared across clients.
  *  - Generated per character (Haiku, via /api/suggestions), not once per beat.
- *  - No regeneration when the scene changes without a new narration beat —
- *    the fetch is keyed strictly on the latest DM dialogue row.
+ *  - No regeneration when the scene changes without a new beat — the fetch is
+ *    keyed strictly on the latest DM-or-NPC dialogue row. (NPC rows count:
+ *    the chat route stores each quoted NPC line under the NPC's own name, so
+ *    keying on Malachar alone skipped the very line the player is answering.
+ *    See buildSuggestionContext in lib/suggestions.ts.)
  *  - Static quick replies remain as the fallback whenever there is no live
  *    character or the generator returns nothing, so the row never goes empty.
  */
@@ -22,7 +25,7 @@
 import { useEffect, useState } from "react"
 import { classifySpeaker } from "@/lib/tts"
 import { getClassColor } from "@/lib/class-colors"
-import type { Suggestion } from "@/lib/suggestions"
+import { buildSuggestionContext, type Suggestion } from "@/lib/suggestions"
 import type { Character, InventoryItem } from "@/lib/types/database"
 
 interface ChipDialogueEntry {
@@ -37,6 +40,10 @@ interface SuggestionChipsProps {
   dialogue: ChipDialogueEntry[]
   inventory: InventoryItem[]
   location: string
+  /** Who the player sat down with (camp / map talk), when that is known. */
+  talkWith?: string | null
+  /** The NPC currently holding the window, if any. */
+  onStage?: string | null
   /** Static quick replies shown when no generated chips are available. These
    *  carry their own observe chip so the look-around action survives a failed
    *  generation — the one chip that must never go missing. */
@@ -51,17 +58,18 @@ const CHIP_CLASS =
   "rounded-full border border-[#2f8f68] bg-[#08251c] px-3.5 py-1.5 text-xs bg-gradient-to-b from-[#fff4b0] via-[#f6c453] to-[#a96f08] bg-clip-text text-transparent drop-shadow-[0_1px_1px_rgba(255,255,255,0.35)] shadow-[0_0_8px_rgba(52,211,153,0.16)] hover:border-[#6ee7b7] hover:bg-[#0d3b2a] disabled:opacity-50"
 
 export function SuggestionChips(props: SuggestionChipsProps) {
-  const { character, dialogue, inventory, location, fallback, disabled, onPick } = props
+  const { character, dialogue, inventory, location, talkWith, onStage, fallback, disabled, onPick } = props
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [loading, setLoading] = useState(false)
 
-  // The latest DM narration beat is the ONLY regeneration trigger.
-  const lastBeat = [...dialogue].reverse().find((entry) => entry.text?.trim() && classifySpeaker(entry.speaker) === "dm")
-  const beatKey = lastBeat ? lastBeat.id ?? lastBeat.text : null
+  // The latest DM-or-NPC row is the ONLY regeneration trigger. The context
+  // carries the last few lines of the exchange and who is being spoken to.
+  const context = buildSuggestionContext(dialogue, classifySpeaker, { talkWith, onStage })
+  const beatKey = context.beatKey
   const characterId = character?.id ?? null
 
   useEffect(() => {
-    if (!character || !characterId || !lastBeat || !beatKey) {
+    if (!character || !characterId || !beatKey || !context.sceneText) {
       setSuggestions([])
       return
     }
@@ -81,7 +89,9 @@ export function SuggestionChips(props: SuggestionChipsProps) {
               conditions: character.conditions,
             },
             inventory: inventory.map((item) => (item.quantity > 1 ? `${item.name} x${item.quantity}` : item.name)),
-            sceneText: lastBeat.text,
+            sceneText: context.sceneText,
+            talkingTo: context.talkingTo,
+            present: context.present,
             location,
           }),
         })
@@ -96,8 +106,10 @@ export function SuggestionChips(props: SuggestionChipsProps) {
     return () => {
       cancelled = true
     }
-    // Keyed on the beat + character identity only — inventory/location changes
-    // alone must NOT regenerate (locked: no regen without a new narration beat).
+    // Keyed on the beat + character identity only — inventory/location/partner
+    // changes alone must NOT regenerate (locked: no regen without a new beat).
+    // A talk opener is logged as an NPC row, so sitting down with someone IS a
+    // new beat and the partner is read fresh when it fires.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId, beatKey])
 
