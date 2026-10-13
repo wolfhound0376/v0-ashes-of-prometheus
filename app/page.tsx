@@ -82,19 +82,30 @@ function optimisticLichEntries(response: { text: string; speechSegments?: Speech
 //   3. Otherwise the message is appended.
 function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): DialogueMessage[] {
   if (prev.some((m) => m.id === incoming.id)) return prev
-  // A settled realtime row can arrive immediately before the HTTP response's
-  // optimistic copy. Only compare a pending incoming row with the newest row:
-  // searching the entire transcript would swallow a legitimate repeated line
-  // merely because the same speaker said the same words earlier in the game.
-  const newestIdx = prev.length - 1
-  const newest = prev[newestIdx]
-  const pendingIdx = incoming.pending && newest && !newest.pending &&
-    newest.speaker === incoming.speaker && newest.text === incoming.text
-    ? newestIdx
-    : prev.findIndex((m) =>
-        m.pending && !incoming.pending &&
-        m.speaker === incoming.speaker && m.text === incoming.text,
-      )
+  // A settled realtime row can arrive before the HTTP response's optimistic
+  // copy: the route inserts the turn and then keeps working (cinematics, the
+  // stage, images) before it answers, and Realtime is faster than that.
+  //
+  // This used to compare a pending incoming row with the NEWEST row only. A
+  // Malachar turn is now several rows (his narration, then Eldeth's line, then
+  // his narration again), so by the time the optimistic copies arrived the
+  // newest row was the LAST row of the turn, the first optimistic copy matched
+  // nothing and was appended, and every row after it matched nothing either.
+  // The whole turn stood twice in the feed and was spoken twice — Malachar and
+  // the character both (Sam, 2026-10-13). So look back through the tail of the
+  // transcript instead: a settled twin among the last few rows is this turn's
+  // own row, not a line someone legitimately said again earlier in the game.
+  if (incoming.pending) {
+    const tail = Math.max(0, prev.length - TURN_TAIL)
+    for (let i = prev.length - 1; i >= tail; i--) {
+      const m = prev[i]
+      if (!m.pending && m.speaker === incoming.speaker && m.text === incoming.text) return prev
+    }
+  }
+  const pendingIdx = prev.findIndex((m) =>
+    m.pending && !incoming.pending &&
+    m.speaker === incoming.speaker && m.text === incoming.text,
+  )
   if (pendingIdx !== -1) {
     const next = prev.slice()
     next[pendingIdx] = { ...incoming, pending: false }
@@ -102,6 +113,9 @@ function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): Dial
   }
   return [...prev, incoming]
 }
+// How far back a pending row looks for its settled twin: more rows than one
+// turn can produce (the route caps a turn well under this), fewer than a scene.
+const TURN_TAIL = 12
 
 // Stable unique id for optimistic / client-only entries.
 const tempId = () =>
