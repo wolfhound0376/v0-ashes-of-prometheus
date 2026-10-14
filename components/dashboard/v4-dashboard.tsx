@@ -3,7 +3,7 @@
 import { listenerCharacterId } from "@/lib/rapport"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
-import { BookOpen, ChevronDown, ChevronUp, Compass, Crown, Dumbbell, Feather, ImagePlus, Map, Mic, Shield, TreeDeciduous, X, type LucideIcon } from "lucide-react"
+import { BookOpen, ChevronDown, ChevronUp, Compass, Crown, Dumbbell, Feather, Flame, ImagePlus, Map, Mic, Shield, TreeDeciduous, X, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DrinkButton, useDrinkables } from "@/components/alchemy/drink-button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -16,7 +16,7 @@ import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { useSkillMarks } from "@/lib/hooks/use-skill-marks"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
 import MapPanel from "@/components/map/map-panel"
-import { useStage } from "@/components/stage/stage-provider"
+import { StageLink, useStage } from "@/components/stage/stage-provider"
 import { DmNarration } from "./dm-narration"
 import { speakBlob } from "@/lib/speech-queue"
 import { unlockSpeechAudio } from "@/lib/speech-playback"
@@ -39,6 +39,7 @@ import { isCombatant } from "@/lib/challenge-rating"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
 import { isVideoUrl } from "@/lib/media-url"
 import { campBiome, CAMP_BIOME_LABEL, CAMP_PLATES } from "@/lib/camp-plates"
+import { useCampVerdict } from "@/lib/hooks/use-camp-verdict"
 import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 
@@ -415,6 +416,9 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [diceOpen, setDiceOpen] = useState(false)
   const [spellbookOpen, setSpellbookOpen] = useState(false)
   const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
+  // Camp is made on the travel map only, never inside a place's node map (Sam, 2026-10-14).
+  const campVerdict = useCampVerdict()
+  const [campNote, setCampNote] = useState<string | null>(null)
   const talkMode = Boolean(props.talkWith)
   // Camp talk narrows the page to the NPC window alone. Map talk does not (Sam, 2026-10-11: "This is
   // the camp UI; we need to go to the dashboard UI"): the full dashboard, with the partner holding the
@@ -942,7 +946,15 @@ export function V4Dashboard(props: V4DashboardProps) {
         <div className="absolute left-3 top-3 z-20 flex gap-1 rounded border border-[#6b5123] bg-[#080705]/85 p-1 text-[8px] uppercase tracking-wider">
           <button onClick={() => setStageMode("scene")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "scene" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Compass className="h-3 w-3" />Character View</button>
           <button onClick={() => setStageMode("tactical")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "tactical" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Map className="h-3 w-3" />Tactical Map{inCombat ? " · Live" : ""}</button>
+          {/* Go to camp. Out on the travel map only: inside a place (a subnodal map) the party can
+              take a short rest, but the fire is made on the road (Sam, 2026-10-14). */}
+          {(campVerdict?.allowed ?? true) ? (
+            <StageLink href="/camp" caption="Camp at the Fire" title={campVerdict?.reason ?? "Make camp."} className="flex items-center gap-1 rounded px-2 py-1 text-[#e0a35c] hover:bg-[#2a1e0d] hover:text-[#f5c34d]"><Flame className="h-3 w-3" />Go to Camp</StageLink>
+          ) : (
+            <button type="button" aria-disabled="true" title={campVerdict?.reason} onClick={() => setCampNote((note) => (note ? null : campVerdict?.reason ?? null))} className="flex cursor-not-allowed items-center gap-1 rounded px-2 py-1 text-[#6f624b]"><Flame className="h-3 w-3" />Go to Camp</button>
+          )}
         </div>
+        {campNote && !(campVerdict?.allowed ?? true) ? <div role="status" className="absolute left-3 top-12 z-20 max-w-[min(360px,80%)] rounded border border-[#6b5123] bg-[#080705]/95 px-3 py-2 text-[10px] leading-snug text-[#cdb276]">{campNote}</div> : null}
         {stageMode === "scene" ? <>
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
           {characterStageMedia ? (isVideoUrl(characterStageMedia)
