@@ -2977,18 +2977,31 @@ function frame(t){
   try { await loadSprites(); } catch (e) { $("loading").textContent = "Could not load sprite: " + e; return; }
   $("loading").remove();
   leader = null;
+  // Whose browser this is. The seat is taken here too (not only on the dashboard and at the door), so
+  // the map can be the first page opened and still be right; and the one you are playing leads —
+  // Sam, 2026-10-14: "The pixel board had me defaulted as Kenta".
+  let mine = null;
   if (APP){
+    try {
+      const id = localStorage.getItem("aop_character_id"), token = localStorage.getItem("aop_claim_token");
+      if (id && token){
+        const v = await fetch("/api/verify-claim", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({characterId: id, claimToken: token})}).then(r => r.json());
+        if (v && v.valid && v.character) mine = seatedSlugs([v.character])[0] || null;
+      }
+    } catch (e) {}
     try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
+    if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }
   const saved = APP ? loadWalk() : null;
   if (saved) saved.party = saved.party.filter(p => PARTY.includes(p.id));
   if (saved && saved.party.length){
     Object.assign(state, saved.state || {});
-    const L = saved.party.find(p => p.id === saved.leader) || saved.party[0];
+    const L = saved.party.find(p => p.id === (mine || saved.leader)) || saved.party.find(p => p.id === saved.leader) || saved.party[0];
     leader = {id: L.id};
     await enterNode(saved.cur, {spawn: {x: L.x, y: L.y}, offs: saved.party.map(p => ({id: p.id, dx: p.x - L.x, dy: p.y - L.y}))});
     for (const p of party){ const s = saved.party.find(q => q.id === p.id); if (s){ p.x = s.x; p.y = s.y; p.face = s.face || 0; p.home = {x: s.x, y: s.y}; } }
   } else {
+    if (mine) leader = {id: mine};
     await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
   }
   requestAnimationFrame(frame);
