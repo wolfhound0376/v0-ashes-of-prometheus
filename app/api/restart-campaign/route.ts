@@ -67,6 +67,8 @@ const STARTING_LOCATION = "Scene_1_Velkynvelve (slave pen)"
 const STARTING_NODE_KEY = "velkynvelve"
 const STARTING_SUBNODAL_MAP = "velkynvelve-nodes"
 const STARTING_SUBNODAL_NODE = 11
+/** The campaign the runs belong to (`campaign_runs.campaign_id`, as /api/travel reads it). */
+const CAMPAIGN_ID = "abyss"
 
 /**
  * The shape the cast handler writes into `characters.sheet_spellcasting`.
@@ -276,6 +278,75 @@ export async function POST(req: Request) {
     report.worldFlagsCleared = count ?? 0
   }
 
+  // --- 2c. a new run, and a session for it ---------------------------------
+  // Until 2026-10-14 a restart wiped the story but kept the same `campaign_runs`
+  // row (run 1, status "setup", never started), so nothing in the database could
+  // tell a restarted game from the one before it: Malachar's "run start" was
+  // guessed from the oldest line of dialogue, and the painted map went on
+  // showing the gate it had opened and the creatures it had walked in because
+  // nothing told it the world had been reset under it.
+  //
+  // Now every restart ENDS the live run and OPENS the next one, numbered
+  // run_number + 1 and already "active" (there is no separate "start" click —
+  // a restart is the start). `one_live_run_per_campaign` allows exactly one
+  // run that is not ended, which is why the old one must close first. Everything
+  // keyed by run (party_position, the subnodal fog, travel_march, party_vessels)
+  // starts empty for the new run; 5b fills in the party's position and fog.
+  //
+  // The party characters move to the new run with it (`characters.run_id`) —
+  // same party, fresh story. That column is write-locked once start_campaign()
+  // has locked a sheet; no sheet is locked today, and a locked one is reported
+  // under `problems` rather than silently left behind.
+  //
+  // `sessions` was emptied in step 2 and NOTHING in the codebase creates a
+  // session row (verified 2026-10-14), so after a restart Malachar's beats and
+  // the shared stage (/api/stage) had no session to attach to. One fresh
+  // session per run, titled after it, opens here.
+  let runId: string | null = null
+  let runNumber: number | null = null
+  {
+    const now = new Date().toISOString()
+    const { data: runs, error: readErr } = await admin
+      .from("campaign_runs")
+      .select("id, run_number, status")
+      .eq("campaign_id", CAMPAIGN_ID)
+      .order("run_number", { ascending: false })
+    note("campaign_runs read", readErr)
+    const rows = (runs ?? []) as { id: string; run_number: number; status: string }[]
+    const live = rows.filter((r) => r.status !== "ended")
+    if (live.length) {
+      const { error } = await admin
+        .from("campaign_runs")
+        .update({ status: "ended", ended_at: now })
+        .in("id", live.map((r) => r.id))
+      note("campaign_runs end", error)
+    }
+    const nextNumber = (rows[0]?.run_number ?? 0) + 1
+    const { data: created, error: insErr } = await admin
+      .from("campaign_runs")
+      .insert({ campaign_id: CAMPAIGN_ID, run_number: nextNumber, status: "active", started_at: now })
+      .select("id, run_number")
+      .maybeSingle()
+    note("campaign_runs insert", insErr)
+    if (created?.id) {
+      runId = created.id
+      runNumber = created.run_number
+      report.run = { id: runId, number: runNumber, startedAt: now }
+      if (live.length) {
+        const { error } = await admin
+          .from("characters")
+          .update({ run_id: runId })
+          .in("run_id", live.map((r) => r.id))
+        note("characters move to new run", error)
+      }
+      const { error: sessErr } = await admin
+        .from("sessions")
+        .insert({ campaign_id: CAMPAIGN_ID, title: `Run ${nextNumber}`, status: "active", started_at: now })
+      note("session open", sessErr)
+      report.sessionOpened = !sessErr
+    }
+  }
+
   // --- 3. NPC memory ------------------------------------------------------
   // RESET, NOT DELETE. hp_current returns to hp_max via a tiny read-modify-write
   // because PostgREST cannot set a column from another column in one statement.
@@ -452,13 +523,22 @@ export async function POST(req: Request) {
     note("travel node read", nodeErr)
 
     if (startNode?.id) {
-      const { data: runs } = await admin
-        .from("campaign_runs")
-        .select("id")
-        .order("started_at", { ascending: false, nullsFirst: false })
-        .limit(1)
-      const runId = runs?.[0]?.id
+      // The run opened in 2c. If that failed, fall back to the latest run the
+      // table has, so the party still walks home.
+      if (!runId) {
+        const { data: runs } = await admin
+          .from("campaign_runs")
+          .select("id")
+          .order("started_at", { ascending: false, nullsFirst: false })
+          .limit(1)
+        runId = runs?.[0]?.id ?? null
+      }
       if (runId) {
+        // One party, one position. The map and /api/travel read this table with
+        // `.limit(1)` and no run filter, so the old run's row must go before the
+        // new run's goes in — two rows would make "where is the party" a coin toss.
+        const { error: oldPosErr } = await admin.from("party_position").delete().neq("campaign_run_id", runId)
+        note("party position (old runs)", oldPosErr)
         const { error: posErr } = await admin
           .from("party_position")
           .upsert(

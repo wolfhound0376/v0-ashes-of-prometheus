@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { StageLink } from "@/components/stage/stage-provider"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/vessels"
 import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
@@ -981,12 +982,13 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
               {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
               {halt.kind === "camp" && (
                 <>
-                  <a
+                  <StageLink
                     href="/camp"
+                    caption="A fire, if you can call it one. Sit. Eat. Lie to each other about how brave you were."
                     className="mt-3 block rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#e0a35c] hover:border-[#e0a35c]"
                   >
                     TO CAMP AT THE FIRE →
-                  </a>
+                  </StageLink>
                   {/* p.25: food and water can be gathered at a normal or slow pace, never fast.
                       The camp's Forage / Hunt tiles post their haul to the real pool and packs. */}
                   {PACES[march.pace].canForage ? (

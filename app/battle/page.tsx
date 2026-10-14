@@ -10,7 +10,8 @@
 // nothing else fighting for it.
 
 import { Suspense, useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
+import { useStage } from "@/components/stage/stage-provider"
 import CombatBoard3D from "@/components/tactical/combat-board-3d"
 import SandboxDrawer from "@/components/tactical/sandbox-drawer"
 import { DynamicMusic } from "@/components/dashboard/dynamic-music"
@@ -122,7 +123,7 @@ function BattleMusic() {
 }
 
 function BattleBoardPage() {
-  const router = useRouter()
+  const stage = useStage()
   const sandbox = useSearchParams().get("sandbox") === "1"
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#020204]">
@@ -159,7 +160,9 @@ function BattleBoardPage() {
             // arrived already.
             sessionStorage.setItem("aop_intro_seen", "1")
           } catch {}
-          router.push("/")
+          // the board shrinks back into the table's stage window (lib/stage.ts: "shrink"); the board is the
+          // DM's place, so this move is not written to the shared record
+          void stage.go("/", { share: false })
         }}
       />
       <BattleMusic />

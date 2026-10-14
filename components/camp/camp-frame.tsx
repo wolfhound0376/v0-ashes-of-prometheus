@@ -7,6 +7,7 @@
 // /api/camp/docs, so it is shared across every device.
 
 import Link from "next/link"
+import { StageLink } from "@/components/stage/stage-provider"
 import { ArrowLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -20,12 +21,12 @@ export function CampFrame({ page }: { page: "/camp" | "/camp/scenes" }) {
   return (
     <div className="flex h-dvh flex-col bg-[#07060a] text-[#efe4cf]">
       <nav className="flex flex-wrap items-center gap-2 border-b border-[#7a6238]/60 px-3 py-2 font-serif text-xs tracking-widest">
-        <Link
+        <StageLink
           href="/"
           className="flex items-center gap-1 rounded border border-[#7a6238] px-3 py-1.5 uppercase text-[#e3b95c] hover:border-[#e3b95c]"
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Dashboard
-        </Link>
+        </StageLink>
         {PAGES.map((p) => (
           <Link
             key={p.href}

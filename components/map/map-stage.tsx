@@ -14,7 +14,7 @@
 // key adds click-to-send, still confirmed before anyone walks.
 
 import { useEffect, useRef, useState } from "react"
-import Link from "next/link"
+import { StageLink } from "@/components/stage/stage-provider"
 import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 
@@ -127,12 +127,13 @@ export default function MapStage({ onBack }: { onBack?: () => void }) {
         <span className="text-[9px] uppercase tracking-wider text-[#8f8061]">
           {dmKey ? "Malachar's eyes · click a node to send the party" : "The Underdark"}
         </span>
-        <Link
+        <StageLink
           href="/map"
+          caption="The Underdark opens around you. All of it hungry."
           className="rounded border border-[#6b5123] px-2 py-1 text-[9px] uppercase tracking-wider text-[#e1d0a8] hover:border-[#c99a49]"
         >
           Full map ↗
-        </Link>
+        </StageLink>
       </div>
 
       <div className="relative min-h-0 flex-1">
