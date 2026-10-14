@@ -26,7 +26,6 @@ import { canSpeak } from "@/lib/tts"
 import { PartyChat } from "./party-chat"
 import { SuggestionChips } from "./suggestion-chips"
 import type { Suggestion } from "@/lib/suggestions"
-import { CinematicOverlay } from "./cinematic-overlay"
 import { createClient } from "@/lib/supabase/client"
 import { CharacterSpriteVignette } from "@/components/dashboard/character-sprite-vignette"
 import { onCinematicCue } from "@/lib/cinematic-cue"
@@ -743,7 +742,11 @@ export function V4Dashboard(props: V4DashboardProps) {
   //     DM Mode is an unguarded toggle that never asks for the code, so a DM
   //     with the toggle on but no code stored is prompted once rather than
   //     handed the silent 403 that hid this feature the first time round.
-  const [cinematicSrc, setCinematicSrc] = useState<string | null>(null)
+  // Film rolls through the stage (components/stage/stage-provider.tsx): the stage window grows
+  // into the clip and shrinks back, like every other move. The ref lets the broadcast effect
+  // below, which subscribes once, reach the current stage api.
+  const stageRef = useRef(stage)
+  stageRef.current = stage
   const [cinematicBusy, setCinematicBusy] = useState(false)
   const locationName = props.environment.name
   const seatId = selected?.id ?? null
@@ -783,7 +786,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       .channel("cinematic-broadcast")
       .on("broadcast", { event: "play" }, (message: { payload?: unknown }) => {
         const url = (message?.payload as { video_url?: string })?.video_url
-        if (url && !talkModeRef.current) setCinematicSrc(url)
+        if (url && !talkModeRef.current) void stageRef.current.film({ url, scope: "party", share: false })
       })
       .subscribe()
     return () => {
@@ -829,7 +832,8 @@ export function V4Dashboard(props: V4DashboardProps) {
       if (!shouldPlay({ clipId, characterId: seatId, trigger, playedHere: readPlayed() })) return
       if (!seatId) rememberPlayed(clipId)
 
-      setCinematicSrc(clip.video_url)
+      // share: false — the broadcast below is how a party clip reaches the other seats here.
+      void stage.film({ url: clip.video_url, scope: clip.scope === "party" ? "party" : "solo", share: false, cue: cue?.state })
       if (clip.scope === "party") {
         // A group moment: everyone at the table sees it, not just this seat.
         await createClient()
@@ -1041,7 +1045,6 @@ export function V4Dashboard(props: V4DashboardProps) {
       inventory={props.inventory as any}
     />
     {inventoryOpen ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onDrop={props.onDropItem} onClose={() => setInventoryOpen(false)} /> : null}
-  {cinematicSrc ? <CinematicOverlay src={cinematicSrc} onClose={() => setCinematicSrc(null)} /> : null}
   </main>
 }
 
