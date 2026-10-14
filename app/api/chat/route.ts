@@ -1480,7 +1480,7 @@ ${combatantRows
     if (timeAdmin) {
       const stage = await readStage(timeAdmin)
       const here = Object.values(stage.present)
-      if (here.length) stageContext += ` ON STAGE NOW (keep these positions unless you move them with [NPC_MOVE:]): ${here.map((e) => `${e.name} — ${e.where || "position not stated"}${e.hp != null ? ` (${e.hp}/${e.hpMax ?? "?"} hp)` : ""}`).join("; ")}.`
+      if (here.length) stageContext += ` ON STAGE NOW (keep these positions unless you move them with [NPC_MOVE:]): ${here.map((e) => `${e.name} — ${e.where || "position not stated"}${e.hp != null ? ` (${e.hp}/${e.hpMax ?? "?"} hp)` : ""}${e.wantsWord ? ` [wants a word with ${e.wantsWord.who ?? "anyone"} — not yet spoken]` : ""}`).join("; ")}.`
     }
   } catch (e) { console.error("[stage] context skipped:", e) }
   // Not in a conversation, but someone is in the NPC window: a line that names no one ("who are you?",
@@ -1662,7 +1662,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 12. WHEN COMBAT BEGINS (SRD, Combat Step by Step): the moment any creature attacks, or a hostile act is declared — a player says they strike, a guard draws on them, an ooze lunges — combat has begun and initiative is rolled. A predator that comes INTO the party's space (through the bars, into the pen, onto them) to attack IS attacking: that is [COMBAT_START:], in the same response as its [NPC_MOVE:], not a description of menace. Emit [COMBAT_START: <Name>, <Name>] on its own line naming EVERY hostile creature in the fight, by its canonical name, each of them already brought on with [NPC_ENCOUNTER:] (emit that first if it is missing). From that line on you do NOT roll attacks or decide damage yourself: the dice engine resolves every exchange, the table sees it, and you narrate what it reports. Do not emit it for threats, posturing or a drawn blade nobody uses; do emit it before describing the first blow. When the fight is over — every foe dead, fled or yielded — emit [COMBAT_END] on its own line.
 
-13. WHERE EVERYONE IS: a creature's position is a FACT, not flavour. The stage list below names where each creature on stage was last put; keep it there until you move it, and move it ONLY with [NPC_MOVE: <Name> | <where>] on its own line — "on the bridge", "at the gate, outside", "inside the pen", "through the bars". An ooze that was touching the bars from outside is still outside until you say [NPC_MOVE: Gray Ooze | inside the pen]. Never have an NPC describe a creature somewhere you have not moved it. The map shows exactly where you put them.
+13. WHERE EVERYONE IS: a creature's position is a FACT, not flavour. The stage list below names where each creature on stage was last put; keep it there until you move it, and move it ONLY with [NPC_MOVE: <Name> | <where>] on its own line — "on the bridge", "at the gate, outside", "inside the pen", "through the bars". An ooze that was touching the bars from outside is still outside until you say [NPC_MOVE: Gray Ooze | inside the pen]. Never have an NPC describe a creature somewhere you have not moved it. The map shows exactly where you put them. This holds for the outpost's own people as much as for monsters: a guard who steps away from the bridge, Jorlan coming to the bars with the food — tag the move or it did not happen.
+13b. SOMEONE APPROACHES THE PARTY on their own only through [NPC_WANTS_WORD: <Name> | <character>] — the map shows them asking for a word and the player chooses to come over. Then they speak. JORLAN'S GAMBIT, specifically (Out of the Abyss, ch.1): Jorlan brings the prisoners their food during his guard duty; at the gate he mutters to the NEAREST character "If I could give you a means to escape from here, would you take it?" — and ONLY IF THEY ACCEPT does he propose leaving the gate unlocked and a distraction at the guard change. If they accept, the gate is left unlocked close to the NEXT guard shift change, with the replacement guards delayed a few minutes — a window of minutes, once. Never before the offer, never for days, never a "latch left open". He offers nothing more, warns of nothing (not the ooze), and does not care whether they live.
 
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
@@ -1877,6 +1878,8 @@ WORLD FLAGS:
 - [COMBAT_END] — when the fight is over (dead, fled or yielded)
 - [NPC_MOVE: name | where] — a creature or NPC changes position in the area ("inside the pen", "on the bridge", "outside the gate"). Positions are facts: say it with the tag or it did not happen.
   - Example: [NPC_MOVE: Gray Ooze | inside the pen]
+- [NPC_WANTS_WORD: name | character] — an NPC wants a word with a character (or with "anyone"): the map shows them asking, and the character can come over. Use it when someone would approach the party on their own — Jorlan at the gate with the food, a prisoner with something to whisper. It is an INVITATION, not the conversation: say nothing of what they want yet. Clears itself when they talk.
+  - Example: [NPC_WANTS_WORD: Jorlan Duskryn | Fifi]
 - [FLAG: <key>] — when a permanent, table-wide fact becomes true
   - pen-door-open — the slave pen's door is open: unlocked, picked, forced, or opened by someone else
   - Emit once, at the moment it happens. Never invent a key that is not listed here.
@@ -3425,6 +3428,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     .replace(/\[COMBAT_START:[^\]]*\]/gi, "")
     .replace(/\[COMBAT_END\]/gi, "")
     .replace(/\[NPC_MOVE:[^\]]*\]/gi, "")
+    .replace(/\[NPC_WANTS_WORD:[^\]]*\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
     // somebody has to remember to add here — and forgetting means the tag is
     // printed to the table as raw text. This sweeps any [UPPERCASE_TAG: ...]
@@ -3926,6 +3930,17 @@ Rules:
   for (const m of rawText.matchAll(/\[NPC_MOVE:\s*([^|\]]+)\|\s*([^\]]+)\]/gi)) {
     const resolved = await resolveNpcByName(supabase, m[1].trim())
     stageEvents.push({ kind: "place", name: resolved?.name || m[1].trim(), where: m[2].trim().slice(0, 80) })
+  }
+  for (const m of rawText.matchAll(/\[NPC_WANTS_WORD:\s*([^|\]]+)(?:\|\s*([^\]]+))?\]/gi)) {
+    const resolved = await resolveNpcByName(supabase, m[1].trim())
+    const whoRaw = (m[2] ?? "").trim()
+    const who = !whoRaw || /^(anyone|any|the party|everyone|all)$/i.test(whoRaw) ? null : whoRaw.slice(0, 40)
+    stageEvents.push({ kind: "wantsWord", name: resolved?.name || m[1].trim(), who })
+  }
+  // The word has been had: a turn addressed to that NPC (the map's Talk, the NPC window) clears the ask.
+  if (talkWith) {
+    const resolved = await resolveNpcByName(supabase, talkWith)
+    stageEvents.push({ kind: "heard", name: resolved?.name || talkWith })
   }
 
   // The stage roster: one read, one write, after every tag has been handled (best-effort, never blocks the turn).

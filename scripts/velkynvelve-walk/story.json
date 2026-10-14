@@ -377,7 +377,7 @@
     "backdrop": true,
     "fixedScale": 1.35,
     "via": "along the rope bridge",
-    "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). `inside` is the chasm-side entry Malachar narrated (2026-10-13 21:28: it oozes up the stone wall from the pool below the pen) \u2014 it heaves up over the ledge at the pen's left rim, by the crystals. The approved film shows an under-the-bars entry instead; `insideGate` keeps that path for when he brings it through the gate.",
+    "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). `inside` is the chasm-side entry Malachar narrated (2026-10-13 21:28: it oozes up the stone wall from the pool below the pen) — it heaves up over the ledge at the pen's left rim, by the crystals. The approved film shows an under-the-bars entry instead; `insideGate` keeps that path for when he brings it through the gate.",
     "inside": {
      "from": [
       700,
@@ -428,6 +428,37 @@
     }
    }
   },
-  "wards": "The wards cut into the pen's walls smother any spell cast inside it; a spell cast from outside still reaches in."
+  "wards": "The wards cut into the pen's walls smother any spell cast inside it; a spell cast from outside still reaches in.",
+  "spots": {
+   "_note": "Where a cast member goes when Malachar tags [NPC_MOVE: name | where] with this word in it. Plate pixels, matched by substring, first match wins. gate/bars = outside the pen gate where the ooze touched the bars; landing/door = Jorlan's post; bridge = the rope bridge; tower = its far end.",
+   "bars": [
+    690,
+    750
+   ],
+   "gate": [
+    690,
+    750
+   ],
+   "landing": [
+    445,
+    650
+   ],
+   "door": [
+    445,
+    650
+   ],
+   "stairs": [
+    432,
+    850
+   ],
+   "bridge": [
+    300,
+    555
+   ],
+   "tower": [
+    90,
+    450
+   ]
+  }
  }
 }

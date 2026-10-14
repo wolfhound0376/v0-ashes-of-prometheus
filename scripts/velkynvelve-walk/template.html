@@ -718,7 +718,7 @@ function updateOverlay(){
   if (nameTag){
     if (hoverActor && mode !== "talk"){
       const [sx, sy] = w2s(hoverActor.x, hoverActor.y); nameTag.hidden = false; nameTag.style.left = sx + "px"; nameTag.style.top = sy + "px";
-      nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" : "");
+      nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" + (hoverActor.talkWho ? " with " + hoverActor.talkWho : "") : "");
     } else nameTag.hidden = true;
   }
 }
@@ -2202,14 +2202,44 @@ async function pollStage(){
       const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; if (c.inside && !f.inside) creatureCrosses(c.slug); }
     }
     for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug)){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead)); }
-    // the cast: off the plate when the game says they have gone, back when it says they are here
+    // the cast: off the plate when the game says they have gone, back when it says they are here;
+    // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
     for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature)){
-      const off = gone.some(g => stageMatch(g, n.id)) && !present.some(c => stageMatch(c, n.id));
+      const here = present.find(c => stageMatch(c, n.id));
+      const off = gone.some(g => stageMatch(g, n.id)) && !here;
       if (off && !n.offStage) castLeaves(n, !!gone.find(g => stageMatch(g, n.id)).dead);
       else if (!off && n.offStage) castReturns(n);
+      if (!n.offStage){ castMovesTo(n, here ? here.where : null); castAsks(n, here ? here.wantsWord : null); }
     }
     stageSeen = {present, gone};
   } catch (e) {}
+}
+// A cast member goes where Malachar's [NPC_MOVE: name | where] put them — the pen's story layer names the
+// spots ("gate"/"bars" is outside the bars, "landing" is Jorlan's post, "bridge", "tower"); a wording that names
+// no spot leaves them where they are (Sam, 2026-10-14: the guard leaves Jorlan, Jorlan comes to the bars).
+function spotFor(where){
+  const w = String(where || "").toLowerCase(); const spots = node.spots || {};
+  for (const k of Object.keys(spots)) if (k[0] !== "_" && w.includes(k)) return {x: spots[k][0], y: spots[k][1]};
+  return null;
+}
+function castMovesTo(n, where){
+  if (!where || n.stageWhere === where) return;
+  n.stageWhere = where;
+  const s = spotFor(where); if (!s || (Math.hypot(s.x - n.x, s.y - n.y) < 40 && !n.path.length)) return;
+  n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n);
+  n.path = [{x: s.x, y: s.y}]; n.slow = true;
+  n.onArrive = () => { n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; setAnim(n, "idle"); n.face = faceOf(leader.x - n.x, leader.y - n.y); };
+  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} moves ${where}.`);
+}
+// [NPC_WANTS_WORD: name | character]: the "!" goes up and the approach plays when a player comes over. The
+// story layer's own `talk` flag is kept underneath so the roster clearing the ask puts things back as they were.
+function castAsks(n, ask){
+  if (!ask){ if (n.stageAsk){ n.stageAsk = null; n.talk = !!n.storyTalk; n.talkWho = null; } return; }
+  if (n.stageAsk && n.stageAsk.since === ask.since) return;
+  if (n.storyTalk === undefined) n.storyTalk = !!n.talk;
+  n.stageAsk = ask; n.talk = true; n.talkWho = ask.who || null;
+  delete state.talked[n.id]; delete state.declined[n.id];
+  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} wants a word${ask.who ? " with " + ask.who : ""}.`);
 }
 // A cast member walks out of the picture by the nearest edge of the plate (a dead one falls where they
 // stand), and comes back in the same way to their post. Backdrop figures (the guards on the balcony)

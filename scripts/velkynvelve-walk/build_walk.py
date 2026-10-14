@@ -45,7 +45,7 @@ story = json.load(open(os.path.join(HERE, 'story.json')))
 for k, v in story.items():
     if k.startswith('_'): continue
     n = spec[k]; n['npcs'] = n.get('npcs', []) + v.get('npcs', [])
-    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards'):
+    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots'):
         if f in v: n[f] = v[f]
     n['cross'] = v.get('cross', {})
 # exits that lead to several places become one strip per destination, split across the way out
