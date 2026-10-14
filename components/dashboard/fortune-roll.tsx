@@ -27,12 +27,15 @@ export function FortuneRoll({
   claimToken,
   characterName,
   onNarrate,
+  onDismiss,
 }: {
   characterId: string | null
   claimToken: string | null
   characterName: string | null
   /** Hands Malachar the result as a stage direction. */
   onNarrate: (direction: string) => void
+  /** Told once the card is out of the way: already rolled this run, or dismissed after rolling. */
+  onDismiss?: (rolled: boolean) => void
 }) {
   const { roll } = useDice()
   const [state, setState] = useState<"unknown" | "due" | "rolling" | "done" | "dismissed">("unknown")
@@ -45,9 +48,10 @@ export function FortuneRoll({
     let live = true
     fetch(`/api/fortune-roll?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((j) => { if (live) setState(j?.rolled ? "dismissed" : "due") })
+      .then((j) => { if (!live) return; if (j?.rolled){ setState("dismissed"); onDismiss?.(false) } else setState("due") })
       .catch(() => { if (live) setState("unknown") })
     return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId, claimToken])
 
   const doRoll = useCallback(async () => {
@@ -116,7 +120,7 @@ export function FortuneRoll({
               {fortune.item ? `${fortune.item} is in your bag.` : "Nothing goes in the bag."} Malachar has the rest.
             </p>
             <button
-              onClick={() => setState("dismissed")}
+              onClick={() => { setState("dismissed"); onDismiss?.(true) }}
               className="px-5 py-2 rounded bg-[#2a2520] border border-[#3d3428] text-stone-300 hover:text-stone-100 hover:border-stone-500 transition-colors"
             >
               Into the dark
