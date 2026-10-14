@@ -38,7 +38,7 @@ export async function GET() {
       present: Object.values(stage.present),
       gone: Object.values(stage.gone),
       run: runRes.data?.run_number ?? null,
-      seated: seated.map((s) => ({ id: s.id, name: s.name })),
+      seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm })),
     })
   } catch (e) {
     return NextResponse.json({ area: null, present: [], gone: [], run: null, seated: [], error: String(e) }, { status: 200 })

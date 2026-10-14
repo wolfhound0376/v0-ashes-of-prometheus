@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { applyStageEvents, readStage, type StageEvent } from "@/lib/stage-roster"
+import { readSeated } from "@/lib/seats"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
@@ -919,7 +920,33 @@ STRICT LIMITS ON USING THESE:
     campaign.contexts.defaults.heat,
     message,
   )
-  const worldContextText = formatWorldContextForAI(worldContext)
+  // WHO IS AT THE TABLE (lib/seats.ts). Until 2026-10-14 every player character was in the prompt
+  // whether or not anyone was playing them, so a solo Fifi had Malachar narrating three absent
+  // friends. Seated by a player: at the table. Seated by the DM: a companion the DM runs as an
+  // NPC. Not seated: not in this run — absent, unmentioned. Nobody seated at all (a turn before
+  // anyone has come through the door): everyone, as before.
+  let tableBlock = ""
+  try {
+    const seats = await readSeated(createAdminClient())
+    if (seats.length) {
+      const byId = new Map(seats.map((x) => [x.id, x]))
+      const all = worldContext.characters
+      const players = all.filter((c) => byId.get(c.id) && !byId.get(c.id)!.dm)
+      const companions = all.filter((c) => byId.get(c.id)?.dm)
+      const absent = all.filter((c) => !byId.get(c.id))
+      // the speaker is always at the table, whatever the seats say
+      if (playerCharacter && !byId.has(playerCharacter.id)) {
+        const me = all.find((c) => c.id === playerCharacter!.id)
+        if (me) { players.push(me); const i = absent.indexOf(me); if (i >= 0) absent.splice(i, 1) }
+      }
+      worldContext.characters = [...players, ...companions]
+      tableBlock = `=== WHO IS AT THE TABLE THIS RUN ===
+PLAYED BY PLAYERS: ${players.map((c) => c.name).join(", ") || "nobody yet"}.
+${companions.length ? `RUN BY THE DM AS NPCs: ${companions.map((c) => c.name).join(", ")}. Each is a party member in the DM's hands: it walks with the party and may have a line in a scene like any NPC, but it makes NO decisions, attempts NO actions and rolls NOTHING unless a stage direction from the DM says so. Never speak for it as though a player had, never resolve its turn for it.\n` : ""}${absent.length ? `NOT IN THIS RUN: ${absent.map((c) => c.name).join(", ")}. They are ABSENT — not in the pen, not in the story. Do not mention them, address them, place them in the room or count them in the party.\n` : ""}=== END TABLE ===
+`
+    }
+  } catch (e) { console.error("[seats] table block skipped:", e) }
+  const worldContextText = tableBlock + formatWorldContextForAI(worldContext)
 
   // === WORLD CLOCK & STORY-ADVANCEMENT PACING ===
   // Read the game_clock for the active session with the service-role client
