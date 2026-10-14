@@ -106,6 +106,7 @@ export function sanitizeForTTS(text: string): string {
     .replace(/\[COMBAT_START:[^\]]*\]/g, "") // initiative call (lib/combat-flag.ts)
     .replace(/\[COMBAT_END\]/g, "")
     .replace(/\[NPC_MOVE:[^\]]*\]/g, "")
+    .replace(/\[NPC_WANTS_WORD:[^\]]*\]/g, "")
     .replace(/\[CAMP_ACTION:[^\]]*\]/g, "") // camp actions (lib/camp.ts §14)
     .replace(/--+/g, ", ") // em-dashes to pause
     .replace(/\.\.\./g, "...") // keep ellipsis (TTS handles it)

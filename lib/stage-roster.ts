@@ -5,7 +5,8 @@
 // turn involves someone else (the "focus" rule), so a gray ooze Malachar brought in went inactive the
 // moment the party spoke to Jimjar, and the map took it for gone. This roster is written only from
 // Malachar's own tags — [NPC_ENCOUNTER:] brings someone on, [NPC_LEAVE:] and death take them off,
-// [UPDATE_LOCATION:] clears the area — and nothing about the panel touches it. It rides world_flags
+// [NPC_MOVE:] places them, [NPC_WANTS_WORD:] has them ask for a word, [UPDATE_LOCATION:] clears the
+// area — and nothing about the panel touches it. It rides world_flags
 // (key "stage", one row per campaign) so there is no migration; the map polls /api/map-stage.
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -25,6 +26,14 @@ export type StageEntry = {
   where?: string | null
   /** Inside the party's own space (the pen) — the map's threshold. Set by [NPC_MOVE:] wording. */
   inside?: boolean
+  /**
+   * This NPC wants a word — set by [NPC_WANTS_WORD: name | character] (Sam, 2026-10-14: Jorlan "should
+   * be able to approach and maybe prompt a player"). `who` is the character they want, or null for
+   * anyone. The map shows the "!" and plays the approach; it clears when the talk happens (the chat
+   * route hears `talkWith` for this NPC) or when they leave. The WHEN stays Malachar's: nothing on the
+   * map decides that someone wants to talk, it only shows it.
+   */
+  wantsWord?: { who: string | null; since: string } | null
 }
 export type Stage = {
   area: string | null
@@ -59,6 +68,8 @@ export type StageEvent =
   | { kind: "leave"; name: string; dead: boolean }
   | { kind: "move"; area: string }
   | { kind: "place"; name: string; where: string }
+  | { kind: "wantsWord"; name: string; who: string | null }
+  | { kind: "heard"; name: string }
 
 /** "inside the pen", "through the bars", "in the cell" → inside the party's space; "bridge", "outside", "beyond the gate" → not. */
 export function isInsideWording(where: string): boolean {
@@ -88,8 +99,23 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
       }
       const slug = slugOf(e.name)
       if (e.kind === "place") {
-        const entry = stage.present[slug] ?? stage.gone[slug]
-        if (entry) { entry.where = e.where; entry.inside = isInsideWording(e.where); delete stage.gone[slug]; stage.present[slug] = entry }
+        // Someone Malachar moves is on stage by definition. The story's own cast — the guards, Jorlan —
+        // stand on the map from story.json without ever being [NPC_ENCOUNTER:]ed, so a move with no entry
+        // used to be dropped on the floor and Jorlan could never be walked to the bars. Now it opens one.
+        const entry = stage.present[slug] ?? stage.gone[slug] ?? { name: e.name, slug, aliases: [], hp: null, hpMax: null, since: now }
+        entry.where = e.where; entry.inside = isInsideWording(e.where); delete entry.dead
+        delete stage.gone[slug]; stage.present[slug] = entry
+        continue
+      }
+      if (e.kind === "wantsWord") {
+        const entry = stage.present[slug] ?? stage.gone[slug] ?? { name: e.name, slug, aliases: [], hp: null, hpMax: null, since: now }
+        entry.wantsWord = { who: e.who, since: now }; delete entry.dead
+        delete stage.gone[slug]; stage.present[slug] = entry
+        continue
+      }
+      if (e.kind === "heard") {
+        const entry = stage.present[slug]
+        if (entry?.wantsWord) entry.wantsWord = null
         continue
       }
       if (e.kind === "arrive") {
@@ -105,7 +131,7 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
       } else {
         const prev = stage.present[slug] ?? stage.gone[slug]
         delete stage.present[slug]
-        stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead }
+        stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead, wantsWord: null }
       }
     }
     await writeStage(db, stage)
