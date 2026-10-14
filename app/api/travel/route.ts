@@ -4,8 +4,10 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { resolveArrival, rollDie, type EncounterRow, type EncounterTable, type NodeEvent } from "@/lib/travel/arrival"
 import { VESSELS, fleetSpeed, isVesselKind } from "@/lib/travel/vessels"
 import {
+  FORCED_MARCH_SOURCE,
   GUIDES,
   depart as departDay,
+  forcedMarch,
   guideByKey,
   isPace,
   navigatorFromGuide,
@@ -13,9 +15,14 @@ import {
   newDay,
   normaliseDay,
   walkLeg,
+  type ConSaver,
   type DayState,
+  type ForcedMarchOutcome,
   type Navigator,
 } from "@/lib/travel/march"
+import { mayLead, tallyLeader } from "@/lib/travel/leader"
+import { activeRunId, readLeader, roster } from "@/lib/travel/leader-store"
+import { MAX_EXHAUSTION, normaliseExhaustion } from "@/lib/exhaustion"
 import { logTimeEvent } from "@/lib/time-tracking"
 import type { SheetSlice } from "@/lib/game-context"
 
@@ -57,9 +64,26 @@ import type { SheetSlice } from "@/lib/game-context"
 //   POST {action: "vessel", op: "lose", vessel_id, reason?}
 //                    → the boat is sunk, stolen or left behind. Never deleted.
 //
+//   WHO LEADS (lib/travel/leader.ts; Sam, 2026-10-14). The players vote among
+//   themselves; a character with more than half the party behind them leads,
+//   and the DM may set the leader outright. The leader's browser may set out,
+//   walk the party and break camp - the same actions as the DM's - carrying
+//   {character_id, claim_token} in the body instead of x-dm-key:
+//     action "vote"   {for: character_id}  → a player's standing vote.
+//     action "leader" {character_id|null}  → the DM's override.
+//   Both are read back by GET /api/travel/leader (public, anon-safe).
+//
+//   FORCED MARCH (SRD 5.1, Travel Pace). "arrive" and "continue" accept
+//   {force: true}: the party walks past the day's eight hours instead of
+//   camping, and every whole hour past eight costs each character a CON save
+//   (DC 10 + hours past eight) or a level of exhaustion, written to
+//   characters.exhaustion. The DM can use it to move the party faster
+//   (Sam's ruling); the leader can too - the saves are the price.
+//
 // AUTHORIZATION mirrors /api/asset-media: x-dm-key must carry DM_ACCESS_CODE
 // when that env var is set; with it unset the route stays open (fail-open,
-// same rule as the /join gate).
+// same rule as the /join gate). A player is identified by (character_id,
+// claim_token) verified against character_secrets, as /api/chat does.
 //
 // WAYPOINT GENERATION happens here, on the first move along an edge: a
 // deterministic count (from the edge's days at normal pace, clamped 2..6) of
@@ -75,6 +99,28 @@ function authorized(req: NextRequest): boolean {
   if (!required) return true
   const given = req.headers.get("x-dm-key") ?? ""
   return safeEquals(normalizeCode(given), normalizeCode(required))
+}
+
+type Db = ReturnType<typeof createAdminClient>
+
+/** Who is asking: the DM (x-dm-key), a verified player character, or nobody. */
+interface Actor {
+  dm: boolean
+  characterId: string | null
+}
+
+async function actor(req: NextRequest, body: Record<string, unknown> | null, db: Db): Promise<Actor> {
+  const characterId = typeof body?.character_id === "string" ? body.character_id : ""
+  const claimToken = typeof body?.claim_token === "string" ? body.claim_token : ""
+  // Fail-open with no DM code set (dev), except that a request which names a
+  // character is a player's, so the leader path can be exercised there too.
+  const dm = authorized(req) && (!!process.env.DM_ACCESS_CODE || !characterId)
+  if (!characterId || !claimToken) return { dm, characterId: null }
+  // Credentials live in character_secrets, never on characters (anon reads
+  // every column of characters). Same check as /api/chat.
+  const { data: secret } = await db.from("character_secrets").select("character_id,claim_token").eq("character_id", characterId).maybeSingle()
+  if (!secret || secret.claim_token !== claimToken) return { dm, characterId: null }
+  return { dm, characterId }
 }
 
 export async function GET(req: NextRequest) {
@@ -101,6 +147,9 @@ export async function GET(req: NextRequest) {
     db.from("travel_march").select("*").limit(1).maybeSingle(),
   ])
   const march = marchRow as Record<string, unknown> | null
+  const runId = (march?.campaign_run_id as string | undefined) ?? (await activeRunId(db))
+  const [lead, party] = await Promise.all([readLeader(db, runId), roster(db)])
+  const tally = tallyLeader(lead.votes, party.map((c) => c.id))
   return NextResponse.json({
     nodes: n.data,
     edges: e.data,
@@ -114,6 +163,16 @@ export async function GET(req: NextRequest) {
       navigator: (march?.navigator as Navigator | null) ?? null,
     },
     guides: GUIDES,
+    // Who leads: the DM's override if set, else whoever the vote carried.
+    leader: {
+      character_id: lead.leader ?? tally.leader,
+      by_vote: !lead.leader && !!tally.leader,
+      votes: lead.votes,
+      counts: tally.counts,
+      needed: tally.needed,
+      roster: party,
+      available: lead.available,
+    },
   })
 }
 
@@ -301,26 +360,65 @@ async function legMiles(
   return edge ? { miles: Number(edge.distance_miles), sail: edge.metadata?.mode === "sail" } : { miles: 0, sail: false }
 }
 
-async function activeRunId(db: ReturnType<typeof createAdminClient>): Promise<string | null> {
-  const { data } = await db
-    .from("campaign_runs")
-    .select("id")
-    .eq("campaign_id", "abyss")
-    .in("status", ["setup", "active"])
-    .limit(1)
-    .maybeSingle()
-  return data?.id ?? null
-}
-
 export async function POST(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 403 })
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart"]
-  const NO_NODE = ["continue", "vessel", "depart"]
+  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader"]
+  const NO_NODE = ["continue", "vessel", "depart", "vote", "leader"]
   if (!KNOWN.includes(action) || (!nodeKey && !NO_NODE.includes(action))) {
     return NextResponse.json({ error: `expected { action: ${KNOWN.join("|")}, node_key }` }, { status: 400 })
+  }
+
+  // Who is asking. The DM may do anything; a verified player may vote, and
+  // may march the party only while they lead it.
+  const dbA = createAdminClient()
+  const who = await actor(req, body, dbA)
+  if (!who.dm && !who.characterId) return NextResponse.json({ error: "unauthorized" }, { status: 403 })
+  const DM_ONLY = ["reveal", "reveal_name", "vessel", "leader"]
+  if (DM_ONLY.includes(action) && !who.dm) return NextResponse.json({ error: "the DM's hand only" }, { status: 403 })
+  const runIdA = await activeRunId(dbA)
+  const lead = await readLeader(dbA, runIdA)
+  const party = await roster(dbA)
+  const tally = tallyLeader(lead.votes, party.map((c) => c.id))
+  const leaderId = lead.leader ?? tally.leader
+  if (["depart", "move", "arrive", "continue"].includes(action) && !mayLead(who, leaderId)) {
+    return NextResponse.json({ error: "only the party's leader (or the DM) may move the party", leader: leaderId }, { status: 403 })
+  }
+  const force = body?.force === true
+
+  if (action === "vote") {
+    // A player's standing vote for who leads. Votes stand until changed, so
+    // "losing confidence" is simply voting for someone else.
+    if (!runIdA) return NextResponse.json({ error: "no active campaign run" }, { status: 409 })
+    if (!lead.available) return NextResponse.json({ error: "leader columns missing - apply migration travel_march_leader" }, { status: 503 })
+    const voter = who.characterId
+    if (!voter) return NextResponse.json({ error: "voting takes a claimed character" }, { status: 403 })
+    const forId = typeof body?.for === "string" ? body.for : null
+    if (forId && !party.some((c) => c.id === forId)) return NextResponse.json({ error: "candidates are player characters only" }, { status: 400 })
+    if (!party.some((c) => c.id === voter)) return NextResponse.json({ error: "only player characters vote" }, { status: 403 })
+    const votes = { ...lead.votes }
+    if (forId) votes[voter] = forId
+    else delete votes[voter]
+    const next = tallyLeader(votes, party.map((c) => c.id))
+    // The vote never overrides the DM's hand: an explicit leader stays until
+    // the DM clears it. Without one, the tally decides.
+    const { error: verr } = await dbA.from("travel_march").update({ leader_votes: votes, updated_at: new Date().toISOString() }).eq("campaign_run_id", runIdA)
+    if (verr) return NextResponse.json({ error: verr.message }, { status: 500 })
+    return NextResponse.json({ ok: true, action, votes, counts: next.counts, needed: next.needed, leader: lead.leader ?? next.leader, by_vote: !lead.leader && !!next.leader })
+  }
+
+  if (action === "leader") {
+    // The DM names (or clears) the leader outright.
+    if (!runIdA) return NextResponse.json({ error: "no active campaign run" }, { status: 409 })
+    if (!lead.available) return NextResponse.json({ error: "leader columns missing - apply migration travel_march_leader" }, { status: 503 })
+    const id = typeof body?.character_id === "string" ? body.character_id : null
+    if (id && !party.some((c) => c.id === id)) return NextResponse.json({ error: "the leader must be a player character" }, { status: 400 })
+    const { data: existing } = await dbA.from("travel_march").select("campaign_run_id").eq("campaign_run_id", runIdA).maybeSingle()
+    if (!existing) await dbA.from("travel_march").insert({ campaign_run_id: runIdA })
+    const { error: lerr } = await dbA.from("travel_march").update({ leader_character_id: id, updated_at: new Date().toISOString() }).eq("campaign_run_id", runIdA)
+    if (lerr) return NextResponse.json({ error: lerr.message }, { status: 500 })
+    return NextResponse.json({ ok: true, action, leader: id ?? tally.leader, by_vote: !id && !!tally.leader })
   }
 
   if (action === "depart") {
@@ -373,14 +471,16 @@ export async function POST(req: NextRequest) {
     if (!open) return NextResponse.json({ ok: true, action, nothing_to_resume: true })
     await db0.from("travel_arrivals").update({ resolved_at: new Date().toISOString() }).eq("id", open.id)
     // Continuing past nightfall is breaking camp: a new day, navigation owed.
+    // Unless they push on (force): the day goes on past eight, and the next
+    // leg's arrive {force:true} rolls the forced-march saves.
     let newDayStarted = false
     const kind = (open.outcome as { kind?: string } | null)?.kind
-    if (kind === "camp") {
+    if (kind === "camp" && !force) {
       const runId = await activeRunId(db0)
       const { data: m } = runId ? await db0.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle() : { data: null }
       if (runId && m) newDayStarted = await saveDay(db0, runId, newDay(normaliseDay(m as Record<string, unknown>)))
     }
-    return NextResponse.json({ ok: true, action, resumed: open.id, new_day: newDayStarted })
+    return NextResponse.json({ ok: true, action, resumed: open.id, new_day: newDayStarted, forced: kind === "camp" && force })
   }
   if (action === "vessel") {
     // The party's boats. The DM's hand: a boat is earned in the fiction
@@ -450,7 +550,7 @@ export async function POST(req: NextRequest) {
       .eq("id", node.id)
       .single()
 
-    const [tablesRes, rowsRes, eventsRes, firedRes, marchRes, leg, boatsRes] = await Promise.all([
+    const [tablesRes, rowsRes, eventsRes, firedRes, marchRes, leg, boatsRes, saversRes] = await Promise.all([
       db.from("encounter_tables").select("table_key,die,title,source"),
       db.from("encounter_table_rows").select("table_key,roll_min,roll_max,result,detail"),
       db.from("travel_node_events").select("id,kind,title,body,payload,fires_once,priority").eq("node_id", node.id),
@@ -458,6 +558,9 @@ export async function POST(req: NextRequest) {
       db.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle(),
       legMiles(db, fromKey, node.id, full?.edge_id ?? null),
       db.from("party_vessels").select("speed_mph,lost_at").is("lost_at", null),
+      // Everyone who would save on a forced march: CON modifier, plus
+      // proficiency when CON is a proficient save on the sheet.
+      db.from("characters").select("id,name,con_modifier,proficiency_bonus,sheet_save_proficiencies,exhaustion").eq("is_player", true),
     ])
     const miles = leg.miles
     // A crossing is rowed at the fleet's pace. With no boat on record (the DM
@@ -503,6 +606,7 @@ export async function POST(req: NextRequest) {
     let legNote: string | null = null
     let navigation: ReturnType<typeof walkLeg>["navigation"] = null
     let nightfall = false
+    let forced: ForcedMarchOutcome | null = null
     if (leg.sail) {
       minutes = Math.round((miles / speed) * 60)
     } else if (miles > 0) {
@@ -513,6 +617,26 @@ export async function POST(req: NextRequest) {
       navigation = walked.navigation
       nightfall = walked.nightfall
       await saveDay(db, runId, dayAfter)
+      // FORCED MARCH. They chose to push past eight: no camp at this marker,
+      // but every whole hour past eight that this leg completed is paid for
+      // with a Constitution save by everyone (SRD 5.1, Travel Pace).
+      if (nightfall && force) {
+        nightfall = false
+        const savers: ConSaver[] = ((saversRes.data ?? []) as Record<string, unknown>[]).map((c) => {
+          const profs = Array.isArray(c.sheet_save_proficiencies) ? (c.sheet_save_proficiencies as unknown[]).map((k) => String(k).trim().toLowerCase()) : []
+          const prof = profs.includes("con") || profs.includes("constitution") ? Number(c.proficiency_bonus) || 0 : 0
+          return { id: String(c.id), name: String(c.name ?? "?"), conSave: (Number(c.con_modifier) || 0) + prof, exhaustion: normaliseExhaustion(c.exhaustion) }
+        })
+        forced = forcedMarch(dayBefore, dayAfter, savers, Math.random)
+        // The failures land on the sheet. Level 6 is death (lib/exhaustion.ts);
+        // the clamp keeps the column honest, the fiction is Malachar's.
+        await Promise.all(
+          Object.entries(forced.exhaustion).map(([id, gained]) => {
+            const was = savers.find((c) => c.id === id)?.exhaustion ?? 0
+            return db.from("characters").update({ exhaustion: Math.min(MAX_EXHAUSTION, was + gained) }).eq("id", id)
+          }),
+        )
+      }
     }
     if (minutes > 0) {
       await logTimeEvent(db, await clockSessionId(db), {
@@ -527,12 +651,20 @@ export async function POST(req: NextRequest) {
     // Nightfall is a halt of its own when nothing else stopped them. If an
     // encounter did, it is the halt and the day's end rides along in the body;
     // "continue" still starts the new day because hours_today says so.
-    const haltKind: string = outcome.halt ? outcome.kind : nightfall ? "camp" : "none"
-    const halt = outcome.halt || nightfall
-    const title = outcome.halt ? outcome.title : `Nightfall at ${full?.name ?? node.node_key} - make camp`
-    const bodyParts = [outcome.body, navigation?.lost ? navigation.note : null, nightfall ? `Day ${dayAfter.days_marched} of the march is done after ${Math.round(dayAfter.hours_today * 10) / 10} hours. The party camps here; Continue breaks camp tomorrow.` : null].filter(Boolean)
+    // A forced march that cost somebody a level of exhaustion stops the party
+    // too - not to camp, but so the price is seen before they go on.
+    const forcedHalt = !!forced && Object.keys(forced.exhaustion).length > 0
+    const haltKind: string = outcome.halt ? outcome.kind : nightfall ? "camp" : forcedHalt ? "forced_march" : "none"
+    const halt = outcome.halt || nightfall || forcedHalt
+    const title = outcome.halt ? outcome.title : nightfall ? `Nightfall at ${full?.name ?? node.node_key} - make camp` : `Forced march to ${full?.name ?? node.node_key}`
+    const bodyParts = [
+      outcome.body,
+      navigation?.lost ? navigation.note : null,
+      nightfall ? `Day ${dayAfter.days_marched} of the march is done after ${Math.round(dayAfter.hours_today * 10) / 10} hours. The party camps here; Continue breaks camp tomorrow - or push on, and pay for every hour past eight.` : null,
+      forced?.note || null,
+    ].filter(Boolean)
     const haltBody = bodyParts.length ? bodyParts.join("\n\n") : null
-    const source = outcome.halt ? outcome.source : "Travel pace: 8 hours of travel a day (SRD / PHB ch.8); OotA-Enc ch.2 p.24"
+    const source = outcome.halt ? outcome.source : forcedHalt ? FORCED_MARCH_SOURCE : "Travel pace: 8 hours of travel a day (SRD / PHB ch.8); OotA-Enc ch.2 p.24"
 
     // Quiet nodes are not written to the log. Fifty-one rows saying "nothing
     // happened" would bury the two that matter.
@@ -555,6 +687,7 @@ export async function POST(req: NextRequest) {
             day: dayAfter,
             ...(navigation ? { navigation } : {}),
             ...(outcome.water ? { water: outcome.water } : {}),
+            ...(forced ? { forced } : {}),
           },
         })
         .select("id")
@@ -585,6 +718,7 @@ export async function POST(req: NextRequest) {
       minutes,
       navigation,
       nightfall,
+      forced,
       leg_note: legNote,
     })
   }

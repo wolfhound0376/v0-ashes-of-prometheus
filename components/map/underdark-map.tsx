@@ -21,7 +21,7 @@ import { createClient } from "@/lib/supabase/client"
 import { StageLink } from "@/components/stage/stage-provider"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/vessels"
-import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
+import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, legPreview, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
 
 const MAP_W = 1672
 const MAP_H = 941
@@ -54,6 +54,17 @@ type EdgeRow = {
   discovered_at?: string | null
 }
 type PartyRow = { campaign_run_id: string; node_id: string; arrived_at: string }
+/** GET /api/travel/leader: who leads, how the vote stands, and the hours of the day (never the day number). */
+type LeadInfo = {
+  leader: string | null
+  by_vote: boolean
+  votes: Record<string, string>
+  counts: Record<string, number>
+  needed: number
+  roster: { id: string; name: string }[]
+  available: boolean
+  day: { pace: Pace; hours_today: number; day_miles: number }
+}
 
 // Deterministic curve per edge (same construction the DM layer uses), so a
 // route always bends the same way on every client.
@@ -113,6 +124,23 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   const [navSel, setNavSel] = useState<string>("none")
   const [pcFamiliar, setPcFamiliar] = useState(false)
   const [pcHasMap, setPcHasMap] = useState(false)
+  // WHO LEADS (lib/travel/leader.ts). This browser's claimed character, read
+  // from the same localStorage keys the dashboard uses; the leader and the
+  // standing votes from /api/travel/leader. The leader's browser gets the DM's
+  // road controls - set out, walk, break camp - never the reveal buttons.
+  const [me, setMe] = useState<{ characterId: string | null; claimToken: string | null }>({ characterId: null, claimToken: null })
+  const [lead, setLead] = useState<LeadInfo | null>(null)
+  const canLead = !!dmKey || (!!lead?.leader && !!me.characterId && lead.leader === me.characterId)
+  const canLeadRef = useRef(false)
+  canLeadRef.current = canLead
+  // Only the browser that set the party walking asks the server what waits at
+  // each marker. Two DM tabs (or the DM and the leader) watching the same
+  // march must not both roll its encounters.
+  const initiatedRef = useRef(false)
+  // Pushing on past eight: every arrive carries force:true until camp is made.
+  const forcingRef = useRef(false)
+  // The hover card: price a leg before anyone clicks.
+  const [hoverNode, setHoverNode] = useState<NodeRow | null>(null)
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -124,8 +152,22 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
 
   useEffect(() => {
     setDmKeyState(getDmKey())
+    try {
+      setMe({ characterId: localStorage.getItem("aop_character_id"), claimToken: localStorage.getItem("aop_claim_token") })
+    } catch {
+      /* private mode: no claim, no lead */
+    }
     return onDmKeyChange(() => setDmKeyState(getDmKey()))
   }, [])
+
+  /** Request headers for /api/travel: the DM's key, or nothing (the player's claim rides in the body). */
+  function travelHeaders(): Record<string, string> {
+    return dmKey ? { ...dmHeaders(), "Content-Type": "application/json" } : { "Content-Type": "application/json" }
+  }
+  /** Request body for /api/travel: a player's claim is attached so the server can check they lead. */
+  function travelBody(extra: Record<string, unknown>): string {
+    return JSON.stringify(dmKey ? extra : { ...extra, character_id: me.characterId, claim_token: me.claimToken })
+  }
   useEffect(() => {
     if (dmKey) setLantern(false)
   }, [dmKey])
@@ -142,9 +184,21 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   async function dmAction(action: "reveal" | "reveal_name" | "move", nodeKey: string) {
     await fetch("/api/travel", {
       method: "POST",
-      headers: { ...dmHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ action, node_key: nodeKey }),
+      headers: travelHeaders(),
+      body: travelBody({ action, node_key: nodeKey }),
     }).catch(() => {})
+    setRefresh((r) => r + 1)
+  }
+
+  /** A player's standing vote, or the DM naming the leader outright. */
+  async function leadAction(body: { action: "vote"; for: string | null } | { action: "leader"; character_id: string | null }) {
+    try {
+      const res = await fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody(body) })
+      const out = res.ok ? await res.json() : null
+      if (out && lead) setLead({ ...lead, leader: out.leader ?? null, by_vote: !!out.by_vote, votes: out.votes ?? lead.votes, counts: out.counts ?? lead.counts })
+    } catch {
+      /* the next poll will say where the vote stands */
+    }
     setRefresh((r) => r + 1)
   }
 
@@ -161,8 +215,8 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     try {
       const res = await fetch("/api/travel", {
         method: "POST",
-        headers: { ...dmHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "depart", pace, navigator }),
+        headers: travelHeaders(),
+        body: travelBody({ action: "depart", pace, navigator }),
       })
       const out = res.ok ? await res.json() : null
       if (out?.day) setMarch((m) => ({ ...m, ...out.day, navigator: out.navigator ?? null }))
@@ -170,6 +224,8 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
       /* the walk still happens; the day just will not count */
     }
     setConfirmNode(null)
+    initiatedRef.current = true
+    forcingRef.current = false
     await dmAction("move", dest.node_key)
   }
 
@@ -190,6 +246,19 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     const supabase = createClient()
     let alive = true
     async function load() {
+      // Who leads, for every browser. Players also take the day's hours and
+      // pace from here - the hover card prices a leg with them.
+      try {
+        const lr = await fetch("/api/travel/leader", { cache: "no-store" })
+        if (lr.ok) {
+          const li = (await lr.json()) as LeadInfo
+          if (!alive) return
+          setLead(li)
+          if (!dmKey && li.day) setMarch((m) => ({ ...m, pace: li.day.pace, hours_today: li.day.hours_today, day_miles: li.day.day_miles }))
+        }
+      } catch {
+        /* no leader info: the DM's road controls still work */
+      }
       if (dmKey) {
         try {
           const res = await fetch("/api/travel", { headers: dmHeaders(), cache: "no-store" })
@@ -517,9 +586,10 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
       }
       setArrivedAt(n)
 
-      // Ask the server what waits here. Only the DM's browser asks — a player
-      // watching must never be the one rolling the party's encounters.
-      if (!dmKey) {
+      // Ask the server what waits here. Only the browser that set the party
+      // walking asks (the DM's, or the leader's) — a player watching must
+      // never be the one rolling the party's encounters.
+      if (!initiatedRef.current || !canLeadRef.current) {
         advance()
         return
       }
@@ -528,8 +598,8 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
         try {
           const res = await fetch("/api/travel", {
             method: "POST",
-            headers: { "content-type": "application/json", "x-dm-key": dmKey },
-            body: JSON.stringify({ action: "arrive", node_key: n.node_key, from_node_key: lastNodeKey.current }),
+            headers: travelHeaders(),
+            body: travelBody({ action: "arrive", node_key: n.node_key, from_node_key: lastNodeKey.current, ...(forcingRef.current ? { force: true } : {}) }),
           })
           out = res.ok ? await res.json() : null
         } catch {
@@ -561,7 +631,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
 
   // ---------- keyboard: arrows pick a neighbour, Enter asks, then they walk ----------
   useEffect(() => {
-    if (!dmKey) return
+    if (!canLead) return
     const onKey = (ev: KeyboardEvent) => {
       const tag = (ev.target as HTMLElement)?.tagName
       if (tag === "INPUT" || tag === "TEXTAREA") return
@@ -616,7 +686,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     return () => window.removeEventListener("keydown", onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dmKey, selected, party?.node_id, edges.length, confirmNode, pace, navSel, pcFamiliar, pcHasMap])
+  }, [canLead, selected, party?.node_id, edges.length, confirmNode, pace, navSel, pcFamiliar, pcHasMap])
 
   // ---------- render ----------
   const kk = Math.max(0.45, Math.min(1, cam.current.w / MAP_W))
@@ -749,8 +819,10 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                   ev.stopPropagation()
                   if (dragged.current) return
                   setSelected(n.id)
-                  if (dmKey && party?.node_id !== n.id) setConfirmNode(n)
+                  if (canLead && party?.node_id !== n.id) setConfirmNode(n)
                 }}
+                onMouseEnter={() => setHoverNode(n)}
+                onMouseLeave={() => setHoverNode((h) => (h?.id === n.id ? null : h))}
               >
                 <circle cx={P.x} cy={P.y} r={9 * kk} fill="transparent" />
                 <circle
@@ -780,9 +852,11 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                   ev.stopPropagation()
                   if (dragged.current) return
                   setSelected(n.id)
-                  // Malachar clicks a node: ask before the party sets out.
-                  if (dmKey && party?.node_id !== n.id) setConfirmNode(n)
+                  // Malachar (or the leader) clicks a node: ask before the party sets out.
+                  if (canLead && party?.node_id !== n.id) setConfirmNode(n)
                 }}
+                onMouseEnter={() => setHoverNode(n)}
+                onMouseLeave={() => setHoverNode((h) => (h?.id === n.id ? null : h))}
               >
                 <circle cx={P.x} cy={P.y} r={30 * kk} fill={col} opacity={isRevealed(n) ? 0.22 : 0.1} />
                 <circle cx={P.x} cy={P.y} r={14 * kk} fill="rgba(5,3,10,.4)" stroke={col} strokeWidth={3.5 * kk} />
@@ -950,6 +1024,34 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           </div>
         )}
 
+        {/* The cost of a leg, priced before anyone clicks (Solasta's hover,
+            kept to the roads): miles by road, hours at the day's pace, hours
+            of the eight left, and the forced-march DC if it runs past them. */}
+        {hoverNode && canLead && party && !confirmNode && !halt && party.node_id !== hoverNode.id && (() => {
+          const ids = routeBetween(party.node_id, hoverNode.id)
+          if (ids.length < 2) return null
+          const miles = routeMiles(ids)
+          const pv = legPreview(march, miles, march.day_miles)
+          const hoursFmt = (h: number) => `${Math.round(h * 10) / 10} h`
+          return (
+            <div className="pointer-events-none absolute right-3 top-3 max-w-[30ch] rounded border-2 border-[#3a2c56] bg-[#171024ee] px-3 py-2 text-[11px] text-[#c9bcd8]">
+              <div className="tracking-[.2em] text-[#f5c34d]">{(hoverNode.name ?? "???").toUpperCase()}</div>
+              <div className="mt-1">
+                {Math.round(miles * 10) / 10} mi by road · {hoursFmt(pv.hours)} at {march.pace} pace
+              </div>
+              <div className="text-[#9a8fb0]">{hoursFmt(pv.left)} of the day's {MARCH_HOURS_PER_DAY} left</div>
+              {pv.forced ? (
+                <div className="mt-1 text-[#e08a8a]">
+                  Runs {hoursFmt(pv.endsAt - MARCH_HOURS_PER_DAY)} past eight — camp on the way, or force it: CON save DC {pv.dc}+ per hour or a level of exhaustion.
+                </div>
+              ) : (
+                <div className="mt-1 text-[#9a8fb0]">Within today's march.</div>
+              )}
+              {!PACES[march.pace].canForage && <div className="text-[#9a8fb0]">Fast pace: no foraging.</div>}
+            </div>
+          )
+        })()}
+
         {/* The day, Malachar's eyes only: players never see the day number or
             the hours (same rule as /api/game-clock). */}
         {dmKey && loaded && (
@@ -976,7 +1078,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           <div className="absolute inset-0 grid place-items-center bg-[#0a0612cc] p-4">
             <div className={`w-full max-w-md rounded-lg border-2 ${halt.kind === "camp" ? "border-[#7a5c2b]" : "border-[#7a2b2b]"} bg-[#1a1020] p-4 shadow-[0_0_40px_#000]`}>
               <div className={`text-[10px] uppercase tracking-[.22em] ${halt.kind === "camp" ? "text-[#e0a35c]" : "text-[#c96a6a]"}`}>
-                {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : halt.kind === "camp" ? "Nightfall — make camp" : "The party stops"}
+                {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : halt.kind === "camp" ? "Nightfall — make camp" : halt.kind === "forced_march" ? "Forced march — the price" : "The party stops"}
               </div>
               <div className="mt-1 font-serif text-lg leading-snug text-[#f5c34d]">{halt.title}</div>
               {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
@@ -1022,10 +1124,11 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                   const go = resumeRef.current
                   resumeRef.current = null
                   const wasCamp = halt.kind === "camp"
+                  forcingRef.current = false
                   void fetch("/api/travel", {
                     method: "POST",
-                    headers: { "content-type": "application/json", "x-dm-key": dmKey },
-                    body: JSON.stringify({ action: "continue", node_key: arrivedAt?.node_key ?? "" }),
+                    headers: travelHeaders(),
+                    body: travelBody({ action: "continue", node_key: arrivedAt?.node_key ?? "" }),
                   }).catch(() => {})
                   // Breaking camp starts a new day on the server; mirror it here
                   // so the HUD does not show yesterday's eight hours until the
@@ -1036,8 +1139,31 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                 }}
                 className="mt-4 w-full rounded border border-[#7a5c2b] bg-[#2a1f10] py-2 text-xs tracking-[.2em] text-[#f5c34d] hover:bg-[#3a2b16]"
               >
-                {halt.kind === "camp" ? "BREAK CAMP — WALK ON" : "CONTINUE THE MARCH"}
+                {halt.kind === "camp" ? "BREAK CAMP — WALK ON" : halt.kind === "forced_march" ? "WALK ON" : "CONTINUE THE MARCH"}
               </button>
+              {halt.kind === "camp" && (
+                // FORCED MARCH (SRD 5.1, Travel Pace). The day goes on past
+                // eight; every whole hour past it, everyone saves CON vs
+                // DC 10 + hours past eight or gains a level of exhaustion.
+                <button
+                  onClick={() => {
+                    const go = resumeRef.current
+                    resumeRef.current = null
+                    forcingRef.current = true
+                    void fetch("/api/travel", {
+                      method: "POST",
+                      headers: travelHeaders(),
+                      body: travelBody({ action: "continue", node_key: arrivedAt?.node_key ?? "", force: true }),
+                    }).catch(() => {})
+                    if (go) go()
+                    else setHalt(null)
+                  }}
+                  className="mt-2 w-full rounded border border-[#7a2b2b] bg-[#2a1216] py-2 text-xs tracking-[.2em] text-[#e08a8a] hover:bg-[#3a1c1c]"
+                  title="SRD 5.1 Travel Pace: Forced March — CON save DC 10 + 1 per hour past eight, or a level of exhaustion"
+                >
+                  PUSH ON — FORCED MARCH (DC {10 + Math.max(1, Math.floor(march.hours_today + 1e-6 - MARCH_HOURS_PER_DAY) + 1)})
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1085,14 +1211,16 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                     REVEAL TO PLAYERS
                   </button>
                 )}
-                {sel.node_type !== "region" && party?.node_id !== sel.id && (
-                  <button
-                    onClick={() => setConfirmNode(sel)}
-                    className="text-xs px-3 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] hover:brightness-110"
-                  >
-                    MOVE PARTY HERE
-                  </button>
-                )}
+              </div>
+            )}
+            {canLead && sel.node_type !== "region" && party?.node_id !== sel.id && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button
+                  onClick={() => setConfirmNode(sel)}
+                  className="text-xs px-3 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] hover:brightness-110"
+                >
+                  {dmKey ? "MOVE PARTY HERE" : "LEAD THE PARTY HERE"}
+                </button>
               </div>
             )}
           </>
@@ -1101,7 +1229,9 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
             {loaded
               ? dmKey
                 ? "Malachar's eyes. Click any node to send the party walking there. Wheel zooms, drag pans."
-                : "Select a node. Wheel zooms, drag pans. The map grows as Malachar reveals the dark."
+                : canLead
+                  ? "You lead. Click a node to take the party there; hover one to see what the road will cost."
+                  : "Select a node. Wheel zooms, drag pans. The map grows as Malachar reveals the dark."
               : "Consulting the cartographers…"}
           </div>
         )}
@@ -1146,6 +1276,66 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
                 </button>
               ))}
             </span>
+          )}
+        </div>
+      )}
+
+      {/* WHO LEADS (Sam, 2026-10-14): the players vote among themselves; more
+          than half carries it; the DM may name the leader outright. Losing
+          confidence is simply voting again. */}
+      {loaded && lead && lead.roster.length > 0 && (
+        <div
+          className={
+            embedded
+              ? "mt-2 flex flex-wrap items-center gap-2 rounded border border-[#4a3c2b] bg-[#1a1410ee] p-2 text-[11px]"
+              : "mt-2 flex flex-wrap items-center gap-2 rounded-lg border-2 border-[#4a3c2b] bg-[#1a1410ee] px-4 py-2 text-xs"
+          }
+        >
+          <span className="tracking-widest text-[#e0a35c]">WHO LEADS</span>
+          {!lead.available ? (
+            <span className="text-[#9a8fb0]">The vote is not open yet{dmKey ? " (apply migration travel_march_leader)" : ""}.</span>
+          ) : (
+            <>
+              <span className="text-[#e4d8bf]">
+                {lead.leader ? `${lead.roster.find((c) => c.id === lead.leader)?.name ?? "?"} leads${lead.by_vote ? " (by vote)" : " (DM's choice)"}` : "No leader yet"}
+                {lead.leader === me.characterId && me.characterId ? " — that's you" : ""}
+              </span>
+              <span className="text-[#9a8fb0]">· {lead.needed} of {lead.roster.length} votes carry it</span>
+              {me.characterId && lead.roster.some((c) => c.id === me.characterId) && (
+                <span className="ml-auto flex flex-wrap items-center gap-1">
+                  <span className="text-[#9a8fb0]">I follow:</span>
+                  {lead.roster.map((c) => {
+                    const mine = lead.votes[me.characterId!] === c.id
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => void leadAction({ action: "vote", for: mine ? null : c.id })}
+                        className={`rounded border px-2 py-1 ${mine ? "border-[#f5c34d] bg-[#2a1f10] text-[#f5c34d]" : "border-[#4a3c2b] bg-[#241a12] text-[#c9bcd8] hover:border-[#e0a35c]"}`}
+                        title={mine ? "Withdraw my vote" : `Vote for ${c.name} to lead`}
+                      >
+                        {c.name}
+                        {lead.counts[c.id] ? ` · ${lead.counts[c.id]}` : ""}
+                      </button>
+                    )
+                  })}
+                </span>
+              )}
+              {dmKey && (
+                <select
+                  value={lead.by_vote || !lead.leader ? "" : lead.leader}
+                  onChange={(e) => void leadAction({ action: "leader", character_id: e.target.value || null })}
+                  className="ml-auto rounded border border-[#4a3c2b] bg-[#241a12] px-2 py-1 text-[#e4d8bf]"
+                  title="The DM's override; blank lets the vote decide"
+                >
+                  <option value="">Let the vote decide</option>
+                  {lead.roster.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} leads{lead.counts[c.id] ? ` (${lead.counts[c.id]} votes)` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </>
           )}
         </div>
       )}
