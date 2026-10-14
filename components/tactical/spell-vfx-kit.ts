@@ -168,17 +168,19 @@ interface TypeSpec {
 // Fireball is lobbed, a Magic Missile weaves, a psychic bolt corkscrews.
 const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   fire:     { rune: "runeFire",     route: "ball",        travel: "pxFireball",    impact: "fireImpact",     impactScale: 4.6, charge: 0.80, speed: 13, motion: "lob",   tint: 0xffffff, decal: "aoeFire",  burst: { tint: 0xffa030, sparks: 28, ring: true, power: 1.4 } },
-  // COLD was the last type still delivered as a beam: one flat strip stretched
-  // from hand to target the instant the charge ended, its sixteen frames the
-  // same speckle reshuffled, so it shimmered in place instead of going
-  // anywhere. Nothing gathered before it and nothing carried weight after it.
+  // COLD stays a BEAM, because most cold spells are one: Ray of Frost is a
+  // frigid beam of blue-white light, and Cone of Cold, Ice Storm and Sleet
+  // Storm are areas. Ice Knife is the thrown one, and it is thrown by NAME in
+  // DELIVERY_BY_SPELL below — not by damage type, which would have made every
+  // Ray of Frost a flying dagger.
   //
-  // It is a thrown shard now — which is literally what Ice Knife is — on the
-  // `dart` profile: leaves slowly, arrives fastest, no arc, because ice is
-  // thrown flat and hard. `gather` does the anticipation the beam never had,
-  // and `rise: 0.1` drops the splinters almost at once instead of floating
-  // them like embers. frostBeam stays in the manifest for a future ray.
-  cold:     { rune: "runeFrost",    route: "ball",        travel: "frostShard",    impact: "frostImpact",    charge: 0.70, speed: 17, motion: "dart",  gather: "frostGather", tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true, rise: 0.1 }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
+  // What the type DOES gain is true of all cold:
+  //   `gather`   — vapour pulled inward and condensed at the hand. Cold takes
+  //                heat rather than giving it, so the anticipation runs the
+  //                opposite way to every other school's.
+  //   `rise: 0.1` — splinters drop almost at once where embers rise first.
+  //                Fire and frost now differ in weight, not only in colour.
+  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, gather: "frostGather", tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true, rise: 0.1 }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff, burst: { tint: 0x9c6bff, sparks: 12, ring: false } },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff, burst: { tint: 0xc678ff, sparks: 18, ring: true } },
   poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
@@ -220,6 +222,31 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
  */
 const BY_SPELL: Record<string, DamageType> = {
   "fog cloud": "fog",
+}
+
+/**
+ * Spells whose DELIVERY differs from their damage type's default.
+ *
+ * `routeFor` below already makes this argument for radiant, and reads the
+ * spellbook to settle it: a spell resolved by an attack roll is a thrown
+ * thing. That works because Sacred Flame is a save and Guiding Bolt is an
+ * attack.
+ *
+ * COLD is the case the spellbook cannot settle. Ray of Frost and Ice Knife
+ * are BOTH ranged spell attacks — `attack_roll: true, attack_type: "ranged"`
+ * on both rows — and one is a beam of blue-white light while the other is a
+ * shard you physically throw. No field in the book separates them, so the
+ * difference has to be stated here, once, by name.
+ *
+ * Keep this table for genuine delivery mismatches only. It is not a place to
+ * restyle a spell someone dislikes: anything that is true of the whole damage
+ * type belongs on the type.
+ */
+const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
+  // A shard of ice created and flung — the one cold spell that is an object
+  // in flight rather than a ray. `dart`: leaves slowly, arrives fastest, no
+  // arc, because ice is thrown flat and hard.
+  "ice knife": { route: "ball", travel: "frostShard", speed: 17, motion: "dart" },
 }
 
 /**
@@ -283,9 +310,13 @@ export function kitSplashFor(
  * The spellbook already records the difference in `resolve`, so read it: a
  * spell resolved by an attack roll is a thrown thing, whatever it is made of.
  */
-function routeFor(type: DamageType, spellName?: string): TypeSpec | undefined {
+export function routeFor(type: DamageType, spellName?: string): TypeSpec | undefined {
   const spec = TYPES[type]
   if (!spec || !spellName) return spec
+  // A stated delivery wins over everything below, including the attack-roll
+  // promotion — it is the more specific fact.
+  const stated = DELIVERY_BY_SPELL[spellName.trim().toLowerCase()]
+  if (stated) return { ...spec, ...stated }
   const entry = spellEntry(spellName)
   if (entry?.resolve !== "attack") return spec
   if (spec.route === "ball" || spec.route === "beam") return spec // already thrown
