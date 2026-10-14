@@ -752,25 +752,22 @@ INVENTORY RULES — ENFORCE STRICTLY:
   - Narrating a loss without the tag means the item is NOT actually removed and the world state is now wrong. The tag is the removal.
 === END INVENTORY ===`
 
-  // Authoritative d100 scavenged-items table with a hard binding rule so the
-  // opening fortune roll (and any roll against this table) awards the EXACT
-  // entry matching the rolled number — no substitutions, no invented items.
-  const scavengedTableBlock = `=== OPENING FORTUNE ROLL — SCAVENGED ITEMS (d100) — ABSOLUTE, NON-NEGOTIABLE RULE ===
-When the player rolls d100 for their starting scavenged possession (the opening fortune roll), OR whenever any roll is resolved against this table, you MUST award the SINGLE entry whose numeric range contains the rolled number. This number-to-item mapping is LAW.
-- Read the rolled total, find the range it falls within, and award THAT item verbatim.
-- Do NOT substitute, approximate, re-flavor, upgrade, or invent a different item.
-- Do NOT choose a "nearby", "cooler", or thematically-preferred item. The rolled number alone dictates the result.
-- Unless the awarded entry is "Nothing", immediately emit an [ITEM_AWARD: ...] tag for that exact item so it is written to the character's inventory.
-
-d100 SCAVENGED ITEMS TABLE (rolled range : item awarded):
+  // The opening fortune roll — scavenged possessions (Out of the Abyss, ch.1).
+  // THE APP ROLLS IT, NOT MALACHAR: the dashboard rolls 1d10 (days held) and
+  // 1d20 on the shared dice, /api/fortune-roll resolves the total against
+  // lib/scavenged.ts and puts the catalog item in the bag, and Malachar is
+  // handed the result as a stage direction to narrate. Until 2026-10-14 this
+  // block told him it was a d100 and gave worked examples naming items that
+  // were never on the table ("Shattered spellbook pages", "Belt pouch") — the
+  // invented mechanic the campaign notes warn about. He no longer asks for the
+  // roll at all; if a player offers a number, he refuses it.
+  const scavengedTableBlock = `=== SCAVENGED POSSESSIONS — THE OPENING ROLL IS NOT YOURS TO RUN ===
+Each prisoner's starting possession is 1d20 + the days they have been held (1d10, rolled per character). Totals run 2–30:
 ${formatRollTable(ABYSS_SCAVENGED_ITEMS_TABLE)}
-
-WORKED EXAMPLES (follow this mapping exactly):
-- A roll of 73 falls in 71-76 -> award "Shattered spellbook pages (contains 1 random cantrip)". It is NOT a hand crossbow.
-- A roll of 45 falls in 41-46 -> award "Belt pouch with 1d4 cp".
-- A roll of 12 falls in 11-16 -> award "Carnelian gem (10gp)".
-- A roll of 98 falls in 95-100 -> award "Nothing" (do not invent an item; narrate the empty-handed result).
-=== END SCAVENGED ITEMS RULE ===`
+- There is NO d100 table and NO other starting-item table. Never ask anyone to roll a d100. Never ask for this roll at all: the game rolls it on the table's dice and tells you the result as a stage direction, with the item already in the bag. Narrate what you are told; award nothing yourself and change nothing.
+- If a player types a number and says it is their scavenged roll, do not resolve it — say the dice on the table decide that, and move on.
+- 28–30 is ONE hand crossbow bolt. It is not a crossbow. Nobody has anything to fire it with.
+=== END SCAVENGED POSSESSIONS ===`
 
   // Get recent dialogue history for context (last 40 messages — widened from 20
   // because Malachar's anti-repetition rule can only avoid what he can see).
@@ -1430,7 +1427,7 @@ ${combatantRows
   let stageContext = ""
 
   if (currentLocation.toLowerCase().includes("slave pen") || currentLocation.toLowerCase().includes("pen")) {
-    stageContext = "CURRENT STAGE: Slave Pen (Stage 1-2). The party is imprisoned and manacled. Run the scavenging roll if not done, then describe their confinement and prisoner NPC introductions."
+    stageContext = "CURRENT STAGE: Slave Pen (Stage 1-2). The party is imprisoned and manacled. Describe their confinement and the other prisoners; the scavenged-possessions roll is the game's to run, never yours to ask for."
   } else if (currentLocation.toLowerCase().includes("outpost") || currentLocation.toLowerCase().includes("velkynvelve") && !currentLocation.toLowerCase().includes("pen")) {
     stageContext = "CURRENT STAGE: Velkynvelve Outpost (Stage 4). The party has escaped the slave pens and is now loose in the drow outpost. Describe the architecture, markets, bridges, patrols. They must find an exit."
   } else if (currentLocation.toLowerCase().includes("tunnel") || currentLocation.toLowerCase().includes("underdark")) {
@@ -1798,16 +1795,16 @@ NPC DIALOGUE OWNERSHIP — CRITICAL:
 - Never blend two NPCs into one voice. A change of speaker requires a new quoted span with clear attribution.
 
 PROGRESSION TRIGGERS — ENFORCE THESE:
-- STAGE 1→2: Once the player rolls d100 for scavenged item, transition to describing the slave pen with other prisoners.
-- STAGE 2→3: When the player attempts escape (attacks guard, breaks chains, negotiates, sneak attacks), immediately transition to the Escape Encounter. Roll [[1d6]] and describe the encounter.
+- STAGE 1→2: The slave pen and the other prisoners, from the first turn. The scavenged-possessions roll is rolled by the game and handed to you; never ask for it.
+- STAGE 2→3: When the player attempts escape (attacks a guard, works the manacles, negotiates, sneaks), play the attempt as the book has it: skill checks against the pen's fixed DCs, the guards and prisoners who are actually there, Jorlan's gambit or the demon attack when they fit. There is NO escape table and NO d6 to roll for one.
 - STAGE 3→4: When the player succeeds at the escape encounter (defeats/evades the obstacle), move them to the Velkynvelve Outpost. Describe stone bridges, rope walkways, drow merchants, the vast cavern below. They are no longer in cells but hunted.
 - STAGE 4→5: When the player finds and uses an exit (secret tunnel, sewer grate, climbing down the web-covered walls), transition them to the Underdark Tunnels. Use [LOCATION_IMAGE: tag].
 - If a stage fails (party captured/killed), revert to that stage and run it again.
 - NEVER skip stages. Progression must feel earned through player actions.
 - You are running OUT OF THE ABYSS, Act 1: Escape Velkynvelve. The progression is strictly:
-  * STAGE 1 (Arrival): Ask the player to roll [[1d100]] on the Scavenged Items table for their hidden item. Do NOT skip. Do NOT assume.
-  * STAGE 2 (Slave Pen): After they provide the d100 result, describe waking in Velkynvelve slave pen. Introduce fellow prisoners (Eldeth, Jimjar, Topsy/Tulgy, Shuushar, Stool, Ront, Derendil). They are manacled and stripped of gear. You are in the pen, watching guards.
-  * STAGE 3 (Escape Attempt): When the player attempts to escape (break chains, attack guards, negotiate, sneak out), run the Escape Encounter. Roll [[1d6]] on the Velkynvelve Escape table to determine what obstacle/NPC they face. DO NOT skip this encounter.
+  * STAGE 1 (Arrival): The pen, the collar, the days already spent here. The scavenged-possessions roll is the game's (1d20 + days, on the table's dice) — you are told the result; you never ask for it and never resolve one yourself.
+  * STAGE 2 (Slave Pen): Describe waking in the Velkynvelve slave pen. Introduce fellow prisoners (Eldeth, Jimjar, Topsy/Tulgy, Shuushar, Stool, Ront, Derendil). They are manacled and stripped of gear. You are in the pen, watching guards.
+  * STAGE 3 (Escape Attempt): When the player attempts to escape (break chains, attack guards, negotiate, sneak out), run the Escape Encounter. No escape table exists: the obstacles are the ones in the book — the locked gate (DC 20), the guards across the bridge, the wards — resolved by skill checks against fixed DCs.
   * STAGE 4 (Outpost): After they overcome the escape encounter and reach the drow outpost proper, describe Velkynvelve's architecture, markets, bridges, and the danger above. Introduce key NPCs like Ilvara (drow priestess), merchants, guards. The slave pens are one level below. They are now loose in a hostile drow enclave.
   * STAGE 5 (Tunnels): When they flee Velkynvelve entirely (leaving the outpost through tunnels, sewers, or hidden passages), transition to the Underdark tunnels. Describe the vast caverns, bioluminescent fungi, distant sounds. This is the beginning of Act 2.
 - Track which STAGE the party is in based on their progress. If they backtrack or get captured, you may revert stages.

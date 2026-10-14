@@ -13,6 +13,7 @@ import { DiceProvider, type DiceResult } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { CompactDashboard } from "@/components/dashboard/compact-dashboard"
 import { StatusBar } from "@/components/dashboard/status-bar"
+import { FortuneRoll } from "@/components/dashboard/fortune-roll"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
 
@@ -2089,6 +2090,16 @@ if (error) {
           </div>
         </div>
       )}
+
+      {/* The opening fortune roll (lib/scavenged.ts): once per run, for the claimed character in this
+          browser. Rolls on the shared dice, awards from the catalog, then hands Malachar the result to
+          narrate — as a direction, since nobody at the table said anything. */}
+      <FortuneRoll
+        characterId={claimToken ? selectedCharacterId : null}
+        claimToken={claimToken}
+        characterName={selectedCharacter?.name ?? null}
+        onNarrate={(direction) => { void sendToLich(direction, selectedCharacterId, claimToken, { director: true }).catch((e) => console.error("[fortune] narration failed:", e)) }}
+      />
 
       {showRestartDialog && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
