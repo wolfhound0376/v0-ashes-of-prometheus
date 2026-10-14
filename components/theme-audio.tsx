@@ -44,6 +44,39 @@ export function fadeOutThemeAudio() {
   step()
 }
 
+/**
+ * Keep the theme going on a pre-dashboard page (/join, /awaken, the forge).
+ *
+ * Sam, 2026-10-14: "intro song only plays on the intro scene. after that, it
+ * doesn't play." The theme element survives client navigation, but nothing on
+ * the pages after /intro ever asked it to play: if the browser held autoplay
+ * back on /intro, or the player arrived at the door directly, or switched
+ * music off and on again, the theme stayed paused for good. This hook asks on
+ * mount, asks again on the first tap or key (the autoplay rule), and starts
+ * it when the preference flips back to on. Nothing here can bypass "music
+ * off": every start goes through playThemeAudio().
+ */
+export function useThemeAudio(volume = 0.55) {
+  useEffect(() => {
+    const audio = getThemeAudio()
+    if (!audio) return
+    audio.volume = volume
+    const tryTheme = () => {
+      if (isMusicOff() || !audio.paused) return
+      playThemeAudio().catch(() => {})
+    }
+    tryTheme()
+    window.addEventListener("pointerdown", tryTheme)
+    window.addEventListener("keydown", tryTheme)
+    const off = onMusicPrefChange(tryTheme)
+    return () => {
+      window.removeEventListener("pointerdown", tryTheme)
+      window.removeEventListener("keydown", tryTheme)
+      off()
+    }
+  }, [volume])
+}
+
 export default function ThemeAudio() {
   // When the preference flips to off — from anywhere, this tab or another —
   // silence the theme at once rather than waiting for a navigation.
