@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { seatCharacter } from "@/lib/seats"
 
 // Verify a character claim link (/?c=<characterId>&k=<claimToken>) SERVER-SIDE.
 // The anon client must never be able to read characters.claim_token, so this
@@ -54,6 +55,10 @@ export async function POST(req: Request) {
   if (!character) {
     return Response.json({ valid: false }, { status: 200 })
   }
+
+  // A verified claim is a player at the table: take their seat for this run (lib/seats.ts).
+  // Best-effort; the verification stands either way.
+  await seatCharacter(admin, { id: character.id, name: character.name })
 
   return Response.json({ valid: true, character: { id: character.id, name: character.name } }, { status: 200 })
 }

@@ -352,7 +352,16 @@ const SPR_META = /*__SPRITES__*/;
 const LANDY = {"node-09-waterfall":690, "node-10-guard-tower":1275};
 
 const NAT_W = 2400, NAT_H = 1339, CELL = 20, GW = Math.ceil(NAT_W / CELL), GH = Math.ceil(NAT_H / CELL);
-const PARTY = ["kenta", "samson", "scott", "freia"];
+// The whole party, in seat order. In the app PARTY is narrowed at boot to who has actually sat down
+// this run (/api/map-stage `seated`, lib/seats.ts) and grows as others come through the door — Sam,
+// 2026-10-14: "Unless there are multiple players, only the character selected will populate in the
+// game." Nobody seated (a DM screen before anyone arrives, or the stand-alone preview): everyone.
+const FULL_PARTY = ["kenta", "samson", "scott", "freia"];
+let PARTY = FULL_PARTY.slice();
+function seatedSlugs(seated){
+  const names = new Set((Array.isArray(seated) ? seated : []).map(s => String(s.name || "").toLowerCase()));
+  return FULL_PARTY.filter(id => names.has(String(PLAYS_AS[id] || "").toLowerCase()));
+}
 const SHORT = {jorlan: "Jorlan", "drow-guard-male": "Drow guard", "drow-guard-female": "Drow guard", freia: "Fifi", derendil: "Derendil", eldeth: "Eldeth", sarith: "Sarith", ront: "Ront", buppido: "Buppido", shuushar: "Shuushar", "giant-spider": "Giant spider", quaggoth: "Quaggoth"};
 const FOE_BARK = {quaggoth: ["Hrrraagh!", "Grrrhh…"], "giant-spider": ["(chittering)", "(hiss)"]};   // sounds, not dialogue
 const BASE = 1.15, SPACING = 58, SPEED = 210;
@@ -2273,6 +2282,8 @@ async function pollStage(){
       if (runSeen === null) runSeen = j.run;
       else if (j.run !== runSeen){ location.reload(); return; }
     }
+    // someone else came through the door: they appear beside the party (never mid-fight — next poll)
+    if (mode === "explore") for (const id of seatedSlugs(j.seated)) if (!PARTY.includes(id)) partyJoins(id);
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
     // creatures: anyone present who is not part of the story's cast
     for (const c of present){
@@ -2322,6 +2333,16 @@ function tickVermin(dt){
     else v.alpha = Math.max(0, v.alpha - dt * 2.5);
   }
   vermin = vermin.filter(v => v.path.length || v.alpha > 0);
+}
+// A seated character who was not on the plate when it loaded joins the party where the leader stands.
+function partyJoins(id){
+  if (!SPR[id] || PARTY.includes(id) || !leader) return;
+  PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === id);
+  const p = nearestWalkable(leader.x - 60 + Math.random() * 120, leader.y + 40, party.map(q => ({x: q.x, y: q.y})));
+  const a = mkActor(id, p.x, p.y, "pc", {alpha: 0, fadeIn: true, home: {x: p.x, y: p.y}, face: leader.face});
+  a.actUntil = now + 3000 + Math.random() * 6000;
+  party.push(a); party.sort((x, y) => PARTY.indexOf(x.id) - PARTY.indexOf(y.id)); actors = [...party, ...npcs, ...foes];
+  renderParty(); narrate(a, `${SHORT[id] || SPR[id].json.name} is here.`);
 }
 // A cast member goes where Malachar's [NPC_MOVE: name | where] put them — the pen's story layer names the
 // spots ("gate"/"bars" is outside the bars, "landing" is Jorlan's post, "bridge", "tower"); a wording that names
@@ -2956,8 +2977,12 @@ function frame(t){
   try { await loadSprites(); } catch (e) { $("loading").textContent = "Could not load sprite: " + e; return; }
   $("loading").remove();
   leader = null;
+  if (APP){
+    try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
+  }
   const saved = APP ? loadWalk() : null;
-  if (saved){
+  if (saved) saved.party = saved.party.filter(p => PARTY.includes(p.id));
+  if (saved && saved.party.length){
     Object.assign(state, saved.state || {});
     const L = saved.party.find(p => p.id === saved.leader) || saved.party[0];
     leader = {id: L.id};
