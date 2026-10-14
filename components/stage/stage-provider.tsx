@@ -8,7 +8,10 @@
 //   - a move is a soft navigation, never a page load — the theme music and this provider survive it;
 //   - the move is drawn from what the player was looking at (lib/stage.ts has the grammar);
 //   - Malachar's caption stays on screen through the move;
-//   - the table moves together: the move is written to sessions.stage and other browsers follow.
+//   - the table moves together: the move is written to sessions.stage and other browsers follow;
+//   - film is a mode too (Sam, 2026-10-14): a clip grows out of the stage window, plays once, and
+//     shrinks back, on every page. Checks fire it through lib/check-cue.ts; Malachar's own cues and
+//     the dashboard's look-around chip call `film()` directly.
 //
 // Pages ask for a move with `useStage().go("/map", { from: element, caption })`. Nothing here
 // decides WHETHER a move is legal — that is lib/game-context.ts and the server. This only draws it.
@@ -20,6 +23,8 @@ import {
   STAGE_ROUTES, durationsFor, modeForPath, shouldFollow, transitionFor,
   type StageMode, type StageRecord, type TransitionKind,
 } from "@/lib/stage"
+import { onCheckCue, type CheckCue } from "@/lib/check-cue"
+import { readPlayed, rememberPlayed, shouldPlay } from "@/lib/cinematic-replay"
 
 export type GoOptions = {
   /** The element the move starts from (the stage window). Defaults to `[data-stage-window]` on the page. */
@@ -34,10 +39,27 @@ export type GoOptions = {
   replace?: boolean
 }
 
+export type FilmOptions = {
+  /** The clip to roll (cinematic_clips.video_url). */
+  url: string
+  /** Malachar's line, carried through the film. */
+  caption?: string
+  /** A party clip is written to sessions.stage so every browser rolls it; a solo clip plays here only. */
+  scope?: "solo" | "party"
+  /** Write the move to the shared record (default: true for party, never for solo). The dashboard's own broadcast passes false. */
+  share?: boolean
+  /** The element the film grows out of. Defaults to `[data-stage-window]`, else a dip through black. */
+  from?: HTMLElement | null
+  /** What cued it, for the shared record. */
+  cue?: string
+}
+
 type StageApi = {
   mode: StageMode
   busy: boolean
   go: (href: string, opts?: GoOptions) => Promise<void>
+  /** Roll a clip over the current page: grow out of the stage window, play once, shrink back. */
+  film: (opts: FilmOptions) => Promise<void>
   caption: (text: string, who?: string) => void
 }
 
@@ -99,6 +121,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
   const [cap, setCap] = useState<{ who: string; text: string } | null>(null)
   const layer = useRef<HTMLDivElement>(null)
   const pic = useRef<HTMLImageElement>(null)
+  const vid = useRef<HTMLVideoElement>(null)
+  const filmDone = useRef<(() => void) | null>(null)
   const landing = useRef<{ kind: TransitionKind; to: StageMode; resolve: () => void; inMs: number } | null>(null)
   const capTimer = useRef<number | null>(null)
   const reduced = useRef(false)
@@ -204,8 +228,86 @@ export function StageProvider({ children }: { children: ReactNode }) {
     window.clearTimeout(guard)
   }, [busy, caption, mode, router])
 
+  // FILM. A moment, not a place: no route changes. The layer grows out of the stage window
+  // (or dips through black where there is none), the clip plays once, muted — the house rule,
+  // Tabletop Audio owns sound — and the layer shrinks back to where it came from. Click, Escape
+  // or the clip's end all bring the page back; nothing loops.
+  const film = useCallback(async (opts: FilmOptions) => {
+    const el = layer.current
+    const v = vid.current
+    if (!el || !v || !opts.url) return
+    if (busy) return
+    const scope = opts.scope ?? "solo"
+    const d = durationsFor("grow", reduced.current)
+    const back = durationsFor("shrink", reduced.current)
+    setBusy(true)
+    if (opts.caption) caption(opts.caption)
+    if (scope === "party" && opts.share !== false) {
+      const rec: StageRecord = { mode: "film", by: selfId(), at: new Date().toISOString(), caption: opts.caption, clip: opts.url, cue: opts.cue }
+      fetch("/api/stage", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(rec) }).catch(() => {})
+    }
+
+    const srcEl = opts.from ?? (document.querySelector("[data-stage-window]") as HTMLElement | null)
+    const srcRect = rectOf(srcEl)
+    if (pic.current) pic.current.style.opacity = "0"
+    v.src = opts.url
+    v.style.opacity = "1"
+    el.style.display = "block"
+    el.style.pointerEvents = "auto"
+    el.style.cursor = "pointer"
+    if (srcRect) {
+      place(el, srcRect)
+      el.style.opacity = "1"
+      void v.play().catch(() => {})
+      await morph(el, srcRect, viewport(), d.out)
+    } else {
+      place(el, viewport())
+      el.style.opacity = "0"
+      await fade(el, 0, 1, d.out)
+      void v.play().catch(() => {})
+    }
+
+    // wait for the end of the clip, a click, or Escape
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const done = () => { if (settled) return; settled = true; cleanup(); resolve() }
+      const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") done() }
+      const cleanup = () => {
+        v.removeEventListener("ended", done); v.removeEventListener("error", done)
+        el.removeEventListener("click", done); window.removeEventListener("keydown", onKey)
+        filmDone.current = null
+      }
+      filmDone.current = done
+      v.addEventListener("ended", done); v.addEventListener("error", done)
+      el.addEventListener("click", done); window.addEventListener("keydown", onKey)
+      // a clip the browser cannot decode fires neither `playing` nor `error` (headless Chromium
+      // and H.264, for one): if nothing is moving after ten seconds, give the page back
+      let started = false
+      v.addEventListener("playing", () => { started = true }, { once: true })
+      window.setTimeout(() => { if (!started) done() }, 10 * 1000)
+      // and a clip that never fires `ended` (a stalled network) still lets the table go
+      window.setTimeout(done, 5 * 60 * 1000)
+    })
+
+    v.pause()
+    el.style.pointerEvents = "none"
+    el.style.cursor = ""
+    if (srcRect) {
+      await morph(el, viewport(), srcRect, back.in)
+      await fade(el, 1, 0, 180)
+    } else {
+      await fade(el, 1, 0, back.in)
+    }
+    v.style.opacity = "0"
+    v.removeAttribute("src"); v.load()
+    el.style.display = "none"
+    setBusy(false)
+    capTimer.current = window.setTimeout(() => setCap(null), 4500)
+  }, [busy, caption])
+
   // Rule 4: the table moves together. Follow the shared record when another browser moves.
   const goRef = useRef(go); goRef.current = go
+  const filmRef = useRef(film); filmRef.current = film
   const modeRef = useRef(mode); modeRef.current = mode
   useEffect(() => {
     const supabase = createClient()
@@ -215,6 +317,10 @@ export function StageProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "sessions" }, (payload: { new?: Record<string, unknown> }) => {
         const rec = (payload.new?.stage ?? null) as StageRecord | null
         if (!shouldFollow(rec, self, modeRef.current)) return
+        if (rec!.mode === "film") {
+          void filmRef.current({ url: rec!.clip!, caption: rec!.caption, scope: "party", share: false, cue: rec!.cue })
+          return
+        }
         const href = STAGE_ROUTES[rec!.mode as Exclude<StageMode, "other">]
         if (href) void goRef.current(href, { share: false, caption: rec!.caption })
       })
@@ -222,7 +328,36 @@ export function StageProvider({ children }: { children: ReactNode }) {
     return () => { void supabase.removeChannel(ch) }
   }, [])
 
-  const api = useMemo<StageApi>(() => ({ mode, busy, go, caption }), [mode, busy, go, caption])
+  // THE THIRD DOOR (lib/check-cue.ts): a check resolved somewhere on the page and named its
+  // moment. Ask the server for film the same way the dashboard asks for Malachar's cues —
+  // event_driven, never an override — and roll what comes back. Nothing here decides whether
+  // there is film, whether this character has seen it, or whether it is solo or party.
+  useEffect(() => {
+    return onCheckCue((cue: CheckCue) => {
+      void (async () => {
+        let seat: string | null = null
+        try { seat = localStorage.getItem("aop_character_id") } catch {}
+        const params = new URLSearchParams({ location: cue.location || "generic", state: cue.state, kind: "action", scope: cue.scope, trigger_type: "event_driven" })
+        if (seat) params.set("character_id", seat)
+        try {
+          const res = await fetch(`/api/cinematics?${params.toString()}`)
+          if (!res.ok) return
+          const body = await res.json()
+          const clip = body?.clip as { id?: string; video_url?: string; scope?: string } | null
+          if (!clip?.video_url) return // no film for this check here, or already seen: the ordinary outcome
+          const clipId = clip.id ?? clip.video_url
+          if (!shouldPlay({ clipId, characterId: seat, trigger: "event_driven", playedHere: readPlayed() })) return
+          if (!seat) rememberPlayed(clipId)
+          const scope = clip.scope === "party" || clip.scope === "solo" ? clip.scope : cue.scope
+          await filmRef.current({ url: clip.video_url, caption: cue.caption, scope, cue: cue.state })
+        } catch {
+          /* the check stands; the film was never promised */
+        }
+      })()
+    })
+  }, [])
+
+  const api = useMemo<StageApi>(() => ({ mode, busy, go, film, caption }), [mode, busy, go, film, caption])
 
   return (
     <Ctx.Provider value={api}>
@@ -234,6 +369,8 @@ export function StageProvider({ children }: { children: ReactNode }) {
         style={{ display: "none", position: "fixed", left: 0, top: 0, width: 0, height: 0, zIndex: 9990, overflow: "hidden", background: "#050403", boxShadow: "0 0 0 1px #c49b4e, 0 0 40px #000", pointerEvents: "none" }}
       >
         <img ref={pic} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0 }} />
+        {/* film: plays once, muted (Tabletop Audio owns sound), never loops */}
+        <video ref={vid} muted playsInline preload="auto" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0, background: "#000" }} />
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 70%, transparent 30%, #050403cc 95%)" }} />
       </div>
       {/* Malachar's voice is the thread: the caption outlives the page it was spoken on */}

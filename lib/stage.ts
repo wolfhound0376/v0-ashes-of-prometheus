@@ -75,7 +75,7 @@ export function durationsFor(kind: TransitionKind, reducedMotion: boolean) {
  * painted scene each player walks their own character, but leaving it is a party move. The
  * battle board is the DM's place and is not forced on anyone.
  */
-export const FOLLOWED_MODES: ReadonlySet<StageMode> = new Set<StageMode>(["table", "scene", "map", "camp"])
+export const FOLLOWED_MODES: ReadonlySet<StageMode> = new Set<StageMode>(["table", "scene", "map", "camp", "film"])
 
 /** The shared record, as written to sessions.stage (jsonb). */
 export type StageRecord = {
@@ -86,6 +86,10 @@ export type StageRecord = {
   at: string
   /** Malachar's line for the move, shown in the caption of every browser that follows. */
   caption?: string
+  /** mode "film" only: the clip to roll. A party clip is written here so every browser rolls it; a solo clip is never shared. */
+  clip?: string
+  /** mode "film" only: where the film came from — a check's cue name (e.g. "notice-success") or a cinematic_clips state. For the log. */
+  cue?: string
 }
 
 /** A record older than this is history, not an instruction: a browser opening the game an hour later stays where it is. */
@@ -95,7 +99,11 @@ export function shouldFollow(rec: StageRecord | null | undefined, self: string, 
   if (!rec || typeof rec !== "object") return false
   if (rec.by === self) return false
   if (!FOLLOWED_MODES.has(rec.mode)) return false
-  if (rec.mode === current) return false
+  // Film is a moment, not a place: it plays over whatever mode a browser is in, so "already in
+  // film" never applies. It needs a clip to roll; a record without one is nothing to follow.
+  if (rec.mode === "film") {
+    if (!rec.clip) return false
+  } else if (rec.mode === current) return false
   // Browsers on pages outside the grammar (admin, forge, previews) are left alone.
   if (current === "other") return false
   const t = Date.parse(rec.at)

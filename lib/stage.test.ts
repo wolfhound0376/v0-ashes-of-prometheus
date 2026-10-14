@@ -41,3 +41,16 @@ describe("the table moves together", () => {
     expect(shouldFollow(null, "me", "table", now)).toBe(false)
   })
 })
+
+describe("film — a moment, not a place", () => {
+  const now = Date.parse("2026-10-14T20:00:00Z")
+  it("a party clip is followed from any mode, including the table", () => {
+    const rec = { mode: "film" as const, by: "them", at: "2026-10-14T19:59:30Z", clip: "https://x/clip.mp4" }
+    expect(shouldFollow(rec, "me", "table", now)).toBe(true)
+    expect(shouldFollow(rec, "me", "map", now)).toBe(true)
+    expect(shouldFollow(rec, "them", "map", now)).toBe(false)
+  })
+  it("a film record without a clip is nothing to follow", () => {
+    expect(shouldFollow({ mode: "film", by: "them", at: "2026-10-14T19:59:30Z" }, "me", "table", now)).toBe(false)
+  })
+})
