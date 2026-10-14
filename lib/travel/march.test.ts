@@ -186,3 +186,53 @@ describe("The day (PHB ch.8: eight hours of travel)", () => {
     expect(normaliseDay({ pace: "brisk", hours_today: "3.5", navigation_due: false })).toMatchObject({ pace: "normal", hours_today: 3.5, navigation_due: false })
   })
 })
+
+describe("forced march (SRD 5.1 Travel Pace)", async () => {
+  const { forcedMarch, legPreview, FRESH_DAY } = await import("./march")
+  const party = [
+    { id: "a", name: "Fifi", conSave: 2, exhaustion: 0 },
+    { id: "b", name: "Kenta", conSave: -1, exhaustion: 0 },
+  ]
+  it("rolls nothing inside the eight hours", () => {
+    const before = { ...FRESH_DAY, hours_today: 6 }
+    const after = { ...FRESH_DAY, hours_today: 7.5 }
+    const out = forcedMarch(before, after, party, () => 0)
+    expect(out.hours).toEqual([])
+    expect(out.saves).toEqual([])
+  })
+  it("saves once per whole hour past eight, DC 10 + hours past eight, everyone", () => {
+    const before = { ...FRESH_DAY, hours_today: 7.5 }
+    const after = { ...FRESH_DAY, hours_today: 10.2 }
+    const out = forcedMarch(before, after, party, () => 0) // every d20 rolls a 1
+    expect(out.hours).toEqual([1, 2])
+    expect(out.saves.map((s) => s.dc)).toEqual([11, 11, 12, 12])
+    expect(out.exhaustion).toEqual({ a: 2, b: 2 })
+  })
+  it("does not re-roll hours already past before the leg", () => {
+    const before = { ...FRESH_DAY, hours_today: 9.5 }
+    const after = { ...FRESH_DAY, hours_today: 10.5 }
+    const out = forcedMarch(before, after, party, () => 0.99) // every d20 rolls a 20
+    expect(out.hours).toEqual([2])
+    expect(out.saves.every((s) => s.success)).toBe(true)
+    expect(out.exhaustion).toEqual({})
+  })
+  it("previews the cost of a leg before the click", () => {
+    const p = legPreview({ ...FRESH_DAY, hours_today: 7 }, 7, 7) // a 7-mile leg at normal pace = 8 h
+    expect(p.forced).toBe(true)
+    expect(p.forcedHours).toBe(7)
+    expect(p.dc).toBe(11)
+    const q = legPreview({ ...FRESH_DAY, hours_today: 0 }, 3.5, 7)
+    expect(q.forced).toBe(false)
+    expect(q.hours).toBeCloseTo(4, 5)
+  })
+})
+
+describe("forced march past eight — the day is counted once", () => {
+  it("a second leg past eight does not add another day", () => {
+    const day = { ...FRESH_DAY, hours_today: 8.5, days_marched: 1, navigation_due: false }
+    const leg = walkLeg(day, 3.5, 7, null, () => 0.5)
+    expect(leg.nightfall).toBe(true)
+    expect(leg.day.days_marched).toBe(1)
+    expect(leg.day.navigation_due).toBe(false)
+  })
+})

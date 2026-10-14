@@ -293,7 +293,11 @@ export function walkLeg(day: DayState, miles: number, normalDayMiles: number, na
   const walkMinutes = legMinutes(miles, d.pace, normalDayMiles)
   d.hours_today += (walkMinutes + lostMinutes) / 60
   const nightfall = d.hours_today + 1e-6 >= MARCH_HOURS_PER_DAY
-  if (nightfall) {
+  // The day is counted once, when the eighth hour is crossed. A forced march
+  // (see below) keeps walking past it; those legs still report nightfall, so
+  // the route can offer camp at every marker, but they do not count more days.
+  const crossed = nightfall && day.hours_today + 1e-6 < MARCH_HOURS_PER_DAY
+  if (crossed) {
     d.days_marched += 1
     d.navigation_due = true // "for each day of travel" (p.25)
   }
@@ -302,6 +306,84 @@ export function walkLeg(day: DayState, miles: number, normalDayMiles: number, na
   bits.push(`${miles.toFixed(1)} miles at ${d.pace} pace: ${Math.round(walkMinutes / 60 * 10) / 10} h.`)
   if (nightfall) bits.push(`Day ${d.days_marched} of the march is done - ${Math.round(d.hours_today * 10) / 10} hours on the road. Make camp.`)
   return { day: d, minutes: walkMinutes + lostMinutes, walkMinutes, lostMinutes, navigation, nightfall, note: bits.join(" ") }
+}
+
+// ============================================================================
+// FORCED MARCH — SRD 5.1 "Travel Pace" (Sam, 2026-10-14: allowed, with the save)
+// ============================================================================
+
+export const FORCED_MARCH_SOURCE = "SRD 5.1 / PHB ch.8 Travel Pace: Forced March"
+export const FORCED_MARCH_BASE_DC = 10
+
+export interface ConSaver {
+  id: string
+  name: string
+  /** Constitution saving throw bonus (modifier, plus proficiency when proficient). */
+  conSave: number
+  exhaustion: number
+}
+
+export interface ForcedMarchSave {
+  characterId: string
+  name: string
+  hourPastEight: number
+  dc: number
+  roll: number
+  total: number
+  success: boolean
+}
+
+export interface ForcedMarchOutcome {
+  /** Whole hours past eight completed by this leg that had not yet been saved against. */
+  hours: number[]
+  saves: ForcedMarchSave[]
+  /** Exhaustion levels gained per character (only those who failed at least once). */
+  exhaustion: Record<string, number>
+  note: string
+}
+
+/**
+ * "For each additional hour of travel beyond 8 hours … each character must make a
+ * Constitution saving throw at the end of the hour. The DC is 10 + 1 for each hour
+ * past 8 hours. On a failed saving throw, a character suffers one level of
+ * exhaustion." (SRD 5.1, Travel Pace: Forced March.)
+ *
+ * Called with the day before and after a leg: every whole hour past eight that the
+ * leg completed is saved against once, by everyone. Hours already past before the
+ * leg are not rolled again. Pure; the route writes `characters.exhaustion`.
+ */
+export function forcedMarch(before: DayState, after: DayState, party: readonly ConSaver[], rng: Rng): ForcedMarchOutcome {
+  const doneBefore = Math.max(0, Math.floor(before.hours_today + 1e-6 - MARCH_HOURS_PER_DAY))
+  const doneAfter = Math.max(0, Math.floor(after.hours_today + 1e-6 - MARCH_HOURS_PER_DAY))
+  const hours: number[] = []
+  for (let h = doneBefore + 1; h <= doneAfter; h++) hours.push(h)
+  const saves: ForcedMarchSave[] = []
+  const exhaustion: Record<string, number> = {}
+  for (const h of hours) {
+    const dc = FORCED_MARCH_BASE_DC + h
+    for (const c of party) {
+      const roll = 1 + Math.floor(rng() * 20)
+      const total = roll + c.conSave
+      const success = total >= dc
+      saves.push({ characterId: c.id, name: c.name, hourPastEight: h, dc, roll, total, success })
+      if (!success) exhaustion[c.id] = (exhaustion[c.id] ?? 0) + 1
+    }
+  }
+  const failed = Object.keys(exhaustion).length
+  const note = hours.length === 0
+    ? ""
+    : `Forced march: ${hours.length} hour${hours.length === 1 ? "" : "s"} past eight (CON save DC ${FORCED_MARCH_BASE_DC + hours[0]}${hours.length > 1 ? "–" + (FORCED_MARCH_BASE_DC + hours[hours.length - 1]) : ""}). ${failed === 0 ? "Everyone held up." : party.filter((c) => exhaustion[c.id]).map((c) => `${c.name} gains ${exhaustion[c.id]} level${exhaustion[c.id] === 1 ? "" : "s"} of exhaustion`).join("; ") + "."}`
+  return { hours, saves, exhaustion, note }
+}
+
+/** The hours a leg would end at, and whether it crosses into a forced march — for the hover card, before anyone clicks. */
+export function legPreview(day: DayState, miles: number, normalDayMiles: number): { hours: number; endsAt: number; left: number; forced: boolean; forcedHours: number; dc: number | null } {
+  const hours = legMinutes(miles, day.pace, normalDayMiles) / 60
+  const endsAt = day.hours_today + hours
+  const left = hoursLeft(day)
+  const forced = endsAt > MARCH_HOURS_PER_DAY + 1e-6
+  const forcedHours = forced ? Math.ceil(endsAt - MARCH_HOURS_PER_DAY - 1e-6) : 0
+  return { hours, endsAt, left, forced, forcedHours, dc: forced ? FORCED_MARCH_BASE_DC + Math.max(1, Math.floor(day.hours_today + 1e-6 - MARCH_HOURS_PER_DAY) + 1) : null }
 }
 
 /** The DM's "continue" after nightfall: a new day begins where the party stands. */
