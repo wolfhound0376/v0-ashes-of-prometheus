@@ -21,6 +21,11 @@ import {
   type Navigator,
 } from "@/lib/travel/march"
 import { mayLead, tallyLeader } from "@/lib/travel/leader"
+import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
+import { arrivalCue } from "@/lib/travel/stingers"
+import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
+import { formatPersonality, type LichPersonality } from "@/lib/world-ai/book-retrieval"
+import { marchPassivePerception } from "@/lib/travel/march"
 import { activeRunId, readLeader, roster } from "@/lib/travel/leader-store"
 import { MAX_EXHAUSTION, normaliseExhaustion } from "@/lib/exhaustion"
 import { logTimeEvent } from "@/lib/time-tracking"
@@ -72,6 +77,17 @@ import type { SheetSlice } from "@/lib/game-context"
 //     action "vote"   {for: character_id}  → a player's standing vote.
 //     action "leader" {character_id|null}  → the DM's override.
 //   Both are read back by GET /api/travel/leader (public, anon-safe).
+//
+//   THE ARRIVAL BEAT (Sam, 2026-10-14). Every "arrive" also returns:
+//     stinger  → which of the five cues the node earned (lib/travel/stingers.ts)
+//     notice   → the party's passive Perception against the node's DC (default
+//                12, homebrew per node in metadata.notice_dc); a success reveals
+//                metadata.notice_reveals (a node_key) and surfaces
+//                metadata.notice_text. The chip is shown and the noticed/missed
+//                sound plays either way.
+//     line     → Malachar's one or two sentences, ONLY when something happened
+//                (a halt, a forced-march cost, a successful notice), written to
+//                dialogue so every browser reads it.
 //
 //   FORCED MARCH (SRD 5.1, Travel Pace). "arrive" and "continue" accept
 //   {force: true}: the party walks past the day's eight hours instead of
@@ -546,9 +562,11 @@ export async function POST(req: NextRequest) {
 
     const { data: full } = await db
       .from("travel_nodes")
-      .select("id,node_key,name,edge_id")
+      .select("id,node_key,name,edge_id,node_type,metadata")
       .eq("id", node.id)
       .single()
+    // First time here? Any earlier arrival row, or the party standing here before, says no.
+    const { count: visitsBefore } = await db.from("travel_arrivals").select("id", { count: "exact", head: true }).eq("node_id", node.id)
 
     const [tablesRes, rowsRes, eventsRes, firedRes, marchRes, leg, boatsRes, saversRes] = await Promise.all([
       db.from("encounter_tables").select("table_key,die,title,source"),
@@ -560,7 +578,10 @@ export async function POST(req: NextRequest) {
       db.from("party_vessels").select("speed_mph,lost_at").is("lost_at", null),
       // Everyone who would save on a forced march: CON modifier, plus
       // proficiency when CON is a proficient save on the sheet.
-      db.from("characters").select("id,name,con_modifier,proficiency_bonus,sheet_save_proficiencies,exhaustion").eq("is_player", true),
+      db
+        .from("characters")
+        .select("id,name,level,con_modifier,proficiency_bonus,sheet_save_proficiencies,exhaustion,passive_perception,wis_score,sheet_skill_proficiencies")
+        .eq("is_player", true),
     ])
     const miles = leg.miles
     // A crossing is rowed at the fleet's pace. With no boat on record (the DM
@@ -651,6 +672,25 @@ export async function POST(req: NextRequest) {
     // Nightfall is a halt of its own when nothing else stopped them. If an
     // encounter did, it is the halt and the day's end rides along in the body;
     // "continue" still starts the new day because hours_today says so.
+    // THE PASSIVE ROLL. Every character's passive Perception, the pace applied
+    // (fast −5, p.24), against the node's DC. No dice. A success can reveal a
+    // hidden node_key named in the node's metadata.
+    const spec = noticeSpec((full?.metadata as Record<string, unknown> | null) ?? null)
+    const eyes: Eyes[] = ((saversRes.data ?? []) as Record<string, unknown>[]).map((c) => ({
+      id: String(c.id),
+      name: String(c.name ?? "?"),
+      passive: marchPassivePerception(c as unknown as SheetSlice, dayAfter.pace),
+    }))
+    const notice = leg.sail ? null : noticeAt(spec, eyes)
+    let revealedName: string | null = null
+    if (notice?.noticed && notice.reveals) {
+      const { data: hidden } = await db.from("travel_nodes").select("id,name,discovered_at").eq("node_key", notice.reveals).maybeSingle()
+      if (hidden) {
+        if (!hidden.discovered_at) await revealNode(db, hidden.id)
+        revealedName = hidden.name ?? notice.reveals
+      }
+    }
+
     // A forced march that cost somebody a level of exhaustion stops the party
     // too - not to camp, but so the price is seen before they go on.
     const forcedHalt = !!forced && Object.keys(forced.exhaustion).length > 0
@@ -662,6 +702,8 @@ export async function POST(req: NextRequest) {
       navigation?.lost ? navigation.note : null,
       nightfall ? `Day ${dayAfter.days_marched} of the march is done after ${Math.round(dayAfter.hours_today * 10) / 10} hours. The party camps here; Continue breaks camp tomorrow - or push on, and pay for every hour past eight.` : null,
       forced?.note || null,
+      notice?.noticed && notice.text ? notice.text : null,
+      revealedName ? `${notice?.best?.name ?? "Someone"} spots ${revealedName}.` : null,
     ].filter(Boolean)
     const haltBody = bodyParts.length ? bodyParts.join("\n\n") : null
     const source = outcome.halt ? outcome.source : forcedHalt ? FORCED_MARCH_SOURCE : "Travel pace: 8 hours of travel a day (SRD / PHB ch.8); OotA-Enc ch.2 p.24"
@@ -688,6 +730,7 @@ export async function POST(req: NextRequest) {
             ...(navigation ? { navigation } : {}),
             ...(outcome.water ? { water: outcome.water } : {}),
             ...(forced ? { forced } : {}),
+            ...(notice ? { notice: { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, revealed: revealedName } } : {}),
           },
         })
         .select("id")
@@ -702,11 +745,41 @@ export async function POST(req: NextRequest) {
     }
 
     await revealNode(db, node.id)
+
+    // THE CUE and, when something happened, MALACHAR'S LINE.
+    const stinger = arrivalCue({
+      haltKind,
+      nodeType: String(full?.node_type ?? node.node_type),
+      firstVisit: (visitsBefore ?? 0) === 0,
+      revealed: !!revealedName,
+    })
+    const facts = {
+      nodeName: full?.name ?? node.node_key,
+      haltKind,
+      title: halt ? title : null,
+      body: halt ? haltBody : null,
+      notice: notice ? { chip: notice.chip, noticed: notice.noticed, text: notice.text, revealedName } : null,
+      hoursToday: dayAfter.hours_today,
+      pace: dayAfter.pace,
+      exhausted: forced
+        ? Object.entries(forced.exhaustion).map(([id, levels]) => ({ name: forced!.saves.find((s) => s.characterId === id)?.name ?? "?", levels }))
+        : [],
+    }
+    let line: string | null = null
+    if (worthAWord(facts)) {
+      const { data: dials } = await db.from("lich_personality").select("snark, cruelty, crassness, swearing, fourth_wall, roast_target").limit(1).maybeSingle()
+      line = await malacharRoadLine(facts, formatPersonality((dials as LichPersonality | null) ?? null) || null)
+      if (line) await sayOnTheRoad(db, line)
+    }
+
     return NextResponse.json({
       ok: true,
       action,
       node_key: node.node_key,
       arrival_id: arrivalId,
+      stinger,
+      notice: notice ? { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, best: notice.best, text: notice.text, revealed: revealedName, source: notice.source } : null,
+      line,
       ...outcome,
       // The day overrides what the encounter alone would have said.
       halt,
