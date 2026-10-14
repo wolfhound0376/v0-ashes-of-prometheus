@@ -212,6 +212,7 @@ footer.party{display:flex;gap:8px;overflow-x:auto;min-width:0;align-items:stretc
 .pc .nm small{font-family:var(--face-mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase}
 .pc[aria-pressed="true"]{border-color:var(--ember)}
 .pc[aria-pressed="true"] small{color:var(--ember)}
+.seats{display:flex;flex-direction:column;gap:4px}
 .help{margin-left:auto;align-self:center;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);white-space:nowrap;padding-left:8px}
 button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outline-offset:2px}
 .loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--face-mono);color:var(--ink-dim);letter-spacing:.1em}
@@ -309,6 +310,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
       <button class="btn" id="dmBark">Make an NPC comment</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
+      <h4>Companions</h4>
+      <div id="dmSeats" class="seats"></div>
     </div>
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
@@ -361,6 +364,49 @@ let PARTY = FULL_PARTY.slice();
 function seatedSlugs(seated){
   const names = new Set((Array.isArray(seated) ? seated : []).map(s => String(s.name || "").toLowerCase()));
   return FULL_PARTY.filter(id => names.has(String(PLAYS_AS[id] || "").toLowerCase()));
+}
+// A DM-run companion (lib/seats.ts, seat.dm): walks with the party, led only from the DM's browser,
+// marked on hover. Sam, 2026-10-14: "The DM can add characters but will treat them like an NPC, with
+// the DM controlling that character."
+let seatsSeen = [];
+const dmRun = new Set();
+function noteSeats(seated){
+  seatsSeen = Array.isArray(seated) ? seated : [];
+  dmRun.clear();
+  for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
+  renderSeats();
+}
+function characterIdOf(slug){ const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
+const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
+async function seatCompanion(slug){
+  const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({name: PLAYS_AS[slug] || slug})});
+  if (!res.ok){ toast(res.status === 403 ? "Seating a companion needs the DM code. Enter it on the dashboard first." : "Could not seat them."); return; }
+  const j = await res.json(); noteSeats(j.seated); if (mode === "explore") partyJoins(slug);
+}
+async function unseatCompanion(slug){
+  const id = characterIdOf(slug); if (!id) return;
+  const res = await fetch(`/api/seat?characterId=${encodeURIComponent(id)}`, {method: "DELETE", headers: dmHeaders()});
+  if (!res.ok){ toast(res.status === 409 ? "That seat belongs to a player." : "Could not send them away."); return; }
+  const j = await res.json(); noteSeats(j.seated); partyLeaves(slug);
+}
+function renderSeats(){
+  const el = $("dmSeats"); if (!el) return; el.innerHTML = "";
+  for (const id of FULL_PARTY){
+    const nm = SHORT[id] || (SPR[id] && SPR[id].json.name) || id;
+    const seatedAsPlayer = PARTY.includes(id) && !dmRun.has(id) && seatsSeen.some(x => String(x.name || "").toLowerCase() === String(PLAYS_AS[id] || "").toLowerCase() && !x.dm);
+    const b = document.createElement("button"); b.className = "btn";
+    if (seatedAsPlayer){ b.textContent = `${nm}: a player's seat`; b.disabled = true; }
+    else if (dmRun.has(id)){ b.textContent = `${nm}: DM-run — send away`; b.onclick = () => unseatCompanion(id); }
+    else { b.textContent = `${nm}: add as DM-run companion`; b.onclick = () => seatCompanion(id); }
+    el.appendChild(b);
+  }
+}
+function partyLeaves(slug){
+  const a = party.find(p => p.id === slug); if (!a) return;
+  PARTY = PARTY.filter(x => x !== slug);
+  if (leader === a){ const next = party.find(p => p !== a); if (next) setLeader(next); }
+  a.fading = true; setTimeout(() => { party = party.filter(p => p !== a); actors = actors.filter(p => p !== a); renderParty(); }, 1300);
+  narrate(a, `${SHORT[slug] || SPR[slug].json.name} goes their own way.`);
 }
 const SHORT = {jorlan: "Jorlan", "drow-guard-male": "Drow guard", "drow-guard-female": "Drow guard", freia: "Fifi", derendil: "Derendil", eldeth: "Eldeth", sarith: "Sarith", ront: "Ront", buppido: "Buppido", shuushar: "Shuushar", "giant-spider": "Giant spider", quaggoth: "Quaggoth"};
 const FOE_BARK = {quaggoth: ["Hrrraagh!", "Grrrhh…"], "giant-spider": ["(chittering)", "(hiss)"]};   // sounds, not dialogue
@@ -734,7 +780,7 @@ function updateOverlay(){
   if (nameTag){
     if (hoverActor && mode !== "talk"){
       const [sx, sy] = w2s(hoverActor.x, hoverActor.y); nameTag.hidden = false; nameTag.style.left = sx + "px"; nameTag.style.top = sy + "px";
-      nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" + (hoverActor.talkWho ? " with " + hoverActor.talkWho : "") : "");
+      nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (dmRun.has(hoverActor.id) ? " · DM-run" : "") + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" + (hoverActor.talkWho ? " with " + hoverActor.talkWho : "") : "");
     } else nameTag.hidden = true;
   }
 }
@@ -945,6 +991,7 @@ function renderParty(){
   });
 }
 function setLeader(a){
+  if (dmRun.has(a.id) && !isDm()){ toast(`${SHORT[a.id] || SPR[a.id].json.name} is in the DM's hands.`); return; }
   if (mode === "combat"){ const i = turnOrder.indexOf(a); if (i >= 0){ turnIdx = i; renderTurns(); } return; }
   if (leader && leader !== a) leader.home = {x: leader.x, y: leader.y};
   stopActivity(a); a.path = []; a.actUntil = 0;
@@ -2283,7 +2330,11 @@ async function pollStage(){
       else if (j.run !== runSeen){ location.reload(); return; }
     }
     // someone else came through the door: they appear beside the party (never mid-fight — next poll)
-    if (mode === "explore") for (const id of seatedSlugs(j.seated)) if (!PARTY.includes(id)) partyJoins(id);
+    noteSeats(j.seated);
+    if (mode === "explore"){
+      for (const id of seatedSlugs(j.seated)) if (!PARTY.includes(id)) partyJoins(id);
+      if (Array.isArray(j.seated) && j.seated.length) for (const id of PARTY.slice()) if (!seatedSlugs(j.seated).includes(id) && party.length > 1 && id !== (leader && leader.id)) partyLeaves(id);
+    }
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
     // creatures: anyone present who is not part of the story's cast
     for (const c of present){
@@ -2709,7 +2760,7 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); }
+function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); if (on) renderSeats(); }
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
@@ -2989,7 +3040,7 @@ function frame(t){
         if (v && v.valid && v.character) mine = seatedSlugs([v.character])[0] || null;
       }
     } catch (e) {}
-    try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
+    try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
     if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }
   const saved = APP ? loadWalk() : null;

@@ -26,6 +26,8 @@ export interface WorldContext {
     maps: Array<{ name: string; hotspots: Array<{ name: string; text: string }> }>
   }
   characters: Array<{
+    /** The characters row id — the seats (lib/seats.ts) are keyed by it. */
+    id: string
     name: string
     class: string
     race: string
@@ -364,6 +366,7 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
         : []
 
       return {
+        id: char.id,
         name: char.name,
         class: char.class,
         race: (char as Character & { sheet_species?: string }).sheet_species || "Unknown",
