@@ -847,13 +847,36 @@ STRICT LIMITS ON USING THESE:
   } catch (e) {
     console.warn("[v0] dm_phrasebook: admin client unavailable, ban list disabled:", e)
   }
-  const { data: phrasebookRows } = phrasebook
-    ? await phrasebook
-        .from("dm_phrasebook")
-        .select("opening")
-        .order("created_at", { ascending: false })
-        .limit(30)
-    : { data: null }
+  // THE BAN LIST IS PHRASING, NOT HISTORY. The phrasebook survives restarts on
+  // purpose, but its lines are Malachar's own past openings, and they carry the
+  // story they were written in: after the 2026-10-13 restart eleven of the
+  // thirty retired lines described the gray ooze of the previous run, and he
+  // read "The ooze pools near the far wall" as a fact about the pen and went on
+  // narrating an ooze that no longer existed (Sam, 2026-10-14: "they are still
+  // talking about the ooze"). So a line from BEFORE this run is cut to its
+  // first few words — enough to retire the pattern, too short to carry a
+  // creature or an event — and the block says in so many words that nothing in
+  // it is true now. The run boundary is the oldest line in `dialogue`, which
+  // restart-campaign clears; no new table, no migration.
+  const [{ data: phrasebookRows }, { data: oldestLine }] = await Promise.all([
+    phrasebook
+      ? phrasebook
+          .from("dm_phrasebook")
+          .select("opening, created_at")
+          .order("created_at", { ascending: false })
+          .limit(30)
+      : Promise.resolve({ data: null as null | Array<{ opening: string; created_at: string }> }),
+    supabase.from("dialogue").select("created_at").order("created_at", { ascending: true }).limit(1).maybeSingle(),
+  ])
+  const runStartedAt = oldestLine?.created_at ? Date.parse(oldestLine.created_at) : Date.now()
+  const retiredOpening = (r: { opening?: string | null; created_at?: string | null }) => {
+    const full = (r.opening || "").trim()
+    if (!full) return ""
+    const fromThisRun = r.created_at ? Date.parse(r.created_at) >= runStartedAt : false
+    if (fromThisRun) return full
+    const stub = full.split(/\s+/).slice(0, 4).join(" ")
+    return stub.length < full.length ? `${stub}…` : full
+  }
 
   // Belt and braces: ALSO retire every opening Malachar has already used in the
   // visible history this session, so in-session repeats are banned explicitly
@@ -872,7 +895,7 @@ STRICT LIMITS ON USING THESE:
   const usedOpenings = Array.from(
     new Set([
       ...sessionOpenings,
-      ...(phrasebookRows || []).map((r: any) => (r.opening || "").trim()).filter(Boolean),
+      ...(phrasebookRows || []).map(retiredOpening).filter(Boolean),
     ]),
   ).slice(0, 45)
 
@@ -1523,6 +1546,7 @@ Rules:
 - Match the cue to the moment plainly. If the player's action and your own narration describe what a listed cue names \u2014 they slept and you described the dream, they picked the lock and it opened \u2014 emit that cue. Do not hold back because the moment was quiet or passive.
 - AT MOST ONE cue per response. If two would fit, choose the more significant.
 - The cue is silent stagecraft. Never mention it, never describe the film, never tell the player a cinematic is playing.
+- This list is NOT a plan or a hint. Film exists for moments that may never come. Never bring on a creature, a visitor or an event because a cue is named for it — a cue named for an arrival does not mean anything is arriving.
 - Whether the player has already seen it is handled elsewhere. Emit the cue whenever the moment fits.
 === END CINEMATIC CUES ===`
       : ""
@@ -2027,6 +2051,10 @@ OPENINGS YOU HAVE ALREADY USED — PERMANENTLY RETIRED
 These are your own past opening lines, kept across campaign restarts. You may
 never reuse any of them, nor a close paraphrase. New session, new material —
 a lich has had ten thousand years to come up with fresh ways to be cruel.
+They are banned PHRASING and nothing more. Many are from earlier runs of this
+campaign that have been wiped: a creature, an event, a wound or a place named
+in one of them is NOT in the scene now unless the world state above says so.
+Never treat a retired line as something that happened.
 ${usedOpenings.map((o) => `- ${o}`).join("\n")}`
   : ""}
 
