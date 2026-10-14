@@ -232,6 +232,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 @keyframes rune{0%,70%,100%{opacity:.3}80%{opacity:1}}
 @keyframes wardcore{0%,100%{opacity:.45}50%{opacity:.95}}
 .ward.flicker .lines,.ward.flicker .glow{animation:none;opacity:.08}
+/* a magic user near the wall: the ward wakes — --near 0..1 drives the bloom and the lines up from their breathing */
+.ward.light{--near:0}
+.ward.light .bloom{opacity:calc(1 + var(--near)*2.2)}
+.ward.light .glow,.ward.light .lines{filter:brightness(calc(1 + var(--near)*1.6))}
+/* a spell cast inside the pen: the ward drinks it — one hard flash, then back to breathing */
+.ward.flare .glow,.ward.flare .lines,.ward.flare .core{animation:none;opacity:1;filter:brightness(2.6) drop-shadow(0 0 14px #c89cff)}
+.ward.flare .bloom{animation:none;opacity:4}
 .marks.still *{animation:none!important}
 .toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--ember);color:var(--ink);border-radius:6px;padding:8px 14px;line-height:1.4;text-align:center;pointer-events:none;animation:fadein .2s ease}
 .toast[hidden]{display:none}
@@ -566,7 +573,7 @@ function draw(){
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround();
   if (mode === "combat") drawFxLayer(true);
-  const list = actors.filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
+  const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
   for (const a of list){
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
     if (a.fall || a.fallIn) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
@@ -830,6 +837,43 @@ function buildMarks(slug){
 setInterval(() => { if (!motionOn) return; for (const m of MARKS[node.slug] || []){ if (!m.el || Math.random() > .35) continue;
   m.el.classList.add("flicker"); setTimeout(() => m.el.classList.remove("flicker"), 90 + Math.random() * 120); } }, 4000);
 const markAt = w => (MARKS[node.slug] || []).find(m => Math.hypot(w.x - m.x, (w.y - m.y) * 1.1) < m.r);
+// The ward feels a magic user coming (Sam, 2026-10-14, artifact comment: "should glow brighter when magic users
+// approach and may a hum when approached"). Nearness is the closest party caster's distance to the sigil,
+// 0 beyond WARD_FAR, 1 at WARD_NEAR; it drives the glow (CSS --near) and a low two-tone hum synthesised in
+// the page (nothing to upload), which rises with them and dies away as they step back.
+const WARD_FAR = 520, WARD_NEAR = 170;
+const wardHum = {osc: null, gain: null, level: 0};
+function wardNearness(){
+  let best = 0;
+  for (const m of MARKS[node.slug] || []){
+    if (!m.el) continue;
+    for (const pc of party){ if (!(SHEETS[pc.id] && SHEETS[pc.id].magic) || pc.alpha < .5) continue;
+      const d = Math.hypot(pc.x - m.x, (pc.y - m.y) * .8), k = Math.max(0, Math.min(1, (WARD_FAR - d) / (WARD_FAR - WARD_NEAR)));
+      if (k > best) best = k; }
+    m.el.style.setProperty("--near", best.toFixed(3));
+  }
+  return best;
+}
+function tickWard(dt){
+  const k = (mode === "explore" || mode === "combat" || mode === "dialog") ? wardNearness() : 0;
+  wardHum.level += (k - wardHum.level) * Math.min(1, dt * 2);
+  const want = wardHum.level > .02 && audioUnlocked && musicOn;
+  try {
+    if (want && !wardHum.osc){
+      const ctx = audioCtx(); if (ctx.state === "suspended") ctx.resume();
+      const g = ctx.createGain(); g.gain.value = 0; g.connect(ctx.destination);
+      const mk = (f, type, lvl) => { const o = ctx.createOscillator(), e = ctx.createGain(); o.type = type; o.frequency.value = f; e.gain.value = lvl; o.connect(e); e.connect(g); o.start(); return o; };
+      wardHum.osc = [mk(55, "sine", .5), mk(82.4, "triangle", .22), mk(110.3, "sine", .12)]; wardHum.gain = g;
+      const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = .35; lg.gain.value = 1.4; lfo.connect(lg); lg.connect(wardHum.osc[1].frequency); lfo.start(); wardHum.osc.push(lfo);
+    }
+    if (wardHum.gain) wardHum.gain.gain.setTargetAtTime(want ? .16 * wardHum.level * wardHum.level : 0, audioCtx().currentTime, .12);
+    if (!want && wardHum.osc && wardHum.level < .02){ const o = wardHum.osc, g = wardHum.gain; wardHum.osc = null; wardHum.gain = null; setTimeout(() => { o.forEach(x => { try { x.stop(); } catch (e) {} }); g.disconnect(); }, 600); }
+  } catch (e) {}
+}
+// A spell cast inside the pen: the wards drink it. The ward flares once and the spell is gone.
+function wardDrinks(){
+  for (const m of MARKS[node.slug] || []){ if (!m.el) continue; m.el.classList.add("flare"); setTimeout(() => m.el.classList.remove("flare"), 700); }
+}
 
 // ---------- music ----------
 const music = {explore: $("mExplore"), combat: $("mCombat")};
@@ -1596,8 +1640,9 @@ function openMenu(a, sub){
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? s.saves.wis)}`, c.action ? () => doSearch(a) : null);
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
     if (s.magic || s.innateSorcery) grp("magic");
-    if (s.magic){ const w = wardsHere(); add("Cast", w ? "the wards smother any spell cast in here" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, !w && (c.action || c.bonus) ? () => openMenu(a, "cast") : null, "primary");
-      if (w && !cbt.wardSaid){ cbt.wardSaid = true; log(`<em>${esc(w)}</em>`); } }
+    // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
+    // but notice it fizzles when attempted because the sigil soaks it up") — the lesson is learned by trying.
+    if (s.magic) add("Cast", `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, (c.action || c.bonus) ? () => openMenu(a, "cast") : null, "primary");
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
@@ -1740,6 +1785,25 @@ function castSpell(caster, tgt, name, done){
   // Sleep is the quiet one (Sam, 2026-10-13: "creates the sigil but doesn't need the flair"): the sigil
   // forms under the target and a lullaby plays; no rune ring, no bolt, no burst. A failed save gets sheep.
   const quiet = name === "Sleep";
+  // THE WARDS (story.json `wards`; the book's area 11: spells cast inside the pen are smothered). The cast
+  // starts as any other — the hands light, the wind-up sounds — and at release the sigil on the wall flares
+  // and drinks it: no bolt, no sigil under the target, nothing happens to anyone. The action and the slot are
+  // spent (the ward soaks the magic up); a cantrip costs only the action.
+  if (wardsHere()){
+    bank(`magic/${family}_windup`, .55);
+    const ring0 = spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
+    playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
+    caster.once && (caster.once.hit = () => {
+      ring0.then(e => { if (e) e.until = now; });
+      wardDrinks(); bank("magic/spell_fizzle", .9); spawnFx("pxSigilShatter", {at: caster, sq: 1.3, anchor: "mid"});
+      caster.flash = now + 220; caster.flashCol = "#c89cff";
+      log(`<b>${fname(caster)}</b> casts <b>${name}</b> — the sigil on the wall flares, and the spell is gone before it leaves the hands. <i>The wards drink it.</i>`);
+      toast("The ward on the wall flares. Nothing. The magic is drunk straight out of the air.", 3600);
+      if (APP) handOff(`${fname(caster)} tries to cast ${name} inside the pen; the drow ward sigil flares and the spell fizzles — the wards smother any spell cast in here.`);
+      setTimeout(() => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(caster, done); }, 900);
+    });
+    return;
+  }
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
   const ring = quiet ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
   const marks = [];
@@ -2228,6 +2292,36 @@ async function pollStage(){
     }
     stageSeen = {present, gone};
   } catch (e) {}
+}
+// ---------- vermin: rats and spiders that run about (Sam, 2026-10-14, artifact comment) ----------
+// Set dressing, not creatures: nothing in the game sees them, they take no part in a fight, and Malachar is
+// not told. A rat (the giant-rat sprite drawn small, scurrying on its one frame) or a small spider (the
+// giant-spider's walk sheet at a quarter size) crosses the floor from one spot to another every so often
+// and is gone at the far end. They keep clear of the party.
+let vermin = [], verminNext = 0;
+const VERMIN = [{id: "giant-rat", big: .6, speed: 1.6, scurry: true, w: 3}, {id: "giant-spider", big: .26, speed: .9, w: 1}];
+function randomWalkable(){
+  for (let i = 0; i < 60; i++){ const x = Math.random() * NAT_W, y = Math.random() * NAT_H; if (walkable(x, y) && !party.some(pc => Math.hypot(pc.x - x, pc.y - y) < 160)) return {x, y}; }
+  return null;
+}
+function spawnVermin(){
+  const pool = VERMIN.filter(v => SPR[v.id]); if (!pool.length) return;
+  let r = Math.random() * pool.reduce((t, v) => t + v.w, 0), kind = pool[0]; for (const v of pool){ r -= v.w; if (r <= 0){ kind = v; break; } }
+  const from = randomWalkable(); if (!from) return;
+  let to = null; for (let i = 0; i < 20 && !to; i++){ const q = randomWalkable(); if (q && Math.hypot(q.x - from.x, q.y - from.y) > 420) to = q; }
+  if (!to) return;
+  const a = mkActor(kind.id, from.x, from.y, "vermin", {alpha: 0, fadeIn: true, big: kind.big, v: kind});
+  a.path = findPath(a, to); if (!a.path.length) return;
+  vermin.push(a);
+}
+function tickVermin(dt){
+  if (!(mode === "explore" || mode === "dialog") || !motionOn || timeStopped){ return; }
+  if (now > verminNext){ verminNext = now + 12000 + Math.random() * 28000; if (vermin.length < 2) spawnVermin(); }
+  for (const v of vermin){
+    if (v.path.length){ step(v, dt, SPEED * v.v.speed); if (v.v.scurry) v.ky = Math.sin(now / 38) * 1.4; if (party.some(pc => Math.hypot(pc.x - v.x, pc.y - v.y) < 70)) v.path = []; }
+    else v.alpha = Math.max(0, v.alpha - dt * 2.5);
+  }
+  vermin = vermin.filter(v => v.path.length || v.alpha > 0);
 }
 // A cast member goes where Malachar's [NPC_MOVE: name | where] put them — the pen's story layer names the
 // spots ("gate"/"bars" is outside the bars, "landing" is Jorlan's post, "bridge", "tower"); a wording that names
@@ -2772,7 +2866,7 @@ function step(a, dt, speed){
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
 }
 function update(dt){
-  tickDoor(dt);
+  tickDoor(dt); tickWard(dt); tickVermin(dt);
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
