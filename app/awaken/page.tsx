@@ -25,6 +25,7 @@ import { CinematicOverlay } from "@/components/dashboard/cinematic-overlay"
 import { FortuneRoll } from "@/components/dashboard/fortune-roll"
 import { useLich } from "@/lib/hooks/use-lich"
 import { MusicToggle } from "@/components/music-toggle"
+import { fadeOutThemeAudio, useThemeAudio } from "@/components/theme-audio"
 
 /** Where the party wakes. Must match `environments.name` / `cinematic_clips.location` (the restart route's STARTING_LOCATION). */
 const OPENING_LOCATION = "Scene_1_Velkynvelve (slave pen)"
@@ -34,6 +35,9 @@ type Step = "seat" | "film" | "roll" | "words" | "go"
 
 export default function AwakenPage() {
   const router = useRouter()
+  // The theme carries on under the film (the film is muted by house rule) and the roll, and
+  // fades as the pen takes over — the map has music of its own.
+  useThemeAudio()
   const [seat, setSeat] = useState<{ id: string; token: string; name: string | null } | null>(null)
   const [step, setStep] = useState<Step>("seat")
   const [film, setFilm] = useState<string | null>(null)
@@ -88,7 +92,7 @@ export default function AwakenPage() {
     }
   }, [seat, sendMessage])
 
-  const goToPen = () => { setStep("go"); router.replace(PEN_ROUTE) }
+  const goToPen = () => { setStep("go"); fadeOutThemeAudio(); router.replace(PEN_ROUTE) }
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">

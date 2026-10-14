@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { MusicToggle } from "@/components/music-toggle"
+import { useThemeAudio } from "@/components/theme-audio"
 
 // The front door (Sam, 2026-10-14: "a cool dark screen that asks you who you are playing or if you
 // are creating a new character").
@@ -60,6 +61,7 @@ function Portrait({ c, size }: { c: RosterCharacter; size: "card" | "small" }) {
 
 export default function JoinPage() {
   const router = useRouter()
+  useThemeAudio()
   const [roster, setRoster] = useState<RosterCharacter[] | null>(null)
   const [pick, setPick] = useState<Pick | null>(null)
   const [code, setCode] = useState("")
