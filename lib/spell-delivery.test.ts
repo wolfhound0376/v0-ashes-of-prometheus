@@ -30,14 +30,33 @@ describe("cold delivery", () => {
     expect(spec?.motion).toBe("dart")
   })
 
-  it("leaves the area cold spells alone", () => {
-    for (const name of ["Cone of Cold", "Ice Storm", "Sleet Storm"]) {
-      expect(routeFor("cold", name)?.route).toBe("beam")
+  it("drops Ice Storm and Sleet Storm from above, carrying nothing across", () => {
+    // SRD 5.1: Ice Storm "pounds to the ground ... centered on a point within
+    // range"; Sleet Storm falls "in a 20-foot tall cylinder". Weather arrives
+    // overhead, so neither should stretch a beam to get there.
+    for (const name of ["Ice Storm", "Sleet Storm"]) {
+      const spec = routeFor("cold", name)
+      expect(spec?.route).toBe("sky")
+      expect(spec?.travel).toBeUndefined()
     }
   })
 
+  it("does not throw a shard at anything that is not Ice Knife", () => {
+    for (const name of ["Ray of Frost", "Cone of Cold", "Ice Storm", "Sleet Storm"]) {
+      expect(routeFor("cold", name)?.travel).not.toBe("frostShard")
+    }
+  })
+
+  it("KNOWN GAP: Cone of Cold still draws a beam", () => {
+    // SRD 5.1: "A blast of cold air erupts from your hands" in a 60-foot cone.
+    // That is neither a beam nor a thing that falls, and the kit has no cone
+    // route. This test records the gap so it is visible rather than forgotten
+    // -- change it when a cone route exists, do not delete it.
+    expect(routeFor("cold", "Cone of Cold")?.route).toBe("beam")
+  })
+
   it("gives every cold spell the inward gather and the heavy splinters", () => {
-    for (const name of ["Ray of Frost", "Ice Knife", "Cone of Cold"]) {
+    for (const name of ["Ray of Frost", "Ice Knife", "Cone of Cold", "Ice Storm"]) {
       const spec = routeFor("cold", name)
       expect(spec?.gather).toBe("frostGather")
       expect(spec?.burst?.rise).toBe(0.1)

@@ -243,10 +243,29 @@ const BY_SPELL: Record<string, DamageType> = {
  * type belongs on the type.
  */
 const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
-  // A shard of ice created and flung — the one cold spell that is an object
-  // in flight rather than a ray. `dart`: leaves slowly, arrives fastest, no
-  // arc, because ice is thrown flat and hard.
+  // Ice Knife is NOT in the SRD (Elemental Evil / Xanathar's), so there is no
+  // rules text to quote here. The spellbook row is the source: a ranged spell
+  // attack that also forces a Dexterity save — the attack is the thrown shard
+  // and the save is the burst it makes. `dart`: leaves slowly, arrives
+  // fastest, no arc, because ice is thrown flat and hard.
   "ice knife": { route: "ball", travel: "frostShard", speed: 17, motion: "dart" },
+
+  // SRD 5.1, Spells: "A hail of rock-hard ice pounds to the ground in a
+  // 20-foot radius, 40-foot high cylinder centered on a point within range."
+  // It falls on a place. It does not cross the room, so it carries no
+  // travelling sheet at all.
+  "ice storm": { route: "sky", travel: undefined },
+
+  // SRD 5.1, Spells: "freezing rain and sleet fall in a 20-foot tall cylinder
+  // with a 40-foot radius centered on a point you choose within range." Same
+  // shape of delivery as Ice Storm — weather arriving overhead.
+  "sleet storm": { route: "sky", travel: undefined },
+
+  // NOT handled here, deliberately: CONE OF COLD. SRD 5.1 has "A blast of
+  // cold air erupts from your hands" in a 60-foot cone — it originates at the
+  // caster and widens, which is neither a beam nor a thing that falls. The
+  // kit has no cone route, so it still draws the type's beam. That is a known
+  // gap, recorded rather than papered over with the nearest wrong route.
 }
 
 /**
