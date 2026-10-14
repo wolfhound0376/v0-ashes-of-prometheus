@@ -20,9 +20,10 @@ SPR = os.path.join(ROOT, "public", "sprites")
 P = ['kenta', 'samson', 'scott', 'freia']
 N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turvy', 'shuushar', 'stool', 'jorlan', 'drow-guard-male', 'drow-guard-female']
 F = ['quaggoth', 'giant-spider']
+V = ['giant-rat']  # vermin: set dressing, idle sheet only
 
 meta = {}
-for i in P + N + F:
+for i in P + N + F + V:
     sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump'] if i in F else [])
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep']
     if i == 'scott': sh.append('perform')
