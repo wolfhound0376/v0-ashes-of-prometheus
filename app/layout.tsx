@@ -5,6 +5,7 @@ import { SupabaseStatus } from '@/components/supabase-status'
 import { BuildWatch } from '@/components/build-watch'
 import ThemeAudio from '@/components/theme-audio'
 import { UiClickSound } from '@/components/ui-click-sound'
+import { StageProvider } from '@/components/stage/stage-provider'
 
 import './globals.css'
 
@@ -93,7 +94,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark bg-[#0a0908]">
       <body className={`${cinzel.variable} ${cinzelDecorative.variable} ${crimsonText.variable} ${unifraktur.variable} ${imFell.variable} font-sans antialiased`}>
-        {children}
+        {/* One stage, no page loads: every move between the table, the scene, the map, camp and the
+            board is a soft navigation drawn by this provider (lib/stage.ts has the grammar). */}
+        <StageProvider>{children}</StageProvider>
         <ThemeAudio />
         <UiClickSound />
 

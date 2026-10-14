@@ -16,6 +16,7 @@ import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { useSkillMarks } from "@/lib/hooks/use-skill-marks"
 import { DiceRoller } from "@/components/dashboard/dice-roller"
 import MapPanel from "@/components/map/map-panel"
+import { useStage } from "@/components/stage/stage-provider"
 import { DmNarration } from "./dm-narration"
 import { speakBlob } from "@/lib/speech-queue"
 import { unlockSpeechAudio } from "@/lib/speech-playback"
@@ -404,6 +405,7 @@ function PortraitCycler({ canCycle, nextName, onCycle, children }: { canCycle: b
 }
 
 export function V4Dashboard(props: V4DashboardProps) {
+  const stage = useStage()
   const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
   const [interactiveLogMinimized, setInteractiveLogMinimized] = useState(true)
@@ -935,7 +937,7 @@ export function V4Dashboard(props: V4DashboardProps) {
           </div>
         </div>
       </div>
-      <div className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
+      <div data-stage-window className="relative mx-3 mt-3 min-h-[205px] flex-1 overflow-hidden rounded border border-[#4b3a19] bg-black">
         <img src={sceneImage} alt="Current scene" style={talkPlate ? { objectPosition: "51% 64%" } : undefined} className={cn("h-full w-full object-cover transition-all duration-500", stageMode === "tactical" && "brightness-[.38] saturate-[.65]")} />
         <div className="absolute left-3 top-3 z-20 flex gap-1 rounded border border-[#6b5123] bg-[#080705]/85 p-1 text-[8px] uppercase tracking-wider">
           <button onClick={() => setStageMode("scene")} className={cn("flex items-center gap-1 rounded px-2 py-1", stageMode === "scene" ? "bg-[#8b6427] text-white" : "text-[#b7a47d]")}><Compass className="h-3 w-3" />Character View</button>
@@ -956,6 +958,7 @@ export function V4Dashboard(props: V4DashboardProps) {
               whole viewport. */}
   {props.dmMode ? <a
   href="/battle"
+  onClick={(e) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); void stage.go("/battle", { caption: inCombat ? "Steel is already out. Try to keep up." : "The board, then. Mind where you stand." }) }}
   className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1.5 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] hover:text-[#fff3cf]"
   >
   <Map className="h-3 w-3" />Open Battle Board{inCombat ? " · Live" : ""} ↗

@@ -15,20 +15,20 @@
 //
 // The old top-down Phaser map (components/velkynvelve/*) is no longer routed. It is left in place.
 
-import Link from "next/link"
+import { StageLink } from "@/components/stage/stage-provider"
 import { ArrowLeft } from "lucide-react"
 
 export default function VelkynvelvePage() {
   return (
     <main className="flex h-dvh flex-col bg-[#07060b] text-stone-200">
       <header className="flex items-center gap-3 border-b border-amber-900/40 px-4 py-2">
-        <Link
+        <StageLink
           href="/?from=map"
           className="inline-flex items-center gap-1.5 font-serif text-xs uppercase tracking-[0.18em] text-amber-300/90 hover:text-amber-200"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
           Dashboard
-        </Link>
+        </StageLink>
         <span className="font-serif text-xs uppercase tracking-[0.22em] text-stone-400">Velkynvelve</span>
       </header>
       <iframe
