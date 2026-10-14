@@ -21,6 +21,20 @@ import { createClient } from "@/lib/supabase/client"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/vessels"
 import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, legPreview, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
+import { STINGER_GAIN, stingerUrl, type StingerCue } from "@/lib/travel/stingers"
+import { speakBlob } from "@/lib/speech-queue"
+
+/**
+ * The arrival cue (lib/travel/stingers.ts). A missing file is silence: the
+ * cues go in only after Sam approves each take, and the march must not care.
+ */
+function playStinger(cue: StingerCue, delayMs = 0) {
+  if (typeof Audio === "undefined") return
+  const a = new Audio(stingerUrl(cue))
+  a.volume = STINGER_GAIN[cue]
+  a.addEventListener("error", () => {})
+  setTimeout(() => void a.play().catch(() => {}), delayMs)
+}
 
 const MAP_W = 1672
 const MAP_H = 941
@@ -140,6 +154,9 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   const forcingRef = useRef(false)
   // The hover card: price a leg before anyone clicks.
   const [hoverNode, setHoverNode] = useState<NodeRow | null>(null)
+  // The arrival beat: the passive-roll chip and Malachar's line, shown a while.
+  const [beat, setBeat] = useState<{ chip: string | null; noticed: boolean | null; line: string | null } | null>(null)
+  const beatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -608,6 +625,22 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
         }
         lastNodeKey.current = n.node_key
         if (out?.day) setMarch((m) => ({ ...m, ...out.day }))
+        // THE ARRIVAL BEAT (Sam, 2026-10-14): the cue for the kind of node,
+        // then the passive roll's sound either way, the chip, and Malachar's
+        // line only when something happened (it is also in `dialogue`, so
+        // every browser reads it; this one hears it at once).
+        if (out?.stinger) playStinger(out.stinger as StingerCue)
+        if (out?.notice) playStinger(out.notice.noticed ? "noticed" : "missed", 900)
+        if (out?.notice || out?.line) {
+          setBeat({ chip: out.notice?.chip ?? null, noticed: out.notice?.noticed ?? null, line: out.line ?? null })
+          if (beatTimer.current) clearTimeout(beatTimer.current)
+          beatTimer.current = setTimeout(() => setBeat(null), out.line ? 14000 : 6000)
+        }
+        if (typeof out?.line === "string" && out.line) {
+          void fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: out.line, voice: "onyx" }) })
+            .then(async (r) => { if (r.ok) speakBlob("dm", await r.blob(), { speaker: "Malachar" }) })
+            .catch(() => {})
+        }
         if (out?.halt) {
           setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source })
           walkingRef.current = false
@@ -1020,6 +1053,24 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
         {arrivedAt && !confirmNode && !halt && (
           <div className="absolute left-1/2 -translate-x-1/2 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-4 py-2 text-xs text-[#f5c34d] tracking-widest">
             ARRIVED: {(arrivedAt.name ?? "???").toUpperCase()}
+          </div>
+        )}
+
+        {/* The arrival beat: the passive roll's chip, and Malachar's line when
+            something happened. */}
+        {beat && !confirmNode && (
+          <div className="pointer-events-none absolute left-1/2 top-14 w-full max-w-[60ch] -translate-x-1/2 px-3">
+            {beat.chip && (
+              <div className={`mx-auto w-fit rounded-full border px-3 py-1 text-[11px] tracking-wide ${beat.noticed ? "border-[#f5c34d] bg-[#2a1f10ee] text-[#f5c34d]" : "border-[#3a2c56] bg-[#171024ee] text-[#9a8fb0]"}`}>
+                👁 {beat.chip}
+              </div>
+            )}
+            {beat.line && (
+              <div className="mt-2 rounded border border-[#5c2b7a] bg-[#1a1024ee] px-4 py-2 text-center font-serif text-[14px] italic leading-snug text-[#e4d8bf]">
+                <span className="mr-2 not-italic text-[10px] tracking-[.2em] text-[#b44df5]">MALACHAR</span>
+                {beat.line}
+              </div>
+            )}
           </div>
         )}
 
