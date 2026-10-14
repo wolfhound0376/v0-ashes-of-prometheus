@@ -2701,7 +2701,12 @@ function step(a, dt, speed){
   if (a.path[0].s != null) a.big = (a.big || 1) + (a.path[0].s - (a.big || 1)) * Math.min(1, dt * 2.5);
   const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), sp = speed * node.scale * depthAt(a.y) * dt;
   if (p.out) a.alpha = Math.min(a.alpha, Math.max(0, (d - 4) / 70));   // walking into a doorway: gone by the threshold
-  if (d <= sp){ a.x = p.x; a.y = p.y; a.path.shift(); if (p.out) a.alpha = 0;
+  // Blocked by a body in the way (the press of a fight, a bystander): if the distance left has not shrunk
+  // for a third of a second, this is as far as the walk goes — stop here and count it as arrived, so a
+  // turn never hangs on a walker treading in place (Sam, 2026-10-14).
+  if (!a.prog || a.prog.p !== p || d < a.prog.d - .5){ a.prog = {p, d, t: now}; }
+  else if (now - a.prog.t > 350 && !p.jump){ a.prog = null; a.path = []; setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); return; }
+  if (d <= sp){ a.x = p.x; a.y = p.y; a.path.shift(); a.prog = null; if (p.out) a.alpha = 0;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); } }
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
 }
@@ -2764,9 +2769,11 @@ function update(dt){
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
       const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
       const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale;
-      if (d > 0 && d < min){ const push = Math.min(4, (min - d) / 2), ux = dx / d, uy = dy / d;
-        if (!b.once && walkable(b.x + ux * push, b.y + uy * push)){ b.x += ux * push; b.y += uy * push; }
-        if (!a.once && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
+      // Sam, 2026-10-14: a character that walked into someone kept walking against the push and stalled.
+      // The one who is walking holds its line; only a standing body gives way (and never a leaping one).
+      if (d > 0 && d < min){ const push = Math.min(4, (min - d) / 2), ux = dx / d, uy = dy / d, aw = a.path.length > 0 || a.leap, bw = b.path.length > 0 || b.leap;
+        if (!b.once && !bw && walkable(b.x + ux * push, b.y + uy * push)){ b.x += ux * push; b.y += uy * push; }
+        if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
     }
   }
   if (mode === "combat" && !combatBusy) keyboardMove(activeActor(), dt);
