@@ -765,6 +765,14 @@ export async function POST(req: NextRequest) {
         ? Object.entries(forced.exhaustion).map(([id, levels]) => ({ name: forced!.saves.find((s) => s.characterId === id)?.name ?? "?", levels }))
         : [],
     }
+    // CHECK CUES (lib/check-cue.ts; Sam, 2026-10-14): the checks that resolved here name
+    // their filmed moments. The browser asks /api/cinematics whether film exists; the
+    // server there owns once-per-character and solo-vs-party. No film is the ordinary case.
+    const cues: { state: string; scope: "solo" | "party" }[] = []
+    if (notice?.noticed && (notice.text || revealedName)) cues.push({ state: "notice-success", scope: "party" })
+    if (navigation?.lost) cues.push({ state: "navigation-fail", scope: "party" })
+    if (forced && Object.keys(forced.exhaustion).length > 0) cues.push({ state: "forced-march-fail", scope: "party" })
+
     let line: string | null = null
     if (worthAWord(facts)) {
       const { data: dials } = await db.from("lich_personality").select("snark, cruelty, crassness, swearing, fourth_wall, roast_target").limit(1).maybeSingle()
@@ -778,6 +786,7 @@ export async function POST(req: NextRequest) {
       node_key: node.node_key,
       arrival_id: arrivalId,
       stinger,
+      cues,
       notice: notice ? { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, best: notice.best, text: notice.text, revealed: revealedName, source: notice.source } : null,
       line,
       ...outcome,

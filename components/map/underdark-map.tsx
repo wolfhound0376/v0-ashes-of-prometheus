@@ -23,6 +23,7 @@ import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/ve
 import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, legPreview, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
 import { STINGER_GAIN, stingerUrl, type StingerCue } from "@/lib/travel/stingers"
 import { speakBlob } from "@/lib/speech-queue"
+import { emitCheckCue } from "@/lib/check-cue"
 
 /**
  * The arrival cue (lib/travel/stingers.ts). A missing file is silence: the
@@ -635,6 +636,13 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           setBeat({ chip: out.notice?.chip ?? null, noticed: out.notice?.noticed ?? null, line: out.line ?? null })
           if (beatTimer.current) clearTimeout(beatTimer.current)
           beatTimer.current = setTimeout(() => setBeat(null), out.line ? 14000 : 6000)
+        }
+        // Checks that earned film (lib/check-cue.ts). The stage rolls it if there is any;
+        // Malachar's line rides along as the caption.
+        if (Array.isArray(out?.cues)) {
+          for (const c of out.cues as { state: string; scope: "solo" | "party" }[]) {
+            emitCheckCue({ state: c.state, scope: c.scope, location: n.name ?? n.node_key, caption: out.line ?? undefined })
+          }
         }
         if (typeof out?.line === "string" && out.line) {
           void fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: out.line, voice: "onyx" }) })
