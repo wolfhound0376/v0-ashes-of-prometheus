@@ -46,6 +46,7 @@ STATE_PATTERNS = [
     ("fly", r"^fly$|fly|flap|hover|soar|glide"),
     ("burrow", r"^burrow$|burrow|dig"),
     ("emerge", r"^emerge$|emerge|surface"),
+    ("jump", r"^jump$|jump|leap|pounce"),
 ]
 
 # How each state plays. fps is the pixel artist's rate, not the screen's;
@@ -62,6 +63,7 @@ PLAYBACK = {
     "fly": {"fps": 10, "loop": True},
     "burrow": {"fps": 10, "loop": False},
     "emerge": {"fps": 10, "loop": False},
+    "jump": {"fps": 12, "loop": False},
 }
 
 
