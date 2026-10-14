@@ -858,11 +858,26 @@ function setMotion(on){ motionOn = on; fxEl.hidden = !on; $("marks").classList.t
 $("motionBtn").onclick = () => setMotion(!motionOn);
 
 // ---------- party roster ----------
+// The figure's own box in its first idle frame (south), measured once per sprite. Used so a portrait shows the
+// WHOLE character (Sam, 2026-10-14: "not a truncated version") — the old scale let big folk like Derendil
+// overflow the frame and lose their head.
+const figBox = {};
+function figureBox(id){
+  if (figBox[id]) return figBox[id];
+  const m = SPR[id].json, img = SPR[id].img.idle, [cw, ch] = m.cell;
+  const t = document.createElement("canvas"); t.width = cw; t.height = ch;
+  const tc = t.getContext("2d", {willReadFrequently: true}); tc.drawImage(img, 0, 0, cw, ch, 0, 0, cw, ch);
+  const d = tc.getImageData(0, 0, cw, ch).data; let x0 = cw, y0 = ch, x1 = -1, y1 = -1;
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 16){ if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return figBox[id] = x1 < 0 ? {x: 0, y: 0, w: cw, h: ch} : {x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1};
+}
 function portrait(id, canvas, size){
-  const m = SPR[id].json, img = SPR[id].img.idle, [cw, ch] = m.cell, c = canvas.getContext("2d");
+  const img = SPR[id].img.idle, c = canvas.getContext("2d"), b = figureBox(id);
   canvas.width = size; canvas.height = size; c.imageSmoothingEnabled = false; c.clearRect(0, 0, size, size);
-  const k = Math.min(1.9, 96 / m.ppu * 1.25) * size / cw;      // larger folk fill more of the frame
-  const w = cw * k, h = ch * k; c.drawImage(img, 0, 0, cw, ch, (size - w) / 2, size - h * .98 + (size * .02), w, h);
+  // fit the whole figure, feet at the bottom, a little air above the head; whole pixels so it stays crisp
+  const pad = Math.round(size * .06), fit = Math.min((size - pad * 2) / b.w, (size - pad * 2) / b.h), k = fit >= 1 ? Math.floor(fit) : fit;
+  const w = b.w * k, h = b.h * k;
+  c.drawImage(img, b.x, b.y, b.w, b.h, Math.round((size - w) / 2), size - pad - h, w, h);
 }
 function renderParty(){
   const el = $("party"); el.querySelectorAll(".pc").forEach(n => n.remove());
