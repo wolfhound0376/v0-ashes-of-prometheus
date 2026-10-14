@@ -859,6 +859,92 @@ def sigilshatter(f, n):
 
 
 
+
+# ── frost: the gather at the hand, and the shard that leaves it ──────────────
+
+FROST = hexes("#19354f", "#2f6a9b", "#7cc0e6", "#cfeeff", "#ffffff")
+
+
+def frostgather(f, n):
+    """Vapour pulled INWARD to the casting hand, crystallising into a shard in
+    three hard steps.
+
+    Cold takes heat rather than giving it, so the motion is inward where every
+    other school's charge streams outward. It is the one piece of anticipation
+    no other type can borrow, and it tells the table a cold spell is coming
+    before the shard exists.
+
+    The shard snaps in rather than fading: ice forms in jumps, and a smooth
+    fade-in reads as a glow instead."""
+    cell = Cell(48, 48)
+    cx = cy = 24.0
+    p = f / max(1, n - 1)                       # 0 on the first frame, 1 on the last
+    for k in range(16):
+        ang = _hash(k, 0, 61) * 2 * math.pi + p * 1.3
+        r = (9 + _hash(k, 1, 61) * 12) * (1 - p) + 3.5
+        x = cx + math.cos(ang) * r
+        y = cy + math.sin(ang) * r * 0.62       # the board's foreshortening
+        cell.put(x, y, FROST[3 if p > 0.5 else 2])
+        if _hash(k, 2, 61) > 0.55:
+            cell.put(x + 1, y, FROST[1])
+    # Three hard steps, never a ramp.
+    step = 0.0 if p < 0.45 else 0.55 if p < 0.68 else 0.82 if p < 0.88 else 1.0
+    if step:
+        L, W = 9.5 * step, 3.2 * step
+        for dx in range(-int(L) - 1, int(L) + 2):
+            for dy in range(-int(W) - 1, int(W) + 2):
+                e = abs(dx) / L + abs(dy) / W
+                if e <= 1:
+                    cell.put(cx + dx, cy + dy,
+                             FROST[4] if e < 0.45 else FROST[3] if e < 0.8 else FROST[1])
+    return cell
+
+
+def frostshard(f, n):
+    """The shard in flight. Head at +X like every other projectile here, so the
+    kit can point it along its own travel.
+
+    Faceted, not round: a lit spine, a pale upper face, a shadowed lower one
+    and a hard dark edge. That separation is what reads as ice — a radially
+    even glow reads as any other bolt tinted blue, which is what the beam it
+    replaces always looked like."""
+    cell = Cell(48, 48)
+    cy = 24.0
+    tip, tail = 44, 10
+    ph = f / n
+    for x in range(tail, tip + 1):
+        t = (x - tail) / (tip - tail)
+        # Widest a third back from the tip, so it has a point and a shoulder.
+        half = 5.6 * max(0.0, 1 - abs(t - 0.62) / 0.62) ** 0.8
+        if half < 0.5:
+            continue
+        for dy in range(-int(half) - 1, int(half) + 2):
+            a = abs(dy) / half
+            if a > 1:
+                continue
+            if a > 0.82:
+                ci = 1                      # the hard edge
+            elif abs(dy) <= 1:
+                ci = 4                      # the lit spine
+            elif dy < 0:
+                ci = 3                      # upper face, catching light
+            else:
+                ci = 2                      # lower face, in shadow
+            cell.put(x, int(cy + dy), FROST[ci])
+    # A glint running the length of the spine, one frame to the next.
+    gx = int(tail + ((ph * 1.4) % 1.0) * (tip - tail))
+    cell.put(gx, int(cy), FROST[4])
+    cell.put(gx + 1, int(cy) - 1, FROST[4])
+    # Vapour shed behind it, drifting back and apart.
+    for k in range(6):
+        s = _hash(k, f, 63)
+        vx = tail - 1 - int(s * 9)
+        vy = int(cy + (_hash(k, f, 64) * 2 - 1) * 5)
+        if vx > 0:
+            cell.put(vx, vy, FROST[2 if k % 2 else 1])
+    return cell
+
+
 SHEETS = [
     # name, draw, frames, cols, fps, loop
     ("pxFireball", fireball,  8, 4, 12, True),
@@ -878,6 +964,8 @@ SHEETS = [
     ("pxArc",      arc,       6, 6, 12, True),
     ("pxWebWrap",  webwrap,   1, 1, 1,  False),
     ("pxWebFloor", webfloor,  1, 1, 1,  False),
+    ("frostGather", frostgather, 8, 4, 11, False),
+    ("frostShard",  frostshard,  6, 6, 14, True),
 ]
 
 

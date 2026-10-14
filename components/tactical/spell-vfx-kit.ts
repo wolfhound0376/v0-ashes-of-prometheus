@@ -56,6 +56,13 @@ interface BurstSpec {
   ring: boolean
   /** How far the sparks fly, 1 = a cantrip's worth. */
   power?: number
+  /**
+   * How much the debris is thrown UPWARD before gravity takes it. Default
+   * 0.7, which is what every type had. Ice is the reason this exists: a
+   * splinter is heavy and should drop almost at once, where an ember rises
+   * first. Fire and frost now differ in weight, not only in colour.
+   */
+  rise?: number
 }
 
 /**
@@ -82,6 +89,17 @@ interface TypeSpec {
    * would put a glowing circle under every dagger in the game.
    */
   rune?: string
+  /**
+   * Sheet played at the hand through the charge, once, for a type whose
+   * windup is worth seeing on its own.
+   *
+   * The rune says WHICH school is casting. This says what the spell is doing
+   * to the room while it winds up, and so far only cold has an answer worth
+   * drawing: it pulls vapour inward and freezes it into the thing it is about
+   * to throw. Every other type streams outward, which the rune already
+   * covers.
+   */
+  gather?: string
   route: Route
   /** Sheet that travels (ball) or stretches (beam). */
   travel?: string
@@ -150,7 +168,19 @@ interface TypeSpec {
 // Fireball is lobbed, a Magic Missile weaves, a psychic bolt corkscrews.
 const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   fire:     { rune: "runeFire",     route: "ball",        travel: "pxFireball",    impact: "fireImpact",     impactScale: 4.6, charge: 0.80, speed: 13, motion: "lob",   tint: 0xffffff, decal: "aoeFire",  burst: { tint: 0xffa030, sparks: 28, ring: true, power: 1.4 } },
-  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
+  // COLD stays a BEAM, because most cold spells are one: Ray of Frost is a
+  // frigid beam of blue-white light, and Cone of Cold, Ice Storm and Sleet
+  // Storm are areas. Ice Knife is the thrown one, and it is thrown by NAME in
+  // DELIVERY_BY_SPELL below — not by damage type, which would have made every
+  // Ray of Frost a flying dagger.
+  //
+  // What the type DOES gain is true of all cold:
+  //   `gather`   — vapour pulled inward and condensed at the hand. Cold takes
+  //                heat rather than giving it, so the anticipation runs the
+  //                opposite way to every other school's.
+  //   `rise: 0.1` — splinters drop almost at once where embers rise first.
+  //                Fire and frost now differ in weight, not only in colour.
+  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, gather: "frostGather", tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true, rise: 0.1 }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff, burst: { tint: 0x9c6bff, sparks: 12, ring: false } },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff, burst: { tint: 0xc678ff, sparks: 18, ring: true } },
   poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
@@ -192,6 +222,31 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
  */
 const BY_SPELL: Record<string, DamageType> = {
   "fog cloud": "fog",
+}
+
+/**
+ * Spells whose DELIVERY differs from their damage type's default.
+ *
+ * `routeFor` below already makes this argument for radiant, and reads the
+ * spellbook to settle it: a spell resolved by an attack roll is a thrown
+ * thing. That works because Sacred Flame is a save and Guiding Bolt is an
+ * attack.
+ *
+ * COLD is the case the spellbook cannot settle. Ray of Frost and Ice Knife
+ * are BOTH ranged spell attacks — `attack_roll: true, attack_type: "ranged"`
+ * on both rows — and one is a beam of blue-white light while the other is a
+ * shard you physically throw. No field in the book separates them, so the
+ * difference has to be stated here, once, by name.
+ *
+ * Keep this table for genuine delivery mismatches only. It is not a place to
+ * restyle a spell someone dislikes: anything that is true of the whole damage
+ * type belongs on the type.
+ */
+const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
+  // A shard of ice created and flung — the one cold spell that is an object
+  // in flight rather than a ray. `dart`: leaves slowly, arrives fastest, no
+  // arc, because ice is thrown flat and hard.
+  "ice knife": { route: "ball", travel: "frostShard", speed: 17, motion: "dart" },
 }
 
 /**
@@ -255,9 +310,13 @@ export function kitSplashFor(
  * The spellbook already records the difference in `resolve`, so read it: a
  * spell resolved by an attack roll is a thrown thing, whatever it is made of.
  */
-function routeFor(type: DamageType, spellName?: string): TypeSpec | undefined {
+export function routeFor(type: DamageType, spellName?: string): TypeSpec | undefined {
   const spec = TYPES[type]
   if (!spec || !spellName) return spec
+  // A stated delivery wins over everything below, including the attack-roll
+  // promotion — it is the more specific fact.
+  const stated = DELIVERY_BY_SPELL[spellName.trim().toLowerCase()]
+  if (stated) return { ...spec, ...stated }
   const entry = spellEntry(spellName)
   if (entry?.resolve !== "attack") return spec
   if (spec.route === "ball" || spec.route === "beam") return spec // already thrown
@@ -408,6 +467,7 @@ export function prewarmKit(type: DamageType, move?: string | null): void {
   if (!spec) return
   const runeKey = schoolRuneFor(move) ?? spec.rune
   if (runeKey) void loadSheet(runeKey).catch(() => {})
+  if (spec.gather) void loadSheet(spec.gather).catch(() => {})
   if (spec.travel) void loadSheet(spec.travel).catch(() => {})
   const impactKey = martialImpactFor(move) ?? spec.impact
   if (impactKey) void loadSheet(impactKey).catch(() => {})
@@ -696,6 +756,7 @@ export function castSpellKitVfx(opts: {
   parent.add(group)
 
   let disc: Flip | null = null
+  let gather: Flip | null = null
   let ring2: RuneRing | null = null
   let travel: Flip | null = null
   let impact: Flip | null = null
@@ -792,6 +853,17 @@ export function castSpellKitVfx(opts: {
           disc = new Flip(s, runeTint, 1.1, 1.1)
           group.add(disc.mesh)
         }
+      }).catch(() => {})
+    }
+
+    // The windup's own sheet, at the hand, alongside whichever rune the branch
+    // above chose. It does not replace the rune — the school still has to read
+    // — it says what the spell is doing while it winds up.
+    if (spec.gather) {
+      void loadSheet(spec.gather).then((s) => {
+        if (disposed || castGone) return
+        gather = new Flip(s, spec.tint, 1.0, 1.0)
+        group.add(gather.mesh)
       }).catch(() => {})
     }
 
@@ -921,12 +993,12 @@ export function castSpellKitVfx(opts: {
   const disposeCast = () => {
     if (castGone) return
     castGone = true
-    for (const f of [disc, travel, impact, flash, ring, swirl, ...ghosts, ...flourishQuads]) {
+    for (const f of [disc, gather, travel, impact, flash, ring, swirl, ...ghosts, ...flourishQuads]) {
       if (!f) continue
       group.remove(f.mesh)
       f.dispose()
     }
-    disc = travel = impact = flash = ring = swirl = null
+    disc = gather = travel = impact = flash = ring = swirl = null
     if (ring2) { ring2.dispose(); ring2 = null }
     ghosts.length = 0
     flourishQuads.length = 0
@@ -1041,6 +1113,24 @@ export function castSpellKitVfx(opts: {
         }
       }
 
+      // ── 1c. the windup gathers at the hand ─────────────────────────────
+      if (gather) {
+        if (t <= charge) {
+          gather.mesh.position.copy(hand)
+          billboard(gather.mesh)
+          // Played ONCE across the charge rather than looped: the whole point
+          // is that it ends somewhere, on the frame the spell leaves.
+          gather.setProgress(Math.min(1, t / charge))
+          gather.opacity = t < charge * 0.12 ? t / (charge * 0.12) : 1
+          gather.mesh.scale.setScalar(1)
+        } else {
+          // Gone within a few frames of the launch — what it gathered is now
+          // the thing in flight, so it has nothing left to be.
+          const f = Math.max(0, 1 - (t - charge) / 0.14)
+          gather.opacity = f
+        }
+      }
+
       // ── 2. delivery ────────────────────────────────────────────────────
       if (t >= charge && travel) {
         const ft = t - charge
@@ -1116,7 +1206,7 @@ export function castSpellKitVfx(opts: {
             ? lastVel
             : spec.route === "sky" ? new THREE.Vector3(0, -1, 0) : null
           const power = (spec.burst?.power ?? 1) * Math.sqrt(areaScale)
-          sparks?.fire(dest, incoming, power, seed)
+          sparks?.fire(dest, incoming, power, seed, spec.burst?.rise ?? 0.7)
         }
         if (impact && impact.mesh.position.lengthSq() === 0) {
           impact.mesh.position.copy(dest)

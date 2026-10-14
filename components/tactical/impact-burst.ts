@@ -80,14 +80,19 @@ export class ImpactBurst {
    * bouncing back the way it came and up, the way debris does. `power`
    * scales speed and size — an area spell throws further than a cantrip.
    */
-  fire(at: THREE.Vector3, incoming: THREE.Vector3 | null, power = 1, seed = 1): void {
+  fire(at: THREE.Vector3, incoming: THREE.Vector3 | null, power = 1, seed = 1, rise = 0.7): void {
     const r = rng(seed)
     const back = incoming ? incoming.clone().normalize().multiplyScalar(-0.55) : new THREE.Vector3()
     for (let i = 0; i < this.n; i++) {
       // A random direction, nudged back along the flight and upward.
+      //
+      // `rise` is how much of that upward nudge the debris gets. Embers off a
+      // fire go up before they fall; ice splinters barely rise at all, and
+      // that difference is most of what separates the two impacts without
+      // changing a single colour.
       const dx = r() * 2 - 1, dy = r() * 2 - 1, dz = r() * 2 - 1
       const len = Math.hypot(dx, dy, dz) || 1
-      let vx = dx / len + back.x, vy = dy / len + back.y + 0.7, vz = dz / len + back.z
+      let vx = dx / len + back.x, vy = dy / len + back.y + rise, vz = dz / len + back.z
       const vlen = Math.hypot(vx, vy, vz) || 1
       const speed = (1.8 + 4.2 * r()) * power
       vx = (vx / vlen) * speed; vy = (vy / vlen) * speed; vz = (vz / vlen) * speed
