@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ROWS = 8  # lib/sprite-token.ts SPRITE_DIRECTIONS
 SEATED_OF_STANDING = 0.66
 PLAYBACK = {"sit": {"fps": 4, "loop": True}, "eat": {"fps": 6, "loop": True}, "sleep": {"fps": 3, "loop": True},
-            # A bard playing at the fire (Sam, 2026-09-28): the instrument is in the art.
+            # A bard at the fire (Sam, 2026-09-28). Since 2026-10-14 the pose is singing, not playing: "the bard can sing and whistle but shouldn't be playing his lute because I don't think he has one" — the drow took everything, and lib/bard-songs.ts already keeps the recordings unaccompanied for the same reason.
             "perform": {"fps": 8, "loop": True}}
 
 
