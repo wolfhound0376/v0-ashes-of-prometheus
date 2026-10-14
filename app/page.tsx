@@ -117,6 +117,20 @@ function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): Dial
 // turn can produce (the route caps a turn well under this), fewer than a scene.
 const TURN_TAIL = 12
 
+// What Malachar is handed after a restart: the opening of the campaign, as the
+// book has it (Out of the Abyss, chapter 1 — the same passage Layer 1 retrieves
+// for the pen). FACTS ONLY. Everything here is from the book; the prose, the
+// cruelty and the pacing are his. Nothing from the previous run is mentioned
+// because nothing from it happened.
+function openingDirection(runNumber: number | null): string {
+  const run = runNumber ? ` This is run ${runNumber}.` : ""
+  return [
+    `THE CAMPAIGN IS STARTING FROM THE BEGINNING.${run} Nothing has happened yet: no earlier scene, no creature, no conversation and no escape exists. Do not refer to anything from before this moment.`,
+    `Open the game. The party has been captured by the drow and is locked in a dark cave in the slave pen of Velkynvelve, an underground outpost far from the light of the sun: stripped of everything but their underclothing, the cold heavy weight of metal tight around throat and wrists, wards cut into the walls that smother any spell cast inside. Each of them has been a prisoner here for 1d10 days (roll separately for each character and say how many), locked in the pen and brought out occasionally under heavy guard for menial chores for their captors' amusement. They are not alone — other prisoners are trapped in here with them. The gate is bolted iron. Their captor is a cruel drow priestess who calls herself Mistress Ilvara of House Mizzrym, robed in silk, scourge in hand, flanked by two male drow, one with a mass of scars down one side of his face and neck; she has reminded them their lives belong to her now: "Accept your fate, learn to obey, and you may survive."`,
+    `Set the scene for the whole party, in your own voice, then stop and give them the first move. Narration only — no rolls, no damage, no items and no cinematic cue unless one on your list fits this opening.`,
+  ].join("\n")
+}
+
 // Stable unique id for optimistic / client-only entries.
 const tempId = () =>
   `optimistic-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random()}`
@@ -572,6 +586,29 @@ export default function DashboardPage() {
       if (env) setCurrentEnvironment(env)
 
       setShowRestartDialog(false)
+
+      // A NEW GAME, not just an empty one (Sam, 2026-10-14: "we need a better way
+      // to restart the game"). Two things happen once the wipe has succeeded:
+      //
+      //   1. Every browser at the table is brought back to the table. The shared
+      //      stage record (/api/stage, PR #724) is what the map and camp pages
+      //      follow; writing "table" to it pulls them home. Best-effort: with the
+      //      sessions.stage migration not yet applied it answers {synced:false}
+      //      and nothing else is lost.
+      //   2. Malachar opens the campaign. The opening is a STAGE DIRECTION, not a
+      //      player line — nobody spoke — and it carries only what the book says
+      //      about the first scene (Out of the Abyss, chapter 1), so nothing is
+      //      invented and the ooze, the pen door and everything else from the old
+      //      run has no way back in. The run number comes from the restart
+      //      report so he can be told this is a fresh start.
+      const runNo = typeof body.report?.run?.number === "number" ? body.report.run.number : null
+      fetch("/api/stage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "table", by: "dm", at: new Date().toISOString(), caption: "A new game begins." }),
+      }).catch(() => {})
+      void sendToLich(openingDirection(runNo), null, null, { director: true })
+        .catch((e) => console.error("[restart] opening narration failed:", e))
     } catch (err) {
       console.error('Error restarting campaign:', err)
       window.alert("The restart failed to reach the server. Nothing was changed.")
