@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { readStage } from "@/lib/stage-roster"
+import { readSeated } from "@/lib/seats"
 
 // /api/map-stage — who is in the area with the party, as Malachar has narrated it (lib/stage-roster.ts).
 //
@@ -15,14 +16,19 @@ import { readStage } from "@/lib/stage-roster"
 // new run (/api/restart-campaign step 2c); the map remembers the number it first saw and reloads
 // itself when it changes, so an open gate, a walked-in creature and a party halfway across the plate
 // do not survive a world that was reset under them. Null when the runs cannot be read.
+//
+// `seated` is who has sat down this run (lib/seats.ts): the map draws THOSE as the party, and only
+// them (Sam, 2026-10-14: "only the character selected will populate"). Empty until someone comes
+// through the door, in which case the map falls back to the whole party so a DM screen is not empty.
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
     const admin = createAdminClient()
-    const [stage, runRes] = await Promise.all([
+    const [stage, seated, runRes] = await Promise.all([
       readStage(admin),
+      readSeated(admin),
       admin.from("campaign_runs").select("run_number").eq("campaign_id", "abyss").neq("status", "ended")
         .order("run_number", { ascending: false }).limit(1).maybeSingle(),
     ])
@@ -32,8 +38,9 @@ export async function GET() {
       present: Object.values(stage.present),
       gone: Object.values(stage.gone),
       run: runRes.data?.run_number ?? null,
+      seated: seated.map((s) => ({ id: s.id, name: s.name })),
     })
   } catch (e) {
-    return NextResponse.json({ area: null, present: [], gone: [], run: null, error: String(e) }, { status: 200 })
+    return NextResponse.json({ area: null, present: [], gone: [], run: null, seated: [], error: String(e) }, { status: 200 })
   }
 }
