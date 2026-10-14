@@ -13,7 +13,6 @@ import { DiceProvider, type DiceResult } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { CompactDashboard } from "@/components/dashboard/compact-dashboard"
 import { StatusBar } from "@/components/dashboard/status-bar"
-import { FortuneRoll } from "@/components/dashboard/fortune-roll"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
 
@@ -117,6 +116,27 @@ function mergeDialogue(prev: DialogueMessage[], incoming: DialogueMessage): Dial
 // How far back a pending row looks for its settled twin: more rows than one
 // turn can produce (the route caps a turn well under this), fewer than a scene.
 const TURN_TAIL = 12
+
+// A claimed player belongs on /awaken until their fortune is rolled for this run — on arrival, and
+// again if the DM restarts under them (a restart clears the roll with every other flag). Checked on
+// mount and every half minute; one small GET, nothing else.
+function NewGameWatch({ characterId }: { characterId: string | null }) {
+  useEffect(() => {
+    if (!characterId) return
+    let live = true
+    const check = async () => {
+      try {
+        const r = await fetch(`/api/fortune-roll?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
+        const j = await r.json()
+        if (live && j && j.rolled === false && !j.error) window.location.replace("/awaken")
+      } catch { /* the table carries on */ }
+    }
+    void check()
+    const t = window.setInterval(check, 30_000)
+    return () => { live = false; window.clearInterval(t) }
+  }, [characterId])
+  return null
+}
 
 // What Malachar is handed after a restart: the opening of the campaign, as the
 // book has it (Out of the Abyss, chapter 1 — the same passage Layer 1 retrieves
@@ -280,6 +300,8 @@ export default function DashboardPage() {
 
   // Save/Restart campaign state
   const [showRestartDialog, setShowRestartDialog] = useState(false)
+  // After a successful restart: the DM chooses to stay behind the screen or take a seat.
+  const [newGameRun, setNewGameRun] = useState<number | null>(null)
   const [isRestarting, setIsRestarting] = useState(false)
   const [showPartyManager, setShowPartyManager] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -610,6 +632,9 @@ export default function DashboardPage() {
       }).catch(() => {})
       void sendToLich(openingDirection(runNo), null, null, { director: true })
         .catch((e) => console.error("[restart] opening narration failed:", e))
+      // Sam, 2026-10-14: "I restarted the campaign but it didn't prompt me to pick a character or
+      // do a roll." The DM screen stays the DM screen; the door is one click away.
+      setNewGameRun(runNo ?? 0)
     } catch (err) {
       console.error('Error restarting campaign:', err)
       window.alert("The restart failed to reach the server. Nothing was changed.")
@@ -2120,15 +2145,46 @@ if (error) {
         </div>
       )}
 
-      {/* The opening fortune roll (lib/scavenged.ts): once per run, for the claimed character in this
-          browser. Rolls on the shared dice, awards from the catalog, then hands Malachar the result to
-          narrate — as a direction, since nobody at the table said anything. */}
-      <FortuneRoll
-        characterId={claimToken ? selectedCharacterId : null}
-        claimToken={claimToken}
-        characterName={selectedCharacter?.name ?? null}
-        onNarrate={(direction) => { void sendToLich(direction, selectedCharacterId, claimToken, { director: true }).catch((e) => console.error("[fortune] narration failed:", e)) }}
-      />
+      {/* The opening (film, fortune roll, Malachar's first words) lives on /awaken. A claimed player
+          whose fortune is unrolled for this run — a fresh seat, or a restart under them — is sent
+          there; see the effect by NewGameWatch. */}
+      <NewGameWatch characterId={claimToken ? selectedCharacterId : null} />
+
+      {newGameRun !== null && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#1a1614] border border-[#3d3428] rounded-lg p-6 max-w-md mx-4 shadow-2xl text-center">
+            <div className="text-[10px] tracking-[0.3em] uppercase text-amber-500/70 mb-2">{newGameRun ? `Run ${newGameRun}` : "A new run"}</div>
+            <h2 className="text-xl font-serif text-amber-200 mb-3">The pen is ready.</h2>
+            <p className="text-stone-300 mb-2">
+              Malachar is writing the opening. Players come in through the door — the intro, their card,
+              their words, the film, the roll.
+            </p>
+            <p className="text-stone-500 text-sm mb-6">
+              This screen stays the DM&apos;s. To play a character from here instead, take a seat: it leaves
+              DM Mode and opens the door.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setNewGameRun(null)}
+                className="px-4 py-2 rounded bg-[#2a2520] border border-[#3d3428] text-stone-300 hover:text-stone-100 hover:border-stone-500 transition-colors"
+              >
+                Stay behind the screen
+              </button>
+              <button
+                onClick={() => {
+                  window.localStorage.removeItem(ROLE_LS_KEY)
+                  window.localStorage.removeItem(TOKEN_LS_KEY)
+                  window.localStorage.removeItem(CHARACTER_LS_KEY)
+                  window.location.assign("/join")
+                }}
+                className="px-4 py-2 rounded bg-amber-500/15 border border-amber-500/50 text-amber-300 hover:bg-amber-500/25 transition-colors font-serif tracking-wide"
+              >
+                Take a seat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showRestartDialog && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm">
