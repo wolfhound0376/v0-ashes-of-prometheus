@@ -30,7 +30,7 @@ import { createClient } from "@/lib/supabase/client"
 import { PEN_DOOR_OPEN, TIME_STOPPED, useWorldFlag } from "@/lib/world-flags"
 import { slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
-import { dmHeaders, ensureDmKey, hasDmKey } from "@/lib/dm-key"
+import { clearDmKey, dmHeaders, ensureDmKey, hasDmKey } from "@/lib/dm-key"
 import { playCues, subscribeSfxCues } from "@/lib/sfx-cues"
 import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
@@ -1672,6 +1672,35 @@ if (error) {
         onToggleDmMode={() => {
           if (dmMode) {
             setDmMode(false)
+            return
+          }
+          // A browser holding a player's seat is never the DM (claimLocked gates every DM
+          // control). Since the front door seats everyone, Sam testing as Fifi was locked out of
+          // DM Mode with no way back (2026-10-14: "Not able to go to DM view from dashboard UI
+          // after inputting my password"). The DM code outranks a seat in this browser: it is
+          // checked server-side first, and only a real DM code releases the seat and reopens
+          // the dashboard as the DM screen. A wrong code changes nothing.
+          if (claimLocked) {
+            const code = ensureDmKey("leave this seat and enable DM mode")
+            if (!code) return
+            void (async () => {
+              try {
+                const res = await fetch("/api/claim-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) })
+                const result = await res.json().catch(() => null)
+                if (!res.ok || !result?.ok || result.role !== "dm") {
+                  clearDmKey()
+                  window.alert("That is not the DM code. Your seat is unchanged.")
+                  return
+                }
+                window.localStorage.removeItem(TOKEN_LS_KEY)
+                window.localStorage.removeItem(CHARACTER_LS_KEY)
+                window.localStorage.setItem(ROLE_LS_KEY, "dm")
+                window.location.replace("/")
+              } catch (e) {
+                console.error("[dm-mode] code check failed:", e)
+                window.alert("Could not check the DM code. Try again.")
+              }
+            })()
             return
           }
           if (ensureDmKey("enable DM mode")) setDmMode(true)
