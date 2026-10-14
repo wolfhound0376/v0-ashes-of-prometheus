@@ -2116,10 +2116,18 @@ function stageMatch(entry, id){           // "jorlan-duskryn" is the map's "jorl
   return names.some(s => s === id || id.startsWith(s + "-") || s.startsWith(id + "-") || s.split("-").some(tok => tok.length > 3 && id.split("-").includes(tok)));
 }
 let stageSeen = null;
+// The run number the map loaded under. A restart opens a new run (/api/restart-campaign); when the
+// number changes the map reloads itself, because everything it holds in memory — the gate it opened,
+// the creatures that walked in, where the party got to — belongs to a game that no longer exists.
+let runSeen = null;
 async function pollStage(){
   if (!APP || timeStopped) return;
   try {
     const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json();
+    if (typeof j.run === "number"){
+      if (runSeen === null) runSeen = j.run;
+      else if (j.run !== runSeen){ location.reload(); return; }
+    }
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
     // creatures: anyone present who is not part of the story's cast
     for (const c of present){
