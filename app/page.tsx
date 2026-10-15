@@ -951,6 +951,13 @@ if (error) {
           // Someone else on stage spoke up in the conversation: the window turns to them.
           const row = payload.new as { speaker?: string; speaker_type?: string }
           if (row.speaker_type === "npc" && row.speaker) turnTo(row.speaker)
+          // The pacing clock hears EVERY seat, not just this browser's. It runs on the DM's screen only, so
+          // a player typing on another seat used to leave it thinking the room was silent: it prodded
+          // Malachar mid-turn, he answered the same question twice, and the log showed Eldeth repeating
+          // herself (Sam, 2026-10-14). A player line resets the ladder and marks a reply as owed; the
+          // reply (a DM or NPC line) clears it.
+          if (row.speaker_type === "player"){ pacing.current = onPlayerMessage(pacing.current, Date.now()); replyOwedSince.current = Date.now() }
+          else if (row.speaker_type === "dm" || row.speaker_type === "npc") replyOwedSince.current = 0
         }
       )
       .subscribe()
@@ -1273,10 +1280,13 @@ if (error) {
   // monster's turn.
   const pacing = useRef<PacingState>(freshScene(Date.now()))
   const nudging = useRef(false)
+  // A player has spoken and Malachar has not answered yet: never prod the room while a reply is on its way.
+  const replyOwedSince = useRef(0)
   useEffect(() => {
     if (!hasDmKey()) return
     const id = window.setInterval(() => {
       if (nudging.current) return
+      if (replyOwedSince.current && Date.now() - replyOwedSince.current < 90_000) return   // a turn is in flight
       const kind = nextNudge(pacing.current, Date.now(), inCombat)
       if (!kind) return
       nudging.current = true
@@ -1301,6 +1311,7 @@ if (error) {
           // Somebody spoke: the ladder starts again from the bottom, and the
           // scene gains a beat toward "this has gone on long enough".
           pacing.current = onPlayerMessage(pacing.current, Date.now())
+          replyOwedSince.current = Date.now()
           setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
 
           // Send to Lich, carrying THIS browser's character + claim token.
