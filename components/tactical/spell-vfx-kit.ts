@@ -285,6 +285,24 @@ const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
     impact: "guidingBoltImpact",
   },
 
+  // ── FORCE ─────────────────────────────────────────────────────────────
+  // SRD 5.1, Magic Missile: "You create three glowing DARTS of magical force.
+  // Each dart hits a creature of your choice that you can see within range...
+  // The darts all strike SIMULTANEOUSLY, and you can direct them to hit one
+  // creature or several."
+  //
+  // A dart, not a bolt and not a ball: it is aimed, it cannot miss (`resolve:
+  // "auto"` on the spellbook row), and it curves to its own target, which is
+  // what `seek` already draws and why the volley fans each dart onto its own
+  // side. All of that was already right. What was wrong was the art — the
+  // force type's default travel sheet is `pxMissile`, a 278-byte pixel mote,
+  // because nothing better existed. This is the drawn dart.
+  //
+  // It stays on the SPELL, not on the `force` type, for the same reason Ice
+  // Knife does: a delivery is a fact about a spell. Eldritch Blast is also
+  // force and is a beam from the hand; it keeps its own.
+  "magic missile": { route: "ball", travel: "magicMissileTravel", speed: 19, motion: "seek" },
+
   // ── NECROTIC ──────────────────────────────────────────────────────────
   // The type's default is a beam, and not one necrotic spell in the
   // spellbook is one. Both of these manifest where the victim is standing.

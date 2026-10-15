@@ -270,6 +270,15 @@
     "frames": 20,
     "rows": 4
   },
+  "magicMissileTravel": {
+    "bytes": 101016,
+    "cols": 4,
+    "file": "magicMissileTravel.webp",
+    "fps": 18,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
   "necroBeam": {
     "bytes": 4748,
     "cols": 4,
