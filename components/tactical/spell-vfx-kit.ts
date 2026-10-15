@@ -243,10 +243,98 @@ const BY_SPELL: Record<string, DamageType> = {
  * type belongs on the type.
  */
 const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
-  // A shard of ice created and flung — the one cold spell that is an object
-  // in flight rather than a ray. `dart`: leaves slowly, arrives fastest, no
-  // arc, because ice is thrown flat and hard.
+  // Ice Knife is NOT in the SRD (Elemental Evil / Xanathar's), so there is no
+  // rules text to quote here. The spellbook row is the source: a ranged spell
+  // attack that also forces a Dexterity save — the attack is the thrown shard
+  // and the save is the burst it makes. `dart`: leaves slowly, arrives
+  // fastest, no arc, because ice is thrown flat and hard.
   "ice knife": { route: "ball", travel: "frostShard", speed: 17, motion: "dart" },
+
+  // SRD 5.1, Spells: "A hail of rock-hard ice pounds to the ground in a
+  // 20-foot radius, 40-foot high cylinder centered on a point within range."
+  // It falls on a place. It does not cross the room, so it carries no
+  // travelling sheet at all.
+  "ice storm": { route: "sky", travel: undefined },
+
+  // SRD 5.1, Spells: "freezing rain and sleet fall in a 20-foot tall cylinder
+  // with a 40-foot radius centered on a point you choose within range." Same
+  // shape of delivery as Ice Storm — weather arriving overhead.
+  "sleet storm": { route: "sky", travel: undefined },
+
+  // ── NECROTIC ──────────────────────────────────────────────────────────
+  // The type's default is a beam, and not one necrotic spell in the
+  // spellbook is one. Both of these manifest where the victim is standing.
+  //
+  // SRD 5.1: "You create a ghostly, skeletal hand IN THE SPACE OF A CREATURE
+  // within range." The hand appears there. Nothing crosses the room.
+  "chill touch": { route: "impact-only", travel: undefined },
+  // SRD 5.1: "Make a MELEE spell attack against a creature YOU CAN REACH."
+  "inflict wounds": { route: "impact-only", travel: undefined },
+
+  // ── HEALING ───────────────────────────────────────────────────────────
+  // The type's default drops a column out of the sky onto the target, which
+  // is wrong for both of the healing spells the kit actually draws.
+  //
+  // SRD 5.1: "A creature YOU TOUCH regains a number of hit points." A column
+  // was falling from the heavens onto someone the cleric had a hand on.
+  "cure wounds": { route: "impact-only", travel: undefined },
+  // SRD 5.1: "A creature of your choice that you can see within range regains
+  // hit points" — no column, nothing descends. And the family is SPOKEN:
+  // Mass Healing Word opens "AS YOU CALL OUT WORDS OF RESTORATION". This is
+  // the conservative half of that — it stops the sky column. The spoken
+  // treatment (the word forming at the mouth, rings crossing the floor) is
+  // its own piece of work and needs art this PR does not add.
+  "healing word": { route: "impact-only", travel: undefined },
+
+  // ── POISON ────────────────────────────────────────────────────────────
+  // SRD 5.1: "You create a 20-foot radius sphere of poisonous, yellow-green
+  // fog CENTERED ON A POINT you choose within range." It is created there.
+  // It was being lobbed across the room like a flask.
+  "cloudkill": { route: "impact-only", travel: undefined },
+
+  // ── LIGHTNING ─────────────────────────────────────────────────────────
+  // SRD 5.1: Range TOUCH. "Lightning springs from your hand to deliver a
+  // shock to a creature you try to touch. Make a MELEE spell attack."
+  "shocking grasp": { route: "impact-only", travel: undefined },
+
+  // ── FIRE ──────────────────────────────────────────────────────────────
+  // SRD 5.1: Range "Self (15-foot cone)" — "a thin sheet of flames SHOOTS
+  // FORTH FROM YOUR OUTSTRETCHED FINGERTIPS." It starts at the caster and
+  // widens, which is what `radiate` already does for Thunderwave, the other
+  // self-origin burst in the book. It was being lobbed at the target.
+  "burning hands": { route: "radiate" },
+  // SRD 5.1: "You point your finger, and the creature that damaged you is
+  // momentarily SURROUNDED BY hellish flames." The flames are on the victim;
+  // nothing flies there.
+  "hellish rebuke": { route: "impact-only", travel: undefined },
+
+  // ── THUNDER ───────────────────────────────────────────────────────────
+  // SRD 5.1: "A sudden loud ringing noise, painfully intense, ERUPTS FROM A
+  // POINT OF YOUR CHOICE within range." Its type radiates from the CASTER,
+  // which is right for Thunderwave ("sweeps out from you") and wrong here.
+  "shatter": { route: "impact-only", travel: undefined },
+
+  // ── PSYCHIC ───────────────────────────────────────────────────────────
+  // SRD 5.1: "You UNLEASH A STRING OF INSULTS ... If the target CAN HEAR
+  // YOU." It is speech, not a thrown object. Stopping the ball is the
+  // correct half of the fix; the laughing-ghost flourish already carries the
+  // rest, and a proper spoken treatment is the same open work as Healing
+  // Word's.
+  "vicious mockery": { route: "impact-only", travel: undefined },
+
+  // NOT handled here, deliberately: CONE OF COLD. SRD 5.1 has "A blast of
+  // cold air erupts from your hands" in a 60-foot cone — it originates at the
+  // caster and widens, which is neither a beam nor a thing that falls. The
+  // kit has no cone route, so it still draws the type's beam. That is a known
+  // gap, recorded rather than papered over with the nearest wrong route.
+  //
+  // Also not handled: SPIRIT GUARDIANS. SRD 5.1 has Range "Self (15-foot
+  // radius)" and "They flit AROUND YOU to a distance of 15 feet for the
+  // duration" — a lasting aura on the caster, which no route here expresses.
+  // It keeps its type's sky column, which is wrong, and is recorded as a gap.
+  //
+  // Also not handled: TOLL THE DEAD. It is not in the SRD (Xanathar's), so
+  // there is no text to quote and nothing is changed on a guess.
 }
 
 /**
