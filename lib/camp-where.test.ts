@@ -26,21 +26,21 @@ describe("Malachar and the camp rule", () => {
   const road = campVerdict({ label: "Road Marker 14", source: "travel_nodes" })
 
   it("tells Malachar only when the party is inside a place", () => {
-    expect(campPromptNote(inside)).toMatch(/Do NOT emit \[TIME:make_camp\]/)
+    expect(campPromptNote(inside)).toMatch(/Do NOT emit \[TIME:make_camp\] or \[TIME:long_rest\]/)
     expect(campPromptNote(inside)).toMatch(/short rest/)
     expect(campPromptNote(road)).toBeNull()
     expect(campPromptNote(null)).toBeNull()
   })
 
-  it("drops make_camp inside a place and keeps everything else", () => {
-    const evs = [{ eventType: "make_camp" }, { eventType: "short_rest" }, { eventType: "dialogue_exchange" }]
+  it("drops make_camp and long_rest inside a place and keeps everything else", () => {
+    const evs = [{ eventType: "make_camp" }, { eventType: "long_rest" }, { eventType: "short_rest" }, { eventType: "dialogue_exchange" }]
     const out = dropBarredCamp(evs, inside)
     expect(out.refused).toBe(true)
     expect(out.events.map((e) => e.eventType)).toEqual(["short_rest", "dialogue_exchange"])
   })
 
   it("leaves camp alone on the road", () => {
-    const evs = [{ eventType: "make_camp" }]
+    const evs = [{ eventType: "make_camp" }, { eventType: "long_rest" }]
     expect(dropBarredCamp(evs, road)).toEqual({ events: evs, refused: false })
     expect(dropBarredCamp(evs, null).refused).toBe(false)
   })

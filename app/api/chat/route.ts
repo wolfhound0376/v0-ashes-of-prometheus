@@ -3995,10 +3995,11 @@ Rules:
   let playerTimeOfDay: string | null = null
   if (timeAdmin && activeSessionId) {
     await logTimeEvent(timeAdmin, activeSessionId, { eventType: "dialogue_exchange" })
-    // A [TIME:make_camp] inside a place is dropped before it is logged: no camp
-    // opens there, so no camp actions are granted (lib/camp-where.ts).
+    // A [TIME:make_camp] or [TIME:long_rest] inside a place is dropped before it
+    // is logged: no camp opens and no long rest is applied there; a short rest
+    // still goes through (lib/camp-where.ts; Sam, 2026-10-14: "road only").
     const campGate = dropBarredCamp(parseTimeEvents(rawText), campVerdictNow)
-    if (campGate.refused) console.log(`[camp] make_camp refused — ${campVerdictNow?.reason}`)
+    if (campGate.refused) console.log(`[camp] camp / long rest refused — ${campVerdictNow?.reason}`)
     const timeEvents = campGate.events
     const restingTonight = timeEvents.some((e) => e.eventType === "long_rest")
 

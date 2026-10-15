@@ -2,6 +2,8 @@
 //
 //   "camp can only be done at the Nodal Map. Short rests can be taken in the
 //    SUBNODAL map."
+//   Long rests: "road only" (same day). A long rest inside a place is refused
+//   like camp; only the short rest is left to a party inside.
 //
 // The NODAL map is the Underdark travel map: the roads, markers and places
 // between them. A SUBNODAL map is the inside of a place: Velkynvelve's
@@ -34,7 +36,7 @@ export function campVerdict(where: PartyWhere | null | undefined): CampVerdict {
     return {
       allowed: false,
       where: place,
-      reason: `Inside ${place}. A short rest can be taken here; camp is made out on the travel map.`,
+      reason: `Inside ${place}. A short rest can be taken here; camp and long rests are made out on the travel map.`,
     }
   }
   // Out on the travel map, or nowhere known yet. Nothing proves the party is
@@ -53,23 +55,27 @@ export function campVerdict(where: PartyWhere | null | undefined): CampVerdict {
 export function campPromptNote(v: CampVerdict | null | undefined): string | null {
   if (!v || v.allowed) return null
   return [
-    "CAMP IS NOT POSSIBLE HERE",
-    `The party is inside ${v.where}. Camp is only ever made out on the travel map, never inside a place.`,
-    "Do NOT emit [TIME:make_camp] while they are here, and do not offer camp actions.",
-    "A short rest ([TIME:short_rest]) is allowed. If they want to camp, they must first leave onto the road.",
+    "CAMP AND LONG RESTS ARE NOT POSSIBLE HERE",
+    `The party is inside ${v.where}. Camp and long rests happen only out on the travel map, never inside a place.`,
+    "Do NOT emit [TIME:make_camp] or [TIME:long_rest] while they are here, and do not offer camp actions.",
+    "A short rest ([TIME:short_rest]) is allowed. To camp or sleep the night, they must first leave onto the road.",
   ].join("\n")
 }
 
+/** Rests that belong to the road (Sam, 2026-10-14). */
+const ROAD_ONLY = new Set(["make_camp", "long_rest"])
+
 /**
- * The server's half of the same rule: a [TIME:make_camp] written while the
- * party is inside a place is dropped before it reaches time_log, so no camp
- * opens and no camp actions are granted. Every other event passes.
+ * The server's half of the same rule: a [TIME:make_camp] or [TIME:long_rest]
+ * written while the party is inside a place is dropped before it reaches
+ * time_log, so no camp opens, no camp actions are granted and no long rest is
+ * applied. Every other event, the short rest included, passes.
  */
 export function dropBarredCamp<T extends { eventType: string }>(
   events: T[],
   v: CampVerdict | null | undefined,
 ): { events: T[]; refused: boolean } {
   if (!v || v.allowed) return { events, refused: false }
-  const kept = events.filter((e) => e.eventType !== "make_camp")
+  const kept = events.filter((e) => !ROAD_ONLY.has(e.eventType))
   return { events: kept, refused: kept.length !== events.length }
 }
