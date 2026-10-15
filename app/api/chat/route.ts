@@ -38,6 +38,7 @@ import { canonicalizeCondition } from "@/lib/conditions"
 // A long rest, as the SRD writes it. The rule is pure and lives in its own
 // file; this route only owns the rows it touches.
 import { longRest, absoluteMinutes, type SheetSpellcasting, type RestOutcome } from "@/lib/long-rest"
+import { restoreOnLongRest } from "@/lib/bardic-inspiration"
 // The short rest — Hit Dice, Song of Rest, Pact Magic — from the camp module.
 // Same arrangement: the rule is pure and tested, this route only owns the rows.
 import {
@@ -4463,7 +4464,7 @@ Rules:
 
       const { data: party } = await timeAdmin
         .from("characters")
-        .select("id,name,level,hp_current,hp_max,hit_dice_remaining,sheet_spellcasting,conditions,death_saves,con_score,exhaustion,unfed_rest_streak")
+        .select("id,name,level,hp_current,hp_max,hit_dice_remaining,sheet_spellcasting,conditions,death_saves,con_score,exhaustion,unfed_rest_streak,sheet_resources")
         .eq("is_player", true).is("archived_at", null)
 
       // === DID THEY EAT? ===
@@ -4625,6 +4626,10 @@ Rules:
             patch.sheet_spellcasting = sc ? { ...sc, slots: outcome.slots } : { slots: outcome.slots }
           }
           if (outcome.hitDiceRemaining != null) patch.hit_dice_remaining = outcome.hitDiceRemaining
+          // Bardic Inspiration: every use back, and a die past its hour dropped
+          // (lib/bardic-inspiration). Null means nothing to write.
+          const resources = restoreOnLongRest(p.sheet_resources, now)
+          if (resources) patch.sheet_resources = resources
           patch.sheet_hp_temp = 0
           patch.death_saves = { successes: 0, failures: 0 }
           // Unconscious and Stable are facts about being at 0. Someone who
