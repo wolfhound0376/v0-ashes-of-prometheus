@@ -665,8 +665,8 @@ function draw(){
       dh = ch * sc * k; dy = a.y - py * sc * k + fy + (a.ky || 0); ctx.filter = dead ? "brightness(.55) saturate(.45)" : "brightness(.72) saturate(.7)";
       if (dead && a.deadT0) ctx.globalAlpha = a.alpha * Math.min(1, .35 + (now - a.deadT0) / 500);
     }
-    if (pose === "belly"){                         // a crawler dies on its back, legs to the sky, flattened
-      ctx.save(); ctx.translate(a.x, a.y); ctx.scale(1, -.62); ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc, dw, ch * sc); ctx.restore();
+    if (pose === "belly"){                         // a crawler dies on its back, legs drawn in over the body (Sam's reference: curled, not splayed)
+      ctx.save(); ctx.translate(a.x, a.y - 6 * sc); ctx.scale(.7, -.66); ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc, dw, ch * sc); ctx.restore();
     } else if (pose === "puddle"){                 // an ooze slumps to a still, spreading puddle
       ctx.save(); ctx.translate(a.x, a.y); ctx.scale(1.25, .4); ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc, dw, ch * sc); ctx.restore();
     } else if (pose === "side"){
@@ -1406,15 +1406,16 @@ function drawFxLayer(flat){
     if (e.until && now > e.until){ fx.splice(i, 1); continue; }
     if (f >= m.frames){ if (e.loop) f = f % m.frames; else { fx.splice(i, 1); if (e.then){ const fn = e.then; e.then = null; fn(); } continue; } }
     const P = fxPos(e), px = (P.ref ? ftPx(P.ref) : 96 * BASE * node.scale * depthAt(P.y) / 5) * 5;   // one square, in plate px
-    const cw = e.img.width / m.cols, ch = e.img.height / m.rows, w = e.sq * px, h = w * ch / cw;
+    const cw = e.img.width / m.cols, ch = e.img.height / m.rows, punch = e.punch ? 1 + .35 * Math.max(0, 1 - (now - e.t0) / 120) : 1, w = e.sq * px * punch, h = w * ch / cw;
+    const img = e.tint ? tintedSheet(e.img, e.name, (e.tintFrom && now - e.t0 < e.tintFrom) ? "#ffffff" : e.tint) : e.img;
     const sx = (f % m.cols) * cw, sy = Math.floor(f / m.cols) * ch;
     ctx.save(); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1);
-    if (e.flat){ ctx.translate(P.x, P.y + 2); ctx.scale(1, .5); if (e.spin) ctx.rotate((now - e.t0) / 1000 * e.spin); ctx.drawImage(e.img, sx, sy, cw, ch, -w / 2, -w / 2, w, w); }
+    if (e.flat){ ctx.translate(P.x, P.y + 2); ctx.scale(1, .5); if (e.spin) ctx.rotate((now - e.t0) / 1000 * e.spin); ctx.drawImage(img, sx, sy, cw, ch, -w / 2, -w / 2, w, w); }
     else {
-      const y = e.anchor === "feet" ? P.y : e.anchor === "top" ? P.top : P.mid; let dx = e.dx || 0, lift = e.lift, flip = false;
+      const y = e.anchor === "feet" || e.anchor === "base" ? P.y : e.anchor === "top" ? P.top : P.mid; let dx = e.dx || 0, lift = e.lift, flip = false;
       if (e.orbit){ const th = (now - e.t0) / 1000 * e.orbit.speed + e.orbit.phase; dx += Math.cos(th) * e.orbit.r; lift += Math.sin(th) * e.orbit.ry; flip = Math.sin(th + Math.PI / 2) < 0; ctx.globalAlpha *= .7 + .3 * (Math.sin(th) + 1) / 2; }
       if (flip){ ctx.translate(P.x + dx * px, 0); ctx.scale(-1, 1); ctx.translate(-(P.x + dx * px), 0); }
-      ctx.drawImage(e.img, sx, sy, cw, ch, P.x - w / 2 + dx * px, y - h / 2 - lift * px, w, h);
+      ctx.drawImage(img, sx, sy, cw, ch, P.x - w / 2 + dx * px, (e.anchor === "base" ? y - h : y - h / 2) - lift * px, w, h);
     }
     ctx.restore();
   }
@@ -1893,6 +1894,7 @@ function castSpell(caster, tgt, name, done){
   }
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
   const ring = quiet ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
+  const kit = quiet ? null : kitFor(name, sp); kitGather(caster, kit);
   const marks = [];
   // Sigils only, no plumes (Sam, 2026-10-13: "use the sigils but NOT the plumes. I will tell you when the
   // plume is appropriate"). sig[1] stays in the table for that day.
@@ -1905,7 +1907,7 @@ function castSpell(caster, tgt, name, done){
   caster.once && (caster.once.hit = () => {
     ring.then(e => { if (e) e.until = now; });
     if (!quiet) bank(`magic/${family}_release`, .7);
-    if (tgt.id && BOLT_OF[dtype] && !quiet) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
+    if (tgt.id && BOLT_OF[dtype] && !quiet && !kit) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
     // Healing is carried by an orb (Sam, 2026-10-13: "healing word should not look like a projectile but an
     // orb"): a soft glowing sphere leaves the caster's hands, arcs over to the ally and sinks into them;
     // the shimmer and the halo follow. Everything else that flies is a bolt.
@@ -1913,11 +1915,12 @@ function castSpell(caster, tgt, name, done){
     // caster speaks it and the light rises out of the ground at the ally — a green bloom, motes climbing,
     // the shimmer. Nothing crosses the room.
     const carry = quiet ? (cb) => setTimeout(cb, 420)
+      : kit ? (cb) => kitDeliver(caster, at, kit, cb)
       : sp.kind === "heal" ? (cb) => healBloom(caster, tgt, cb)
       : (cb) => spellBolt(caster, at, sp.fx, cb);
     carry(() => {
       const m = c.sheet.magic;
-      const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
+      const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
         const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + m.hit >= targetAc(tgt)); afterAttackRoll(caster);
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
@@ -1929,9 +1932,9 @@ function castSpell(caster, tgt, name, done){
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
       } else if (sp.kind === "heal"){
         const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
-        sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300); spawnFx("healingShimmer", {at: tgt, sq: 2, anchor: "mid"});
-        spawnFx("pxGlow", {at: tgt, sq: 1.7, anchor: "mid", loop: true, until: now + 2600, alpha: .85});
-        popText(tgt, `+${d}`, "#9ff2c8"); burst(tgt, "#9ff2c8", 14); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
+        sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
+        kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
+        popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
       } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6); spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8}); addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else {                                                                    // a save
         const targets = sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt];
@@ -1944,7 +1947,7 @@ function castSpell(caster, tgt, name, done){
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
-          else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
+          else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) spawnFx("pxSwirl", {at: t, sq: .7, anchor: "top", lift: .45, loop: true, until: now + 2600, alpha: .95}); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
           else land(t, !ok, sp.type || "psychic");
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
@@ -2164,6 +2167,129 @@ function swipeStyle(atk, crit){
   if (n.includes("unarmed") || n.includes("club") || n.includes("mace")) return {col: "#ffe2b0", core: "#ffffff", kind: "slash"};
   return {col: "#dfe7ff", core: "#ffffff", kind: "slash"};
 }
+
+// ============================================================================
+// THE SPELL KIT, ported from the battle board (components/tactical/spell-vfx-kit.ts, lib/projectile-motion.ts).
+// Sam, 2026-10-14: "yes I want the new spell effects onto the pixel map." Same table, same sheets, same rules:
+// a spell is drawn by HOW IT CROSSES THE ROOM, which is its damage type's unless the book says otherwise —
+//   ball      a drawn pixel sprite that flies, turned to face its travel, with its own motion (lob, seek,
+//             drift, dart) and after-images
+//   beam      a sheet stretched from the hand to the target (Ray of Frost, Chill Touch, lightning)
+//   radiate   a ripple rolling outward (thunder) — a beam that does not reach all the way
+//   sky       nothing travels: it comes down on the target (Sacred Flame's column, healing)
+// then THE IMPACT (its sheet, landing big and settling — the punch) and THE BURST: a white flash cooling to
+// the type's colour, a shockwave across the floor, thrown sparks (ice drops at once, embers rise). Cold
+// gathers at the hand before it leaves and leaves rime on the floor; healing leaves a golden glow; Vicious
+// Mockery leaves its laughing ghosts. A spell resolved by an attack roll is thrown, whatever it is made of
+// (Guiding Bolt). The map's own rules stay: sigils, never plumes; Sleep stays quiet; the pen's wards drink it.
+// ============================================================================
+const KIT_MOTION = {
+  lob:   {ease: 1.15, lift: .11, liftMax: .55, weaveAmp: 0,   weaveCycles: 0,   spiral: 0,   turns: 0, stretch: 1.0,  trail: 3},
+  weave: {ease: 1.30, lift: .02, liftMax: .12, weaveAmp: .24, weaveCycles: 2.5, spiral: 0,   turns: 0, stretch: 1.35, trail: 3},
+  dart:  {ease: 1.60, lift: 0,   liftMax: 0,   weaveAmp: 0,   weaveCycles: 0,   spiral: 0,   turns: 0, stretch: 1.45, trail: 2},
+  drift: {ease: 1.05, lift: .03, liftMax: .15, weaveAmp: 0,   weaveCycles: 0,   spiral: .12, turns: 2, stretch: 1.0,  trail: 3},
+  seek:  {ease: 1.25, lift: .04, liftMax: .25, weaveAmp: .08, weaveCycles: 2,   spiral: 0,   turns: 0, stretch: 1.3,  trail: 3, bow: .9},
+};
+const KIT = {
+  fire:      {route: "ball",   travel: "pxFireball",  impact: "fireImpact",      impactScale: 2.2, speed: 13, motion: "lob",   burst: {tint: "#ffa030", sparks: 28, ring: true, power: 1.4}},
+  cold:      {route: "beam",   travel: "frostBeam",   impact: "frostImpact",     gather: "frostGather", burst: {tint: "#a8e6ff", sparks: 22, ring: true, rise: .1}, aftermath: {sheet: "pxIce", hold: 8000, size: 1.35}},
+  necrotic:  {route: "beam",   travel: "necroBeam",   impact: "necroImpact",     burst: {tint: "#9c6bff", sparks: 12, ring: false}},
+  eldritch:  {route: "beam",   travel: "eldBeam",     impact: "eldImpact",       burst: {tint: "#c678ff", sparks: 18, ring: true}},
+  poison:    {route: "ball",   travel: "pxPoison",    impact: "poisonCloud",     speed: 10, motion: "lob",   burst: {tint: "#7ee23f", sparks: 16, ring: false, power: .8}},
+  force:     {route: "ball",   travel: "pxMissile",   impact: "forceHit",        speed: 16, motion: "seek",  burst: {tint: "#a78bff", sparks: 18, ring: true}},
+  psychic:   {route: "ball",   travel: "pxPsychic",   impact: "psychicImpact",   speed: 12, motion: "drift", burst: {tint: "#ff8cf0", sparks: 14, ring: true, power: .9}},
+  thunder:   {route: "radiate", travel: "thunderGust", impact: "thunderImpact",  burst: {tint: "#ffffff", sparks: 24, ring: true, power: 1.5}},
+  lightning: {route: "beam",   travel: "thunderGust", impact: "lightningStrike", impactScale: 1.5, burst: {tint: "#bfe8ff", sparks: 26, ring: true, power: 1.3}},
+  radiant:   {route: "sky",    impact: "radiantColumn", burst: {tint: "#ffe9a8", sparks: 18, ring: true}},
+  // The board lands a golden orb (healingShimmer) above the target. On the plate that reads as a ball over
+  // the head, and a ball is the thing Sam keeps saying healing is not; the map keeps the board's golden
+  // luminescence around the body (the glow) and its motes, and leaves the orb out.
+  healing:   {route: "sky",    burst: {tint: "#ffe6a0", sparks: 12, ring: false, power: .6, rise: 1.2, noFlash: true}, flourish: "glow"},
+  acid:      {route: "impact", impact: "acidImpact",  burst: {tint: "#b8ff3a", sparks: 16, ring: false, power: .8}},
+};
+// Where the book says a spell crosses the room differently from its type (the board's DELIVERY_BY_SPELL).
+const KIT_BY_SPELL = {"Ice Knife": {route: "ball", travel: "frostShard", speed: 17, motion: "dart"}};
+function kitFor(name, sp){
+  const type = sp.kind === "heal" ? "healing" : sp.type, base = KIT[type]; if (!base) return null;
+  const named = KIT_BY_SPELL[name]; if (named) return {...base, ...named, type};
+  if (sp.kind === "attack" && base.route !== "ball" && base.route !== "beam")
+    return {...base, type, route: "ball", travel: base.travel || base.impact, speed: base.speed || 18, motion: base.motion || "dart", impactScale: (base.impactScale || 1) * .8};
+  return {...base, type};
+}
+// a white sheet tinted to a colour (multiply, alpha kept), made once per sheet and colour
+const TINTS = {};
+function tintedSheet(img, name, col){
+  const key = name + col; if (TINTS[key]) return TINTS[key];
+  const c = document.createElement("canvas"); c.width = img.width; c.height = img.height; const g = c.getContext("2d");
+  g.drawImage(img, 0, 0); g.globalCompositeOperation = "multiply"; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = "destination-in"; g.drawImage(img, 0, 0); return (TINTS[key] = c);
+}
+const flights = [];
+function handPoint(a){ const m = SPR[a.id].json; return {x: a.x + (a.face >= 4 && a.face <= 6 ? -1 : 1) * 10 * actorScale(a), y: a.y - m.pivot[1] * actorScale(a) * .58}; }
+function bodyPoint(t){ if (!t.id) return {x: t.x, y: t.y - 10}; const m = SPR[t.id].json; return {x: t.x, y: t.y - m.pivot[1] * actorScale(t) * .5}; }
+// the windup's extra for a type that has one: cold pulls vapour in at the hand
+function kitGather(caster, kit){ if (kit && kit.gather) spawnFx(kit.gather, {at: caster, sq: 1.1, anchor: "mid", alpha: .95}); }
+// carry the spell from the hand to the target; `then` fires on the impact frame
+async function kitDeliver(caster, at, kit, then){
+  const from = handPoint(caster), to = bodyPoint(at), sq = ftPx(caster) * 5, dist = Math.hypot(to.x - from.x, to.y - from.y) / sq;
+  if (kit.route === "sky" || kit.route === "impact" || !kit.travel){ setTimeout(then, kit.route === "sky" ? 260 : 120); return; }
+  const v = await vfxLoad(kit.travel); if (!v){ then(); return; }
+  if (kit.route === "ball"){
+    const ms = Math.min(900, Math.max(220, dist / (kit.speed || 14) * 1000));
+    flights.push({ball: true, kit, v, from, to, sq, dist, t0: now, ms, seed: Math.floor(Math.random() * 7), then});
+  } else flights.push({beam: true, kit, v, from, to, sq, t0: now, ms: kit.route === "radiate" ? 420 : 340, hitAt: kit.route === "radiate" ? 300 : 150, then});
+}
+function poseAt(M, p, dist, seed){
+  const c = Math.min(1, Math.max(0, p)), along = Math.pow(c, M.ease), phase = (seed % 7) / 7 * Math.PI * 2;
+  let up = Math.sin(c * Math.PI) * Math.min(M.liftMax, M.lift * dist), side = 0;
+  if (M.weaveAmp) side += Math.sin(c * M.weaveCycles * Math.PI * 2 + phase) * M.weaveAmp * Math.pow(1 - c, .6);
+  if (M.spiral){ const d = Math.sin(c * Math.PI), a = c * M.turns * Math.PI * 2 + phase; side += Math.cos(a) * M.spiral * d; up += Math.sin(a) * M.spiral * d; }
+  if (M.bow){ const sign = seed % 2 === 0 ? 1 : -1, spread = .55 + .45 * (((seed >> 1) % 3) / 2); side += Math.sin(Math.pow(c, .8) * Math.PI) * M.bow * spread * sign; }
+  return {along, up, side};
+}
+function flightPos(f, p){
+  const M = KIT_MOTION[f.kit.motion || "dart"], P = poseAt(M, p, f.dist, f.seed), dx = f.to.x - f.from.x, dy = f.to.y - f.from.y, L = Math.hypot(dx, dy) || 1;
+  const rx = -dy / L, ry = dx / L;   // the flight's right, on the plate
+  return {x: f.from.x + dx * P.along + rx * P.side * f.sq, y: f.from.y + dy * P.along + ry * P.side * f.sq * .55 - P.up * f.sq};
+}
+function drawFlights(){
+  for (let i = flights.length - 1; i >= 0; i--){
+    const f = flights[i], el = now - f.t0, m = f.v.m, img = f.v.img, cw = img.width / m.cols, ch = img.height / m.rows, fr = Math.floor(el / 1000 * m.fps) % m.frames;
+    const sx = (fr % m.cols) * cw, sy = Math.floor(fr / m.cols) * ch;
+    if (f.ball){
+      const p = Math.min(1, el / f.ms), M = KIT_MOTION[f.kit.motion || "dart"];
+      const draw1 = (q, alpha, shrink) => {
+        const a = flightPos(f, q), b = flightPos(f, Math.min(1, q + .03)), ang = Math.atan2(b.y - a.y, b.x - a.x), st = 1 + (M.stretch - 1) * Math.min(1, q * 1.6);
+        const w = f.sq * .95 * st * shrink, h = f.sq * .95 * ch / cw / Math.sqrt(st) * shrink;
+        ctx.save(); ctx.globalAlpha = alpha; ctx.translate(a.x, a.y); ctx.rotate(ang); ctx.drawImage(img, sx, sy, cw, ch, -w / 2, -h / 2, w, h); ctx.restore();
+      };
+      for (let g = M.trail; g >= 1; g--){ const q = p - g * .07; if (q > 0 && p < 1) draw1(q, .42 * Math.pow(.6, g - 1), Math.pow(.82, g)); }
+      draw1(p, p < .08 ? p / .08 : 1, 1);
+      if (p >= 1){ flights.splice(i, 1); const fn = f.then; f.then = null; fn && fn(); }
+    } else {
+      const p = Math.min(1, el / f.ms), len = Math.hypot(f.to.x - f.from.x, f.to.y - f.from.y), ang = Math.atan2(f.to.y - f.from.y, f.to.x - f.from.x);
+      const radiate = f.kit.route === "radiate", reach = radiate ? len * .78 : len, h = f.sq * (radiate ? 1.9 : .8);
+      ctx.save(); ctx.globalAlpha = p < .15 ? p / .15 : Math.max(0, 1 - (p - .6) / .4); ctx.translate(f.from.x, f.from.y); ctx.rotate(ang);
+      ctx.drawImage(img, sx, sy, cw, ch, 0, -h / 2, reach, h); ctx.restore();
+      if (f.then && el >= f.hitAt){ const fn = f.then; f.then = null; fn(); }
+      if (p >= 1) flights.splice(i, 1);
+    }
+  }
+}
+// the arrival: the impact sheet with its punch, the flash, the shockwave, the sparks, then what it leaves
+function kitImpact(t, kit, opts = {}){
+  const sky = kit.route === "sky", P = bodyPoint(t), b = kit.burst || {}, power = (b.power || 1) * (opts.area ? 1.3 : 1);
+  if (kit.impact) spawnFx(kit.impact, {at: t, sq: (sky ? 1.9 : 2.1) * (kit.impactScale || 1), anchor: sky ? "base" : "mid", punch: true});
+  if (b.tint){
+    if (!b.noFlash) spawnFx("pxFlash", {at: t, sq: 1.5 * power, anchor: sky ? "top" : "mid", tint: b.tint, tintFrom: 70});
+    if (b.ring) spawnFx("pxRing", {at: t, sq: 2.6 * power, flat: true, tint: b.tint, alpha: .85});
+    const rise = b.rise == null ? .7 : b.rise;
+    for (let k = 0; k < (b.sparks || 0); k++){ const ang = Math.random() * Math.PI * 2, v = (80 + Math.random() * 220) * power;
+      sparks.push({x: P.x, y: P.y, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v * .55 - 260 * rise * Math.random(), g: 520, col: Math.random() < .3 ? "#ffffff" : b.tint, t0: now, life: 380 + Math.random() * 320}); }
+  }
+  if (kit.aftermath && !opts.area) spawnFx(kit.aftermath.sheet, {at: t, sq: kit.aftermath.size, flat: true, loop: true, until: now + kit.aftermath.hold, alpha: .9});
+  if (kit.flourish === "glow") spawnFx("pxGlow", {at: t, sq: 1.8, anchor: "mid", loop: true, until: now + 2600, alpha: .9, tint: "#ffd36a"});
+}
 // The healing orb: a soft sphere of light that leaves the caster's hands, arcs over and sinks into the
 // ally. Drawn (a radial glow with a hot core, motes trailing), not a sheet, so it is a ball and not a ring.
 function healBloom(from, to, then){
@@ -2202,6 +2328,7 @@ function drawOrb(s, k){
 }
 function spellBolt(from, to, col, then){ const m = SPR[from.id].json, sc = actorScale(from); sparks.push({bolt: true, x: from.x, y: from.y - m.pivot[1] * sc * .6, tx: to.x, ty: to.y - (to.id ? SPR[to.id].json.pivot[1] * actorScale(to) * .5 : 0), col, t0: now, life: 260, then}); }
 function drawCombatFx(){
+  drawFlights();
   for (let i = sparks.length - 1; i >= 0; i--){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
