@@ -1381,7 +1381,7 @@ window.__ds=()=>DS;
 // ===== THE BARD'S SONG (Sam, 9/29: "when he plays, magical musical notes float delicately across the night sky").
 // Scott's own recording plays when the bard performs; notes rise from the lute, sway and drift across the dark above the
 // camp, glow, and fade. The camp's music steps aside while he plays.
-const SONG_SRC="/_blob/d39107534eb26188480ab65b8737f6f5"; let song=null, songOn=false, songFrom=null, songEmit=0, songT=0; const songNotes=[];
+const SONG_SRC="/camp/fire/assets/d39107534eb26188480ab65b8737f6f5.webm"; let song=null, songOn=false, songFrom=null, songEmit=0, songT=0; const songNotes=[];
 const NOTE_HUES=["255,214,150","196,168,255","160,222,255","255,178,222"];
 function playSong(f){ songFrom=f; songOn=true; songT=0; try{ if(song){ song.pause(); song.currentTime=0; } song=new Audio(SONG_SRC); song.volume=.95;
     if(window.campMusic&&window.campMusic.duck) window.campMusic.duck(true);
@@ -1641,17 +1641,17 @@ $("alchq").oninput=renderAlch; $("alchf").onchange=renderAlch;
 // Sam, 9/29: the alchemy module opens with its film. Skip, Esc, or the film ending opens the bench; if it cannot play, the bench opens at once.
 // Module films (Sam, 9/29): alchemy and exploring each open with their own film. Skip, Esc/Space/Enter, or the film ending
 // continues; if the film cannot play, the module opens at once. H.264 first, WebM for browsers without it.
-const FILMS={ alchemy:["/_blob/6ba4f8c2ab25344545cb8b30b8b1e247","/_blob/07828d7b6ba6baa9d8e91bf9c1c0cba8"],
-              explore:["/_blob/05316d289f3a8104fa2088cbb3e7834f","/_blob/e30ae2760dda9a2b4549e11a2b0f6365"],
-                forage:["/_blob/abfbc5f316aa1327faf14d88c2382e8e","/_blob/de889908446a27bfd643f47f5285045d"],
-                hunt:["/_blob/a97c3b380fc257c26b053e23bda09e2f","/_blob/90895047d2cfc2ba1256024766a7fc6b"],
-                exit:["/_blob/3a50702890f433131194864104617a91","/_blob/be5a68b03c225ef7bb92cf8a51347e59"],
-                attune:["/_blob/ff00aa436aa2294385ca9bce3c8ba8f8","/_blob/198b5831381b70a9bb9dfae18f6808fb"],
-                attunefail:["/_blob/fb118a406a6d3bf94ab78ba4251886dd","/_blob/328a465e5eaada8d734cfa818a19e65c"],
-              repair:["/_blob/5017873d51332c6456715134c6f1a9aa","/_blob/fc8e3ec5571dd1b29cfa281784ce4a1b"],
-              magic:["/_blob/5c26c365b9f6ca2622342172d5ddd96a","/_blob/aee77060b3f2bf19ff47faa10f4883ad"],
-              decipher:["/_blob/4c3ab468078066133281e6db03e6e35a","/_blob/07c05a46e6e8d957b953401f0f379063"],
-              study:["/_blob/babb2bf29545328f0f7c764a58663727","/_blob/4e32d710227d7ce8350453c65928318e"] }; // Sam, 9/29: the STUDY button opens with the study-table film // Sam, 9/29: STUDY → Decipher opens with the book film // Sam, 9/29: STUDY → Is it magic? opens with the sigil film
+const FILMS={ alchemy:["/camp/fire/assets/6ba4f8c2ab25344545cb8b30b8b1e247.mp4","/camp/fire/assets/07828d7b6ba6baa9d8e91bf9c1c0cba8.webm"],
+              explore:["/camp/fire/assets/05316d289f3a8104fa2088cbb3e7834f.mp4","/camp/fire/assets/e30ae2760dda9a2b4549e11a2b0f6365.webm"],
+                forage:["/camp/fire/assets/abfbc5f316aa1327faf14d88c2382e8e.mp4","/camp/fire/assets/de889908446a27bfd643f47f5285045d.webm"],
+                hunt:["/camp/fire/assets/a97c3b380fc257c26b053e23bda09e2f.mp4","/camp/fire/assets/90895047d2cfc2ba1256024766a7fc6b.webm"],
+                exit:["/camp/fire/assets/3a50702890f433131194864104617a91.mp4","/camp/fire/assets/be5a68b03c225ef7bb92cf8a51347e59.webm"],
+                attune:["/camp/fire/assets/ff00aa436aa2294385ca9bce3c8ba8f8.mp4","/camp/fire/assets/198b5831381b70a9bb9dfae18f6808fb.webm"],
+                attunefail:["/camp/fire/assets/fb118a406a6d3bf94ab78ba4251886dd.mp4","/camp/fire/assets/328a465e5eaada8d734cfa818a19e65c.webm"],
+              repair:["/camp/fire/assets/5017873d51332c6456715134c6f1a9aa.mp4","/camp/fire/assets/fc8e3ec5571dd1b29cfa281784ce4a1b.webm"],
+              magic:["/camp/fire/assets/5c26c365b9f6ca2622342172d5ddd96a.mp4","/camp/fire/assets/aee77060b3f2bf19ff47faa10f4883ad.webm"],
+              decipher:["/camp/fire/assets/4c3ab468078066133281e6db03e6e35a.mp4","/camp/fire/assets/07c05a46e6e8d957b953401f0f379063.webm"],
+              study:["/camp/fire/assets/babb2bf29545328f0f7c764a58663727.mp4","/camp/fire/assets/4e32d710227d7ce8350453c65928318e.webm"] }; // Sam, 9/29: the STUDY button opens with the study-table film // Sam, 9/29: STUDY → Decipher opens with the book film // Sam, 9/29: STUDY → Is it magic? opens with the sigil film
 function playFilm(which,then){ const ov=$("alchintro"), v=$("alchvid"), f=FILMS[which]; if(!ov||!v||!f){ then(); return; }
   let done=false; const finish=()=>{ if(done) return; done=true; v.pause(); ov.classList.remove("on"); window.removeEventListener("keydown",esc,true); if(window.campMusic&&window.campMusic.duck) window.campMusic.duck(false); setTimeout(()=>{ ov.hidden=true; },450); then(); };
   const esc=(e)=>{ if(e.key==="Escape"||e.key===" "||e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); finish(); } };
@@ -3078,7 +3078,7 @@ document.addEventListener("click",(e)=>{ const tp=$("talkpick"); if(!tp.hidden&&
 // Both levelled to about -27 LUFS. Browsers block sound until the first click, so it fades in on the first interaction.
 // Each track has two players that crossfade 6 s at the loop point, so the loop has no seam; switching tracks crossfades 2.5 s.
 (function(){
-  const SRC={camp:"/_blob/5d87307ec5aba02a3837aeb7e8a27d69",field:"/_blob/1f8d7106173f2dac28037b29e86845e0"};
+  const SRC={camp:"/camp/fire/assets/5d87307ec5aba02a3837aeb7e8a27d69.mp4",field:"/camp/fire/assets/1f8d7106173f2dac28037b29e86845e0.mp4"};
   const XF=6, VOL={camp:0.45,field:0.5};
   const T={}; for(const k of Object.keys(SRC)){ const a=[new Audio(SRC[k]),new Audio(SRC[k])]; a.forEach(x=>{x.preload="auto";x.volume=0;}); T[k]={a,cur:0,on:false}; }
   let track="camp", started=false;
