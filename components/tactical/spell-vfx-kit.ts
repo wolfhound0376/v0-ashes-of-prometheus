@@ -174,13 +174,19 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   // DELIVERY_BY_SPELL below — not by damage type, which would have made every
   // Ray of Frost a flying dagger.
   //
+  // The three sheets are cut from one contact sheet Sam supplied for Ray of
+  // Frost (scripts/vfx/split_cast_sheet.py). They replace frostBeam, which
+  // was 3 KB of the same speckle reshuffled sixteen times, and the procedural
+  // frostGather. frostImpact stays in the manifest -- death-vfx still plays
+  // it for the freeze death.
+  //
   // What the type DOES gain is true of all cold:
   //   `gather`   — vapour pulled inward and condensed at the hand. Cold takes
   //                heat rather than giving it, so the anticipation runs the
   //                opposite way to every other school's.
   //   `rise: 0.1` — splinters drop almost at once where embers rise first.
   //                Fire and frost now differ in weight, not only in colour.
-  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostBeam",     impact: "frostImpact",    charge: 0.70, gather: "frostGather", tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true, rise: 0.1 }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
+  cold:     { rune: "runeFrost",    route: "beam",        travel: "frostRayTravel", impact: "frostRayImpact", charge: 0.70, gather: "frostRayCharge", tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true, rise: 0.1 }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff, burst: { tint: 0x9c6bff, sparks: 12, ring: false } },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff, burst: { tint: 0xc678ff, sparks: 18, ring: true } },
   poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
@@ -260,6 +266,24 @@ const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
   // with a 40-foot radius centered on a point you choose within range." Same
   // shape of delivery as Ice Storm — weather arriving overhead.
   "sleet storm": { route: "sky", travel: undefined },
+
+  // ── RADIANT ───────────────────────────────────────────────────────────
+  // SRD 5.1: "A flash of light streaks toward a creature of your choice."
+  // It streaks, so the attack-roll promotion was already turning it into a
+  // ball -- but radiant has no travel art, so the promotion fell back to
+  // `spec.impact` and Guiding Bolt flew across the room as a RADIANT COLUMN,
+  // a sheet drawn to descend from above, stretched sideways.
+  //
+  // It has its own art now, cut from Sam's contact sheet. Stating the whole
+  // delivery here also takes it off the promotion path, so the column is
+  // never borrowed again. Sacred Flame and Moonbeam keep the column, which
+  // is what they are: both "descend" in their own text.
+  "guiding bolt": {
+    route: "ball", motion: "dart", speed: 18,
+    gather: "guidingBoltCharge",
+    travel: "guidingBoltTravel",
+    impact: "guidingBoltImpact",
+  },
 
   // ── NECROTIC ──────────────────────────────────────────────────────────
   // The type's default is a beam, and not one necrotic spell in the

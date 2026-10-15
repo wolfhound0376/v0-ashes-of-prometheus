@@ -964,7 +964,6 @@ SHEETS = [
     ("pxArc",      arc,       6, 6, 12, True),
     ("pxWebWrap",  webwrap,   1, 1, 1,  False),
     ("pxWebFloor", webfloor,  1, 1, 1,  False),
-    ("frostGather", frostgather, 8, 4, 11, False),
     ("frostShard",  frostshard,  6, 6, 14, True),
 ]
 
