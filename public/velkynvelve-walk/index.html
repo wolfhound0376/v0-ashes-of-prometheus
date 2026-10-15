@@ -3878,6 +3878,7 @@ const ITEM_SNAPSHOT = [
 ]
 ;               // the catalogue's weapons, for the preview (build_walk.py)
 const PICKUP_FT = 5;
+const FLOOR_ITEM_SCALE = 1 / 3;                      // an icon's 48-px canvas is a third of a square on the floor
 let catalog = APP ? null : ITEM_SNAPSHOT, floor = [], gearLoaded = false, dmPlacing = null;
 const GEAR = {};                                      // hero id -> {carried: [{name, item_key, properties}], main}
 const ITEM_IMG = {};
@@ -3944,7 +3945,10 @@ function pileAt(w){ return pilesHere().find(p => Math.hypot(w.x - p.x, w.y - (p.
 function feetToPile(a, p){ return Math.hypot(a.x - p.x, a.y - p.y) / pxPerFtAt(p.y); }
 function drawFloorItems(){
   for (const p of pilesHere()){
-    const img = itemImg(p.pixel), sq = 5 * pxPerFtAt(p.y), bob = Math.sin(now / 600 + p.x) * .6;
+    // One square drew the icon canvas about three times too big beside the sprites (Sam, 2026-10-15: "Dagger size is a
+    // little too big. Should be about 1/3 of that size"). FLOOR_ITEM_SCALE keeps the icons' own size ladder
+    // (a dagger is fewer pixels than a spear) and shrinks them all together.
+    const img = itemImg(p.pixel), sq = 5 * pxPerFtAt(p.y) * FLOOR_ITEM_SCALE, bob = Math.sin(now / 600 + p.x) * .6;
     ctx.save(); ctx.globalAlpha = .45; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(p.x, p.y, sq * .28, sq * .09, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     if (img) ctx.drawImage(img, p.x - sq / 2, p.y - sq * .62 + bob, sq, sq);
     else { ctx.fillStyle = "#e8d9a8"; ctx.fillRect(p.x - 3, p.y - 8 + bob, 6, 6); }
