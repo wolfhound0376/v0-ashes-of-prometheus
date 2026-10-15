@@ -2461,7 +2461,12 @@ function shootWeb(f, tgt, done){
 // face the landing, play the "jump" sheet when the sprite has one (the walk sheet otherwise),
 // and let the renderer lift the body on the way over.
 function arcTo(a, land, then){
-  const d = norm({x: land.x - a.x, y: land.y - a.y}), from = {x: a.x, y: a.y}, ms = 520;
+  const d = norm({x: land.x - a.x, y: land.y - a.y}), from = {x: a.x, y: a.y};
+  // The arc lasts as long as the jump sheet does, so the figure is not still tucked in the air
+  // when its feet touch down. 520 ms is the fallback for a sprite with no jump frames, which
+  // rides its walk sheet over.
+  const an = SPR[a.id].img.jump && SPR[a.id].json.animations.jump;
+  const ms = an ? (an.frames / an.fps) * 1000 : 520;
   a.face = faceOf(d.x, d.y); a.path = [];
   if (SPR[a.id].img.jump){ a.anim = "jump"; a.t0 = now; }
   const cs = CREATURE_SFX[a.id]; if (cs && cs.call) bank(cs.call, .5);
