@@ -437,7 +437,7 @@ let actors = [], party = [], npcs = [], foes = [];
 let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
-const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}};
+const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}};
 let now = performance.now();
 
 function mkActor(id, x, y, kind, extra = {}){
@@ -601,7 +601,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor();
+  drawDoor(); drawProps(); drawPropHighlight();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -1044,7 +1044,7 @@ async function enterNode(n, opts = {}){
   cur = n; node = SPEC[n];
   plateImg.src = `${ASSET}img/${node.slug}.jpg`;
   try { await plateImg.decode(); } catch (e) {}
-  buildFx(node.slug); buildMarks(node.slug); buildGrid(); buildDoor();
+  buildFx(node.slug); buildMarks(node.slug); buildGrid(); buildDoor(); buildProps();
   // spawn: the arrival zone in this plate that links back to where we came from
   let spawn, entryDir = {x: 0, y: 1}, arrival = null;
   if (opts.from != null) arrival = node.zones.find(z => z.to.includes(opts.from)) || null;
@@ -1263,6 +1263,105 @@ function drawDoor(){
   ctx.restore();
 }
 
+
+// ---------- props you open: Ilvara's chest (Sam, 2026-10-14: "make this box into an animated treasure box that
+// opens when interacted with") ----------
+// The chest is the one painted at the foot of the bed. Its lid is cut from the painting and swung back on its hinge
+// (the same trick as the pen gate), so no new art: the dark inside shows, warm light rises out of it. The book decides
+// everything else (story.json `props`, OotA ch.1 area 7): locked, Ilvara keeps the key, a poison needle guards the
+// lock. Rolls are made on the dashboard and reported here, as at the gate. What is inside is Layer 1's to say.
+const lids = {};   // prop id -> {img, bx, by, k, target}
+function propState(pr){ return state.props[pr.id] || (state.props[pr.id] = {locked: true, trapKnown: false, disarmed: false, open: false}); }
+function propAt(w){ return (node.props || []).find(pr => inPoly(pr.poly, w.x, w.y)) || null; }
+function buildProps(){
+  for (const pr of node.props || []){
+    const L = pr.lid.poly, xs = L.map(p => p[0]), ys = L.map(p => p[1]);
+    const bx = Math.floor(Math.min(...xs)) - 2, by = Math.floor(Math.min(...ys)) - 2, bw = Math.ceil(Math.max(...xs)) + 2 - bx, bh = Math.ceil(Math.max(...ys)) + 2 - by;
+    const c = document.createElement("canvas"); c.width = bw; c.height = bh; const g = c.getContext("2d");
+    g.beginPath(); L.forEach(([x, y], i) => i ? g.lineTo(x - bx, y - by) : g.moveTo(x - bx, y - by)); g.closePath(); g.clip();
+    const k = plateImg.naturalWidth / NAT_W; try { g.drawImage(plateImg, bx * k, by * k, bw * k, bh * k, 0, 0, bw, bh); } catch (e) {}
+    const dk = document.createElement("canvas"); dk.width = bw; dk.height = bh; const dg = dk.getContext("2d");   // the underside: the same lid, in shadow
+    dg.drawImage(c, 0, 0); dg.globalCompositeOperation = "source-atop"; dg.fillStyle = "rgba(10,7,16,.62)"; dg.fillRect(0, 0, bw, bh);
+    const o = propState(pr).open ? 1 : 0; lids[pr.id] = {img: c, dark: dk, bx, by, k: o, target: o};
+  }
+}
+function tickProps(dt){ for (const id in lids){ const l = lids[id]; if (l.k !== l.target) l.k = l.target > l.k ? Math.min(1, l.k + dt / 1.3) : Math.max(0, l.k - dt / .7); } }
+function drawProps(){
+  for (const pr of node.props || []){
+    const l = lids[pr.id]; if (!l || l.k <= 0) continue;
+    const L = pr.lid.poly, [h0, h1] = pr.lid.hinge, e = l.k < .5 ? 2 * l.k * l.k : 1 - (-2 * l.k + 2) ** 2 / 2, a = e * 1.8;   // ~105 degrees
+    // the inside: dark wood, and warm light rising out of it
+    ctx.save(); ctx.beginPath(); L.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+    const cx = (h0[0] + h1[0] + pr.lid.front[0] * 2) / 4, cy = (h0[1] + h1[1] + pr.lid.front[1] * 2) / 4;
+    const gr = ctx.createRadialGradient(cx, cy, 4, cx, cy, 150); gr.addColorStop(0, `rgba(255,196,110,${.55 * e})`); gr.addColorStop(.45, "#1a1009"); gr.addColorStop(1, "#07050a");
+    ctx.fillStyle = "#08060c"; ctx.fill(); ctx.fillStyle = gr; ctx.fill(); ctx.restore();   // the dark inside first, so the painted lid never shows through
+    if (e > .3 && Math.random() < .25 * e) sparks.push({x: cx + (Math.random() - .5) * 160, y: cy + (Math.random() - .5) * 30, vx: (Math.random() - .5) * 10, vy: -30 - Math.random() * 40, g: -10, col: Math.random() < .5 ? "#ffd38a" : "#fff1c8", t0: now, life: 900});
+    // the lid, swung back on its hinge: an affine map of the cut-out from the painted (W, H) to (W, H2)
+    const W = {x: h1[0] - h0[0], y: h1[1] - h0[1]}, H = {x: pr.lid.front[0] - h0[0], y: pr.lid.front[1] - h0[1]}, len = Math.hypot(H.x, H.y);
+    const H2 = {x: H.x * Math.cos(a), y: H.y * Math.cos(a) - len * 1.05 * Math.sin(a)};
+    const det = W.x * H.y - W.y * H.x, ia = H.y / det, ib = -W.y / det, ic = -H.x / det, id = W.x / det;
+    const A = W.x * ia + H2.x * ib, B = W.y * ia + H2.y * ib, C = W.x * ic + H2.x * id, D = W.y * ic + H2.y * id;
+    const ox = h0[0] - l.bx, oy = h0[1] - l.by;
+    ctx.save(); ctx.transform(A, B, C, D, h0[0] - (A * ox + C * oy), h0[1] - (B * ox + D * oy)); ctx.drawImage(a > Math.PI / 2 ? l.dark : l.img, 0, 0);   // past upright we see its underside, in shadow
+    ctx.restore();
+  }
+}
+function drawPropHighlight(){
+  if (mode !== "explore" && mode !== "dialog") return;
+  for (const pr of node.props || []){
+    const xs = pr.poly.map(p => p[0]), ys = pr.poly.map(p => p[1]), cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const lit = hoverProp === pr || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 300 * node.scale); if (!lit) continue;
+    const st = propState(pr), pulse = .5 + .5 * Math.sin(now / 520), col = st.open ? "98,227,198" : "240,170,80";
+    ctx.save(); ctx.beginPath(); pr.poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+    ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = 22; ctx.lineJoin = "round"; ctx.strokeStyle = `rgba(${col},${.5 + .35 * pulse})`; ctx.lineWidth = 4; ctx.stroke(); ctx.restore();
+  }
+}
+let hoverProp = null;
+function propCenter(pr){ const xs = pr.poly.map(p => p[0]), ys = pr.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
+function openChest(pr){
+  const l = lids[pr.id], st = propState(pr); st.open = true; st.locked = false; if (l) l.target = 1;
+  sfx("door-open", .6); bank("ui/coin_purse", .5);
+  log(`${fname(leader)} opens <b>${pr.name}</b>.`);
+  if (APP) handOff(`${fname(leader)} opens ${pr.name} at the foot of Ilvara's bed. Say what is inside.`);
+  else toast("What is inside is Malachar's to say — in the game this goes to him as your action.", 4200);
+}
+// the poison needle (OotA ch.1 area 7): any attempt to open the lock without the key sets it off
+function needle(pr){
+  const st = propState(pr); if (st.disarmed) return false;
+  st.disarmed = true;   // it fires once
+  bank("creature/player_hurt", .6); leader.flash = now + 220; leader.flashCol = "#8fd48f"; popText(leader, "needle!", "#8fd48f", 1.1);
+  log(`A needle snaps out of the lock into ${fname(leader)}'s hand: 1 piercing, and a <b>DC 13 Constitution</b> save against drow poison (fail: poisoned for an hour; fail by 5 or more: unconscious too).`);
+  if (APP) handOff(`${fname(leader)} sets off the poison needle in the lock of ${pr.name}: 1 piercing damage and a DC 13 Constitution saving throw against drow poison (poisoned for 1 hour on a failure; unconscious too if it fails by 5 or more). Roll it.`);
+  return true;
+}
+function openProp(pr, opts = {}){
+  if (mode !== "explore") return;
+  mode = "dialog"; leader.path = []; tip.hidden = true;
+  const st = propState(pr), c = $("objPic"), g = c.getContext("2d"), xs = pr.poly.map(p => p[0]), ys = pr.poly.map(p => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), sz = Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0), k = plateImg.naturalWidth / NAT_W;
+  g.clearRect(0, 0, 128, 128); try { g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = pr.name;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const close = () => { $("obj").hidden = true; mode = "explore"; };
+  const ask = (what, dc, onWin, onLose) => () => {
+    $("objText").textContent = `${what}: roll it on the dashboard (DC ${dc}). What did it come to?`; box.innerHTML = "";
+    add(`${dc} or more`, () => { close(); onWin(); }, "primary"); add(`Under ${dc}`, () => { close(); onLose(); }); add("Back", () => { close(); openProp(pr, {again: true}); });
+    box.firstChild?.focus();
+  };
+  if (st.open){ $("objText").textContent = pr.text.open; add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
+  else if (!st.locked){ $("objText").textContent = "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
+  else {
+    $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
+    if (!opts.again) sfx("door-locked", .45);
+    if (!st.trapKnown) add("Search it for traps", ask("Intelligence (Investigation)", 20, () => { st.trapKnown = true; toast("There: a needle set into the lock, its tip stained dark.", 3600); log(`${fname(leader)} finds a poison needle in the lock of ${pr.name}.`); }, () => { toast("You find nothing wrong with it.", 2800); }));
+    if (st.trapKnown && !st.disarmed) add("Disarm the needle (thieves' tools)", ask("Dexterity with thieves' tools", 15, () => { st.disarmed = true; sfx("lock-picked", .7); log(`${fname(leader)} disarms the needle.`); }, () => { sfx("lock-pick-fail", .7); toast("The needle does not come free.", 2800); }));
+    add("Pick the lock (thieves' tools)", ask("Dexterity with thieves' tools", 15, () => { needle(pr); sfx("lock-picked", .9); st.locked = false; setTimeout(() => openChest(pr), 700); }, () => { needle(pr); sfx("lock-pick-fail", .8); toast("The lock holds.", 2800); }), "primary");
+    add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
+    add("Leave it", close);
+  }
+  $("obj").hidden = false; box.firstChild?.focus();
+}
 // ---------- things you can use (the template: lit when in reach, a card of options when used) ----------
 let hoverObj = null;
 function interactAt(w){ return node.zones.find(z => z.interact && inPoly(z.interact.poly, w.x, w.y)) || null; }
@@ -2961,6 +3060,9 @@ stage.addEventListener("pointermove", e => {
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(party, w)) : null;
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
+  hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
+  if (hoverProp){ const st = propState(hoverProp); tip.textContent = `${hoverProp.name}${st.open ? "" : st.locked ? " (locked)" : ""}: click to use`; tip.className = "tip" + (st.locked && !st.open ? " locked" : ""); tip.hidden = false;
+    tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   const th = combatTargetHint();
   if (th){ tip.textContent = th; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   hoverZone = mode === "explore" && !hoverActor && !hoverObj ? zoneAt(w.x, w.y) : null;
@@ -2993,6 +3095,7 @@ function click(w){
   if (mode === "explore"){
     const me = hitActor(party, w);
     if (me && me !== leader){ setLeader(me); return; }
+    const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
     const n = hitActor(npcs, w);
@@ -3213,7 +3316,7 @@ function step(a, dt, speed){
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
 }
 function update(dt){
-  tickDoor(dt); tickWard(dt); tickVermin(dt);
+  tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt);
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
