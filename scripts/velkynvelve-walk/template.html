@@ -1701,9 +1701,15 @@ const SHEETS = {
 };
 // Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
 // sheet_save_proficiencies is wired in step 2). Monster saves below are their ability modifiers, as the rows carry no save list.
+// SRD 5.1 Drow: "Hand Crossbow. Ranged Weapon Attack: +4 to hit, range 30/120 ft., one target. Hit: 5 (1d6 + 2) piercing
+// damage, and the target must succeed on a DC 13 Constitution saving throw or be poisoned for 1 hour. If the saving throw
+// fails by 5 or more, the target is also unconscious while poisoned in this way. The target wakes up if it takes damage or
+// if another creature takes an action to shake it awake." (Sam, 2026-10-15: "Yes" to the guards shooting back.)
+// Jorlan keeps the block he had: his canon stat block is not the guard's, and none is invented for him here.
+const HAND_XBOW_DROW = {name: "Hand Crossbow", hit: 4, dmg: "1d6+2", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}};
 const FOE_BLOCKS = {
-  "drow-guard-male":   {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  "drow-guard-female": {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "drow-guard-male":   {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
+  "drow-guard-female": {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
   jorlan:              {name: "Jorlan", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
   "giant-spider": {name: "Giant spider", xp: 200, passive: 10, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
                    attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d8", type: "poison", half: true}}],
@@ -1733,7 +1739,7 @@ const SPELLS = {
   "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
-const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
+const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
@@ -1882,12 +1888,16 @@ function nextTurn(first){
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.reactionUsed = false;
   renderTurns(); renderParty();
+  if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
     const s = d20() + (a.c.sheet.saves.wis || 0);
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
-  a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
+  a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
+  // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
+  if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
+    log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 700); return; } }
   a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...party, ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
@@ -1940,7 +1950,13 @@ function openMenu(a, sub){
     if (sa){ ACTION_ICON["Sneak Attack"] = "attack";
       add("Sneak Attack", c.sneakUsed ? "already used this turn" : `+${sa.sneak} on a ${sa.name} hit · ✓ marks the foes it works on`, c.action && !c.sneakUsed ? () => aim(a, {atk: sa, sneakAim: true}) : null); }
     const thrown = s.attacks.find(k => k.thrown);
-    if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
+    if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}${thrown.item ? " · it lands on the floor" : ""}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
+    for (const fa of flaskAttacks(a)){ ACTION_ICON["Throw: " + fa.name] = "offhand-attack";
+      add(`Throw: ${fa.name}`, `${fa.blurb} · up to ${fa.thrown} ft · +${fa.hit}${fa.qty > 1 ? ` · ${fa.qty} left` : ""}`, c.action ? () => aim(a, {atk: fa, throwing: true}) : null); }
+    // shaking a friend out of a drow-poison stupor or a Sleep spell (SRD: "another creature takes an action to shake it awake")
+    for (const t of party) if (t !== a && t.c && t.c.conds.has("asleep") && !t.down && feetBetween(a, t) <= 5.5){ ACTION_ICON["Shake awake: " + fname(t)] = "help";
+      add(`Shake awake: ${fname(t)}`, "your action", c.action ? () => { c.action = false; t.c.conds.delete("asleep"); t.c.drugged = false; popText(t, "awake", "#b0b8ff"); log(`${fname(a)} shakes ${fname(t)} awake.`); renderParty(); afterAction(a); } : null); }
+    if (c.conds.has("burning")) add("Put out the flames", "your action · DC 10 DEX", c.action ? () => putOutFire(a, () => afterAction(a)) : null);
     // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
     add("Hide", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
     add("Shove / Grapple", `unarmed · they save vs DC ${shoveDc(a)}`, c.action ? () => openMenu(a, "shove") : null);
@@ -1950,7 +1966,8 @@ function openMenu(a, sub){
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? s.saves.wis)}`, c.action ? () => doSearch(a) : null);
     for (const it of (GEAR[a.id] || {carried: []}).carried.filter(c => isWeapon(c) && c.name !== GEAR[a.id].main))
-      { ACTION_ICON["Equip: " + it.name] = "attack"; add(`Equip: ${it.name}`, "your action · it becomes your weapon", c.action ? () => equipItem(a, it.name) : null); }
+      { ACTION_ICON["Equip: " + it.name] = "attack"; const n = GEAR[a.id].main ? 2 : 1, k = gearCost(a, n);
+        add(`Equip: ${it.name}`, k.ok ? `${k.label}${n === 2 ? " · a swap" : ""}` : "no free interaction or action left", k.ok ? () => equipItem(a, it.name) : null); }
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
     if (s.magic || s.innateSorcery) grp("magic");
     // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
@@ -2133,8 +2150,14 @@ function moveActor(a, w, done){
 }
 
 // ----- resolving -----
-function advantageOn(att, tgt, ranged){
+function advantageOn(att, tgt, ranged, atk){
   let adv = 0;
+  if (att.c.conds.has("poisoned")) adv--;                                     // SRD: poisoned — disadvantage on attack rolls
+  if (ranged){                                                                // SRD: a ranged attack with a hostile within 5 ft,
+    const near = (att.kind === "pc" ? standing(foes) : standing(party)).some(h => h !== tgt && !incapacitated(h) && feetBetween(att, h) <= 5) || (!incapacitated(tgt) && feetBetween(att, tgt) <= 5);
+    if (near) adv--;                                                          // or beyond the weapon's normal range
+    if (atk && atk.long && feetBetween(att, tgt) > atk.reach) adv--;
+  }
   if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep")) adv++;
   if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--;
   if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
@@ -2182,18 +2205,22 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     // and the blow lands when the shot arrives (fireShot), not on the shooter's attack frame
     const shot = shotKind(atk, att, tgt);
     if (!shot) bank(ws.swing, .6); else att.aimAt = chestOf(tgt, 0);
-    const ranged = feetBetween(att, tgt) > (atk.reach || 5) + 2;
-    let flying = null;
+    const ranged = !!shot || feetBetween(att, tgt) > (atk.reach || 5) + 2;
+    // a thrown weapon or flask leaves the hand: out of the bag now (the flask is spent; the weapon lands on the floor)
+    if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
+    let flying = null, landed = null;
     strike(att, tgt, () => {
-      const adv = advantageOn(att, tgt, ranged), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + atk.hit + insp >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      const adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + atk.hit + insp >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
-        flying = new Promise(res => fireShot(att, tgt, shot, hit, () => { lands(); res(); })); }
+        flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
       else { lunge(att, tgt, 14 * actorScale(att)); lands(); }
       function lands(){
       const sw = swipeStyle(atk, crit, att);
-      if (!hit){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(ws.miss, .7); log(`${why} — miss.`); narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
+      if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
+      if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
+      if (!hit){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); log(`${why} — miss.`); narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)));
@@ -2202,6 +2229,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       if (!shot){ swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90); }
       spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2});
+      if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
@@ -2209,6 +2237,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (tgt.kind === "pc" ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
+      if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
@@ -2411,7 +2440,7 @@ function damage(t, n, type, crit, from){
   t.flash = now + 180; t.flashCol = "#fff";
   popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
-  t.c.conds.delete("asleep"); if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
+  t.c.conds.delete("asleep"); t.c.drugged = false; if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
   if (t.c.conc && t.c.hp > 0 && n > 0) concSave(t, n);
   if (t.kind === "foe" && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.berserk) goBerserk(t);
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
@@ -2506,7 +2535,12 @@ function foeTurn(f){
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
-  const atk = f.c.sheet.attacks[0], swings = f.c.sheet.multi || 1, s = f.c.sheet;
+  const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
+  // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
+  // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
+  const pressed = standing(party).some(p => !incapacitated(p) && feetBetween(f, p) <= 5);
+  const atk = bow && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
+  if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500)); return; }
   if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); }); return; }
   if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
   let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
@@ -2564,6 +2598,7 @@ function endCombat(won){
   if (mode !== "combat") return;
   // the living pull the bolts out of themselves; the dead keep theirs
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
+  for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
   shots.length = 0;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
@@ -3004,7 +3039,7 @@ function drawConds(a){
     ctx.fillStyle = a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
   }
   if (!a.c.conds.size) return;
-  if (a.c.conds.has("asleep")){ drawSheep(a, top); drawZzz(a, top); }
+  if (a.c.conds.has("asleep")){ if (!a.c.drugged) drawSheep(a, top); drawZzz(a, top); }
   for (const k of a.c.conds){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
     const x = a.x + (i - (a.c.conds.size - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
 }
@@ -3774,7 +3809,8 @@ function attackFromItem(sheet, it){
   const str = sheet.saves.str || 0, dex = sheet.saves.dex || 0, mod = ammo ? dex : finesse ? Math.max(str, dex) : str;
   const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus || 0);       // proficiency +2 at levels 1-4
   const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus || 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
-    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, item: true};
+    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null};
+  if (ammo && rng[1]) a.long = rng[1];
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
   return a;
@@ -3843,17 +3879,115 @@ async function pickUp(a, p){
   if (isWeapon(cat) || isWeapon({name: p.name})) showDialog({title: p.name, body: `${fname(a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
     {label: "Equip it", primary: true, fn: () => equipItem(a, p.name)}, {label: "Keep it in the pack"}]});
 }
+// ONE ANSWER TO "REACH FOR A THING" (Sam, 2026-10-15: "Yes" to the walk matching the battle board). The board's rule
+// (/api/equipment, lib/ground-items interactionCost): the SRD gives one free object interaction a turn — "draw or
+// sheathe a sword" is its own example — and a second costs the action. A SWAP is two (sheathe one, draw the other),
+// so it takes the free interaction AND the action. Out of a fight nothing is counted.
+function gearCost(a, n){
+  const c = a.c, free = c.objFree !== false ? 1 : 0;
+  if (n <= free) return {ok: true, label: "free", pay(){ c.objFree = false; }};
+  if (n - free === 1 && c.action) return {ok: true, label: free ? "free interaction + action" : "action", pay(){ c.objFree = false; c.action = false; }};
+  return {ok: false, why: n >= 2 ? "A swap is two object interactions: your free one and your action." : "Your free object interaction is spent, and so is your action."};
+}
+function gearHint(a, n){ if (!inFightNow()) return ""; const k = gearCost(a, n); return k.ok ? k.label : "nothing left to pay with"; }
 function equipItem(a, name){
   const g = GEAR[a.id]; if (!g) return; const it = g.carried.find(c => c.name === name); if (!it) return;
-  const inFight = mode === "combat" && cbt;
-  if (inFight){ if (!a.c.action){ toast("Equipping takes your action."); return; } a.c.action = false; }
+  const inFight = mode === "combat" && cbt; let paid = "";
+  if (inFight){ const k = gearCost(a, g.main ? 2 : 1); if (!k.ok){ toast(k.why); return; } k.pay(); paid = k.label; }
   const was = g.main; g.main = name; refreshAttacks(a.id);
-  popText(a, `${name} in hand`, "#e8d9a8"); log(`${fname(a)} ${was && was !== name ? `puts away the ${esc(was)} and ` : ""}readies the <b>${esc(name)}</b>${inFight ? " (action)" : ""}.`);
+  popText(a, `${name} in hand`, "#e8d9a8"); log(`${fname(a)} ${was && was !== name ? `puts away the ${esc(was)} and ` : ""}readies the <b>${esc(name)}</b>${inFight ? ` (${paid})` : ""}.`);
   if (APP){ const cid = characterIdOf(a.id);
     const send = () => { const k = (GEAR[a.id].carried.find(c => c.name === name) || {}).item_key; if (!cid || !k) return false;
       fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: "main_hand", item_key: k})}).catch(() => {}); return true; };
     if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }               // a fresh pickup gets its key from the server first
   if (inFight){ renderParty(); afterAction(a); }
+}
+// what is in a hero's hand after a throw: it left with the throw
+function throwAway(a, name){
+  const g = GEAR[a.id]; if (!g) return null; const it = g.carried.find(c => c.name === name); if (!it) return null;
+  it.qty = (it.qty || 1) - 1; if (it.qty <= 0) g.carried = g.carried.filter(c => c !== it);
+  if (g.main === name && !g.carried.some(c => c.name === name)) g.main = null;
+  refreshAttacks(a.id); return it;
+}
+// ---------- throwing (Sam, 2026-10-15: "Yes" to daggers, holy water and alchemist's fire being thrown) ----------
+// A THROWN WEAPON (dagger, handaxe, javelin, spear, light hammer) flies as its own pixel icon — tumbling end over end,
+// or point-first for a javelin or spear — and when it lands it is ON THE FLOOR: at the target's feet on a hit, where it
+// fell on a miss. It has left the hand and the bag (/api/walk-items "drop"), so getting it back is a pickup.
+// A FLASK (SRD 5.1 Adventuring Gear) is thrown up to 20 ft as an improvised weapon — a ranged attack with no
+// proficiency, DEX to hit — and breaks where it lands, hit or miss. It is spent either way.
+//   Acid (vial): "On a hit, the target takes 2d6 acid damage."
+//   Alchemist's fire: "On a hit, the target takes 1d4 fire damage at the start of each of its turns. A creature can end
+//     this damage by using its action to make a DC 10 Dexterity check to extinguish the flames."
+//   Holy water: "the target takes 2d6 radiant damage if it is a fiend or undead." Nothing in Velkynvelve is either, so
+//     on a drow it splashes and does nothing; the map says so rather than inventing a burn.
+function FLASK_OF(it){
+  const n = String((it && it.name) || "").toLowerCase();
+  if (/^acid\b/.test(n)) return {kind: "acid", dmg: "2d6", type: "acid", fx: "acidImpact", blurb: "2d6 acid on a hit"};
+  if (/alchemist'?s fire/.test(n)) return {kind: "fire", burn: "1d4", type: "fire", fx: "fireImpact", blurb: "sets them burning: 1d4 fire each turn"};
+  if (/holy water/.test(n)) return {kind: "holy", dmg: "2d6", type: "radiant", only: /fiend|undead/, fx: "radiantColumn", blurb: "2d6 radiant to a fiend or undead"};
+  return null;
+}
+function flaskAttacks(a){
+  const g = GEAR[a.id]; if (!g) return [];
+  return g.carried.filter(it => FLASK_OF(it)).map(it => { const f = FLASK_OF(it);
+    return {name: it.name, itemName: it.name, hit: a.c.sheet.init || 0, dmg: f.dmg || "0", type: f.type, reach: 20, thrown: 20, flask: f, blurb: f.blurb,
+            pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, qty: it.qty || 1}; });
+}
+// it leaves the hand at the release
+function flung(a, atk, shot){
+  if (shot === "flask"){ const it = (GEAR[a.id] || {carried: []}).carried.find(c => c.name === atk.itemName); if (it) spendItem(a, it, "throw"); return; }
+  throwAway(a, atk.itemName);
+}
+// a thrown weapon comes to rest on the floor, a real pile anyone can pick up
+function restOnFloor(a, atk, where, missed){
+  const t = where && where.id ? where : null;
+  let x = t ? t.x + (Math.random() - .5) * 18 : where.x, y = t ? t.y + 6 + Math.random() * 6 : where.y;
+  if (typeof nearestWalkable === "function" && !walkable(x, y)){ const q = nearestWalkable(x, y); x = q.x; y = q.y; }
+  const cat = catalogItem(atk.itemName) || {};
+  const pile = {id: "local-" + Math.random().toString(36).slice(2), node: String(cur), x: Math.round(x), y: Math.round(y), itemId: cat.id || null, slug: cat.slug || "", name: atk.itemName, pixel: atk.pixel || cat.pixel_icon_url || null, at: new Date().toISOString()};
+  floor.push(pile);
+  bank("combat/arrow_hit_stone", .5);
+  if (!APP) return;
+  const cid = characterIdOf(a.id); if (!cid) return;
+  fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "drop", characterId: cid, itemName: atk.itemName, node: pile.node, x: pile.x, y: pile.y, thrown: true})})
+    .then(r => r.json()).then(j => { if (j.error) toast(j.error); loadFloor(); }).catch(() => {});
+}
+// the glass goes where it lands
+function shatter(atk, where, tgt){
+  const f = atk.flask; bank(`magic/impact_${f.type}`, .75);
+  if (tgt) spawnFx(f.fx, {at: tgt, sq: 1.6, anchor: f.type === "radiant" ? "feet" : "mid"});
+  else spawnFx(f.fx, {at: null, x: where.x, y: where.y, sq: 1.3, flat: true});
+  const gr = GROUND_OF[f.type]; if (gr) spawnFx(gr, {at: tgt || null, x: where.x, y: tgt ? tgt.y : where.y, sq: 1.4, flat: true, fade: true});
+  for (let i = 0; i < 8; i++) sparks.push({x: where.x, y: where.y, vx: (Math.random() - .5) * 160, vy: -40 - Math.random() * 90, g: 300, col: i % 2 ? "#e8f4ff" : "#9fc4d8", t0: now, life: 420});   // glass
+}
+function flaskHits(att, tgt, atk, crit, why){
+  const f = atk.flask;
+  knock(tgt, att, 10 * actorScale(tgt));
+  if (f.kind === "fire"){ addCond(tgt, "burning"); log(`${why} — <b>hit</b>: ${fname(tgt)} catches fire (1d4 fire at the start of each turn; an action and DC 10 DEX puts it out).`); narrate(att, `${fname(att)}'s flask bursts across ${fname(tgt)} in a sheet of fire.`); renderParty(); return; }
+  if (f.only){ const kind = (tgt.c.sheet.ctype || (tgt.creature && tgt.creature.type) || "").toLowerCase();
+    if (!f.only.test(kind)){ popText(tgt, "no effect", "#cfe8ff"); log(`${why} — <b>hit</b>, but ${fname(tgt)} is neither fiend nor undead: the holy water only wets them.`); return; } }
+  const d = roll(f.dmg, crit).total; damage(tgt, d, f.type, crit, att);
+  log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d} ${f.type}.`);
+}
+// SRD 5.1 Drow, Hand Crossbow: DC 13 CON or poisoned for 1 hour; failed by 5 or more, also unconscious until it takes
+// damage or someone uses an action to shake it awake
+function drowPoison(t, dc){
+  const s = t.c.sheet;
+  if ((s.immune || []).includes("poison") || (s.immuneCond || []).includes("poisoned")) return "immune to the poison";
+  const s0 = d20() + (s.saves.con || 0), sv = s0 + (t.kind === "pc" ? useInspiration(t, s0, dc) : 0);
+  if (sv >= dc){ popText(t, "resists poison", "#8fd48f", .8); return `CON save ${sv} vs ${dc}: shrugs off the poison`; }
+  addCond(t, "poisoned"); setTimeout(() => bank("magic/impact_poison", .5), 200);
+  if (sv <= dc - 5){ addCond(t, "asleep"); t.c.drugged = true; t.path = []; popText(t, "out cold", "#8fd48f", 1.1); renderParty();
+    return `CON save ${sv} vs ${dc}: poisoned and unconscious (wakes if hurt, or shaken awake as an action)`; }
+  renderParty(); return `CON save ${sv} vs ${dc}: poisoned (disadvantage on attacks)`;
+}
+// an action and a DC 10 Dexterity check
+function putOutFire(a, done){
+  if (a.kind === "pc") a.c.action = false;
+  const r = d20() + (a.c.sheet.init || 0), ok = r >= 10;
+  if (ok){ a.c.conds.delete("burning"); popText(a, "flames out", "#ffd0a0"); }
+  log(`${fname(a)} beats at the flames: DEX ${r} vs 10 — ${ok ? "out" : "still burning"}.`); renderParty(); done && done();
 }
 // ---------- shots: bolts and arrows that fly, and stay where they land ----------
 // Sam, 2026-10-15: "We need a better crossbow animation for our pixel characters that shows the bolts being fired and
@@ -3875,11 +4009,15 @@ const SHOT_LOOK = {
   dart:   {len: .8,  w: .14, msPerFt: 6.0, arc: .06,  shaft: "#55555e", head: "#d0d6dc", fl: "#c04a3a", stick: true},
   needle: {len: .5,  w: .08, msPerFt: 4.0, arc: .01,  shaft: "#cfd6dc", head: "#ffffff", fl: null,      stick: true},
   stone:  {len: .25, w: .25, msPerFt: 5.0, arc: .06,  shaft: "#7d7a72", head: "#7d7a72", fl: null,      stick: false},
+  thrown: {msPerFt: 7.0, arc: .10, stick: false, sprite: true},              // the weapon itself, tumbling
+  flask:  {msPerFt: 8.0, arc: .16, stick: false, sprite: true},              // a lobbed bottle
 };
 const shots = [], stuck = []; let SHOT_MAX_MS = 560;            // a long shot still lands inside the attack
 function shotKind(atk, att, tgt){
+  if (atk.flask) return "flask";
   const k = SHOT_OF(String(atk.name || "").toLowerCase()); if (k) return k;
-  return null;                                     // thrown weapons keep the strike for now
+  if (atk.thrown && atk.pixel && att && tgt && feetBetween(att, tgt) > 6) return "thrown";   // a throw from range flies; at arm's length it is a stab
+  return null;
 }
 function chestOf(t, jitter){
   const m = SPR[t.id].json, sc = actorScale(t), body = m.pivot[1] * sc;
@@ -3891,7 +4029,7 @@ function shotFrom(a){
   return {x: a.x + fx * m.cell[0] * sc * .16, y: a.y - m.pivot[1] * sc * .58 + fy * 6 * sc};
 }
 // the shot leaves now; land(to) runs when it gets there
-function fireShot(att, tgt, kind, hit, land){
+function fireShot(att, tgt, kind, hit, land, atk){
   const L = SHOT_LOOK[kind], from = shotFrom(att), fp = ftPx(att);
   let to;
   if (hit) to = chestOf(tgt, 1);
@@ -3900,7 +4038,8 @@ function fireShot(att, tgt, kind, hit, land){
     to = {x: c.x + d.x * fp * 3 - d.y * side * m.cell[0] * sc * .2, y: tgt.y + Math.max(4, d.y * fp * 2.5) + 6, ground: true};
   }
   const dist = Math.hypot(to.x - from.x, to.y - from.y) / fp, ms = Math.max(110, Math.min(SHOT_MAX_MS, dist * L.msPerFt));
-  const s = {kind, from, to, t0: now, ms, arc: L.arc * dist * fp, hit, tgt};
+  const s = {kind, from, to, t0: now, ms, arc: L.arc * dist * fp, hit, tgt, img: L.sprite && atk && atk.pixel ? itemImg(atk.pixel) : null,
+             spin: kind === "flask" ? 1.5 : kind === "thrown" && !/javelin|spear/i.test((atk && atk.name) || "") ? 3 : 0};
   shots.push(s);
   if (L.snap){ for (let i = 0; i < 6; i++){ const ang = Math.atan2(to.y - from.y, to.x - from.x) + (Math.random() - .5) * 1.4;
     sparks.push({x: from.x, y: from.y, vx: Math.cos(ang) * (90 + Math.random() * 120), vy: Math.sin(ang) * (90 + Math.random() * 120), col: L.snap, t0: now, life: 160 + Math.random() * 120}); } }
@@ -3951,6 +4090,12 @@ function drawShots(){
     const P = shotPos(s, p), Q = shotPos(s, Math.min(1, p + .02)), ang = Math.atan2(Q.y - P.y, Q.x - P.x), pxft = ftPx({x: P.x, y: P.y, big: 1});
     const T = shotPos(s, Math.max(0, p - .18));                                                    // a streak behind it
     ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = "#fff6e0"; ctx.lineWidth = Math.max(1, pxft * .06); ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.restore();
+    if (SHOT_LOOK[s.kind].sprite){                                                              // a thrown thing: its own icon
+      const sq = 5 * pxft * FLOOR_ITEM_SCALE * (s.kind === "flask" ? 1.2 : 1), rot = s.spin ? p * s.ms / 1000 * Math.PI * 2 * s.spin : ang + Math.PI / 4;
+      if (s.img){ ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(rot); ctx.drawImage(s.img, -sq / 2, -sq / 2, sq, sq); ctx.restore(); }
+      else { ctx.fillStyle = "#cfd8e2"; ctx.fillRect(P.x - 2, P.y - 2, 4, 4); }
+      continue;
+    }
     drawShaft(P.x, P.y, ang, s.kind, pxft);
   }
 }
@@ -4003,8 +4148,9 @@ function useOf(it){
   const p = it.properties || {}, n = String(it.name || "").toLowerCase();
   if (isWeapon(it)) return {kind: "weapon"};
   if (p.heal) return {kind: "heal", dice: String(p.heal)};
+  if (FLASK_OF(it)) return {kind: "throw"};
   if (p.damage || p.range || p.application || p.poison_type || p.save_ability || p.save || p.trap_item || /poison|venom|blood \(vial\)/.test(n))
-    return {kind: "dm", why: p.range ? "it is thrown, and the map has no throw yet" : "it needs a save or a target"};
+    return {kind: "dm", why: "it needs a save or a target"};
   if (/potion|antitoxin|elixir|cordial|draught|tonic|philter/.test(n) || p.effect || p.duration)
     return {kind: "drink", effect: p.effect || (p.duration ? `lasts ${p.duration}` : "")};
   if (p.food_days != null || p.drink || p.rations || /meat|jerky|fish|mushroom|bread|ration|egg|skewer|grub|crab|snail|cricket|crayfish|legs|eel/.test(n))
@@ -4037,11 +4183,11 @@ function renderBag(){
   const hand = $("invHand"); hand.innerHTML = "";
   const held = g.main ? g.carried.find(x => x.name === g.main) : null;
   hand.innerHTML = `<span>In hand: <b>${esc(g.main || "nothing (fists)")}</b></span>`;
-  if (held){ const b = document.createElement("button"); b.className = "btn"; b.textContent = "Put away"; b.title = "free: sheathing a weapon is the turn's free object interaction";
-    b.disabled = !mine; b.onclick = () => unequipItem(a); hand.appendChild(b); }
+  if (held){ const b = document.createElement("button"); b.className = "btn"; b.textContent = "Put away"; b.title = fight ? gearHint(a, 1) : "";
+    b.disabled = !mine || (fight && !gearCost(a, 1).ok); b.onclick = () => unequipItem(a); hand.appendChild(b); }
   const list = $("invList"); list.innerHTML = "";
   if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
-  const order = {weapon: 0, heal: 1, drink: 2, food: 3, dm: 4, none: 5};
+  const order = {weapon: 0, heal: 1, drink: 2, throw: 3, food: 4, dm: 5, none: 6};
   const rows = g.carried.map(it => ({it, u: useOf(it)})).sort((x, y) => order[x.u.kind] - order[y.u.kind] || x.it.name.localeCompare(y.it.name));
   for (const {it, u} of rows){
     const row = document.createElement("div"); row.className = "invRow";
@@ -4050,20 +4196,22 @@ function renderBag(){
       : u.kind === "heal" ? `restores ${u.dice} HP`
       : u.kind === "drink" ? (u.effect || "a draught")
       : u.kind === "food" ? (u.verb === "drink" ? "a drink" : "food")
-      : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
+      : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     row.innerHTML = `<span class="invPic">${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
       + `<span class="invTxt"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}</b><small>${esc(what)}</small></span><span class="invBtns"></span>`;
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
     const btns = row.querySelector(".invBtns");
     const btn = (label, ok, why, fn) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; btns.appendChild(b); };
     if (u.kind === "weapon" && g.main !== it.name)
-      btn("Equip", mine && (!fight || c.action), fight ? "takes your action" : "", () => { equipItem(a, it.name); if (inFightNow()) toggleBag(false); else renderBag(); });
+      btn("Equip", mine && (!fight || gearCost(a, g.main ? 2 : 1).ok), fight ? gearHint(a, g.main ? 2 : 1) : "", () => { equipItem(a, it.name); if (inFightNow()) toggleBag(false); else renderBag(); });
     if (u.kind === "heal" || u.kind === "drink"){
       btn("Drink", mine && (!fight || c.bonus), fight ? "your bonus action" : "", () => drinkItem(a, it, a));
       if (u.kind === "heal") for (const t of party){ if (t === a) continue;
         const near = !fight || feetBetween(a, t) <= 5.5;
         if (near) btn(`Give ${SHEETS[t.id] ? SHEETS[t.id].name.split(" ")[0] : t.id}`, mine && (!fight || c.bonus), fight ? "your bonus action · they must be within 5 ft" : "", () => drinkItem(a, it, t)); }
     }
+    if (u.kind === "throw" && fight){ const fa = flaskAttacks(a).find(x => x.itemName === it.name);
+      btn("Throw", mine && c.action && !!fa, "your action: click a foe within 20 ft", () => { toggleBag(false); aim(a, {atk: fa, throwing: true}); }); }
     if (u.kind === "food") btn(u.verb === "drink" ? "Drink" : "Eat", mine && (!fight || c.action), fight ? "takes your action" : "", () => eatItem(a, it, u.verb));
     list.appendChild(row);
   }
@@ -4106,6 +4254,7 @@ function eatItem(a, it, verb){
 }
 function unequipItem(a){
   const g = GEAR[a.id]; if (!g || !g.main || !bagCan(a)) return;
+  if (inFightNow()){ const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
   const was = g.main; g.main = null; refreshAttacks(a.id);
   popText(a, `${was} away`, "#e8d9a8", .8); log(`${fname(a)} puts the <b>${esc(was)}</b> away.`);
   if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
