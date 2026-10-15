@@ -1490,7 +1490,7 @@ const SHEETS = {
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
   scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
-           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}},
+           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
   freia:  {name: "Fifi", cls: "Rogue", hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
            attacks: [{name: "Dagger", hit: 5, dmg: "1d4+3", type: "piercing", reach: 5, thrown: 60, sneak: "1d6"}, {name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: null},
@@ -1531,6 +1531,7 @@ const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned"], lit: ["✦", "#e9c
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
                     sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], dodging: ["◈", "#cfe8ff", "Dodging"],
+                    inspired: ["♪", "#ffd36a", "Bardic Inspiration: +d6 to one attack roll, ability check or saving throw"],
                     restrained: ["⌗", "#e8e2c8", "Restrained by webbing: speed 0, attacks on you have advantage, yours disadvantage"]};
 
 // dice: "1d8+3", "2d6", "4" → {total, rolls}
@@ -1731,6 +1732,10 @@ function openMenu(a, sub){
     // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
     // but notice it fizzles when attempted because the sigil soaks it up") — the lesson is learned by trying.
     if (s.magic) add("Cast", `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, (c.action || c.bonus) ? () => openMenu(a, "cast") : null, "primary");
+    // Bardic Inspiration (SRD 5.1, Bard): a bonus action, one creature other than you within 60 ft who can hear
+    // you gains a d6, once per creature at a time; uses = Charisma modifier per long rest.
+    if (s.bardic){ const left = c.inspLeft ?? s.bardic.uses;
+      add("Bardic Inspiration", `bonus action · ${left} of ${s.bardic.uses} left · an ally within 60 ft adds a d${s.bardic.die} to one roll`, c.bonus && left > 0 ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {inspire: true}; hint("Bardic Inspiration: click a friend within 60 ft who can hear you."); } : null); }
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
@@ -1769,6 +1774,8 @@ function combatClick(w){
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
+  if (p.inspire){ const t = hitActor(party, w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
+    if (t.c.conds.has("inspired")){ toast(`${fname(t)} already has an inspiration die.`); return; } inspire(a, t); return; }
   if (p.help){ const t = hitActor(party, w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(party, w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; } castSpell(a, t, p.spell); return; }
@@ -1834,7 +1841,7 @@ function attackWith(att, tgt, atk, done){
     bank(ws.swing, .6);
     const ranged = feetBetween(att, tgt) > (atk.reach || 5) + 2;
     strike(att, tgt, () => {
-      const adv = advantageOn(att, tgt, ranged), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + atk.hit >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      const adv = advantageOn(att, tgt, ranged), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + atk.hit + insp >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
       if (r === 1) bank("ui/nat1", .7);
       lunge(att, tgt, 14 * actorScale(att));
@@ -1852,7 +1859,7 @@ function attackWith(att, tgt, atk, done){
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
       damage(tgt, dmg.total, atk.type, crit, att);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ const s = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (tgt.kind === "pc" ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
@@ -1880,7 +1887,7 @@ function castSpell(caster, tgt, name, done){
   if (wardsHere()){
     bank(`magic/${family}_windup`, .55);
     const ring0 = spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
-    playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
+    playOnce(caster, bardic && SPR[caster.id].img.perform ? "perform" : SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
     caster.once && (caster.once.hit = () => {
       ring0.then(e => { if (e) e.until = now; });
       wardDrinks(); bank("magic/spell_fizzle", .9); spawnFx("pxSigilShatter", {at: caster, sq: 1.3, anchor: "mid"});
@@ -1893,17 +1900,19 @@ function castSpell(caster, tgt, name, done){
     return;
   }
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
-  const ring = quiet ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
+  const bardic = isMusical(caster), noteCol = sp.fx || "#ffd36a";
+  const ring = quiet || bardic ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
+  if (bardic && !quiet) singAt(caster, noteCol, 900);
   const kit = quiet ? null : kitFor(name, sp); kitGather(caster, kit);
   const marks = [];
   // Sigils only, no plumes (Sam, 2026-10-13: "use the sigils but NOT the plumes. I will tell you when the
   // plume is appropriate"). sig[1] stays in the table for that day.
-  const markTarget = (tg) => { if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); };
+  const markTarget = (tg) => { if (bardic && !quiet){ noteRing(tg, noteCol, now + 2400); return; } if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); };
   if (sp.area) aoeMarks.push({x: at.x, y: at.y, sp, col: sp.fx || "#e8a24a", until: now + 2600});
   if (sp.area && !quiet) spawnFx(sig[0] || "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: true, spin: .8, loop: true, until: now + 2600, alpha: .8});
   else if (tgt.id) markTarget(tgt);
-  const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
-  playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
+  const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (bardic && !quiet){ for (let i = 0; i < 8; i++){ const B = bodyPoint(tg); noteAt(B.x, B.y, taken ? noteCol : "#9a93a8"); } return; } if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
+  playOnce(caster, bardic && SPR[caster.id].img.perform ? "perform" : SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
   caster.once && (caster.once.hit = () => {
     ring.then(e => { if (e) e.until = now; });
     if (!quiet) bank(`magic/${family}_release`, .7);
@@ -1922,7 +1931,7 @@ function castSpell(caster, tgt, name, done){
       const m = c.sheet.magic;
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
-        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, hit = crit || (r !== 1 && r + m.hit >= targetAc(tgt)); afterAttackRoll(caster);
+        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + m.hit + insp >= targetAc(tgt)); afterAttackRoll(caster);
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
@@ -2236,7 +2245,7 @@ async function kitDeliver(caster, at, kit, then){
   const v = await vfxLoad(kit.travel); if (!v){ then(); return; }
   if (kit.route === "ball"){
     const ms = Math.min(900, Math.max(220, dist / (kit.speed || 14) * 1000));
-    flights.push({ball: true, kit, v, from, to, sq, dist, t0: now, ms, seed: Math.floor(Math.random() * 7), then});
+    flights.push({ball: true, kit, v, from, to, sq, dist, t0: now, ms, seed: Math.floor(Math.random() * 7), then, music: isMusical(caster)});
   } else flights.push({beam: true, kit, v, from, to, sq, t0: now, ms: kit.route === "radiate" ? 420 : 340, hitAt: kit.route === "radiate" ? 300 : 150, then});
 }
 function poseAt(M, p, dist, seed){
@@ -2265,6 +2274,7 @@ function drawFlights(){
       };
       for (let g = M.trail; g >= 1; g--){ const q = p - g * .07; if (q > 0 && p < 1) draw1(q, .42 * Math.pow(.6, g - 1), Math.pow(.82, g)); }
       draw1(p, p < .08 ? p / .08 : 1, 1);
+      if (f.music && Math.random() < .5){ const q = flightPos(f, p); noteAt(q.x, q.y, f.kit.burst ? f.kit.burst.tint : "#ffd36a", {vx: 0, vy: -20, life: 600, size: 15}); }
       if (p >= 1){ flights.splice(i, 1); const fn = f.then; f.then = null; fn && fn(); }
     } else {
       const p = Math.min(1, el / f.ms), len = Math.hypot(f.to.x - f.from.x, f.to.y - f.from.y), ang = Math.atan2(f.to.y - f.from.y, f.to.x - f.from.x);
@@ -2289,6 +2299,56 @@ function kitImpact(t, kit, opts = {}){
   }
   if (kit.aftermath && !opts.area) spawnFx(kit.aftermath.sheet, {at: t, sq: kit.aftermath.size, flat: true, loop: true, until: now + kit.aftermath.hold, alpha: .9});
   if (kit.flourish === "glow") spawnFx("pxGlow", {at: t, sq: 1.8, anchor: "mid", loop: true, until: now + 2600, alpha: .9, tint: "#ffd36a"});
+}
+
+// ============================================================================
+// THE BARD'S MAGIC IS MUSIC (Sam, 2026-10-14: "The bard doesn't really use sigils he use the magic of music for
+// most of his spells"). SRD 5.1: a bard's "magic comes from the heart and soul you pour into the performance of
+// your music or oration", and an instrument is the focus. The drow took Scott's instrument, so it is his voice:
+// he sings (the `perform` sheet), and notes do what runes and sigils do for everyone else — they rise at his
+// hands while the spell winds up, they circle the one he sings at, and they trail his spells across the room.
+// Sleep keeps its sigil (Sam's ruling of 2026-10-13) and its lullaby.
+// ============================================================================
+const notes = [];
+const NOTE_GLYPH = ["♪", "♫", "♩", "♬"];
+function isMusical(a){ return !!(a && a.c && a.c.sheet.music); }
+function noteAt(x, y, col, o = {}){ notes.push(Object.assign({x, y, vx: (Math.random() - .5) * 40, vy: -40 - Math.random() * 40, g: NOTE_GLYPH[Math.floor(Math.random() * 4)], col, t0: now, life: 900 + Math.random() * 500, size: 18 + Math.random() * 8, wob: Math.random() * 6}, o)); }
+// notes rising off the singer for `ms`
+function singAt(a, col, ms){ const end = now + ms; const tick = () => { if (now > end || !actors.includes(a)) return; const h = handPoint(a); noteAt(h.x + (Math.random() - .5) * 20, h.y, col); setTimeout(tick, 110); }; tick(); }
+// notes circling the one being sung at, until `until`
+function noteRing(t, col, until){ for (let i = 0; i < 5; i++) notes.push({ring: t, ph: i / 5 * Math.PI * 2, g: NOTE_GLYPH[i % 4], col, t0: now, life: until - now, size: 20}); }
+// a stream of notes from the singer to someone, arriving in `ms`
+function noteStream(a, t, col, ms){ const n = 9; for (let i = 0; i < n; i++) setTimeout(() => { const A = handPoint(a), B = bodyPoint(t); notes.push({from: A, to: B, arc: 50 + Math.random() * 30, g: NOTE_GLYPH[i % 4], col, t0: now, life: ms * .8, size: 20}); }, i * ms / n * .5); }
+function drawNotes(){
+  ctx.save(); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "#140a06";
+  for (let i = notes.length - 1; i >= 0; i--){
+    const n = notes[i], k = (now - n.t0) / n.life; if (k >= 1 || (n.ring && !actors.includes(n.ring))){ notes.splice(i, 1); continue; }
+    let x, y, sz = n.size;
+    if (n.ring){ const t = n.ring, sc = actorScale(t), m = SPR[t.id].json, th = (now - n.t0) / 1000 * 1.8 + n.ph; x = t.x + Math.cos(th) * 30 * sc; y = t.y - m.pivot[1] * sc * .55 + Math.sin(th) * 12 * sc + Math.sin(now / 200 + n.ph) * 4; }
+    else if (n.from){ const e = k * k * (3 - 2 * k); x = n.from.x + (n.to.x - n.from.x) * e; y = n.from.y + (n.to.y - n.from.y) * e - Math.sin(e * Math.PI) * n.arc; }
+    else { const t = (now - n.t0) / 1000; x = n.x + n.vx * t + Math.sin(t * 5 + n.wob) * 6; y = n.y + n.vy * t; }
+    ctx.globalAlpha = n.ring ? Math.min(1, (now - n.t0) / 300, (n.life - (now - n.t0)) / 400) : k < .15 ? k / .15 : 1 - Math.max(0, k - .6) / .4;
+    ctx.font = `700 ${Math.round(sz)}px Georgia, 'Times New Roman', serif`; ctx.shadowColor = n.col; ctx.shadowBlur = 10;
+    ctx.strokeText(n.g, x, y); ctx.fillStyle = n.col; ctx.fillText(n.g, x, y);
+  }
+  ctx.restore();
+}
+// Bardic Inspiration: he sings to them, the notes cross to them, and they carry a golden note until they use it
+function inspire(a, t){
+  const c = a.c; c.bonus = false; c.inspLeft = (c.inspLeft ?? c.sheet.bardic.uses) - 1; combatBusy = true;
+  a.face = faceOf(t.x - a.x, t.y - a.y); playOnce(a, SPR[a.id].img.perform ? "perform" : "cast", () => setAnim(a, "idle"));
+  bank("ui/turn_bard", .8); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
+  setTimeout(() => { addCond(t, "inspired"); t.c.inspDie = c.sheet.bardic.die; spawnFx("pxGlow", {at: t, sq: 1.5, anchor: "mid", until: now + 1200, alpha: .8, tint: "#ffd36a"});
+    log(`${fname(a)} sings to ${fname(t)}: <b>Bardic Inspiration</b> (d${c.sheet.bardic.die}).`); narrate(a, `${fname(a)} sings, and ${fname(t)} stands a little taller.`);
+    combatBusy = false; renderParty(); afterAction(a); }, 1000);
+}
+// Spend an inspiration die on a roll that would otherwise fall short (SRD: rolled after the d20, before the
+// outcome is known; here the die is spent only when it can still change the outcome). Returns the bonus.
+function useInspiration(a, total, need){
+  if (!a || !a.c || !a.c.conds.has("inspired") || total >= need) return 0;
+  const d = 1 + Math.floor(Math.random() * (a.c.inspDie || 6)); a.c.conds.delete("inspired");
+  popText(a, `♪ +${d}`, "#ffd36a", 1.1); for (let i = 0; i < 6; i++){ const B = bodyPoint(a); noteAt(B.x, B.y, "#ffd36a"); }
+  log(`${fname(a)} uses Bardic Inspiration: +${d}.`); renderParty(); return d;
 }
 // The healing orb: a soft sphere of light that leaves the caster's hands, arcs over and sinks into the
 // ally. Drawn (a radial glow with a hot core, motes trailing), not a sheet, so it is a ball and not a ring.
@@ -2329,6 +2389,7 @@ function drawOrb(s, k){
 function spellBolt(from, to, col, then){ const m = SPR[from.id].json, sc = actorScale(from); sparks.push({bolt: true, x: from.x, y: from.y - m.pivot[1] * sc * .6, tx: to.x, ty: to.y - (to.id ? SPR[to.id].json.pivot[1] * actorScale(to) * .5 : 0), col, t0: now, life: 260, then}); }
 function drawCombatFx(){
   drawFlights();
+  drawNotes();
   for (let i = sparks.length - 1; i >= 0; i--){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
