@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const [doll, pack] = await Promise.all([
     db.from("equipment_items").select("id,slot,item_key,name,icon_url,equipped").eq("character_id", characterId),
     db.from("inventory_items")
-      .select("id,name,item_key,item_type,equippable_slot,icon_url,items(item_type,properties,equippable_slot)")
+      .select("id,name,item_key,item_type,equippable_slot,icon_url,quantity,description,items(item_type,properties,equippable_slot)")
       .eq("character_id", characterId),
   ])
   return NextResponse.json({ equipped: doll.data ?? [], carried: pack.data ?? [] })

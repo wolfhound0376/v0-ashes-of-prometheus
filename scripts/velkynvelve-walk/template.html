@@ -187,6 +187,21 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 
 .dm{position:absolute;top:10px;right:12px;width:min(300px,calc(100% - 24px));background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:10px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .dm[hidden]{display:none}
+.inv{position:absolute;top:10px;left:12px;width:min(360px,calc(100% - 24px));max-height:calc(100% - 20px);overflow:auto;background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:6}
+.inv[hidden]{display:none}
+.invHead{display:flex;justify-content:space-between;align-items:center;font-family:var(--face-display);font-size:var(--s1)}
+.invEcon,.invFoot{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim)}
+.invTabs{display:flex;flex-wrap:wrap;gap:4px}
+.invTabs .tbtn[aria-pressed="true"]{color:var(--ink);border-color:var(--ember)}
+.invHand{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--rule);border-radius:6px;padding:6px 8px}
+.invList{display:grid;gap:6px}
+.invRow{display:grid;grid-template-columns:40px 1fr;gap:4px 8px;align-items:center;border-bottom:1px solid var(--rule);padding-bottom:6px}
+.invPic{width:40px;height:40px;display:grid;place-items:center;background:radial-gradient(circle,rgba(255,235,200,.08),transparent 70%);border:1px solid var(--rule);border-radius:5px;color:var(--ink-dim)}
+.invPic img{max-width:36px;max-height:36px;object-fit:contain;image-rendering:auto}
+.invTxt{display:grid;min-width:0}.invTxt b{font-weight:600}.invTxt i{color:var(--ink-dim);font-style:normal}
+.invTxt small{color:var(--ink-dim);font-size:var(--s-1);line-height:1.3}
+.invBtns{grid-column:2;display:flex;flex-wrap:wrap;gap:4px}.invBtns .btn{padding:3px 9px;font-size:var(--s-1)}
+.invEmpty{margin:0;color:var(--ink-dim);font-size:var(--s-1)}
 .dm h4{margin:0;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);font-weight:500}
 .dm select{font:inherit;background:var(--stage);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:6px}
 .dm .btn{text-align:left}
@@ -271,6 +286,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <input type="range" id="vol" min="0" max="100" value="40" aria-label="Music volume">
       <button class="tbtn" id="motionBtn" aria-pressed="true">Motion on</button>
       <button class="tbtn" id="voicesBtn" aria-pressed="true" title="Hear the story's lines on the map">Voices on</button>
+      <button class="tbtn" id="bagBtn" aria-expanded="false" title="What the hero carries (I)">Bag (I)</button>
       <button class="tbtn" id="dmBtn" aria-expanded="false">DM tools</button>
     </div>
   </header>
@@ -300,6 +316,14 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn danger" id="endCombat">End fight</button></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
       <div class="cbt-hint" id="cbtHint" hidden></div>
+    </div>
+    <div class="inv" id="inv" role="dialog" aria-label="Inventory" hidden>
+      <div class="invHead"><b id="invWho"></b><button class="tbtn" id="invClose" aria-label="Close the bag">✕</button></div>
+      <div class="invEcon" id="invEcon"></div>
+      <div class="invTabs" id="invTabs"></div>
+      <div class="invHand" id="invHand"></div>
+      <div class="invList" id="invList"></div>
+      <div class="invFoot">I opens and closes · Esc closes</div>
     </div>
     <div class="dm" id="dm" hidden>
       <h4>Jump to area</h4>
@@ -1962,6 +1986,7 @@ function openMenu(a, sub){
     }
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("walk:innate-sorcery", .8); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
+    ACTION_ICON["Bag"] = "use-object"; add("Bag", "equip, put away, drink a potion (I)", () => toggleBag(true, a));
     for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
@@ -3530,7 +3555,7 @@ function hitActor(list, w){
   return best;
 }
 stage.addEventListener("pointerdown", e => {
-  if (e.target.closest(".dm,.dialog,.talk,.zoom,.cbt-ui")) return;
+  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui")) return;
   unlockAudio();
   ptr = {id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false};
   stage.setPointerCapture(e.pointerId);
@@ -3542,7 +3567,7 @@ stage.addEventListener("pointermove", e => {
     if (ptr.moved){ view.tx = ptr.tx + dx; view.ty = ptr.ty + dy; camTween = null; userPanAt = now; applyView(); }
     return;
   }
-  if (e.target.closest(".dm,.dialog,.talk,.zoom,.cbt-ui")){ tip.hidden = true; return; }
+  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(party, w)) : null;
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
@@ -3604,6 +3629,8 @@ $("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyV
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
+  if (e.code === "KeyI" && (mode === "explore" || mode === "combat")){ e.preventDefault(); toggleBag(); return; }
+  if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
   if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
   if (MOVE_KEYS.has(e.code) && (mode === "explore" || mode === "combat")){ keys.add(e.code); e.preventDefault(); unlockAudio(); }
@@ -3764,12 +3791,14 @@ async function loadGear(only){
     const cid = characterIdOf(id); if (!cid) continue;
     try {
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
-      const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null}; });
+      const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
+        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || ""}; });
       const main = (j.equipped || []).find(e => e.slot === "main_hand" && e.equipped !== false);
       GEAR[id] = {carried, main: main ? main.name : null}; refreshAttacks(id);
     } catch (e) {}
   }
   if (cbt) renderParty();
+  if (bagOpen()) renderBag();
 }
 async function loadFloor(){
   if (!APP) return;
@@ -3801,7 +3830,10 @@ async function pickUp(a, p){
   floor = floor.filter(q => q !== p); await ensureCatalog();
   const cat = catalogItem(p.name) || {};
   const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null});
-  g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel});
+  const have = g.carried.find(c => c.name === p.name && !isWeapon(c));
+  if (have) have.qty = (have.qty || 1) + 1;
+  else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, icon: cat.icon_url || null, desc: cat.description || ""});
+  if (bagOpen()) renderBag();
   popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
   bank("ui/item_pickup", .7);
   if (APP){ const cid = characterIdOf(a.id);
@@ -3948,6 +3980,141 @@ function drawStuckGround(){
     const fade = Math.min(1, (q.until - now) / 800); drawShaft(q.x, q.y, q.ang, q.kind, ftPx({x: q.x, y: q.y, big: 1}), .7, fade);
   }
 }
+// ---------- the bag (I) ----------
+// Sam, 2026-10-15: "We also need a way to check inventory (letter I) when playing to equip and unequip. We also need a
+// way while in combat and out of combat to use potions, elixers, etc."
+// I (or the Bag button in the header, or Bag in a hero's combat menu) opens what that hero carries: their real
+// inventory_items in the game (/api/equipment), the page's own in the preview. Painted icon in the bag, the pixel icon
+// when there is no painting (AGENTS.md: "Painted art in the bag, pixel art on the floor").
+// WHAT A THING DOES comes from its catalogue row, never from the map:
+//   - a weapon: Equip (the action in a fight, Sam's ruling) or Put away (free: sheathing a weapon is the SRD's own
+//     example of the turn's free object interaction).
+//   - properties.heal (Potion of Healing 2d4+2, Greater 4d4+4): drink it, or pour it into someone within 5 ft. The map
+//     runs SRD 5.2.1 rules: drinking or administering a potion is a Bonus Action.
+//   - other potions and draughts with a stated effect (Antitoxin, Water Breathing, Nightlight Cordial): drunk the same
+//     way. The effect is the catalogue's own words, logged and told to Malachar; the map invents no mechanics for them.
+//   - food and drink: free outside a fight; in one it takes the action (Utilize).
+//   - throwables (acid, alchemist's fire, holy water), poisons and anything that asks for a save: shown with what the
+//     catalogue says, used through the DM. The map has no throw yet, and nothing gets spent by mistake.
+// Using a thing spends it: one off the stack (/api/walk-items "consume"), and a line in the story so Malachar knows.
+const inv = {who: null};
+const inFightNow = () => mode === "combat" && !!cbt;
+function useOf(it){
+  const p = it.properties || {}, n = String(it.name || "").toLowerCase();
+  if (isWeapon(it)) return {kind: "weapon"};
+  if (p.heal) return {kind: "heal", dice: String(p.heal)};
+  if (p.damage || p.range || p.application || p.poison_type || p.save_ability || p.save || p.trap_item || /poison|venom|blood \(vial\)/.test(n))
+    return {kind: "dm", why: p.range ? "it is thrown, and the map has no throw yet" : "it needs a save or a target"};
+  if (/potion|antitoxin|elixir|cordial|draught|tonic|philter/.test(n) || p.effect || p.duration)
+    return {kind: "drink", effect: p.effect || (p.duration ? `lasts ${p.duration}` : "")};
+  if (p.food_days != null || p.drink || p.rations || /meat|jerky|fish|mushroom|bread|ration|egg|skewer|grub|crab|snail|cricket|crayfish|legs|eel/.test(n))
+    return {kind: "food", verb: p.drink || /stout|wine|ale|brandy|mead|liquor|milk|cordial/.test(n) ? "drink" : "eat"};
+  if (p.drink || /stout|wine|ale|brandy|mead|liquor|milk/.test(n)) return {kind: "food", verb: "drink"};
+  return {kind: "none"};
+}
+function bagHero(){
+  if (inFightNow()){ const a = activeActor(); if (a && a.kind === "pc" && !inv.who) return a; }
+  return inv.who && party.includes(inv.who) ? inv.who : leader;
+}
+const bagOpen = () => !$("inv").hidden;
+function toggleBag(on, who){
+  if (on === undefined) on = !bagOpen();
+  if (on){ inv.who = who || null; if (APP && !gearLoaded && seatsSeen.length){ gearLoaded = true; loadGear(); } renderBag(); }
+  $("inv").hidden = !on; $("bagBtn").setAttribute("aria-expanded", String(on));
+}
+// what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
+function bagCan(a){ return !inFightNow() || (a === activeActor() && !combatBusy && !a.down); }
+function renderBag(){
+  const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null});
+  const fight = inFightNow(), mine = bagCan(a), c = a.c;
+  $("invWho").textContent = `${fname(a)}'s pack`;
+  $("invEcon").textContent = !fight ? "out of combat: nothing costs a turn"
+    : !mine ? "not their turn: look, don't touch"
+    : `this turn: ${c.action ? "action ready" : "action spent"} · ${c.bonus ? "bonus action ready" : "bonus action spent"}`;
+  const tabs = $("invTabs"); tabs.innerHTML = "";
+  for (const p of party){ const b = document.createElement("button"); b.className = "tbtn"; b.textContent = SHEETS[p.id] ? SHEETS[p.id].name.split(" ")[0] : p.id;
+    b.setAttribute("aria-pressed", String(p === a)); b.onclick = () => { inv.who = p; renderBag(); }; tabs.appendChild(b); }
+  const hand = $("invHand"); hand.innerHTML = "";
+  const held = g.main ? g.carried.find(x => x.name === g.main) : null;
+  hand.innerHTML = `<span>In hand: <b>${esc(g.main || "nothing (fists)")}</b></span>`;
+  if (held){ const b = document.createElement("button"); b.className = "btn"; b.textContent = "Put away"; b.title = "free: sheathing a weapon is the turn's free object interaction";
+    b.disabled = !mine; b.onclick = () => unequipItem(a); hand.appendChild(b); }
+  const list = $("invList"); list.innerHTML = "";
+  if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
+  const order = {weapon: 0, heal: 1, drink: 2, food: 3, dm: 4, none: 5};
+  const rows = g.carried.map(it => ({it, u: useOf(it)})).sort((x, y) => order[x.u.kind] - order[y.u.kind] || x.it.name.localeCompare(y.it.name));
+  for (const {it, u} of rows){
+    const row = document.createElement("div"); row.className = "invRow";
+    const pic = it.icon || (it.pixel ? ITEM_PX + it.pixel : "");
+    const what = u.kind === "weapon" ? (g.main === it.name ? "in hand" : "a weapon")
+      : u.kind === "heal" ? `restores ${u.dice} HP`
+      : u.kind === "drink" ? (u.effect || "a draught")
+      : u.kind === "food" ? (u.verb === "drink" ? "a drink" : "food")
+      : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
+    row.innerHTML = `<span class="invPic">${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
+      + `<span class="invTxt"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}</b><small>${esc(what)}</small></span><span class="invBtns"></span>`;
+    const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
+    const btns = row.querySelector(".invBtns");
+    const btn = (label, ok, why, fn) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; btns.appendChild(b); };
+    if (u.kind === "weapon" && g.main !== it.name)
+      btn("Equip", mine && (!fight || c.action), fight ? "takes your action" : "", () => { equipItem(a, it.name); if (inFightNow()) toggleBag(false); else renderBag(); });
+    if (u.kind === "heal" || u.kind === "drink"){
+      btn("Drink", mine && (!fight || c.bonus), fight ? "your bonus action" : "", () => drinkItem(a, it, a));
+      if (u.kind === "heal") for (const t of party){ if (t === a) continue;
+        const near = !fight || feetBetween(a, t) <= 5.5;
+        if (near) btn(`Give ${SHEETS[t.id] ? SHEETS[t.id].name.split(" ")[0] : t.id}`, mine && (!fight || c.bonus), fight ? "your bonus action · they must be within 5 ft" : "", () => drinkItem(a, it, t)); }
+    }
+    if (u.kind === "food") btn(u.verb === "drink" ? "Drink" : "Eat", mine && (!fight || c.action), fight ? "takes your action" : "", () => eatItem(a, it, u.verb));
+    list.appendChild(row);
+  }
+}
+// one off the stack, here and in the character's real inventory
+function spendItem(a, it, verb, target){
+  const g = GEAR[a.id]; it.qty = (it.qty || 1) - 1; if (it.qty <= 0) g.carried = g.carried.filter(x => x !== it);
+  if (!APP) return;
+  const cid = characterIdOf(a.id); if (!cid) return;
+  const send = key => fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "consume", characterId: cid, itemKey: key, itemName: it.name, verb, targetCharacterId: target && target !== a ? characterIdOf(target.id) : null})})
+    .then(r => r.json()).then(j => { if (j.error) toast(j.error); }).catch(() => {});
+  send(it.item_key || null);
+}
+function drinkItem(a, it, t){
+  const fight = inFightNow(); if (!bagCan(a)) return;
+  if (fight){ if (!a.c.bonus){ toast("Drinking a potion takes your bonus action."); return; }
+    if (t !== a && feetBetween(a, t) > 5.5){ toast(`${fname(t)} is out of reach: they must be within 5 ft.`); return; } a.c.bonus = false; }
+  const u = useOf(it); t.c = t.c || fighterFor(t);
+  spendItem(a, it, t === a ? "drink" : "give", t);
+  bank("ui/item_pickup", .5);
+  if (u.kind === "heal"){
+    const d = roll(u.dice).total; t.c.hp = Math.min(t.c.hpMax, t.c.hp + d);
+    if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); }
+    setTimeout(() => { kitImpact(t, KIT.healing); bank("combat/heal", .8); popText(t, `+${d}`, "#9ff2c8"); }, 250);
+    log(t === a ? `${fname(a)} drinks the <b>${esc(it.name)}</b> and regains ${d} HP${fight ? " (bonus action)" : ""}.`
+               : `${fname(a)} pours the <b>${esc(it.name)}</b> into ${fname(t)}: ${d} HP back${fight ? " (bonus action)" : ""}.`);
+  } else {
+    popText(t, it.name, "#cfe8ff", .8);
+    log(`${fname(t)} drinks the <b>${esc(it.name)}</b>${u.effect ? `: ${esc(u.effect)}` : ""}${fight ? " (bonus action)" : ""}.`);
+  }
+  if (fight){ renderParty(); toggleBag(false); if (!a.down) openMenu(a); } else renderBag();
+}
+function eatItem(a, it, verb){
+  const fight = inFightNow(); if (!bagCan(a)) return;
+  if (fight){ if (!a.c.action){ toast("That takes your action."); return; } a.c.action = false; }
+  spendItem(a, it, verb, a); bank("ui/item_pickup", .5); popText(a, it.name, "#e8d9a8", .8);
+  log(`${fname(a)} ${verb === "drink" ? "drinks" : "eats"} the <b>${esc(it.name)}</b>${fight ? " (action)" : ""}.`);
+  if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
+}
+function unequipItem(a){
+  const g = GEAR[a.id]; if (!g || !g.main || !bagCan(a)) return;
+  const was = g.main; g.main = null; refreshAttacks(a.id);
+  popText(a, `${was} away`, "#e8d9a8", .8); log(`${fname(a)} puts the <b>${esc(was)}</b> away.`);
+  if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "unequip", character_id: cid, slot: "main_hand"})}).catch(() => {}); }
+  if (inFightNow()){ renderParty(); if (cbt.phase === "menu") openMenu(a); }
+  renderBag();
+}
+$("bagBtn").onclick = () => toggleBag();
+$("invClose").onclick = () => toggleBag(false);
 // ---------- the weapon in the hand ----------
 // Sam, 2026-10-15: "I'm not seeing the weapons being used by the pixel characters." The heroes' pixel art was drawn
 // empty-handed, and repainting every frame for every weapon is not affordable (about 500 frames a hero). So the
