@@ -81,10 +81,24 @@ WALK_DIVERGES = {
     # plate that reads as a ball over the head, and a ball is the thing Sam
     # keeps saying healing is not. The walk keeps the board's golden
     # luminescence around the body and its motes, and leaves the orb out.
-    "healing": {"route": "sky",
-                "burst": {"tint": "#ffe6a0", "sparks": 12, "ring": False,
-                          "power": 0.6, "rise": 1.2, "noFlash": True},
-                "flourish": "glow"},
+    # Then Sam sent his own healing sheet (2026-10-14): a ring of light opening
+    # at the ally's feet and spiralling up through them (vfx/healRise). It rises
+    # out of the floor, so it is not punched in like an impact, and it is lifted
+    # down so the ring sits on the floor. It replaces the pixel glow ring, which
+    # was drawn on top of it and hid it.
+    "healing": {"route": "sky", "impact": "healRise", "impactScale": 1.45,
+                "impactLift": -0.4, "noPunch": True,
+                "burst": {"tint": "#ffe6a0", "sparks": 10, "ring": False,
+                          "power": 0.6, "rise": 1.2, "noFlash": True}},
+}
+# Per-spell additions on top of the board's DELIVERY_BY_SPELL, merged into it.
+WALK_BY_SPELL = {
+    # SRD 5.1: "You create a ghostly, skeletal hand in the space of a creature
+    # ... Until then [the start of your next turn], the hand clings to the
+    # target." Sam's hand sheet (vfx/chillHand, 2026-10-14) forms on the target
+    # and grips; `cling` keeps its last 6 frames cycling until the caster's next
+    # turn starts. The board already delivers it impact-only; this adds the art.
+    "Chill Touch": {"impact": "chillHand", "impactScale": 0.8, "noPunch": True, "cling": 6},
 }
 # Per-type scale tweaks for the walk's camera, which sits closer than the
 # board's. Applied on top of whatever the board says.
@@ -130,6 +144,8 @@ def build_kit_tables(root):
     # DELIVERY_BY_SPELL is keyed lower-case on the board; the walk looks spells
     # up by their display name, so title-case the keys it will be asked for.
     named = {n.title(): _adapt(spec) for n, spec in by_spell.items()}
+    for n, extra in WALK_BY_SPELL.items():
+        named[n] = dict(named.get(n, {}), **extra)
 
     # Every sheet named has to exist, or the page silently draws less. This is
     # the check that would have caught the deleted frostGather.
