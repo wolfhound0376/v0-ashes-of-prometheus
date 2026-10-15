@@ -617,6 +617,14 @@
     "frames": 16,
     "rows": 4
   },
+  "shieldOfFaith": {
+    "bytes": 455676,
+    "cols": 4,
+    "file": "shieldOfFaith.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 4
+  },
   "sigilAbjurationPlume": {
     "bytes": 260896,
     "cols": 3,
