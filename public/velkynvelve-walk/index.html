@@ -1222,11 +1222,13 @@ function wakeAudio(){ try { const c = audioCtx(); if (c.state !== "running") c.r
 // 2026-10-13), so the preview carries its own copy of the bank under sfx/bank/.
 const SFX_BANK = APP ? "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/sfx/" : "sfx/bank/";
 function loadSfx(name){
-  const url = name.startsWith("bank:") ? `${SFX_BANK}${name.slice(5)}.ogg` : `${ASSET}${name.startsWith("arrive-") ? "audio" : "sfx"}/${name}.mp3`;
+  const url = name.startsWith("bank:") ? `${SFX_BANK}${name.slice(5)}.ogg`
+    : name.startsWith("walk:") ? `${APP ? "/" : ""}sfx/walk/${name.slice(5)}.mp3`        // Sam's ElevenLabs picks, shipped with the app (public/sfx/walk)
+    : `${ASSET}${name.startsWith("arrive-") ? "audio" : "sfx"}/${name}.mp3`;
   return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
-const bank = (name, gain = .8) => sfx("bank:" + name, gain);
+const bank = (name, gain = .8) => sfx(name.startsWith("walk:") ? name : "bank:" + name, gain);
 async function sfx(name, gain = .8){
   try {
     const ctx = audioCtx(); if (ctx.state === "suspended") await ctx.resume();
@@ -1634,9 +1636,10 @@ function weaponSfx(atk, tgt){
   const swing = ranged ? (/cross/.test(n) ? "combat/crossbow_release" : "combat/bow_release")
     : /dagger|knife|shortsword|rapier|scimitar|sword|shard/.test(n) ? "combat/dagger_stab"
     : /mace|hammer|maul|club|staff|greatsword|axe|halberd|pick|morningstar|pike|bar/.test(n) ? "combat/melee_swing_heavy"
-    : /unarmed|fist|punch|claw|bite|slam|kick|pseudopod/.test(n) ? "combat/unarmed_hit" : "combat/melee_swing_light";
-  const ac = tgt ? targetAc(tgt) : 0;
-  const hit = ranged ? "combat/arrow_hit_flesh" : (atk.type || "") === "bludgeoning" ? "combat/melee_hit_bludgeon"
+    : /claw|bite|slam|pseudopod/.test(n) ? "combat/unarmed_hit" : "combat/melee_swing_light";
+  const ac = tgt ? targetAc(tgt) : 0, fist = /unarmed|fist|punch|kick/.test(n);
+  // a bare fist lands with Sam's own punch (ElevenLabs take 1, 2026-10-15: "a better sound ... for unarmed attack")
+  const hit = ranged ? "combat/arrow_hit_flesh" : fist ? "walk:unarmed-hit" : (atk.type || "") === "bludgeoning" ? "combat/melee_hit_bludgeon"
     : ac >= 17 ? "combat/melee_hit_plate" : ac >= 14 ? "combat/melee_hit_chainmail" : "combat/melee_hit_flesh";
   return {swing, hit, miss: ranged ? "combat/arrow_hit_stone" : "combat/melee_miss"};
 }
@@ -1956,7 +1959,7 @@ function openMenu(a, sub){
       } else if ((s.level || 1) < 2) add("No bonus action yet", `Cunning Action comes at rogue level 2${light.length === 1 ? "; an off-hand attack needs a second light weapon" : ""}`, null);
       else if (light.length === 1) add("Off-hand attack", "needs a second light weapon in the other hand", null);
     }
-    if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
+    if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("walk:innate-sorcery", .8); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
     for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
@@ -2316,7 +2319,7 @@ function doShove(a, t, what){
       const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
-      bank("combat/unarmed_hit", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
+      bank("walk:unarmed-hit", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
       else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const to = nearestWalkable(t.x + d.x * ftPx(t) * 5, t.y + d.y * ftPx(t) * 5); t.x = to.x; t.y = to.y; narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
@@ -3053,7 +3056,7 @@ function drawNotes(){
 function inspire(a, t){
   const c = a.c; c.bonus = false; c.inspLeft = (c.inspLeft ?? c.sheet.bardic.uses) - 1; combatBusy = true;
   a.face = faceOf(t.x - a.x, t.y - a.y); playOnce(a, SPR[a.id].img.perform ? "perform" : "cast", () => setAnim(a, "idle"));
-  bank("ui/turn_bard", .8); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
+  bank("walk:bardic-inspiration", .8); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
   // Sam's Bardic Inspiration sheet (2026-10-14): ribbons of gold and blue music rise around the ally and gather
   // into one glowing note. The note (the sheet's last 4 frames) stays over them while they hold the die, and
   // goes out when they spend it — so everyone can see who is carrying Scott's song.
