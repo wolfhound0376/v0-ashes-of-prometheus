@@ -2333,6 +2333,9 @@ function goBerserk(f){
   f.c.berserk = true;
   const cs = CREATURE_SFX[f.id]; if (cs && cs.call) bank(cs.call, .95);
   popText(f, "BERSERK", "#ff4a2a", 1.4); shake(7); burst(f, "#ff4a2a", 26);
+  // its own rage sheet (Sam approved 2026-10-15): hunch, rear up, roar, settle into a crouch. Played after the
+  // blow's flinch, which damage() starts in the same tick, so the flinch does not cut the roar off.
+  if (SPR[f.id].img.rage) setTimeout(() => { if (!f.down) playOnce(f, "rage", () => setAnim(f, "idle")); }, 420);
   bark(f, (FOE_BARK[f.id] || ["Hrrraagh!"])[0], 1800);
   log(`<b>${fname(f)} goes berserk.</b> Wounded Fury: advantage on its attacks and +2d6 on every claw that lands. It will not back off now.`);
   narrate(f, `${fname(f)}'s eyes roll white. It stops caring what this costs it and turns toward whoever looks easiest to break.`);
