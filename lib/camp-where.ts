@@ -45,3 +45,31 @@ export function campVerdict(where: PartyWhere | null | undefined): CampVerdict {
     reason: where?.label ? `Make camp at ${where.label}.` : "Make camp.",
   }
 }
+
+/**
+ * What Malachar is told when the party stands inside a place, so he never
+ * offers the fire there. Null when camp is allowed.
+ */
+export function campPromptNote(v: CampVerdict | null | undefined): string | null {
+  if (!v || v.allowed) return null
+  return [
+    "CAMP IS NOT POSSIBLE HERE",
+    `The party is inside ${v.where}. Camp is only ever made out on the travel map, never inside a place.`,
+    "Do NOT emit [TIME:make_camp] while they are here, and do not offer camp actions.",
+    "A short rest ([TIME:short_rest]) is allowed. If they want to camp, they must first leave onto the road.",
+  ].join("\n")
+}
+
+/**
+ * The server's half of the same rule: a [TIME:make_camp] written while the
+ * party is inside a place is dropped before it reaches time_log, so no camp
+ * opens and no camp actions are granted. Every other event passes.
+ */
+export function dropBarredCamp<T extends { eventType: string }>(
+  events: T[],
+  v: CampVerdict | null | undefined,
+): { events: T[]; refused: boolean } {
+  if (!v || v.allowed) return { events, refused: false }
+  const kept = events.filter((e) => e.eventType !== "make_camp")
+  return { events: kept, refused: kept.length !== events.length }
+}

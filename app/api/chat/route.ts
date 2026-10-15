@@ -62,6 +62,7 @@ import {
   type CraftMenuRecipeRow, type CarriedItem,
   type LevelUpSheet,
 } from "@/lib/camp"
+import { campVerdict, campPromptNote, dropBarredCamp, type CampVerdict, type PartyWhere } from "@/lib/camp-where"
 // What the bard actually sings when a performance lands, and the one reason
 // it stays silent — see lib/bard-songs.
 import { bardSongCue, carriesInstrument } from "@/lib/bard-songs"
@@ -979,6 +980,9 @@ ${companions.length ? `RUN BY THE DM AS NPCs: ${companions.map((c) => c.name).jo
   let campingBefore = false
   let pendingVisitorRestId: string | null = null
   let campBlock = ""
+  // Camp is made on the travel map only, never inside a place's node map
+  // (Sam, 2026-10-14). Read once here: it shapes the prompt and gates the tag.
+  let campVerdictNow: CampVerdict | null = null
   let questBlock = ""
   // Set after the reply when a [CAMP_ACTION] needs this player's roll (§14):
   // stamped onto the roll request created at the end of the turn.
@@ -1336,6 +1340,17 @@ ${companions.length ? `RUN BY THE DM AS NPCs: ${companions.map((c) => c.name).jo
       campBlock = formatCampBlock({ camping: campingBefore, supplies, partySize: budgets.length, budgets, visitor: pendingVisitor, results: campResults, testsReady, crafting })
     } catch (e) {
       console.warn("[camp] state unavailable this turn:", e)
+    }
+  }
+  if (timeAdmin) {
+    try {
+      const { data: where } = await timeAdmin.rpc("party_location_label")
+      campVerdictNow = campVerdict(where as PartyWhere | null)
+      const note = campPromptNote(campVerdictNow)
+      if (note) campBlock = campBlock ? `${campBlock}\n\n${note}` : note
+    } catch (e) {
+      // Best-effort, like the rest of the camp: an unreadable position never blocks a turn.
+      console.warn("[camp] party location unavailable:", e)
     }
   }
 
@@ -3980,7 +3995,11 @@ Rules:
   let playerTimeOfDay: string | null = null
   if (timeAdmin && activeSessionId) {
     await logTimeEvent(timeAdmin, activeSessionId, { eventType: "dialogue_exchange" })
-    const timeEvents = parseTimeEvents(rawText)
+    // A [TIME:make_camp] inside a place is dropped before it is logged: no camp
+    // opens there, so no camp actions are granted (lib/camp-where.ts).
+    const campGate = dropBarredCamp(parseTimeEvents(rawText), campVerdictNow)
+    if (campGate.refused) console.log(`[camp] make_camp refused — ${campVerdictNow?.reason}`)
+    const timeEvents = campGate.events
     const restingTonight = timeEvents.some((e) => e.eventType === "long_rest")
 
     // The PREVIOUS long rest, read BEFORE this one is written. Every time_log
