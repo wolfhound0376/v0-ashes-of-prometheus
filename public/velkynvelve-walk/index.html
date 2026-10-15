@@ -257,6 +257,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .victory .big{font-family:"Cinzel",Georgia,serif;font-size:56px;font-weight:700;color:#f3d68a;letter-spacing:.08em;text-shadow:0 0 18px rgba(243,214,138,.55),0 2px 0 #2a1a08,0 4px 14px rgba(0,0,0,.8)}
 .victory .small{font-family:"Crimson Text",Georgia,serif;font-size:19px;color:#e8dcc4;margin-top:6px;text-shadow:0 2px 6px rgba(0,0,0,.9)}
 @keyframes victory{0%{opacity:0;transform:translate(-50%,-40%) scale(.9)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}20%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-58%)}}
+.sneakTag{position:absolute;transform:translate(-50%,-140%);pointer-events:none;font:700 11px/1 ui-monospace,monospace;letter-spacing:.08em;color:#1a1208;background:#ffd166;border-radius:4px;padding:3px 6px;box-shadow:0 0 10px rgba(255,209,102,.7);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -814,7 +815,19 @@ function bark(a, text, ms = 4200, opts = {}){
   el.appendChild(document.createTextNode(text)); over.appendChild(el);
   bubbles.push({a, el, until: now + ms}); a.lastBark = now; lastAnyBark = now;
 }
+const sneakTags = new Map();   // foe -> its "✓ SNEAK" tag while a Sneak Attack is being aimed
+function updateSneakTags(){
+  const p = cbt && cbt.phase === "target" && cbt.pend, a = p && p.atk && p.atk.sneak ? activeActor() : null;
+  const want = new Set();
+  if (a) for (const f of standing(foes)){ const st = sneakState(a, f, p.atk, feetBetween(a, f) > (p.atk.reach || 5) + 2); if (st && st.on) want.add(f); }
+  for (const [f, el] of sneakTags) if (!want.has(f)){ el.remove(); sneakTags.delete(f); }
+  for (const f of want){
+    let el = sneakTags.get(f); if (!el){ el = document.createElement("div"); el.className = "sneakTag"; el.textContent = "✓ SNEAK"; over.appendChild(el); sneakTags.set(f, el); }
+    const m = SPR[f.id].json, top = f.y - m.pivot[1] * actorScale(f); const [sx, sy] = w2s(f.x, top); el.style.left = sx + "px"; el.style.top = sy + "px";
+  }
+}
 function updateOverlay(){
+  updateSneakTags();
   for (let i = bubbles.length - 1; i >= 0; i--){
     const b = bubbles[i];
     if (now > b.until || !actors.includes(b.a)){ b.el.remove(); bubbles.splice(i, 1); continue; }
@@ -1817,7 +1830,7 @@ function nextTurn(first){
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
-  a.c.conds.delete("disengaged"); a.c.sneakUsed = false; a.c.lastLight = null; a.c.bonusSpell = false; a.c.leveledSpell = false;
+  a.c.conds.delete("disengaged"); a.c.lastLight = null; for (const h of [...party, ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
@@ -1862,6 +1875,12 @@ function openMenu(a, sub){
     grp("attack");
     const sa = s.attacks.find(k => k.sneak), ss = sa && sneakState(a, null, sa);
     add("Attack", ss ? (c.sneakUsed ? "sneak attack used this turn" : `Sneak Attack ${ss.why}`) : s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
+    // SNEAK ATTACK, AS A COMMAND (Sam, 2026-10-14: "How about the sneak attack; I didn't see the option."). By the
+    // rules it is not a separate action: it rides on an Attack once per turn when the conditions are met. The command
+    // makes that visible: it aims the finesse weapon and marks every foe it would work on right now (✓ SNEAK) — with
+    // advantage, or an ally beside the target, and never at disadvantage.
+    if (sa){ ACTION_ICON["Sneak Attack"] = "attack";
+      add("Sneak Attack", c.sneakUsed ? "already used this turn" : `+${sa.sneak} on a ${sa.name} hit · ✓ marks the foes it works on`, c.action && !c.sneakUsed ? () => aim(a, {atk: sa, sneakAim: true}) : null); }
     const thrown = s.attacks.find(k => k.thrown);
     if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
     // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
@@ -2008,8 +2027,11 @@ function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0); }
 // `offhand`: two-weapon fighting's bonus-action swing (SRD 5.1) — the bonus action, not the action, and no
 // ability modifier on its damage unless that modifier is negative.
 const offDmg = (atk) => atk.dmg.replace(/\+\d+$/, "");
-function attackWith(att, tgt, atk, done, offhand){
-  const c = att.c; if (att.kind === "pc"){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
+// the weapon a hero swings with when there is no time to choose: their first real melee weapon, else a punch
+function meleeOf(h){ const a = h.c.sheet.attacks || []; return a.find(k => (k.reach || 5) <= 10 && !/unarmed/i.test(k.name)) || a[0]; }
+// `reaction`: an opportunity attack, made with the reaction, not the action.
+function attackWith(att, tgt, atk, done, offhand, reaction){
+  const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
   approachThen(att, tgt, reach, () => {
     pushCam(att, tgt);
@@ -2116,6 +2138,8 @@ function castSpell(caster, tgt, name, done){
         land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
         const d = roll(sp.dmg, crit); damage(tgt, d.total, sp.type, crit, caster); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
+        // SRD 5.1 Shocking Grasp: "On a hit ... it can't take reactions until the start of its next turn."
+        if (name === "Shocking Grasp"){ tgt.c.reactionUsed = true; popText(tgt, "no reactions", "#fff27a", .8); }
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
       } else if (sp.kind === "heal"){
         const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
@@ -2266,6 +2290,25 @@ function approachThen(att, tgt, ft, then){
   if (d <= reach + 6){ then(); return; }
   const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
   const k = Math.min(need, budget) / d, goal = nearestWalkable(att.x + (tgt.x - att.x) * k, att.y + (tgt.y - att.y) * k);
+  // OPPORTUNITY ATTACKS, THE OTHER WAY (Sam, 2026-10-14: "are there opportunity attacks?"). A foe that moves out of
+  // a hero's reach gives that hero a swing with their reaction (SRD 5.1: "You can make an opportunity attack when a
+  // hostile creature that you can see moves out of your reach ... you use your reaction to make one melee attack
+  // against the provoking creature. The attack occurs right before the creature leaves your reach."). Heroes
+  // leaving a foe's reach were already covered (moveActor).
+  if (att.kind === "foe" && !att.c.conds.has("disengaged")){
+    const p = standing(party).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
+    if (p){
+      p.c.reactionUsed = true; const atk = meleeOf(p);
+      log(`${fname(p)} takes a swing as ${fname(att)} breaks away (opportunity attack, their reaction).`); narrate(p, `${fname(p)} lashes out as ${fname(att)} pulls away.`);
+      attackWith(p, att, atk, () => {
+        combatBusy = true;
+        if (!cbt) return;
+        if (att.down){ combatBusy = false; setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; }
+        approachThen(att, tgt, ft, then);
+      }, false, true);
+      return;
+    }
+  }
   att.c.move = Math.max(0, att.c.move - Math.round(Math.min(need, budget) / ftPx(att) / 5) * 5);
   att.path = findPath(att, goal); att.onArrive = () => { if (Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 40 && att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; } then(); };
   if (!att.path.length) then();
