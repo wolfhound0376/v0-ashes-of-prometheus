@@ -460,5 +460,94 @@
     450
    ]
   }
+ },
+ "7": {
+  "props": [
+   {
+    "id": "ilvara-chest",
+    "name": "Ilvara's chest",
+    "_src": "OotA ch.1 area 7 (Ilvara's Quarters): 'A heavy chest of black-stained zurkhwood sits at the foot of the bed.' Locked; the key is in a hidden pocket inside Ilvara's belt. Poison-needle trap on the lock, set off by any attempt to open it without the key: 1 piercing, DC 13 CON or poisoned 1 hour (fail by 5+: also unconscious). DC 20 INT (Investigation) finds it; thieves' tools + DC 15 DEX disarms it; thieves' tools + DC 15 DEX picks the lock. Traced by eye on the painted plate, 2026-10-14.",
+    "poly": [
+     [
+      930,
+      735
+     ],
+     [
+      988,
+      712
+     ],
+     [
+      1200,
+      680
+     ],
+     [
+      1222,
+      730
+     ],
+     [
+      1222,
+      800
+     ],
+     [
+      985,
+      862
+     ],
+     [
+      936,
+      820
+     ]
+    ],
+    "lid": {
+     "poly": [
+      [
+       943,
+       733
+      ],
+      [
+       988,
+       718
+      ],
+      [
+       1197,
+       686
+      ],
+      [
+       1215,
+       732
+      ],
+      [
+       1217,
+       757
+      ],
+      [
+       980,
+       807
+      ],
+      [
+       942,
+       762
+      ]
+     ],
+     "hinge": [
+      [
+       988,
+       718
+      ],
+      [
+       1197,
+       686
+      ]
+     ],
+     "front": [
+      978,
+      780
+     ]
+    },
+    "text": {
+     "closed": "A heavy chest of black-stained zurkhwood at the foot of the bed. Locked.",
+     "open": "Ilvara's chest stands open."
+    }
+   }
+  ]
  }
 }
