@@ -2,6 +2,7 @@ import * as THREE from "three"
 import { Flip, loadSheet, type Sheet } from "./spell-vfx-kit"
 import type { StatusKind } from "@/lib/status-kinds"
 import type { SpriteRig } from "@/lib/sprite-token"
+import { sanctuaryQuad, sanctuaryCentre, sanctuaryHoldOpacity } from "@/lib/ward-look"
 
 // ============================================================================
 // WHAT A CONDITION LOOKS LIKE ON THE BODY.
@@ -26,6 +27,10 @@ import type { SpriteRig } from "@/lib/sprite-token"
 //   webbed   pxWebWrap over the figure, pxWebFloor flat on its square.
 //   prone    no quad: the body lies down. A sprite card goes flat (its own
 //            `prone` flag); a rigged model pitches over onto its front.
+//   sanctuary  Sam's own dome (sanctuaryHold), looping QUIETLY for as long
+//            as the ward is up, so a warded creature can be told from an
+//            unwarded one at a glance. The cast itself is ward-vfx.ts; this
+//            waits for it to finish and then takes over (lib/ward-look).
 //
 // Sheets come through the kit's loader, so a web on the floor never
 // downloads a sheet the cast that laid it already has.
@@ -41,6 +46,10 @@ export interface StatusBody {
   dead: boolean
   /** Mid-walk: the board owns the position, so the hop stays out of it. */
   moving: boolean
+  /** Model height in board units, for looks sized to the body (sanctuary). */
+  height?: number
+  /** The token's base radius, likewise. */
+  radius?: number
 }
 
 const TINT = { burning: 0xffffff, charged: 0xbfe8ff, webbed: 0xe6e6e6 } as const
@@ -48,6 +57,7 @@ const SHEETS: Record<Exclude<StatusKind, "prone">, string[]> = {
   burning: ["pxFlame"],
   charged: ["pxArc"],
   webbed: ["pxWebWrap", "pxWebFloor"],
+  sanctuary: ["sanctuaryHold"],
 }
 
 function hash(s: string): number {
@@ -85,6 +95,8 @@ interface TokenLooks {
 const PROUD = 0.34
 const toCam = new THREE.Vector3()
 const camRight = new THREE.Vector3()
+const camUp = new THREE.Vector3()
+const camBack = new THREE.Vector3()
 
 /** Sheets already fetched, by key — read synchronously at build time. */
 const have = new Map<string, Sheet>()
@@ -181,6 +193,13 @@ export class StatusVfx {
       floor.mesh.position.y = 0.028   // over the floor marks, under the movement bands
       group.add(floor.mesh)
       look.quads.push(wrap, floor)
+    } else if (kind === "sanctuary") {
+      // Sized every frame in drive(): the camera turns and the body may be a
+      // gnome or a hook horror, so the quad starts at unit size.
+      const q = new Flip(sheets[0]!, 0xffffff, 1, 1)
+      q.opacity = 0
+      group.add(q.mesh)
+      look.quads.push(q)
     }
     this.parent.add(group)
     return look
@@ -199,6 +218,7 @@ export class StatusVfx {
     const charged = tl.looks.get("charged")
     const webbed = tl.looks.get("webbed")
     const prone = tl.looks.get("prone")
+    const sanctuary = tl.looks.get("sanctuary")
 
     // Undo last frame's hop and twist before anything else reads the body.
     if (tl.hop) { b.obj.position.y -= tl.hop; tl.hop = 0 }
@@ -267,6 +287,25 @@ export class StatusVfx {
       if (camera) wrap.mesh.quaternion.copy(camera.quaternion)
       wrap.opacity = Math.min(1, webbed.t / 0.3)
       webbed.quads[1].opacity = Math.min(1, webbed.t / 0.3)
+    }
+
+    if (sanctuary) {
+      const [q] = sanctuary.quads
+      if (camera) {
+        camUp.set(0, 1, 0).applyQuaternion(camera.quaternion)
+        camera.getWorldDirection(camBack).negate()
+        const quad = sanctuaryQuad((b.height ?? 1.7) * Math.max(0.2, camUp.y), b.radius ?? 0.38)
+        // The group sits at the token's square at floor level (above); the
+        // quad is placed in the group's frame, so the foot is the origin.
+        const c = sanctuaryCentre({ x: 0, y: 0, z: 0 }, camUp, camBack, quad)
+        q.mesh.position.set(c.x, c.y, c.z)
+        q.mesh.quaternion.copy(camera.quaternion)
+        q.mesh.scale.set(quad.w, quad.h, 1)
+      }
+      // Its own clock, offset per token so two warded creatures never pulse
+      // in step.
+      q.clock(sanctuary.t + sanctuary.phase)
+      q.opacity = camera ? sanctuaryHoldOpacity(sanctuary.t) : 0
     }
 
     // Lying down, and getting back up.

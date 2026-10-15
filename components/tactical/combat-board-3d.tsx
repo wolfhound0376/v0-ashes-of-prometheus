@@ -116,7 +116,7 @@ import { weaponArcVfx, ARC_STEEL, ARC_CRIT } from "./weapon-arc"
 import { MeleeCombo, styleFor, rotateClip, arcSecondsFor } from "@/lib/melee-combo"
 // A ward landing: gold, from the feet up.
 import { wardVfx } from "./ward-vfx"
-import { wardSpellFor } from "@/lib/wards"
+import { wardSpellFor, normaliseWard } from "@/lib/wards"
 // The cones that appear when Sneak is armed, painted by the SAME function
 // the server judges the roll with.
 import { showSightCones, type ConeHandle } from "./sight-cones"
@@ -219,6 +219,12 @@ interface TokenRow {
   hp_max: number | null
   /** Set when this token is a spell effect (Mage Hand), see lib/summons. */
   summon?: unknown
+  /**
+   * A ward on this creature (Sanctuary, Shield of Faith), see lib/wards.
+   * Read for the standing Sanctuary look (status-vfx.ts); the rules read it
+   * server-side.
+   */
+  ward?: unknown
   /**
    * Timed conditions the combat route laid on this creature — Web's
    * Restrained, Faerie Fire — as {condition, spell, ...} rows. Read for the
@@ -3530,7 +3536,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       const box = new THREE.Box3().setFromObject(t.obj)
       const h = Math.max(0.8, box.max.y - box.min.y)
       vfx.push(wardVfx({
-        parent: scene, spell, height: h,
+        parent: scene, spell, height: h, camera: activeCam,
         radius: radiusFor(t.row.token_size) * 0.9,
         resolve: () => tokensRef.current.get(tokenId)?.obj ?? null,
       }))
@@ -5855,7 +5861,7 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // The combatants.
       const { data: tokenRows } = await supabase
         .from("vtt_tokens")
-        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,is_hidden,hp_current,hp_max,allegiance,summon,effects")
+        .select("id,map_id,character_id,bestiary_id,label,model_url,model_scale,model_y_offset,grid_x,grid_y,rotation_y,token_size,tint_color,is_visible,is_hidden,hp_current,hp_max,allegiance,summon,effects,ward")
         .eq("map_id", map.id)
 
       // A model belongs to the SPECIES. A token that names a bestiary entry
@@ -6940,6 +6946,12 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
         const sigilOutcome = p.damage?.word === "saved" ? "warded" : "taken"
         const layTargetSigil = () => {
           if (!sigilPlan || !p.target) return false
+          // SANCTUARY HAS ITS OWN ART (ward-vfx.ts, Sam's dome), laid on the
+          // warded creature when the ward lands. Its "save" is the
+          // ATTACKER'S, rolled later, so the abjuration sigil — a dome over
+          // the caster — would be a second dome, on the wrong body, for a
+          // save nobody is making yet. The caster still raises the ward pose.
+          if (wardSpellFor(p.spell) === "sanctuary") return false
           // WHOSE SQUARE. Almost every sigil marks the creature the spell was
           // thrown at; divination's scrying eyes open around the CASTER
           // instead (SigilArt.anchor). Only the position moves — the timing
@@ -7021,6 +7033,11 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             })
             vfx.push(cast)
           }
+        } else if (wardSpellFor(p.spell) === "sanctuary") {
+          // NOTHING IS THROWN. Sanctuary's dome is laid on the warded body
+          // by ward-vfx.ts when the ward lands, and the standing ward after
+          // it by status-vfx.ts. Falling through would fling the generic
+          // sparks below at a friend, and it is not an attack — no flinch.
         } else if (layTargetSigil()) {
           // A SAVE SPELL MADE OF NOTHING THE KIT DRAWS — the whole of
           // enchantment, and most of what a charm or a compulsion is. There is
@@ -7193,10 +7210,23 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
             ...(npcConds.get(entry.row.id) ?? []),
             ...(entry.row.character_id ? pcConds.get(entry.row.character_id) ?? [] : []),
           ])
+          // SANCTUARY, off the row's own ward — the only place that says
+          // truthfully whether it is up. It ends the moment the route
+          // clears the ward (broken by an attack, or its minute ran out),
+          // and the realtime row carries that here.
+          const sanctuary = normaliseWard(entry.row.ward)?.spell === "sanctuary"
+          if (sanctuary) kinds.push("sanctuary")
+          // Measured once per token off whatever it loaded, never assumed.
+          if (sanctuary && entry.obj.userData.wardHeight == null) {
+            const box = new THREE.Box3().setFromObject(entry.obj)
+            entry.obj.userData.wardHeight = Math.max(0.8, box.max.y - box.min.y)
+          }
           bodies.push({
             id: entry.row.id,
             obj: entry.obj,
             kinds,
+            height: entry.obj.userData.wardHeight as number | undefined,
+            radius: radiusFor(entry.row.token_size),
             dead: isDowned(entry.row),
             moving: Boolean(entry.obj.userData.glide || entry.obj.userData.fall || entry.obj.userData.charging || entry.obj.userData.blink),
           })

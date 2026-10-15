@@ -626,6 +626,26 @@
     "frames": 16,
     "rows": 4
   },
+  "sanctuaryHold": {
+    "bytes": 281004,
+    "cols": 4,
+    "file": "sanctuaryHold.webp",
+    "floor": 0.7063,
+    "fps": 10,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
+  "sanctuaryRise": {
+    "bytes": 176764,
+    "cols": 4,
+    "file": "sanctuaryRise.webp",
+    "floor": 0.7063,
+    "fps": 10,
+    "frames": 8,
+    "loop": false,
+    "rows": 2
+  },
   "shieldOfFaith": {
     "bytes": 455676,
     "cols": 4,
