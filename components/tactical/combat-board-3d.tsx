@@ -111,7 +111,7 @@ import SpellBanner, { type BannerCast } from "./spell-banner"
 // The hold that stops a corpse arriving before the spell that made it.
 import { ImpactHold, holdMsFor } from "@/lib/impact-hold"
 // A bolt you can see leave the bow, and a miss that goes past you.
-import { loose } from "./projectile"
+import { loose, prewarmShaft } from "./projectile"
 import { weaponArcVfx, ARC_STEEL, ARC_CRIT } from "./weapon-arc"
 import { MeleeCombo, styleFor, rotateClip, arcSecondsFor } from "@/lib/melee-combo"
 // A ward landing: gold, from the feet up.
@@ -2625,6 +2625,8 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
       // The armour is read off the target's AC, because nothing in the schema
       // records armour. It is a proxy and it is stated as one in sfx.ts.
       const ranged = /bow|sling|dart|javelin/.test(ability.toLowerCase())
+      // Sam's arrow / bolt art starts loading now, so it is there on release.
+      prewarmShaft(ability)
       const targetAc = w?.targetAc ?? null
       const dmgWord = lastHitWithRef.current.get(explicitTarget?.id ?? "") ?? null
       const swingSound = w
@@ -6889,6 +6891,9 @@ export default function CombatBoard3D({ onBack, sandbox = false }: { onBack?: ()
               // replay on another seat picks differently.
               seed: (p.victimId ?? "").charCodeAt(0) || 0,
               onImpact: flinch,
+              // A bow or crossbow flies Sam's painted arrow / bolt.
+              weapon: p.spell,
+              camera,
             }))
             continue
           }

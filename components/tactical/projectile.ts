@@ -28,6 +28,109 @@ import { aimPoint, flightTime } from "@/lib/projectile-aim"
 /** How far a bolt sinks into whatever it hits, in board units. */
 const BITE = 0.18
 
+// ============================================================================
+// SAM'S ART, WHEN THE WEAPON IS A BOW OR A CROSSBOW (2026-10-15).
+//
+// Sam supplied painted flight art for an arrow and a crossbow bolt. The
+// objection above still stands — a billboard cannot point along its travel —
+// so this is NOT a billboard. It is one flat quad laid ALONG the flight line
+// and spun about that line every frame so its face turns toward the camera
+// (an axis-locked billboard, the way tracers are drawn). The head always
+// leads, from any angle the free camera finds, and only the E heading of the
+// pack is needed. Baked by scripts/vfx/bake_projectile_atlas.py.
+//
+// Everything else that is shot or thrown (slings, darts, javelins, a
+// monster's spit) keeps the procedural shaft, as does the first bow shot of a
+// page if its sheet has not finished loading — never a blank.
+// ============================================================================
+
+type ShaftKind = "arrow" | "crossbow-bolt"
+
+/** Atlas cell size in px, 4x4 frames at 60 ms. Printed by the bake script. */
+const SHAFTS: Record<ShaftKind, { cellW: number; cellH: number; drawnPx: number }> = {
+  arrow: { cellW: 352, cellH: 112, drawnPx: 344 },
+  "crossbow-bolt": { cellW: 264, cellH: 116, drawnPx: 256 },
+}
+const SHAFT_COLS = 4
+const SHAFT_ROWS = 4
+const SHAFT_FRAME_S = 0.06
+/**
+ * Board units per drawn pixel, the same for both, so a bolt is shorter than
+ * an arrow because it was drawn shorter. 344 px of arrow comes to 0.62 — a
+ * shade longer than the procedural shaft, which is what reads at tabletop
+ * distance.
+ */
+const UNITS_PER_PX = 0.62 / 344
+
+/** Which art a weapon looses, or null for the procedural shaft. Crossbow first: it contains "bow". */
+export function shaftFor(weapon: string | null | undefined): ShaftKind | null {
+  const w = (weapon ?? "").toLowerCase()
+  if (/crossbow/.test(w)) return "crossbow-bolt"
+  if (/\b(long|short)?bow\b|\barrow/.test(w)) return "arrow"
+  return null
+}
+
+const shaftTex = new Map<ShaftKind, THREE.Texture>()
+const shaftLoading = new Set<ShaftKind>()
+
+/**
+ * Start fetching a weapon's flight sheet. Call it when the attack begins, so
+ * the sheet has landed by the release frame. Safe to call for any weapon and
+ * as often as you like.
+ */
+export function prewarmShaft(weapon: string | null | undefined): void {
+  const kind = shaftFor(weapon)
+  if (!kind || shaftTex.has(kind) || shaftLoading.has(kind)) return
+  shaftLoading.add(kind)
+  new THREE.TextureLoader()
+    .loadAsync(`/vfx/projectiles/${kind}.webp`)
+    .then((tex: THREE.Texture) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      // Painted, not pixel art: linear filtering, unlike the spell sheets.
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping
+      tex.repeat.set(1 / SHAFT_COLS, 1 / SHAFT_ROWS)
+      shaftTex.set(kind, tex)
+    })
+    .catch(() => { /* the procedural shaft stands in */ })
+    .finally(() => shaftLoading.delete(kind))
+}
+
+/**
+ * The painted shaft: a group pointing along +Z (like buildArrow) holding one
+ * quad that lies along that axis. `roll` turns the quad's face to the camera;
+ * `frame` steps the flight animation.
+ */
+function buildShaft(kind: ShaftKind, base: THREE.Texture) {
+  const spec = SHAFTS[kind]
+  const tex = base.clone()
+  const geo = new THREE.PlaneGeometry(spec.cellW * UNITS_PER_PX, spec.cellH * UNITS_PER_PX)
+  // The art points +X (heading E). Turn it so the head points +Z; the face
+  // then looks along -X, which `roll` spins toward the camera.
+  geo.rotateY(-Math.PI / 2)
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex, transparent: true, alphaTest: 0.04, side: THREE.DoubleSide, depthWrite: false, toneMapped: false,
+  })
+  const quad = new THREE.Mesh(geo, mat)
+  const group = new THREE.Group()
+  group.add(quad)
+  const local = new THREE.Vector3()
+  return {
+    group,
+    frame(i: number) {
+      const f = i % (SHAFT_COLS * SHAFT_ROWS)
+      // Row 0 of the atlas is the top of the image; UV v runs bottom-up.
+      tex.offset.set((f % SHAFT_COLS) / SHAFT_COLS, 1 - (Math.floor(f / SHAFT_COLS) + 1) / SHAFT_ROWS)
+    },
+    roll(camera: THREE.Camera) {
+      group.updateMatrixWorld()
+      local.setFromMatrixPosition(camera.matrixWorld)
+      group.worldToLocal(local)
+      // Spin about the flight axis (+Z) so the face (-X) points at the camera.
+      if (local.x * local.x + local.y * local.y > 1e-10) quad.rotation.z = Math.atan2(local.y, local.x) + Math.PI
+    },
+  }
+}
+
 function buildArrow(): THREE.Group {
   const g = new THREE.Group()
   // Along +Z, so the group can simply be pointed at where it is going.
@@ -80,8 +183,16 @@ export function loose(opts: {
   margin?: number
   seed?: number
   onImpact?: () => void
+  /** The weapon's name. A bow or crossbow flies Sam's painted art. */
+  weapon?: string | null
+  /** Needed to turn the painted shaft's face toward the viewer. */
+  camera?: THREE.Camera | null
 }): VfxHandle {
-  const arrow = buildArrow()
+  const kind = shaftFor(opts.weapon)
+  const tex = kind ? shaftTex.get(kind) : undefined
+  const painted = kind && tex && opts.camera ? buildShaft(kind, tex) : null
+  const arrow = painted ? painted.group : buildArrow()
+  painted?.frame(0)
   const start = opts.from.clone()
   const aim = aimPoint({
     from: { x: start.x, z: start.z },
@@ -121,6 +232,12 @@ export function loose(opts: {
       const ahead = new THREE.Vector3().lerpVectors(start, end, Math.min(1, p + 0.05))
       ahead.y += Math.sin(Math.min(1, p + 0.05) * Math.PI) * 0.16
       if (ahead.distanceToSquared(arrow.position) > 1e-8) arrow.lookAt(ahead)
+      if (painted && opts.camera) {
+        painted.roll(opts.camera)
+        // The flutter keeps running while a hit sticks; it is drawn as the
+        // shaft quivering, which is what a buried arrow does.
+        painted.frame(Math.floor(t / SHAFT_FRAME_S))
+      }
 
       if (p >= 1 && !landed) {
         landed = true
@@ -144,6 +261,9 @@ export function loose(opts: {
         const m = o as THREE.Mesh
         if (m.geometry) m.geometry.dispose()
         const mat = m.material as THREE.Material | THREE.Material[] | undefined
+        // The per-shot texture clone, not the shared sheet: three counts the
+        // shared image's users, so the next shot's clone still has it.
+        if (mat && !Array.isArray(mat)) (mat as THREE.MeshBasicMaterial).map?.dispose()
         if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
         else mat?.dispose()
       })
