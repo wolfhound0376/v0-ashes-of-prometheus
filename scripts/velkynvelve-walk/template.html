@@ -1830,7 +1830,7 @@ function nextTurn(first){
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
-  a.c.conds.delete("disengaged"); a.c.lastLight = null; for (const h of [...party, ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
+  a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...party, ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
@@ -3437,11 +3437,36 @@ function keyDir(){
 function keyboardMove(a, dt){
   if (!a || a.kind !== "pc" || a.once) return;
   const kd = keyDir();
-  if (!kd){ if (a.kbd){ a.kbd = false; if (a.anim === "walk") setAnim(a, "idle"); } return; }
+  if (!kd){ if (a.kbd){ a.kbd = false; a.kbdOut = false; if (a.anim === "walk") setAnim(a, "idle");
+      if (mode === "combat" && cbt && a === activeActor() && cbt.phase === "menu") openMenu(a); }   // the menu's "ft left" catches up
+    return; }
   stopActivity(a); a.path = []; a.onArrive = null; a.kbd = true;
   const n = norm(kd), sp = SPEED * node.scale * depthAt(a.y) * dt;
   let nx = a.x + n.x * sp, ny = a.y + n.y * sp * .8;
   if (!walkable(nx, ny)){ if (walkable(nx, a.y)) ny = a.y; else if (walkable(a.x, ny)) nx = a.x; else { nx = a.x; ny = a.y; } }
+  // IN A FIGHT, THE KEYS SPEND MOVEMENT AND PROVOKE (Sam, 2026-10-15: "using keyboard for movement should trigger
+  // movement counting as well as any opportunity attacks"). Clicking the ground already did both (moveActor);
+  // walking with WASD / arrows used to slide the hero anywhere for free. Now every step comes off the turn's
+  // speed (carried in feet, 5 ft at a time), the hero stops when it runs out, and stepping out of a foe's reach
+  // without Disengage gives that foe its opportunity attack (SRD 5.1), right before the hero leaves.
+  if (mode === "combat" && cbt && a === activeActor()){
+    const fp = ftPx(a), left = a.c.move * fp - (a.c.kbdPx || 0), d = Math.hypot(nx - a.x, ny - a.y);
+    if (left <= .5){ nx = a.x; ny = a.y; if (!a.kbdOut){ a.kbdOut = true; hint("No movement left this turn."); } }
+    else if (d > left){ const k = left / d; nx = a.x + (nx - a.x) * k; ny = a.y + (ny - a.y) * k; }
+    if (!a.c.conds.has("disengaged")){
+      // one measure for both sides of the line: inside its reach this frame, outside it on the next step
+      const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && Math.hypot(a.x - f.x, a.y - f.y) <= r && Math.hypot(nx - f.x, ny - f.y) > r; });
+      if (f){
+        keys.clear(); a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
+        log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
+        attackWith(f, a, f.c.sheet.attacks[0], () => { combatBusy = false; if (cbt && activeActor() === a && !a.down) openMenu(a); });
+        return;
+      }
+    }
+    a.c.kbdPx = (a.c.kbdPx || 0) + Math.hypot(nx - a.x, ny - a.y);
+    while (a.c.kbdPx >= 5 * fp - .01 && a.c.move > 0){ a.c.move -= 5; a.c.kbdPx -= 5 * fp; }
+    if (!a.kbdOut) hint(`Moving · ${a.c.move} ft left`);
+  }
   const moved = nx !== a.x || ny !== a.y;
   a.x = nx; a.y = ny; a.face = faceOf(n.x, n.y); setAnim(a, moved ? "walk" : "idle");
 }
