@@ -2459,7 +2459,7 @@ function shootWeb(f, tgt, done){
   const cs = CREATURE_SFX[f.id]; if (cs && cs.call) bank(cs.call, .6);
   strike(f, tgt, () => {
     const adv = advantageOn(f, tgt, true), r = d20(adv), hit = r === 20 || (r !== 1 && r + w.hit >= targetAc(tgt));
-    spellBolt(f, tgt, "#efe9d6", () => {
+    webStrand(f, tgt, () => {
       if (!hit){ miss(tgt); log(`${fname(f)} spits a web at ${fname(tgt)}: ${r} + ${w.hit} vs AC ${targetAc(tgt)} — it slaps the stone beside them.`); spawnFx("pxWebFloor", {at: tgt, sq: 1.4, flat: true, fade: false, until: now + 6000, alpha: .8}); return; }
       addCond(tgt, "restrained"); tgt.c.webDc = w.dc; tgt.path = []; bank("movement/web_tear", .4);
       spawnFx("pxWebWrap", {at: tgt, sq: 1.5, anchor: "mid", loop: true, alpha: .95}).then(e => { tgt.webFx = e; });
@@ -3079,6 +3079,32 @@ function drawOrb(s, k){
   ctx.restore();
 }
 function spellBolt(from, to, col, then){ const m = SPR[from.id].json, sc = actorScale(from); sparks.push({bolt: true, x: from.x, y: from.y - m.pivot[1] * sc * .6, tx: to.x, ty: to.y - (to.id ? SPR[to.id].json.pivot[1] * actorScale(to) * .5 : 0), col, t0: now, life: 260, then}); }
+// The web flies as silk, not as the old glowing orb (Sam, 2026-10-15: "the spider was using the old web"): a strand
+// pays out from the spider's spinnerets with a little sag, its tip a balled glob that opens into a small net as it
+// lands; the line hangs a moment and fades. Then the wrap (a hit) or the splat on the stone (a miss).
+function webStrand(from, to, then){
+  const m = SPR[from.id].json, sc = actorScale(from), bm = to.id ? SPR[to.id].json : null;
+  sparks.push({strand: true, from, to, ax: from.x - (from.face >= 4 && from.face <= 6 ? -1 : 1) * 14 * sc, ay: from.y - m.pivot[1] * sc * .32,
+    ty0: bm ? bm.pivot[1] * actorScale(to) * .55 : 10, t0: now, life: 900, then, fired: false});
+}
+function drawStrand(s, k){
+  const fly = Math.min(1, k / .38), e = 1 - Math.pow(1 - fly, 2), bx = s.to.x, by = s.to.y - s.ty0;
+  const dx = bx - s.ax, dy = by - s.ay, L = Math.hypot(dx, dy) || 1, sag = Math.min(40, L * .12) * (1 - e * .6);
+  const tx = s.ax + dx * e, ty = s.ay + dy * e;
+  const fade = k < .38 ? 1 : 1 - (k - .38) / .62;
+  ctx.save(); ctx.globalAlpha = .9 * fade; ctx.strokeStyle = "#f2efe4"; ctx.lineWidth = 1.4; ctx.lineCap = "round";
+  ctx.shadowColor = "rgba(255,255,255,.6)"; ctx.shadowBlur = 4;
+  ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.quadraticCurveTo((s.ax + tx) / 2, (s.ay + ty) / 2 + sag, tx, ty); ctx.stroke();
+  if (k < .38){ ctx.fillStyle = "#f7f4ea"; ctx.beginPath(); ctx.arc(tx, ty, 2.2 + 2 * e, 0, Math.PI * 2); ctx.fill(); }   // the glob on the end
+  else {                                                                                                                   // it opens into a little net
+    const o = Math.min(1, (k - .38) / .2), r = 6 + 10 * o; ctx.lineWidth = .9; ctx.beginPath();
+    for (let i = 0; i < 8; i++){ const a = i / 8 * Math.PI * 2; ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a) * r, by + Math.sin(a) * r * .8); }
+    for (const rr of [r * .45, r * .85]){ for (let i = 0; i <= 8; i++){ const a = i / 8 * Math.PI * 2, x = bx + Math.cos(a) * rr, y = by + Math.sin(a) * rr * .8; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } }
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (!s.fired && k >= .38){ s.fired = true; const fn = s.then; s.then = null; fn && fn(); }
+}
 function drawCombatFx(){
   for (const f of foes) if (f.c && f.c.berserk && !f.down && Math.random() < .55){ const m = SPR[f.id].json, sc = actorScale(f), h = m.pivot[1] * sc;
     sparks.push({x: f.x + (Math.random() - .5) * m.cell[0] * sc * .45, y: f.y - Math.random() * h * .8, vx: (Math.random() - .5) * 14, vy: -50 - Math.random() * 50, g: -120, col: Math.random() < .6 ? "#ff4a2a" : "#ffb070", t0: now, life: 520 + Math.random() * 260}); }
@@ -3089,6 +3115,7 @@ function drawCombatFx(){
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
     if (s.swipe){ drawSwipe(s, k); continue; }
     if (s.orb){ drawOrb(s, k); continue; }
+    if (s.strand){ drawStrand(s, k); continue; }
     if (s.glow){ drawGlow(s, k); continue; }
     if (s.bloom){ drawBloom(s, k); continue; }
     if (s.bolt){ const x = s.x + (s.tx - s.x) * k, y = s.y + (s.ty - s.y) * k; ctx.save(); ctx.shadowColor = s.col; ctx.shadowBlur = 24; ctx.fillStyle = s.col; ctx.globalAlpha = .95;
