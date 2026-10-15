@@ -657,6 +657,18 @@ function draw(){
     if (a.fall){ const k = Math.min(1, (now - a.fall) / 900); fy = k * k * 800; ctx.globalAlpha = a.alpha * (1 - k); }
     if (a.fallIn){ const k = 1 - Math.min(1, (now - a.fallIn) / 700); fy = -k * k * 700; if (k <= 0) a.fallIn = 0; }
     if (a.kx || a.ky){ a.kx *= .82; a.ky *= .82; if (Math.abs(a.kx) < .3) a.kx = 0; if (Math.abs(a.ky) < .3) a.ky = 0; }
+    if (a.climbing){
+      const C = a.climbing, el = now - C.t0;
+      if (el < 0){ ctx.globalAlpha = 0; }
+      else {
+        const k = Math.min(1, el / 1000), sway = Math.sin(el / 90) * 2 * sc, rise = 140 * sc * (C.dir === "up" ? -1 : 1);
+        if (C.out){ const s1 = Math.min(1, k / .25), s2 = Math.max(0, (k - .25) / .75);
+          a.x = C.from.x + (C.to.x - C.from.x) * s1 + sway * s2; a.y = C.from.y + (C.to.y - C.from.y) * s1; fy += rise * s2; ctx.globalAlpha = a.alpha * (1 - s2 * s2); a.anim = "walk"; }
+        else { const s2 = Math.min(1, k / .8); fy += rise * -(1 - s2); a.x = C.from.x + sway * (1 - s2); a.alpha = 1; ctx.globalAlpha = s2 < .15 ? s2 / .15 : 1; a.anim = "walk";
+          if (k >= 1){ a.climbing = null; a.anim = "idle"; } }
+        if (C.out && k >= 1){ a.alpha = 0; }
+      }
+    }
     if (a.leap){ const k = Math.min(1, (now - a.leap.t0) / a.leap.ms); a.x = a.leap.from.x + (a.leap.to.x - a.leap.from.x) * k; a.y = a.leap.from.y + (a.leap.to.y - a.leap.from.y) * k; fy -= Math.sin(k * Math.PI) * 90 * sc; }
     let dw = cw * sc, dh = ch * sc, dx = a.x - px * sc + (a.kx || 0), dy = a.y - py * sc + fy + (a.ky || 0);
     const dead = !!(a.down && pose);
@@ -1089,6 +1101,9 @@ async function enterNode(n, opts = {}){
     party.forEach((p, i) => {
       const fx = p.x, fy = p.y;
       if (opts.drop){ p.fallIn = now + i * 220; p.waitUntil = 0; }
+      else if (arrival && arrival.climb){ const C = arrival.climb; p.x = C.ladder[0]; p.y = C.ladder[1]; p.face = faceOf(0, -1);   // hidden by the climb until their turn (alpha stays 1 so the draw loop reaches them)
+        p.climbing = {t0: now + i * 650, dir: C.dir === "up" ? "down" : "up", from: {x: C.ladder[0], y: C.ladder[1]}, to: {x: C.foot[0], y: C.foot[1]}, out: false};
+        p.waitUntil = now + i * 650 + 1100; p.path = [{x: C.foot[0], y: C.foot[1]}, {x: fx, y: fy}]; }
       else { const back = 520 + i * 70; p.x = fx - entryDir.x * back; p.y = fy - entryDir.y * back; p.path = [{x: fx, y: fy}]; p.waitUntil = now + i * 260; p.walkIn = true; p.onArrive = () => { p.walkIn = false; }; }
     });
   }
@@ -1110,7 +1125,7 @@ async function travel(to, z){
   const zc = zoneCenter(z), exitDir = norm({x: zc.x - centroid.x, y: zc.y - centroid.y});
   const offs = party.map(p => { let dx = p.x - leader.x, dy = p.y - leader.y; const d = Math.hypot(dx, dy), cap = 170 * node.scale;
     if (d > cap){ dx *= cap / d; dy *= cap / d; } return {id: p.id, dx, dy}; });
-  const drop = z.kind === "water" && cur === 9;
+  const drop = z.kind === "water" && cur === 9, climb = z.climb;
   const cr = z.cross || (z.crossBy && z.crossBy[String(to)]);
   const route = cr ? cr.map(([x, y, s, f]) => ({x, y, s, out: f === "out", jump: f === "jump"}))
     : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 900, y: zc.y + exitDir.y * 900}];
@@ -1118,12 +1133,13 @@ async function travel(to, z){
   order.forEach((a, i) => {
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
+    else if (climb){ a.waitUntil = now + i * 650; a.path = [{x: climb.foot[0], y: climb.foot[1]}]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
     else a.path = route.map(p => ({...p}));
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
-  await wait(drop ? 1900 : cr ? 2600 : 1500);
+  await wait(drop ? 1900 : climb ? 1600 + order.length * 650 : cr ? 2600 : 1500);
   await slideTo(to, dir);
-  const verb = drop ? "The party drops through the falls" : z.kind === "water" ? "The party climbs" : "The party crosses";
+  const verb = drop ? "The party drops through the falls" : climb ? (climb.dir === "up" ? "The party climbs up" : "The party climbs down") : z.kind === "water" ? "The party climbs" : "The party crosses";
   await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, note: `${verb} to <em>${esc(SPEC[to].name)}</em>.`});
 }
 async function slideTo(to, dir){
