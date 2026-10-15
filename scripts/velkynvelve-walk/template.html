@@ -1499,7 +1499,12 @@ const VFX_BASE = APP ? "/vfx/" : "vfx/";
 let VFX_META = null; const VFX_IMG = {}; const fx = [];
 async function vfxLoad(name){
   try {
-    if (!VFX_META) VFX_META = await (await fetch(VFX_BASE + "manifest.json", {cache: "force-cache"})).json();
+    // NOT force-cache. That returns a cached copy fresh OR STALE, forever, so
+    // once a browser had this file every sheet added afterwards was invisible
+    // to it: VFX_META[name] came back undefined, vfxLoad returned null and
+    // spawnFx silently drew nothing -- no error, no console warning. The board
+    // fetches its manifest plainly and revalidates; so does this now.
+    if (!VFX_META) VFX_META = await (await fetch(VFX_BASE + "manifest.json")).json();
     const m = VFX_META[name]; if (!m) return null;
     if (!VFX_IMG[name]) VFX_IMG[name] = loadImg(VFX_BASE + m.file).catch(() => null);
     const img = await VFX_IMG[name]; return img ? {m, img} : null;
@@ -2325,25 +2330,7 @@ const KIT_MOTION = {
   drift: {ease: 1.05, lift: .03, liftMax: .15, weaveAmp: 0,   weaveCycles: 0,   spiral: .12, turns: 2, stretch: 1.0,  trail: 3},
   seek:  {ease: 1.25, lift: .04, liftMax: .25, weaveAmp: .08, weaveCycles: 2,   spiral: 0,   turns: 0, stretch: 1.3,  trail: 3, bow: .9},
 };
-const KIT = {
-  fire:      {route: "ball",   travel: "pxFireball",  impact: "fireImpact",      impactScale: 2.2, speed: 13, motion: "lob",   burst: {tint: "#ffa030", sparks: 28, ring: true, power: 1.4}},
-  cold:      {route: "beam",   travel: "frostBeam",   impact: "frostImpact",     gather: "frostGather", burst: {tint: "#a8e6ff", sparks: 22, ring: true, rise: .1}, aftermath: {sheet: "pxIce", hold: 8000, size: 1.35}},
-  necrotic:  {route: "beam",   travel: "necroBeam",   impact: "necroImpact",     burst: {tint: "#9c6bff", sparks: 12, ring: false}},
-  eldritch:  {route: "beam",   travel: "eldBeam",     impact: "eldImpact",       burst: {tint: "#c678ff", sparks: 18, ring: true}},
-  poison:    {route: "ball",   travel: "pxPoison",    impact: "poisonCloud",     speed: 10, motion: "lob",   burst: {tint: "#7ee23f", sparks: 16, ring: false, power: .8}},
-  force:     {route: "ball",   travel: "pxMissile",   impact: "forceHit",        speed: 16, motion: "seek",  burst: {tint: "#a78bff", sparks: 18, ring: true}},
-  psychic:   {route: "ball",   travel: "pxPsychic",   impact: "psychicImpact",   speed: 12, motion: "drift", burst: {tint: "#ff8cf0", sparks: 14, ring: true, power: .9}},
-  thunder:   {route: "radiate", travel: "thunderGust", impact: "thunderImpact",  burst: {tint: "#ffffff", sparks: 24, ring: true, power: 1.5}},
-  lightning: {route: "beam",   travel: "thunderGust", impact: "lightningStrike", impactScale: 1.5, burst: {tint: "#bfe8ff", sparks: 26, ring: true, power: 1.3}},
-  radiant:   {route: "sky",    impact: "radiantColumn", burst: {tint: "#ffe9a8", sparks: 18, ring: true}},
-  // The board lands a golden orb (healingShimmer) above the target. On the plate that reads as a ball over
-  // the head, and a ball is the thing Sam keeps saying healing is not; the map keeps the board's golden
-  // luminescence around the body (the glow) and its motes, and leaves the orb out.
-  healing:   {route: "sky",    burst: {tint: "#ffe6a0", sparks: 12, ring: false, power: .6, rise: 1.2, noFlash: true}, flourish: "glow"},
-  acid:      {route: "impact", impact: "acidImpact",  burst: {tint: "#b8ff3a", sparks: 16, ring: false, power: .8}},
-};
-// Where the book says a spell crosses the room differently from its type (the board's DELIVERY_BY_SPELL).
-const KIT_BY_SPELL = {"Ice Knife": {route: "ball", travel: "frostShard", speed: 17, motion: "dart"}};
+/*__KIT__*/
 function kitFor(name, sp){
   const type = sp.kind === "heal" ? "healing" : sp.type, base = KIT[type]; if (!base) return null;
   const named = KIT_BY_SPELL[name]; if (named) return {...base, ...named, type};
@@ -2626,7 +2613,10 @@ async function loadSpriteManifest(slug){
   if (SPR[slug]) return true;
   if (spriteMissing.has(slug)) return false;
   try {
-    const m = await (await fetch(`${SPRITE_BASE}${slug}/sprite.json`, {cache: "force-cache"})).json();
+    // Same reason as the vfx manifest: a NEW sprite arrives on a new slug and
+    // misses the cache anyway, but a RE-BAKED one keeps its slug, and sprites
+    // are re-baked here whenever the height rule is reapplied.
+    const m = await (await fetch(`${SPRITE_BASE}${slug}/sprite.json`)).json();
     const entry = {json: m, img: {}};
     await Promise.all(Object.entries(m.animations).map(([name, an]) => loadImg(`${SPRITE_BASE}${slug}/${an.sheet || name + ".png"}`).then(i => entry.img[name] = i)));
     SPR[slug] = entry; return true;

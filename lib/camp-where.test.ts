@@ -18,3 +18,30 @@ describe("campVerdict", () => {
     expect(campVerdict({ label: null, source: "none" }).allowed).toBe(true)
   })
 })
+
+import { campPromptNote, dropBarredCamp } from "./camp-where"
+
+describe("Malachar and the camp rule", () => {
+  const inside = campVerdict({ label: "Velkynvelve — Slave Pen", source: "subnodal" })
+  const road = campVerdict({ label: "Road Marker 14", source: "travel_nodes" })
+
+  it("tells Malachar only when the party is inside a place", () => {
+    expect(campPromptNote(inside)).toMatch(/Do NOT emit \[TIME:make_camp\]/)
+    expect(campPromptNote(inside)).toMatch(/short rest/)
+    expect(campPromptNote(road)).toBeNull()
+    expect(campPromptNote(null)).toBeNull()
+  })
+
+  it("drops make_camp inside a place and keeps everything else", () => {
+    const evs = [{ eventType: "make_camp" }, { eventType: "short_rest" }, { eventType: "dialogue_exchange" }]
+    const out = dropBarredCamp(evs, inside)
+    expect(out.refused).toBe(true)
+    expect(out.events.map((e) => e.eventType)).toEqual(["short_rest", "dialogue_exchange"])
+  })
+
+  it("leaves camp alone on the road", () => {
+    const evs = [{ eventType: "make_camp" }]
+    expect(dropBarredCamp(evs, road)).toEqual({ events: evs, refused: false })
+    expect(dropBarredCamp(evs, null).refused).toBe(false)
+  })
+})

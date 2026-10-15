@@ -1,6 +1,8 @@
 import os
 """Walk spec for the Velkynvelve exploration proof.
 All coordinates are viewer-plate pixels (2400 x 1339). Traced by eye over gridded plates, 2026-10-10.
+Rope bridges are the DECK ONLY (Sam, 2026-10-14: "characters shouldn't be on the ropes or in the air"): a sprite's feet
+sit where its floor shape says, so a bridge shape that is taller than the planks puts people on the railings or in the drop.
 floors: shapes the party may stand on (poly / ellipse / rect).  obstacles: circles/ellipses inside floors that block.
 zones: exit hotspots. 'to' = registered V5 connections reachable from that spot (a list gives the player a choice).
 'kind': walk (default) | water (9<->14 descent) | gate (locked unless the DM opens it) | leave (leaves Velkynvelve, not wired).
@@ -38,10 +40,10 @@ NODES = {
    zones=[dict(rect=[150,740,260,870], to=[3], label="Walkway to the main hall"),
           dict(rect=[1440,820,1530,960], to=[], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds to the cavern floor (leaves Velkynvelve)")]),
  6: dict(slug="node-06-shrine", name="Shrine to Lolth", scale=1.0,
-   floors=[dict(ellipse=[1200,750,620,250]),dict(rect=[1010,980,1390,1339]),dict(rect=[420,650,620,790]),dict(rect=[1790,680,1980,820])],
+   floors=[dict(ellipse=[1200,750,620,250]),dict(rect=[1010,980,1390,1339]),dict(rect=[400,700,620,775]),dict(rect=[1800,700,1990,785])],
    obstacles=[dict(cx=1200,cy=665,rx=200,ry=95),dict(cx=780,cy=665,rx=60,ry=35),dict(cx=1610,cy=665,rx=60,ry=35)],
    zones=[dict(rect=[1020,1260,1380,1339], to=[7], label="Stair down the priestess tower"),
-          dict(rect=[420,640,500,800], to=[10], label="Rope bridge west")],
+          dict(rect=[420,700,500,775], to=[10], label="Rope bridge west")],
    hazard=dict(poly=P((900,500),(1500,500),(1520,560),(880,560)), kind="ambush", foes=["giant-spider"], label="Something shifts among the cushions")),
  7: dict(slug="node-07-ilvara-quarters", name="Ilvara's Quarters", scale=1.0,
    floors=[dict(poly=P((660,660),(840,480),(1120,430),(1400,460),(1680,480),(1800,600),(1860,760),(1800,880),(1680,960),(1400,1000),(1120,1000),(840,940),(640,820))),dict(rect=[520,760,680,900]),dict(rect=[1175,995,1250,1112])],
@@ -60,16 +62,16 @@ NODES = {
           dict(rect=[700,690,790,860], to=[3,4], label="Rope bridge west"),
           dict(rect=[1080,950,1300,1000], to=[9], label="Stair down toward the waterfall")]),
  9: dict(slug="node-09-waterfall", name="Waterfall", scale=0.85,
-   floors=[dict(poly=P((320,660),(520,580),(800,580),(880,660),(880,800),(760,840),(500,840),(280,820),(240,740))),dict(rect=[870,670,1550,800]),dict(poly=P((1540,640),(1760,600),(2000,680),(2120,800),(2000,860),(1720,860),(1560,800)))],
+   floors=[dict(poly=P((320,660),(520,580),(800,580),(880,660),(880,800),(760,840),(500,840),(280,820),(240,740))),dict(poly=P((880,705),(1000,740),(1200,770),(1400,740),(1530,705),(1530,745),(1400,790),(1200,815),(1000,790),(880,745))),dict(poly=P((1540,640),(1760,600),(2000,680),(2120,800),(2000,860),(1720,860),(1560,800)))],
    obstacles=[],
    zones=[dict(rect=[240,790,420,870], to=[8], label="Rope bridge down-left"),
           dict(rect=[1990,800,2140,900], to=[10], label="Rope bridge down-right"),
           dict(rect=[1100,760,1320,805], to=[14], kind="water", label="Drop into the waterfall: you land in the pool for no damage")]),
  10: dict(slug="node-10-guard-tower", name="Guard Tower", scale=0.9,
-   floors=[dict(poly=P((1060,700),(1240,640),(1600,660),(1860,680),(1920,800),(1900,940),(1760,1020),(1400,1040),(1120,980),(1040,860))),dict(poly=P((320,760),(1060,800),(1060,960),(320,900))),dict(rect=[0,660,340,940]),dict(rect=[1890,780,2400,940])],
+   floors=[dict(poly=P((1060,700),(1240,640),(1600,660),(1860,680),(1920,800),(1900,940),(1760,1020),(1400,1040),(1120,980),(1040,860))),dict(poly=P((320,840),(1050,895),(1050,950),(320,905))),dict(rect=[0,720,330,950]),dict(poly=P((1900,875),(2400,810),(2400,870),(1900,935)))],
    obstacles=[dict(cx=1480,cy=880,rx=140,ry=60),dict(cx=1780,cy=870,rx=60,ry=40)],
-   zones=[dict(rect=[0,640,110,960], to=[6,7,9], label="Ledge west, toward the priestess tower and the falls"),
-          dict(rect=[2300,760,2400,960], to=[11], label="Rope bridge east to the slave pen")]),
+   zones=[dict(rect=[0,720,110,950], to=[6,7,9], label="Ledge west, toward the priestess tower and the falls"),
+          dict(rect=[2300,800,2400,875], to=[11], label="Rope bridge east to the slave pen")]),
  11: dict(slug="node-11-slave-pen", name="Slave Pen", scale=1.25,
    floors=[dict(poly=P((960,740),(1120,700),(1400,560),(1700,500),(2000,480),(2200,560),(2300,700),(2360,940),(2300,1200),(2200,1339),(900,1339),(760,1200),(620,1000),(640,900),(800,860),(920,780)))],
    obstacles=[],  # table and stool removed from the plate (take 35)
