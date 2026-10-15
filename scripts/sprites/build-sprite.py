@@ -47,6 +47,7 @@ STATE_PATTERNS = [
     ("burrow", r"^burrow$|burrow|dig"),
     ("emerge", r"^emerge$|emerge|surface"),
     ("jump", r"^jump$|jump|leap|pounce"),
+    ("rage", r"^rage$|berserk|rage"),
 ]
 
 # How each state plays. fps is the pixel artist's rate, not the screen's;
@@ -58,6 +59,7 @@ PLAYBACK = {
     "cast": {"fps": 10, "loop": False, "hit": 0.6},
     "ward": {"fps": 12, "loop": False},
     "hurt": {"fps": 10, "loop": False},
+    "rage": {"fps": 10, "loop": False},
     "dodge": {"fps": 12, "loop": False},
     "dead": {"fps": 8, "loop": False},
     "fly": {"fps": 10, "loop": True},

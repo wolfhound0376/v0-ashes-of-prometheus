@@ -188,7 +188,7 @@ for i in P + N + F + V:
     # 'jump' is asked for on both sides now that heroes long-jump too (arcTo/planLeap in the
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
-    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump'] if i in F else [])
+    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage'] if i in F else [])
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
