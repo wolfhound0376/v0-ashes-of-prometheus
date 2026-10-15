@@ -2699,7 +2699,12 @@ function tickCreatures(){
 // sight they walk off the plate, and back on when he brings them in again. Nothing here reads the NPC
 // panel's spotlight (is_active); that switches off whenever the party talks to someone else.
 const CAST = new Set(Object.keys(SPR_META));
+// Generic names the game sometimes uses for one of the story's own cast. Velkynvelve has exactly one kuo-toa —
+// Shuushar the Awakened, a prisoner in the pen (OotA ch.1) — so a "Kuo-toa" on stage is him, never a second fish
+// walking in from the bridge (Sam, 2026-10-14: "I have a Kuo-Toa that just showed up").
+const STAGE_IS = {"kuo-toa": "shuushar", "kuotoa": "shuushar", "kuo-toa-prisoner": "shuushar"};
 function stageMatch(entry, id){           // "jorlan-duskryn" is the map's "jorlan"; "drow-guard" is either guard
+  if (STAGE_IS[entry.slug] === id) return true;
   const names = [entry.slug, ...(entry.aliases || [])];
   return names.some(s => s === id || id.startsWith(s + "-") || s.startsWith(id + "-") || s.split("-").some(tok => tok.length > 3 && id.split("-").includes(tok)));
 }
@@ -2729,7 +2734,7 @@ async function pollStage(){
       if (!creatures.has(c.slug) && await loadSpriteManifest(c.slug)) creatureArrives(c);
       const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; if (c.inside && !f.inside) creatureCrosses(c.slug); }
     }
-    for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug)){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead)); }
+    for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)))){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead)); }
     // the cast: off the plate when the game says they have gone, back when it says they are here;
     // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
     for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature)){
