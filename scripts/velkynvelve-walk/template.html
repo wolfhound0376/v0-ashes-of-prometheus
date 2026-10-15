@@ -267,6 +267,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="tbtn" id="musicBtn" aria-pressed="true" title="Music (M)">♪ Music on</button>
       <input type="range" id="vol" min="0" max="100" value="40" aria-label="Music volume">
       <button class="tbtn" id="motionBtn" aria-pressed="true">Motion on</button>
+      <button class="tbtn" id="voicesBtn" aria-pressed="true" title="Hear the story's lines on the map">Voices on</button>
       <button class="tbtn" id="dmBtn" aria-expanded="false">DM tools</button>
     </div>
   </header>
@@ -2884,6 +2885,55 @@ function castReturns(n){
 }
 if (APP){ setTimeout(pollStage, 2500); setInterval(pollStage, 5000); }
 
+// ---------- the story, heard on the plate ----------
+// Sam, 2026-10-14: "why can I not hear Jorlan speak or see him". The roster above put him at the gate, but what
+// he SAID lived only on the dashboard. Now every line the table hears comes through here too (/api/map-dialogue,
+// polled): an NPC says it in a bubble over their own sprite and in their own voice (their row's ElevenLabs voice,
+// a myconid in the listener's, a kuo-toa croaking, the same as everywhere else); a player's line is a bubble over
+// their sprite, unvoiced, since they said it themselves; Malachar's narration runs in the strip, unvoiced, since
+// the dashboard is his stage. Someone talking who is not on this plate is still heard, and named in the log.
+// Lines are taken in order and voiced one at a time. "Voices off" keeps the bubbles and silences the walk, for a
+// table that has the dashboard open beside it and would otherwise hear every line twice.
+let voicesOn = (() => { try { return localStorage.getItem("vk-voices") !== "off"; } catch (e) { return true; } })();
+function renderVoicesBtn(){ const b = $("voicesBtn"); if (!b) return; b.setAttribute("aria-pressed", String(voicesOn)); b.textContent = voicesOn ? "Voices on" : "Voices off"; }
+if ($("voicesBtn")){ $("voicesBtn").onclick = () => { voicesOn = !voicesOn; try { localStorage.setItem("vk-voices", voicesOn ? "on" : "off"); } catch (e) {} renderVoicesBtn(); }; renderVoicesBtn(); }
+if (!APP && $("voicesBtn")) $("voicesBtn").hidden = true;
+let talkCursor = null; const talkSeen = new Set(); let talkQueue = Promise.resolve();
+const slugOf = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+function actorForSpeaker(name, type){
+  if (type === "player"){ const id = Object.keys(PLAYS_AS).find(k => PLAYS_AS[k].toLowerCase() === String(name).toLowerCase()); return id ? party.find(p => p.id === id) || null : null; }
+  const who = {slug: slugOf(name), aliases: [slugOf(String(name).split(" ")[0])]};
+  return npcs.find(n => actors.includes(n) && !n.offStage && SPR[n.id] && stageMatch(who, n.id)) || null;
+}
+// the cast's ids by name, so a line can be voiced by someone who is not on this plate
+function castIdFor(name){ const who = {slug: slugOf(name), aliases: [slugOf(String(name).split(" ")[0])]}; return [...CAST].find(id => SPR[id] && stageMatch(who, id)) || null; }
+const lineMs = text => Math.max(3500, Math.min(14000, 900 + text.length * 62));
+function hearLine(row){
+  const text = String(row.text).trim(), type = row.speaker_type, name = row.speaker || "";
+  if (type === "dm"){ narrate(null, text); return; }
+  const a = actorForSpeaker(name, type);
+  if (type === "player"){ if (a) bark(a, text, lineMs(text), {talk: true}); else log(`<b>${esc(name)}</b>: ${esc(text)}`); return; }
+  // an NPC: their turn in the queue, bubble when their voice starts
+  const id = (a && a.id) || castIdFor(name);
+  talkQueue = talkQueue.then(async () => {
+    const here = actorForSpeaker(name, type);
+    if (here) bark(here, text, lineMs(text), {talk: true}); else log(`<b>${esc(name)}</b>${id ? " (not here)" : ""}: ${esc(text)}`);
+    if (!voicesOn || !id) return wait(here ? Math.min(lineMs(text), 2500) : 300);
+    try { await speakCanon(id, text, name); } catch (e) { console.warn("voice unavailable:", name, e); return; }
+    const t0 = performance.now(); while (speaking && performance.now() - t0 < 30000) await wait(150);   // one voice at a time
+  });
+}
+async function pollTalk(){
+  try {
+    const r = await fetch("/api/map-dialogue" + (talkCursor ? "?after=" + encodeURIComponent(talkCursor) : ""), {cache: "no-store"});
+    const j = await r.json(); if (!j) return;
+    if (!talkCursor){ talkCursor = j.cursor; return; }                 // first look: start from now, do not replay history
+    for (const row of j.lines || []){ if (talkSeen.has(row.id)) continue; talkSeen.add(row.id); hearLine(row); }
+    if (j.cursor) talkCursor = j.cursor;
+  } catch (e) {}
+}
+if (APP){ setTimeout(pollTalk, 3000); setInterval(pollTalk, 2500); }
+
 // ---------- talk: hand off to the dashboard ----------
 // Someone wants a word: Malachar writes their opener (in the NPC's own voice, addressing the speaker by name if
 // they would know it, otherwise by race or a gesture); it is said in a balloon and a small card offers Talk / Decline.
@@ -2995,8 +3045,8 @@ function playVoice(ctx, buf, profile){
   src.connect(profile === "rapport" ? rapportChain(ctx) : profile === "croak" ? croakChain(ctx) : ctx.destination);
   src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
 }
-async function speakCanon(id, text){         // the game's ElevenLabs route: the voice saved on the row (Eldeth, Ront...); a myconid in the listener's own
-  const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: SPR[id].json.name, listenerName: PLAYS_AS[leader?.id] || undefined})});
+async function speakCanon(id, text, npcName){         // the game's ElevenLabs route: the voice saved on the row (Eldeth, Ront...); a myconid in the listener's own
+  const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: npcName || SPR[id].json.name, listenerName: PLAYS_AS[leader?.id] || undefined})});
   if (!res.ok) throw new Error("tts " + res.status);
   const ct = res.headers.get("content-type") || "";
   const rapport = /profile=rapport/i.test(ct) ? "rapport" : /profile=croak/i.test(ct) ? "croak" : profileFor(id);
