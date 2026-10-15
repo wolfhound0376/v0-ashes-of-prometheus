@@ -1,6 +1,11 @@
 import * as THREE from "three"
 import type { VfxHandle } from "./spell-vfx"
 import type { WardSpell } from "@/lib/wards"
+import { Flip, loadSheet } from "./spell-vfx-kit"
+import {
+  sanctuaryQuad, sanctuaryCentre, sanctuaryCastOpacity,
+  RISE_SECONDS, CAST_SECONDS,
+} from "@/lib/ward-look"
 
 // ============================================================================
 // A WARD LANDING — gold, from the feet up.
@@ -48,7 +53,10 @@ export function wardVfx(opts: {
   spell: WardSpell
   height?: number
   radius?: number
+  /** The camera the board is drawing through; Sanctuary's dome faces it. */
+  camera?: () => THREE.Camera | null
 }): VfxHandle {
+  if (opts.spell === "sanctuary") return sanctuaryCast(opts)
   const look = LOOK[opts.spell]
   const h = Math.max(0.8, opts.height ?? 1.7)
   const r = Math.max(0.25, opts.radius ?? 0.42)
@@ -115,6 +123,97 @@ export function wardVfx(opts: {
       band.geometry.dispose(); bandMat.dispose()
       shell.geometry.dispose(); shellMat.dispose()
       opts.parent.remove(group)
+    },
+  }
+}
+
+// ============================================================================
+// SANCTUARY — Sam's own art.
+//
+// Sam, 2026-10-15, sending a 16-frame dome of gold and white light: embers on
+// the floor, a ring, wisps rising up both sides, a halo closing over the top.
+// It replaces the procedural band for Sanctuary only; Shield of Faith keeps
+// the climbing gold Sam described for it.
+//
+// The rise plays once, the hold loops for a moment at full strength, then it
+// lets go — and the standing ward in status-vfx.ts, quiet, takes over for as
+// long as vtt_tokens.ward says the spell is up. lib/ward-look.ts holds the
+// sizing and timing so both read the same numbers.
+// ============================================================================
+
+const toCam = new THREE.Vector3()
+const camUp = new THREE.Vector3()
+
+function sanctuaryCast(opts: {
+  parent: THREE.Object3D
+  resolve: () => THREE.Object3D | null
+  height?: number
+  radius?: number
+  camera?: () => THREE.Camera | null
+}): VfxHandle {
+  const h = Math.max(0.8, opts.height ?? 1.7)
+  const r = Math.max(0.18, opts.radius ?? 0.38)
+  let rise: Flip | null = null
+  let hold: Flip | null = null
+  let t = 0
+  let dead = false
+
+  // Both sheets are asked for at once: the hold has to be here by the time
+  // the rise ends, or the dome would blink out for a frame at the seam.
+  void loadSheet("sanctuaryRise").then((s) => {
+    if (dead) return
+    rise = new Flip(s, 0xffffff, 1, 1)
+    rise.opacity = 0
+    opts.parent.add(rise.mesh)
+  }).catch(() => {})
+  void loadSheet("sanctuaryHold").then((s) => {
+    if (dead) return
+    hold = new Flip(s, 0xffffff, 1, 1)
+    hold.opacity = 0
+    opts.parent.add(hold.mesh)
+  }).catch(() => {})
+
+  const drop = (f: Flip | null) => {
+    if (!f) return
+    opts.parent.remove(f.mesh)
+    f.dispose()
+  }
+
+  return {
+    update(dt: number): boolean {
+      if (dead) return false
+      t += dt
+      const body = opts.resolve()
+      const cam = opts.camera?.() ?? null
+      if (!body) return false
+      if (t > CAST_SECONDS) { dead = true; return false }
+      if (!cam) return true
+
+      camUp.set(0, 1, 0).applyQuaternion(cam.quaternion)
+      cam.getWorldDirection(toCam).negate()
+      // A billboard's height runs along the camera's up, and a standing body
+      // is foreshortened by the pitch, so the halo is sized against the body
+      // as it LOOKS rather than as it is.
+      const quad = sanctuaryQuad(h * Math.max(0.2, camUp.y), r)
+      const c = sanctuaryCentre(body.position, camUp, toCam, quad)
+      const a = sanctuaryCastOpacity(t)
+      for (const f of [rise, hold]) {
+        if (!f) continue
+        f.mesh.position.set(c.x, c.y, c.z)
+        f.mesh.quaternion.copy(cam.quaternion)
+        f.mesh.scale.set(quad.w, quad.h, 1)
+      }
+      // ONE of the two at a time. Until the hold has arrived the rise keeps
+      // its last frame rather than leaving nothing on the body.
+      const rising = t < RISE_SECONDS || !hold
+      if (rise) { rise.setProgress(Math.min(0.999, t / RISE_SECONDS)); rise.opacity = rising ? a : 0 }
+      if (hold) { hold.clock(t - RISE_SECONDS); hold.opacity = rising ? 0 : a }
+      return true
+    },
+    dispose() {
+      dead = true
+      drop(rise); drop(hold)
+      rise = hold = null
     },
   }
 }

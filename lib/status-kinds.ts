@@ -14,7 +14,13 @@
 // Pure, so the mapping is testable and the board only ever asks one question.
 // ============================================================================
 
-export type StatusKind = "burning" | "charged" | "webbed" | "prone"
+/**
+ * `sanctuary` is never matched from text. It comes from `vtt_tokens.ward`,
+ * the one place that says truthfully whether the ward is up: the combat
+ * route also writes "Sanctuary" onto a PC's sheet, but an NPC it wards gets
+ * no sheet word at all, so the text would miss every warded ally.
+ */
+export type StatusKind = "burning" | "charged" | "webbed" | "prone" | "sanctuary"
 
 const LOOKS: { kind: StatusKind; match: RegExp }[] = [
   { kind: "burning", match: /\b(burning|on fire|ablaze|aflame|ignited)\b/ },
