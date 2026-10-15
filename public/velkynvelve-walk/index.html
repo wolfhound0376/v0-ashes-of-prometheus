@@ -1622,7 +1622,24 @@ function blowNarration(att, tgt, atk, n, crit){
   const verb = /claw/.test(w) ? "rakes" : /bite/.test(w) ? "sinks its fangs into" : /pseudopod/.test(w) ? "slaps a burning pseudopod across" : /dagger/.test(w) ? "drives the dagger into" : /unarmed/.test(w) ? "lands a fist on" : "strikes";
   narrate(att, `${who} ${verb} ${whom}${crit ? " — a terrible blow" : ""}.`);
 }
-function weaponSfx(atk){ const n = atk.name.toLowerCase(); return n.includes("dagger") ? {swing: "combat/dagger_stab", hit: "combat/dagger_stab"} : n.includes("unarmed") ? {swing: "combat/melee_swing_light", hit: "combat/unarmed_hit"} : /claw|bite|pseudopod/.test(n) ? {swing: "combat/melee_swing_heavy", hit: "combat/melee_hit_flesh"} : {swing: "combat/melee_swing_light", hit: "combat/melee_hit_flesh"}; }
+// What a blow sounds like (Sam, 2026-10-15: "Monsters that attack use different attack sounds"). The same rules as the
+// battle board (lib/sfx.ts weaponSounds + meleeHit), from the clips the bucket actually holds:
+//   the SWING by what is swung — a blade stabs, a heavy weapon whooshes, a bow is released, a fist / claw / bite is
+//   the unarmed hit; the LANDING by what it lands on — bludgeoning thuds, and otherwise the target's AC stands in for
+//   its armour (17+ plate, 14+ mail, else flesh); arrows hit flesh, or the stone behind on a miss.
+// And the creature itself: its call (the spider's hiss, the quaggoth's roar) with every attack it makes, not one in
+// two; the ooze's acid and the spider's venom land with their own impact sound.
+function weaponSfx(atk, tgt){
+  const n = atk.name.toLowerCase(), ranged = /bow|sling|crossbow|blowgun|dart/.test(n);
+  const swing = ranged ? (/cross/.test(n) ? "combat/crossbow_release" : "combat/bow_release")
+    : /dagger|knife|shortsword|rapier|scimitar|sword|shard/.test(n) ? "combat/dagger_stab"
+    : /mace|hammer|maul|club|staff|greatsword|axe|halberd|pick|morningstar|pike|bar/.test(n) ? "combat/melee_swing_heavy"
+    : /unarmed|fist|punch|claw|bite|slam|kick|pseudopod/.test(n) ? "combat/unarmed_hit" : "combat/melee_swing_light";
+  const ac = tgt ? targetAc(tgt) : 0;
+  const hit = ranged ? "combat/arrow_hit_flesh" : (atk.type || "") === "bludgeoning" ? "combat/melee_hit_bludgeon"
+    : ac >= 17 ? "combat/melee_hit_plate" : ac >= 14 ? "combat/melee_hit_chainmail" : "combat/melee_hit_flesh";
+  return {swing, hit, miss: ranged ? "combat/arrow_hit_stone" : "combat/melee_miss"};
+}
 function strikeSheet(atk, sneak){ const n = atk.name.toLowerCase(); return sneak ? "strikeSneak" : n.includes("unarmed") ? "strikePunch" : n.includes("claw") || n.includes("bite") ? "strikeSpecial" : "physicalImpact"; }
 // Wards (lib/world-ai/campaigns.ts: "Magical wards block spells cast inside pen (but not from outside)"):
 // in a warded area the Cast command is shut, and the reason is said.
@@ -2130,8 +2147,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
   approachThen(att, tgt, reach, () => {
     pushCam(att, tgt);
-    const ws = weaponSfx(atk), cs = CREATURE_SFX[att.id];
-    if (cs && cs.call && Math.random() < .5) bank(cs.call, .7);
+    const ws = weaponSfx(atk, tgt), cs = CREATURE_SFX[att.id];
+    if (cs && cs.call && now - (att.lastCall || 0) > 1500){ att.lastCall = now; bank(cs.call, .7); }
     bank(ws.swing, .6);
     const ranged = feetBetween(att, tgt) > (atk.reach || 5) + 2;
     strike(att, tgt, () => {
@@ -2140,7 +2157,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (r === 1) bank("ui/nat1", .7);
       lunge(att, tgt, 14 * actorScale(att));
       const sw = swipeStyle(atk, crit, att);
-      if (!hit){ swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank("combat/melee_miss", .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
+      if (!hit){ swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(ws.miss, .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)));
@@ -2153,8 +2170,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
       damage(tgt, dmg.total, atk.type, crit, att);
-      if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (tgt.kind === "pc" ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (tgt.kind === "pc" ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
