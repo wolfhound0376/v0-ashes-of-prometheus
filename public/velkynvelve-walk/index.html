@@ -1530,6 +1530,9 @@ function drawFxLayer(flat){
       if (k >= 1){ fx.splice(i, 1); if (e.then){ const fn = e.then; e.then = null; fn(); } continue; }
     }
     const m = e.m, el = (now - e.t0) / 1000 * m.fps; let f = Math.floor(el);
+    // `whileCond`: held for as long as the one it is on keeps that condition (Shield of Faith's dome), and goes when
+    // they lose it, drop, or the fight ends
+    if (e.whileCond && !e.until && (!cbt || !e.at || e.at.down || !e.at.c || !e.at.c.conds.has(e.whileCond))) e.until = now + 400;
     if (e.until && now > e.until){ fx.splice(i, 1); continue; }
     // `tail`: play once, then keep cycling the last `tail` frames until `until` (Chill Touch's hand clinging on)
     if (f >= m.frames){ if (e.loop) f = f % m.frames; else if (e.tail) f = m.frames - e.tail + (f - m.frames) % e.tail; else { fx.splice(i, 1); if (e.then){ const fn = e.then; e.then = null; fn(); } continue; } }
@@ -1537,7 +1540,7 @@ function drawFxLayer(flat){
     const cw = e.img.width / m.cols, ch = e.img.height / m.rows, punch = e.punch ? 1 + .35 * Math.max(0, 1 - (now - e.t0) / 120) : 1, w = e.sq * px * punch, h = w * ch / cw;
     const img = e.tint ? tintedSheet(e.img, e.name, (e.tintFrom && now - e.t0 < e.tintFrom) ? "#ffffff" : e.tint) : e.img;
     const sx = (f % m.cols) * cw, sy = Math.floor(f / m.cols) * ch;
-    ctx.save(); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1) * (e.tail && e.until ? Math.min(1, (e.until - now) / 350) : 1);
+    ctx.save(); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1) * (e.tail && e.until ? Math.min(1, (e.until - now) / 350) : 1) * (e.holdAlpha ? 1 - (1 - e.holdAlpha) * Math.min(1, Math.max(0, el - m.frames) / 6) : 1);
     if (e.flat){ ctx.translate(P.x, P.y + 2); ctx.scale(1, .5); if (e.spin) ctx.rotate((now - e.t0) / 1000 * e.spin); ctx.drawImage(img, sx, sy, cw, ch, -w / 2, -w / 2, w, w); }
     else {
       const y = e.anchor === "feet" || e.anchor === "base" ? P.y : e.anchor === "top" ? P.top : P.mid; let dx = e.dx || 0, lift = e.lift, flip = false;
@@ -2112,7 +2115,14 @@ function castSpell(caster, tgt, name, done){
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
-      } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6); spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8}); addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
+      } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6);
+        // Shield of Faith (SRD 5.1: "A shimmering field appears and surrounds a creature of your choice ... granting it
+        // a +2 bonus to AC"): Sam's sheet, a ring of gold on the floor that rises into a shimmering egg of light around
+        // them. The dome stays, softened so the sprite shows through, for as long as they are shielded.
+        if (name === "Shield of Faith"){ if (tgt.sofFx) tgt.sofFx.then(e => { if (e) e.until = now; });
+          tgt.sofFx = spawnFx("shieldOfFaith", {at: tgt, sq: 1.9, anchor: "base", lift: -.2, tail: 8, holdAlpha: .5, whileCond: "shielded"}); }
+        else spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8});
+        addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else {                                                                    // a save
         const targets = sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt];
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
