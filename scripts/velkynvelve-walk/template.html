@@ -412,7 +412,7 @@ function noteSeats(seated){
   renderSeats();
   if (!gearLoaded && seatsSeen.length){ gearLoaded = true; setTimeout(() => loadGear(), 0); }   // what each hero really carries
 }
-function characterIdOf(slug){ const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
+function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
 async function seatCompanion(slug){
   const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({name: PLAYS_AS[slug] || slug})});
@@ -581,7 +581,7 @@ function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE 
 function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
   const sp = SPR[a.id];
-  if (a.down && a.kind !== "pc" && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
+  if (a.down && !hero(a) && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
   if (asleepNow(a)){
     const A = sp.json.animations;
     if (A.sleep && sp.img.sleep){ const an = A.sleep; return {img: sp.img.sleep, f: Math.floor((now - (a.sleepT0 || 0)) / 1000 * an.fps) % an.frames, pose: "sleep"}; }
@@ -1722,6 +1722,34 @@ const FOE_BLOCKS = {
                 immuneCond: ["blinded", "charmed", "deafened", "frightened", "prone"],
                 attacks: [{name: "Pseudopod", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5, extra: {dmg: "2d6", type: "acid"}}]},
 };
+// THE ALLIES WHO FIGHT (Sam, 2026-10-15: "Make allied NPCs actually fight in the painted map (mostly just Ront,
+// Eldeth, Prince Derendil, and Sarith)"). Same rule as SHEETS and FOE_BLOCKS — nothing made up:
+//   hp, ac, ability scores  — their own `characters` rows (snapshot 2026-10-15; Derendil's row ac 14, the block's 13 —
+//                             the row wins, as it does for the party)
+//   attacks, traits         — their `bestiary` rows (Ront, Sarith: SRD 5.1; Eldeth, Derendil: Out of the Abyss)
+// They are prisoners and hold nothing (inventory_items is empty for all four), so like the party they fight with
+// fists — Unarmed Strike, SRD 5.2.1: STR mod + proficiency to hit, 1 + STR mod bludgeoning — until a weapon reaches
+// them. `kit` is the block's own line for each weapon it lists; it is used only when they actually carry that weapon
+// (loadGear reads their inventory like a hero's). Derendil's claws are his body, so he always has them.
+// `multi`: the block's Multiattack. Ront's Aggressive (bonus action: move up to his speed toward a hostile creature
+// he can see) and Derendil's Wounded Fury (10 HP or fewer: advantage, +2d6 on a melee hit) are their block traits.
+// Saves are ability modifiers, as for the foes (the rows carry no save list).
+const ALLY_SHEETS = {
+  ront:     {name: "Ront", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
+             attacks: [{name: "Unarmed Strike", hit: 5, dmg: "4", type: "bludgeoning", reach: 5}],
+             kit: {greataxe: {name: "Greataxe", hit: 5, dmg: "1d12+3", type: "slashing", reach: 5}, javelin: {name: "Javelin", hit: 5, dmg: "1d6+3", type: "piercing", reach: 5, thrown: 30}}},
+  eldeth:   {name: "Eldeth", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
+             attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
+             kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, longbow: {name: "Longbow", hit: 4, dmg: "1d8+2", type: "piercing", reach: 150}}},
+  derendil: {name: "Derendil", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
+             attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], kit: {}},
+  sarith:   {name: "Sarith", cls: "Drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
+             attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
+             kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, "hand crossbow": {name: "Hand Crossbow", hit: 4, dmg: "1d6+2", type: "piercing", reach: 30}}},
+};
+// their `characters` ids, so the walk can read what they carry the way it reads a hero's (/api/equipment)
+const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b65375-f25e-4773-bf41-641be0f12b86",
+                  derendil: "e0c652fe-2f68-40ff-823d-bb7ac34f529f", sarith: "cc309888-e98d-4cfe-8bf1-d75787b8ec8e"};
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
 const SPELLS = {
   "Ray of Frost":       {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "cold", fx: "#9fdcff", note: "speed −10 ft"},
@@ -1769,14 +1797,16 @@ let cbt = null;                                   // the running fight
 const activeActor = () => cbt ? cbt.order[cbt.idx] : null;
 let combatBusy = false;
 function fighterFor(a){
-  const s = a.kind === "pc" ? SHEETS[a.id] : FOE_BLOCKS[a.id];
-  const hpMax = a.kind === "pc" ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = a.kind === "pc" ? s.hp : (a.hp ?? hpMax);
+  const s = a.kind === "pc" ? SHEETS[a.id] : a.ally ? ALLY_SHEETS[a.id] : FOE_BLOCKS[a.id];
+  const own = a.kind === "pc" || a.ally;
+  const hpMax = own ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = own ? s.hp : (a.hp ?? hpMax);
   return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
 function startCombat(foeIds, label){
   if (mode !== "explore") return;
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
+  const allies = alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
   hoverZone = null; tip.hidden = true;
   const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
   let dir;
@@ -1814,10 +1844,10 @@ function startCombat(foeIds, label){
   camTo(z, cx, cy, 900);
   $("vignette").classList.add("on"); setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
-  const order = [...party, ...foes].filter(a => !a.down);
-  for (const a of order){ a.c = a.c && a.kind === "pc" ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
+  const order = [...party, ...allies, ...foes].filter(a => !a.down);
+  for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
-  cbt = {order, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
+  cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
   bank("ui/initiative_start", .8);
@@ -1827,6 +1857,11 @@ function startCombat(foeIds, label){
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
+// The heroes' side of a fight: the party plus the allies fighting beside them (cbt.allies).
+const hero = a => !!a && (a.kind === "pc" || !!a.ally);
+const heroes = () => [...party, ...(cbt ? cbt.allies : [])];
+// Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
+const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
 // SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
 // Sam, 2026-10-14: "how did the spider do an opportunity attack if it is sleeping?" — it no longer can.
 const INCAP = ["asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified"];
@@ -1898,11 +1933,12 @@ function nextTurn(first){
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
   if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
     log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 700); return; } }
-  a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...party, ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
+  a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...heroes(), ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
+  if (a.ally){ bank("ui/turn_chime", .5); allyTurn(a); return; }
   bank(CLASS_TURN[a.c.sheet.cls] || "ui/turn_chime", .7);
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
   openMenu(a);
@@ -2008,7 +2044,7 @@ function openMenu(a, sub){
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
-    const webbed = standing(party).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
+    const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
     if (c.conds.has("prone")) add("Stand up", `half your speed (${Math.floor(s.speed / 2)} ft)`, c.move >= Math.floor(s.speed / 2) ? () => { c.move -= Math.floor(s.speed / 2); c.conds.delete("prone"); setAnim(a, "idle"); renderParty(); openMenu(a); } : null);
     add("End turn", "Enter", () => nextTurn(), "end");
@@ -2047,11 +2083,11 @@ function combatClick(w){
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
-  if (p.inspire){ const t = hitActor(party, w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
+  if (p.inspire){ const t = hitActor(heroes(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
     if (t.c.conds.has("inspired")){ toast(`${fname(t)} already has an inspiration die.`); return; } inspire(a, t); return; }
-  if (p.help){ const t = hitActor(party, w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
+  if (p.help){ const t = hitActor(heroes(), w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
-  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(party, w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; } castSpell(a, t, p.spell); return; }
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(heroes(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; } castSpell(a, t, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
@@ -2175,7 +2211,7 @@ function sneakState(att, tgt, atk, ranged){
   if (!atk || !atk.sneak) return null;
   if (att.c.sneakUsed) return {on: false, why: "used this turn"};
   if (!tgt) return {on: null, why: `+${atk.sneak} with advantage, or an ally next to the target`};
-  const adv = advantageOn(att, tgt, ranged), ally = standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5);
+  const adv = advantageOn(att, tgt, ranged), ally = standing(hero(att) ? heroes() : foes).some(p => p !== att && feetBetween(p, tgt) <= 5);
   if (adv < 0) return {on: false, why: "no sneak attack at disadvantage"};
   if (adv > 0) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (advantage)`};
   if (ally) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (ally beside it)`};
@@ -2223,7 +2259,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (!hit){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); log(`${why} — miss.`); narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
-      const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)));
+      const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(heroes()).some(p => p !== att && feetBetween(p, tgt) <= 5)));
       if (sneak) att.c.sneakUsed = true;
       knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
@@ -2235,7 +2271,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
       damage(tgt, dmg.total, atk.type, crit, att);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (tgt.kind === "pc" ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
@@ -2438,11 +2474,15 @@ function damage(t, n, type, crit, from){
   if ((s.resist || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resist", "#aaa"); }
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
   t.flash = now + 180; t.flashCol = "#fff";
-  popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
+  popText(t, String(n), crit ? "#ffd166" : hero(t) ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
   t.c.conds.delete("asleep"); t.c.drugged = false; if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
   if (t.c.conc && t.c.hp > 0 && n > 0) concSave(t, n);
   if (t.kind === "foe" && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.berserk) goBerserk(t);
+  if (t.ally && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.fury){   // Derendil, on our side: same trait, no hunt for casters
+    t.c.fury = true; popText(t, "WOUNDED FURY", "#ff4a2a", 1.2); burst(t, "#ff4a2a", 20);
+    log(`<b>${fname(t)}</b> — Wounded Fury: advantage on his attacks and +2d6 on every claw that lands.`); narrate(t, `${fname(t)} roars, bleeding, and keeps coming.`);
+  }
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   renderParty();
@@ -2456,9 +2496,9 @@ function fall(t){
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
   if (SPR[t.id].img.dead){ playOnce(t, "dead", () => {}); if (SPR[t.id].json.animations.dead.frames === 1) t.deadSwap = now; } else t.deadT0 = now;   // a one-frame corpse (the spider) cross-fades in from the standing body
-  log(`<b>${fname(t)}</b> ${t.kind === "pc" ? "goes down." : "is dead."}`);
+  log(`<b>${fname(t)}</b> ${hero(t) ? "goes down." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
-  popText(t, t.kind === "pc" ? "down" : "slain", t.kind === "pc" ? "#ff6b5e" : "#ffd166", 1.3); hitstop(160); shake(10);
+  popText(t, hero(t) ? "down" : "slain", hero(t) ? "#ff6b5e" : "#ffd166", 1.3); hitstop(160); shake(10);
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
     const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
   else narrate(t, `${fname(t)} falls.`);
@@ -2475,8 +2515,8 @@ function approachThen(att, tgt, ft, then){
   // hostile creature that you can see moves out of your reach ... you use your reaction to make one melee attack
   // against the provoking creature. The attack occurs right before the creature leaves your reach."). Heroes
   // leaving a foe's reach were already covered (moveActor).
-  if (att.kind === "foe" && !att.c.conds.has("disengaged")){
-    const p = standing(party).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
+  if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged")){
+    const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
     if (p){
       p.c.reactionUsed = true; const atk = meleeOf(p);
       log(`${fname(p)} takes a swing as ${fname(att)} breaks away (opportunity attack, their reaction).`); narrate(p, `${fname(p)} lashes out as ${fname(att)} pulls away.`);
@@ -2530,8 +2570,8 @@ function berserkTarget(f, pool){
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
-  const seen = standing(party).filter(p => !p.c.conds.has("hidden"));
-  const tgt = f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(party)) : (seen.length ? seen : standing(party)).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  const seen = standing(heroes()).filter(p => !p.c.conds.has("hidden"));
+  const tgt = f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
@@ -2545,6 +2585,47 @@ function foeTurn(f){
   if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
   let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
   setTimeout(go, 500);
+}
+// An ally's turn (Ront, Eldeth, Derendil, Sarith). Plain 5e, no new numbers: close on the nearest foe they can
+// see and use their block's attack (Multiattack where the block has it). Too far to reach this turn: Ront first
+// uses Aggressive (his bonus action, move up to his speed toward the foe); anyone still short takes the Dash
+// action and closes instead of swinging. A hero who is restrained in webbing beside them gets cut free first,
+// as the party already does for each other (the web's own rule: an action to free a creature next to you).
+function allyTurn(a){
+  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); };
+  if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
+  if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} gets up.`); }
+  if (a.c.conds.has("restrained")){   // the same Break free the party has: a STR (Athletics) check against the web, as the action
+    const dc = a.c.webDc || 12, k = skillCheck(a, "athletics");
+    if (k.total >= dc){ a.c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${dc}.`); }
+    else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${dc} — stuck.`); }
+    renderParty(); end(); return;
+  }
+  const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
+  if (webbed){   // the party's Cut free: hit the webbing (AC 10) with the action
+    const r = d20(), hit = r === 20 || r + (a.c.sheet.attacks[0].hit || 0) >= 10; a.face = faceOf(webbed.x - a.x, webbed.y - a.y);
+    if (hit){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); narrate(a, `${fname(a)} tears the webbing off ${fname(webbed)}.`); }
+    else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); }
+    renderParty(); end(); return;
+  }
+  const seen = standing(foes).filter(f => !f.c.conds.has("hidden"));
+  const near = (x, y) => Math.hypot(x.x - a.x, x.y - a.y) - Math.hypot(y.x - a.x, y.y - a.y);
+  const tgt = (cbt.lastAllyTarget && cbt.lastAllyTarget.get(a) && seen.includes(cbt.lastAllyTarget.get(a))) ? cbt.lastAllyTarget.get(a) : seen.sort(near)[0];
+  if (!tgt){ checkEnd() || end(); return; }
+  (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
+  camTo(Math.min(2.4, cbt.home.z * 1.08), (a.x + tgt.x) / 2, (a.y + tgt.y) / 2 - 50, 600);
+  const s = a.c.sheet, atk = meleeOf(a), swings = s.multi || 1;
+  const gapFt = () => Math.max(0, (Math.hypot(tgt.x - a.x, tgt.y - a.y) - reachPx(a, tgt, atk.reach || 5)) / ftPx(a));
+  if (gapFt() > a.c.move && s.aggressive && a.c.bonus){
+    a.c.bonus = false; a.c.move += s.speed; log(`${fname(a)} charges (Aggressive, bonus action: +${s.speed} ft toward ${fname(tgt)}).`);
+  }
+  if (gapFt() > a.c.move){
+    a.c.action = false; a.c.move += s.speed; combatBusy = true; cbt.phase = "busy";
+    log(`${fname(a)} dashes toward ${fname(tgt)}.`); narrate(a, `${fname(a)} runs at ${fname(tgt)}.`);
+    approachThen(a, tgt, atk.reach || 5, end); return;
+  }
+  let n = 0; const go = () => { if (!cbt || tgt.down || a.down || n >= swings){ end(); return; } n++; attackWith(a, tgt, atk, () => setTimeout(go, 250)); };
+  setTimeout(go, 400);
 }
 // The spider's Web: it rears up (the attack sheet), a strand flies, and on a hit the target is wrapped —
 // restrained until they burst it (DC 12 STR) or a friend cuts them out. Recharges on a 5–6 each turn.
@@ -2602,7 +2683,8 @@ function endCombat(won){
   shots.length = 0;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
-  for (const a of [...party, ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
+  for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
+  const allies = cbt ? cbt.allies : [];
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby();
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
@@ -2623,6 +2705,9 @@ function endCombat(won){
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
     party.forEach(p => { if (p.down){ p.down = false; setAnim(p, "idle"); if (p.c) p.c.hp = 1; } });
+    // the allies the same way as the party (knocked down, not killed — the DM core rules on wounds), then back to
+    // being people on the plate, standing where the fight left them
+    allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
     mode = "explore"; setTrack("explore"); log(won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
@@ -3033,10 +3118,11 @@ function drawCombatGround(){
 function drawConds(a){
   if (!a.c || a.down) return;
   const m = SPR[a.id].json, sc = actorScale(a), lying = asleepNow(a) && frameOf(a).pose === "side", top = lying ? a.y - 40 * sc : a.y - m.pivot[1] * sc - 10; let i = 0;
-  if (a.kind === "foe"){                       // a thin bar over each foe, the way the party sees a monster's state
+  if (a.kind === "foe" || (a.ally && inFightNow())){   // a thin bar over each foe (and each ally fighting with us)
+    const own = a.ally;
     const w = 44 * sc * (m.cell[0] / 128), h = 5, x = a.x - w / 2, y = top + 4;
     ctx.fillStyle = "rgba(10,6,8,.85)"; ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillStyle = "#5a1f1a"; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
+    ctx.fillStyle = own ? (a.c.hp / a.c.hpMax > .5 ? "#5fbf6a" : "#d9b23f") : a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
   }
   if (!a.c.conds.size) return;
   if (a.c.conds.has("asleep")){ if (!a.c.drugged) drawSheep(a, top); drawZzz(a, top); }
@@ -3604,7 +3690,7 @@ stage.addEventListener("pointermove", e => {
   }
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
-  hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(party, w)) : null;
+  hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
   const hp = !hoverActor && (mode === "explore" || mode === "combat") ? pileAt(w) : null;
@@ -3817,13 +3903,19 @@ function attackFromItem(sheet, it){
 }
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
 function refreshAttacks(id){
+  if (ALLY_SHEETS[id]){   // an ally: the block's own line for each weapon of theirs they actually carry, then the base
+    const s = ALLY_SHEETS[id]; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
+    const have = ((GEAR[id] || {}).carried || []).map(c => baseWeapon(c)).filter(Boolean);
+    s.attacks = [...Object.entries(s.kit).filter(([k]) => have.includes(k)).map(([, v]) => v), ...s.baseAttacks];
+    return;
+  }
   const s = SHEETS[id]; if (!s) return; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
   const g = GEAR[id], eq = g && g.main && g.carried.find(c => c.name === g.main);
   s.attacks = eq && isWeapon(eq) ? [attackFromItem(s, eq), ...s.baseAttacks] : s.baseAttacks.slice();
 }
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
-  for (const id of (only ? [only] : party.map(p => p.id))){
+  for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW)])){
     const cid = characterIdOf(id); if (!cid) continue;
     try {
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
