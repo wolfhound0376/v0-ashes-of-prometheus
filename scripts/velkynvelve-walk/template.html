@@ -1628,16 +1628,16 @@ const wardsHere = () => node.wards || null;
 // spells are SRD 5.2.1 at level 1.
 const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: []}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {stealth: 2, athletics: 0, perception: 3},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {stealth: 2, athletics: 0, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: 3},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
            attacks: [{name: "Dagger", hit: 5, dmg: "1d4+3", type: "piercing", reach: 5, thrown: 60, light: true, sneak: "1d6"}, {name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: null},
 };
@@ -1977,18 +1977,96 @@ function combatClick(w){
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
   if (p.atk) attackWith(a, t, p.atk, null, p.offhand); else castSpell(a, t, p.spell);
 }
+// Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as
+// its reaction. Leaving by air counts — a long jump is movement, so it provokes exactly as a walk does.
+function provokedBy(a, end){
+  if (a.kind !== "pc" || a.c.conds.has("disengaged")) return [];
+  return standing(foes).filter(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5
+    && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6);
+}
 // walk up to the movement left, deducting what is used
-function moveActor(a, w, done){
-  const p = nearestWalkable(w.x, w.y); let path = findPath(a, p); if (!path.length){ done && done(); return; }
+function walkTo(a, p, done){
+  let path = findPath(a, p); if (!path.length){ combatBusy = false; done && done(); return; }
   const px = ftPx(a); let left = a.c.move * px, prev = a, cut = [];
   for (const q of path){ const d = Math.hypot(q.x - prev.x, q.y - prev.y); if (d > left){ const k = left / d; cut.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); left = 0; break; } cut.push(q); left -= d; prev = q; }
   a.c.move = Math.max(0, Math.round(left / px / 5) * 5); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
-  // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as its reaction.
-  const end = cut[cut.length - 1], threat = a.kind === "pc" && !a.c.conds.has("disengaged") ? standing(foes).filter(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5 && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6) : [];
+  const threat = provokedBy(a, cut[cut.length - 1]);
   combatBusy = true; closeMenu(); a.path = cut;
   a.onArrive = () => { combatBusy = false; done && done(); };
   if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = []; log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
     attackWith(f, a, f.c.sheet.attacks[0], () => { if (!a.down){ a.path = cut; a.onArrive = () => { combatBusy = false; done && done(); }; } else { combatBusy = false; done && done(); } }); }
+}
+
+// ----- the long jump -----
+// SRD 5.1 (Adventuring > Special Types of Movement > Jumping): a long jump clears up to your
+// STRENGTH SCORE in feet after at least 10 ft of run-up on foot, half that from a standstill,
+// and every foot you clear costs a foot of movement. The score — not the save modifier — is the
+// number the rule asks for, which is why the sheets carry `strScore` straight off the characters
+// table. Creatures keep their own `leap` field instead; their stat blocks record no STR score and
+// none is invented for them here.
+//
+// Two parts of the rule are deliberately NOT modelled, because the data is silent, not the rule:
+// the GM-option DC 10 Strength (Athletics) check to clear a LOW obstacle needs the obstacle's
+// height and spec.json records none; the DC 10 Dexterity (Acrobatics) check on landing needs
+// difficult terrain, which the walk has no concept of.
+//
+// Anything under a square wide is a crack in the floor, not an obstacle — stepping round it is
+// what a person does, and leaping it would only paper over a pathfinding seam.
+const MIN_LEAP_FT = 5;
+// Look along the straight line to `to`. The grid IS the terrain: one run of cells that are not
+// walkable — a slab of rubble, a pool, a bed — is the thing being jumped.
+function gapOnLine(a, to){
+  const dx = to.x - a.x, dy = to.y - a.y, d = Math.hypot(dx, dy);
+  if (d < 1) return null;
+  const n = Math.ceil(d / 6), at = i => ({x: a.x + dx * i / n, y: a.y + dy * i / n});
+  let i = 1;
+  while (i <= n && walkable(at(i).x, at(i).y)) i++;        // the run-up
+  if (i > n) return null;                                   // clear line: nothing to jump
+  const takeoff = at(i - 1);
+  while (i <= n && !walkable(at(i).x, at(i).y)) i++;        // the gap
+  if (i > n) return null;                                   // no ground on the far side
+  const land = at(i);
+  for (let k = i; k <= n; k++) if (!walkable(at(k).x, at(k).y)) return null;  // a second gap: walk it
+  const px = ftPx(a);
+  return {takeoff, land, runUpFt: Math.hypot(takeoff.x - a.x, takeoff.y - a.y) / px,
+          gapFt: Math.hypot(land.x - takeoff.x, land.y - takeoff.y) / px};
+}
+function planLeap(a, to){
+  const span = a.c.sheet.strScore; if (!span) return null;
+  if (["prone", "grappled", "restrained", "asleep"].some(c => a.c.conds.has(c))) return null;
+  const g = gapOnLine(a, to); if (!g || g.gapFt < MIN_LEAP_FT) return null;
+  g.max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
+  g.standing = g.runUpFt < 10;
+  const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5;
+  if (g.gapFt > g.max) g.why = `That gap is about ${Math.round(g.gapFt)} ft. ${fname(a)} clears ${g.max}${g.standing ? " from a standstill — back up for a run-up" : ""}.`;
+  else if (need > a.c.move) g.why = `Not enough movement left: the run-up and the jump cost ${need} ft, ${fname(a)} has ${a.c.move}.`;
+  else g.ok = true;
+  return g;
+}
+// Run up, spring, land — then walk whatever is left of the way on foot.
+function leapMove(a, g, to, done){
+  a.c.move = Math.max(0, a.c.move - Math.round((g.runUpFt + g.gapFt) / 5) * 5);
+  const threat = provokedBy(a, g.land);
+  combatBusy = true; closeMenu();
+  const land = () => {
+    log(`${fname(a)} clears the ${Math.round(g.gapFt)} ft gap${g.standing ? " from a standing start" : ""}. ${a.c.move} ft left.`);
+    narrate(a, `${fname(a)} takes it in one leap.`);
+    if (Math.hypot(to.x - a.x, to.y - a.y) > 8 && a.c.move > 0) walkTo(a, to, done);
+    else { combatBusy = false; done && done(); }
+  };
+  const spring = () => { if (a.down){ combatBusy = false; done && done(); return; } arcTo(a, g.land, land); };
+  const runUp = () => { if (g.runUpFt > 0.5){ a.path = [g.takeoff]; a.onArrive = spring; } else spring(); };
+  if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = [];
+    log(`${fname(f)} takes a swing as ${fname(a)} breaks away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} springs clear.`);
+    attackWith(f, a, f.c.sheet.attacks[0], () => { if (!a.down) runUp(); else { combatBusy = false; done && done(); } });
+  } else runUp();
+}
+function moveActor(a, w, done){
+  const p = nearestWalkable(w.x, w.y);
+  const g = a.kind === "pc" ? planLeap(a, p) : null;
+  if (g && g.ok){ leapMove(a, g, p, done); return; }
+  if (g && g.why && !findPath(a, p).length) toast(g.why);   // nothing to walk round it either: say why
+  walkTo(a, p, done);
 }
 
 // ----- resolving -----
@@ -2378,15 +2456,23 @@ function shootWeb(f, tgt, done){
     });
   }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); done && done(); });
 }
-// A leap: the spider springs across the gap in one arc (its "jump" sheet when it has one, the walk sheet otherwise).
+// ---------- leaping ----------
+// One leap, one implementation. The spider's spring and a hero's long jump are the same arc:
+// face the landing, play the "jump" sheet when the sprite has one (the walk sheet otherwise),
+// and let the renderer lift the body on the way over.
+function arcTo(a, land, then){
+  const d = norm({x: land.x - a.x, y: land.y - a.y}), from = {x: a.x, y: a.y}, ms = 520;
+  a.face = faceOf(d.x, d.y); a.path = [];
+  if (SPR[a.id].img.jump){ a.anim = "jump"; a.t0 = now; }
+  const cs = CREATURE_SFX[a.id]; if (cs && cs.call) bank(cs.call, .5);
+  a.leap = {from, to: land, t0: now, ms};
+  setTimeout(() => { a.leap = null; a.x = land.x; a.y = land.y; setAnim(a, "idle"); bank("movement/jump_land", .8); shake(4); then && then(); }, ms);
+}
+// The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
-  const land = nearestWalkable(f.x + d.x * dist, f.y + d.y * dist), from = {x: f.x, y: f.y}, t0 = now, ms = 520;
-  f.face = faceOf(d.x, d.y); f.path = []; f.c.move = Math.max(0, f.c.move - Math.round(dist / ftPx(f) / 5) * 5);
-  if (SPR[f.id].img.jump){ f.anim = "jump"; f.t0 = now; }
-  const cs = CREATURE_SFX[f.id]; if (cs && cs.call) bank(cs.call, .5);
-  f.leap = {from, to: land, t0, ms};
-  setTimeout(() => { f.leap = null; f.x = land.x; f.y = land.y; setAnim(f, "idle"); bank("movement/jump_land", .8); shake(4); narrate(f, `${fname(f)} springs across the floor at ${fname(tgt)}.`); then && then(); }, ms);
+  f.c.move = Math.max(0, f.c.move - Math.round(dist / ftPx(f) / 5) * 5);
+  arcTo(f, nearestWalkable(f.x + d.x * dist, f.y + d.y * dist), () => { narrate(f, `${fname(f)} springs across the floor at ${fname(tgt)}.`); then && then(); });
 }
 function checkEnd(){
   if (!cbt) return true;
