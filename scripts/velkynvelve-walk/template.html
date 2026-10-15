@@ -2142,7 +2142,7 @@ function castSpell(caster, tgt, name, done){
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
           else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) spawnFx("pxSwirl", {at: t, sq: .7, anchor: "top", lift: .45, loop: true, until: now + 2600, alpha: .95}); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
-          else land(t, !ok, sp.type || "psychic");
+          else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
@@ -2428,7 +2428,8 @@ const KIT_MOTION = {
 const clings = [];   // Chill Touch's hands: {by: caster, p: the hand's fx}, let go when the caster's next turn starts
 function kitFor(name, sp){
   const type = sp.kind === "heal" ? "healing" : sp.type, base = KIT[type]; if (!base) return null;
-  const named = KIT_BY_SPELL[name]; if (named) return {...base, ...named, type};
+  // the generated table title-cases the board's keys ("Toll The Dead"); look names up without regard to case
+  const named = KIT_BY_SPELL[name] || Object.entries(KIT_BY_SPELL).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1]; if (named) return {...base, ...named, type};
   if (sp.kind === "attack" && base.route !== "ball" && base.route !== "beam")
     return {...base, type, route: "ball", travel: base.travel || base.impact, speed: base.speed || 18, motion: base.motion || "dart", impactScale: (base.impactScale || 1) * .8};
   return {...base, type};
