@@ -3,7 +3,8 @@
 Python only (Sam's machine has no Node). From the repo root:  python scripts/velkynvelve-walk/build_walk.py
 
 Inputs, all in this folder:
-  template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/
+  template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/ /*__KIT__*/
+                 (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots (built by spec.py)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
   fx.json        lamp/crystal glows and waterfall masks per plate
@@ -11,8 +12,144 @@ Sprite metadata is read from public/sprites/<slug>/sprite.json and inlined; the 
 runtime from /sprites. Plates, masks and music live in Supabase storage vtt-assets/scenes/velkynvelve/walk/.
 """
 import json, os
+import re
 import numpy as np
 from PIL import Image
+
+# ── the board's spell tables, inherited rather than hand-copied ──────────────
+#
+# WHY THIS EXISTS. The walk used to carry its own transcription of the board's
+# TYPES table. Nothing kept the two in step, so every VFX change on the board
+# had to be copied across by hand and usually was not. On 2026-10-14 the board
+# replaced Ray of Frost's art and DELETED the old frostGather sheet; the walk
+# still asked for it, so it was requesting a file that no longer existed. That
+# is the bug this closes: the walk now reads the board's tables at build time.
+#
+# WHAT IT IS NOT. This is not a copy -- the walk is a different surface with a
+# different camera and some deliberate choices of its own. Those live in
+# WALK_DIVERGES below, each with the reason it differs. Everything NOT listed
+# there follows the board automatically.
+
+KIT_TS = "components/tactical/spell-vfx-kit.ts"
+
+
+def _ts_block(src, decl):
+    """The balanced {...} literal that follows `decl` in the TypeScript."""
+    i = src.index(decl)
+    i = src.index("{", i)
+    depth = 0
+    for j in range(i, len(src)):
+        if src[j] == "{":
+            depth += 1
+        elif src[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[i:j + 1]
+    raise ValueError("unbalanced block after " + decl)
+
+
+def _ts_to_obj(js):
+    """A TS object literal -> Python. Restricted syntax, so this is enough:
+    strings are copied verbatim, comments dropped, 0xRRGGBB made decimal, bare
+    keys quoted, .5 made 0.5, trailing commas and `undefined` removed."""
+    out, i, n = [], 0, len(js)
+    while i < n:
+        c = js[i]
+        if c == '"':
+            j = i + 1
+            while js[j] != '"' or js[j - 1] == "\\":
+                j += 1
+            out.append(js[i:j + 1]); i = j + 1; continue
+        if js.startswith("//", i):
+            i = js.find("\n", i); i = n if i < 0 else i; continue
+        if js.startswith("/*", i):
+            i = js.find("*/", i) + 2; continue
+        out.append(c); i += 1
+    s = "".join(out)
+    s = re.sub(r"0x([0-9a-fA-F]+)", lambda m: str(int(m.group(1), 16)), s)
+    s = re.sub(r'([{,]\s*)([A-Za-z_$][\w$]*)\s*:', r'\1"\2":', s)
+    s = re.sub(r"(:\s*)\.(\d)", r"\g<1>0.\2", s)
+    s = re.sub(r",(\s*[}\]])", r"\1", s)
+    s = re.sub(r":\s*undefined", ": null", s)
+    return json.loads(s)
+
+
+# The walk's own decisions. Each key REPLACES that type's generated entry, and
+# each one says why it is not simply following the board.
+WALK_DIVERGES = {
+    # The board lands a golden orb (healingShimmer) above the target. On the
+    # plate that reads as a ball over the head, and a ball is the thing Sam
+    # keeps saying healing is not. The walk keeps the board's golden
+    # luminescence around the body and its motes, and leaves the orb out.
+    "healing": {"route": "sky",
+                "burst": {"tint": "#ffe6a0", "sparks": 12, "ring": False,
+                          "power": 0.6, "rise": 1.2, "noFlash": True},
+                "flourish": "glow"},
+}
+# Per-type scale tweaks for the walk's camera, which sits closer than the
+# board's. Applied on top of whatever the board says.
+WALK_SCALE = {"fire": 2.2}
+# Fields the walk's renderer has no use for.
+WALK_DROPS = ("rune", "decal", "tint", "charge", "impactScale")
+
+
+def _adapt(spec):
+    """One board TypeSpec -> the shape the walk's renderer reads."""
+    out = {}
+    for k, v in spec.items():
+        if k in WALK_DROPS or v is None:
+            continue
+        if k == "route":
+            # the walk's renderer spells this one differently
+            out[k] = "impact" if v == "impact-only" else v
+        elif k == "burst":
+            b = dict(v)
+            b["tint"] = "#%06x" % b["tint"]          # the walk takes CSS colours
+            out[k] = b
+        elif k == "aftermath":
+            a = dict(v)
+            a["hold"] = int(a["hold"] * 1000)        # the walk counts in ms
+            out[k] = a
+        else:
+            out[k] = v
+    return out
+
+
+def build_kit_tables(root):
+    src = open(os.path.join(root, KIT_TS), encoding="utf-8").read()
+    types = _ts_to_obj(_ts_block(src, "const TYPES"))
+    by_spell = _ts_to_obj(_ts_block(src, "const DELIVERY_BY_SPELL"))
+
+    kit = {}
+    for name, spec in types.items():
+        entry = WALK_DIVERGES.get(name) or _adapt(spec)
+        if name in WALK_SCALE:
+            entry = dict(entry, impactScale=WALK_SCALE[name])
+        kit[name] = entry
+
+    # DELIVERY_BY_SPELL is keyed lower-case on the board; the walk looks spells
+    # up by their display name, so title-case the keys it will be asked for.
+    named = {n.title(): _adapt(spec) for n, spec in by_spell.items()}
+
+    # Every sheet named has to exist, or the page silently draws less. This is
+    # the check that would have caught the deleted frostGather.
+    manifest = json.load(open(os.path.join(root, "public", "vfx", "manifest.json")))
+    wanted = set()
+    for tbl in (kit, named):
+        for spec in tbl.values():
+            for k in ("travel", "impact", "gather"):
+                if spec.get(k):
+                    wanted.add(spec[k])
+            if spec.get("aftermath"):
+                wanted.add(spec["aftermath"]["sheet"])
+    missing = sorted(w for w in wanted if w not in manifest)
+    if missing:
+        raise SystemExit("walk kit names sheets that are not in the manifest: "
+                         + ", ".join(missing))
+
+    return ("const KIT = " + json.dumps(kit, indent=2) + ";\n"
+            + "const KIT_BY_SPELL = " + json.dumps(named, indent=2) + ";")
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -74,7 +211,8 @@ for k, n in spec.items():
 
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
-t = (t.replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
+t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT))
+      .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
       .replace('/*__VOICE_BANK__*/{}', open(os.path.join(HERE, 'voice-bank.json')).read())
       .replace('const APP = /*__APP__*/false;', 'const APP = true;').replace('<title>Velkynvelve Walk</title>', '<title>Velkynvelve</title>'))
