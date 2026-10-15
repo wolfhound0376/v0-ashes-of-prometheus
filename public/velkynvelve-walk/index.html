@@ -1828,7 +1828,10 @@ function openMenu(a, sub){
     // bonus-action spell needs the bonus action; and per the SRD, once you have cast a spell with a bonus
     // action the only other spell you can cast this turn is a cantrip (and the reverse: a leveled action
     // spell shuts the bonus-action spell for the turn).
-    if (!c.action) add("— action already used —", "only a bonus-action spell is left", null);
+    // Say what is actually left (Sam, 2026-10-14: "not sure Samson was able to use healing as a bonus action").
+    // After a leveled action spell (Guiding Bolt) the SRD shuts the bonus-action spell too, so "only a
+    // bonus-action spell is left" would be a lie.
+    if (!c.action) add("— action already used —", c.leveledSpell ? "you cast a leveled spell with it: no other spell this turn but a cantrip, and your action is spent" : c.bonus ? "only a bonus-action spell is left" : "and the bonus action too", null);
     for (const nm of [...s.magic.cantrips, ...s.magic.prepared]) ACTION_ICON[nm] = "cast-spell";
     for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
     for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const left = c.slots[sp.lvl] || 0;
@@ -1852,7 +1855,9 @@ function openMenu(a, sub){
     if (s.magic || s.innateSorcery) grp("magic");
     // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
     // but notice it fizzles when attempted because the sigil soaks it up") — the lesson is learned by trying.
-    if (s.magic) add("Cast", `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, (c.action || c.bonus) ? () => openMenu(a, "cast") : null, "primary");
+    const castable = s.magic && [...s.magic.cantrips, ...s.magic.prepared].some(nm => { const sp = SPELLS[nm]; if (!sp) return false;
+      if (sp.lvl === 0) return c.action; if ((c.slots[sp.lvl] || 0) <= 0) return false; return sp.bonus ? c.bonus && !c.leveledSpell : c.action && !c.bonusSpell; });
+    if (s.magic) add("Cast", !castable ? "nothing left to cast this turn" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, castable ? () => openMenu(a, "cast") : null, "primary");
     // Bardic Inspiration (SRD 5.1, Bard): a bonus action, one creature other than you within 60 ft who can hear
     // you gains a d6, once per creature at a time; uses = Charisma modifier per long rest.
     if (s.bardic){ const left = c.inspLeft ?? s.bardic.uses;
