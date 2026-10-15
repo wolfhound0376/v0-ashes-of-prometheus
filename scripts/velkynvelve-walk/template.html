@@ -689,6 +689,8 @@ function draw(){
       dh = ch * sc * k; dy = a.y - py * sc * k + fy + (a.ky || 0); ctx.filter = dead ? "brightness(.55) saturate(.45)" : "brightness(.72) saturate(.7)";
       if (dead && a.deadT0) ctx.globalAlpha = a.alpha * Math.min(1, .35 + (now - a.deadT0) / 500);
     }
+    const held = !pose && !a.climbing && heldWeapon(a);                              // what is in their hand, drawn on the sprite
+    if (held && held.behind) drawHeld(a, held, sc, py, cw, fy);
     if (pose === "belly"){                         // a crawler dies on its back, legs drawn in over the body (Sam's reference: curled, not splayed)
       ctx.save(); ctx.translate(a.x, a.y - 6 * sc); ctx.scale(.7, -.66); ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc, dw, ch * sc); ctx.restore();
     } else if (pose === "puddle"){                 // an ooze slumps to a still, spreading puddle
@@ -703,6 +705,7 @@ function draw(){
       ctx.globalAlpha = a0 * k; ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.globalAlpha = a0;
     } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
     if (pose) ctx.filter = "none";
+    if (held && !held.behind) drawHeld(a, held, sc, py, cw, fy);
     if (a.flash > now){
       ctx.globalAlpha = .55 * a.alpha;
       // tint by redrawing through a temp canvas
@@ -3786,6 +3789,40 @@ function equipItem(a, name){
       fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: "main_hand", item_key: k})}).catch(() => {}); return true; };
     if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }               // a fresh pickup gets its key from the server first
   if (inFight){ renderParty(); afterAction(a); }
+}
+// ---------- the weapon in the hand ----------
+// Sam, 2026-10-15: "I'm not seeing the weapons being used by the pixel characters." The heroes' pixel art was drawn
+// empty-handed, and repainting every frame for every weapon is not affordable (about 500 frames a hero). So the
+// equipped weapon's own pixel icon (items.pixel_icon_url, the one that lies on the floor) is drawn in the hero's right
+// hand: hanging at the side while they stand and walk, raised and brought down at the target in the attack. The
+// right hand is worked out from the facing (facing the viewer it is on screen-left; walking left it is the far
+// side, so it goes behind the body). Sitting, sleeping, casting, climbing and down: the weapon is put away.
+const HELD_ANIMS = new Set(["idle", "walk", "attack", "hurt", "dodge", "jump"]);
+const ROW_DIR = [[0, 1], [.71, .71], [1, 0], [.71, -.71], [0, -1], [-.71, -.71], [-1, 0], [-.71, .71]];   // sheet row -> facing (S, SE, E, NE, N, NW, W, SW)
+function heldWeapon(a){
+  if (a.kind !== "pc" || !HELD_ANIMS.has(a.anim || "idle")) return null;
+  const g = GEAR[a.id], it = g && g.main && g.carried.find(c => c.name === g.main);
+  const url = it && (it.pixel || (catalogItem(it.name) || {}).pixel_icon_url); if (!url) return null;
+  const img = itemImg(url); if (!img) return null;
+  const [fx, fy] = ROW_DIR[a.face] || ROW_DIR[0], rx = -fy, ry = fx;                       // the right hand's side of the body
+  return {img, fx, fy, rx, ry, behind: ry < -.3};
+}
+function drawHeld(a, h, sc, py, cw, fy0){
+  const sq = 5 * ftPx(a) * FLOOR_ITEM_SCALE, body = py * sc;
+  let hx = a.x + h.rx * cw * sc * .15 + (a.kx || 0), hy = a.y - body * .4 + h.ry * body * .04 + fy0 + (a.ky || 0);
+  // the icons are drawn tip to the upper right: -45 degrees is where the blade points before it is turned
+  let tip = Math.PI / 2 - h.rx * .25;                                                           // hanging: point down, a little out
+  if (a.anim === "attack"){
+    const m = SPR[a.id].json.animations.attack, p = Math.min(1, (now - a.t0) / 1000 * (m.fps || 12) / (m.frames || 6)), hit = m.hit || .6;
+    const at = Math.atan2(h.fy, h.fx), up = -Math.PI / 2 + h.fx * .3;
+    const k = p < hit ? p / hit : 1, e = k * k * (3 - 2 * k);                                    // up and back, then down onto the target
+    tip = p < hit * .45 ? up : up + (at - up + (Math.abs(at - up) > Math.PI ? (at > up ? -2 * Math.PI : 2 * Math.PI) : 0)) * e;
+    // the blade follows the punching fist the sprite throws: out in front at chest height on the strike
+    hx = a.x + (a.kx || 0) + h.rx * cw * sc * .15 * (1 - e) + h.fx * cw * sc * .22 * e;
+    hy = a.y + fy0 + (a.ky || 0) - body * (.58 + .1 * (1 - e)) + h.fy * body * .05 * e;
+  }
+  const theta = tip + Math.PI / 4, cx = hx + Math.cos(tip) * sq * .28, cy = hy + Math.sin(tip) * sq * .28;   // the grip in the hand, the blade beyond it
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(theta); ctx.drawImage(h.img, -sq / 2, -sq / 2, sq, sq); ctx.restore();
 }
 // the DM's hand: Items in DM tools
 async function renderDmItems(){
