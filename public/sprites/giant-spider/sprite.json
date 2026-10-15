@@ -41,6 +41,13 @@
       "frames": 9,
       "fps": 14,
       "loop": false
+    },
+    "dead": {
+      "sheet": "dead.png",
+      "frames": 1,
+      "fps": 1,
+      "loop": false,
+      "note": "Sam approved 2026-10-14: on its back, legs curled in over the belly. One still frame, the same for every facing (a corpse has no facing). PixelLab edit_image_pro_flash from the south rotation of character 324b3994."
     }
   }
 }
