@@ -1654,9 +1654,12 @@ const SPELLS = {
   "Vicious Mockery":    {lvl: 0, kind: "save", save: "wis", range: 60, dmg: "1d6", type: "psychic", fx: "#ff9bd2", cond: "mocked"},
   "Guiding Bolt":       {lvl: 1, kind: "attack", range: 120, dmg: "4d6", type: "radiant", fx: "#fff1b0", cond: "lit"},
   "Healing Word":       {lvl: 1, kind: "heal", range: 60, dmg: "2d4", bonus: true, fx: "#9ff2c8"},
-  "Shield of Faith":    {lvl: 1, kind: "buff", range: 60, bonus: true, cond: "shielded", fx: "#cfe8ff"},
-  "Faerie Fire":        {lvl: 1, kind: "save", save: "dex", range: 60, area: 20, cond: "lit", fx: "#c8a2ff"},
-  "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff"},
+  // conc: Concentration, in rounds (1 minute = 10). SRD 5.1: Shield of Faith "Concentration, up to 10 minutes",
+  // Faerie Fire "Concentration, up to 1 minute". Sleep is the 5.2.1 spell here (a WIS save, waking on a later
+  // save), and in 5.2.1 it is "Concentration, up to 1 minute" (in 5.1 it was not concentration).
+  "Shield of Faith":    {lvl: 1, kind: "buff", range: 60, bonus: true, cond: "shielded", fx: "#cfe8ff", conc: 100},
+  "Faerie Fire":        {lvl: 1, kind: "save", save: "dex", range: 60, area: 20, cond: "lit", fx: "#c8a2ff", conc: 10},
+  "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
 const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
@@ -1788,7 +1791,8 @@ function renderParty(){
     const c = p.c || fighterFor(p), row = document.createElement("div"); row.className = "cpc" + (p === activeActor() ? " now" : "") + (p.down ? " down" : "");
     const slots = Object.entries(c.slots).map(([l, n]) => `<span class="slots" title="Level ${l} spell slots">${"●".repeat(n)}${"○".repeat(Math.max(0, (c.sheet.magic.slots[l] || 0) - n))}</span>`).join("");
     const conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
-    row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}</div>
+    const conc = c.conc ? `<b class="conc" style="color:#9fe6ff" title="Concentrating on ${esc(c.conc.spell)}: taking damage means a CON save (DC 10 or half the damage)">◎ ${esc(c.conc.spell)}</b>` : "";
+    row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}${conc}</div>
       <div class="hp"><i style="width:${100 * c.hp / c.hpMax}%"></i><span>${c.hp} / ${c.hpMax}</span></div>${slots}`;
     el.appendChild(row);
   }
@@ -1803,6 +1807,7 @@ function nextTurn(first){
     const a = cbt.order[cbt.idx]; if (!a.down && actors.includes(a)) break;
   }
   const a = activeActor(); if (!a) return;
+  if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.reactionUsed = false;
   renderTurns(); renderParty();
@@ -1851,7 +1856,7 @@ function openMenu(a, sub){
     for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
     for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const left = c.slots[sp.lvl] || 0;
       const why = left <= 0 ? "no slot left" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
-      add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
+      add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"}${sp.conc ? (c.conc ? ` · concentration: ends ${c.conc.spell}` : " · concentration") : ""} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
     add("Back", "", () => openMenu(a));
   } else {
     grp("attack");
@@ -1873,6 +1878,7 @@ function openMenu(a, sub){
     // but notice it fizzles when attempted because the sigil soaks it up") — the lesson is learned by trying.
     const castable = s.magic && [...s.magic.cantrips, ...s.magic.prepared].some(nm => { const sp = SPELLS[nm]; if (!sp) return false;
       if (sp.lvl === 0) return c.action; if ((c.slots[sp.lvl] || 0) <= 0) return false; return sp.bonus ? c.bonus && !c.leveledSpell : c.action && !c.bonusSpell; });
+    if (c.conc) add("End concentration", `${c.conc.spell} · free, no action · ${Math.max(0, c.conc.endRound - cbt.round)} rounds left`, () => { endConc(a, "let go"); openMenu(a); });
     if (s.magic) add("Cast", !castable ? "nothing left to cast this turn" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, castable ? () => openMenu(a, "cast") : null, "primary");
     // Bardic Inspiration (SRD 5.1, Bard): a bonus action, one creature other than you within 60 ft who can hear
     // you gains a d6, once per creature at a time; uses = Charisma modifier per long rest.
@@ -2072,6 +2078,7 @@ function castSpell(caster, tgt, name, done){
   }
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
   const bardic = isMusical(caster), noteCol = sp.fx || "#ffd36a";
+  if (sp.conc) startConc(caster, name);
   const ring = quiet || bardic ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
   if (bardic) singAt(caster, quiet ? "#b0b8ff" : noteCol, 900);   // Sleep too (Sam, 2026-10-14: "sleep should be music"): a lullaby, sung
   const kit = quiet ? null : kitFor(name, sp); kitGather(caster, kit);
@@ -2122,7 +2129,7 @@ function castSpell(caster, tgt, name, done){
         if (name === "Shield of Faith"){ if (tgt.sofFx) tgt.sofFx.then(e => { if (e) e.until = now; });
           tgt.sofFx = spawnFx("shieldOfFaith", {at: tgt, sq: 1.9, anchor: "base", lift: -.2, tail: 8, holdAlpha: .5, whileCond: "shielded"}); }
         else spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8});
-        addCond(tgt, sp.cond); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
+        addCond(tgt, sp.cond); concHolds(caster, tgt, sp.cond, name); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else {                                                                    // a save
         const targets = sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt];
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
@@ -2137,7 +2144,7 @@ function castSpell(caster, tgt, name, done){
           else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) spawnFx("pxSwirl", {at: t, sq: .7, anchor: "top", lift: .45, loop: true, until: now + 2600, alpha: .95}); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
           else land(t, !ok, sp.type || "psychic");
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
-          if (sp.cond && !ok){ addCond(t, sp.cond); if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
+          if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
       }
@@ -2186,7 +2193,43 @@ function afterAction(a, done){
   if (checkEnd()) return;
   if (a.kind === "pc" && activeActor() === a){ if (a.c.action || a.c.bonus || a.c.move > 0) openMenu(a); else nextTurn(); }
 }
-function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(t, "immune", "#aaa"); return; } t.c.conds.add(k); popText(t, COND_GLYPH[k] ? COND_GLYPH[k][2].split(":")[0].toLowerCase() : k, COND_GLYPH[k] ? COND_GLYPH[k][1] : "#fff"); renderParty(); }
+function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(t, "immune", "#aaa"); return; } t.c.conds.add(k);
+  if (t.c.conc && INCAP.includes(k)) endConc(t, "they are incapacitated"); popText(t, COND_GLYPH[k] ? COND_GLYPH[k][2].split(":")[0].toLowerCase() : k, COND_GLYPH[k] ? COND_GLYPH[k][1] : "#fff"); renderParty(); }
+// ---------- concentration (SRD 5.1, "Concentration") ----------
+// Sam, 2026-10-14: "Well, lets track concentration". The rules, as the SRD has them:
+//  - "You can't concentrate on two spells at once": casting another concentration spell ends the first.
+//  - "Whenever you take damage while you are concentrating on a spell, you must make a Constitution saving
+//    throw to maintain your concentration. The DC equals 10 or half the damage you take, whichever number is
+//    higher." One save per source of damage; here, one per hit.
+//  - "You lose concentration on a spell if you are incapacitated or if you die."
+//  - "You can end concentration at any time (no action required)."
+//  - and it ends when its time is up (`conc` rounds, checked at the start of the caster's turn).
+// When it ends, whatever that spell put on people comes off: the shield (and its dome), Faerie Fire's light,
+// Sleep's slumber. A condition someone got from elsewhere (Guiding Bolt's light) is left alone.
+function startConc(a, spell){
+  if (a.c.conc) endConc(a, `casting ${spell} instead`);
+  a.c.conc = {spell, endRound: (cbt ? cbt.round : 0) + SPELLS[spell].conc, holds: []};
+  popText(a, "concentrating", "#9fe6ff", .9); renderParty();
+}
+function concHolds(caster, t, cond, spell){
+  const k = caster.c.conc; if (!k || k.spell !== spell) return;
+  k.holds.push({t, cond}); t.c.condFrom = t.c.condFrom || {}; t.c.condFrom[cond] = k;
+}
+function endConc(a, why){
+  const k = a.c.conc; if (!k) return; a.c.conc = null;
+  for (const {t, cond} of k.holds){
+    if (!t.c || !t.c.condFrom || t.c.condFrom[cond] !== k) continue;      // since replaced by another source
+    delete t.c.condFrom[cond]; if (!t.c.conds.has(cond)) continue;
+    t.c.conds.delete(cond); if (cond === "asleep" && !t.down){ popText(t, "wakes", "#b0b8ff"); t.sheepT0 = 0; }
+  }
+  popText(a, "concentration broken", "#9fe6ff", .9);
+  log(`${fname(a)} loses concentration on <b>${esc(k.spell)}</b> (${esc(why)}).`); renderParty();
+}
+function concSave(a, dmg){
+  const dc = Math.max(10, Math.floor(dmg / 2)), r = d20(), mod = a.c.sheet.saves.con || 0, s = r + mod, insp = a.kind === "pc" ? useInspiration(a, s, dc) : 0, ok = s + insp >= dc;
+  log(`${fname(a)} keeps concentration? CON ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)}${insp ? ` + ${insp}` : ""} vs DC ${dc}: ${ok ? "holds" : "fails"}.`);
+  if (ok) popText(a, "holds focus", "#9fe6ff", .8); else endConc(a, `failed the CON save after ${dmg} damage`);
+}
 function damage(t, n, type, crit, from){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
   if ((s.resist || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resist", "#aaa"); }
@@ -2195,12 +2238,14 @@ function damage(t, n, type, crit, from){
   popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
   t.c.conds.delete("asleep"); if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
+  if (t.c.conc && t.c.hp > 0 && n > 0) concSave(t, n);
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   renderParty();
 }
 function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
 function fall(t){
+  if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
   const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_downed" : cs && cs.death ? cs.death : "creature/death_beast", .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
@@ -2282,6 +2327,8 @@ function checkEnd(){
 function endCombat(won){
   if (mode !== "combat") return;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
+  // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
+  for (const a of [...party, ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby();
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
