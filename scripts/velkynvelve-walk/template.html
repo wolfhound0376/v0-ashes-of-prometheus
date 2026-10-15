@@ -648,7 +648,7 @@ function draw(){
     ctx.beginPath(); ctx.ellipse(marker.x, marker.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
   }
   for (const c of node.chains || []) drawChain(c);
-  drawCombatGround();
+  drawCombatGround(); drawStuckGround();
   if (mode === "combat") drawFxLayer(true);
   const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
   for (const a of list){
@@ -706,6 +706,7 @@ function draw(){
     } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
     if (pose) ctx.filter = "none";
     if (held && !held.behind) drawHeld(a, held, sc, py, cw, fy);
+    drawStuckOn(a, fy, pose);
     if (a.flash > now){
       ctx.globalAlpha = .55 * a.alpha;
       // tint by redrawing through a temp canvas
@@ -723,7 +724,7 @@ function draw(){
     }
   }
   if (mode === "combat") drawFxLayer(false);
-  drawCombatFx();
+  drawCombatFx(); drawShots();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -2152,23 +2153,30 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     pushCam(att, tgt);
     const ws = weaponSfx(atk, tgt), cs = CREATURE_SFX[att.id];
     if (cs && cs.call && now - (att.lastCall || 0) > 1500){ att.lastCall = now; bank(cs.call, .7); }
-    bank(ws.swing, .6);
+    // a bow, crossbow, sling, dart or blowgun SHOOTS: the string sounds at the release, not before the wind-up,
+    // and the blow lands when the shot arrives (fireShot), not on the shooter's attack frame
+    const shot = shotKind(atk, att, tgt);
+    if (!shot) bank(ws.swing, .6); else att.aimAt = chestOf(tgt, 0);
     const ranged = feetBetween(att, tgt) > (atk.reach || 5) + 2;
+    let flying = null;
     strike(att, tgt, () => {
       const adv = advantageOn(att, tgt, ranged), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + atk.hit + insp >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
       if (r === 1) bank("ui/nat1", .7);
-      lunge(att, tgt, 14 * actorScale(att));
+      if (shot){ bank(ws.swing, .75); att.aimHold = now;
+        flying = new Promise(res => fireShot(att, tgt, shot, hit, () => { lands(); res(); })); }
+      else { lunge(att, tgt, 14 * actorScale(att)); lands(); }
+      function lands(){
       const sw = swipeStyle(atk, crit, att);
-      if (!hit){ swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(ws.miss, .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
+      if (!hit){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(ws.miss, .7); log(`${why} — miss.`); narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)));
       if (sneak) att.c.sneakUsed = true;
       knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
-      swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90);
-      spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: crit ? 2.6 : 2});
+      if (!shot){ swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90); }
+      spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2});
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
@@ -2178,7 +2186,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
-    }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); });
+      }
+    }, () => Promise.resolve(flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)));
   });
 }
 function castSpell(caster, tgt, name, done){
@@ -2528,6 +2537,9 @@ function checkEnd(){
 }
 function endCombat(won){
   if (mode !== "combat") return;
+  // the living pull the bolts out of themselves; the dead keep theirs
+  for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
+  shots.length = 0;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...party, ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
@@ -3811,6 +3823,131 @@ function equipItem(a, name){
     if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }               // a fresh pickup gets its key from the server first
   if (inFight){ renderParty(); afterAction(a); }
 }
+// ---------- shots: bolts and arrows that fly, and stay where they land ----------
+// Sam, 2026-10-15: "We need a better crossbow animation for our pixel characters that shows the bolts being fired and
+// the bolts hitting the target. Arrows should stick in the target if they are struck."
+// A ranged weapon attack used to play the melee swipe on the target, with nothing crossing the gap. Now:
+//   - the shooter brings the weapon up level and aims at the target (drawHeld), and at the release the string snaps,
+//     the weapon kicks back and the shot leaves the front of it;
+//   - the bolt (flat and fast) or arrow (a little arc) flies to the target, and only when it ARRIVES does the hit land:
+//     the sound, the knock-back, the damage;
+//   - on a hit it stays in them, sticking out the way it came in (two-thirds of the shaft showing, the head buried),
+//     and moves with them, falls with them, and is still in the body when they lie dead. Pulled out when the fight ends;
+//   - on a miss it goes wide of the body and drives into the floor behind them, and is gone a few seconds later.
+// Drawn, not sheets, so they fit any sprite size; the shapes are pixel-blocky to match the art.
+const SHOT_OF = n => /crossbow/.test(n) ? "bolt" : /bow/.test(n) ? "arrow" : /blowgun/.test(n) ? "needle" : /dart/.test(n) ? "dart" : /sling/.test(n) ? "stone" : null;
+// len in feet (a little over life size so it reads at this zoom), msPerFt the flight time
+const SHOT_LOOK = {
+  bolt:   {len: 1.5, w: .16, msPerFt: 4.2, arc: .015, shaft: "#5a3c22", head: "#cfd8e2", fl: "#e4dccb", stick: true, snap: "#ffffff"},
+  arrow:  {len: 2.2, w: .13, msPerFt: 5.4, arc: .07,  shaft: "#8a6236", head: "#b8c2cc", fl: "#eee6d6", stick: true, snap: "#fff3d6"},
+  dart:   {len: .8,  w: .14, msPerFt: 6.0, arc: .06,  shaft: "#55555e", head: "#d0d6dc", fl: "#c04a3a", stick: true},
+  needle: {len: .5,  w: .08, msPerFt: 4.0, arc: .01,  shaft: "#cfd6dc", head: "#ffffff", fl: null,      stick: true},
+  stone:  {len: .25, w: .25, msPerFt: 5.0, arc: .06,  shaft: "#7d7a72", head: "#7d7a72", fl: null,      stick: false},
+};
+const shots = [], stuck = []; let SHOT_MAX_MS = 560;            // a long shot still lands inside the attack
+function shotKind(atk, att, tgt){
+  const k = SHOT_OF(String(atk.name || "").toLowerCase()); if (k) return k;
+  return null;                                     // thrown weapons keep the strike for now
+}
+function chestOf(t, jitter){
+  const m = SPR[t.id].json, sc = actorScale(t), body = m.pivot[1] * sc;
+  return {x: t.x + (t.kx || 0) + (Math.random() - .5) * m.cell[0] * sc * .14 * jitter, y: t.y + (t.ky || 0) - body * (.62 + (Math.random() - .5) * .22 * jitter)};
+}
+function shotFrom(a){
+  if (a.muzzle && now - a.muzzle.t < 200) return {x: a.muzzle.x, y: a.muzzle.y};
+  const m = SPR[a.id].json, sc = actorScale(a), [fx, fy] = ROW_DIR[a.face] || ROW_DIR[0];
+  return {x: a.x + fx * m.cell[0] * sc * .16, y: a.y - m.pivot[1] * sc * .58 + fy * 6 * sc};
+}
+// the shot leaves now; land(to) runs when it gets there
+function fireShot(att, tgt, kind, hit, land){
+  const L = SHOT_LOOK[kind], from = shotFrom(att), fp = ftPx(att);
+  let to;
+  if (hit) to = chestOf(tgt, 1);
+  else {
+    const c = chestOf(tgt, 0), d = norm({x: c.x - from.x, y: c.y - from.y}), side = Math.random() < .5 ? -1 : 1, m = SPR[tgt.id].json, sc = actorScale(tgt);
+    to = {x: c.x + d.x * fp * 3 - d.y * side * m.cell[0] * sc * .2, y: tgt.y + Math.max(4, d.y * fp * 2.5) + 6, ground: true};
+  }
+  const dist = Math.hypot(to.x - from.x, to.y - from.y) / fp, ms = Math.max(110, Math.min(SHOT_MAX_MS, dist * L.msPerFt));
+  const s = {kind, from, to, t0: now, ms, arc: L.arc * dist * fp, hit, tgt};
+  shots.push(s);
+  if (L.snap){ for (let i = 0; i < 6; i++){ const ang = Math.atan2(to.y - from.y, to.x - from.x) + (Math.random() - .5) * 1.4;
+    sparks.push({x: from.x, y: from.y, vx: Math.cos(ang) * (90 + Math.random() * 120), vy: Math.sin(ang) * (90 + Math.random() * 120), col: L.snap, t0: now, life: 160 + Math.random() * 120}); } }
+  s.land = () => {
+    const i = shots.indexOf(s); if (i >= 0) shots.splice(i, 1);
+    const ang = endAngle(s);
+    if (L.stick){
+      if (hit && tgt){ const sc = actorScale(tgt);
+        stuck.push({at: tgt, ox: (to.x - tgt.x - (tgt.kx || 0)) / sc, oy: (to.y - tgt.y - (tgt.ky || 0)) / sc, ang, kind, t0: now});
+        const mine = stuck.filter(q => q.at === tgt); if (mine.length > 8) stuck.splice(stuck.indexOf(mine[0]), 1); }
+      else stuck.push({x: to.x, y: to.y, ang: Math.atan2(Math.sin(ang) + .9, Math.cos(ang)), kind, t0: now, until: now + 6000});
+    }
+    if (!hit){ for (let i = 0; i < 5; i++) sparks.push({x: to.x, y: to.y, vx: (Math.random() - .5) * 80, vy: -30 - Math.random() * 50, g: 160, col: "#9b9284", t0: now, life: 380}); }
+    land(to);
+  };
+}
+function shotPos(s, p){
+  const x = s.from.x + (s.to.x - s.from.x) * p, y = s.from.y + (s.to.y - s.from.y) * p - s.arc * 4 * p * (1 - p);
+  return {x, y};
+}
+function endAngle(s){ const dx = s.to.x - s.from.x, dy = s.to.y - s.from.y + s.arc * 4; return Math.atan2(dy, dx); }
+// one shaft: the tip at (x, y) pointing along ang; `show` is how much of it is out of whatever it is in
+function drawShaft(x, y, ang, kind, pxft, show = 1, alpha = 1){
+  const L = SHOT_LOOK[kind], len = L.len * pxft, w = Math.max(1.6, L.w * pxft), cx = Math.cos(ang), cy = Math.sin(ang);
+  ctx.save(); ctx.globalAlpha = alpha;
+  if (kind === "stone"){ ctx.fillStyle = L.shaft; ctx.fillRect(x - w / 2, y - w / 2, w, w); ctx.restore(); return; }
+  const tail = {x: x - cx * len, y: y - cy * len}, start = show < 1 ? {x: x - cx * len * (1 - show), y: y - cy * len * (1 - show)} : {x, y};
+  ctx.lineCap = "butt"; ctx.strokeStyle = "#1a120c"; ctx.lineWidth = w + 1.4;                        // a dark outline, like the sprites
+  ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(start.x, start.y); ctx.stroke();
+  ctx.strokeStyle = L.shaft; ctx.lineWidth = w; ctx.stroke();
+  if (show >= 1){                                                                                   // the head
+    const hl = Math.max(4, len * .2), hw = w * 1.35;
+    ctx.fillStyle = "#1a120c"; ctx.beginPath(); ctx.moveTo(x + cx * 1.2, y + cy * 1.2); ctx.lineTo(x - cx * hl - cy * (hw + .8), y - cy * hl + cx * (hw + .8)); ctx.lineTo(x - cx * hl + cy * (hw + .8), y - cy * hl - cx * (hw + .8)); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = L.head; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - cx * hl - cy * hw, y - cy * hl + cx * hw); ctx.lineTo(x - cx * hl + cy * hw, y - cy * hl - cx * hw); ctx.closePath(); ctx.fill();
+  }
+  if (L.fl){                                                                                        // fletching at the tail
+    const fl = Math.max(4, len * .22), fw = w * 1.6;
+    ctx.fillStyle = L.fl;
+    for (const sd of [-1, 1]){ ctx.beginPath(); ctx.moveTo(tail.x + cx * fl, tail.y + cy * fl); ctx.lineTo(tail.x - sd * cy * fw, tail.y + sd * cx * fw); ctx.lineTo(tail.x + cx * fl * .3 - sd * cy * fw, tail.y + cy * fl * .3 + sd * cx * fw); ctx.closePath(); ctx.fill(); }
+  }
+  ctx.restore();
+}
+// in flight (on top of everything) — drawn from drawCombatFx's pass
+function drawShots(){
+  for (let i = shots.length - 1; i >= 0; i--){
+    const s = shots[i], p = Math.min(1, (now - s.t0) / s.ms);
+    if (p >= 1){ s.land(); continue; }
+    const P = shotPos(s, p), Q = shotPos(s, Math.min(1, p + .02)), ang = Math.atan2(Q.y - P.y, Q.x - P.x), pxft = ftPx({x: P.x, y: P.y, big: 1});
+    const T = shotPos(s, Math.max(0, p - .18));                                                    // a streak behind it
+    ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = "#fff6e0"; ctx.lineWidth = Math.max(1, pxft * .06); ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.restore();
+    drawShaft(P.x, P.y, ang, s.kind, pxft);
+  }
+}
+// stuck in a body: drawn right after that body, so it sits in front of it and behind whoever stands in front. It
+// follows the body's pose: a sleeper settles, a corpse lying on its side carries its bolts round with it.
+function drawStuckOn(a, fy, pose){
+  if (!stuck.length) return; const sc = actorScale(a), pxft = ftPx(a);
+  for (const q of stuck){ if (q.at !== a) continue;
+    const wob = now - q.t0 < 300 ? Math.sin((now - q.t0) / 22) * .12 * (1 - (now - q.t0) / 300) : 0;   // it quivers as it goes in
+    let ox = q.ox * sc, oy = q.oy * sc, ang = q.ang + wob, bx = a.x + (a.kx || 0), by = a.y + (a.ky || 0) + fy;
+    if (pose === "side"){
+      const left = a.face >= 4 && a.face <= 6 ? -1 : 1, body = SPR[a.id].json.pivot[1] * sc * .82, r = left * Math.PI / 2 * .94;
+      bx = a.x - left * body / 2; by = a.y - 4 * sc; const c = Math.cos(r), s = Math.sin(r); [ox, oy] = [ox * c - oy * s, ox * s + oy * c]; ang += r;
+    } else if (pose === "belly"){ by = a.y - 6 * sc; ox *= .7; oy *= -.66; ang = Math.atan2(-Math.sin(ang) * .66, Math.cos(ang) * .7); }
+    else if (pose === "puddle"){ by = a.y; ox *= 1.25; oy *= .4; ang = Math.atan2(Math.sin(ang) * .4, Math.cos(ang) * 1.25); }
+    else if (pose === "settle") oy *= .8;
+    else if (a.down && a.anim === "dead") oy *= .35;                                               // the body is on the floor now
+    if (!(a.creature && /ooze/.test(a.id))){ ctx.save(); ctx.globalAlpha = a.alpha * .9; ctx.fillStyle = "#7a0e14"; const r = Math.max(1.5, pxft * .09);   // where it went in
+      ctx.fillRect(bx + ox - r, by + oy - r * .6, r * 2, r * 1.6); ctx.fillRect(bx + ox - r * .5, by + oy + r, r, r * 1.4); ctx.restore(); }
+    drawShaft(bx + ox, by + oy, ang, q.kind, pxft, .68, a.alpha);
+  }
+}
+// stuck in the floor: drawn with the floor, under everyone
+function drawStuckGround(){
+  for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (q.at) continue;
+    if (now > q.until){ stuck.splice(i, 1); continue; }
+    const fade = Math.min(1, (q.until - now) / 800); drawShaft(q.x, q.y, q.ang, q.kind, ftPx({x: q.x, y: q.y, big: 1}), .7, fade);
+  }
+}
 // ---------- the weapon in the hand ----------
 // Sam, 2026-10-15: "I'm not seeing the weapons being used by the pixel characters." The heroes' pixel art was drawn
 // empty-handed, and repainting every frame for every weapon is not affordable (about 500 frames a hero). So the
@@ -3826,12 +3963,35 @@ function heldWeapon(a){
   const url = it && (it.pixel || (catalogItem(it.name) || {}).pixel_icon_url); if (!url) return null;
   const img = itemImg(url); if (!img) return null;
   const [fx, fy] = ROW_DIR[a.face] || ROW_DIR[0], rx = -fy, ry = fx;                       // the right hand's side of the body
-  return {img, fx, fy, rx, ry, behind: ry < -.3};
+  const shoot = SHOT_OF(it.name.toLowerCase());
+  return {img, fx, fy, rx, ry, behind: ry < -.3, shoot, bow: shoot === "arrow"};
 }
+const wrapAng = d => d > Math.PI ? d - 2 * Math.PI : d < -Math.PI ? d + 2 * Math.PI : d;
 function drawHeld(a, h, sc, py, cw, fy0){
   const sq = 5 * ftPx(a) * FLOOR_ITEM_SCALE, body = py * sc;
   let hx = a.x + h.rx * cw * sc * .15 + (a.kx || 0), hy = a.y - body * .4 + h.ry * body * .04 + fy0 + (a.ky || 0);
   // the icons are drawn tip to the upper right: -45 degrees is where the blade points before it is turned
+  if (h.shoot){
+    // A bow or a crossbow (Sam, 2026-10-15: "a better crossbow animation"): carried lowered along the facing, brought
+    // up level at the target as the attack winds up, a kick back along the line at the release, and the shot leaves
+    // from the front of it (a.muzzle). The crossbow icon points to its upper right; a bow shoots to its upper left
+    // (the string is on the lower right). Aimed leftward it is mirrored along that line, so it is never upside down.
+    const face = Math.atan2(h.fy, h.fx); let aim = face + .55 * (Math.cos(face) >= 0 ? 1 : -1), kick = 0;
+    hx = a.x + (a.kx || 0) + h.fx * cw * sc * .06 + h.rx * cw * sc * .08; hy = a.y + fy0 + (a.ky || 0) - body * .5;
+    if (a.anim === "attack" && a.aimAt){
+      const m = SPR[a.id].json.animations.attack, p = Math.min(1, (now - a.t0) / 1000 * (m.fps || 12) / (m.frames || 6)), hit = m.hit || .6;
+      const want = Math.atan2(a.aimAt.y - hy, a.aimAt.x - hx), k = Math.min(1, p / (hit * .55)), e = k * k * (3 - 2 * k);
+      aim = aim + wrapAng(want - aim) * e; if (p > hit) kick = Math.max(0, 1 - (p - hit) / .3);
+    } else if (a.aimAt && now - (a.aimHold || 0) < 500) aim = Math.atan2(a.aimAt.y - hy, a.aimAt.x - hx);   // holds the line while the shot flies
+    const ca = Math.cos(aim), sa = Math.sin(aim);
+    hx -= ca * kick * sq * .22; hy -= sa * kick * sq * .22;
+    const fwd = h.bow ? .04 : .18, cx = hx + ca * sq * fwd, cy = hy + sa * sq * fwd;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(aim + (h.bow ? 3 * Math.PI / 4 : Math.PI / 4));
+    if (ca < 0) ctx.transform(h.bow ? 0 : 0, h.bow ? 1 : -1, h.bow ? 1 : -1, 0, 0, 0);
+    ctx.drawImage(h.img, -sq / 2, -sq / 2, sq, sq); ctx.restore();
+    a.muzzle = {x: cx + ca * sq * (h.bow ? .12 : .4), y: cy + sa * sq * (h.bow ? .12 : .4), t: now};
+    return;
+  }
   let tip = Math.PI / 2 - h.rx * .25;                                                           // hanging: point down, a little out
   if (a.anim === "attack"){
     const m = SPR[a.id].json.animations.attack, p = Math.min(1, (now - a.t0) / 1000 * (m.fps || 12) / (m.frames || 6)), hit = m.hit || .6;
