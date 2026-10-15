@@ -788,6 +788,14 @@
     "peak": 7,
     "rows": 2
   },
+  "spiderWeb": {
+    "bytes": 399470,
+    "cols": 4,
+    "file": "spiderWeb.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
   "strikeKick": {
     "bytes": 16166,
     "cols": 5,

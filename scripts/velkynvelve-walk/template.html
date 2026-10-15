@@ -2483,10 +2483,11 @@ function shootWeb(f, tgt, done){
   strike(f, tgt, () => {
     const adv = advantageOn(f, tgt, true), r = d20(adv), hit = r === 20 || (r !== 1 && r + w.hit >= targetAc(tgt));
     webStrand(f, tgt, () => {
-      if (!hit){ miss(tgt); log(`${fname(f)} spits a web at ${fname(tgt)}: ${r} + ${w.hit} vs AC ${targetAc(tgt)} — it slaps the stone beside them.`); spawnFx("pxWebFloor", {at: tgt, sq: 1.4, flat: true, fade: false, until: now + 6000, alpha: .8}); return; }
+      if (!hit){ miss(tgt); log(`${fname(f)} spits a web at ${fname(tgt)}: ${r} + ${w.hit} vs AC ${targetAc(tgt)} — it slaps the stone beside them.`); spawnFx("spiderWeb", {at: null, x: tgt.x, y: tgt.y, sq: 1.5, flat: true, tail: 12, until: now + 6000, alpha: .75}); return; }
       addCond(tgt, "restrained"); tgt.c.webDc = w.dc; tgt.path = []; bank("movement/web_tear", .4);
-      spawnFx("pxWebWrap", {at: tgt, sq: 1.5, anchor: "mid", loop: true, alpha: .95}).then(e => { tgt.webFx = e; });
-      spawnFx("groundWeb", {at: tgt, sq: 1.8, flat: true, fade: true});
+      // Sam's web (2026-10-15: "Where is the web animation?"): it gathers from a few strands into a full web over
+      // them and holds (its last 12 frames cycling) until they burst it or are cut out.
+      spawnFx("spiderWeb", {at: tgt, sq: 1.8, anchor: "mid", tail: 12, until: now + 600000, alpha: .95}).then(e => { tgt.webFx = e; });
       narrate(f, `${fname(f)} wraps ${fname(tgt)} in a sheet of webbing.`);
       log(`${fname(f)} Web: ${r} + ${w.hit} vs AC ${targetAc(tgt)} — <b>hit</b>, ${fname(tgt)} is restrained (DC ${w.dc} STR to break free).`);
       renderParty();
