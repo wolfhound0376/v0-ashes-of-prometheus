@@ -43,6 +43,14 @@
     "loop": true,
     "rows": 6
   },
+  "chillHand": {
+    "bytes": 532870,
+    "cols": 4,
+    "file": "chillHand.webp",
+    "fps": 14,
+    "frames": 16,
+    "rows": 4
+  },
   "eldBeam": {
     "bytes": 6700,
     "cols": 4,
@@ -229,6 +237,14 @@
     "frames": 4,
     "loop": true,
     "rows": 1
+  },
+  "healRise": {
+    "bytes": 389224,
+    "cols": 6,
+    "file": "healRise.webp",
+    "fps": 12,
+    "frames": 16,
+    "rows": 3
   },
   "healingShimmer": {
     "bytes": 4430,
