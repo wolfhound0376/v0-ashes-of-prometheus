@@ -834,5 +834,13 @@
     "fps": 24,
     "frames": 18,
     "rows": 4
+  },
+  "tollBell": {
+    "bytes": 512856,
+    "cols": 4,
+    "file": "tollBell.webp",
+    "fps": 12,
+    "frames": 15,
+    "rows": 4
   }
 }

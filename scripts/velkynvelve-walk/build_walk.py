@@ -99,6 +99,14 @@ WALK_BY_SPELL = {
     # and grips; `cling` keeps its last 6 frames cycling until the caster's next
     # turn starts. The board already delivers it impact-only; this adds the art.
     "Chill Touch": {"impact": "chillHand", "impactScale": 0.8, "noPunch": True, "cling": 6},
+    # SRD 5.1: "You point at one creature you can see within range, and the sound of
+    # a dolorous bell fills the air around it for a moment." Nothing crosses the room:
+    # Sam's bell (vfx/tollBell, 2026-10-14) forms over the target, tolls (the ring on
+    # the floor) and shatters into shards.
+    "Toll the Dead": {"route": "sky", "impact": "tollBell", "impactScale": 1.05,
+                      "impactLift": -0.15, "noPunch": True,
+                      # the bell is the moment; no white flash over it
+                      "burst": {"tint": "#9c6bff", "sparks": 12, "ring": False, "noFlash": True}},
 }
 # Per-type scale tweaks for the walk's camera, which sits closer than the
 # board's. Applied on top of whatever the board says.
