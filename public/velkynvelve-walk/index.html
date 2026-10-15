@@ -1380,7 +1380,13 @@ const VFX_BASE = APP ? "/vfx/" : "vfx/";
 let VFX_META = null; const VFX_IMG = {}; const fx = [];
 async function vfxLoad(name){
   try {
-    if (!VFX_META) VFX_META = await (await fetch(VFX_BASE + "manifest.json", {cache: "force-cache"})).json();
+    // NOT force-cache. That returns a cached copy fresh OR STALE, forever, so
+    // once a browser had this file every sheet added afterwards was invisible
+    // to it: VFX_META[name] came back undefined, vfxLoad returned null and
+    // spawnFx silently drew nothing. No error, no console warning. The board
+    // fetches its manifest plainly and revalidates; so does this now. It is a
+    // few KB against an ETag, once a session.
+    if (!VFX_META) VFX_META = await (await fetch(VFX_BASE + "manifest.json")).json();
     const m = VFX_META[name]; if (!m) return null;
     if (!VFX_IMG[name]) VFX_IMG[name] = loadImg(VFX_BASE + m.file).catch(() => null);
     const img = await VFX_IMG[name]; return img ? {m, img} : null;
@@ -2690,7 +2696,10 @@ async function loadSpriteManifest(slug){
   if (SPR[slug]) return true;
   if (spriteMissing.has(slug)) return false;
   try {
-    const m = await (await fetch(`${SPRITE_BASE}${slug}/sprite.json`, {cache: "force-cache"})).json();
+    // Same reason as the vfx manifest above: a NEW sprite arrives on a new
+    // slug and would miss the cache anyway, but a RE-BAKED one keeps its slug,
+    // and sprites get re-baked here whenever the height rule is reapplied.
+    const m = await (await fetch(`${SPRITE_BASE}${slug}/sprite.json`)).json();
     const entry = {json: m, img: {}};
     await Promise.all(Object.entries(m.animations).map(([name, an]) => loadImg(`${SPRITE_BASE}${slug}/${an.sheet || name + ".png"}`).then(i => entry.img[name] = i)));
     SPR[slug] = entry; return true;
