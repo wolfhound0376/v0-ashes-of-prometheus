@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest"
-import { routeFor } from "@/components/tactical/spell-vfx-kit"
+import { kitVfxTypeFor, routeFor } from "@/components/tactical/spell-vfx-kit"
+
+/**
+ * The spell name is ALL the renderer is given (combat-board-3d.tsx: it calls
+ * kitVfxTypeFor, then routeFor with what comes back). Tests that pass the
+ * damage type in by hand prove the function works, not that the spell can
+ * reach it -- which is how Ice Knife shipped with art nothing could play.
+ */
+const kitSpecFor = (spell: string) => {
+  const type = kitVfxTypeFor(spell)
+  return type ? routeFor(type, spell) : undefined
+}
 
 // ============================================================================
 // DELIVERY IS A PROPERTY OF THE SPELL, NOT OF THE DAMAGE TYPE.
@@ -41,6 +52,23 @@ describe("cold delivery", () => {
       expect(spec?.route).toBe("sky")
       expect(spec?.travel).toBeUndefined()
     }
+  })
+
+  it("flies Magic Missile as a seeking dart with its own art", () => {
+    // SRD 5.1: "You create three glowing DARTS of magical force. Each dart
+    // hits a creature of your choice" -- aimed, unmissable, one per target.
+    // `seek` is what curves each dart of the volley onto its own line.
+    const spec = kitSpecFor("Magic Missile")
+    expect(spec?.route).toBe("ball")
+    expect(spec?.travel).toBe("magicMissileTravel")
+    expect(spec?.motion).toBe("seek")
+  })
+
+  it("leaves the other force spells on the type default", () => {
+    // The dart belongs to the SPELL. Eldritch Blast is force too and is a
+    // beam from the hand; putting the dart on the `force` type would have
+    // handed it a thrown projectile, which is the Ice Knife bug again.
+    expect(kitSpecFor("Eldritch Blast")?.travel).not.toBe("magicMissileTravel")
   })
 
   it("does not throw a shard at anything that is not Ice Knife", () => {
