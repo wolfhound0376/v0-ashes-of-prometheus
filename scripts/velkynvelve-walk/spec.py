@@ -44,10 +44,14 @@ NODES = {
           dict(rect=[420,640,500,800], to=[10], label="Rope bridge west")],
    hazard=dict(poly=P((900,500),(1500,500),(1520,560),(880,560)), kind="ambush", foes=["giant-spider"], label="Something shifts among the cushions")),
  7: dict(slug="node-07-ilvara-quarters", name="Ilvara's Quarters", scale=1.0,
-   floors=[dict(poly=P((660,660),(840,480),(1120,430),(1400,460),(1680,480),(1800,600),(1860,760),(1800,880),(1680,960),(1400,1000),(1120,1000),(840,940),(640,820))),dict(rect=[520,760,680,900])],
-   obstacles=[dict(cx=920,cy=600,rx=200,ry=110),dict(cx=1080,cy=770,rx=140,ry=55),dict(cx=1640,cy=550,rx=140,ry=75),dict(cx=1520,cy=865,rx=130,ry=60)],
-   zones=[dict(rect=[1130,425,1250,500], to=[6], label="Hatch up to the shrine"),
-          dict(rect=[1120,960,1360,1010], to=[8], label="Stair down to Shoor's chamber"),
+   floors=[dict(poly=P((660,660),(840,480),(1120,430),(1400,460),(1680,480),(1800,600),(1860,760),(1800,880),(1680,960),(1400,1000),(1120,1000),(840,940),(640,820))),dict(rect=[520,760,680,900]),dict(rect=[1175,995,1250,1112])],
+   # the two ladders (Sam, 2026-10-14: "a point of entrance and exit (2) — characters climb up and down"):
+   # the pit at the back with the ladder standing in it, up to the shrine (OotA: "A rope ladder leads down from the
+   # shrine into this chamber"), blocked to walking except at its foot; and the gap in the front rail where the
+   # ladder goes down to Shoor's chamber. `climb`: where to stand, where the ladder is, which way it goes.
+   obstacles=[dict(cx=920,cy=600,rx=200,ry=110),dict(cx=1080,cy=770,rx=140,ry=55),dict(cx=1640,cy=550,rx=140,ry=75),dict(cx=1520,cy=865,rx=130,ry=60),dict(cx=1202,cy=476,rx=96,ry=36)],
+   zones=[dict(rect=[1150,480,1270,522], to=[6], label="Ladder up to the shrine", climb=dict(foot=[1210,540], ladder=[1210,494], dir="up")),
+          dict(rect=[1170,1096,1255,1118], to=[8], label="Ladder down to Shoor's chamber", climb=dict(foot=[1212,1078], ladder=[1212,1116], dir="down")),
           dict(rect=[520,750,600,910], to=[10], label="Rope bridge west")]),
  8: dict(slug="node-08-shoor-quarters", name="Shoor's Quarters", scale=1.0,
    floors=[dict(poly=P((760,480),(920,380),(1120,420),(1300,360),(1520,400),(1660,520),(1720,640),(1700,800),(1560,900),(1320,940),(1080,940),(860,880),(740,760),(720,600))),dict(rect=[1080,900,1300,1000])],
