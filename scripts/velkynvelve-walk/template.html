@@ -372,6 +372,8 @@ let seatsSeen = [];
 const dmRun = new Set();
 function noteSeats(seated){
   seatsSeen = Array.isArray(seated) ? seated : [];
+  // the live level of each seated character (/api/map-stage), so a class feature switches on the day it is earned
+  for (const s of seatsSeen) if (typeof s.level === "number") for (const id of seatedSlugs([s])) if (SHEETS[id]) SHEETS[id].level = s.level;
   dmRun.clear();
   for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
   renderSeats();
@@ -1616,8 +1618,8 @@ const SHEETS = {
   scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
-           attacks: [{name: "Dagger", hit: 5, dmg: "1d4+3", type: "piercing", reach: 5, thrown: 60, sneak: "1d6"}, {name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
+           attacks: [{name: "Dagger", hit: 5, dmg: "1d4+3", type: "piercing", reach: 5, thrown: 60, light: true, sneak: "1d6"}, {name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: null},
 };
 // Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
@@ -1804,7 +1806,7 @@ function nextTurn(first){
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
-  a.c.conds.delete("disengaged"); a.c.sneakUsed = false; a.c.bonusSpell = false; a.c.leveledSpell = false;
+  a.c.conds.delete("disengaged"); a.c.sneakUsed = false; a.c.lastLight = null; a.c.bonusSpell = false; a.c.leveledSpell = false;
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
@@ -1816,7 +1818,7 @@ function nextTurn(first){
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
-  const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
+  const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
     const sic = SPELL_ICON[label];
     b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
   const grp = (label) => { const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); if (label){ const g = document.createElement("b"); g.className = "grp"; g.textContent = label; m.appendChild(g); } };
@@ -1851,7 +1853,8 @@ function openMenu(a, sub){
     add("Attack", ss ? (c.sneakUsed ? "sneak attack used this turn" : `Sneak Attack ${ss.why}`) : s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
     const thrown = s.attacks.find(k => k.thrown);
     if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
-    add("Sneak (Hide)", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
+    // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
+    add("Hide", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
     add("Shove / Grapple", `unarmed · they save vs DC ${shoveDc(a)}`, c.action ? () => openMenu(a, "shove") : null);
     grp("action");
     add("Dash", `+${s.speed} ft of movement`, c.action ? () => { c.action = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
@@ -1869,6 +1872,27 @@ function openMenu(a, sub){
     // you gains a d6, once per creature at a time; uses = Charisma modifier per long rest.
     if (s.bardic){ const left = c.inspLeft ?? s.bardic.uses;
       add("Bardic Inspiration", `bonus action · ${left} of ${s.bardic.uses} left · an ally within 60 ft adds a d${s.bardic.die} to one roll`, c.bonus && left > 0 ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {inspire: true}; hint("Bardic Inspiration: click a friend within 60 ft who can hear you."); } : null); }
+    // A ROGUE'S BONUS ACTIONS (Sam, 2026-10-14: "why does the rogue not have bonus actions"). SRD 5.1: the rules
+    // give no bonus action by default ("You can take a bonus action only when a special ability, spell, or other
+    // feature of the game states that you can"). A rogue's comes at 2nd level — Cunning Action: "You can take a
+    // bonus action on each of your turns in combat. This action can be used only to take the Dash, Disengage, or
+    // Hide action." The other route is two-weapon fighting: attack with a light melee weapon, then a bonus-action
+    // attack with a different light melee weapon in the other hand, no ability modifier to its damage unless
+    // negative. Fifi carries one dagger, so that line says what it is waiting for.
+    if (s.cls === "Rogue"){
+      grp("bonus action");
+      if ((s.level || 1) >= 2){
+        add("Cunning Action: Dash", `bonus action · +${s.speed} ft of movement`, c.bonus ? () => { c.bonus = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes (Cunning Action).`); openMenu(a); } : null);
+        add("Cunning Action: Disengage", "bonus action · leave reach without a free swing", c.bonus ? () => { c.bonus = false; addCond(a, "disengaged"); log(`${fname(a)} disengages (Cunning Action).`); openMenu(a); } : null);
+        add("Cunning Action: Hide", c.conds.has("hidden") ? "you are hidden" : `bonus action · Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.bonus && !c.conds.has("hidden") ? () => doHide(a, true) : null);
+      }
+      const light = s.attacks.filter(k => k.light);
+      if (light.length >= 2){
+        const off = light.find(k => k !== c.lastLight) || light[1];
+        add("Off-hand attack", !c.lastLight ? "attack with a light weapon first" : `bonus action · ${off.name} +${off.hit} · ${offDmg(off)} ${off.type}`, c.bonus && c.lastLight ? () => aim(a, {atk: off, offhand: true}) : null);
+      } else if ((s.level || 1) < 2) add("No bonus action yet", `Cunning Action comes at rogue level 2${light.length === 1 ? "; an off-hand attack needs a second light weapon" : ""}`, null);
+      else if (light.length === 1) add("Off-hand attack", "needs a second light weapon in the other hand", null);
+    }
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
@@ -1888,7 +1912,7 @@ const ICON_BASE = APP ? "/velkynvelve-walk/icons/" : "icons/";
 const SPELL_ICON = {"Ray of Frost": "ray-of-frost", "Shocking Grasp": "shocking-grasp", "Chill Touch": "chill-touch", "Toll the Dead": "toll-the-dead",
   "Vicious Mockery": "vicious-mockery", "Guiding Bolt": "guiding-bolt", "Healing Word": "healing-word", "Shield of Faith": "shield-of-faith",
   "Faerie Fire": "faerie-fire", "Sleep": "sleep", "Dissonant Whispers": "dissonant-whispers", "Bardic Inspiration": "bardic-inspiration"};
-const ACTION_ICON = {Attack: "attack", Throw: "offhand-attack", "Sneak (Hide)": "hide", "Shove / Grapple": "opportunity-attack", Shove: "opportunity-attack", Grapple: "opportunity-attack",
+const ACTION_ICON = {Attack: "attack", Throw: "offhand-attack", Hide: "hide", "Cunning Action: Dash": "dash", "Cunning Action: Disengage": "disengage", "Cunning Action: Hide": "hide", "Off-hand attack": "offhand-attack", "Shove / Grapple": "opportunity-attack", Shove: "opportunity-attack", Grapple: "opportunity-attack",
   Dash: "dash", Disengage: "disengage", Help: "help", Search: "search", Dodge: "dodge", Cast: "cast-spell", "Innate Sorcery": "cast-spell"};
 const ACTION_GLYPH = {Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
 function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
@@ -1920,7 +1944,7 @@ function combatClick(w){
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
-  if (p.atk) attackWith(a, t, p.atk); else castSpell(a, t, p.spell);
+  if (p.atk) attackWith(a, t, p.atk, null, p.offhand); else castSpell(a, t, p.spell);
 }
 // walk up to the movement left, deducting what is used
 function moveActor(a, w, done){
@@ -1969,8 +1993,11 @@ const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
 function skillCheck(a, skill){ const r = d20(), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
 function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0); }
 // a weapon attack: close to reach, swing, roll on the hit frame, then the number
-function attackWith(att, tgt, atk, done){
-  const c = att.c; if (att.kind === "pc"){ c.action = false; } closeMenu(); cbt.phase = "busy"; combatBusy = true;
+// `offhand`: two-weapon fighting's bonus-action swing (SRD 5.1) — the bonus action, not the action, and no
+// ability modifier on its damage unless that modifier is negative.
+const offDmg = (atk) => atk.dmg.replace(/\+\d+$/, "");
+function attackWith(att, tgt, atk, done, offhand){
+  const c = att.c; if (att.kind === "pc"){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
   approachThen(att, tgt, reach, () => {
     pushCam(att, tgt);
@@ -1992,7 +2019,7 @@ function attackWith(att, tgt, atk, done){
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       swipe(att, tgt, {...swipeStyle(atk, crit), crit}); if (crit) setTimeout(() => swipe(att, tgt, {...swipeStyle(atk, true), crit: true}), 90);
       spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: crit ? 2.6 : 2});
-      let dmg = roll(atk.dmg, crit), parts = [`${dmg.total} ${atk.type}`];
+      let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
       damage(tgt, dmg.total, atk.type, crit, att);
@@ -2107,10 +2134,10 @@ function castSpell(caster, tgt, name, done){
 }
 // Hide: a Stealth check against the best passive Perception among the foes still standing (SRD: you must
 // be unseen; the map takes "not within 5 ft of a foe" as enough cover in a cave this cluttered).
-function doHide(a){
+function doHide(a, bonus){
   const c = a.c; const near = standing(foes).find(f => feetBetween(a, f) <= 5);
   if (near){ toast(`${fname(near)} is right on top of you — step away first.`); return; }
-  c.action = false; const k = skillCheck(a, "stealth"), best = Math.max(10, ...standing(foes).map(f => f.c.sheet.passive || 10));
+  if (bonus) c.bonus = false; else c.action = false; const k = skillCheck(a, "stealth"), best = Math.max(10, ...standing(foes).map(f => f.c.sheet.passive || 10));
   bank("combat/hide", .7);
   if (k.total >= best){ addCond(a, "hidden"); log(`${fname(a)} hides: Stealth ${k.r} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); a.alpha = .55; }
   else { log(`${fname(a)} tries to hide: Stealth ${k.r} + ${k.mod} = ${k.total} vs passive ${best} — spotted.`); popText(a, "spotted", "#c9c4b8"); }
