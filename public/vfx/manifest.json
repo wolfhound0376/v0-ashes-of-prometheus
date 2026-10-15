@@ -91,14 +91,6 @@
     "frames": 16,
     "rows": 4
   },
-  "frostGather": {
-    "bytes": 302,
-    "cols": 4,
-    "file": "frostGather.webp",
-    "fps": 11,
-    "frames": 8,
-    "rows": 2
-  },
   "frostImpact": {
     "bytes": 24018,
     "cols": 5,
@@ -106,6 +98,31 @@
     "fps": 24,
     "frames": 20,
     "rows": 4
+  },
+  "frostRayCharge": {
+    "bytes": 50146,
+    "cols": 4,
+    "file": "frostRayCharge.webp",
+    "fps": 12,
+    "frames": 3,
+    "rows": 1
+  },
+  "frostRayImpact": {
+    "bytes": 421948,
+    "cols": 3,
+    "file": "frostRayImpact.webp",
+    "fps": 20,
+    "frames": 8,
+    "rows": 3
+  },
+  "frostRayTravel": {
+    "bytes": 93618,
+    "cols": 4,
+    "file": "frostRayTravel.webp",
+    "fps": 18,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
   },
   "frostShard": {
     "bytes": 240,
@@ -187,6 +204,31 @@
     "fps": 18,
     "frames": 16,
     "rows": 4
+  },
+  "guidingBoltCharge": {
+    "bytes": 36858,
+    "cols": 4,
+    "file": "guidingBoltCharge.webp",
+    "fps": 12,
+    "frames": 3,
+    "rows": 1
+  },
+  "guidingBoltImpact": {
+    "bytes": 385588,
+    "cols": 3,
+    "file": "guidingBoltImpact.webp",
+    "fps": 20,
+    "frames": 8,
+    "rows": 3
+  },
+  "guidingBoltTravel": {
+    "bytes": 82214,
+    "cols": 4,
+    "file": "guidingBoltTravel.webp",
+    "fps": 18,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
   },
   "healingShimmer": {
     "bytes": 4430,
