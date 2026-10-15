@@ -1902,16 +1902,16 @@ function castSpell(caster, tgt, name, done){
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
   const bardic = isMusical(caster), noteCol = sp.fx || "#ffd36a";
   const ring = quiet || bardic ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
-  if (bardic && !quiet) singAt(caster, noteCol, 900);
+  if (bardic) singAt(caster, quiet ? "#b0b8ff" : noteCol, 900);   // Sleep too (Sam, 2026-10-14: "sleep should be music"): a lullaby, sung
   const kit = quiet ? null : kitFor(name, sp); kitGather(caster, kit);
   const marks = [];
   // Sigils only, no plumes (Sam, 2026-10-13: "use the sigils but NOT the plumes. I will tell you when the
   // plume is appropriate"). sig[1] stays in the table for that day.
-  const markTarget = (tg) => { if (bardic && !quiet){ noteRing(tg, noteCol, now + 2400); return; } if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); };
+  const markTarget = (tg) => { if (bardic){ noteRing(tg, quiet ? "#b0b8ff" : noteCol, now + 2400); return; } if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); };
   if (sp.area) aoeMarks.push({x: at.x, y: at.y, sp, col: sp.fx || "#e8a24a", until: now + 2600});
   if (sp.area && !quiet) spawnFx(sig[0] || "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: true, spin: .8, loop: true, until: now + 2600, alpha: .8});
   else if (tgt.id) markTarget(tgt);
-  const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (bardic && !quiet){ for (let i = 0; i < 8; i++){ const B = bodyPoint(tg); noteAt(B.x, B.y, taken ? noteCol : "#9a93a8"); } return; } if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
+  const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (bardic){ for (let i = 0; i < 8; i++){ const B = bodyPoint(tg); noteAt(B.x, B.y, taken ? (quiet ? "#b0b8ff" : noteCol) : "#9a93a8"); } return; } if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
   playOnce(caster, bardic && SPR[caster.id].img.perform ? "perform" : SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
   caster.once && (caster.once.hit = () => {
     ring.then(e => { if (e) e.until = now; });
@@ -2307,7 +2307,7 @@ function kitImpact(t, kit, opts = {}){
 // your music or oration", and an instrument is the focus. The drow took Scott's instrument, so it is his voice:
 // he sings (the `perform` sheet), and notes do what runes and sigils do for everyone else — they rise at his
 // hands while the spell winds up, they circle the one he sings at, and they trail his spells across the room.
-// Sleep keeps its sigil (Sam's ruling of 2026-10-13) and its lullaby.
+// Sleep is music too (Sam, 2026-10-14, replacing the sigil of 2026-10-13): lullaby-blue notes, and the lullaby.
 // ============================================================================
 const notes = [];
 const NOTE_GLYPH = ["♪", "♫", "♩", "♬"];
