@@ -1810,9 +1810,11 @@ function nextTurn(first){
 function openMenu(a, sub){
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
-    b.innerHTML = `${ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
+    const sic = SPELL_ICON[label];
+    b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
   const grp = (label) => { const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); if (label){ const g = document.createElement("b"); g.className = "grp"; g.textContent = label; m.appendChild(g); } };
   const c = a.c, s = c.sheet;
+  // a spell (or Bardic Inspiration) wears its own commissioned icon, the one the dashboard uses (lib/action-icons.ts)
   if (sub === "attack"){
     for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
     add("Back", "", () => openMenu(a));
@@ -1869,6 +1871,11 @@ function openMenu(a, sub){
 function closeMenu(){ $("cbtMenu").hidden = true; hint(""); }
 // The dashboard's painted action icons (public/icons/actions), 96 px copies under velkynvelve-walk/icons.
 const ICON_BASE = APP ? "/velkynvelve-walk/icons/" : "icons/";
+// Sam, 2026-10-14: "We have more icons for magic under cast that can be used." The commissioned spell icons
+// (vtt-assets/spell-icons, the dashboard's — lib/action-icons.ts), copied beside the action icons in icons/spells/.
+const SPELL_ICON = {"Ray of Frost": "ray-of-frost", "Shocking Grasp": "shocking-grasp", "Chill Touch": "chill-touch", "Toll the Dead": "toll-the-dead",
+  "Vicious Mockery": "vicious-mockery", "Guiding Bolt": "guiding-bolt", "Healing Word": "healing-word", "Shield of Faith": "shield-of-faith",
+  "Faerie Fire": "faerie-fire", "Sleep": "sleep", "Dissonant Whispers": "dissonant-whispers", "Bardic Inspiration": "bardic-inspiration"};
 const ACTION_ICON = {Attack: "attack", Throw: "offhand-attack", "Sneak (Hide)": "hide", "Shove / Grapple": "opportunity-attack", Shove: "opportunity-attack", Grapple: "opportunity-attack",
   Dash: "dash", Disengage: "disengage", Help: "help", Search: "search", Dodge: "dodge", Cast: "cast-spell", "Innate Sorcery": "cast-spell"};
 const ACTION_GLYPH = {Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
