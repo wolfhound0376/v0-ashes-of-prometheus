@@ -18,6 +18,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   POST {action:"place"}         → DM only: a catalogue item onto a spot on a plate
 //   POST {action:"remove"}        → DM only: a pile off the floor, into nobody's hands
 //   POST {action:"pickup"}        → a pile off the floor into a character's inventory_items
+//   POST {action:"consume"}       → one off a stack the character carries (a potion drunk, a meal eaten)
 //
 // WHAT IT COSTS is decided on the walk, which runs the fight: picking up spends movement, equipping
 // spends the action (Sam's ruling above). This route only moves the thing.
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   if (req.nextUrl.searchParams.get("catalog") === "1") {
     const { data, error } = await db.from("items")
-      .select("id,slug,name,item_type,equippable_slot,pixel_icon_url,properties")
+      .select("id,slug,name,item_type,equippable_slot,pixel_icon_url,icon_url,description,stackable,properties")
       .order("item_type", { ascending: true }).order("name", { ascending: true })
     if (error) return NextResponse.json({ items: [], error: error.message })
     return NextResponse.json({ items: data ?? [] })
@@ -124,5 +125,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, picked: item.name })
   }
 
-  return NextResponse.json({ error: "expected action place, remove or pickup" }, { status: 400 })
+  if (action === "consume") {
+    // Sam, 2026-10-15: "a way while in combat and out of combat to use potions, elixers, etc." What the thing DOES is
+    // worked out on the walk from the catalogue row; this only takes one off the stack the character really carries
+    // and says so in the story, so Malachar knows the potion is gone.
+    const characterId = String(body?.characterId ?? ""), itemKey = String(body?.itemKey ?? ""), itemName = String(body?.itemName ?? "")
+    if (!characterId || (!itemKey && !itemName)) return NextResponse.json({ error: "characterId and itemKey required" }, { status: 400 })
+    const { data: who } = await db.from("characters").select("id,name").eq("id", characterId).maybeSingle()
+    if (!who) return NextResponse.json({ error: "No such character." }, { status: 404 })
+    let q = db.from("inventory_items").select("id,name,quantity").eq("character_id", characterId)
+    q = itemKey ? q.eq("item_key", itemKey) : q.eq("name", itemName)
+    const { data: row } = await q.limit(1).maybeSingle()
+    if (!row) return NextResponse.json({ error: "You are not carrying that." }, { status: 409 })
+    const left = (row.quantity ?? 1) - 1
+    const { error } = left > 0
+      ? await db.from("inventory_items").update({ quantity: left }).eq("id", row.id)
+      : await db.from("inventory_items").delete().eq("id", row.id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const verb = String(body?.verb ?? "use")
+    let text = `${who.name} ${verb === "drink" ? "drinks" : verb === "eat" ? "eats" : "uses"} ${row.name}.`
+    if (verb === "give" && body?.targetCharacterId) {
+      const { data: to } = await db.from("characters").select("name").eq("id", String(body.targetCharacterId)).maybeSingle()
+      text = `${who.name} gives ${row.name} to ${to?.name ?? "an ally"}.`
+    }
+    await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text })
+    return NextResponse.json({ ok: true, left: Math.max(0, left) })
+  }
+
+  return NextResponse.json({ error: "expected action place, remove, pickup or consume" }, { status: 400 })
 }
