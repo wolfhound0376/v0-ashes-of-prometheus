@@ -2264,6 +2264,7 @@ function damage(t, n, type, crit, from){
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
   t.c.conds.delete("asleep"); if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
   if (t.c.conc && t.c.hp > 0 && n > 0) concSave(t, n);
+  if (t.kind === "foe" && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.berserk) goBerserk(t);
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   renderParty();
@@ -2319,12 +2320,40 @@ function strike(att, tgt, onHit, after){
   playOnce(att, "attack", () => { setAnim(att, "idle"); setTimeout(after, 320); });
   att.once && (att.once.hit = onHit);
 }
-// the monster's turn: close on the nearest standing hero and use the block's attack(s)
+// BERSERK (Sam, 2026-10-15: "Do not have quaggoths retreat when bloodied. Instead, describe them entering a
+// berserk state. Direct a wounded quaggoth toward fragile backline characters (wizards, sorcerers) where that
+// massive damage boost can easily force a player into death-saving throws."). The rule is the stat block's own
+// Wounded Fury (10 HP or fewer: advantage on attacks, +2d6 on a melee hit; advantageOn and attackWith already
+// apply it). What this adds is the BEHAVIOUR: the moment it crosses that line it is announced, it burns, and
+// from then on it stops taking the nearest body and goes for the softest arcane caster it can reach, running
+// past the front line and eating the opportunity attacks to get there. It never retreats (nothing here ever
+// made it retreat; that stays true). Tactics, not homebrew: no number in the stat block changes.
+const FRAGILE = /sorcerer|wizard|warlock/i;
+function goBerserk(f){
+  f.c.berserk = true;
+  const cs = CREATURE_SFX[f.id]; if (cs && cs.call) bank(cs.call, .95);
+  popText(f, "BERSERK", "#ff4a2a", 1.4); shake(7); burst(f, "#ff4a2a", 26);
+  // its own rage sheet (Sam approved 2026-10-15): hunch, rear up, roar, settle into a crouch. Played after the
+  // blow's flinch, which damage() starts in the same tick, so the flinch does not cut the roar off.
+  if (SPR[f.id].img.rage) setTimeout(() => { if (!f.down) playOnce(f, "rage", () => setAnim(f, "idle")); }, 420);
+  bark(f, (FOE_BARK[f.id] || ["Hrrraagh!"])[0], 1800);
+  log(`<b>${fname(f)} goes berserk.</b> Wounded Fury: advantage on its attacks and +2d6 on every claw that lands. It will not back off now.`);
+  narrate(f, `${fname(f)}'s eyes roll white. It stops caring what this costs it and turns toward whoever looks easiest to break.`);
+}
+function berserkTarget(f, pool){
+  const reach = (f.c.move || f.c.sheet.speed || 30) + 5, near = (a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y);
+  const soft = pool.filter(p => FRAGILE.test(p.c.sheet.cls || "")).sort((a, b) => (targetAc(a) - targetAc(b)) || (a.c.hp - b.c.hp) || near(a, b));
+  const inReach = soft.filter(p => feetBetween(f, p) <= reach);
+  const pick = inReach[0] || soft[0] || [...pool].sort((a, b) => (targetAc(a) - targetAc(b)) || (a.c.hp - b.c.hp) || near(a, b))[0];
+  if (pick && !f.c.berserkCalled){ f.c.berserkCalled = true; narrate(f, `${fname(f)} shoulders past the front line, straight for ${fname(pick)}.`); }
+  return pick;
+}
+// the monster's turn: close on the nearest standing hero and use the block's attack(s); a berserk one goes for the softest caster
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
   const seen = standing(party).filter(p => !p.c.conds.has("hidden"));
-  const tgt = (seen.length ? seen : standing(party)).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  const tgt = f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(party)) : (seen.length ? seen : standing(party)).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
@@ -2721,6 +2750,8 @@ function drawOrb(s, k){
 }
 function spellBolt(from, to, col, then){ const m = SPR[from.id].json, sc = actorScale(from); sparks.push({bolt: true, x: from.x, y: from.y - m.pivot[1] * sc * .6, tx: to.x, ty: to.y - (to.id ? SPR[to.id].json.pivot[1] * actorScale(to) * .5 : 0), col, t0: now, life: 260, then}); }
 function drawCombatFx(){
+  for (const f of foes) if (f.c && f.c.berserk && !f.down && Math.random() < .55){ const m = SPR[f.id].json, sc = actorScale(f), h = m.pivot[1] * sc;
+    sparks.push({x: f.x + (Math.random() - .5) * m.cell[0] * sc * .45, y: f.y - Math.random() * h * .8, vx: (Math.random() - .5) * 14, vy: -50 - Math.random() * 50, g: -120, col: Math.random() < .6 ? "#ff4a2a" : "#ffb070", t0: now, life: 520 + Math.random() * 260}); }
   drawFlights();
   drawNotes();
   for (let i = sparks.length - 1; i >= 0; i--){
