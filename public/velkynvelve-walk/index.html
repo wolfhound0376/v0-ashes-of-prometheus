@@ -1283,7 +1283,7 @@ function stopLullaby(){
   try { const ctx = audioCtx(), g = lullaby.gain; g.gain.cancelScheduledValues(ctx.currentTime); g.gain.setValueAtTime(g.gain.value, ctx.currentTime); g.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5); setTimeout(() => g.disconnect(), 1700); } catch (e) {}
 }
 // it stops when the last sleeper wakes (or the fight ends)
-setInterval(() => { if (lullaby.on && !(cbt && [...party, ...foes].some(a => a.c && a.c.conds.has("asleep")))) { if (now - (lullaby.since || 0) > 3500) stopLullaby(); } else if (lullaby.on) lullaby.since = now; }, 500);
+setInterval(() => { if (lullaby.on && !(cbt && [...heroes(), ...foes].some(a => a.c && a.c.conds.has("asleep")))) { if (now - (lullaby.since || 0) > 3500) stopLullaby(); } else if (lullaby.on) lullaby.since = now; }, 500);
 const DOOR_SFX = ["door-open", "door-close", "door-locked", "lock-picked", "lock-pick-fail"];
 
 // ---------- the pen door: a real leaf that swings ----------
@@ -2190,7 +2190,7 @@ function advantageOn(att, tgt, ranged, atk){
   let adv = 0;
   if (att.c.conds.has("poisoned")) adv--;                                     // SRD: poisoned — disadvantage on attack rolls
   if (ranged){                                                                // SRD: a ranged attack with a hostile within 5 ft,
-    const near = (att.kind === "pc" ? standing(foes) : standing(party)).some(h => h !== tgt && !incapacitated(h) && feetBetween(att, h) <= 5) || (!incapacitated(tgt) && feetBetween(att, tgt) <= 5);
+    const near = (hero(att) ? standing(foes) : standing(heroes())).some(h => h !== tgt && !incapacitated(h) && feetBetween(att, h) <= 5) || (!incapacitated(tgt) && feetBetween(att, tgt) <= 5);
     if (near) adv--;                                                          // or beyond the weapon's normal range
     if (atk && atk.long && feetBetween(att, tgt) > atk.reach) adv--;
   }
@@ -2578,7 +2578,7 @@ function foeTurn(f){
   const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
   // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
   // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
-  const pressed = standing(party).some(p => !incapacitated(p) && feetBetween(f, p) <= 5);
+  const pressed = standing(heroes()).some(p => !incapacitated(p) && feetBetween(f, p) <= 5);
   const atk = bow && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
   if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500)); return; }
   if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); }); return; }
