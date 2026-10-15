@@ -542,8 +542,17 @@ function findPath(from, to){
 // ---------- scale & drawing ----------
 function depthAt(y){ return 0.8 + 0.32 * Math.min(1, Math.max(0, (y - depthMin) / (depthMax - depthMin))); }
 function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE * a.fixedScale * (96 / m.ppu); return BASE * node.scale * depthAt(a.y) * (96 / m.ppu) * (a.big || 1); }
+function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
-  const sp = SPR[a.id], an = sp.json.animations[a.anim] && sp.img[a.anim] ? sp.json.animations[a.anim] : sp.json.animations.idle;
+  const sp = SPR[a.id];
+  if (asleepNow(a)){
+    const A = sp.json.animations;
+    if (A.sleep && sp.img.sleep){ const an = A.sleep; return {img: sp.img.sleep, f: Math.floor((now - (a.sleepT0 || 0)) / 1000 * an.fps) % an.frames, pose: "sleep"}; }
+    if (A.dead && sp.img.dead) return {img: sp.img.dead, f: A.dead.frames - 1, pose: "lie"};
+    // no sheet to sleep in: a crawler (spider, ooze, rat) settles low and still; anything that stands up lies down on its side
+    return {img: sp.img.idle, f: 0, pose: /spider|ooze|rat/.test(a.id) ? "settle" : "side"};
+  }
+  const an = sp.json.animations[a.anim] && sp.img[a.anim] ? sp.json.animations[a.anim] : sp.json.animations.idle;
   const name = sp.json.animations[a.anim] && sp.img[a.anim] ? a.anim : "idle";
   const el = (now - a.t0) / 1000 * an.fps;
   const f = an.loop === false ? Math.min(an.frames - 1, Math.floor(el)) : Math.floor(el) % an.frames;
@@ -642,14 +651,23 @@ function draw(){
       ctx.beginPath(); ctx.ellipse(a.x, a.y, 34 * sc * (cw / 128), 12 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.globalAlpha = a.alpha;
-    const {img, f} = frameOf(a);
+    const {img, f, pose} = frameOf(a);
     let fy = 0;
     if (a.fall){ const k = Math.min(1, (now - a.fall) / 900); fy = k * k * 800; ctx.globalAlpha = a.alpha * (1 - k); }
     if (a.fallIn){ const k = 1 - Math.min(1, (now - a.fallIn) / 700); fy = -k * k * 700; if (k <= 0) a.fallIn = 0; }
     if (a.kx || a.ky){ a.kx *= .82; a.ky *= .82; if (Math.abs(a.kx) < .3) a.kx = 0; if (Math.abs(a.ky) < .3) a.ky = 0; }
     if (a.leap){ const k = Math.min(1, (now - a.leap.t0) / a.leap.ms); a.x = a.leap.from.x + (a.leap.to.x - a.leap.from.x) * k; a.y = a.leap.from.y + (a.leap.to.y - a.leap.from.y) * k; fy -= Math.sin(k * Math.PI) * 90 * sc; }
-    const dw = cw * sc, dh = ch * sc, dx = a.x - px * sc + (a.kx || 0), dy = a.y - py * sc + fy + (a.ky || 0);
-    ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
+    let dw = cw * sc, dh = ch * sc, dx = a.x - px * sc + (a.kx || 0), dy = a.y - py * sc + fy + (a.ky || 0);
+    if (pose){                                   // asleep: dim, slow breath; one with no sleeping sheet settles low or lies on its side
+      const breath = 1 + .025 * Math.sin(now / 650), k = (pose === "settle" ? .8 : 1) * breath;
+      dh = ch * sc * k; dy = a.y - py * sc * k + fy + (a.ky || 0); ctx.filter = "brightness(.72) saturate(.7)";
+    }
+    if (pose === "side"){
+      const left = a.face >= 4 && a.face <= 6 ? -1 : 1, body = py * sc * .82;     // head goes the way it was facing
+      ctx.save(); ctx.translate(a.x - left * body / 2, a.y - 4 * sc); ctx.rotate(left * Math.PI / 2 * .94);
+      ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc * (1 + .02 * Math.sin(now / 650)), dw, ch * sc); ctx.restore();
+    } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
+    if (pose) ctx.filter = "none";
     if (a.flash > now){
       ctx.globalAlpha = .55 * a.alpha;
       // tint by redrawing through a temp canvas
@@ -1585,6 +1603,10 @@ function startCombat(foeIds, label){
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
+// SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
+// Sam, 2026-10-14: "how did the spider do an opportunity attack if it is sleeping?" — it no longer can.
+const INCAP = ["asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified"];
+function incapacitated(a){ return !!(a.c && INCAP.some(k => a.c.conds.has(k))); }
 
 // ----- the strip and the column -----
 // A card for the tracker: the party's medallion or the foe's canon face from velkynvelve-walk/cards (whole,
@@ -1752,7 +1774,7 @@ function moveActor(a, w, done){
   for (const q of path){ const d = Math.hypot(q.x - prev.x, q.y - prev.y); if (d > left){ const k = left / d; cut.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); left = 0; break; } cut.push(q); left -= d; prev = q; }
   a.c.move = Math.max(0, Math.round(left / px / 5) * 5); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
   // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as its reaction.
-  const end = cut[cut.length - 1], threat = a.kind === "pc" && !a.c.conds.has("disengaged") ? standing(foes).filter(f => !f.c.reactionUsed && feetBetween(a, f) <= 5 && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6) : [];
+  const end = cut[cut.length - 1], threat = a.kind === "pc" && !a.c.conds.has("disengaged") ? standing(foes).filter(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5 && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6) : [];
   combatBusy = true; closeMenu(); a.path = cut;
   a.onArrive = () => { combatBusy = false; done && done(); };
   if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = []; log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
@@ -1866,6 +1888,7 @@ function castSpell(caster, tgt, name, done){
   // Sigils only, no plumes (Sam, 2026-10-13: "use the sigils but NOT the plumes. I will tell you when the
   // plume is appropriate"). sig[1] stays in the table for that day.
   const markTarget = (tg) => { if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); };
+  if (sp.area) aoeMarks.push({x: at.x, y: at.y, sp, col: sp.fx || "#e8a24a", until: now + 2600});
   if (sp.area && !quiet) spawnFx(sig[0] || "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: true, spin: .8, loop: true, until: now + 2600, alpha: .8});
   else if (tgt.id) markTarget(tgt);
   const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
@@ -1912,7 +1935,7 @@ function castSpell(caster, tgt, name, done){
           else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
           else land(t, !ok, sp.type || "psychic");
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
-          if (sp.cond && !ok){ addCond(t, sp.cond); if (sp.cond === "asleep") t.c.sleptDc = m.dc; }
+          if (sp.cond && !ok){ addCond(t, sp.cond); if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
       }
@@ -2164,9 +2187,23 @@ function drawCombatFx(){
   ctx.globalAlpha = 1;
 }
 // the active hero's reach of movement, and what a hovered foe would take to hit
+// Sam, 2026-10-14: "When casting sleep the area of effect should display." The circle is the same one the
+// spell uses to pick its targets (castSpell: area/2 + 2.5 ft from the point), so what you see is what it takes.
+function aoeRadiusAt(sp, y){ return (sp.area / 2 + 2.5) * ftPx({y}); }
+function drawAoe(x, y, sp, col, alpha, inside){
+  const r = aoeRadiusAt(sp, y); ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = col + "22"; ctx.strokeStyle = col; ctx.lineWidth = 2.5 / (base * view.z);
+  ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 60; ctx.beginPath(); ctx.ellipse(x, y, r, r * .55, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+  if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ftPx(t)){
+    ctx.globalAlpha = alpha * (.6 + .4 * Math.sin(now / 160)); ctx.beginPath(); ctx.ellipse(t.x, t.y, 30 * actorScale(t), 10 * actorScale(t), 0, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore();
+}
+let aimW = null, aoeMarks = [];
 function drawCombatGround(){
+  aoeMarks = aoeMarks.filter(m => now < m.until);
+  for (const m of aoeMarks) drawAoe(m.x, m.y, m.sp, m.col, Math.min(1, (m.until - now) / 600) * .9, false);
   if (!cbt) return;
   const a = activeActor(); if (!a) return;
+  if (cbt.phase === "target" && aimW && a.kind === "pc"){ const sp = cbt.pend && cbt.pend.spell && SPELLS[cbt.pend.spell]; if (sp && sp.area) drawAoe(aimW.x, aimW.y, sp, sp.fx || "#e8a24a", .95, true); }
   if (a.kind === "pc" && (cbt.phase === "menu" || cbt.phase === "move") && a.c.move > 0){
     const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9; ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, r, r * .55, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
@@ -2179,16 +2216,26 @@ function drawCombatGround(){
 }
 function drawConds(a){
   if (!a.c || a.down) return;
-  const m = SPR[a.id].json, sc = actorScale(a), top = a.y - m.pivot[1] * sc - 10; let i = 0;
+  const m = SPR[a.id].json, sc = actorScale(a), lying = asleepNow(a) && frameOf(a).pose === "side", top = lying ? a.y - 40 * sc : a.y - m.pivot[1] * sc - 10; let i = 0;
   if (a.kind === "foe"){                       // a thin bar over each foe, the way the party sees a monster's state
     const w = 44 * sc * (m.cell[0] / 128), h = 5, x = a.x - w / 2, y = top + 4;
     ctx.fillStyle = "rgba(10,6,8,.85)"; ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillStyle = "#5a1f1a"; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
   }
   if (!a.c.conds.size) return;
-  if (a.c.conds.has("asleep")) drawSheep(a, top);
+  if (a.c.conds.has("asleep")){ drawSheep(a, top); drawZzz(a, top); }
   for (const k of a.c.conds){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
     const x = a.x + (i - (a.c.conds.size - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
+}
+// z's drifting up off a sleeper: three at a time, growing and fading as they rise
+function drawZzz(a, top){
+  const sc = actorScale(a); ctx.save(); ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "#140a06";
+  for (let i = 0; i < 3; i++){
+    const k = ((now / 1700) + i / 3) % 1, x = a.x + 22 * sc + Math.sin(k * 5 + i) * 6 * sc, y = top - 30 * sc - k * 46 * sc;
+    ctx.globalAlpha = k < .15 ? k / .15 : 1 - (k - .15) / .85; ctx.font = `700 ${Math.round((12 + k * 12) * Math.max(.7, sc))}px Georgia, serif`; ctx.fillStyle = "#c9cfff";
+    ctx.strokeText("z", x, y); ctx.fillText("z", x, y);
+  }
+  ctx.restore();
 }
 // Counting sheep (Sam, 2026-10-13): three little sheep circle a sleeper's head for as long as the spell holds.
 // Drawn by hand, not a sheet: a woolly body of white blocks, a dark face, two stubby legs, a bob as they trot.
@@ -2742,7 +2789,7 @@ stage.addEventListener("pointermove", e => {
     return;
   }
   if (e.target.closest(".dm,.dialog,.talk,.zoom,.cbt-ui")){ tip.hidden = true; return; }
-  const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect();
+  const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(party, w)) : null;
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   const th = combatTargetHint();
