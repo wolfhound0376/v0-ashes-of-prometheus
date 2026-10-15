@@ -18,7 +18,8 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   POST {action:"place"}         → DM only: a catalogue item onto a spot on a plate
 //   POST {action:"remove"}        → DM only: a pile off the floor, into nobody's hands
 //   POST {action:"pickup"}        → a pile off the floor into a character's inventory_items
-//   POST {action:"consume"}       → one off a stack the character carries (a potion drunk, a meal eaten)
+//   POST {action:"consume"}       → one off a stack the character carries (a potion drunk, a meal eaten, a flask thrown)
+//   POST {action:"drop"}          → one of the character's own items onto the floor (a thrown dagger where it landed)
 //
 // WHAT IT COSTS is decided on the walk, which runs the fight: picking up spends movement, equipping
 // spends the action (Sam's ruling above). This route only moves the thing.
@@ -143,7 +144,7 @@ export async function POST(req: NextRequest) {
       : await db.from("inventory_items").delete().eq("id", row.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     const verb = String(body?.verb ?? "use")
-    let text = `${who.name} ${verb === "drink" ? "drinks" : verb === "eat" ? "eats" : "uses"} ${row.name}.`
+    let text = `${who.name} ${verb === "drink" ? "drinks" : verb === "eat" ? "eats" : verb === "throw" ? "throws" : "uses"} ${row.name}.`
     if (verb === "give" && body?.targetCharacterId) {
       const { data: to } = await db.from("characters").select("name").eq("id", String(body.targetCharacterId)).maybeSingle()
       text = `${who.name} gives ${row.name} to ${to?.name ?? "an ally"}.`
@@ -152,5 +153,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, left: Math.max(0, left) })
   }
 
-  return NextResponse.json({ error: "expected action place, remove, pickup or consume" }, { status: 400 })
+  if (action === "drop") {
+    // Sam, 2026-10-15: thrown weapons land on the floor. A character's own item leaves their inventory (and their hand,
+    // if that was the last of it) and becomes a pile where it came to rest. Only what they carry can be dropped, and
+    // the pile is the catalogue item the inventory row points at: nothing invented.
+    const characterId = String(body?.characterId ?? ""), itemKey = String(body?.itemKey ?? ""), itemName = String(body?.itemName ?? "")
+    const node = String(body?.node ?? ""), x = Number(body?.x), y = Number(body?.y)
+    if (!characterId || (!itemKey && !itemName) || !node || !Number.isFinite(x) || !Number.isFinite(y))
+      return NextResponse.json({ error: "characterId, item, node, x and y required" }, { status: 400 })
+    const { data: who } = await db.from("characters").select("id,name").eq("id", characterId).maybeSingle()
+    if (!who) return NextResponse.json({ error: "No such character." }, { status: 404 })
+    let q = db.from("inventory_items").select("id,name,quantity,item_id").eq("character_id", characterId)
+    q = itemKey ? q.eq("item_key", itemKey) : q.eq("name", itemName)
+    const { data: row } = await q.limit(1).maybeSingle()
+    if (!row) return NextResponse.json({ error: "You are not carrying that." }, { status: 409 })
+    let item: { id: string; slug: string; name: string; pixel_icon_url: string | null } | null = null
+    if (row.item_id) item = (await db.from("items").select("id,slug,name,pixel_icon_url").eq("id", row.item_id).maybeSingle()).data
+    if (!item) item = (await db.from("items").select("id,slug,name,pixel_icon_url").ilike("name", row.name).limit(1).maybeSingle()).data
+    if (!item) return NextResponse.json({ error: "Not in the item catalogue, so it cannot lie on the floor." }, { status: 409 })
+    const left = (row.quantity ?? 1) - 1
+    const { error } = left > 0
+      ? await db.from("inventory_items").update({ quantity: left }).eq("id", row.id)
+      : await db.from("inventory_items").delete().eq("id", row.id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (left <= 0) await db.from("equipment_items").delete().eq("character_id", characterId).eq("name", row.name)
+    const piles = await readFloor(db)
+    const pile: Pile = { id: crypto.randomUUID(), node, x: Math.round(x), y: Math.round(y), itemId: item.id, slug: item.slug, name: item.name, pixel: item.pixel_icon_url ?? null, at: new Date().toISOString() }
+    const err = await writeFloor(db, [...piles, pile], `${who.name} ${body?.thrown ? "threw" : "dropped"} ${item.name}`)
+    if (err) return NextResponse.json({ error: err.message }, { status: 500 })
+    await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name}'s ${item.name} lies on the floor${body?.thrown ? " where the throw left it" : ""}.` })
+    return NextResponse.json({ ok: true, pile })
+  }
+
+  return NextResponse.json({ error: "expected action place, remove, pickup, consume or drop" }, { status: 400 })
 }
