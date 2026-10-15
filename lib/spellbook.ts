@@ -178,6 +178,27 @@ export const SPELLBOOK: Record<string, SpellEntry> = {
   "sacred flame":      S({ level: 0, school: "holy",     damage: "radiant",   rangeFt: 60,  target: "creature", resolve: "save", save: "DEX", dice: "1d8" }),
   "fire bolt":         S({ level: 0, school: "fire",     damage: "fire",      rangeFt: 120, target: "creature", resolve: "attack", dice: "1d10" }),
   "cure wounds":       S({ level: 1, school: "holy",                          rangeFt: 5,   target: "creature", helpful: true, resolve: "auto", dice: "1d8", heals: true }),
+  // ICE KNIFE — in the registry so the kit can draw it, NOT on anyone's sheet.
+  // rackFor builds from the character's own spellcasting block, so a row here
+  // grants nothing; Kenta is level 1 with 2 of 2 spells known (Disguise Self,
+  // Fog Cloud) and would have to swap one at level-up to actually take this.
+  //
+  // WHAT THIS ROW CANNOT SAY. Ice Knife is two effects: a ranged spell attack
+  // for 1d10 PIERCING (the shard itself) and, hit or miss, a Dexterity save
+  // against 2d6 COLD (the burst). SpellEntry holds one damage type and one
+  // dice group, and DamageType has no "piercing" at all -- it maps 1:1 to the
+  // sfx/magic/impact_* set, which is magical damage only.
+  //
+  // So the row carries the half it can state exactly -- the cold burst -- and
+  // the 1d10 piercing shard is MISSING. The board will under-roll this spell
+  // by 1d10 until SpellEntry grows a second damage component. Flagged to Sam
+  // rather than papered over with a combined dice string: parseDamage reads
+  // only the first group, so "1d10+2d6" would silently roll 1d10+2.
+  //
+  // Not in the SRD (Elemental Evil / Xanathar's). Source for every number
+  // here is lib/data/spells.json, which records itself as "5e core dataset
+  // (owned)": level 1, conjuration, 60 ft, Druid/Sorcerer/Wizard.
+  "ice knife":         S({ level: 1, school: "cold",     damage: "cold",      rangeFt: 60,  target: "creature", resolve: "save", save: "DEX", dice: "2d6" }),
   // SRD: "three glowing darts ... A dart deals 1d4 + 1 force damage ... one
   // more dart for each slot level above 1st." Dice are per dart now; the old
   // "3d4+3" was the three darts summed onto one creature.
