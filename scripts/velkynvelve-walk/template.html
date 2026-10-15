@@ -673,6 +673,10 @@ function draw(){
       const left = a.face >= 4 && a.face <= 6 ? -1 : 1, body = py * sc * .82;     // head goes the way it was facing
       ctx.save(); ctx.translate(a.x - left * body / 2, a.y - 4 * sc); ctx.rotate(left * Math.PI / 2 * .94);
       ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc * (dead ? 1 : 1 + .02 * Math.sin(now / 650)), dw, ch * sc); ctx.restore();
+    } else if (a.deadSwap && now - a.deadSwap < 650 && a.anim === "dead"){
+      const k = (now - a.deadSwap) / 650, idl = SPR[a.id].img.idle, a0 = ctx.globalAlpha;
+      ctx.globalAlpha = a0 * (1 - k); ctx.drawImage(idl, 0, a.face * ch, cw, ch, dx, dy, dw, dh);
+      ctx.globalAlpha = a0 * k; ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.globalAlpha = a0;
     } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
     if (pose) ctx.filter = "none";
     if (a.flash > now){
@@ -2028,7 +2032,7 @@ function fall(t){
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
-  if (SPR[t.id].img.dead) playOnce(t, "dead", () => {}); else t.deadT0 = now;
+  if (SPR[t.id].img.dead){ playOnce(t, "dead", () => {}); if (SPR[t.id].json.animations.dead.frames === 1) t.deadSwap = now; } else t.deadT0 = now;   // a one-frame corpse (the spider) cross-fades in from the standing body
   log(`<b>${fname(t)}</b> ${t.kind === "pc" ? "goes down." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
   popText(t, t.kind === "pc" ? "down" : "slain", t.kind === "pc" ? "#ff6b5e" : "#ffd166", 1.3); hitstop(160); shake(10);
