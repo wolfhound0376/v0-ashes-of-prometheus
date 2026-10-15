@@ -190,6 +190,8 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .dm h4{margin:0;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);font-weight:500}
 .dm select{font:inherit;background:var(--stage);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:6px}
 .dm .btn{text-align:left}
+.dm .dmq,.dm select{width:100%;background:#120f0c;color:var(--ink,#e8e2c8);border:1px solid var(--rule);border-radius:6px;padding:6px;font:inherit;font-size:13px}
+.stage.placing{cursor:crosshair}
 
 /* talk: hand off to the dashboard */
 .talk{position:absolute;inset:auto 0 18px 0;display:flex;justify-content:center;padding:0 16px;pointer-events:none}
@@ -312,6 +314,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
       <button class="btn" id="dmBark">Make an NPC comment</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
+      <h4>Items</h4>
+      <input id="dmItemQ" class="dmq" placeholder="Search the item catalogue" aria-label="Search the item catalogue">
+      <select id="dmItem" size="6" aria-label="Catalogue items"></select>
+      <button class="btn" id="dmPlace">Put it on the floor (then click where)</button>
+      <div id="dmPiles" class="seats"></div>
       <h4>Companions</h4>
       <div id="dmSeats" class="seats"></div>
     </div>
@@ -379,6 +386,7 @@ function noteSeats(seated){
   dmRun.clear();
   for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
   renderSeats();
+  if (!gearLoaded && seatsSeen.length){ gearLoaded = true; setTimeout(() => loadGear(), 0); }   // what each hero really carries
 }
 function characterIdOf(slug){ const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
@@ -605,7 +613,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor(); drawProps(); drawPropHighlight();
+  drawDoor(); drawProps(); drawPropHighlight(); drawFloorItems();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -1638,7 +1646,9 @@ const SHEETS = {
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
   freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
-           attacks: [{name: "Dagger", hit: 5, dmg: "1d4+3", type: "piercing", reach: 5, thrown: 60, light: true, sneak: "1d6"}, {name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
+           // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
+           // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
+           sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: null},
 };
 // Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
@@ -1891,6 +1901,8 @@ function openMenu(a, sub){
     add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? s.saves.wis)}`, c.action ? () => doSearch(a) : null);
+    for (const it of (GEAR[a.id] || {carried: []}).carried.filter(c => isWeapon(c) && c.name !== GEAR[a.id].main))
+      { ACTION_ICON["Equip: " + it.name] = "attack"; add(`Equip: ${it.name}`, "your action · it becomes your weapon", c.action ? () => equipItem(a, it.name) : null); }
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
     if (s.magic || s.innateSorcery) grp("magic");
     // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
@@ -1926,6 +1938,8 @@ function openMenu(a, sub){
     }
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("magic/arcane_windup", .5); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
+    for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
+      { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
     const webbed = standing(party).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
@@ -3376,6 +3390,9 @@ stage.addEventListener("pointermove", e => {
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(party, w)) : null;
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
+  const hp = !hoverActor && (mode === "explore" || mode === "combat") ? pileAt(w) : null;
+  if (hp){ tip.textContent = mode === "combat" ? `${hp.name}: pick it up from the menu when you are beside it (${PICKUP_FT} ft of movement)` : `${hp.name}: click to pick up`; tip.className = "tip"; tip.hidden = false;
+    tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   if (hoverProp){ const st = propState(hoverProp); tip.textContent = `${hoverProp.name}${st.open ? "" : st.locked ? " (locked)" : ""}: click to use`; tip.className = "tip" + (st.locked && !st.open ? " locked" : ""); tip.hidden = false;
     tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   const th = combatTargetHint();
@@ -3407,7 +3424,10 @@ stage.addEventListener("pointerup", endPtr); stage.addEventListener("pointercanc
 stage.addEventListener("wheel", e => { e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
   if (timeStopped) return;
+  if (dmPlacing){ placePile(w); return; }
   if (mode === "explore"){
+    const pile = !hitActor(npcs, w) ? pileAt(w) : null;
+    if (pile){ const me0 = leader; walkTo(nearestWalkable(pile.x, pile.y + 8), () => pickUp(me0, pile)); return; }
     const me = hitActor(party, w);
     if (me && me !== leader){ setLeader(me); return; }
     const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
@@ -3426,6 +3446,7 @@ $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.wi
 $("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyView(); };
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
+  if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
   if (MOVE_KEYS.has(e.code) && (mode === "explore" || mode === "combat")){ keys.add(e.code); e.preventDefault(); unlockAudio(); }
@@ -3440,6 +3461,8 @@ addEventListener("keydown", e => {
 addEventListener("keyup", e => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 function interact(){
+  const near = pilesHere().map(p => [p, feetToPile(leader, p)]).filter(([, d]) => d <= 6).sort((x, y) => x[1] - y[1])[0];
+  if (near){ pickUp(leader, near[0]); return; }
   const n = npcs.map(a => [a, Math.hypot(a.x - leader.x, a.y - leader.y)]).filter(([, d]) => d < 190 * node.scale).sort((a, b) => a[1] - b[1])[0];
   if (!n){ log("No one close enough. Walk up to someone and press <em>E</em>."); return; }
   const a = n[0];
@@ -3453,7 +3476,7 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); if (on) renderSeats(); }
+function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); } }
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
@@ -3520,6 +3543,147 @@ $("dmTalk").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   else log("Nobody here wants to talk. The pen (Area 11) has Eldeth."); };
 $("dmBark").onclick = () => { toggleDm(false); const n = npcs.filter(a => a.barks && a.barks.length); if (n.length) ambient(n[Math.floor(Math.random() * n.length)]); else log("No one here to comment."); };
 $("dmReset").onclick = () => { toggleDm(false); state.cleared = {}; log("Ambushes reset."); };
+
+// ---------- things on the floor, and what the party carries ----------
+// Sam, 2026-10-15: "Can we have a dagger show up in the DM menu and her be able to pick it up (in fact) characters
+// should be able to pick things up and that should cost movement but equipping is an action."
+//  - The DM puts a catalogue item down (DM tools → Items): it lies on the plate in its own pixel art.
+//  - Anyone can pick it up: walk to it and press E, or click it. In a fight that costs PICKUP_FT of movement (Sam's
+//    ruling; the SRD would make it the turn's free object interaction). Out of a fight it costs nothing.
+//  - Equipping a weapon is an action in a fight (Sam's ruling), free outside one. What a hero has equipped is what
+//    they attack with: the walk no longer hands Fifi a dagger she does not own. Her sheet starts unarmed; her
+//    real inventory and doll (/api/equipment) decide the rest.
+// In the game the floor is shared (/api/walk-items) and a pickup lands in the character's real inventory_items; the
+// preview keeps it all in the page.
+const ITEM_PX = APP ? "" : ".";                      // pixel_icon_url is "/item-pixels/<slug>.png"
+const ITEM_SNAPSHOT = /*__ITEMS__*/[];               // the catalogue's weapons, for the preview (build_walk.py)
+const PICKUP_FT = 5;
+let catalog = APP ? null : ITEM_SNAPSHOT, floor = [], gearLoaded = false, dmPlacing = null;
+const GEAR = {};                                      // hero id -> {carried: [{name, item_key, properties}], main}
+const ITEM_IMG = {};
+function itemImg(url){ if (!url) return null; if (!ITEM_IMG[url]){ ITEM_IMG[url] = {img: null}; loadImg(ITEM_PX + url).then(i => ITEM_IMG[url].img = i).catch(() => {}); } return ITEM_IMG[url].img; }
+async function ensureCatalog(){
+  if (catalog) return catalog;
+  try { const r = await fetch("/api/walk-items?catalog=1", {cache: "no-store"}); const j = await r.json(); catalog = Array.isArray(j.items) ? j.items : []; } catch (e) { catalog = []; }
+  return catalog;
+}
+const catalogItem = name => (catalog || []).find(i => i.name.toLowerCase() === String(name).toLowerCase()) || null;
+
+// Weapon proficiencies, SRD 5.1 class features: Rogue and Bard "Simple weapons, hand crossbows, longswords, rapiers,
+// shortswords"; Cleric "Simple weapons"; Sorcerer "Daggers, darts, slings, quarterstaffs, light crossbows". Simple
+// weapons per the SRD weapons table.
+const SIMPLE_WEAPONS = ["club", "dagger", "greatclub", "handaxe", "javelin", "light hammer", "mace", "quarterstaff", "sickle", "spear", "light crossbow", "dart", "shortbow", "sling"];
+const MARTIAL_WEAPONS = ["battleaxe", "flail", "glaive", "greataxe", "greatsword", "halberd", "lance", "longsword", "maul", "morningstar", "pike", "rapier", "scimitar", "shortsword", "trident", "war pick", "warhammer", "whip", "blowgun", "hand crossbow", "heavy crossbow", "longbow", "net"];
+const CLASS_WEAPONS = {Rogue: ["simple", "hand crossbow", "longsword", "rapier", "shortsword"], Bard: ["simple", "hand crossbow", "longsword", "rapier", "shortsword"],
+  Cleric: ["simple"], Sorcerer: ["dagger", "dart", "sling", "quarterstaff", "light crossbow"]};
+function baseWeapon(it){ const n = String((it.properties || {}).srd_stats_as || it.name || "").toLowerCase();
+  return [...SIMPLE_WEAPONS, ...MARTIAL_WEAPONS].filter(b => n.includes(b)).sort((a, b) => b.length - a.length)[0] || null; }
+function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[cls] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b))); }
+const isWeapon = it => !!it && ((it.item_type || "") === "weapon" || !!baseWeapon(it));
+// an attack line from a catalogue weapon, the way the sheet's own lines are written
+function attackFromItem(sheet, it){
+  const p = it.properties || {}, wp = (p.weapon_properties || []).map(s => String(s).toLowerCase());
+  const finesse = wp.includes("finesse") || p.finesse === true, light = wp.includes("light") || p.light === true, thrown = wp.includes("thrown"), ammo = wp.includes("ammunition");
+  const rng = String(p.range || "").split("/").map(Number), die = (String(p.damage || "1").match(/^\s*(\d+d\d+|\d+)/) || [0, "1"])[1];
+  const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
+  const str = sheet.saves.str || 0, dex = sheet.saves.dex || 0, mod = ammo ? dex : finesse ? Math.max(str, dex) : str;
+  const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus || 0);       // proficiency +2 at levels 1-4
+  const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus || 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
+    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, item: true};
+  if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
+  if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
+  return a;
+}
+// a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
+function refreshAttacks(id){
+  const s = SHEETS[id]; if (!s) return; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
+  const g = GEAR[id], eq = g && g.main && g.carried.find(c => c.name === g.main);
+  s.attacks = eq && isWeapon(eq) ? [attackFromItem(s, eq), ...s.baseAttacks] : s.baseAttacks.slice();
+}
+async function loadGear(only){
+  if (!APP) return; await ensureCatalog();
+  for (const id of (only ? [only] : party.map(p => p.id))){
+    const cid = characterIdOf(id); if (!cid) continue;
+    try {
+      const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
+      const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null}; });
+      const main = (j.equipped || []).find(e => e.slot === "main_hand" && e.equipped !== false);
+      GEAR[id] = {carried, main: main ? main.name : null}; refreshAttacks(id);
+    } catch (e) {}
+  }
+  if (cbt) renderParty();
+}
+async function loadFloor(){
+  if (!APP) return;
+  try { const j = await (await fetch("/api/walk-items", {cache: "no-store"})).json(); if (Array.isArray(j.piles)) floor = j.piles; } catch (e) {}
+}
+if (APP){ setTimeout(loadFloor, 2000); setInterval(loadFloor, 4000); }
+const pilesHere = () => floor.filter(p => String(p.node) === String(cur));
+const pxPerFtAt = y => 96 * BASE * node.scale * depthAt(y) / 5;
+function pileAt(w){ return pilesHere().find(p => Math.hypot(w.x - p.x, w.y - (p.y - 6)) < pxPerFtAt(p.y) * 3.2) || null; }
+function feetToPile(a, p){ return Math.hypot(a.x - p.x, a.y - p.y) / pxPerFtAt(p.y); }
+function drawFloorItems(){
+  for (const p of pilesHere()){
+    const img = itemImg(p.pixel), sq = 5 * pxPerFtAt(p.y), bob = Math.sin(now / 600 + p.x) * .6;
+    ctx.save(); ctx.globalAlpha = .45; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(p.x, p.y, sq * .28, sq * .09, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    if (img) ctx.drawImage(img, p.x - sq / 2, p.y - sq * .62 + bob, sq, sq);
+    else { ctx.fillStyle = "#e8d9a8"; ctx.fillRect(p.x - 3, p.y - 8 + bob, 6, 6); }
+    const k = (now / 1400 + p.x * .01) % 1;                                       // a glint now and then, so it reads as a thing
+    if (k < .12){ ctx.save(); ctx.globalAlpha = 1 - k / .12; ctx.fillStyle = "#fff6d0"; const gx = p.x + sq * .12, gy = p.y - sq * .3 + bob, r = 2 + 4 * (k / .12);
+      ctx.fillRect(gx - r, gy - .6, r * 2, 1.2); ctx.fillRect(gx - .6, gy - r, 1.2, r * 2); ctx.restore(); }
+  }
+}
+async function pickUp(a, p){
+  if (!floor.includes(p)) return;
+  const inFight = mode === "combat" && cbt;
+  if (inFight){ if (a.c.move < PICKUP_FT){ toast(`Picking it up costs ${PICKUP_FT} ft of movement.`); return; } a.c.move -= PICKUP_FT; }
+  floor = floor.filter(q => q !== p); await ensureCatalog();
+  const cat = catalogItem(p.name) || {};
+  const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null});
+  g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel});
+  popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
+  bank("ui/item_pickup", .7);
+  if (APP){ const cid = characterIdOf(a.id);
+    if (cid) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "pickup", pileId: p.id, characterId: cid})})
+      .then(r => r.json()).then(j => { if (j.error) toast(j.error); loadGear(a.id); }).catch(() => {}); }
+  if (inFight){ openMenu(a); return; }
+  if (isWeapon(cat) || isWeapon({name: p.name})) showDialog({title: p.name, body: `${fname(a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
+    {label: "Equip it", primary: true, fn: () => equipItem(a, p.name)}, {label: "Keep it in the pack"}]});
+}
+function equipItem(a, name){
+  const g = GEAR[a.id]; if (!g) return; const it = g.carried.find(c => c.name === name); if (!it) return;
+  const inFight = mode === "combat" && cbt;
+  if (inFight){ if (!a.c.action){ toast("Equipping takes your action."); return; } a.c.action = false; }
+  const was = g.main; g.main = name; refreshAttacks(a.id);
+  popText(a, `${name} in hand`, "#e8d9a8"); log(`${fname(a)} ${was && was !== name ? `puts away the ${esc(was)} and ` : ""}readies the <b>${esc(name)}</b>${inFight ? " (action)" : ""}.`);
+  if (APP){ const cid = characterIdOf(a.id);
+    const send = () => { const k = (GEAR[a.id].carried.find(c => c.name === name) || {}).item_key; if (!cid || !k) return false;
+      fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: "main_hand", item_key: k})}).catch(() => {}); return true; };
+    if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }               // a fresh pickup gets its key from the server first
+  if (inFight){ renderParty(); afterAction(a); }
+}
+// the DM's hand: Items in DM tools
+async function renderDmItems(){
+  const sel = $("dmItem"); if (!sel) return; const q = ($("dmItemQ").value || "").toLowerCase(); const list = await ensureCatalog();
+  sel.innerHTML = ""; for (const it of list.filter(i => !q || i.name.toLowerCase().includes(q)).slice(0, 200)){ const o = document.createElement("option"); o.value = it.id; o.textContent = `${it.name}${it.item_type ? " · " + it.item_type : ""}`; sel.appendChild(o); }
+  const pl = $("dmPiles"); pl.innerHTML = ""; for (const p of pilesHere()){ const b = document.createElement("button"); b.className = "btn"; b.textContent = `✕ ${p.name} (on the floor here)`; b.onclick = () => removePile(p); pl.appendChild(b); }
+}
+function placePile(w){
+  const it = dmPlacing; dmPlacing = null; stage.classList.remove("placing"); hint("");
+  const at = nearestWalkable(w.x, w.y), pile = {id: "local-" + Math.random().toString(36).slice(2), node: String(cur), x: Math.round(at.x), y: Math.round(at.y), itemId: it.id, slug: it.slug, name: it.name, pixel: it.pixel_icon_url || null};
+  floor.push(pile); log(`The DM leaves a <b>${esc(it.name)}</b> on the floor.`);
+  if (APP) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({action: "place", node: pile.node, x: pile.x, y: pile.y, itemId: it.id})})
+    .then(r => r.json()).then(j => { if (j.error){ toast(j.error); floor = floor.filter(q => q !== pile); } else Object.assign(pile, j.pile); }).catch(() => {});
+}
+function removePile(p){
+  floor = floor.filter(q => q !== p); renderDmItems();
+  if (APP && !String(p.id).startsWith("local-")) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({action: "remove", pileId: p.id})}).catch(() => {});
+}
+if ($("dmItemQ")){
+  $("dmItemQ").oninput = renderDmItems;
+  $("dmPlace").onclick = async () => { const list = await ensureCatalog(), it = list.find(i => i.id === $("dmItem").value); if (!it){ toast("Pick an item from the list first."); return; }
+    dmPlacing = it; toggleDm(false); stage.classList.add("placing"); toast(`Click where the ${it.name} should lie. Esc to cancel.`, 6000); };
+}
 
 // ---------- keyboard ----------
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD"]);
