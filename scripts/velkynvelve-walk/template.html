@@ -1878,7 +1878,7 @@ function renderParty(){
 // ----- turns -----
 function nextTurn(first){
   if (!cbt || (combatBusy && !first)) return;
-  closeMenu(); cbt.phase = "idle";
+  closeMenu(); cbt.phase = "idle"; cbt.turnNo = (cbt.turnNo || 0) + 1;
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0) cbt.round++;
     const a = cbt.order[cbt.idx]; if (!a.down && actors.includes(a)) break;
@@ -1897,7 +1897,7 @@ function nextTurn(first){
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
   if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
-    log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 700); return; } }
+    log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => passTurn(a), 700); return; } }
   a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...party, ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
@@ -1909,6 +1909,7 @@ function nextTurn(first){
 }
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
+  if (!a || a.down) return;                                    // the fallen get no commands; passWhenSettled moves the turn on
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
     const sic = SPELL_ICON[label];
@@ -2463,7 +2464,30 @@ function fall(t){
     const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
   else narrate(t, `${fname(t)} falls.`);
   renderTurns();
+  if (cbt && activeActor() === t) passWhenSettled(t);
 }
+// THE TURN MOVES ON WHEN ITS OWNER FALLS (Sam, 2026-10-22: "When a character dies or falls it doesn't automatically go
+// to the next player which causes an impassable block"). A hero cut down by an opportunity attack while walking (mouse
+// or keys), a foe killed by a hero's reaction as it closes, anyone who drops in the middle of their own turn: the fight
+// used to wait for a command nobody could give. Now, once the blow that felled them has finished playing (nothing busy,
+// nothing in flight, for a second), the turn passes to the next in line. It only acts if the turn is still theirs, so a
+// path that already moved the turn on is never doubled.
+function passWhenSettled(a){
+  const no = cbt.turnNo; let quiet = 0, waited = 0;
+  const tick = () => {
+    if (!cbt || cbt.turnNo !== no || activeActor() !== a) return;
+    waited += 250;
+    // a foe struck down mid-stride never arrives, so its attack never clears the busy flag: after 3 s that is a stall,
+    // not something still playing (shots in flight, a leap, a climb are always waited out)
+    const busy = shots.length || a.leap || a.climbing || (combatBusy && waited < 3000);
+    if (busy) quiet = 0; else quiet += 250;
+    if (quiet >= 1000){ combatBusy = false; closeMenu(); hint(""); cbt.phase = "idle"; log(`${fname(a)} ${a.kind === "pc" ? "is down" : "is dead"}; the turn passes.`); if (!checkEnd()) nextTurn(); return; }
+    setTimeout(tick, 250);
+  };
+  setTimeout(tick, 600);
+}
+// end this actor's turn, but only if it is still theirs (callbacks that arrive late must not skip the next one)
+function passTurn(a){ if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
 function approachThen(att, tgt, ft, then){
   const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
@@ -2483,7 +2507,7 @@ function approachThen(att, tgt, ft, then){
       attackWith(p, att, atk, () => {
         combatBusy = true;
         if (!cbt) return;
-        if (att.down){ combatBusy = false; setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; }
+        if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
         approachThen(att, tgt, ft, then);
       }, false, true);
       return;
@@ -2540,10 +2564,10 @@ function foeTurn(f){
   // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
   const pressed = standing(party).some(p => !incapacitated(p) && feetBetween(f, p) <= 5);
   const atk = bow && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
-  if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500)); return; }
-  if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); }); return; }
-  if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
-  let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
+  if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => passTurn(f), 500)); return; }
+  if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => passTurn(f), 500); }); return; }
+  if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => passTurn(f), 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
+  let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => passTurn(f), 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
   setTimeout(go, 500);
 }
 // The spider's Web: it rears up (the attack sheet), a strand flies, and on a hit the target is wrapped —
