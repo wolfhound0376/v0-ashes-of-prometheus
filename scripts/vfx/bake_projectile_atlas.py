@@ -1,9 +1,9 @@
 """Bake Sam's arrow / crossbow-bolt flight art into the board's two atlases.
 
 Source: the "Arrow-and-Crossbow-Projectiles" pack (Sam, 2026-10-15). It ships
-8 headings x (animated WebP + 2048 PNG atlas) per shot. The board only needs
-the E heading: the shot is a quad that is pointed along its own flight in 3D
-(components/tactical/projectile.ts), so one heading covers every direction.
+8 headings x (animated WebP + 2048 PNG atlas) per shot. Only the E heading is
+needed: the pixel map (scripts/velkynvelve-walk/template.html, drawShaftArt)
+rotates it to the shot's own angle, so one heading covers every direction.
 
 Each 512px frame is mostly empty, so the frames are cropped to the union of
 the drawn shot across all 16 frames (same crop for every frame, so the small
@@ -12,7 +12,7 @@ in-place jiggle the art carries survives) and packed 4x4.
     python3 -I scripts/vfx/bake_projectile_atlas.py <unzipped pack dir>
 
 Writes public/vfx/projectiles/{arrow,crossbow-bolt}.webp and prints the crop
-sizes that projectile.ts's SHAFTS table carries.
+sizes that the walk's SHAFT_ART table carries.
 """
 import sys
 from pathlib import Path

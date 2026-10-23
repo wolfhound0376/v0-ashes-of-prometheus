@@ -4571,10 +4571,31 @@ function shotPos(s, p){
   return {x, y};
 }
 function endAngle(s){ const dx = s.to.x - s.from.x, dy = s.to.y - s.from.y + s.arc * 4; return Math.atan2(dy, dx); }
+// SAM'S ARROW AND BOLT (2026-10-23: "put them on the pixel map too"). Painted flight art from his projectile pack,
+// heading E, 16 frames 4x4 at 60 ms, baked by scripts/vfx/bake_projectile_atlas.py. It replaces the drawn shaft for
+// these two kinds, in flight and stuck; until a sheet has loaded (or if it never does) the drawn shaft stands in.
+// cell = one atlas frame in px; tip = how far in from the cell's right edge the point sits; drawn = point to nock.
+const SHAFT_ART = {
+  arrow: {file: "arrow.webp",         cell: [352, 112], tip: 4, drawn: 344},
+  bolt:  {file: "crossbow-bolt.webp", cell: [264, 116], tip: 4, drawn: 256},
+};
+for (const k in SHAFT_ART) loadImg(VFX_BASE + "projectiles/" + SHAFT_ART[k].file).then(i => SHAFT_ART[k].img = i).catch(() => {});
+// `frame` < 0 holds still on frame 0 (a shaft in a body or the floor); otherwise the flutter runs off the clock
+function drawShaftArt(x, y, ang, kind, len, show, frame){
+  const A = SHAFT_ART[kind]; if (!A || !A.img) return false;
+  const k = len / A.drawn, [cw, ch] = A.cell, f = frame < 0 ? 0 : Math.floor(frame / 60) % 16;
+  ctx.translate(x, y); ctx.rotate(ang);
+  if (show < 1){ ctx.beginPath(); ctx.rect(-len - cw * k, -ch * k, len * show + cw * k, ch * k * 2); ctx.clip(); }   // only the part that is out
+  // Painted, not pixel art: smoothed, or a 340-px painting shrunk to a few dozen pixels sparkles.
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(A.img, (f % 4) * cw, Math.floor(f / 4) * ch, cw, ch, -(cw - A.tip) * k, -ch / 2 * k, cw * k, ch * k);
+  return true;
+}
 // one shaft: the tip at (x, y) pointing along ang; `show` is how much of it is out of whatever it is in
-function drawShaft(x, y, ang, kind, pxft, show = 1, alpha = 1){
+function drawShaft(x, y, ang, kind, pxft, show = 1, alpha = 1, frame = -1){
   const L = SHOT_LOOK[kind], len = L.len * pxft, w = Math.max(1.6, L.w * pxft), cx = Math.cos(ang), cy = Math.sin(ang);
   ctx.save(); ctx.globalAlpha = alpha;
+  if (drawShaftArt(x, y, ang, kind, len, show, frame)){ ctx.restore(); return; }
   if (kind === "stone"){ ctx.fillStyle = L.shaft; ctx.fillRect(x - w / 2, y - w / 2, w, w); ctx.restore(); return; }
   const tail = {x: x - cx * len, y: y - cy * len}, start = show < 1 ? {x: x - cx * len * (1 - show), y: y - cy * len * (1 - show)} : {x, y};
   ctx.lineCap = "butt"; ctx.strokeStyle = "#1a120c"; ctx.lineWidth = w + 1.4;                        // a dark outline, like the sprites
@@ -4606,7 +4627,7 @@ function drawShots(){
       else { ctx.fillStyle = "#cfd8e2"; ctx.fillRect(P.x - 2, P.y - 2, 4, 4); }
       continue;
     }
-    drawShaft(P.x, P.y, ang, s.kind, pxft);
+    drawShaft(P.x, P.y, ang, s.kind, pxft, 1, 1, now - s.t0);
   }
 }
 // stuck in a body: drawn right after that body, so it sits in front of it and behind whoever stands in front. It

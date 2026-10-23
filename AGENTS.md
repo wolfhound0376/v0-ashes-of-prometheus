@@ -72,9 +72,9 @@ Supabase vars; the full set is in §6.
 > ```
 >
 > Strip the line numbers as shown, or your own edits will make unchanged errors look like
-> both an addition and a removal. **As of 2026-08-31 the baseline is 14 errors in 3 files**
-> (`app/api/chat/route.ts`, `app/api/combat/route.ts`,
-> `components/tactical/combat-board-3d.tsx`). When that reaches zero, delete this note and
+> both an addition and a removal. **As of 2026-10-23 the baseline is 11 errors in 4 files**
+> (`app/api/chat/route.ts`, `app/api/combat/route.ts`, `lib/camp-haul-route.test.ts`,
+> `lib/repair.test.ts`). When that reaches zero, delete this note and
 > make the gate a plain `exit 0`.
 
 > **`pnpm lint` does not work.** The script is `eslint .` but no ESLint config exists in
@@ -95,6 +95,7 @@ Supabase vars; the full set is in §6.
 | `/join` | `app/join/page.tsx` | The access-code gate + character picker. A valid player code shows a card (portrait/class/level) with Enter / Create / Import paths; a forge code shows Create / Import; the DM code skips the picker entirely. Nothing hits localStorage until a path is chosen. |
 | `/forge` | `app/forge/page.tsx` | Character Forge importer — paste `aop-character-v1` JSON; POSTs `/api/forge/import`, returns a claim link + three-word code. Quick build is retired (it produced incomplete sheets). |
 | `/forge/builder` | `app/forge/builder/page.tsx` | The Character Forge 2014 builder embedded same-origin (iframe of `public/forge2014.html`, an exact copy of `docs/design/CharacterForge_2014Edition.html` — regenerate with `cp` if the source changes). Lists this browser's saved builds (`aop_forge2014_v1`); "Add to campaign" calls the iframe's own `exportPayload()`/`migrateChar()` (window-scoped function declarations) and POSTs `/api/forge/import`. |
+| `/battle` | *(retired)* | The 3D battle board (`components/tactical/combat-board-3d.tsx`) was retired 2026-10-23 (Sam: "We are done with the 3d battle board"). `/battle` redirects to `/velkynvelve` in `next.config.mjs`; fights happen on the pixel map. The board-only modules went with it; the rest of `components/tactical/` is still used elsewhere. Recover from git history if ever needed. |
 | `/shotlist` | `app/shotlist/page.tsx` | Layer 4 view: cinematic beat timeline over `session_beats`, realtime. |
 | `/music-upload` | `app/music-upload/page.tsx` | Bulk audio upload into 12 mood categories. |
 | `/admin` | `app/admin/page.tsx` | Tabbed CMS over 8 tables. `force-dynamic`. |
