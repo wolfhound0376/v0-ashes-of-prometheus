@@ -2323,7 +2323,10 @@ function provokedBy(a, end){
     && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6);
 }
 // walk up to the movement left, deducting what is used
-function walkTo(a, p, done){
+// Named combatWalk, not walkTo: the explore click handler further down declares its own walkTo(p, cb) for the leader,
+// and in one script the later declaration wins. Under the shared name every combat Move called the explore one,
+// and nobody moved (6e1f3e8, 2026-10-15).
+function combatWalk(a, p, done){
   let path = findPath(a, p); if (!path.length){ combatBusy = false; done && done(); return; }
   const px = ftPx(a); let left = a.c.move * px, prev = a, cut = [];
   for (const q of path){ const d = Math.hypot(q.x - prev.x, q.y - prev.y); if (d > left){ const k = left / d; cut.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); left = 0; break; } cut.push(q); left -= d; prev = q; }
@@ -2389,7 +2392,7 @@ function leapMove(a, g, to, done){
   const land = () => {
     log(`${fname(a)} clears the ${Math.round(g.gapFt)} ft gap${g.standing ? " from a standing start" : ""}. ${a.c.move} ft left.`);
     narrate(a, `${fname(a)} takes it in one leap.`);
-    if (Math.hypot(to.x - a.x, to.y - a.y) > 8 && a.c.move > 0) walkTo(a, to, done);
+    if (Math.hypot(to.x - a.x, to.y - a.y) > 8 && a.c.move > 0) combatWalk(a, to, done);
     else { combatBusy = false; done && done(); }
   };
   const spring = () => { if (a.down){ combatBusy = false; done && done(); return; } arcTo(a, g.land, land); };
@@ -2404,7 +2407,7 @@ function moveActor(a, w, done){
   const g = a.kind === "pc" ? planLeap(a, p) : null;
   if (g && g.ok){ leapMove(a, g, p, done); return; }
   if (g && g.why && !findPath(a, p).length) toast(g.why);   // nothing to walk round it either: say why
-  walkTo(a, p, done);
+  combatWalk(a, p, done);
 }
 
 // ----- resolving -----
