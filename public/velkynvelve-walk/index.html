@@ -740,6 +740,7 @@ function draw(){
       ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
     }
     if (mode === "combat") drawConds(a);
+    if (mode === "combat" && a.kind === "pc" && a.down && a.c && a.c.ds) drawDeathSaves(a);
     if (a.talk && !state.talked[a.id] && mode === "explore"){
       ctx.globalAlpha = 1; const bob = Math.sin(now / 260) * 6, top = dy + dh * .18 - 26 + bob;
       ctx.fillStyle = "#e8a24a"; ctx.strokeStyle = "#1a0f05"; ctx.lineWidth = 4;
@@ -1684,16 +1685,16 @@ const wardsHere = () => node.wards || null;
 // spells are SRD 5.2.1 at level 1.
 const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {medicine: -1, stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: []}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {stealth: 2, athletics: 0, perception: 3},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {medicine: 5, stealth: 2, athletics: 0, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: 3},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {medicine: 1, stealth: 2, athletics: 1, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {medicine: 1, stealth: 7, athletics: 1, perception: 1},
            // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
            // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
            sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -1869,7 +1870,9 @@ function renderParty(){
     const slots = Object.entries(c.slots).map(([l, n]) => `<span class="slots" title="Level ${l} spell slots">${"●".repeat(n)}${"○".repeat(Math.max(0, (c.sheet.magic.slots[l] || 0) - n))}</span>`).join("");
     const conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
     const conc = c.conc ? `<b class="conc" style="color:#9fe6ff" title="Concentrating on ${esc(c.conc.spell)}: taking damage means a CON save (DC 10 or half the damage)">◎ ${esc(c.conc.spell)}</b>` : "";
-    row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}${conc}</div>
+    const ds = p.down && c.ds ? (c.ds.dead ? `<b style="color:#ff6b5e">☠ dead</b>` : c.ds.stable ? `<b style="color:#9ff2c8">stable</b>`
+      : `<b title="Death saves: three successes and they are stable, three failures and they die" style="letter-spacing:1px"><span style="color:#62e3c6">${"●".repeat(c.ds.s)}${"○".repeat(3 - c.ds.s)}</span> <span style="color:#ff5a4a">${"●".repeat(c.ds.f)}${"○".repeat(3 - c.ds.f)}</span></b>`) : "";
+    row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}${conc}${ds}</div>
       <div class="hp"><i style="width:${100 * c.hp / c.hpMax}%"></i><span>${c.hp} / ${c.hpMax}</span></div>${slots}`;
     el.appendChild(row);
   }
@@ -1881,9 +1884,10 @@ function nextTurn(first){
   closeMenu(); cbt.phase = "idle"; cbt.turnNo = (cbt.turnNo || 0) + 1;
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0) cbt.round++;
-    const a = cbt.order[cbt.idx]; if (!a.down && actors.includes(a)) break;
+    const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a)) break;
   }
   const a = activeActor(); if (!a) return;
+  if (a.down){ renderTurns(); renderParty(); if (deathSaveTurn(a)) return; }
   if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.reactionUsed = false;
@@ -1957,6 +1961,8 @@ function openMenu(a, sub){
     // shaking a friend out of a drow-poison stupor or a Sleep spell (SRD: "another creature takes an action to shake it awake")
     for (const t of party) if (t !== a && t.c && t.c.conds.has("asleep") && !t.down && feetBetween(a, t) <= 5.5){ ACTION_ICON["Shake awake: " + fname(t)] = "help";
       add(`Shake awake: ${fname(t)}`, "your action", c.action ? () => { c.action = false; t.c.conds.delete("asleep"); t.c.drugged = false; popText(t, "awake", "#b0b8ff"); log(`${fname(a)} shakes ${fname(t)} awake.`); renderParty(); afterAction(a); } : null); }
+    for (const t of party) if (t !== a && dyingNow(t) && feetBetween(a, t) <= 5.5){ ACTION_ICON["Stabilize: " + fname(t)] = "help";
+      add(`Stabilize: ${fname(t)}`, `your action · Medicine ${sgn((s.skills || {}).medicine ?? 0)} vs DC 10`, c.action ? () => stabilize(a, t) : null); }
     if (c.conds.has("burning")) add("Put out the flames", "your action · DC 10 DEX", c.action ? () => putOutFire(a, () => afterAction(a)) : null);
     // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
     add("Hide", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
@@ -2444,7 +2450,15 @@ function concSave(a, dmg){
 function damage(t, n, type, crit, from){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
   if ((s.resist || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resist", "#aaa"); }
+  if (t.kind === "pc" && t.down){                                             // already at 0
+    if (t.c.ds && !t.c.ds.dead){ popText(t, String(n), "#ff6b5e"); burst(t, "#ff5040", 8);
+      if (n >= t.c.hpMax) dieNow(t, "struck while down by a blow as great as their whole life");
+      else { log(`${fname(t)} is hit while down: ${crit ? "two death-save failures" : "a death-save failure"}.`); deathMark(t, false, crit ? 2 : 1, "struck while dying"); } }
+    return;
+  }
+  const over = n - t.c.hp;
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
+  if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
   t.flash = now + 180; t.flashCol = "#fff";
   popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
@@ -2459,6 +2473,7 @@ function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) pl
 function fall(t){
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
+  if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: false, dead: false};
   const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_downed" : cs && cs.death ? cs.death : "creature/death_beast", .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
@@ -2676,7 +2691,7 @@ function endCombat(won){
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
-    party.forEach(p => { if (p.down){ p.down = false; setAnim(p, "idle"); if (p.c) p.c.hp = 1; } });
+    party.forEach(p => { if (p.down && !(p.c && p.c.ds && p.c.ds.dead)){ p.down = false; setAnim(p, "idle"); if (p.c){ p.c.hp = 1; p.c.ds = null; } } });
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
     mode = "explore"; setTrack("explore"); log(won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
@@ -4657,6 +4672,73 @@ function unequipItem(a){
 }
 $("bagBtn").onclick = () => toggleBag();
 $("invClose").onclick = () => toggleBag(false);
+// ---------- death saving throws (SRD 5.1, Combat > Damage and Healing > Dropping to 0 Hit Points) ----------
+// Sam, 2026-10-22: "line of sight and then death saves". A hero at 0 used to just lie there until the fight ended.
+//   - INSTANT DEATH: "When damage reduces you to 0 hit points and there is damage remaining, you die if the remaining
+//     damage equals or exceeds your hit point maximum."
+//   - THE SAVE: "Whenever you start your turn with 0 hit points, you must make a special saving throw ... roll a d20. If
+//     the roll is 10 or higher, you succeed. Otherwise, you fail. On your third success, you become stable. On your
+//     third failure, you die." "If you roll a 1 on the d20, it counts as two failures. If you roll a 20 on the d20, you
+//     regain 1 hit point" (and so the turn is theirs to take).
+//   - HIT WHILE DOWN: "If you take any damage while you have 0 hit points, you suffer a death saving throw failure. If
+//     the damage is from a critical hit, you suffer two failures instead. If the damage equals or exceeds your hit point
+//     maximum, you suffer instant death."
+//   - HEALING: "If you regain any hit points ... the successes and failures are reset" (the old ways back up already do
+//     this: Healing Word, a potion poured in, now also wake a dying hero with a clean slate).
+//   - STABILIZING: "You can use your action to administer first aid to an unconscious creature and attempt to stabilize
+//     it, which requires a successful DC 10 Wisdom (Medicine) check." A stable creature makes no more saves.
+// The tallies hang over the body, and show on the party card.
+const dyingNow = a => !!(a && a.kind === "pc" && a.down && a.c && a.c.ds && !a.c.ds.stable && !a.c.ds.dead);
+function deathMark(a, success, n, why){
+  const ds = a.c.ds; if (!ds || ds.dead || ds.stable) return;
+  if (success) ds.s = Math.min(3, ds.s + n); else ds.f = Math.min(3, ds.f + n);
+  if (ds.f >= 3){ dieNow(a, why); return; }
+  if (ds.s >= 3){ ds.stable = true; popText(a, "stable", "#9ff2c8", 1.2); log(`<b>${fname(a)} is stable.</b> No more death saves; they stay down at 0 HP until healed.`); }
+  renderParty();
+}
+function dieNow(a, why){
+  const ds = a.c.ds || (a.c.ds = {s: 0, f: 0}); ds.dead = true; ds.f = 3; a.dead = true;
+  bank("creature/death_beast", .7); popText(a, "dead", "#ff6b5e", 1.5); shake(8);
+  log(`<b>${fname(a)} dies</b>${why ? ` (${why})` : ""}.`); narrate(a, `${fname(a)} is gone.`);
+  const near = standing(party).filter(p => p !== a)[0]; if (near) setTimeout(() => bark(near, `No… ${fname(a)}!`, 2000, {talk: true}), 500);
+  renderParty();
+}
+// a downed hero's turn: the save, and the turn passes (a 20 gets them up, and the turn is theirs)
+function deathSaveTurn(a){
+  const r = d20();
+  camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 40, 500);
+  if (r === 20){
+    a.c.hp = 1; a.down = false; a.c.ds = null; setAnim(a, "idle"); popText(a, "20! on their feet", "#9ff2c8", 1.3); bank("combat/heal", .7);
+    log(`${fname(a)} death save: <b>20</b> — regains 1 HP and gets up.`); renderParty(); renderTurns(); return false;   // carry on: it is their turn
+  }
+  const ok = r >= 10; popText(a, ok ? `save ${r} ✓` : r === 1 ? "1 ✗✗" : `save ${r} ✗`, ok ? "#9ff2c8" : "#ff6b5e", 1.1);
+  bank(ok ? "ui/turn_chime" : "ui/nat1", .5);
+  log(`${fname(a)} death save: ${r} — ${ok ? "success" : r === 1 ? "two failures" : "failure"}.`);
+  deathMark(a, ok, ok ? 1 : r === 1 ? 2 : 1, "three failed death saves");
+  setTimeout(() => passTurn(a), 1300); return true;
+}
+// first aid: an action, DC 10 Wisdom (Medicine), on a dying friend within 5 ft
+function stabilize(a, t){
+  a.c.action = false; const mod = (a.c.sheet.skills || {}).medicine ?? 0, r = d20() + mod, ok = r >= 10;
+  log(`${fname(a)} works on ${fname(t)}: Medicine ${r} vs 10 — ${ok ? "stable" : "not yet"}.`);
+  if (ok){ t.c.ds.stable = true; popText(t, "stable", "#9ff2c8", 1.2); } else popText(t, "still dying", "#ff6b5e", .9);
+  renderParty(); afterAction(a);
+}
+function drawDeathSaves(a){
+  const ds = a.c.ds; if (!ds) return; const sc = actorScale(a), y = a.y - 34 * sc;
+  ctx.save(); ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06";
+  if (ds.dead){ ctx.font = "bold 26px Georgia, serif"; ctx.fillStyle = "#ff6b5e"; ctx.strokeText("☠", a.x, y); ctx.fillText("☠", a.x, y); ctx.restore(); return; }
+  if (ds.stable){ ctx.font = "bold 14px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#9ff2c8"; ctx.strokeText("stable", a.x, y); ctx.fillText("stable", a.x, y); ctx.restore(); return; }
+  const pulse = .6 + .4 * Math.sin(now / 260), R = 5;
+  for (let i = 0; i < 3; i++){
+    for (const [row, n, col] of [[-1, ds.s, "#62e3c6"], [1, ds.f, "#ff5a4a"]]){
+      const x = a.x + (i - 1) * 15, yy = y + row * 8;
+      ctx.beginPath(); ctx.arc(x, yy, R, 0, Math.PI * 2); ctx.fillStyle = i < n ? col : "rgba(20,10,8,.85)"; ctx.globalAlpha = i < n ? 1 : .9; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.globalAlpha = i < n ? 1 : pulse; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+  ctx.restore();
+}
 // ---------- line of sight and cover (SRD 5.1, Combat > Cover) ----------
 // Sam, 2026-10-22: "line of sight". A drow on the balcony shot a hero through the stone of the pen wall. Now:
 //   - TOTAL COVER: a wall between them (node.walls, traced along the foot of the stone in spec.py) means the target
