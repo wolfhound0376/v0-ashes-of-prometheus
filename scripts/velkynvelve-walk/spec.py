@@ -75,6 +75,13 @@ NODES = {
  11: dict(slug="node-11-slave-pen", name="Slave Pen", scale=1.25,
    floors=[dict(poly=P((960,740),(1120,700),(1400,560),(1700,500),(2000,480),(2200,560),(2300,700),(2360,940),(2300,1200),(2200,1339),(900,1339),(760,1200),(620,1000),(640,900),(800,860),(920,780)))],
    obstacles=[],  # table and stool removed from the plate (take 35)
+   # What blocks sight (Sam, 2026-10-22: line of sight). Traced along the FOOT of the pen's west wall, the line where the
+   # floor meets the stone, because sight is tested foot to foot: anyone on the balcony, the bridge or Jorlan's landing is
+   # behind it. The brick wall and the rock column below it are solid; the gate is iron bars (cover, not a wall) and
+   # nothing at all once it stands open. North of the gate the wall turns up into the back of the cave.
+   walls=[dict(line=P((500,1339),(620,1000),(640,900),(740,885)), label="the pen wall"),
+          dict(line=P((740,885),(906,795)), kind="gate", label="the gate's bars"),
+          dict(line=P((906,795),(960,740),(985,400),(1000,0)), label="the pen wall")],
    zones=[dict(rect=[730,790,915,940], to=[10,12], kind="gate", label="The pen gate: heavy iron bolted into the stone. Locked: DC 20 to pick or force (OotA p.18)")],
    npcs=[dict(id="ront",x=1700,y=760,face=2,talk=False,barks=["Ront mutters something about orc blood and drow throats."]),
          dict(id="eldeth",x=1300,y=1000,face=6,talk=True,talkLine="Eldeth Feldrun catches your eye. She wants a word."),
