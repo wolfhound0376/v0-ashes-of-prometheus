@@ -549,5 +549,152 @@
     }
    }
   ]
+ },
+ "8": {
+  "props": [
+   {
+    "id": "shoor-chest",
+    "name": "Shoor's chest",
+    "_src": "Sam's ruling, 2026-10-22: the party's confiscated weapons and gear are kept in Shoor's quarters. Traced by eye on the painted plate. Lid traced by eye, 2026-10-22 (Sam: \"This chest should also be able to open and have an animation\"). Not locked: the book says nothing of a lock on it.",
+    "locked": false,
+    "poly": [
+     [
+      1290,
+      330
+     ],
+     [
+      1370,
+      315
+     ],
+     [
+      1525,
+      350
+     ],
+     [
+      1520,
+      470
+     ],
+     [
+      1440,
+      495
+     ],
+     [
+      1290,
+      450
+     ]
+    ],
+    "lid": {
+     "poly": [
+      [
+       1288,
+       408
+      ],
+      [
+       1292,
+       360
+      ],
+      [
+       1318,
+       312
+      ],
+      [
+       1478,
+       348
+      ],
+      [
+       1528,
+       385
+      ],
+      [
+       1520,
+       440
+      ],
+      [
+       1400,
+       436
+      ],
+      [
+       1340,
+       425
+      ]
+     ],
+     "hinge": [
+      [
+       1318,
+       316
+      ],
+      [
+       1478,
+       352
+      ]
+     ],
+     "front": [
+      1400,
+      434
+     ]
+    },
+    "text": {
+     "closed": "A heavy iron-bound chest against the wall of Shoor's quarters.",
+     "unlocked": "A heavy iron-bound chest against the wall. It is not locked.",
+     "open": "A chest against the wall of Shoor's quarters. Your own things are in here, the ones the drow took off you."
+    }
+   }
+  ]
+ },
+ "2": {
+  "loot": [
+   {
+    "id": "barracks-west",
+    "name": "The barracks chests (west)",
+    "_src": "OotA ch.1 area 2: six chests in each barracks; drow poison, clothing, trinkets. Traced by eye on the painted plate.",
+    "poly": [
+     [
+      835,
+      610
+     ],
+     [
+      925,
+      610
+     ],
+     [
+      930,
+      690
+     ],
+     [
+      840,
+      695
+     ]
+    ],
+    "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
+   },
+   {
+    "id": "barracks-east",
+    "name": "The barracks chests (east)",
+    "_src": "OotA ch.1 area 2 (the same six chests, the other cave). Traced by eye on the painted plate.",
+    "poly": [
+     [
+      1140,
+      945
+     ],
+     [
+      1340,
+      930
+     ],
+     [
+      1345,
+      1060
+     ],
+     [
+      1240,
+      1140
+     ],
+     [
+      1140,
+      1140
+     ]
+    ],
+    "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
+   }
+  ]
  }
 }

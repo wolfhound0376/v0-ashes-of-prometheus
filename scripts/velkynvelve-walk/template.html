@@ -185,6 +185,13 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .card p{margin:0;line-height:1.45;color:var(--ink)}
 .card .src{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim)}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
+.btns.loot{flex-direction:column;align-items:stretch;max-height:46vh;overflow:auto}
+.btns.loot .btn{text-align:left;display:flex;align-items:center;gap:8px}
+.btns.loot .btn[disabled]{opacity:.55;cursor:default}
+.lootPx{width:24px;height:24px;image-rendering:pixelated;flex:none}
+.lootDm{display:grid;gap:6px;font-size:12px}
+.lootRow{display:grid;gap:3px}
+.lootRow select{font:inherit}
 .btn{font:inherit;background:transparent;color:var(--ink);border:1px solid var(--rule);border-radius:5px;padding:7px 12px;cursor:pointer}
 .btn:hover{border-color:var(--ember);color:var(--ember)}
 .btn.primary{border-color:var(--ember);color:var(--ember)}
@@ -348,6 +355,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <select id="dmItem" size="6" aria-label="Catalogue items"></select>
       <button class="btn" id="dmPlace">Put it on the floor (then click where)</button>
       <div id="dmPiles" class="seats"></div>
+      <h4>Confiscated gear</h4>
+      <div id="dmLoot" class="seats lootDm"></div>
       <h4>Companions</h4>
       <div id="dmSeats" class="seats"></div>
     </div>
@@ -643,7 +652,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor(); drawProps(); drawPropHighlight(); drawFloorItems();
+  drawDoor(); drawProps(); drawPropHighlight(); drawLootHighlight(); drawFloorItems();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -1356,7 +1365,7 @@ function drawDoor(){
 // everything else (story.json `props`, OotA ch.1 area 7): locked, Ilvara keeps the key, a poison needle guards the
 // lock. Rolls are made on the dashboard and reported here, as at the gate. What is inside is Layer 1's to say.
 const lids = {};   // prop id -> {img, bx, by, k, target}
-function propState(pr){ return state.props[pr.id] || (state.props[pr.id] = {locked: true, trapKnown: false, disarmed: false, open: false}); }
+function propState(pr){ return state.props[pr.id] || (state.props[pr.id] = {locked: pr.locked !== false, trapKnown: false, disarmed: false, open: false}); }
 function propAt(w){ return (node.props || []).find(pr => inPoly(pr.poly, w.x, w.y)) || null; }
 function buildProps(){
   for (const pr of node.props || []){
@@ -1407,8 +1416,7 @@ function openChest(pr){
   const l = lids[pr.id], st = propState(pr); st.open = true; st.locked = false; if (l) l.target = 1;
   sfx("door-open", .6); bank("ui/coin_purse", .5);
   log(`${fname(leader)} opens <b>${pr.name}</b>.`);
-  if (APP) handOff(`${fname(leader)} opens ${pr.name} at the foot of Ilvara's bed. Say what is inside.`);
-  else toast("What is inside is Malachar's to say — in the game this goes to him as your action.", 4200);
+  setTimeout(() => { if (mode === "explore") openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open}); }, 1100);
 }
 // the poison needle (OotA ch.1 area 7): any attempt to open the lock without the key sets it off
 function needle(pr){
@@ -1434,8 +1442,8 @@ function openProp(pr, opts = {}){
     add(`${dc} or more`, () => { close(); onWin(); }, "primary"); add(`Under ${dc}`, () => { close(); onLose(); }); add("Back", () => { close(); openProp(pr, {again: true}); });
     box.firstChild?.focus();
   };
-  if (st.open){ $("objText").textContent = pr.text.open; add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
-  else if (!st.locked){ $("objText").textContent = "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
+  if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
+  else if (!st.locked){ $("objText").textContent = (pr.text && pr.text.unlocked) || "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
   else {
     $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
     if (!opts.again) sfx("door-locked", .45);
@@ -1446,6 +1454,175 @@ function openProp(pr, opts = {}){
     add("Leave it", close);
   }
   $("obj").hidden = false; box.firstChild?.focus();
+}
+// ---------- loot: chests, bodies and pockets ----------
+// Sam, 2026-10-22: "Build all. Shoor's quarters is good. Some gear might be found on people's bodies after killing them
+// or may be stolen." What is in each place is the book's, never the map's: lib/walk-loot.ts lists it by catalogue slug,
+// and /api/walk-loot resolves it against `items` and the party's confiscated gear (held on the stash: valuables in
+// Ilvara's chest, everything else in Shoor's). A thing the catalogue does not have yet shows, and cannot be taken.
+// Taking puts the real row in the character's inventory and writes a line Malachar reads. The preview keeps the same
+// lists here, for looking; nothing in it is saved.
+const LOOT_KIT = [["shortsword", 1], ["hand-crossbow", 1], ["bolts-20", 1, "a case of 20 hand crossbow bolts"], ["chain-shirt", 1],
+  ["silk-rope", 2, "a 100-foot coil"], ["grappling-hook", 1, "small, tied to the rope"]];
+const LOOT_BOOK = {
+  "ilvara-chest": [["silver-chain-headdress", 1, "set with small onyx stones, 50 gp"], ["potion-of-healing", 2, "in a drawstring bag"],
+    ["gold-coin", 24, "from the leather purse"], ["silver-coin", 30, "from the leather purse"], ["moonstone", 1, "small, 20 gp"],
+    ["spell-component-pouch", 1, "Ilvara's spare"]],
+  "shoor-chest": [],
+  "barracks-west": [["drow-poison", 6, "a flask per chest, each treats 20 bolts"], ["common-clothes", 12, "two sets per chest"]],
+  "barracks-east": [["drow-poison", 6, "a flask per chest, each treats 20 bolts"], ["common-clothes", 12, "two sets per chest"]],
+  "body:drow-guard-male": LOOT_KIT, "body:drow-guard-female": LOOT_KIT,
+  "pocket:drow-guard-male": [["slave-pen-key", 1, "the key to the slave pen"]], "pocket:drow-guard-female": [["slave-pen-key", 1, "the key to the slave pen"]],
+};
+const LOOT_STASH = {"ilvara-chest": "Everything of value the drow took from you: focuses, spell components, spellbooks, magic.", "shoor-chest": "Your weapons, armour and packs, as the drow took them."};
+const PEN_KEY = "Slave pen key";
+const lootLocal = {};                                   // preview only: container key -> {slug: taken}
+const lootKeyOf = id => id.startsWith("pocket:") ? id : id.startsWith("body:") ? "body:" + id.split(":")[1] + ":" + id.split(":").slice(2).join(":") : id;
+const slugName = s => s.replace(/-/g, " ").replace(/^./, c => c.toUpperCase());
+async function fetchLoot(id){
+  if (APP){
+    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; }
+    catch (e){ return {rows: [], error: String(e.message || e)}; }
+  }
+  await ensureCatalog();
+  const book = LOOT_BOOK[id] || LOOT_BOOK[id.split(":").slice(0, 2).join(":")] || [], taken = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
+  const rows = [];
+  for (const [slug, qty, note] of book){
+    const left = qty - (taken[slug] || 0); if (left <= 0 || (slug === "slave-pen-key" && penGone)) continue;
+    const it = (catalog || []).find(i => i.slug === slug);
+    rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it});
+  }
+  if (LOOT_STASH[id]) rows.push({kind: "preview-stash", name: LOOT_STASH[id], qty: 1});
+  return {rows};
+}
+function lootLabel(row){ return `${row.qty > 1 ? row.qty + " × " : ""}${row.name}${row.owner ? ` (${row.owner}'s)` : ""}${row.note ? ` — ${row.note}` : ""}`; }
+// one thing into a hero's hands: the server first (it is the truth), then the bag here
+async function takeLoot(a, id, row){
+  if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return false; }
+  if (APP){
+    const cid = characterIdOf(a.id); if (!cid){ toast(`${fname(a)} has no seat in this game, so nothing can go into their pack.`, 3600); return false; }
+    try {
+      const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId})});
+      const j = await r.json(); if (!r.ok || j.error){ toast(j.error || "It would not come free.", 3600); return false; }
+    } catch (e){ toast("The game did not answer. Try again.", 3000); return false; }
+    loadGear(a.id);
+  } else {
+    if (row.kind === "preview-stash"){ toast("In the game this is the real list of what the drow took from you.", 3600); return false; }
+    const k = lootKeyOf(id), m = lootLocal[k] || (lootLocal[k] = {}); m[row.slug] = (m[row.slug] || 0) + row.qty;
+    const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null}), cat = (catalog || []).find(i => i.slug === row.slug) || {};
+    const have = g.carried.find(c => c.name === row.name && !isWeapon(c));
+    if (have) have.qty = (have.qty || 1) + row.qty;
+    else g.carried.push({name: row.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: cat.pixel_icon_url || null, qty: row.qty, icon: cat.icon_url || null, desc: cat.description || ""});
+  }
+  if (row.name === PEN_KEY) state.penKey = true;
+  if (bagOpen()) renderBag();
+  popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, "#e8d9a8"); bank("ui/item_pickup", .7);
+  log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
+  return true;
+}
+// the card: what is there, a button for each, and Take all
+async function openLoot(id, title, opts = {}){
+  if (mode !== "explore" && mode !== "dialog") return;
+  mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
+  if (opts.poly) plateCrop(opts.poly);
+  const who = leader, box = $("objBtns");
+  $("objWho").textContent = title; $("objText").textContent = opts.text || "You look inside."; box.innerHTML = ""; box.classList.add("loot");
+  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); mode = "explore"; if (opts.onClose) opts.onClose(); };
+  const add = (label, fn, cls = "", off = false) => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.disabled = off; if (fn) b.onclick = fn; box.appendChild(b); return b; };
+  $("obj").hidden = false;
+  add("…", null, "", true);
+  const j = await fetchLoot(id); if ($("obj").hidden) return;
+  box.innerHTML = "";
+  const rows = j.rows || [], can = rows.filter(r => !r.missing && r.kind !== "preview-stash");
+  if (j.error) $("objText").textContent = `The game did not answer (${j.error}).`;
+  else if (!rows.length) $("objText").textContent = opts.empty || "Nothing is left in it.";
+  else $("objText").textContent = (opts.text ? opts.text + " " : "") + `${fname(who)} can take:`;
+  for (const row of rows){
+    const b = add(row.missing ? `${lootLabel(row)} · not in the catalogue yet` : row.kind === "preview-stash" ? row.name : `Take: ${lootLabel(row)}`,
+      async () => { b.disabled = true; if (await takeLoot(who, id, row)){ close(); openLoot(id, title, opts); } else b.disabled = false; }, "", !!row.missing);
+    if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
+  }
+  if (can.length > 1) add("Take all", async () => {
+    for (const b of box.querySelectorAll("button")) b.disabled = true;
+    for (const row of can) await takeLoot(who, id, row);
+    close(); openLoot(id, title, opts);
+  }, "primary");
+  if (opts.extra) for (const [label, fn] of opts.extra) add(label, () => { close(); fn(); });
+  add("Leave it", close);
+  box.querySelector("button:not([disabled])")?.focus();
+}
+function plateCrop(poly){
+  const c = $("objPic"), g = c.getContext("2d"), xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), sz = Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0), k = plateImg.naturalWidth / NAT_W;
+  g.clearRect(0, 0, 128, 128); try { g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
+}
+// chests and lockers you only open (story.json `loot`): Shoor's chest, the barracks footlockers
+let hoverLoot = null;
+function lootSpotAt(w){ return (node.loot || []).find(l => inPoly(l.poly, w.x, w.y)) || null; }
+function lootCenter(l){ const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
+function openLootSpot(l){ openLoot(l.id, l.name, {poly: l.poly, text: l.text}); }
+function drawLootHighlight(){
+  if (mode !== "explore" && mode !== "dialog") return;
+  for (const l of node.loot || []){
+    const c = lootCenter(l), lit = hoverLoot === l || (leader && Math.hypot(leader.x - c.x, leader.y - c.y) < 300 * node.scale); if (!lit) continue;
+    const pulse = .5 + .5 * Math.sin(now / 520);
+    ctx.save(); ctx.beginPath(); l.poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+    ctx.shadowColor = "rgba(240,170,80,.95)"; ctx.shadowBlur = 22; ctx.lineJoin = "round"; ctx.strokeStyle = `rgba(240,170,80,${.45 + .35 * pulse})`; ctx.lineWidth = 4; ctx.stroke(); ctx.restore();
+  }
+}
+// A quick hand on a living guard. OotA ch.1, Acquisitions: "lift a key to the slave pen from a guard ... a successful
+// Dexterity (Sleight of Hand) check contested by the Wisdom (Perception) checks of any active observers, or using an
+// observer's passive Wisdom (Perception) score as the base DC. A prisoner that fails the check is commanded to
+// relinquish the item, on pain of death." The roll is made on the dashboard and reported here, as at the gate.
+const POCKETED = id => !!LOOT_BOOK["pocket:" + id];
+async function openPockets(n){
+  if (mode !== "explore") return;
+  mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
+  stopActivity(n); n.path = [];
+  const name = fname(n), who = leader, s = SHEETS[who.id] || {}, sl = (s.skills || {}).sleightOfHand ?? 0, dc = (FOE_BLOCKS[n.id] || {}).passive ?? 12;
+  try { portrait(n.id, $("objPic"), 128); } catch (e) {}
+  $("objWho").textContent = name;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const close = () => { $("obj").hidden = true; mode = "explore"; };
+  $("objText").textContent = `${name} is close enough to touch.`; $("obj").hidden = false;
+  const id = "pocket:" + n.id, j = await fetchLoot(id); if ($("obj").hidden) return;
+  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash");
+  for (const row of rows) add(`Lift: ${row.name}${row.missing ? " (not in the catalogue yet)" : ""}`, () => {
+    $("objText").textContent = `${fname(who)}: Dexterity (Sleight of Hand) ${sgn(sl)}, against ${name}'s passive Perception. Roll it on the dashboard (DC ${dc}). What did it come to?`;
+    box.innerHTML = "";
+    add(`${dc} or more`, async () => { close(); if (await takeLoot(who, id, row)) log(`${fname(who)} lifts the ${esc(row.name)} from ${esc(name)} without being noticed.`); }, "primary");
+    add(`Under ${dc}`, () => { close(); caught(n, who, row); });
+    add("Back", () => { close(); openPockets(n); });
+    box.firstChild?.focus();
+  }, "primary");
+  if (!rows.length) $("objText").textContent = `${name} is close enough to touch, but nothing on them is within reach.`;
+  if (wantsWord(n) || canTalkTo(n)) add("Talk to them", () => { close(); approach(n); });
+  add("Leave them be", close);
+  box.firstChild?.focus();
+}
+function caught(n, who, row){
+  n.face = faceOf(who.x - n.x, who.y - n.y); bank("ui/nat1", .5); popText(who, "caught!", "#ff6b5e", 1.2);
+  log(`<b>${esc(fname(n))} catches ${esc(fname(who))}'s hand</b> at the ${esc(row.name)}. A prisoner caught stealing is commanded to give it up, on pain of death.`);
+  if (APP) handOff(`${fname(who)} tried to lift the ${row.name} from ${fname(n)} with Sleight of Hand and failed. ${fname(n)} noticed. Per the book, a prisoner who fails is commanded to relinquish the item, on pain of death. Play it.`);
+  else toast("What the drow do next is Malachar's to say. In the game this goes to him.", 4200);
+}
+// the DM's hand: confiscated gear given to a drow, so it turns up on their body, or in their pockets for a thief
+const CARRIERS = [["drow-guard-male", "the drow guards (men)"], ["drow-guard-female", "the drow guards (women)"], ["jorlan", "Jorlan"]];
+async function renderDmLoot(){
+  const el = $("dmLoot"); if (!el) return; el.innerHTML = "";
+  if (!APP){ el.textContent = "In the game: the party's confiscated gear, and which drow (if any) the DM has handed each piece to."; return; }
+  let rows = [];
+  try { const j = await (await fetch("/api/walk-loot?stash=1", {cache: "no-store", headers: dmHeaders()})).json(); rows = j.rows || []; if (j.error) el.textContent = j.error; } catch (e) { el.textContent = "The game did not answer."; return; }
+  if (!rows.length && !el.textContent){ el.textContent = "Nothing confiscated is left on the stash."; return; }
+  for (const r of rows){
+    const line = document.createElement("label"); line.className = "lootRow";
+    const sel = document.createElement("select"); sel.setAttribute("aria-label", `Where ${r.name} is`);
+    for (const [v, lab] of [["", r.where.startsWith("on ") ? "in its chest" : r.where], ...CARRIERS.map(([s, l]) => [s, `on ${l}`])]){ const o = document.createElement("option"); o.value = v; o.textContent = lab; if ((r.carriedBy || "") === v) o.selected = true; sel.appendChild(o); }
+    sel.onchange = () => fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({action: "carry", rowId: r.rowId, slug: sel.value || null})})
+      .then(x => x.json()).then(j => { if (j.error) toast(j.error); else toast(sel.value ? `${r.name} is on ${CARRIERS.find(c => c[0] === sel.value)[1]} now.` : `${r.name} is back in its chest.`, 2600); }).catch(() => toast("The game did not answer."));
+    line.append(`${r.qty > 1 ? r.qty + " × " : ""}${r.name}${r.owner ? ` (${r.owner}'s)` : ""} `, sel); el.appendChild(line);
+  }
 }
 // ---------- things you can use (the template: lit when in reach, a card of options when used) ----------
 let hoverObj = null;
@@ -1475,6 +1652,7 @@ function openInteract(z, opts = {}){
       add("Back", () => { close(); openInteract(z, {again: true}); });
       box.firstChild?.focus();
     };
+    if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`); setTimeout(() => unlockGate(), 650); }, "primary");
     add("Pick the lock", ask("Picking the lock", () => {
       sfx("lock-picked", .9); log("The lock gives with a soft click.");
       setTimeout(() => unlockGate(), 650);
@@ -1513,13 +1691,20 @@ function openBody(b){
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => { const el = document.createElement("button"); el.className = "btn " + cls; el.textContent = label; el.onclick = fn; box.appendChild(el); };
   const close = () => { $("obj").hidden = true; mode = "explore"; };
-  if (!b.searched) add("Search the body", () => { close(); b.searched = true; bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); if (APP) handOff(`${fname(leader)} searches ${name}'s body.`); else toast("What it carried is Malachar's to say — in the game this goes to him as your action.", 4200); }, "primary");
+  b.lootKey = b.lootKey || `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`;
+  const known = !!LOOT_BOOK["body:" + b.id];
+  add(b.searched ? "Look again" : "Search the body", () => { close(); const first = !b.searched; b.searched = true;
+    if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); }
+    if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`);                 // not a kit the book lists: Malachar says
+    openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
+  }, "primary");
   add("Leave it", close);
   $("obj").hidden = false; box.firstChild?.focus();
 }
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 function handOff(text){ try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", text}, "*"); } catch (e) {} }
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
+function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === PEN_KEY)); }
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
 function unlockGate(forced){
   if (state.gateOpen) return;
@@ -1700,16 +1885,16 @@ const wardsHere = () => node.wards || null;
 // spells are SRD 5.2.1 at level 1.
 const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {medicine: -1, stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: []}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {medicine: 5, stealth: 2, athletics: 0, perception: 3},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {medicine: 1, stealth: 2, athletics: 1, perception: 3},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {medicine: 1, stealth: 7, athletics: 1, perception: 1},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1},
            // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
            // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
            sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -2852,7 +3037,7 @@ function endCombat(won){
     log(`<b>Victory.</b> ${xp} XP (${Math.floor(xp / live)} each).`);
   }
   setTimeout(() => {
-    for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; npcs.push(f); }
+    for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = `${cur}-${Math.round(f.x)}-${Math.round(f.y)}`; npcs.push(f); }
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
@@ -3889,6 +4074,9 @@ stage.addEventListener("pointermove", e => {
   { const ai = aimTargetFor(hoverActor), key = ai ? ai.t.id : null; if (key !== aimTickKey){ aimTickKey = key; if (ai) aimTick(ai.boon, key); } }
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
+  hoverLoot = mode === "explore" && !hoverActor && !hoverObj && !hoverProp ? lootSpotAt(w) : null;
+  if (hoverLoot){ tip.textContent = `${hoverLoot.name}: click to look inside`; tip.className = "tip"; tip.hidden = false;
+    tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   const hp = !hoverActor && (mode === "explore" || mode === "combat") ? pileAt(w) : null;
   if (hp){ tip.textContent = mode === "combat" ? `${hp.name}: pick it up from the menu when you are beside it (${PICKUP_FT} ft of movement)` : `${hp.name}: click to pick up`; tip.className = "tip"; tip.hidden = false;
     tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
@@ -3930,10 +4118,12 @@ function click(w){
     const me = hitActor(party, w);
     if (me && me !== leader){ setLeader(me); return; }
     const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
+    const ls = !hitActor(npcs, w) ? lootSpotAt(w) : null; if (ls){ const lc = lootCenter(ls); walkTo(nearestWalkable(lc.x, lc.y), () => openLootSpot(ls)); return; }
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
     const n = hitActor(npcs, w);
     if (n && n.body){ walkTo(nearNpc(n), () => openBody(n)); return; }
+    if (n && POCKETED(n.id) && !n.hostile){ walkTo(nearNpc(n), () => openPockets(n)); return; }
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat"){ combatClick(w); }
@@ -3977,7 +4167,7 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); } }
+function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); renderDmLoot(); } }
 $("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
