@@ -1464,6 +1464,16 @@ function openInteract(z, opts = {}){
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
   const close = () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
   const isDoor = !!it.leaf;
+  // Sam, 2026-10-22 (a comment on the pen): "Coming close the gate should prompt the possibility to speak to the guard
+  // or Jorlan." Whoever is in sight beyond the bars can be called over: Jorlan on the landing, the nearest guard on the
+  // bridge. It opens the same talk card as walking up to anyone else, and the talk itself happens on the dashboard.
+  const calls = () => { if (!isDoor) return;
+    const seen = n => n && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n), gx = (it.poly[0][0] + it.poly[2][0]) / 2, gy = (it.poly[0][1] + it.poly[2][1]) / 2;
+    const j = npcs.find(n => n.id === "jorlan" && seen(n));
+    const g = npcs.filter(n => /^drow-guard/.test(n.id) && seen(n)).sort((a, b) => Math.hypot(a.x - gx, a.y - gy) - Math.hypot(b.x - gx, b.y - gy))[0];
+    if (j) add("Call to Jorlan", () => { close(); openTalk(j, {quiet: true}); });
+    if (g) add("Call to the guard", () => { close(); openTalk(g, {quiet: true}); });
+  };
   if (!state.gateOpen){
     if (isDoor && !opts.again) sfx("door-locked", .7);             // you try the bars: locked fast
     // No dice here: the roll is made on the dashboard with the one dice roller; the player says how it went.
@@ -1482,6 +1492,7 @@ function openInteract(z, opts = {}){
     add("Force it", ask("Forcing the gate", () => {
       log("The bolt tears from the stone."); unlockGate(1);
     }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }));
+    calls();
     if (!APP || isDm()) add("DM: Jorlan opens it", () => { close(); openGate(); });
     add("Step back", close);
   } else if (state.doorShut){
@@ -1490,6 +1501,7 @@ function openInteract(z, opts = {}){
     add("Step back", close);
   } else {
     for (const t of z.to) add(it.routes?.[t] || `To ${SPEC[t].name}`, () => { $("obj").hidden = true; mode = "explore"; travel(t, z); }, "primary");
+    calls();
     if (isDoor) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); setTimeout(() => sfx("door-close"), 650); });
     add("Stay inside", close);
   }
