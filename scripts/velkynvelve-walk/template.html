@@ -157,6 +157,11 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
    action · magic · move — each with the dashboard's painted action icon (public/icons/actions, 96 px copies). */
 .cbt-menu{display:flex;flex-wrap:wrap;align-items:stretch;gap:5px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.6)}
 .cbt-menu[hidden]{display:none}
+/* the command bar steps aside while the DM drawer is open (Sam, 2026-10-21: "This window is in the way of my DM tools.
+   Please have the bottom window minimize when this is up.") — a small tab stays; clicking it closes the drawer */
+.cbt-mini{all:unset;display:none;justify-self:center;cursor:pointer;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.08em;color:var(--ember);background:rgba(16,10,8,.94);border:1px solid var(--ember);border-radius:6px 6px 0 0;padding:3px 14px;margin:0 auto}
+body.dm-open .cbt-menu:not([hidden]){display:none}
+body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu button{all:unset;display:grid;grid-template-columns:38px 1fr;grid-template-rows:auto auto;column-gap:7px;align-items:center;width:168px;min-height:46px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
 .cbt-menu button .ico{grid-row:1/3;width:38px;height:38px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
 .cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:20px;color:var(--ember)}
@@ -370,6 +375,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   </div>
 
   <div class="cbt-menu" id="cbtMenu" hidden></div>
+  <button class="cbt-mini" id="cbtMini" title="Close DM tools and bring the commands back">▲ Commands (DM tools open)</button>
   <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
 </div>
 
@@ -3719,7 +3725,8 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); } }
+function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); } }
+$("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
