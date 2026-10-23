@@ -2052,9 +2052,11 @@ function combatClick(w){
     if (t.c.conds.has("inspired")){ toast(`${fname(t)} already has an inspiration die.`); return; } inspire(a, t); return; }
   if (p.help){ const t = hitActor(party, w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
-  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(party, w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; } castSpell(a, t, p.spell); return; }
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(party, w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
+    if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
+  { const cv = coverOf(a, t); if (cv.total){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
   if (p.atk) attackWith(a, t, p.atk, null, p.offhand); else castSpell(a, t, p.spell);
 }
@@ -2211,8 +2213,11 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
     let flying = null, landed = null;
     strike(att, tgt, () => {
-      const adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + atk.hit + insp >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
-      const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
+      // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
+      // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
+      const cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
+      const adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
@@ -2311,8 +2316,9 @@ function castSpell(caster, tgt, name, done){
       const m = c.sheet.magic;
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
-        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + m.hit + insp >= targetAc(tgt)); afterAttackRoll(caster);
-        const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
+        const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
+        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
+        const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
         land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
@@ -2340,8 +2346,9 @@ function castSpell(caster, tgt, name, done){
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20() + (t.c.sheet.saves[sp.save] || 0), ok = s >= dc;
-          let line = `${fname(t)} ${sp.save.toUpperCase()} ${s} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
+          const cvS = sp.save === "dex" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20() + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
+          let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
@@ -2486,6 +2493,22 @@ function passWhenSettled(a){
   };
   setTimeout(tick, 600);
 }
+function seekSight(f){
+  const g0 = node.spots && (node.spots.gate || node.spots.bars), crowd = g0 ? foes.filter(o => o !== f && !o.down && Math.hypot(o.x - g0[0], o.y - g0[1]) < 30).length : 0;
+  const g = g0 && [g0[0] - crowd * 34, g0[1] - crowd * 22], say = () => { log(`${fname(f)} has no clear line to anyone and holds, watching.`); setTimeout(() => passTurn(f), 600); };
+  const look = () => {
+    const vis = standing(party).filter(p => !p.c.conds.has("hidden") && !coverOf(f, p).total).sort((a, b) => feetBetween(f, a) - feetBetween(f, b));
+    const bow = f.c.sheet.attacks.find(k => k.ranged);
+    if (vis.length && bow && feetBetween(f, vis[0]) <= (bow.long || bow.reach)){ attackWith(f, vis[0], bow, () => setTimeout(() => passTurn(f), 400)); return; }
+    say();
+  };
+  if (!g || Math.hypot(f.x - g[0], f.y - g[1]) < 12){ look(); return; }
+  const fp = ftPx(f), d = Math.hypot(g[0] - f.x, g[1] - f.y), k = Math.min(1, (f.c.move || 0) * fp / d);
+  if (k <= 0){ look(); return; }
+  f.c.move = Math.max(0, (f.c.move || 0) - Math.round(d * k / fp / 5) * 5);
+  log(`${fname(f)} moves to get a line through the gate.`);
+  f.path = [{x: f.x + (g[0] - f.x) * k, y: f.y + (g[1] - f.y) * k}]; f.onArrive = () => { f.onArrive = null; setAnim(f, "idle"); look(); };
+}
 // end this actor's turn, but only if it is still theirs (callbacks that arrive late must not skip the next one)
 function passTurn(a){ if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
@@ -2554,7 +2577,10 @@ function berserkTarget(f, pool){
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
-  const seen = standing(party).filter(p => !p.c.conds.has("hidden"));
+  const seen0 = standing(party).filter(p => !p.c.conds.has("hidden"));
+  // someone it can see if it can (no wall between them); otherwise the nearest, and it goes round with its blade
+  const inSight = seen0.filter(p => !coverOf(f, p).total), blind = !inSight.length && seen0.length > 0;
+  const seen = inSight.length ? inSight : seen0;
   const tgt = f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(party)) : (seen.length ? seen : standing(party)).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
@@ -2563,7 +2589,11 @@ function foeTurn(f){
   // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
   // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
   const pressed = standing(party).some(p => !incapacitated(p) && feetBetween(f, p) <= 5);
-  const atk = bow && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
+  const atk = bow && !blind && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
+  // NOBODY IN SIGHT (a wall between it and every hero): it does not hack at the stone. If the room has a place to see
+  // in from (story.json `spots`: the pen gate, where the bars give three-quarters cover), it goes there, as far as its
+  // speed allows, and shoots through if it can; otherwise it holds and watches.
+  if (blind){ seekSight(f); return; }
   if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => passTurn(f), 500)); return; }
   if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => passTurn(f), 500); }); return; }
   if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => passTurn(f), 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
@@ -3048,6 +3078,11 @@ function drawCombatGround(){
     const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9; ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, r, r * .55, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
   }
+  if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down && a.kind === "pc"){
+    const cv = coverOf(a, hoverActor), col = cv.total ? "255,80,70" : cv.ac >= 5 ? "255,150,60" : cv.ac >= 2 ? "255,214,102" : "120,230,160";
+    ctx.save(); ctx.setLineDash([10, 8]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = `rgba(${col},.85)`;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y - 6); ctx.lineTo(hoverActor.x, hoverActor.y - 6); ctx.stroke(); ctx.restore();
+  }
   if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down){
     const t = hoverActor, sc = actorScale(t), m = SPR[t.id].json, pulse = .5 + .5 * Math.sin(now / 160);
     ctx.save(); ctx.strokeStyle = `rgba(255,107,94,${.6 + .4 * pulse})`; ctx.lineWidth = 3 / (base * view.z);
@@ -3097,11 +3132,12 @@ function drawSheep(a, top){
 function combatTargetHint(){
   if (!cbt || cbt.phase !== "target" || !hoverActor || hoverActor.kind !== "foe") return null;
   const a = activeActor(), p = cbt.pend, t = hoverActor, sp = p.spell && SPELLS[p.spell];
-  if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}`;
-  const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t), need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
+  const cv = coverOf(a, t); if (cv.total) return `${fname(t)} · no line of sight: ${cv.why} is in the way`;
+  if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}${sp.save === "dex" && cv.ac ? ` · ${cv.label}` : ""}`;
+  const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t) + cv.ac, need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
   let p1 = (21 - need) / 20; if (adv > 0) p1 = 1 - (1 - p1) ** 2; else if (adv < 0) p1 = p1 ** 2;
   const sn = p.atk ? sneakState(a, t, p.atk, feetBetween(a, t) > (p.atk.reach || 5) + 2) : null;
-  return `${fname(t)} · AC ${ac} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft${sn ? " · " + sn.why : ""}`;
+  return `${fname(t)} · AC ${ac}${cv.ac ? ` (${cv.label}: ${cv.why})` : ""} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft${sn ? " · " + sn.why : ""}`;
 }
 
 // ---------- creatures Malachar brings in ----------
@@ -4288,6 +4324,53 @@ function unequipItem(a){
 }
 $("bagBtn").onclick = () => toggleBag();
 $("invClose").onclick = () => toggleBag(false);
+// ---------- line of sight and cover (SRD 5.1, Combat > Cover) ----------
+// Sam, 2026-10-22: "line of sight". A drow on the balcony shot a hero through the stone of the pen wall. Now:
+//   - TOTAL COVER: a wall between them (node.walls, traced along the foot of the stone in spec.py) means the target
+//     "can't be targeted directly by an attack or a spell". The aim refuses it, and a foe picks someone it can see.
+//   - THREE-QUARTERS COVER, +5 AC and DEX saves: "behind a portcullis, an arrow slit, or a thick tree trunk". The pen
+//     gate's bars while it is shut; nothing once it stands open.
+//   - HALF COVER, +2 AC and DEX saves: "a low wall, a large piece of furniture, a narrow tree trunk, or a creature,
+//     whether that creature is an enemy or a friend". Furniture is the node's obstacles; creatures are the others in
+//     the fight standing in the line (the prisoners milling about are not counted, or the pen would be all cover).
+//   "If a target is behind multiple sources of cover, only the most protective degree of cover applies."
+// Sight is tested FOOT TO FOOT on the plate: the walls are traced where the floor meets the stone, so anyone standing
+// behind a wall in the painting is behind its line.
+function segCross(a, b, c, d){
+  const r = (p, q, s) => (q.x - p.x) * (s.y - p.y) - (q.y - p.y) * (s.x - p.x);
+  const d1 = r(c, d, a), d2 = r(c, d, b), d3 = r(a, b, c), d4 = r(a, b, d);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+function segNear(a, b, p){             // how close p comes to the segment, and how far along it
+  const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L));
+  return {d: Math.hypot(a.x + dx * u - p.x, a.y + dy * u - p.y), u};
+}
+function coverOf(att, tgt){
+  const A = {x: att.x, y: att.y}, B = {x: tgt.x, y: tgt.y};
+  let ac = 0, why = "";
+  for (const w of node.walls || []){
+    const L = w.line;
+    for (let i = 0; i + 1 < L.length; i++){
+      if (!segCross(A, B, {x: L[i][0], y: L[i][1]}, {x: L[i + 1][0], y: L[i + 1][1]})) continue;
+      if (w.kind === "gate"){ if (!state.gateOpen && ac < 5){ ac = 5; why = w.label || "the bars"; } }
+      else return {total: true, ac: 0, why: w.label || "a wall", label: "total cover"};
+    }
+  }
+  if (ac < 2 && feetBetween(att, tgt) > 7){
+    for (const o of node.obstacles || []){                                   // furniture: sample the line through the ellipse
+      for (let k = 1; k < 10; k++){ const x = A.x + (B.x - A.x) * k / 10, y = A.y + (B.y - A.y) * k / 10;
+        if (((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1){ ac = 2; why = "furniture"; break; } }
+      if (ac >= 2) break;
+    }
+    if (ac < 2 && cbt) for (const c of cbt.order){
+      if (c === att || c === tgt || c.down || !actors.includes(c)) continue;
+      const m = SPR[c.id].json, n = segNear(A, B, c);
+      if (n.u > .08 && n.u < .92 && n.d < 22 * actorScale(c) * (m.cell[0] / 128)){ ac = 2; why = fname(c); break; }
+    }
+  }
+  return {total: false, ac, why, label: ac >= 5 ? "three-quarters cover +5" : ac >= 2 ? "half cover +2" : ""};
+}
+const coverNote = cv => cv.ac ? ` (${cv.label}: ${cv.why})` : "";
 // ---------- the weapon in the hand ----------
 // Sam, 2026-10-15: "I'm not seeing the weapons being used by the pixel characters." The heroes' pixel art was drawn
 // empty-handed, and repainting every frame for every weapon is not affordable (about 500 frames a hero). So the
