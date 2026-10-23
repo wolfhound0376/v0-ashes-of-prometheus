@@ -3500,11 +3500,47 @@ function drawCombatGround(){
     ctx.save(); ctx.setLineDash([10, 8]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = `rgba(${col},.85)`;
     ctx.beginPath(); ctx.moveTo(a.x, a.y - 6); ctx.lineTo(hoverActor.x, hoverActor.y - 6); ctx.stroke(); ctx.restore();
   }
-  if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down){
-    const t = hoverActor, sc = actorScale(t), m = SPR[t.id].json, pulse = .5 + .5 * Math.sin(now / 160);
-    ctx.save(); ctx.strokeStyle = `rgba(255,107,94,${.6 + .4 * pulse})`; ctx.lineWidth = 3 / (base * view.z);
-    ctx.beginPath(); ctx.ellipse(t.x, t.y, 40 * sc * (m.cell[0] / 128), 14 * sc * (m.cell[0] / 128), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  // THE TARGET'S BASE GLOWS (Sam, 2026-10-22: "When selecting a target for a spell they should be highlighted at
+  // their base with red if it is offensive and yellow if a boon/buff/heal."). It used to be a red ring under a
+  // hovered foe only, so a heal or a buff aimed at a friend marked nobody. Now whoever the click would act on gets
+  // a lit disc and a pulsing ring at their feet, red for harm and yellow for help, by the same rules the click uses.
+  const aimed = aimTargetFor(hoverActor);
+  if (aimed){
+    const t = aimed.t, sc = actorScale(t), m = SPR[t.id].json, pulse = .5 + .5 * Math.sin(now / 160);
+    const col = aimed.boon ? "255,224,58" : "255,96,80", rx = 40 * sc * (m.cell[0] / 128), ry = 14 * sc * (m.cell[0] / 128);
+    ctx.save(); ctx.beginPath(); ctx.ellipse(t.x, t.y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${col},${.16 + .1 * pulse})`; ctx.fill();
+    ctx.strokeStyle = `rgba(${col},${.65 + .35 * pulse})`; ctx.lineWidth = 3 / (base * view.z); ctx.stroke(); ctx.restore();
   }
+}
+// Who a click on `t` would act on while aiming, and whether it helps them: {t, boon} or null. The same tests as
+// combatClick, so the colour never disagrees with what the click then does. Range and sight are left to the click,
+// which explains a refusal in words.
+function aimTargetFor(t){
+  if (!t || !cbt || cbt.phase !== "target" || mode !== "combat") return null;
+  const a = activeActor(); if (!a || a.kind !== "pc") return null;
+  const p = cbt.pend || {}, sp = p.spell && SPELLS[p.spell];
+  if (p.inspire) return hero(t) && t !== a && !t.down ? {t, boon: true} : null;
+  if (p.help) return hero(t) && t !== a ? {t, boon: true} : null;
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")) return hero(t) ? {t, boon: true} : null;
+  if (sp && sp.area) return null;                    // an area is aimed at the floor, and its circle already shows
+  return t.kind === "foe" && !t.down ? {t, boon: false} : null;
+}
+// THE TICK (Sam: "An audible but subtle click should be heard briefly"). Fifteen milliseconds of band-passed noise,
+// made here like the lullaby, so there is no file to fetch: lower for a target you would hurt, brighter for one you
+// would help. Once per new target, never faster than a few a second however fast the mouse crosses a crowd, and not
+// again for the same body when the cursor slips off its edge and straight back on.
+let aimTickKey = null, aimTickAt = 0, aimTickLast = null;
+function aimTick(boon, id){
+  const t = performance.now(); if (t - aimTickAt < 60 || (id === aimTickLast && t - aimTickAt < 400)) return; aimTickAt = t; aimTickLast = id;
+  try {
+    const ctx = audioCtx(); if (ctx.state !== "running") return;
+    const len = Math.max(1, Math.floor(ctx.sampleRate * .015)), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * .18));
+    const src = ctx.createBufferSource(), band = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = buf; band.type = "bandpass"; band.frequency.value = boon ? 3600 : 2300; band.Q.value = 4; g.gain.value = .28;
+    src.connect(band).connect(g).connect(ctx.destination); src.start();
+  } catch (e) {}
 }
 function drawConds(a){
   if (!a.c || a.down) return;
@@ -4142,6 +4178,7 @@ stage.addEventListener("pointermove", e => {
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
+  { const ai = aimTargetFor(hoverActor), key = ai ? ai.t.id : null; if (key !== aimTickKey){ aimTickKey = key; if (ai) aimTick(ai.boon, key); } }
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
   const hp = !hoverActor && (mode === "explore" || mode === "combat") ? pileAt(w) : null;
