@@ -27,7 +27,7 @@ import { ImpactBurst } from "./impact-burst"
 import { spellEntry, type AreaSpec } from "@/lib/spellbook"
 import { schoolOf, schoolRampFor, schoolRuneFor } from "@/lib/spell-school"
 import { RuneRing } from "./rune-ring"
-import { MARTIAL_SCALE, martialArtFor, martialImpactFor } from "@/lib/martial-arts"
+import { MARTIAL_DIRECTIONAL, MARTIAL_SCALE, martialArtFor, martialImpactFor, strikeFacesLeft } from "@/lib/martial-arts"
 import { FEET_PER_SQUARE } from "@/lib/aoe"
 import { MOTION, flightFrame, poseAt, screenRoll, stretchAt, type MotionKind } from "@/lib/projectile-motion"
 
@@ -929,6 +929,9 @@ export function castSpellKitVfx(opts: {
         : 0.0
   const impactAt = charge + flightTime
   const impactLife = 0.9
+  // The strike this is, if it is one (lib/martial-arts). Read here so both the
+  // sheet choice below and the impact frame can see it.
+  const martial = martialArtFor(opts.spell)
   // A flourish outlives the impact sheet: the glow settles over the body
   // after the shimmer, the ghosts keep laughing after the blow.
   const lifetime = impactAt + Math.max(impactLife, flourishSpec?.life ?? 0)
@@ -1028,7 +1031,6 @@ export function castSpellKitVfx(opts: {
     //
     // Null for an ordinary weapon swing, so a longsword still blooms with
     // physicalImpact exactly as it always has.
-    const martial = martialArtFor(opts.spell)
     const impactKey = martialImpactFor(opts.spell) ?? spec.impact
     if (impactKey) {
       void loadSheet(impactKey).then((s) => {
@@ -1357,12 +1359,22 @@ export function castSpellKitVfx(opts: {
           billboard(impact.mesh)
         }
         impact.setProgress(p)
-        impact.opacity = 1 - Math.max(0, (p - 0.7) / 0.3)
+        // A strike spark stops; it does not fade. Its sheet is drawn at full
+        // opacity and then goes OFF at 80% of its life (bake_strike_sparks.py),
+        // so the kit's tail fade would only smear the frames before the cut.
+        impact.opacity = martial ? 1 : 1 - Math.max(0, (p - 0.7) / 0.3)
         // THE PUNCH. It lands big and settles in a tenth of a second — the
         // overshoot-and-settle every hit in a fighting game has, and the
         // single cheapest thing that makes an impact feel like it has mass.
         const punch = 1 + 0.35 * Math.max(0, 1 - it / 0.12)
         impact.mesh.scale.setScalar(punch)
+        // An arc spark is drawn with the attacker facing right. Mirror it when
+        // the blow travels toward screen-left, by the same camera-right test
+        // that turns Vicious Mockery's ghosts toward their victim.
+        if (martial && MARTIAL_DIRECTIONAL.has(martial) && opts.camera) {
+          camRight.set(1, 0, 0).applyQuaternion(opts.camera.quaternion)
+          if (strikeFacesLeft(hand.x, hand.z, dest.x, dest.z, camRight.x, camRight.z)) impact.mesh.scale.x = -punch
+        }
         if (light) {
           light.position.copy(dest).sub(group.position)
           // A spike, not a ramp: bright for a few frames, then the decay.
