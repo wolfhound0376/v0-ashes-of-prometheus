@@ -157,6 +157,11 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
    action · magic · move — each with the dashboard's painted action icon (public/icons/actions, 96 px copies). */
 .cbt-menu{display:flex;flex-wrap:wrap;align-items:stretch;gap:5px;background:linear-gradient(180deg,rgba(28,18,12,.96),rgba(16,10,8,.94));border:1px solid var(--ember);border-radius:6px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.6)}
 .cbt-menu[hidden]{display:none}
+/* the command bar steps aside while the DM drawer is open (Sam, 2026-10-21: "This window is in the way of my DM tools.
+   Please have the bottom window minimize when this is up.") — a small tab stays; clicking it closes the drawer */
+.cbt-mini{all:unset;display:none;justify-self:center;cursor:pointer;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.08em;color:var(--ember);background:rgba(16,10,8,.94);border:1px solid var(--ember);border-radius:6px 6px 0 0;padding:3px 14px;margin:0 auto}
+body.dm-open .cbt-menu:not([hidden]){display:none}
+body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu button{all:unset;display:grid;grid-template-columns:38px 1fr;grid-template-rows:auto auto;column-gap:7px;align-items:center;width:168px;min-height:46px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
 .cbt-menu button .ico{grid-row:1/3;width:38px;height:38px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
 .cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:20px;color:var(--ember)}
@@ -370,6 +375,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   </div>
 
   <div class="cbt-menu" id="cbtMenu" hidden></div>
+  <button class="cbt-mini" id="cbtMini" title="Close DM tools and bring the commands back">▲ Commands (DM tools open)</button>
   <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
 </div>
 
@@ -412,7 +418,7 @@ function noteSeats(seated){
   renderSeats();
   if (!gearLoaded && seatsSeen.length){ gearLoaded = true; setTimeout(() => loadGear(), 0); }   // what each hero really carries
 }
-function characterIdOf(slug){ const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
+function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
 async function seatCompanion(slug){
   const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({name: PLAYS_AS[slug] || slug})});
@@ -581,7 +587,7 @@ function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE 
 function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
   const sp = SPR[a.id];
-  if (a.down && a.kind !== "pc" && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
+  if (a.down && !hero(a) && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
   if (asleepNow(a)){
     const A = sp.json.animations;
     if (A.sleep && sp.img.sleep){ const an = A.sleep; return {img: sp.img.sleep, f: Math.floor((now - (a.sleepT0 || 0)) / 1000 * an.fps) % an.frames, pose: "sleep"}; }
@@ -672,7 +678,7 @@ function draw(){
     ctx.beginPath(); ctx.ellipse(marker.x, marker.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
   }
   for (const c of node.chains || []) drawChain(c);
-  drawCombatGround();
+  drawCombatGround(); drawStuckGround();
   if (mode === "combat") drawFxLayer(true);
   const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
   for (const a of list){
@@ -730,6 +736,7 @@ function draw(){
     } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
     if (pose) ctx.filter = "none";
     if (held && !held.behind) drawHeld(a, held, sc, py, cw, fy);
+    drawStuckOn(a, fy, pose);
     if (a.flash > now){
       ctx.globalAlpha = .55 * a.alpha;
       // tint by redrawing through a temp canvas
@@ -739,6 +746,7 @@ function draw(){
       ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
     }
     if (mode === "combat") drawConds(a);
+    if (mode === "combat" && a.kind === "pc" && a.down && a.c && a.c.ds) drawDeathSaves(a);
     if (a.talk && !state.talked[a.id] && mode === "explore"){
       ctx.globalAlpha = 1; const bob = Math.sin(now / 260) * 6, top = dy + dh * .18 - 26 + bob;
       ctx.fillStyle = "#e8a24a"; ctx.strokeStyle = "#1a0f05"; ctx.lineWidth = 4;
@@ -747,7 +755,7 @@ function draw(){
     }
   }
   if (mode === "combat") drawFxLayer(false);
-  drawCombatFx();
+  drawCombatFx(); drawShots();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -1282,7 +1290,7 @@ function stopLullaby(){
   try { const ctx = audioCtx(), g = lullaby.gain; g.gain.cancelScheduledValues(ctx.currentTime); g.gain.setValueAtTime(g.gain.value, ctx.currentTime); g.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.5); setTimeout(() => g.disconnect(), 1700); } catch (e) {}
 }
 // it stops when the last sleeper wakes (or the fight ends)
-setInterval(() => { if (lullaby.on && !(cbt && [...party, ...foes].some(a => a.c && a.c.conds.has("asleep")))) { if (now - (lullaby.since || 0) > 3500) stopLullaby(); } else if (lullaby.on) lullaby.since = now; }, 500);
+setInterval(() => { if (lullaby.on && !(cbt && [...heroes(), ...foes].some(a => a.c && a.c.conds.has("asleep")))) { if (now - (lullaby.since || 0) > 3500) stopLullaby(); } else if (lullaby.on) lullaby.since = now; }, 500);
 const DOOR_SFX = ["door-open", "door-close", "door-locked", "lock-picked", "lock-pick-fail"];
 
 // ---------- the pen door: a real leaf that swings ----------
@@ -1662,8 +1670,9 @@ function weaponSfx(atk, tgt){
     : /mace|hammer|maul|club|staff|greatsword|axe|halberd|pick|morningstar|pike|bar/.test(n) ? "combat/melee_swing_heavy"
     : /claw|bite|slam|pseudopod/.test(n) ? "combat/unarmed_hit" : "combat/melee_swing_light";
   const ac = tgt ? targetAc(tgt) : 0, fist = /unarmed|fist|punch|kick/.test(n);
-  // a bare fist lands with Sam's own punch (ElevenLabs take 1, 2026-10-15: "a better sound ... for unarmed attack")
-  const hit = ranged ? "combat/arrow_hit_flesh" : fist ? "walk:unarmed-hit" : (atk.type || "") === "bludgeoning" ? "combat/melee_hit_bludgeon"
+  // a bare fist lands with the ElevenLabs library's "quick movement punch on a bag" (Sam, 2026-10-22, after the made-up
+  // arcade takes: "Eleven labs has combat sounds use those" / "punch can use quick punch bag movement")
+  const hit = ranged ? "combat/arrow_hit_flesh" : fist ? "walk:punch-bag" : (atk.type || "") === "bludgeoning" ? "combat/melee_hit_bludgeon"
     : ac >= 17 ? "combat/melee_hit_plate" : ac >= 14 ? "combat/melee_hit_chainmail" : "combat/melee_hit_flesh";
   return {swing, hit, miss: ranged ? "combat/arrow_hit_stone" : "combat/melee_miss"};
 }
@@ -1683,16 +1692,16 @@ const wardsHere = () => node.wards || null;
 // spells are SRD 5.2.1 at level 1.
 const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {medicine: -1, stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: []}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {stealth: 2, athletics: 0, perception: 3},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {medicine: 5, stealth: 2, athletics: 0, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {stealth: 2, athletics: 1, perception: 3},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {medicine: 1, stealth: 2, athletics: 1, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {stealth: 7, athletics: 1, perception: 1},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {medicine: 1, stealth: 7, athletics: 1, perception: 1},
            // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
            // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
            sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -1700,9 +1709,15 @@ const SHEETS = {
 };
 // Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
 // sheet_save_proficiencies is wired in step 2). Monster saves below are their ability modifiers, as the rows carry no save list.
+// SRD 5.1 Drow: "Hand Crossbow. Ranged Weapon Attack: +4 to hit, range 30/120 ft., one target. Hit: 5 (1d6 + 2) piercing
+// damage, and the target must succeed on a DC 13 Constitution saving throw or be poisoned for 1 hour. If the saving throw
+// fails by 5 or more, the target is also unconscious while poisoned in this way. The target wakes up if it takes damage or
+// if another creature takes an action to shake it awake." (Sam, 2026-10-15: "Yes" to the guards shooting back.)
+// Jorlan keeps the block he had: his canon stat block is not the guard's, and none is invented for him here.
+const HAND_XBOW_DROW = {name: "Hand Crossbow", hit: 4, dmg: "1d6+2", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}};
 const FOE_BLOCKS = {
-  "drow-guard-male":   {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  "drow-guard-female": {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
+  "drow-guard-male":   {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
+  "drow-guard-female": {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
   jorlan:              {name: "Jorlan", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
   "giant-spider": {name: "Giant spider", xp: 200, passive: 10, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
                    attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d8", type: "poison", half: true}}],
@@ -1715,6 +1730,34 @@ const FOE_BLOCKS = {
                 immuneCond: ["blinded", "charmed", "deafened", "frightened", "prone"],
                 attacks: [{name: "Pseudopod", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5, extra: {dmg: "2d6", type: "acid"}}]},
 };
+// THE ALLIES WHO FIGHT (Sam, 2026-10-15: "Make allied NPCs actually fight in the painted map (mostly just Ront,
+// Eldeth, Prince Derendil, and Sarith)"). Same rule as SHEETS and FOE_BLOCKS — nothing made up:
+//   hp, ac, ability scores  — their own `characters` rows (snapshot 2026-10-15; Derendil's row ac 14, the block's 13 —
+//                             the row wins, as it does for the party)
+//   attacks, traits         — their `bestiary` rows (Ront, Sarith: SRD 5.1; Eldeth, Derendil: Out of the Abyss)
+// They are prisoners and hold nothing (inventory_items is empty for all four), so like the party they fight with
+// fists — Unarmed Strike, SRD 5.2.1: STR mod + proficiency to hit, 1 + STR mod bludgeoning — until a weapon reaches
+// them. `kit` is the block's own line for each weapon it lists; it is used only when they actually carry that weapon
+// (loadGear reads their inventory like a hero's). Derendil's claws are his body, so he always has them.
+// `multi`: the block's Multiattack. Ront's Aggressive (bonus action: move up to his speed toward a hostile creature
+// he can see) and Derendil's Wounded Fury (10 HP or fewer: advantage, +2d6 on a melee hit) are their block traits.
+// Saves are ability modifiers, as for the foes (the rows carry no save list).
+const ALLY_SHEETS = {
+  ront:     {name: "Ront", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
+             attacks: [{name: "Unarmed Strike", hit: 5, dmg: "4", type: "bludgeoning", reach: 5}],
+             kit: {greataxe: {name: "Greataxe", hit: 5, dmg: "1d12+3", type: "slashing", reach: 5}, javelin: {name: "Javelin", hit: 5, dmg: "1d6+3", type: "piercing", reach: 5, thrown: 30}}},
+  eldeth:   {name: "Eldeth", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
+             attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
+             kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, longbow: {name: "Longbow", hit: 4, dmg: "1d8+2", type: "piercing", reach: 150}}},
+  derendil: {name: "Derendil", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
+             attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], kit: {}},
+  sarith:   {name: "Sarith", cls: "Drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
+             attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
+             kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, "hand crossbow": {name: "Hand Crossbow", hit: 4, dmg: "1d6+2", type: "piercing", reach: 30}}},
+};
+// their `characters` ids, so the walk can read what they carry the way it reads a hero's (/api/equipment)
+const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b65375-f25e-4773-bf41-641be0f12b86",
+                  derendil: "e0c652fe-2f68-40ff-823d-bb7ac34f529f", sarith: "cc309888-e98d-4cfe-8bf1-d75787b8ec8e"};
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
 const SPELLS = {
   "Ray of Frost":       {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "cold", fx: "#9fdcff", note: "speed −10 ft"},
@@ -1732,7 +1775,7 @@ const SPELLS = {
   "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
-const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
+const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
@@ -1762,14 +1805,16 @@ let cbt = null;                                   // the running fight
 const activeActor = () => cbt ? cbt.order[cbt.idx] : null;
 let combatBusy = false;
 function fighterFor(a){
-  const s = a.kind === "pc" ? SHEETS[a.id] : FOE_BLOCKS[a.id];
-  const hpMax = a.kind === "pc" ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = a.kind === "pc" ? s.hp : (a.hp ?? hpMax);
+  const s = a.kind === "pc" ? SHEETS[a.id] : a.ally ? ALLY_SHEETS[a.id] : FOE_BLOCKS[a.id];
+  const own = a.kind === "pc" || a.ally;
+  const hpMax = own ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = own ? s.hp : (a.hp ?? hpMax);
   return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
 function startCombat(foeIds, label){
   if (mode !== "explore") return;
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
+  const allies = alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
   hoverZone = null; tip.hidden = true;
   const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
   let dir;
@@ -1807,10 +1852,10 @@ function startCombat(foeIds, label){
   camTo(z, cx, cy, 900);
   $("vignette").classList.add("on"); setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
-  const order = [...party, ...foes].filter(a => !a.down);
-  for (const a of order){ a.c = a.c && a.kind === "pc" ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
+  const order = [...party, ...allies, ...foes].filter(a => !a.down);
+  for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
-  cbt = {order, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
+  cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
   bank("ui/initiative_start", .8);
@@ -1820,6 +1865,11 @@ function startCombat(foeIds, label){
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
+// The heroes' side of a fight: the party plus the allies fighting beside them (cbt.allies).
+const hero = a => !!a && (a.kind === "pc" || !!a.ally);
+const heroes = () => [...party, ...(cbt ? cbt.allies : [])];
+// Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
+const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
 // SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
 // Sam, 2026-10-14: "how did the spider do an opportunity attack if it is sleeping?" — it no longer can.
 const INCAP = ["asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified"];
@@ -1862,7 +1912,9 @@ function renderParty(){
     const slots = Object.entries(c.slots).map(([l, n]) => `<span class="slots" title="Level ${l} spell slots">${"●".repeat(n)}${"○".repeat(Math.max(0, (c.sheet.magic.slots[l] || 0) - n))}</span>`).join("");
     const conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
     const conc = c.conc ? `<b class="conc" style="color:#9fe6ff" title="Concentrating on ${esc(c.conc.spell)}: taking damage means a CON save (DC 10 or half the damage)">◎ ${esc(c.conc.spell)}</b>` : "";
-    row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}${conc}</div>
+    const ds = p.down && c.ds ? (c.ds.dead ? `<b style="color:#ff6b5e">☠ dead</b>` : c.ds.stable ? `<b style="color:#9ff2c8">stable</b>`
+      : `<b title="Death saves: three successes and they are stable, three failures and they die" style="letter-spacing:1px"><span style="color:#62e3c6">${"●".repeat(c.ds.s)}${"○".repeat(3 - c.ds.s)}</span> <span style="color:#ff5a4a">${"●".repeat(c.ds.f)}${"○".repeat(3 - c.ds.f)}</span></b>`) : "";
+    row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}${conc}${ds}</div>
       <div class="hp"><i style="width:${100 * c.hp / c.hpMax}%"></i><span>${c.hp} / ${c.hpMax}</span></div>${slots}`;
     el.appendChild(row);
   }
@@ -1871,33 +1923,40 @@ function renderParty(){
 // ----- turns -----
 function nextTurn(first){
   if (!cbt || (combatBusy && !first)) return;
-  closeMenu(); cbt.phase = "idle";
+  closeMenu(); cbt.phase = "idle"; cbt.turnNo = (cbt.turnNo || 0) + 1;
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0) cbt.round++;
-    const a = cbt.order[cbt.idx]; if (!a.down && actors.includes(a)) break;
+    const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a)) break;
   }
   const a = activeActor(); if (!a) return;
+  if (a.down){ renderTurns(); renderParty(); if (deathSaveTurn(a)) return; }
   if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.reactionUsed = false;
   renderTurns(); renderParty();
+  if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
     const s = d20() + (a.c.sheet.saves.wis || 0);
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
-  a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true;
-  a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...party, ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
+  a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
+  // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
+  if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
+    log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => passTurn(a), 700); return; } }
+  a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...heroes(), ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
+  if (a.ally){ bank("ui/turn_chime", .5); allyTurn(a); return; }
   bank(CLASS_TURN[a.c.sheet.cls] || "ui/turn_chime", .7);
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
   openMenu(a);
 }
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
+  if (!a || a.down) return;                                    // the fallen get no commands; passWhenSettled moves the turn on
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
     const sic = SPELL_ICON[label];
@@ -1939,7 +1998,15 @@ function openMenu(a, sub){
     if (sa){ ACTION_ICON["Sneak Attack"] = "attack";
       add("Sneak Attack", c.sneakUsed ? "already used this turn" : `+${sa.sneak} on a ${sa.name} hit · ✓ marks the foes it works on`, c.action && !c.sneakUsed ? () => aim(a, {atk: sa, sneakAim: true}) : null); }
     const thrown = s.attacks.find(k => k.thrown);
-    if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
+    if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}${thrown.item ? " · it lands on the floor" : ""}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
+    for (const fa of flaskAttacks(a)){ ACTION_ICON["Throw: " + fa.name] = "offhand-attack";
+      add(`Throw: ${fa.name}`, `${fa.blurb} · up to ${fa.thrown} ft · +${fa.hit}${fa.qty > 1 ? ` · ${fa.qty} left` : ""}`, c.action ? () => aim(a, {atk: fa, throwing: true}) : null); }
+    // shaking a friend out of a drow-poison stupor or a Sleep spell (SRD: "another creature takes an action to shake it awake")
+    for (const t of party) if (t !== a && t.c && t.c.conds.has("asleep") && !t.down && feetBetween(a, t) <= 5.5){ ACTION_ICON["Shake awake: " + fname(t)] = "help";
+      add(`Shake awake: ${fname(t)}`, "your action", c.action ? () => { c.action = false; t.c.conds.delete("asleep"); t.c.drugged = false; popText(t, "awake", "#b0b8ff"); log(`${fname(a)} shakes ${fname(t)} awake.`); renderParty(); afterAction(a); } : null); }
+    for (const t of party) if (t !== a && dyingNow(t) && feetBetween(a, t) <= 5.5){ ACTION_ICON["Stabilize: " + fname(t)] = "help";
+      add(`Stabilize: ${fname(t)}`, `your action · Medicine ${sgn((s.skills || {}).medicine ?? 0)} vs DC 10`, c.action ? () => stabilize(a, t) : null); }
+    if (c.conds.has("burning")) add("Put out the flames", "your action · DC 10 DEX", c.action ? () => putOutFire(a, () => afterAction(a)) : null);
     // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
     add("Hide", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
     add("Shove / Grapple", `unarmed · they save vs DC ${shoveDc(a)}`, c.action ? () => openMenu(a, "shove") : null);
@@ -1949,7 +2016,8 @@ function openMenu(a, sub){
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? s.saves.wis)}`, c.action ? () => doSearch(a) : null);
     for (const it of (GEAR[a.id] || {carried: []}).carried.filter(c => isWeapon(c) && c.name !== GEAR[a.id].main))
-      { ACTION_ICON["Equip: " + it.name] = "attack"; add(`Equip: ${it.name}`, "your action · it becomes your weapon", c.action ? () => equipItem(a, it.name) : null); }
+      { ACTION_ICON["Equip: " + it.name] = "attack"; const n = GEAR[a.id].main ? 2 : 1, k = gearCost(a, n);
+        add(`Equip: ${it.name}`, k.ok ? `${k.label}${n === 2 ? " · a swap" : ""}` : "no free interaction or action left", k.ok ? () => equipItem(a, it.name) : null); }
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
     if (s.magic || s.innateSorcery) grp("magic");
     // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
@@ -1990,7 +2058,7 @@ function openMenu(a, sub){
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
-    const webbed = standing(party).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
+    const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
     if (c.conds.has("prone")) add("Stand up", `half your speed (${Math.floor(s.speed / 2)} ft)`, c.move >= Math.floor(s.speed / 2) ? () => { c.move -= Math.floor(s.speed / 2); c.conds.delete("prone"); setAnim(a, "idle"); renderParty(); openMenu(a); } : null);
     add("End turn", "Enter", () => nextTurn(), "end");
@@ -2029,13 +2097,15 @@ function combatClick(w){
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
-  if (p.inspire){ const t = hitActor(party, w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
+  if (p.inspire){ const t = hitActor(heroes(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
     if (t.c.conds.has("inspired")){ toast(`${fname(t)} already has an inspiration die.`); return; } inspire(a, t); return; }
-  if (p.help){ const t = hitActor(party, w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
+  if (p.help){ const t = hitActor(heroes(), w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
-  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(party, w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; } castSpell(a, t, p.spell); return; }
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(heroes(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
+    if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
+  { const cv = coverOf(a, t); if (cv.total){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
   if (p.atk) attackWith(a, t, p.atk, null, p.offhand); else castSpell(a, t, p.spell);
 }
@@ -2132,8 +2202,14 @@ function moveActor(a, w, done){
 }
 
 // ----- resolving -----
-function advantageOn(att, tgt, ranged){
+function advantageOn(att, tgt, ranged, atk){
   let adv = 0;
+  if (att.c.conds.has("poisoned")) adv--;                                     // SRD: poisoned — disadvantage on attack rolls
+  if (ranged){                                                                // SRD: a ranged attack with a hostile within 5 ft,
+    const near = (hero(att) ? standing(foes) : standing(heroes())).some(h => h !== tgt && !incapacitated(h) && feetBetween(att, h) <= 5) || (!incapacitated(tgt) && feetBetween(att, tgt) <= 5);
+    if (near) adv--;                                                          // or beyond the weapon's normal range
+    if (atk && atk.long && feetBetween(att, tgt) > atk.reach) adv--;
+  }
   if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep")) adv++;
   if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--;
   if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
@@ -2151,7 +2227,7 @@ function sneakState(att, tgt, atk, ranged){
   if (!atk || !atk.sneak) return null;
   if (att.c.sneakUsed) return {on: false, why: "used this turn"};
   if (!tgt) return {on: null, why: `+${atk.sneak} with advantage, or an ally next to the target`};
-  const adv = advantageOn(att, tgt, ranged), ally = standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5);
+  const adv = advantageOn(att, tgt, ranged), ally = standing(hero(att) ? heroes() : foes).some(p => p !== att && feetBetween(p, tgt) <= 5);
   if (adv < 0) return {on: false, why: "no sneak attack at disadvantage"};
   if (adv > 0) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (advantage)`};
   if (ally) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (ally beside it)`};
@@ -2177,33 +2253,50 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     pushCam(att, tgt);
     const ws = weaponSfx(atk, tgt), cs = CREATURE_SFX[att.id];
     if (cs && cs.call && now - (att.lastCall || 0) > 1500){ att.lastCall = now; bank(cs.call, .7); }
-    bank(ws.swing, .6);
-    const ranged = feetBetween(att, tgt) > (atk.reach || 5) + 2;
+    // a bow, crossbow, sling, dart or blowgun SHOOTS: the string sounds at the release, not before the wind-up,
+    // and the blow lands when the shot arrives (fireShot), not on the shooter's attack frame
+    const shot = shotKind(atk, att, tgt);
+    if (!shot) bank(ws.swing, .6); else att.aimAt = chestOf(tgt, 0);
+    const ranged = !!shot || feetBetween(att, tgt) > (atk.reach || 5) + 2;
+    // a thrown weapon or flask leaves the hand: out of the bag now (the flask is spent; the weapon lands on the floor)
+    if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
+    let flying = null, landed = null;
     strike(att, tgt, () => {
-      const adv = advantageOn(att, tgt, ranged), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + atk.hit + insp >= targetAc(tgt)); att.c.conds.delete("mocked"); afterAttackRoll(att);
-      const why = `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${targetAc(tgt)}`;
+      // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
+      // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
+      const cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
+      const adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
       if (r === 1) bank("ui/nat1", .7);
-      lunge(att, tgt, 14 * actorScale(att));
+      if (shot){ bank(ws.swing, .75); att.aimHold = now;
+        flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
+      else { lunge(att, tgt, 14 * actorScale(att)); lands(); }
+      function lands(){
       const sw = swipeStyle(atk, crit, att);
-      if (!hit){ swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(ws.miss, .7); log(`${why} — miss.`); narrate(att, `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
+      if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
+      if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
+      if (!hit){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); log(`${why} — miss.`); narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
-      const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(party).some(p => p !== att && feetBetween(p, tgt) <= 5)));
+      const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(heroes()).some(p => p !== att && feetBetween(p, tgt) <= 5)));
       if (sneak) att.c.sneakUsed = true;
       knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
-      swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90);
-      spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: crit ? 2.6 : 2});
+      if (!shot){ swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90); }
+      spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2});
+      if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
       if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
       damage(tgt, dmg.total, atk.type, crit, att);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (tgt.kind === "pc" ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
+      if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
-    }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); });
+      }
+    }, () => Promise.resolve(flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)));
   });
 }
 function castSpell(caster, tgt, name, done){
@@ -2272,8 +2365,9 @@ function castSpell(caster, tgt, name, done){
       const m = c.sheet.magic;
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
-        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, targetAc(tgt)), hit = crit || (r !== 1 && r + m.hit + insp >= targetAc(tgt)); afterAttackRoll(caster);
-        const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${targetAc(tgt)}`;
+        const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
+        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
+        const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
         land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
@@ -2301,8 +2395,9 @@ function castSpell(caster, tgt, name, done){
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20() + (t.c.sheet.saves[sp.save] || 0), ok = s >= dc;
-          let line = `${fname(t)} ${sp.save.toUpperCase()} ${s} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
+          const cvS = sp.save === "dex" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20() + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
+          let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
@@ -2344,7 +2439,7 @@ function doShove(a, t, what){
       const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
-      bank("walk:unarmed-hit", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
+      bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
       else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const to = nearestWalkable(t.x + d.x * ftPx(t) * 5, t.y + d.y * ftPx(t) * 5); t.x = to.x; t.y = to.y; narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
@@ -2398,13 +2493,25 @@ function concSave(a, dmg){
 function damage(t, n, type, crit, from){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
   if ((s.resist || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resist", "#aaa"); }
+  if (t.kind === "pc" && t.down){                                             // already at 0
+    if (t.c.ds && !t.c.ds.dead){ popText(t, String(n), "#ff6b5e"); burst(t, "#ff5040", 8);
+      if (n >= t.c.hpMax) dieNow(t, "struck while down by a blow as great as their whole life");
+      else { log(`${fname(t)} is hit while down: ${crit ? "two death-save failures" : "a death-save failure"}.`); deathMark(t, false, crit ? 2 : 1, "struck while dying"); } }
+    return;
+  }
+  const over = n - t.c.hp;
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
+  if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
   t.flash = now + 180; t.flashCol = "#fff";
-  popText(t, String(n), crit ? "#ffd166" : t.kind === "pc" ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
+  popText(t, String(n), crit ? "#ffd166" : hero(t) ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
-  t.c.conds.delete("asleep"); if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
+  t.c.conds.delete("asleep"); t.c.drugged = false; if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
   if (t.c.conc && t.c.hp > 0 && n > 0) concSave(t, n);
   if (t.kind === "foe" && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.berserk) goBerserk(t);
+  if (t.ally && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.fury){   // Derendil, on our side: same trait, no hunt for casters
+    t.c.fury = true; popText(t, "WOUNDED FURY", "#ff4a2a", 1.2); burst(t, "#ff4a2a", 20);
+    log(`<b>${fname(t)}</b> — Wounded Fury: advantage on his attacks and +2d6 on every claw that lands.`); narrate(t, `${fname(t)} roars, bleeding, and keeps coming.`);
+  }
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   renderParty();
@@ -2413,19 +2520,59 @@ function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) pl
 function fall(t){
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
+  if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: false, dead: false};
   const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_downed" : cs && cs.death ? cs.death : "creature/death_beast", .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
   if (SPR[t.id].img.dead){ playOnce(t, "dead", () => {}); if (SPR[t.id].json.animations.dead.frames === 1) t.deadSwap = now; } else t.deadT0 = now;   // a one-frame corpse (the spider) cross-fades in from the standing body
-  log(`<b>${fname(t)}</b> ${t.kind === "pc" ? "goes down." : "is dead."}`);
+  log(`<b>${fname(t)}</b> ${hero(t) ? "goes down." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
-  popText(t, t.kind === "pc" ? "down" : "slain", t.kind === "pc" ? "#ff6b5e" : "#ffd166", 1.3); hitstop(160); shake(10);
+  popText(t, hero(t) ? "down" : "slain", hero(t) ? "#ff6b5e" : "#ffd166", 1.3); hitstop(160); shake(10);
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
     const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
   else narrate(t, `${fname(t)} falls.`);
   renderTurns();
+  if (cbt && activeActor() === t) passWhenSettled(t);
 }
+// THE TURN MOVES ON WHEN ITS OWNER FALLS (Sam, 2026-10-22: "When a character dies or falls it doesn't automatically go
+// to the next player which causes an impassable block"). A hero cut down by an opportunity attack while walking (mouse
+// or keys), a foe killed by a hero's reaction as it closes, anyone who drops in the middle of their own turn: the fight
+// used to wait for a command nobody could give. Now, once the blow that felled them has finished playing (nothing busy,
+// nothing in flight, for a second), the turn passes to the next in line. It only acts if the turn is still theirs, so a
+// path that already moved the turn on is never doubled.
+function passWhenSettled(a){
+  const no = cbt.turnNo; let quiet = 0, waited = 0;
+  const tick = () => {
+    if (!cbt || cbt.turnNo !== no || activeActor() !== a) return;
+    waited += 250;
+    // a foe struck down mid-stride never arrives, so its attack never clears the busy flag: after 3 s that is a stall,
+    // not something still playing (shots in flight, a leap, a climb are always waited out)
+    const busy = shots.length || a.leap || a.climbing || (combatBusy && waited < 3000);
+    if (busy) quiet = 0; else quiet += 250;
+    if (quiet >= 1000){ combatBusy = false; closeMenu(); hint(""); cbt.phase = "idle"; log(`${fname(a)} ${a.kind === "pc" ? "is down" : "is dead"}; the turn passes.`); if (!checkEnd()) nextTurn(); return; }
+    setTimeout(tick, 250);
+  };
+  setTimeout(tick, 600);
+}
+function seekSight(f){
+  const g0 = node.spots && (node.spots.gate || node.spots.bars), crowd = g0 ? foes.filter(o => o !== f && !o.down && Math.hypot(o.x - g0[0], o.y - g0[1]) < 30).length : 0;
+  const g = g0 && [g0[0] - crowd * 34, g0[1] - crowd * 22], say = () => { log(`${fname(f)} has no clear line to anyone and holds, watching.`); setTimeout(() => passTurn(f), 600); };
+  const look = () => {
+    const vis = standing(heroes()).filter(p => !p.c.conds.has("hidden") && !coverOf(f, p).total).sort((a, b) => feetBetween(f, a) - feetBetween(f, b));
+    const bow = f.c.sheet.attacks.find(k => k.ranged);
+    if (vis.length && bow && feetBetween(f, vis[0]) <= (bow.long || bow.reach)){ attackWith(f, vis[0], bow, () => setTimeout(() => passTurn(f), 400)); return; }
+    say();
+  };
+  if (!g || Math.hypot(f.x - g[0], f.y - g[1]) < 12){ look(); return; }
+  const fp = ftPx(f), d = Math.hypot(g[0] - f.x, g[1] - f.y), k = Math.min(1, (f.c.move || 0) * fp / d);
+  if (k <= 0){ look(); return; }
+  f.c.move = Math.max(0, (f.c.move || 0) - Math.round(d * k / fp / 5) * 5);
+  log(`${fname(f)} moves to get a line through the gate.`);
+  f.path = [{x: f.x + (g[0] - f.x) * k, y: f.y + (g[1] - f.y) * k}]; f.onArrive = () => { f.onArrive = null; setAnim(f, "idle"); look(); };
+}
+// end this actor's turn, but only if it is still theirs (callbacks that arrive late must not skip the next one)
+function passTurn(a){ if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
 function approachThen(att, tgt, ft, then){
   const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
@@ -2437,15 +2584,15 @@ function approachThen(att, tgt, ft, then){
   // hostile creature that you can see moves out of your reach ... you use your reaction to make one melee attack
   // against the provoking creature. The attack occurs right before the creature leaves your reach."). Heroes
   // leaving a foe's reach were already covered (moveActor).
-  if (att.kind === "foe" && !att.c.conds.has("disengaged")){
-    const p = standing(party).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
+  if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged")){
+    const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
     if (p){
       p.c.reactionUsed = true; const atk = meleeOf(p);
       log(`${fname(p)} takes a swing as ${fname(att)} breaks away (opportunity attack, their reaction).`); narrate(p, `${fname(p)} lashes out as ${fname(att)} pulls away.`);
       attackWith(p, att, atk, () => {
         combatBusy = true;
         if (!cbt) return;
-        if (att.down){ combatBusy = false; setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; }
+        if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
         approachThen(att, tgt, ft, then);
       }, false, true);
       return;
@@ -2492,16 +2639,71 @@ function berserkTarget(f, pool){
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
-  const seen = standing(party).filter(p => !p.c.conds.has("hidden"));
-  const tgt = f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(party)) : (seen.length ? seen : standing(party)).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  const seen0 = standing(heroes()).filter(p => !p.c.conds.has("hidden"));
+  // someone it can see if it can (no wall between them); otherwise the nearest, and it goes round with its blade
+  const inSight = seen0.filter(p => !coverOf(f, p).total), blind = !inSight.length && seen0.length > 0;
+  const seen = inSight.length ? inSight : seen0;
+  const tgt = f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
-  const atk = f.c.sheet.attacks[0], swings = f.c.sheet.multi || 1, s = f.c.sheet;
-  if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); }); return; }
-  if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
-  let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => { if (cbt && !checkEnd()) nextTurn(); }, 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
+  const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
+  // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
+  // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
+  const pressed = standing(heroes()).some(p => !incapacitated(p) && feetBetween(f, p) <= 5);
+  const atk = bow && !blind && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
+  // NOBODY IN SIGHT (a wall between it and every hero): it does not hack at the stone. If the room has a place to see
+  // in from (story.json `spots`: the pen gate, where the bars give three-quarters cover), it goes there, as far as its
+  // speed allows, and shoots through if it can; otherwise it holds and watches.
+  if (blind){ seekSight(f); return; }
+  if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => passTurn(f), 500)); return; }
+  if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => passTurn(f), 500); }); return; }
+  if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => passTurn(f), 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
+  let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => passTurn(f), 500); return; } n++; attackWith(f, tgt, atk, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4) bark(f, b[1] || b[0], 1600); setTimeout(go, 250); }); };
   setTimeout(go, 500);
+}
+// An ally's turn (Ront, Eldeth, Derendil, Sarith). Plain 5e, no new numbers: close on the nearest foe they can
+// see and use their block's attack (Multiattack where the block has it). Too far to reach this turn: Ront first
+// uses Aggressive (his bonus action, move up to his speed toward the foe); anyone still short takes the Dash
+// action and closes instead of swinging. A hero who is restrained in webbing beside them gets cut free first,
+// as the party already does for each other (the web's own rule: an action to free a creature next to you).
+function allyTurn(a){
+  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 500); };   // only if the turn is still theirs (main #795)
+  if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
+  if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} gets up.`); }
+  if (a.c.conds.has("restrained")){   // the same Break free the party has: a STR (Athletics) check against the web, as the action
+    const dc = a.c.webDc || 12, k = skillCheck(a, "athletics");
+    if (k.total >= dc){ a.c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${dc}.`); }
+    else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${dc} — stuck.`); }
+    renderParty(); end(); return;
+  }
+  const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
+  if (webbed){   // the party's Cut free: hit the webbing (AC 10) with the action
+    const r = d20(), hit = r === 20 || r + (a.c.sheet.attacks[0].hit || 0) >= 10; a.face = faceOf(webbed.x - a.x, webbed.y - a.y);
+    if (hit){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); narrate(a, `${fname(a)} tears the webbing off ${fname(webbed)}.`); }
+    else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); }
+    renderParty(); end(); return;
+  }
+  // only foes it has a line to (line of sight, main #796): an ally does not swing at a drow through the pen wall
+  const seen = standing(foes).filter(f => !f.c.conds.has("hidden") && !coverOf(a, f).total);
+  if (!seen.length && standing(foes).length){ log(`${fname(a)} has no way at the enemy from here and holds.`); end(); return; }
+  const near = (x, y) => Math.hypot(x.x - a.x, x.y - a.y) - Math.hypot(y.x - a.x, y.y - a.y);
+  const tgt = (cbt.lastAllyTarget && cbt.lastAllyTarget.get(a) && seen.includes(cbt.lastAllyTarget.get(a))) ? cbt.lastAllyTarget.get(a) : seen.sort(near)[0];
+  if (!tgt){ checkEnd() || end(); return; }
+  (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
+  camTo(Math.min(2.4, cbt.home.z * 1.08), (a.x + tgt.x) / 2, (a.y + tgt.y) / 2 - 50, 600);
+  const s = a.c.sheet, atk = meleeOf(a), swings = s.multi || 1;
+  const gapFt = () => Math.max(0, (Math.hypot(tgt.x - a.x, tgt.y - a.y) - reachPx(a, tgt, atk.reach || 5)) / ftPx(a));
+  if (gapFt() > a.c.move && s.aggressive && a.c.bonus){
+    a.c.bonus = false; a.c.move += s.speed; log(`${fname(a)} charges (Aggressive, bonus action: +${s.speed} ft toward ${fname(tgt)}).`);
+  }
+  if (gapFt() > a.c.move){
+    a.c.action = false; a.c.move += s.speed; combatBusy = true; cbt.phase = "busy";
+    log(`${fname(a)} dashes toward ${fname(tgt)}.`); narrate(a, `${fname(a)} runs at ${fname(tgt)}.`);
+    approachThen(a, tgt, atk.reach || 5, end); return;
+  }
+  let n = 0; const go = () => { if (!cbt || tgt.down || a.down || n >= swings){ end(); return; } n++; attackWith(a, tgt, atk, () => setTimeout(go, 250)); };
+  setTimeout(go, 400);
 }
 // The spider's Web: it rears up (the attack sheet), a strand flies, and on a hit the target is wrapped —
 // restrained until they burst it (DC 12 STR) or a friend cuts them out. Recharges on a 5–6 each turn.
@@ -2553,9 +2755,14 @@ function checkEnd(){
 }
 function endCombat(won){
   if (mode !== "combat") return;
+  // the living pull the bolts out of themselves; the dead keep theirs
+  for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
+  for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
+  shots.length = 0;
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
-  for (const a of [...party, ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
+  for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
+  const allies = cbt ? cbt.allies : [];
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby();
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
@@ -2575,7 +2782,10 @@ function endCombat(won){
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
-    party.forEach(p => { if (p.down){ p.down = false; setAnim(p, "idle"); if (p.c) p.c.hp = 1; } });
+    party.forEach(p => { if (p.down && !(p.c && p.c.ds && p.c.ds.dead)){ p.down = false; setAnim(p, "idle"); if (p.c){ p.c.hp = 1; p.c.ds = null; } } });
+    // the allies the same way as the party (knocked down, not killed — the DM core rules on wounds), then back to
+    // being people on the plate, standing where the fight left them
+    allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
     mode = "explore"; setTrack("explore"); log(won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
@@ -2977,6 +3187,11 @@ function drawCombatGround(){
     const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9; ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, r, r * .55, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
   }
+  if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down && a.kind === "pc"){
+    const cv = coverOf(a, hoverActor), col = cv.total ? "255,80,70" : cv.ac >= 5 ? "255,150,60" : cv.ac >= 2 ? "255,214,102" : "120,230,160";
+    ctx.save(); ctx.setLineDash([10, 8]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = `rgba(${col},.85)`;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y - 6); ctx.lineTo(hoverActor.x, hoverActor.y - 6); ctx.stroke(); ctx.restore();
+  }
   if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down){
     const t = hoverActor, sc = actorScale(t), m = SPR[t.id].json, pulse = .5 + .5 * Math.sin(now / 160);
     ctx.save(); ctx.strokeStyle = `rgba(255,107,94,${.6 + .4 * pulse})`; ctx.lineWidth = 3 / (base * view.z);
@@ -2986,13 +3201,14 @@ function drawCombatGround(){
 function drawConds(a){
   if (!a.c || a.down) return;
   const m = SPR[a.id].json, sc = actorScale(a), lying = asleepNow(a) && frameOf(a).pose === "side", top = lying ? a.y - 40 * sc : a.y - m.pivot[1] * sc - 10; let i = 0;
-  if (a.kind === "foe"){                       // a thin bar over each foe, the way the party sees a monster's state
+  if (a.kind === "foe" || (a.ally && inFightNow())){   // a thin bar over each foe (and each ally fighting with us)
+    const own = a.ally;
     const w = 44 * sc * (m.cell[0] / 128), h = 5, x = a.x - w / 2, y = top + 4;
     ctx.fillStyle = "rgba(10,6,8,.85)"; ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillStyle = "#5a1f1a"; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
+    ctx.fillStyle = own ? (a.c.hp / a.c.hpMax > .5 ? "#5fbf6a" : "#d9b23f") : a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
   }
   if (!a.c.conds.size) return;
-  if (a.c.conds.has("asleep")){ drawSheep(a, top); drawZzz(a, top); }
+  if (a.c.conds.has("asleep")){ if (!a.c.drugged) drawSheep(a, top); drawZzz(a, top); }
   for (const k of a.c.conds){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
     const x = a.x + (i - (a.c.conds.size - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
 }
@@ -3026,11 +3242,12 @@ function drawSheep(a, top){
 function combatTargetHint(){
   if (!cbt || cbt.phase !== "target" || !hoverActor || hoverActor.kind !== "foe") return null;
   const a = activeActor(), p = cbt.pend, t = hoverActor, sp = p.spell && SPELLS[p.spell];
-  if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}`;
-  const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t), need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
+  const cv = coverOf(a, t); if (cv.total) return `${fname(t)} · no line of sight: ${cv.why} is in the way`;
+  if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}${sp.save === "dex" && cv.ac ? ` · ${cv.label}` : ""}`;
+  const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t) + cv.ac, need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
   let p1 = (21 - need) / 20; if (adv > 0) p1 = 1 - (1 - p1) ** 2; else if (adv < 0) p1 = p1 ** 2;
   const sn = p.atk ? sneakState(a, t, p.atk, feetBetween(a, t) > (p.atk.reach || 5) + 2) : null;
-  return `${fname(t)} · AC ${ac} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft${sn ? " · " + sn.why : ""}`;
+  return `${fname(t)} · AC ${ac}${cv.ac ? ` (${cv.label}: ${cv.why})` : ""} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft${sn ? " · " + sn.why : ""}`;
 }
 
 // ---------- creatures Malachar brings in ----------
@@ -3557,7 +3774,7 @@ stage.addEventListener("pointermove", e => {
   }
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
-  hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(party, w)) : null;
+  hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
   const hp = !hoverActor && (mode === "explore" || mode === "combat") ? pileAt(w) : null;
@@ -3648,7 +3865,8 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); } }
+function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); } }
+$("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
@@ -3762,20 +3980,27 @@ function attackFromItem(sheet, it){
   const str = sheet.saves.str || 0, dex = sheet.saves.dex || 0, mod = ammo ? dex : finesse ? Math.max(str, dex) : str;
   const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus || 0);       // proficiency +2 at levels 1-4
   const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus || 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
-    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, item: true};
+    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null};
+  if (ammo && rng[1]) a.long = rng[1];
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
   return a;
 }
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
 function refreshAttacks(id){
+  if (ALLY_SHEETS[id]){   // an ally: the block's own line for each weapon of theirs they actually carry, then the base
+    const s = ALLY_SHEETS[id]; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
+    const have = ((GEAR[id] || {}).carried || []).map(c => baseWeapon(c)).filter(Boolean);
+    s.attacks = [...Object.entries(s.kit).filter(([k]) => have.includes(k)).map(([, v]) => v), ...s.baseAttacks];
+    return;
+  }
   const s = SHEETS[id]; if (!s) return; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
   const g = GEAR[id], eq = g && g.main && g.carried.find(c => c.name === g.main);
   s.attacks = eq && isWeapon(eq) ? [attackFromItem(s, eq), ...s.baseAttacks] : s.baseAttacks.slice();
 }
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
-  for (const id of (only ? [only] : party.map(p => p.id))){
+  for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW)])){
     const cid = characterIdOf(id); if (!cid) continue;
     try {
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
@@ -3831,17 +4056,251 @@ async function pickUp(a, p){
   if (isWeapon(cat) || isWeapon({name: p.name})) showDialog({title: p.name, body: `${fname(a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
     {label: "Equip it", primary: true, fn: () => equipItem(a, p.name)}, {label: "Keep it in the pack"}]});
 }
+// ONE ANSWER TO "REACH FOR A THING" (Sam, 2026-10-15: "Yes" to the walk matching the battle board). The board's rule
+// (/api/equipment, lib/ground-items interactionCost): the SRD gives one free object interaction a turn — "draw or
+// sheathe a sword" is its own example — and a second costs the action. A SWAP is two (sheathe one, draw the other),
+// so it takes the free interaction AND the action. Out of a fight nothing is counted.
+function gearCost(a, n){
+  const c = a.c, free = c.objFree !== false ? 1 : 0;
+  if (n <= free) return {ok: true, label: "free", pay(){ c.objFree = false; }};
+  if (n - free === 1 && c.action) return {ok: true, label: free ? "free interaction + action" : "action", pay(){ c.objFree = false; c.action = false; }};
+  return {ok: false, why: n >= 2 ? "A swap is two object interactions: your free one and your action." : "Your free object interaction is spent, and so is your action."};
+}
+function gearHint(a, n){ if (!inFightNow()) return ""; const k = gearCost(a, n); return k.ok ? k.label : "nothing left to pay with"; }
 function equipItem(a, name){
   const g = GEAR[a.id]; if (!g) return; const it = g.carried.find(c => c.name === name); if (!it) return;
-  const inFight = mode === "combat" && cbt;
-  if (inFight){ if (!a.c.action){ toast("Equipping takes your action."); return; } a.c.action = false; }
+  const inFight = mode === "combat" && cbt; let paid = "";
+  if (inFight){ const k = gearCost(a, g.main ? 2 : 1); if (!k.ok){ toast(k.why); return; } k.pay(); paid = k.label; }
   const was = g.main; g.main = name; refreshAttacks(a.id);
-  popText(a, `${name} in hand`, "#e8d9a8"); log(`${fname(a)} ${was && was !== name ? `puts away the ${esc(was)} and ` : ""}readies the <b>${esc(name)}</b>${inFight ? " (action)" : ""}.`);
+  popText(a, `${name} in hand`, "#e8d9a8"); log(`${fname(a)} ${was && was !== name ? `puts away the ${esc(was)} and ` : ""}readies the <b>${esc(name)}</b>${inFight ? ` (${paid})` : ""}.`);
   if (APP){ const cid = characterIdOf(a.id);
     const send = () => { const k = (GEAR[a.id].carried.find(c => c.name === name) || {}).item_key; if (!cid || !k) return false;
       fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: "main_hand", item_key: k})}).catch(() => {}); return true; };
     if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }               // a fresh pickup gets its key from the server first
   if (inFight){ renderParty(); afterAction(a); }
+}
+// what is in a hero's hand after a throw: it left with the throw
+function throwAway(a, name){
+  const g = GEAR[a.id]; if (!g) return null; const it = g.carried.find(c => c.name === name); if (!it) return null;
+  it.qty = (it.qty || 1) - 1; if (it.qty <= 0) g.carried = g.carried.filter(c => c !== it);
+  if (g.main === name && !g.carried.some(c => c.name === name)) g.main = null;
+  refreshAttacks(a.id); return it;
+}
+// ---------- throwing (Sam, 2026-10-15: "Yes" to daggers, holy water and alchemist's fire being thrown) ----------
+// A THROWN WEAPON (dagger, handaxe, javelin, spear, light hammer) flies as its own pixel icon — tumbling end over end,
+// or point-first for a javelin or spear — and when it lands it is ON THE FLOOR: at the target's feet on a hit, where it
+// fell on a miss. It has left the hand and the bag (/api/walk-items "drop"), so getting it back is a pickup.
+// A FLASK (SRD 5.1 Adventuring Gear) is thrown up to 20 ft as an improvised weapon — a ranged attack with no
+// proficiency, DEX to hit — and breaks where it lands, hit or miss. It is spent either way.
+//   Acid (vial): "On a hit, the target takes 2d6 acid damage."
+//   Alchemist's fire: "On a hit, the target takes 1d4 fire damage at the start of each of its turns. A creature can end
+//     this damage by using its action to make a DC 10 Dexterity check to extinguish the flames."
+//   Holy water: "the target takes 2d6 radiant damage if it is a fiend or undead." Nothing in Velkynvelve is either, so
+//     on a drow it splashes and does nothing; the map says so rather than inventing a burn.
+function FLASK_OF(it){
+  const n = String((it && it.name) || "").toLowerCase();
+  if (/^acid\b/.test(n)) return {kind: "acid", dmg: "2d6", type: "acid", fx: "acidImpact", blurb: "2d6 acid on a hit"};
+  if (/alchemist'?s fire/.test(n)) return {kind: "fire", burn: "1d4", type: "fire", fx: "fireImpact", blurb: "sets them burning: 1d4 fire each turn"};
+  if (/holy water/.test(n)) return {kind: "holy", dmg: "2d6", type: "radiant", only: /fiend|undead/, fx: "radiantColumn", blurb: "2d6 radiant to a fiend or undead"};
+  return null;
+}
+function flaskAttacks(a){
+  const g = GEAR[a.id]; if (!g) return [];
+  return g.carried.filter(it => FLASK_OF(it)).map(it => { const f = FLASK_OF(it);
+    return {name: it.name, itemName: it.name, hit: a.c.sheet.init || 0, dmg: f.dmg || "0", type: f.type, reach: 20, thrown: 20, flask: f, blurb: f.blurb,
+            pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, qty: it.qty || 1}; });
+}
+// it leaves the hand at the release
+function flung(a, atk, shot){
+  if (shot === "flask"){ const it = (GEAR[a.id] || {carried: []}).carried.find(c => c.name === atk.itemName); if (it) spendItem(a, it, "throw"); return; }
+  throwAway(a, atk.itemName);
+}
+// a thrown weapon comes to rest on the floor, a real pile anyone can pick up
+function restOnFloor(a, atk, where, missed){
+  const t = where && where.id ? where : null;
+  let x = t ? t.x + (Math.random() - .5) * 18 : where.x, y = t ? t.y + 6 + Math.random() * 6 : where.y;
+  if (typeof nearestWalkable === "function" && !walkable(x, y)){ const q = nearestWalkable(x, y); x = q.x; y = q.y; }
+  const cat = catalogItem(atk.itemName) || {};
+  const pile = {id: "local-" + Math.random().toString(36).slice(2), node: String(cur), x: Math.round(x), y: Math.round(y), itemId: cat.id || null, slug: cat.slug || "", name: atk.itemName, pixel: atk.pixel || cat.pixel_icon_url || null, at: new Date().toISOString()};
+  floor.push(pile);
+  bank("combat/arrow_hit_stone", .5);
+  if (!APP) return;
+  const cid = characterIdOf(a.id); if (!cid) return;
+  fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "drop", characterId: cid, itemName: atk.itemName, node: pile.node, x: pile.x, y: pile.y, thrown: true})})
+    .then(r => r.json()).then(j => { if (j.error) toast(j.error); loadFloor(); }).catch(() => {});
+}
+// the glass goes where it lands
+function shatter(atk, where, tgt){
+  const f = atk.flask; bank(`magic/impact_${f.type}`, .75);
+  if (tgt) spawnFx(f.fx, {at: tgt, sq: 1.6, anchor: f.type === "radiant" ? "feet" : "mid"});
+  else spawnFx(f.fx, {at: null, x: where.x, y: where.y, sq: 1.3, flat: true});
+  const gr = GROUND_OF[f.type]; if (gr) spawnFx(gr, {at: tgt || null, x: where.x, y: tgt ? tgt.y : where.y, sq: 1.4, flat: true, fade: true});
+  for (let i = 0; i < 8; i++) sparks.push({x: where.x, y: where.y, vx: (Math.random() - .5) * 160, vy: -40 - Math.random() * 90, g: 300, col: i % 2 ? "#e8f4ff" : "#9fc4d8", t0: now, life: 420});   // glass
+}
+function flaskHits(att, tgt, atk, crit, why){
+  const f = atk.flask;
+  knock(tgt, att, 10 * actorScale(tgt));
+  if (f.kind === "fire"){ addCond(tgt, "burning"); log(`${why} — <b>hit</b>: ${fname(tgt)} catches fire (1d4 fire at the start of each turn; an action and DC 10 DEX puts it out).`); narrate(att, `${fname(att)}'s flask bursts across ${fname(tgt)} in a sheet of fire.`); renderParty(); return; }
+  if (f.only){ const kind = (tgt.c.sheet.ctype || (tgt.creature && tgt.creature.type) || "").toLowerCase();
+    if (!f.only.test(kind)){ popText(tgt, "no effect", "#cfe8ff"); log(`${why} — <b>hit</b>, but ${fname(tgt)} is neither fiend nor undead: the holy water only wets them.`); return; } }
+  const d = roll(f.dmg, crit).total; damage(tgt, d, f.type, crit, att);
+  log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d} ${f.type}.`);
+}
+// SRD 5.1 Drow, Hand Crossbow: DC 13 CON or poisoned for 1 hour; failed by 5 or more, also unconscious until it takes
+// damage or someone uses an action to shake it awake
+function drowPoison(t, dc){
+  const s = t.c.sheet;
+  if ((s.immune || []).includes("poison") || (s.immuneCond || []).includes("poisoned")) return "immune to the poison";
+  const s0 = d20() + (s.saves.con || 0), sv = s0 + (t.kind === "pc" ? useInspiration(t, s0, dc) : 0);
+  if (sv >= dc){ popText(t, "resists poison", "#8fd48f", .8); return `CON save ${sv} vs ${dc}: shrugs off the poison`; }
+  addCond(t, "poisoned"); setTimeout(() => bank("magic/impact_poison", .5), 200);
+  if (sv <= dc - 5){ addCond(t, "asleep"); t.c.drugged = true; t.path = []; popText(t, "out cold", "#8fd48f", 1.1); renderParty();
+    return `CON save ${sv} vs ${dc}: poisoned and unconscious (wakes if hurt, or shaken awake as an action)`; }
+  renderParty(); return `CON save ${sv} vs ${dc}: poisoned (disadvantage on attacks)`;
+}
+// an action and a DC 10 Dexterity check
+function putOutFire(a, done){
+  if (a.kind === "pc") a.c.action = false;
+  const r = d20() + (a.c.sheet.init || 0), ok = r >= 10;
+  if (ok){ a.c.conds.delete("burning"); popText(a, "flames out", "#ffd0a0"); }
+  log(`${fname(a)} beats at the flames: DEX ${r} vs 10 — ${ok ? "out" : "still burning"}.`); renderParty(); done && done();
+}
+// ---------- shots: bolts and arrows that fly, and stay where they land ----------
+// Sam, 2026-10-15: "We need a better crossbow animation for our pixel characters that shows the bolts being fired and
+// the bolts hitting the target. Arrows should stick in the target if they are struck."
+// A ranged weapon attack used to play the melee swipe on the target, with nothing crossing the gap. Now:
+//   - the shooter brings the weapon up level and aims at the target (drawHeld), and at the release the string snaps,
+//     the weapon kicks back and the shot leaves the front of it;
+//   - the bolt (flat and fast) or arrow (a little arc) flies to the target, and only when it ARRIVES does the hit land:
+//     the sound, the knock-back, the damage;
+//   - on a hit it stays in them, sticking out the way it came in (two-thirds of the shaft showing, the head buried),
+//     and moves with them, falls with them, and is still in the body when they lie dead. Pulled out when the fight ends;
+//   - on a miss it goes wide of the body and drives into the floor behind them, and is gone a few seconds later.
+// Drawn, not sheets, so they fit any sprite size; the shapes are pixel-blocky to match the art.
+const SHOT_OF = n => /crossbow/.test(n) ? "bolt" : /bow/.test(n) ? "arrow" : /blowgun/.test(n) ? "needle" : /dart/.test(n) ? "dart" : /sling/.test(n) ? "stone" : null;
+// len in feet (a little over life size so it reads at this zoom), msPerFt the flight time
+const SHOT_LOOK = {
+  bolt:   {len: 1.5, w: .16, msPerFt: 4.2, arc: .015, shaft: "#5a3c22", head: "#cfd8e2", fl: "#e4dccb", stick: true, snap: "#ffffff"},
+  arrow:  {len: 2.2, w: .13, msPerFt: 5.4, arc: .07,  shaft: "#8a6236", head: "#b8c2cc", fl: "#eee6d6", stick: true, snap: "#fff3d6"},
+  dart:   {len: .8,  w: .14, msPerFt: 6.0, arc: .06,  shaft: "#55555e", head: "#d0d6dc", fl: "#c04a3a", stick: true},
+  needle: {len: .5,  w: .08, msPerFt: 4.0, arc: .01,  shaft: "#cfd6dc", head: "#ffffff", fl: null,      stick: true},
+  stone:  {len: .25, w: .25, msPerFt: 5.0, arc: .06,  shaft: "#7d7a72", head: "#7d7a72", fl: null,      stick: false},
+  thrown: {msPerFt: 7.0, arc: .10, stick: false, sprite: true},              // the weapon itself, tumbling
+  flask:  {msPerFt: 8.0, arc: .16, stick: false, sprite: true},              // a lobbed bottle
+};
+const shots = [], stuck = []; let SHOT_MAX_MS = 560;            // a long shot still lands inside the attack
+function shotKind(atk, att, tgt){
+  if (atk.flask) return "flask";
+  const k = SHOT_OF(String(atk.name || "").toLowerCase()); if (k) return k;
+  if (atk.thrown && atk.pixel && att && tgt && feetBetween(att, tgt) > 6) return "thrown";   // a throw from range flies; at arm's length it is a stab
+  return null;
+}
+function chestOf(t, jitter){
+  const m = SPR[t.id].json, sc = actorScale(t), body = m.pivot[1] * sc;
+  return {x: t.x + (t.kx || 0) + (Math.random() - .5) * m.cell[0] * sc * .14 * jitter, y: t.y + (t.ky || 0) - body * (.62 + (Math.random() - .5) * .22 * jitter)};
+}
+function shotFrom(a){
+  if (a.muzzle && now - a.muzzle.t < 200) return {x: a.muzzle.x, y: a.muzzle.y};
+  const m = SPR[a.id].json, sc = actorScale(a), [fx, fy] = ROW_DIR[a.face] || ROW_DIR[0];
+  return {x: a.x + fx * m.cell[0] * sc * .16, y: a.y - m.pivot[1] * sc * .58 + fy * 6 * sc};
+}
+// the shot leaves now; land(to) runs when it gets there
+function fireShot(att, tgt, kind, hit, land, atk){
+  const L = SHOT_LOOK[kind], from = shotFrom(att), fp = ftPx(att);
+  let to;
+  if (hit) to = chestOf(tgt, 1);
+  else {
+    const c = chestOf(tgt, 0), d = norm({x: c.x - from.x, y: c.y - from.y}), side = Math.random() < .5 ? -1 : 1, m = SPR[tgt.id].json, sc = actorScale(tgt);
+    to = {x: c.x + d.x * fp * 3 - d.y * side * m.cell[0] * sc * .2, y: tgt.y + Math.max(4, d.y * fp * 2.5) + 6, ground: true};
+  }
+  const dist = Math.hypot(to.x - from.x, to.y - from.y) / fp, ms = Math.max(110, Math.min(SHOT_MAX_MS, dist * L.msPerFt));
+  const s = {kind, from, to, t0: now, ms, arc: L.arc * dist * fp, hit, tgt, img: L.sprite && atk && atk.pixel ? itemImg(atk.pixel) : null,
+             spin: kind === "flask" ? 1.5 : kind === "thrown" && !/javelin|spear/i.test((atk && atk.name) || "") ? 3 : 0};
+  shots.push(s);
+  if (L.snap){ for (let i = 0; i < 6; i++){ const ang = Math.atan2(to.y - from.y, to.x - from.x) + (Math.random() - .5) * 1.4;
+    sparks.push({x: from.x, y: from.y, vx: Math.cos(ang) * (90 + Math.random() * 120), vy: Math.sin(ang) * (90 + Math.random() * 120), col: L.snap, t0: now, life: 160 + Math.random() * 120}); } }
+  s.land = () => {
+    const i = shots.indexOf(s); if (i >= 0) shots.splice(i, 1);
+    const ang = endAngle(s);
+    if (L.stick){
+      if (hit && tgt){ const sc = actorScale(tgt);
+        stuck.push({at: tgt, ox: (to.x - tgt.x - (tgt.kx || 0)) / sc, oy: (to.y - tgt.y - (tgt.ky || 0)) / sc, ang, kind, t0: now});
+        const mine = stuck.filter(q => q.at === tgt); if (mine.length > 8) stuck.splice(stuck.indexOf(mine[0]), 1); }
+      else stuck.push({x: to.x, y: to.y, ang: Math.atan2(Math.sin(ang) + .9, Math.cos(ang)), kind, t0: now, until: now + 6000});
+    }
+    if (!hit){ for (let i = 0; i < 5; i++) sparks.push({x: to.x, y: to.y, vx: (Math.random() - .5) * 80, vy: -30 - Math.random() * 50, g: 160, col: "#9b9284", t0: now, life: 380}); }
+    land(to);
+  };
+}
+function shotPos(s, p){
+  const x = s.from.x + (s.to.x - s.from.x) * p, y = s.from.y + (s.to.y - s.from.y) * p - s.arc * 4 * p * (1 - p);
+  return {x, y};
+}
+function endAngle(s){ const dx = s.to.x - s.from.x, dy = s.to.y - s.from.y + s.arc * 4; return Math.atan2(dy, dx); }
+// one shaft: the tip at (x, y) pointing along ang; `show` is how much of it is out of whatever it is in
+function drawShaft(x, y, ang, kind, pxft, show = 1, alpha = 1){
+  const L = SHOT_LOOK[kind], len = L.len * pxft, w = Math.max(1.6, L.w * pxft), cx = Math.cos(ang), cy = Math.sin(ang);
+  ctx.save(); ctx.globalAlpha = alpha;
+  if (kind === "stone"){ ctx.fillStyle = L.shaft; ctx.fillRect(x - w / 2, y - w / 2, w, w); ctx.restore(); return; }
+  const tail = {x: x - cx * len, y: y - cy * len}, start = show < 1 ? {x: x - cx * len * (1 - show), y: y - cy * len * (1 - show)} : {x, y};
+  ctx.lineCap = "butt"; ctx.strokeStyle = "#1a120c"; ctx.lineWidth = w + 1.4;                        // a dark outline, like the sprites
+  ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(start.x, start.y); ctx.stroke();
+  ctx.strokeStyle = L.shaft; ctx.lineWidth = w; ctx.stroke();
+  if (show >= 1){                                                                                   // the head
+    const hl = Math.max(4, len * .2), hw = w * 1.35;
+    ctx.fillStyle = "#1a120c"; ctx.beginPath(); ctx.moveTo(x + cx * 1.2, y + cy * 1.2); ctx.lineTo(x - cx * hl - cy * (hw + .8), y - cy * hl + cx * (hw + .8)); ctx.lineTo(x - cx * hl + cy * (hw + .8), y - cy * hl - cx * (hw + .8)); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = L.head; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - cx * hl - cy * hw, y - cy * hl + cx * hw); ctx.lineTo(x - cx * hl + cy * hw, y - cy * hl - cx * hw); ctx.closePath(); ctx.fill();
+  }
+  if (L.fl){                                                                                        // fletching at the tail
+    const fl = Math.max(4, len * .22), fw = w * 1.6;
+    ctx.fillStyle = L.fl;
+    for (const sd of [-1, 1]){ ctx.beginPath(); ctx.moveTo(tail.x + cx * fl, tail.y + cy * fl); ctx.lineTo(tail.x - sd * cy * fw, tail.y + sd * cx * fw); ctx.lineTo(tail.x + cx * fl * .3 - sd * cy * fw, tail.y + cy * fl * .3 + sd * cx * fw); ctx.closePath(); ctx.fill(); }
+  }
+  ctx.restore();
+}
+// in flight (on top of everything) — drawn from drawCombatFx's pass
+function drawShots(){
+  for (let i = shots.length - 1; i >= 0; i--){
+    const s = shots[i], p = Math.min(1, (now - s.t0) / s.ms);
+    if (p >= 1){ s.land(); continue; }
+    const P = shotPos(s, p), Q = shotPos(s, Math.min(1, p + .02)), ang = Math.atan2(Q.y - P.y, Q.x - P.x), pxft = ftPx({x: P.x, y: P.y, big: 1});
+    const T = shotPos(s, Math.max(0, p - .18));                                                    // a streak behind it
+    ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = "#fff6e0"; ctx.lineWidth = Math.max(1, pxft * .06); ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.restore();
+    if (SHOT_LOOK[s.kind].sprite){                                                              // a thrown thing: its own icon
+      const sq = 5 * pxft * FLOOR_ITEM_SCALE * (s.kind === "flask" ? 1.2 : 1), rot = s.spin ? p * s.ms / 1000 * Math.PI * 2 * s.spin : ang + Math.PI / 4;
+      if (s.img){ ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(rot); ctx.drawImage(s.img, -sq / 2, -sq / 2, sq, sq); ctx.restore(); }
+      else { ctx.fillStyle = "#cfd8e2"; ctx.fillRect(P.x - 2, P.y - 2, 4, 4); }
+      continue;
+    }
+    drawShaft(P.x, P.y, ang, s.kind, pxft);
+  }
+}
+// stuck in a body: drawn right after that body, so it sits in front of it and behind whoever stands in front. It
+// follows the body's pose: a sleeper settles, a corpse lying on its side carries its bolts round with it.
+function drawStuckOn(a, fy, pose){
+  if (!stuck.length) return; const sc = actorScale(a), pxft = ftPx(a);
+  for (const q of stuck){ if (q.at !== a) continue;
+    const wob = now - q.t0 < 300 ? Math.sin((now - q.t0) / 22) * .12 * (1 - (now - q.t0) / 300) : 0;   // it quivers as it goes in
+    let ox = q.ox * sc, oy = q.oy * sc, ang = q.ang + wob, bx = a.x + (a.kx || 0), by = a.y + (a.ky || 0) + fy;
+    if (pose === "side"){
+      const left = a.face >= 4 && a.face <= 6 ? -1 : 1, body = SPR[a.id].json.pivot[1] * sc * .82, r = left * Math.PI / 2 * .94;
+      bx = a.x - left * body / 2; by = a.y - 4 * sc; const c = Math.cos(r), s = Math.sin(r); [ox, oy] = [ox * c - oy * s, ox * s + oy * c]; ang += r;
+    } else if (pose === "belly"){ by = a.y - 6 * sc; ox *= .7; oy *= -.66; ang = Math.atan2(-Math.sin(ang) * .66, Math.cos(ang) * .7); }
+    else if (pose === "puddle"){ by = a.y; ox *= 1.25; oy *= .4; ang = Math.atan2(Math.sin(ang) * .4, Math.cos(ang) * 1.25); }
+    else if (pose === "settle") oy *= .8;
+    else if (a.down && a.anim === "dead") oy *= .35;                                               // the body is on the floor now
+    if (!(a.creature && /ooze/.test(a.id))){ ctx.save(); ctx.globalAlpha = a.alpha * .9; ctx.fillStyle = "#7a0e14"; const r = Math.max(1.5, pxft * .09);   // where it went in
+      ctx.fillRect(bx + ox - r, by + oy - r * .6, r * 2, r * 1.6); ctx.fillRect(bx + ox - r * .5, by + oy + r, r, r * 1.4); ctx.restore(); }
+    drawShaft(bx + ox, by + oy, ang, q.kind, pxft, .68, a.alpha);
+  }
+}
+// stuck in the floor: drawn with the floor, under everyone
+function drawStuckGround(){
+  for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (q.at) continue;
+    if (now > q.until){ stuck.splice(i, 1); continue; }
+    const fade = Math.min(1, (q.until - now) / 800); drawShaft(q.x, q.y, q.ang, q.kind, ftPx({x: q.x, y: q.y, big: 1}), .7, fade);
+  }
 }
 // ---------- the bag (I) ----------
 // Sam, 2026-10-15: "We also need a way to check inventory (letter I) when playing to equip and unequip. We also need a
@@ -3866,8 +4325,9 @@ function useOf(it){
   const p = it.properties || {}, n = String(it.name || "").toLowerCase();
   if (isWeapon(it)) return {kind: "weapon"};
   if (p.heal) return {kind: "heal", dice: String(p.heal)};
+  if (FLASK_OF(it)) return {kind: "throw"};
   if (p.damage || p.range || p.application || p.poison_type || p.save_ability || p.save || p.trap_item || /poison|venom|blood \(vial\)/.test(n))
-    return {kind: "dm", why: p.range ? "it is thrown, and the map has no throw yet" : "it needs a save or a target"};
+    return {kind: "dm", why: "it needs a save or a target"};
   if (/potion|antitoxin|elixir|cordial|draught|tonic|philter/.test(n) || p.effect || p.duration)
     return {kind: "drink", effect: p.effect || (p.duration ? `lasts ${p.duration}` : "")};
   if (p.food_days != null || p.drink || p.rations || /meat|jerky|fish|mushroom|bread|ration|egg|skewer|grub|crab|snail|cricket|crayfish|legs|eel/.test(n))
@@ -3900,11 +4360,11 @@ function renderBag(){
   const hand = $("invHand"); hand.innerHTML = "";
   const held = g.main ? g.carried.find(x => x.name === g.main) : null;
   hand.innerHTML = `<span>In hand: <b>${esc(g.main || "nothing (fists)")}</b></span>`;
-  if (held){ const b = document.createElement("button"); b.className = "btn"; b.textContent = "Put away"; b.title = "free: sheathing a weapon is the turn's free object interaction";
-    b.disabled = !mine; b.onclick = () => unequipItem(a); hand.appendChild(b); }
+  if (held){ const b = document.createElement("button"); b.className = "btn"; b.textContent = "Put away"; b.title = fight ? gearHint(a, 1) : "";
+    b.disabled = !mine || (fight && !gearCost(a, 1).ok); b.onclick = () => unequipItem(a); hand.appendChild(b); }
   const list = $("invList"); list.innerHTML = "";
   if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
-  const order = {weapon: 0, heal: 1, drink: 2, food: 3, dm: 4, none: 5};
+  const order = {weapon: 0, heal: 1, drink: 2, throw: 3, food: 4, dm: 5, none: 6};
   const rows = g.carried.map(it => ({it, u: useOf(it)})).sort((x, y) => order[x.u.kind] - order[y.u.kind] || x.it.name.localeCompare(y.it.name));
   for (const {it, u} of rows){
     const row = document.createElement("div"); row.className = "invRow";
@@ -3913,20 +4373,22 @@ function renderBag(){
       : u.kind === "heal" ? `restores ${u.dice} HP`
       : u.kind === "drink" ? (u.effect || "a draught")
       : u.kind === "food" ? (u.verb === "drink" ? "a drink" : "food")
-      : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
+      : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     row.innerHTML = `<span class="invPic">${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
       + `<span class="invTxt"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}</b><small>${esc(what)}</small></span><span class="invBtns"></span>`;
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
     const btns = row.querySelector(".invBtns");
     const btn = (label, ok, why, fn) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; btns.appendChild(b); };
     if (u.kind === "weapon" && g.main !== it.name)
-      btn("Equip", mine && (!fight || c.action), fight ? "takes your action" : "", () => { equipItem(a, it.name); if (inFightNow()) toggleBag(false); else renderBag(); });
+      btn("Equip", mine && (!fight || gearCost(a, g.main ? 2 : 1).ok), fight ? gearHint(a, g.main ? 2 : 1) : "", () => { equipItem(a, it.name); if (inFightNow()) toggleBag(false); else renderBag(); });
     if (u.kind === "heal" || u.kind === "drink"){
       btn("Drink", mine && (!fight || c.bonus), fight ? "your bonus action" : "", () => drinkItem(a, it, a));
       if (u.kind === "heal") for (const t of party){ if (t === a) continue;
         const near = !fight || feetBetween(a, t) <= 5.5;
         if (near) btn(`Give ${SHEETS[t.id] ? SHEETS[t.id].name.split(" ")[0] : t.id}`, mine && (!fight || c.bonus), fight ? "your bonus action · they must be within 5 ft" : "", () => drinkItem(a, it, t)); }
     }
+    if (u.kind === "throw" && fight){ const fa = flaskAttacks(a).find(x => x.itemName === it.name);
+      btn("Throw", mine && c.action && !!fa, "your action: click a foe within 20 ft", () => { toggleBag(false); aim(a, {atk: fa, throwing: true}); }); }
     if (u.kind === "food") btn(u.verb === "drink" ? "Drink" : "Eat", mine && (!fight || c.action), fight ? "takes your action" : "", () => eatItem(a, it, u.verb));
     list.appendChild(row);
   }
@@ -3969,6 +4431,7 @@ function eatItem(a, it, verb){
 }
 function unequipItem(a){
   const g = GEAR[a.id]; if (!g || !g.main || !bagCan(a)) return;
+  if (inFightNow()){ const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
   const was = g.main; g.main = null; refreshAttacks(a.id);
   popText(a, `${was} away`, "#e8d9a8", .8); log(`${fname(a)} puts the <b>${esc(was)}</b> away.`);
   if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
@@ -3978,6 +4441,120 @@ function unequipItem(a){
 }
 $("bagBtn").onclick = () => toggleBag();
 $("invClose").onclick = () => toggleBag(false);
+// ---------- death saving throws (SRD 5.1, Combat > Damage and Healing > Dropping to 0 Hit Points) ----------
+// Sam, 2026-10-22: "line of sight and then death saves". A hero at 0 used to just lie there until the fight ended.
+//   - INSTANT DEATH: "When damage reduces you to 0 hit points and there is damage remaining, you die if the remaining
+//     damage equals or exceeds your hit point maximum."
+//   - THE SAVE: "Whenever you start your turn with 0 hit points, you must make a special saving throw ... roll a d20. If
+//     the roll is 10 or higher, you succeed. Otherwise, you fail. On your third success, you become stable. On your
+//     third failure, you die." "If you roll a 1 on the d20, it counts as two failures. If you roll a 20 on the d20, you
+//     regain 1 hit point" (and so the turn is theirs to take).
+//   - HIT WHILE DOWN: "If you take any damage while you have 0 hit points, you suffer a death saving throw failure. If
+//     the damage is from a critical hit, you suffer two failures instead. If the damage equals or exceeds your hit point
+//     maximum, you suffer instant death."
+//   - HEALING: "If you regain any hit points ... the successes and failures are reset" (the old ways back up already do
+//     this: Healing Word, a potion poured in, now also wake a dying hero with a clean slate).
+//   - STABILIZING: "You can use your action to administer first aid to an unconscious creature and attempt to stabilize
+//     it, which requires a successful DC 10 Wisdom (Medicine) check." A stable creature makes no more saves.
+// The tallies hang over the body, and show on the party card.
+const dyingNow = a => !!(a && a.kind === "pc" && a.down && a.c && a.c.ds && !a.c.ds.stable && !a.c.ds.dead);
+function deathMark(a, success, n, why){
+  const ds = a.c.ds; if (!ds || ds.dead || ds.stable) return;
+  if (success) ds.s = Math.min(3, ds.s + n); else ds.f = Math.min(3, ds.f + n);
+  if (ds.f >= 3){ dieNow(a, why); return; }
+  if (ds.s >= 3){ ds.stable = true; popText(a, "stable", "#9ff2c8", 1.2); log(`<b>${fname(a)} is stable.</b> No more death saves; they stay down at 0 HP until healed.`); }
+  renderParty();
+}
+function dieNow(a, why){
+  const ds = a.c.ds || (a.c.ds = {s: 0, f: 0}); ds.dead = true; ds.f = 3; a.dead = true;
+  bank("creature/death_beast", .7); popText(a, "dead", "#ff6b5e", 1.5); shake(8);
+  log(`<b>${fname(a)} dies</b>${why ? ` (${why})` : ""}.`); narrate(a, `${fname(a)} is gone.`);
+  const near = standing(party).filter(p => p !== a)[0]; if (near) setTimeout(() => bark(near, `No… ${fname(a)}!`, 2000, {talk: true}), 500);
+  renderParty();
+}
+// a downed hero's turn: the save, and the turn passes (a 20 gets them up, and the turn is theirs)
+function deathSaveTurn(a){
+  const r = d20();
+  camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 40, 500);
+  if (r === 20){
+    a.c.hp = 1; a.down = false; a.c.ds = null; setAnim(a, "idle"); popText(a, "20! on their feet", "#9ff2c8", 1.3); bank("combat/heal", .7);
+    log(`${fname(a)} death save: <b>20</b> — regains 1 HP and gets up.`); renderParty(); renderTurns(); return false;   // carry on: it is their turn
+  }
+  const ok = r >= 10; popText(a, ok ? `save ${r} ✓` : r === 1 ? "1 ✗✗" : `save ${r} ✗`, ok ? "#9ff2c8" : "#ff6b5e", 1.1);
+  bank(ok ? "ui/turn_chime" : "ui/nat1", .5);
+  log(`${fname(a)} death save: ${r} — ${ok ? "success" : r === 1 ? "two failures" : "failure"}.`);
+  deathMark(a, ok, ok ? 1 : r === 1 ? 2 : 1, "three failed death saves");
+  setTimeout(() => passTurn(a), 1300); return true;
+}
+// first aid: an action, DC 10 Wisdom (Medicine), on a dying friend within 5 ft
+function stabilize(a, t){
+  a.c.action = false; const mod = (a.c.sheet.skills || {}).medicine ?? 0, r = d20() + mod, ok = r >= 10;
+  log(`${fname(a)} works on ${fname(t)}: Medicine ${r} vs 10 — ${ok ? "stable" : "not yet"}.`);
+  if (ok){ t.c.ds.stable = true; popText(t, "stable", "#9ff2c8", 1.2); } else popText(t, "still dying", "#ff6b5e", .9);
+  renderParty(); afterAction(a);
+}
+function drawDeathSaves(a){
+  const ds = a.c.ds; if (!ds) return; const sc = actorScale(a), y = a.y - 34 * sc;
+  ctx.save(); ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06";
+  if (ds.dead){ ctx.font = "bold 26px Georgia, serif"; ctx.fillStyle = "#ff6b5e"; ctx.strokeText("☠", a.x, y); ctx.fillText("☠", a.x, y); ctx.restore(); return; }
+  if (ds.stable){ ctx.font = "bold 14px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#9ff2c8"; ctx.strokeText("stable", a.x, y); ctx.fillText("stable", a.x, y); ctx.restore(); return; }
+  const pulse = .6 + .4 * Math.sin(now / 260), R = 5;
+  for (let i = 0; i < 3; i++){
+    for (const [row, n, col] of [[-1, ds.s, "#62e3c6"], [1, ds.f, "#ff5a4a"]]){
+      const x = a.x + (i - 1) * 15, yy = y + row * 8;
+      ctx.beginPath(); ctx.arc(x, yy, R, 0, Math.PI * 2); ctx.fillStyle = i < n ? col : "rgba(20,10,8,.85)"; ctx.globalAlpha = i < n ? 1 : .9; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.globalAlpha = i < n ? 1 : pulse; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+  ctx.restore();
+}
+// ---------- line of sight and cover (SRD 5.1, Combat > Cover) ----------
+// Sam, 2026-10-22: "line of sight". A drow on the balcony shot a hero through the stone of the pen wall. Now:
+//   - TOTAL COVER: a wall between them (node.walls, traced along the foot of the stone in spec.py) means the target
+//     "can't be targeted directly by an attack or a spell". The aim refuses it, and a foe picks someone it can see.
+//   - THREE-QUARTERS COVER, +5 AC and DEX saves: "behind a portcullis, an arrow slit, or a thick tree trunk". The pen
+//     gate's bars while it is shut; nothing once it stands open.
+//   - HALF COVER, +2 AC and DEX saves: "a low wall, a large piece of furniture, a narrow tree trunk, or a creature,
+//     whether that creature is an enemy or a friend". Furniture is the node's obstacles; creatures are the others in
+//     the fight standing in the line (the prisoners milling about are not counted, or the pen would be all cover).
+//   "If a target is behind multiple sources of cover, only the most protective degree of cover applies."
+// Sight is tested FOOT TO FOOT on the plate: the walls are traced where the floor meets the stone, so anyone standing
+// behind a wall in the painting is behind its line.
+function segCross(a, b, c, d){
+  const r = (p, q, s) => (q.x - p.x) * (s.y - p.y) - (q.y - p.y) * (s.x - p.x);
+  const d1 = r(c, d, a), d2 = r(c, d, b), d3 = r(a, b, c), d4 = r(a, b, d);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+function segNear(a, b, p){             // how close p comes to the segment, and how far along it
+  const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L));
+  return {d: Math.hypot(a.x + dx * u - p.x, a.y + dy * u - p.y), u};
+}
+function coverOf(att, tgt){
+  const A = {x: att.x, y: att.y}, B = {x: tgt.x, y: tgt.y};
+  let ac = 0, why = "";
+  for (const w of node.walls || []){
+    const L = w.line;
+    for (let i = 0; i + 1 < L.length; i++){
+      if (!segCross(A, B, {x: L[i][0], y: L[i][1]}, {x: L[i + 1][0], y: L[i + 1][1]})) continue;
+      if (w.kind === "gate"){ if (!state.gateOpen && ac < 5){ ac = 5; why = w.label || "the bars"; } }
+      else return {total: true, ac: 0, why: w.label || "a wall", label: "total cover"};
+    }
+  }
+  if (ac < 2 && feetBetween(att, tgt) > 7){
+    for (const o of node.obstacles || []){                                   // furniture: sample the line through the ellipse
+      for (let k = 1; k < 10; k++){ const x = A.x + (B.x - A.x) * k / 10, y = A.y + (B.y - A.y) * k / 10;
+        if (((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1){ ac = 2; why = "furniture"; break; } }
+      if (ac >= 2) break;
+    }
+    if (ac < 2 && cbt) for (const c of cbt.order){
+      if (c === att || c === tgt || c.down || !actors.includes(c)) continue;
+      const m = SPR[c.id].json, n = segNear(A, B, c);
+      if (n.u > .08 && n.u < .92 && n.d < 22 * actorScale(c) * (m.cell[0] / 128)){ ac = 2; why = fname(c); break; }
+    }
+  }
+  return {total: false, ac, why, label: ac >= 5 ? "three-quarters cover +5" : ac >= 2 ? "half cover +2" : ""};
+}
+const coverNote = cv => cv.ac ? ` (${cv.label}: ${cv.why})` : "";
 // ---------- the weapon in the hand ----------
 // Sam, 2026-10-15: "I'm not seeing the weapons being used by the pixel characters." The heroes' pixel art was drawn
 // empty-handed, and repainting every frame for every weapon is not affordable (about 500 frames a hero). So the
@@ -3993,12 +4570,35 @@ function heldWeapon(a){
   const url = it && (it.pixel || (catalogItem(it.name) || {}).pixel_icon_url); if (!url) return null;
   const img = itemImg(url); if (!img) return null;
   const [fx, fy] = ROW_DIR[a.face] || ROW_DIR[0], rx = -fy, ry = fx;                       // the right hand's side of the body
-  return {img, fx, fy, rx, ry, behind: ry < -.3};
+  const shoot = SHOT_OF(it.name.toLowerCase());
+  return {img, fx, fy, rx, ry, behind: ry < -.3, shoot, bow: shoot === "arrow"};
 }
+const wrapAng = d => d > Math.PI ? d - 2 * Math.PI : d < -Math.PI ? d + 2 * Math.PI : d;
 function drawHeld(a, h, sc, py, cw, fy0){
   const sq = 5 * ftPx(a) * FLOOR_ITEM_SCALE, body = py * sc;
   let hx = a.x + h.rx * cw * sc * .15 + (a.kx || 0), hy = a.y - body * .4 + h.ry * body * .04 + fy0 + (a.ky || 0);
   // the icons are drawn tip to the upper right: -45 degrees is where the blade points before it is turned
+  if (h.shoot){
+    // A bow or a crossbow (Sam, 2026-10-15: "a better crossbow animation"): carried lowered along the facing, brought
+    // up level at the target as the attack winds up, a kick back along the line at the release, and the shot leaves
+    // from the front of it (a.muzzle). The crossbow icon points to its upper right; a bow shoots to its upper left
+    // (the string is on the lower right). Aimed leftward it is mirrored along that line, so it is never upside down.
+    const face = Math.atan2(h.fy, h.fx); let aim = face + .55 * (Math.cos(face) >= 0 ? 1 : -1), kick = 0;
+    hx = a.x + (a.kx || 0) + h.fx * cw * sc * .06 + h.rx * cw * sc * .08; hy = a.y + fy0 + (a.ky || 0) - body * .5;
+    if (a.anim === "attack" && a.aimAt){
+      const m = SPR[a.id].json.animations.attack, p = Math.min(1, (now - a.t0) / 1000 * (m.fps || 12) / (m.frames || 6)), hit = m.hit || .6;
+      const want = Math.atan2(a.aimAt.y - hy, a.aimAt.x - hx), k = Math.min(1, p / (hit * .55)), e = k * k * (3 - 2 * k);
+      aim = aim + wrapAng(want - aim) * e; if (p > hit) kick = Math.max(0, 1 - (p - hit) / .3);
+    } else if (a.aimAt && now - (a.aimHold || 0) < 500) aim = Math.atan2(a.aimAt.y - hy, a.aimAt.x - hx);   // holds the line while the shot flies
+    const ca = Math.cos(aim), sa = Math.sin(aim);
+    hx -= ca * kick * sq * .22; hy -= sa * kick * sq * .22;
+    const fwd = h.bow ? .04 : .18, cx = hx + ca * sq * fwd, cy = hy + sa * sq * fwd;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(aim + (h.bow ? 3 * Math.PI / 4 : Math.PI / 4));
+    if (ca < 0) ctx.transform(h.bow ? 0 : 0, h.bow ? 1 : -1, h.bow ? 1 : -1, 0, 0, 0);
+    ctx.drawImage(h.img, -sq / 2, -sq / 2, sq, sq); ctx.restore();
+    a.muzzle = {x: cx + ca * sq * (h.bow ? .12 : .4), y: cy + sa * sq * (h.bow ? .12 : .4), t: now};
+    return;
+  }
   let tip = Math.PI / 2 - h.rx * .25;                                                           // hanging: point down, a little out
   if (a.anim === "attack"){
     const m = SPR[a.id].json.animations.attack, p = Math.min(1, (now - a.t0) / 1000 * (m.fps || 12) / (m.frames || 6)), hit = m.hit || .6;

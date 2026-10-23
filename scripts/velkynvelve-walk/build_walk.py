@@ -189,7 +189,9 @@ for i in P + N + F + V:
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
     sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage'] if i in F else [])
-    if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep']
+    # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
+    # without 'attack' a swing has no hit frame and the roll never happens
+    if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     j = json.load(open(os.path.join(SPR, i, 'sprite.json')))

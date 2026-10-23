@@ -18,7 +18,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { StageLink } from "@/components/stage/stage-provider"
+import { StageLink, useStage } from "@/components/stage/stage-provider"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/vessels"
 import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, legPreview, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
@@ -69,6 +69,20 @@ type EdgeRow = {
   discovered_at?: string | null
 }
 type PartyRow = { campaign_run_id: string; node_id: string; arrived_at: string }
+/** An authored option at a node (lib/travel/options.ts), as the arrive reply sends it. */
+type OfferedOption = {
+  key: string
+  label: string
+  detail?: string | null
+  cost_line: string
+  available: boolean
+  blocked_by: string[]
+  check?: { skill: string; dc: number }
+}
+
+/** The painted entrance of a great place (lib/travel/entrance.ts). */
+type EntranceInfo = { slug: string; plate: string; name: string; scene: string | null }
+
 /** GET /api/travel/leader: who leads, how the vote stands, and the hours of the day (never the day number). */
 type LeadInfo = {
   leader: string | null
@@ -110,6 +124,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   const [selected, setSelected] = useState<string | null>(null)
   const [lantern, setLantern] = useState(true)
   const [loaded, setLoaded] = useState(false)
+  const stage = useStage()
   const [dmKey, setDmKeyState] = useState("")
   const [refresh, setRefresh] = useState(0)
   const [confirmNode, setConfirmNode] = useState<NodeRow | null>(null)
@@ -158,6 +173,11 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   const [hoverNode, setHoverNode] = useState<NodeRow | null>(null)
   // The arrival beat: the passive-roll chip and Malachar's line, shown a while.
   const [beat, setBeat] = useState<{ chip: string | null; noticed: boolean | null; line: string | null } | null>(null)
+  // The options card and the entrance: both authored, both arriving with the leg.
+  const [options, setOptions] = useState<{ node: NodeRow; list: OfferedOption[] } | null>(null)
+  const [chosen, setChosen] = useState<{ label: string; success: boolean; text: string | null; roll: { name: string; arithmetic: string } | null; line: string | null; revealed: string | null } | null>(null)
+  const [entrance, setEntrance] = useState<{ node: NodeRow; info: EntranceInfo } | null>(null)
+  const [entering, setEntering] = useState(false)
   const beatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // camera
@@ -206,6 +226,58 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
       body: travelBody({ action, node_key: nodeKey }),
     }).catch(() => {})
     setRefresh((r) => r + 1)
+  }
+
+  // A test hook, the same pattern the world-map prototype used (`__wm`): it lets
+  // a headless check drive the arrival cards without walking the party across the
+  // map first. It only sets local UI state, so it is inert in play.
+  useEffect(() => {
+    // Set, never deleted on cleanup: /map mounts this component inside a tabbed
+    // shell, and a sibling unmounting would otherwise take the hook with it.
+    ;(window as unknown as Record<string, unknown>).__aopMap = { setOptions, setEntrance, setChosen }
+  }, [])
+
+  /** Pick one of the node's authored options: the server charges the cost and rolls the check. */
+  async function chooseOption(nodeKey: string, optionKey: string) {
+    try {
+      const res = await fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody({ action: "choose", node_key: nodeKey, option_key: optionKey }) })
+      const out = res.ok ? await res.json() : null
+      if (!out?.ok) return
+      setOptions(null)
+      setChosen({ label: out.option?.label ?? "", success: !!out.success, text: out.text ?? null, roll: out.roll ? { name: out.roll.name, arithmetic: out.roll.arithmetic } : null, line: out.line ?? null, revealed: out.revealed ?? null })
+      if (out.day) setMarch((m) => ({ ...m, ...out.day }))
+      if (typeof out.line === "string" && out.line) {
+        void fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: out.line, voice: "onyx" }) })
+          .then(async (r) => { if (r.ok) speakBlob("dm", await r.blob(), { speaker: "Malachar" }) })
+          .catch(() => {})
+      }
+      setRefresh((r) => r + 1)
+    } catch {
+      /* the option stands unchosen; the card can be clicked again */
+    }
+  }
+
+  /** Step off the overworld into a great place. The server owns whether the edge is legal. */
+  async function enterPlace(nodeKey: string, scene: string | null, plate: string, name: string) {
+    if (entering) return
+    setEntering(true)
+    try {
+      const res = await fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody({ action: "enter", node_key: nodeKey }) })
+      const out = res.ok ? await res.json() : null
+      if (!out?.ok) {
+        console.warn("[map] the party cannot enter here:", out?.error)
+        setEntering(false)
+        return
+      }
+      if (scene) {
+        // The stage grows out of the plate into the place itself.
+        await stage.go(scene, { caption: `The party enters ${name}.` })
+        setEntrance(null)
+      }
+    } catch {
+      /* stay at the gates */
+    }
+    setEntering(false)
   }
 
   /** A player's standing vote, or the DM naming the leader outright. */
@@ -632,6 +704,10 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
         // line only when something happened (it is also in `dialogue`, so
         // every browser reads it; this one hears it at once).
         if (out?.stinger) playStinger(out.stinger as StingerCue)
+        // A great place opens its entrance; a node with authored options offers
+        // them. Both are authored — nothing appears here that Sam did not make.
+        if (out?.entrance) setEntrance({ node: n, info: out.entrance as EntranceInfo })
+        if (Array.isArray(out?.options) && out.options.length) setOptions({ node: n, list: out.options as OfferedOption[] })
         if (out?.notice) playStinger(out.notice.noticed ? "noticed" : "missed", 900)
         if (out?.notice || out?.line) {
           setBeat({ chip: out.notice?.chip ?? null, noticed: out.notice?.noticed ?? null, line: out.line ?? null })
@@ -1058,6 +1134,117 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
           </div>
           )
         })()}
+
+        {/* THE ENTRANCE. A great place the party has reached: the painted plate
+            fills the map, the place names itself, and "Enter" steps off the
+            overworld (the server validates that edge). Eight places are painted;
+            everywhere else arrives as an ordinary stop. */}
+        {entrance && !confirmNode && !halt && (
+          <div className="absolute inset-0 z-20 grid place-items-end bg-[#05030a]">
+            <img
+              src={entrance.info.plate}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ animation: "aop-plate-in 1.2s cubic-bezier(.6,0,.2,1) both" }}
+            />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(to top, #05030af2 0%, #05030a66 38%, transparent 70%)" }} />
+            <div className="relative w-full px-6 pb-8 text-center">
+              <div className="text-[11px] tracking-[.3em] text-[#9a8fb0]">THE PARTY ARRIVES AT</div>
+              <div className="mt-1 font-serif text-3xl tracking-[.18em] text-[#f5c34d]" style={{ textShadow: "0 2px 18px #000" }}>
+                {entrance.info.name.toUpperCase()}
+              </div>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {canLead && entrance.info.scene && (
+                  <button
+                    onClick={() => void enterPlace(entrance.node.node_key, entrance.info.scene, entrance.info.plate, entrance.info.name)}
+                    disabled={entering}
+                    className="rounded border-2 border-[#f5c34d] bg-[#f5c34d] px-5 py-2 text-xs font-bold tracking-[.2em] text-[#120b1e] disabled:opacity-60"
+                  >
+                    {entering ? "ENTERING…" : "ENTER →"}
+                  </button>
+                )}
+                {canLead && !entrance.info.scene && (
+                  <span className="rounded border border-[#3a2c56] bg-[#171024cc] px-4 py-2 text-[11px] text-[#9a8fb0]">
+                    The gates stand open, but there is nothing built inside yet.
+                  </span>
+                )}
+                <button
+                  onClick={() => setEntrance(null)}
+                  className="rounded border-2 border-[#3a2c56] bg-[#221936] px-4 py-2 text-xs tracking-[.2em] text-[#c9bcd8]"
+                >
+                  STAY ON THE MAP
+                </button>
+              </div>
+            </div>
+            <style>{`@keyframes aop-plate-in{from{opacity:0;transform:scale(1.06)}to{opacity:1;transform:scale(1)}}`}</style>
+          </div>
+        )}
+
+        {/* THE OPTIONS CARD (Sam: "a screen should pop up offering you options and
+            their relative costs"). Every option here was authored on the node;
+            a greyed one names what the party is missing. */}
+        {options && !confirmNode && !halt && !entrance && (
+          <div className="absolute inset-0 z-20 grid place-items-center bg-[#05030acc] p-3">
+            <div className="w-full max-w-[52ch] rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5">
+              <div className="text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">At {options.node.name ?? "this place"}</div>
+              <div className="mt-1 font-serif text-lg text-[#f5c34d]">What do they do?</div>
+              <div className="mt-4 grid gap-2">
+                {options.list.map((o) => (
+                  <button
+                    key={o.key}
+                    disabled={!o.available || !canLead}
+                    onClick={() => void chooseOption(options.node.node_key, o.key)}
+                    className={`rounded border px-3 py-2 text-left text-xs ${
+                      o.available && canLead
+                        ? "border-[#3a2c56] bg-[#221936] text-[#e4d8bf] hover:border-[#f5c34d]"
+                        : "cursor-not-allowed border-[#2a2140] bg-[#1a1428] text-[#6f6486]"
+                    }`}
+                  >
+                    <b className="tracking-wide">{o.label}</b>
+                    {o.detail && <div className="mt-0.5 text-[11px] text-[#9a8fb0]">{o.detail}</div>}
+                    <div className="mt-1 text-[11px] text-[#e0a35c]">{o.cost_line}</div>
+                    {!o.available && <div className="mt-0.5 text-[11px] text-[#c96a6a]">The party has no {o.blocked_by.join(", ")}.</div>}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setOptions(null)}
+                className="mt-4 w-full rounded border border-[#3a2c56] bg-[#221936] py-2 text-xs tracking-[.2em] text-[#9a8fb0]"
+              >
+                WALK ON
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* What the choice came to. */}
+        {chosen && (
+          <div className="absolute inset-0 z-20 grid place-items-center bg-[#05030acc] p-3">
+            <div className={`w-full max-w-[52ch] rounded-lg border-2 ${chosen.success ? "border-[#5ec08a]" : "border-[#7a2b2b]"} bg-[#171024] px-6 py-5`}>
+              <div className="text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">{chosen.success ? "It works" : "It does not"}</div>
+              <div className="mt-1 font-serif text-lg text-[#f5c34d]">{chosen.label}</div>
+              {chosen.roll && (
+                <div className="mt-2 text-[11px] text-[#9a8fb0]">
+                  <span className="text-[#f5c34d]">{chosen.roll.name}</span> · {chosen.roll.arithmetic}
+                </div>
+              )}
+              {chosen.text && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{chosen.text}</p>}
+              {chosen.revealed && <div className="mt-2 text-[12px] text-[#f5c34d]">The map grows: {chosen.revealed}.</div>}
+              {chosen.line && (
+                <div className="mt-3 border-t border-[#3a2c56] pt-3 font-serif text-[13px] italic text-[#e4d8bf]">
+                  <span className="mr-2 not-italic text-[10px] tracking-[.2em] text-[#b44df5]">MALACHAR</span>
+                  {chosen.line}
+                </div>
+              )}
+              <button
+                onClick={() => setChosen(null)}
+                className="mt-4 w-full rounded border border-[#7a5c2b] bg-[#2a1f10] py-2 text-xs tracking-[.2em] text-[#f5c34d]"
+              >
+                ON WE GO
+              </button>
+            </div>
+          </div>
+        )}
 
         {arrivedAt && !confirmNode && !halt && (
           <div className="absolute left-1/2 -translate-x-1/2 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-4 py-2 text-xs text-[#f5c34d] tracking-widest">
