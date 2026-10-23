@@ -817,7 +817,7 @@
     "rows": 4
   },
   "strikeKick": {
-    "bytes": 16166,
+    "bytes": 11274,
     "cols": 5,
     "file": "strikeKick.webp",
     "fps": 24,
@@ -825,7 +825,7 @@
     "rows": 4
   },
   "strikePunch": {
-    "bytes": 25756,
+    "bytes": 20186,
     "cols": 5,
     "file": "strikePunch.webp",
     "fps": 24,
@@ -833,7 +833,7 @@
     "rows": 4
   },
   "strikeSneak": {
-    "bytes": 33288,
+    "bytes": 14034,
     "cols": 5,
     "file": "strikeSneak.webp",
     "fps": 24,
@@ -841,9 +841,25 @@
     "rows": 4
   },
   "strikeSpecial": {
-    "bytes": 46870,
+    "bytes": 9386,
     "cols": 5,
     "file": "strikeSpecial.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "strikeSweep": {
+    "bytes": 6692,
+    "cols": 5,
+    "file": "strikeSweep.webp",
+    "fps": 24,
+    "frames": 20,
+    "rows": 4
+  },
+  "strikeUppercut": {
+    "bytes": 10040,
+    "cols": 5,
+    "file": "strikeUppercut.webp",
     "fps": 24,
     "frames": 20,
     "rows": 4
