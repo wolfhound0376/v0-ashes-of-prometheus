@@ -1670,8 +1670,9 @@ function weaponSfx(atk, tgt){
     : /mace|hammer|maul|club|staff|greatsword|axe|halberd|pick|morningstar|pike|bar/.test(n) ? "combat/melee_swing_heavy"
     : /claw|bite|slam|pseudopod/.test(n) ? "combat/unarmed_hit" : "combat/melee_swing_light";
   const ac = tgt ? targetAc(tgt) : 0, fist = /unarmed|fist|punch|kick/.test(n);
-  // a bare fist lands with Sam's own punch (ElevenLabs take 1, 2026-10-15: "a better sound ... for unarmed attack")
-  const hit = ranged ? "combat/arrow_hit_flesh" : fist ? "walk:unarmed-hit" : (atk.type || "") === "bludgeoning" ? "combat/melee_hit_bludgeon"
+  // a bare fist lands with the ElevenLabs library's "quick movement punch on a bag" (Sam, 2026-10-22, after the made-up
+  // arcade takes: "Eleven labs has combat sounds use those" / "punch can use quick punch bag movement")
+  const hit = ranged ? "combat/arrow_hit_flesh" : fist ? "walk:punch-bag" : (atk.type || "") === "bludgeoning" ? "combat/melee_hit_bludgeon"
     : ac >= 17 ? "combat/melee_hit_plate" : ac >= 14 ? "combat/melee_hit_chainmail" : "combat/melee_hit_flesh";
   return {swing, hit, miss: ranged ? "combat/arrow_hit_stone" : "combat/melee_miss"};
 }
@@ -2438,7 +2439,7 @@ function doShove(a, t, what){
       const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
-      bank("walk:unarmed-hit", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
+      bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
       else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const to = nearestWalkable(t.x + d.x * ftPx(t) * 5, t.y + d.y * ftPx(t) * 5); t.x = to.x; t.y = to.y; narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
