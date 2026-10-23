@@ -699,6 +699,9 @@ function draw(){
     if (a.fall){ const k = Math.min(1, (now - a.fall) / 900); fy = k * k * 800; ctx.globalAlpha = a.alpha * (1 - k); }
     if (a.fallIn){ const k = 1 - Math.min(1, (now - a.fallIn) / 700); fy = -k * k * 700; if (k <= 0) a.fallIn = 0; }
     if (a.kx || a.ky){ a.kx *= .82; a.ky *= .82; if (Math.abs(a.kx) < .3) a.kx = 0; if (Math.abs(a.ky) < .3) a.ky = 0; }
+    // a sparring move (sparMiss): its offset rides on kx/ky for this one frame, so the held weapon, any stuck
+    // arrow and the hit flash all move with the body; it is taken off again at the end of this actor
+    const sp = sparPose(a); if (sp){ a.kx = (a.kx || 0) + sp.ox; a.ky = (a.ky || 0) + sp.oy; }
     if (a.climbing){
       const C = a.climbing, el = now - C.t0;
       if (el < 0){ ctx.globalAlpha = 0; }
@@ -733,6 +736,10 @@ function draw(){
       const k = (now - a.deadSwap) / 650, idl = SPR[a.id].img.idle, a0 = ctx.globalAlpha;
       ctx.globalAlpha = a0 * (1 - k); ctx.drawImage(idl, 0, a.face * ch, cw, ch, dx, dy, dw, dh);
       ctx.globalAlpha = a0 * k; ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.globalAlpha = a0;
+    } else if (sp){                              // leaning or crouched into a sparring move, pivoting on the feet
+      const fx = a.x + a.kx, fyy = a.y + fy + a.ky;
+      ctx.save(); ctx.translate(fx, fyy); ctx.rotate(sp.rot); ctx.scale(1, sp.sy);
+      ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore();
     } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
     if (pose) ctx.filter = "none";
     if (held && !held.behind) drawHeld(a, held, sc, py, cw, fy);
@@ -753,6 +760,7 @@ function draw(){
       ctx.font = "bold 44px 'IM Fell English SC', Georgia, serif"; ctx.textAlign = "center";
       ctx.strokeText("!", a.x, top); ctx.fillText("!", a.x, top);
     }
+    if (sp){ a.kx -= sp.ox; a.ky -= sp.oy; }
   }
   if (mode === "combat") drawFxLayer(false);
   drawCombatFx(); drawShots();
@@ -2275,7 +2283,14 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       const sw = swipeStyle(atk, crit, att);
       if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
       if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
-      if (!hit){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); log(`${why} — miss.`); narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : `${fname(att)} swings at ${fname(tgt)} and misses.`); if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
+      if (!hit){
+        // a melee blow that reached them is a sparring exchange (sparMiss); a shot, a flask, or a blow with stone in
+        // the way is the plain miss it always was
+        const how = !shot && !cv.total ? sparMiss(att, tgt, r === 1 ? null : r + atk.hit + insp - acVs, sw, ws) : null;
+        if (!how){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
+        log(`${why} — ${how === "parry" ? "parried" : how === "duck" ? "ducked" : how === "dodge" ? "dodged" : "miss"}.`);
+        narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
+        if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(heroes()).some(p => p !== att && feetBetween(p, tgt) <= 5)));
@@ -2517,6 +2532,64 @@ function damage(t, n, type, crit, from){
   renderParty();
 }
 function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
+// THE SPARRING EXCHANGE (Sam, 2026-10-22: "I would like misses in combat to look like real deflections, parries,
+// ducking. Such that melee attacks actually look like the two subjects are sparring."). A melee miss used to be the
+// word MISS over a body that stood still (only a few sprites have a drawn dodge) while a grey swipe went through it.
+// Now BOTH bodies answer for it, the way the battle board's defenceFor reads a verdict:
+//   a NEAR miss (short by 3 or less) was very nearly a hit, so it is met with steel: the defender turns into it and
+//   gives a little ground, sparks fly where the blades meet, and the attacker is knocked back off its line;
+//   a WIDE miss was never going to land, so the defender is simply not there: a sidestep across the line, a duck
+//   under the swing, or a sway back out of reach, never the same one twice running, and the attacker's swing
+//   carries it forward into the space they left;
+//   a natural 1 is the attacker's own doing: it stumbles through the swing and the defender does nothing at all.
+// The defender squares up to the swinger first. Each move is out fast, a held beat, back slow, well under a square.
+// There are no shields on this map, so there is no block (the board's third answer).
+const SPAR_SHAPES = {   // back/side/drop in sprite px (times actorScale) along the line between them; lean in radians
+  sidestep:  {back: 10, side: 34, drop: 4, lean: .14, squash: 0, life: 460},
+  duck:      {back: 2, side: 0, drop: 0, lean: -.14, squash: .26, life: 440},
+  sway:      {back: 30, side: 0, drop: 0, lean: .32, squash: .03, life: 460},
+  parry:     {back: 10, side: 0, drop: 0, lean: .10, squash: .04, life: 340},
+  deflected: {back: 16, side: 0, drop: 0, lean: .20, squash: 0, life: 380},
+  overreach: {back: -22, side: 6, drop: 0, lean: -.22, squash: .05, life: 420},
+};
+const SPAR_DODGES = ["sidestep", "duck", "sway"];
+function sparEnv(p){ if (p <= 0 || p >= 1) return 0; if (p < .3){ const u = p / .3; return 1 - (1 - u) * (1 - u); } if (p < .5) return 1; const u = (p - .5) / .5; return 1 - u * u * (3 - 2 * u); }
+function spar(a, from, style){ const d = norm({x: a.x - from.x, y: a.y - from.y}); a.sparSide = -(a.sparSide || 1); a.spar = {style, t0: now, ax: d.x, ay: d.y, side: a.sparSide}; }
+function sparPose(a){
+  const s = a.spar; if (!s) return null;
+  const sh = SPAR_SHAPES[s.style], p = (now - s.t0) / sh.life; if (p >= 1){ a.spar = null; return null; }
+  const k = sparEnv(p), sc = actorScale(a), back = sh.back * sc * k, side = sh.side * s.side * sc * k;
+  return {ox: s.ax * back - s.ay * side, oy: (s.ay * back + s.ax * side) * .6 + sh.drop * sc * k, rot: (Math.sign(s.ax) || 1) * sh.lean * k, sy: 1 - sh.squash * k};
+}
+// steel on steel: a white star and a spray of hot sparks where the blade was met, most of the way to the defender
+function clash(att, tgt){
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), x = att.x + (tgt.x - att.x) * .62, y = att.y + (tgt.y - att.y) * .62 - m.pivot[1] * sc * .55;
+  sparks.push({star: true, x, y, r: 26 * sc, t0: now, life: 180});
+  for (let i = 0; i < 14; i++){ const ang = Math.random() * Math.PI * 2, v = 90 + Math.random() * 190; sparks.push({x, y, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v * .6 - 70, col: Math.random() < .5 ? "#ffffff" : "#ffe7a0", t0: now, life: 220 + Math.random() * 220}); }
+}
+function drawStar(s, k){
+  const r = s.r * (1.2 - .5 * k); ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = "#ffffff"; ctx.shadowColor = "#fff4c8"; ctx.shadowBlur = 18; ctx.beginPath();
+  for (let i = 0; i < 8; i++){ const a = i * Math.PI / 4 + .3, rr = i % 2 ? r * .22 : r; ctx.lineTo(s.x + Math.cos(a) * rr, s.y + Math.sin(a) * rr * .8); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+// `margin` is roll + bonus - AC (negative on a miss), or null for a natural 1. Draws the swipe, moves both bodies,
+// plays the sound, and returns what the defender did ("parry", "duck", "dodge") or "fumble"; null when the target
+// cannot move at all (down or asleep), and the caller plays the plain miss instead.
+function sparMiss(att, tgt, margin, sw, ws){
+  if (tgt.down || asleepNow(tgt)) return null;
+  swipe(att, tgt, {...sw, miss: true});
+  if (margin === null){ spar(att, tgt, "overreach"); popText(tgt, "miss", "#c9c4b8", .9); bank(ws.miss, .7); return "fumble"; }
+  if (!tgt.down) tgt.face = faceOf(att.x - tgt.x, att.y - tgt.y);
+  if (margin >= -3){
+    spar(tgt, att, "parry"); spar(att, tgt, "deflected"); clash(att, tgt);
+    popText(tgt, "parry", "#e8eefc", .9); bank("combat/parry_blade", .8); return "parry";
+  }
+  tgt.sparDodge = ((tgt.sparDodge ?? tgt.id.length) + 1) % SPAR_DODGES.length;
+  const style = SPAR_DODGES[tgt.sparDodge];
+  spar(tgt, att, style); spar(att, tgt, "overreach");
+  if (style === "sidestep" && SPR[tgt.id].img.dodge) playOnce(tgt, "dodge", () => setAnim(tgt, "idle"));
+  popText(tgt, style === "duck" ? "duck" : "dodge", "#c9c4b8", .9); bank(ws.miss, .7); return style === "duck" ? "duck" : "dodge";
+}
 function fall(t){
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
@@ -3148,6 +3221,7 @@ function drawCombatFx(){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
     if (s.swipe){ drawSwipe(s, k); continue; }
+    if (s.star){ drawStar(s, k); continue; }
     if (s.orb){ drawOrb(s, k); continue; }
     if (s.strand){ drawStrand(s, k); continue; }
     if (s.glow){ drawGlow(s, k); continue; }
