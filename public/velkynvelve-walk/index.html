@@ -3937,7 +3937,11 @@ function castMovesTo(n, where){
   n.stageWhere = where;
   const s = spotFor(where); if (!s || (Math.hypot(s.x - n.x, s.y - n.y) < 40 && !n.path.length)) return;
   n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n);
-  n.path = [{x: s.x, y: s.y}]; n.slow = true;
+  // Someone standing on the floor goes where the floor goes: a spot beyond it (the gate, the landing, the bridge are all
+  // outside the bars) becomes the nearest point inside, and the walk goes round, not through the wall (Sam, 2026-10-22:
+  // "why does jimjar sometimes walk out of the pen?"). The figures out on the balcony keep their straight line.
+  const onFloor = walkable(n.x, n.y), goal = onFloor && !walkable(s.x, s.y) ? nearestWalkable(s.x, s.y) : s;
+  n.path = onFloor ? findPath(n, goal) : [{x: s.x, y: s.y}]; if (!n.path.length) n.path = [{x: goal.x, y: goal.y}]; n.slow = true;
   n.onArrive = () => { n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; setAnim(n, "idle"); n.face = faceOf(leader.x - n.x, leader.y - n.y); };
   narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} moves ${where}.`);
 }
@@ -3961,14 +3965,20 @@ function plateEdge(a){
 function castLeaves(n, dead){
   n.offStage = true; n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n); n.talk = false;
   if (dead){ n.path = []; n.down = true; if (SPR[n.id].img.dead) playOnce(n, "dead", () => {}); else n.deadT0 = now; narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} is dead.`); return; }
-  const e = plateEdge(n); n.path = [{x: e.x, y: e.y, out: true}]; n.slow = false;
+  // out of the pen by its gate, not through its wall: a prisoner the story takes away walks to the bars and is gone
+  const gate = cur === 11 && walkable(n.x, n.y) ? doorGate() : null;
+  if (gate){ const g = nearestWalkable(822, 880); n.path = [...findPath(n, g), {x: 812, y: 812, out: true}]; n.slow = false; }
+  else { const e = plateEdge(n); n.path = [{x: e.x, y: e.y, out: true}]; n.slow = false; }
   n.onArrive = () => { n.alpha = 0; };
   narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} goes out of sight.`);
 }
 function castReturns(n){
   n.offStage = false; n.down = false; n.fading = false;
-  const e = plateEdge(n.post); n.x = e.x; n.y = e.y; n.alpha = 0; n.fadeIn = true; setAnim(n, "idle");
-  n.path = [{x: n.post.x, y: n.post.y}]; n.slow = true;
+  const viaGate = cur === 11 && doorGate() && walkable(n.post.x, n.post.y);       // back into the pen by its gate
+  const e = viaGate ? {x: 812, y: 812} : plateEdge(n.post); n.x = e.x; n.y = e.y; n.alpha = 0; n.fadeIn = true; setAnim(n, "idle");
+  if (viaGate){ const g = nearestWalkable(822, 880); n.path = [{x: g.x, y: g.y}, ...findPath({...n, x: g.x, y: g.y}, n.post)]; }
+  else n.path = [{x: n.post.x, y: n.post.y}];
+  n.slow = true;
   n.onArrive = () => { if (n.keep){ n.patrol = n.keep.patrol; n.static = n.keep.static; } n.home = {x: n.x, y: n.y}; };
   narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} comes back into view.`);
 }
