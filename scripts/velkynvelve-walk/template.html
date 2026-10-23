@@ -527,6 +527,11 @@ function buildGrid(){
     if (inside && !blocked){ grid[cy * GW + cx] = 1; sx += x; sy += y; n++; depthMin = Math.min(depthMin, y); depthMax = Math.max(depthMax, y); }
   }
   centroid = n ? {x: sx / n, y: sy / n} : {x: 1200, y: 700};
+  const B = balconyFloor() ? balcony() : null;
+  if (B) for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++){
+    const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
+    if (inPoly(B.poly, x, y)) grid[cy * GW + cx] = 1;
+  }
   if (depthMax - depthMin < 200){ depthMin -= 100; depthMax += 100; }
 }
 function walkable(x, y){
@@ -555,7 +560,7 @@ function los(a, b){
   for (let k = 1; k <= n; k++){ const t = k / n; if (!walkable(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false; }
   return true;
 }
-function findPath(from, to){
+function gridPath(from, to){
   if (los(from, to)) return [{x: to.x, y: to.y}];
   const cell = p => Math.min(GW - 1, Math.max(0, Math.floor(p.x / CELL))) + Math.min(GH - 1, Math.max(0, Math.floor(p.y / CELL))) * GW;
   const s = cell(from), t = cell(to), N = GW * GH;
@@ -589,10 +594,108 @@ function findPath(from, to){
   }
   return out;
 }
+// ---------- the pen gate, both ways ----------
+// Sam, 2026-10-23: "The drow should be able to open the gate and come in and vice versa." In a fight in the pen the
+// guards stood on the balcony and shot through the bars for ever, and nobody on either side could reach the other:
+// the balcony was not floor, and nothing ever opened the gate.
+//
+// Now, while steel is out, the balcony outside the bars (story.json: interact.gate.balcony, the rope bridge and the
+// rock landing by Jorlan's post) is floor, drawn at the guards' size. Once the gate stands open, the way between the
+// landing and the threshold goes round behind the pillar, out of sight, exactly the route Jorlan walks in openGate,
+// and it costs `passFt` of movement. findPath takes it in either direction, so a drow comes in by it and a hero goes
+// out by it, and everything that walks (a Move, an approach, an ally closing on a foe) gets it for free.
+//
+// Outside a fight none of this exists: the gate's own crossing card still handles leaving, exactly as before.
+function balcony(){ const z = doorGate(); return (z && z.interact && z.interact.balcony) || null; }
+function onBalcony(p){ const B = balcony(); return !!(B && p && p.x != null && inPoly(B.poly, p.x, p.y)); }
+const balconyFloor = () => mode === "combat" && !!balcony();
+const gatePassable = () => balconyFloor() && state.gateOpen && !state.doorShut;
+// whether `a` can reach `b` only by going through the gate (one inside the pen, one out on the balcony)
+const gateWayTo = (a, b) => gatePassable() && onBalcony(a) !== onBalcony(b);
+function findPath(from, to){
+  const p = gridPath(from, to); if (p.length || !gatePassable()) return p;
+  const fb = onBalcony(from); if (fb === onBalcony(to)) return p;
+  const B = balcony(), P = q => ({x: q[0], y: q[1]});
+  const L = P(B.landing), H = P(B.behind), T = P(B.threshold), I = P(B.inside);
+  const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) <= 8;
+  // out of sight on the near side ("out": fades as it goes), back into view on the far side ("jump": reappears)
+  const [a, b] = fb ? [gridPath(from, L), gridPath(T, to)] : [gridPath(from, I), gridPath(L, to)];
+  if ((!a.length && !near(from, fb ? L : I)) || (!b.length && !near(fb ? T : L, to))) return [];
+  return fb ? [...a, {...H, out: true}, {...T, jump: true, passFt: B.passFt}, ...b]
+            : [...a, {...T, out: true}, {...L, jump: true, passFt: B.passFt}, ...b];
+}
+// Trim a path to what `budget` pixels of movement buys. The hidden passage is all or nothing: it costs passFt, and a
+// walker who cannot afford it stops on the near side rather than vanishing behind the pillar half way.
+function cutPath(a, path, budget){
+  const px = ftPx(a); let left = budget, prev = a, used = 0; const pts = [];
+  const done = reached => ({pts, usedFt: Math.round(used / px / 5) * 5, reached});
+  for (let i = 0; i < path.length; i++){
+    const q = path[i];
+    if (q.out){
+      const nx = path[i + 1], cost = Math.hypot(q.x - prev.x, q.y - prev.y) + (nx && nx.jump ? (nx.passFt || 0) * px : 0);
+      if (cost > left) return done(false);
+      pts.push(q); if (nx){ pts.push(nx); prev = nx; i++; } left -= cost; used += cost; continue;
+    }
+    const d = Math.hypot(q.x - prev.x, q.y - prev.y);
+    if (d > left){ const k = left / d; pts.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); used += left; return done(false); }
+    pts.push(q); left -= d; used += d; prev = q;
+  }
+  return done(true);
+}
+// A guard with the key, out on the balcony while the gate is shut, goes to it and opens it (house assumption: the
+// outpost's guards carry the pen key; story.json `keys`). Unlocking and swinging a gate is the turn's object
+// interaction; the turn ends there, and from the next round the drow come through.
+function holdsGateKey(f){
+  const B = balcony();
+  return !!(B && balconyFloor() && (!state.gateOpen || state.doorShut) && onBalcony(f) && new RegExp(B.keys).test(f.id) && !incapacitated(f));
+}
+function goOpenGate(f){
+  const B = balcony(), L = {x: B.landing[0], y: B.landing[1]};
+  f.slow = false;
+  const unlock = () => {
+    state.gateOpen = true; state.doorShut = false;
+    sfx("lock-picked", .9); setTimeout(() => { setDoor(true); sfx("door-open", .85); }, 600);
+    // the balcony is floor now for everyone out there: they walk it at the guards' size rather than standing as scenery
+    for (const o of [...foes, ...npcs]) if (onBalcony(o)){ o.backdrop = false; o.fixedScale = 0; o.patrol = null; o.static = false; }
+    log(`${fname(f)} turns a key in the pen gate and drags it open. The way in stands open.`);
+    narrate(f, `${fname(f)} unlocks the gate from the landing and hauls it wide.`);
+    setTimeout(() => passTurn(f), 1500);
+  };
+  if (Math.hypot(L.x - f.x, L.y - f.y) <= 12){ unlock(); return; }
+  const path = gridPath(f, L); if (!path.length){ log(`${fname(f)} cannot get to the gate and holds.`); setTimeout(() => passTurn(f), 600); return; }
+  const c = cutPath(f, path, (f.c.move || 0) * ftPx(f));
+  f.c.move = Math.max(0, (f.c.move || 0) - c.usedFt);
+  log(`${fname(f)} makes for the pen gate${c.reached ? "" : " and does not reach it this turn"}.`);
+  f.path = c.pts; f.onArrive = () => { f.onArrive = null; setAnim(f, "idle"); if (c.reached) unlock(); else setTimeout(() => passTurn(f), 400); };
+  if (!f.path.length) f.onArrive();
+}
+// An approach that has to go through the gate: walk as far as the movement buys toward the target's side, strike
+// only if that brings them within reach. No straight-line shortcut across the pillar.
+function approachViaGate(att, tgt, ft, then){
+  const B = balcony(), reach = reachPx(att, tgt, ft);
+  const entry = onBalcony(tgt) ? {x: B.landing[0], y: B.landing[1]} : {x: B.threshold[0], y: B.threshold[1]};
+  const dd = Math.hypot(tgt.x - entry.x, tgt.y - entry.y), k = Math.max(0, dd - reach * .8) / (dd || 1);
+  const goal = nearestWalkable(entry.x + (tgt.x - entry.x) * k, entry.y + (tgt.y - entry.y) * k);
+  const hero = party.includes(att);
+  const stop = why => {
+    combatBusy = false;
+    if (hero){ toast(why); if (cbt) cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); }
+    else { log(`${fname(att)} ${why}`); setTimeout(() => passTurn(att), 400); }
+  };
+  const full = findPath(att, goal); if (!full.length){ stop("has no way through the gate."); return; }
+  const c = cutPath(att, full, Math.max(0, (att.c.move || 0) * ftPx(att)));
+  if (!c.pts.length){ stop(hero ? `Not enough movement to go round through the gate (${B.passFt} ft for the way behind the pillar).` : "cannot make it through the gate this turn."); return; }
+  att.c.move = Math.max(0, (att.c.move || 0) - c.usedFt);
+  att.path = c.pts; att.onArrive = () => {
+    att.onArrive = null; setAnim(att, "idle");
+    if (Math.hypot(tgt.x - att.x, tgt.y - att.y) <= reach + 40) then();
+    else stop(hero ? "Through the gate, but not within reach yet." : `${onBalcony(att) ? "is out on the landing" : "is through the gate"}, not yet within reach.`);
+  };
+}
 
 // ---------- scale & drawing ----------
 function depthAt(y){ return 0.8 + 0.32 * Math.min(1, Math.max(0, (y - depthMin) / (depthMax - depthMin))); }
-function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE * a.fixedScale * (96 / m.ppu); return BASE * node.scale * depthAt(a.y) * (96 / m.ppu) * (a.big || 1); }
+function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE * a.fixedScale * (96 / m.ppu); return BASE * paceAt(a) * (96 / m.ppu) * (a.big || 1); }
 function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
   const sp = SPR[a.id];
@@ -2002,7 +2105,9 @@ const d6 = () => 1 + Math.floor(Math.random() * 6);
 function d20(adv){ const a = 1 + Math.floor(Math.random() * 20); if (!adv) return a; const b = 1 + Math.floor(Math.random() * 20); return adv > 0 ? Math.max(a, b) : Math.min(a, b); }
 
 // one 5-ft square in plate pixels where this actor stands (the sprites are drawn at ppu px per square)
-function ftPx(a){ return 96 * BASE * node.scale * depthAt(a.y) * (a.big || 1) / 5; }
+function ftPx(a){ return 96 * BASE * paceAt(a) * (a.big || 1) / 5; }
+// how big a five-foot step is where `a` stands: the pen's depth rule, or out on the balcony the guards' own size
+function paceAt(a){ const B = balconyFloor() && onBalcony(a) ? balcony() : null; return B ? B.scale : node.scale * depthAt(a.y); }
 function feetBetween(a, b){ return Math.hypot(b.x - a.x, b.y - a.y) / ftPx(a); }
 function reachPx(att, tgt, ft){ const m = SPR[tgt.id].json; return ft * ftPx(att) + 22 * actorScale(tgt) * (m.cell[0] / 128); }
 
@@ -2019,6 +2124,7 @@ function fighterFor(a){
 function startCombat(foeIds, label){
   if (mode !== "explore") return;
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
+  if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
   const allies = alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
   hoverZone = null; tip.hidden = true;
   const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
@@ -2311,7 +2417,8 @@ function combatClick(w){
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
-  { const cv = coverOf(a, t); if (cv.total){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
+  { const cv = coverOf(a, t), round = p.atk && !p.throwing && (p.atk.reach || 5) <= 10 && gateWayTo(a, t);
+    if (cv.total && !round){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
   if (p.atk) attackWith(a, t, p.atk, null, p.offhand); else castSpell(a, t, p.spell);
 }
@@ -2328,9 +2435,9 @@ function provokedBy(a, end){
 // and nobody moved (6e1f3e8, 2026-10-15).
 function combatWalk(a, p, done){
   let path = findPath(a, p); if (!path.length){ combatBusy = false; done && done(); return; }
-  const px = ftPx(a); let left = a.c.move * px, prev = a, cut = [];
-  for (const q of path){ const d = Math.hypot(q.x - prev.x, q.y - prev.y); if (d > left){ const k = left / d; cut.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); left = 0; break; } cut.push(q); left -= d; prev = q; }
-  a.c.move = Math.max(0, Math.round(left / px / 5) * 5); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
+  const c = cutPath(a, path, a.c.move * ftPx(a)), cut = c.pts;
+  if (!cut.length){ toast(`Not enough movement to go round through the gate (${balcony() ? balcony().passFt : 15} ft for the way behind the pillar).`); combatBusy = false; done && done(); return; }
+  a.c.move = Math.max(0, a.c.move - c.usedFt); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
   const threat = provokedBy(a, cut[cut.length - 1]);
   combatBusy = true; closeMenu(); a.path = cut;
   a.onArrive = () => { combatBusy = false; done && done(); };
@@ -2374,6 +2481,7 @@ function gapOnLine(a, to){
 }
 function planLeap(a, to){
   const span = a.c.sheet.strScore; if (!span) return null;
+  if (balconyFloor() && onBalcony(a) !== onBalcony(to)) return null;   // between the pen and the balcony is a wall, not a gap: the way is the gate
   if (["prone", "grappled", "restrained", "asleep"].some(c => a.c.conds.has(c))) return null;
   const g = gapOnLine(a, to); if (!g || g.gapFt < MIN_LEAP_FT) return null;
   g.max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
@@ -2849,6 +2957,7 @@ function seekSight(f){
 function passTurn(a){ if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
 function approachThen(att, tgt, ft, then){
+  if (gateWayTo(att, tgt)){ approachViaGate(att, tgt, ft, then); return; }
   const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
   if (d <= reach + 6){ then(); return; }
   const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
@@ -2929,7 +3038,8 @@ function foeTurn(f){
   // NOBODY IN SIGHT (a wall between it and every hero): it does not hack at the stone. If the room has a place to see
   // in from (story.json `spots`: the pen gate, where the bars give three-quarters cover), it goes there, as far as its
   // speed allows, and shoots through if it can; otherwise it holds and watches.
-  if (blind){ seekSight(f); return; }
+  if (holdsGateKey(f)){ goOpenGate(f); return; }      // the pen gate, both ways: a guard with the key opens it first
+  if (blind && !gateWayTo(f, tgt)){ seekSight(f); return; }
   if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => passTurn(f), 500)); return; }
   if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => passTurn(f), 500); }); return; }
   if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => passTurn(f), 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
@@ -2959,7 +3069,7 @@ function allyTurn(a){
     renderParty(); end(); return;
   }
   // only foes it has a line to (line of sight, main #796): an ally does not swing at a drow through the pen wall
-  const seen = standing(foes).filter(f => !f.c.conds.has("hidden") && !coverOf(a, f).total);
+  const seen = standing(foes).filter(f => !f.c.conds.has("hidden") && (!coverOf(a, f).total || gateWayTo(a, f)));
   if (!seen.length && standing(foes).length){ log(`${fname(a)} has no way at the enemy from here and holds.`); end(); return; }
   const near = (x, y) => Math.hypot(x.x - a.x, x.y - a.y) - Math.hypot(y.x - a.x, y.y - a.y);
   const tgt = (cbt.lastAllyTarget && cbt.lastAllyTarget.get(a) && seen.includes(cbt.lastAllyTarget.get(a))) ? cbt.lastAllyTarget.get(a) : seen.sort(near)[0];
@@ -3033,7 +3143,12 @@ function endCombat(won){
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
   for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
   shots.length = 0;
+  // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
+  if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && onBalcony(h)){
+    const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; }
+  }
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
+  if (balcony()) buildGrid();
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
   const allies = cbt ? cbt.allies : [];
@@ -5093,7 +5208,7 @@ function step(a, dt, speed){
     return;
   }
   if (a.path[0].s != null) a.big = (a.big || 1) + (a.path[0].s - (a.big || 1)) * Math.min(1, dt * 2.5);
-  const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), sp = speed * node.scale * depthAt(a.y) * dt;
+  const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), sp = speed * paceAt(a) * dt;
   if (p.out) a.alpha = Math.min(a.alpha, Math.max(0, (d - 4) / 70));   // walking into a doorway: gone by the threshold
   // Blocked by a body in the way (the press of a fight, a bystander): if the distance left has not shrunk
   // for a third of a second, this is as far as the walk goes — stop here and count it as arrived, so a
