@@ -66,6 +66,11 @@ with open(os.path.join(out, "manifest.js"), "w", encoding="utf-8") as f:
 with open(os.path.join(out, "pov.js"), "w", encoding="utf-8") as f:
     f.write(js.rstrip() + "\n")
 shell = top.rstrip() + '\n<script src="manifest.js"></script>\n<script src="pov.js"></script>\n'  # NOTE: re-add the dungeon loader from git history if unpacking from scratch
+# Test copies start silent (Sam, 2026-10-22): the mute must load before pov.js makes its AudioContext.
+SILENCE = '<script src="/test-copy-silence.js"></script>'
+if SILENCE not in shell:
+    shell = shell.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n' + SILENCE, 1)
+    assert SILENCE in shell, "cave shell has no <meta charset> to anchor the test-copy mute on"
 with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
     f.write(shell)
 print(f"{len(written)} assets, {sum(written.values())//1024} KB -> {out}")
