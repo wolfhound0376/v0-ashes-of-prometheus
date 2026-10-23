@@ -1357,7 +1357,7 @@ function drawDoor(){
 // everything else (story.json `props`, OotA ch.1 area 7): locked, Ilvara keeps the key, a poison needle guards the
 // lock. Rolls are made on the dashboard and reported here, as at the gate. What is inside is Layer 1's to say.
 const lids = {};   // prop id -> {img, bx, by, k, target}
-function propState(pr){ return state.props[pr.id] || (state.props[pr.id] = {locked: true, trapKnown: false, disarmed: false, open: false}); }
+function propState(pr){ return state.props[pr.id] || (state.props[pr.id] = {locked: pr.locked !== false, trapKnown: false, disarmed: false, open: false}); }
 function propAt(w){ return (node.props || []).find(pr => inPoly(pr.poly, w.x, w.y)) || null; }
 function buildProps(){
   for (const pr of node.props || []){
@@ -1435,7 +1435,7 @@ function openProp(pr, opts = {}){
     box.firstChild?.focus();
   };
   if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
-  else if (!st.locked){ $("objText").textContent = "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
+  else if (!st.locked){ $("objText").textContent = (pr.text && pr.text.unlocked) || "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
   else {
     $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
     if (!opts.again) sfx("door-locked", .45);
