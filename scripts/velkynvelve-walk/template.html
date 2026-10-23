@@ -1952,7 +1952,8 @@ function nextTurn(first){
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
   if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
     log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => passTurn(a), 700); return; } }
-  a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...heroes(), ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it) a.c.bonusSpell = false; a.c.leveledSpell = false;
+  a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...heroes(), ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it)
+  a.c.bonusSpell = false; a.c.leveledSpell = false;   // the bonus-action spell rule is per turn (it had slipped into the comment above, so one Guiding Bolt locked out Healing Word for the rest of the fight)
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
