@@ -1,0 +1,110 @@
+{
+ "jab": {
+  "size": [
+   573,
+   385
+  ],
+  "impact_px": [
+   483,
+   108
+  ],
+  "feet_y_px": 375,
+  "fx_bbox": [
+   394,
+   8,
+   565,
+   198
+  ],
+  "fx_kind": "burst"
+ },
+ "uppercut": {
+  "size": [
+   398,
+   488
+  ],
+  "impact_px": [
+   320,
+   163
+  ],
+  "feet_y_px": 478,
+  "fx_bbox": [
+   227,
+   8,
+   390,
+   356
+  ],
+  "fx_kind": "arc"
+ },
+ "side_kick": {
+  "size": [
+   517,
+   378
+  ],
+  "impact_px": [
+   459,
+   112
+  ],
+  "feet_y_px": 369,
+  "fx_bbox": [
+   391,
+   8,
+   509,
+   241
+  ],
+  "fx_kind": "burst"
+ },
+ "sweep": {
+  "size": [
+   563,
+   295
+  ],
+  "impact_px": [
+   476,
+   230
+  ],
+  "feet_y_px": 285,
+  "fx_bbox": [
+   324,
+   139,
+   553,
+   283
+  ],
+  "fx_kind": "arc"
+ },
+ "flying_knee": {
+  "size": [
+   355,
+   404
+  ],
+  "impact_px": [
+   289,
+   160
+  ],
+  "feet_y_px": 394,
+  "fx_bbox": [
+   227,
+   83,
+   347,
+   241
+  ],
+  "fx_kind": "burst"
+ },
+ "roundhouse": {
+  "size": [
+   509,
+   435
+  ],
+  "impact_px": [
+   397,
+   173
+  ],
+  "feet_y_px": 425,
+  "fx_bbox": [
+   162,
+   9,
+   501,
+   339
+  ],
+  "fx_kind": "arc"
+ }
+}
