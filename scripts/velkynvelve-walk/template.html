@@ -3499,8 +3499,8 @@ async function pollStage(){
     for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature)){
       const here = present.find(c => stageMatch(c, n.id));
       const off = gone.some(g => stageMatch(g, n.id)) && !here;
-      if (off && !n.offStage) castLeaves(n, !!gone.find(g => stageMatch(g, n.id)).dead);
-      else if (!off && n.offStage) castReturns(n);
+      if (off){ n.stroll = null; if (!n.offStage) castLeaves(n, !!gone.find(g => stageMatch(g, n.id)).dead); }   // gone in the story: not just out for a walk
+      else if (n.offStage && !n.stroll) castReturns(n);                    // a guard out for a walk comes back on their own clock
       if (!n.offStage){ castMovesTo(n, here ? here.where : null); castAsks(n, here ? here.wantsWord : null); }
     }
     stageSeen = {present, gone};
@@ -3580,19 +3580,36 @@ function plateEdge(a){
   const c = [{x: -120, y: a.y}, {x: NAT_W + 120, y: a.y}, {x: a.x, y: -120}, {x: a.x, y: NAT_H + 120}];
   return c.sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0];
 }
-function castLeaves(n, dead){
+function castLeaves(n, dead, quiet){
   n.offStage = true; n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n); n.talk = false;
   if (dead){ n.path = []; n.down = true; if (SPR[n.id].img.dead) playOnce(n, "dead", () => {}); else n.deadT0 = now; narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} is dead.`); return; }
   const e = plateEdge(n); n.path = [{x: e.x, y: e.y, out: true}]; n.slow = false;
   n.onArrive = () => { n.alpha = 0; };
-  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} goes out of sight.`);
+  if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} goes out of sight.`);
 }
-function castReturns(n){
+function castReturns(n, quiet){
   n.offStage = false; n.down = false; n.fading = false;
   const e = plateEdge(n.post); n.x = e.x; n.y = e.y; n.alpha = 0; n.fadeIn = true; setAnim(n, "idle");
   n.path = [{x: n.post.x, y: n.post.y}]; n.slow = true;
   n.onArrive = () => { if (n.keep){ n.patrol = n.keep.patrol; n.static = n.keep.static; } n.home = {x: n.x, y: n.y}; };
-  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} comes back into view.`);
+  if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} comes back into view.`);
+}
+// Sam, 2026-10-22 (a comment on the pen): "Sometimes these guards should be able to step off the map." A drow guard
+// walking a beat now and then carries on past the end of it, off the plate by the nearest edge, is gone a while, and
+// walks back onto the beat the same way. Only in a calm moment (the idle life runs only while exploring, so a fight, a
+// talk or a card holds them where they are), never the last guard in sight, never one who wants a word. The game's
+// own roster still wins: a guard Malachar says has gone stays gone, and one he has moved or wants talking is not sent off.
+const STROLL = {chance: .22, away: [20000, 60000]};
+function maybeStroll(a){
+  if (!/^drow-guard/.test(a.id) || a.hostile || a.talk || a.stageAsk || a.stageWhere) return false;
+  const inSight = npcs.filter(n => /^drow-guard/.test(n.id) && !n.offStage && !n.body && actors.includes(n));
+  if (inSight.length < 2 || Math.random() > STROLL.chance) return false;
+  const [lo, hi] = STROLL.away; a.stroll = {back: now + lo + Math.random() * (hi - lo)};
+  castLeaves(a, false, true); return true;
+}
+function strollBack(a){
+  if (!a.stroll || !a.offStage || now < a.stroll.back) return false;
+  a.stroll = null; castReturns(a, true); return true;
 }
 if (APP){ setTimeout(pollStage, 2500); setInterval(pollStage, 5000); }
 
@@ -3985,7 +4002,7 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
-$("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => n.offStage ? castReturns(n) : castLeaves(n, false)); };
+$("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };
 $("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { const f = creatures.get("gray-ooze"); if (!f.inside) creatureCrosses("gray-ooze"); else creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
   if (on === timeStopped) return;
@@ -4808,12 +4825,13 @@ const ACTS = [
 ];
 function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
 function idleLife(a){
+  if (a.stroll && strollBack(a)) return;                                                 // a guard back from a walk off the plate
   if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body) return;   // creatures move by tickCreatures, not the idle wander
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
     if (now < (a.actUntil || 0)) return;
     a.leg = (a.leg || 0) ^ 1; const [px, py] = a.patrol[a.leg];
-    a.path = [{x: px, y: py}]; a.slow = true; a.onArrive = () => { a.actUntil = now + 2500 + Math.random() * 3500; };
+    a.path = [{x: px, y: py}]; a.slow = true; a.onArrive = () => { if (maybeStroll(a)) return; a.actUntil = now + 2500 + Math.random() * 3500; };
     return;
   }
   if (a.static){ if (now > (a.actUntil || 0)){ a.face = [0, 1, 2, 7, 6][Math.floor(Math.random() * 5)]; a.actUntil = now + 3000 + Math.random() * 5000; } return; }
