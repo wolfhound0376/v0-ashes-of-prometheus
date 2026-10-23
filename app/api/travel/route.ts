@@ -24,6 +24,9 @@ import { mayLead, tallyLeader } from "@/lib/travel/leader"
 import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
+import { costLine, offerOptions, readOptions, resolveChoice, type NodeOption } from "@/lib/travel/options"
+import { entranceFor } from "@/lib/travel/entrance"
+import { applyTransition } from "@/lib/game-context"
 import { formatPersonality, type LichPersonality } from "@/lib/world-ai/book-retrieval"
 import { marchPassivePerception } from "@/lib/travel/march"
 import { activeRunId, readLeader, roster } from "@/lib/travel/leader-store"
@@ -77,6 +80,22 @@ import type { SheetSlice } from "@/lib/game-context"
 //     action "vote"   {for: character_id}  → a player's standing vote.
 //     action "leader" {character_id|null}  → the DM's override.
 //   Both are read back by GET /api/travel/leader (public, anon-safe).
+//
+//   OPTIONS AT A NODE (Sam, 2026-10-14: "If there are any options at the node, a
+//   screen should pop up offering you options and their relative costs").
+//     "arrive" also returns `options` — the node's AUTHORED options
+//     (travel_node_events.payload.options; lib/travel/options.ts), each with the
+//     cost the party reads before choosing. A node with none simply has none.
+//     action "choose" {node_key, option_key} → charges the cost (hours to the
+//     day, exhaustion to the sheets), rolls the option's check with the
+//     best-suited character, reveals what the author named, and narrates.
+//
+//   THE ENTRANCE (Sam's scope: "A great place opens its entrance").
+//     "arrive" returns `entrance` for the eight painted places
+//     (lib/travel/entrance.ts): the plate, the name, and where "Enter" leads.
+//     action "enter" {node_key} → validates the overworld -> exploration edge
+//     through lib/game-context.ts applyTransition() and records the context on
+//     campaign_runs.game_context. The map grows the stage into the plate.
 //
 //   THE ARRIVAL BEAT (Sam, 2026-10-14). Every "arrive" also returns:
 //     stinger  → which of the five cues the node earned (lib/travel/stingers.ts)
@@ -380,7 +399,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader"]
+  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader", "choose", "enter"]
   const NO_NODE = ["continue", "vessel", "depart", "vote", "leader"]
   if (!KNOWN.includes(action) || (!nodeKey && !NO_NODE.includes(action))) {
     return NextResponse.json({ error: `expected { action: ${KNOWN.join("|")}, node_key }` }, { status: 400 })
@@ -398,7 +417,7 @@ export async function POST(req: NextRequest) {
   const party = await roster(dbA)
   const tally = tallyLeader(lead.votes, party.map((c) => c.id))
   const leaderId = lead.leader ?? tally.leader
-  if (["depart", "move", "arrive", "continue"].includes(action) && !mayLead(who, leaderId)) {
+  if (["depart", "move", "arrive", "continue", "choose", "enter"].includes(action) && !mayLead(who, leaderId)) {
     return NextResponse.json({ error: "only the party's leader (or the DM) may move the party", leader: leaderId }, { status: 403 })
   }
   const force = body?.force === true
@@ -543,6 +562,140 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, action, op: "lose", lost: (data ?? []).length })
     }
     return NextResponse.json({ error: "op must be acquire | lose" }, { status: 400 })
+  }
+
+  // ==========================================================================
+  // CHOOSE — the party picks one of the node's authored options.
+  // ==========================================================================
+  if (action === "choose") {
+    const dbc = createAdminClient()
+    const optionKey = typeof body?.option_key === "string" ? body.option_key.trim() : ""
+    if (!optionKey) return NextResponse.json({ error: "option_key required" }, { status: 400 })
+    const runId = runIdA
+    if (!runId) return NextResponse.json({ error: "no active campaign run" }, { status: 409 })
+
+    const { data: node0 } = await dbc.from("travel_nodes").select("id,node_key,name,metadata").eq("node_key", nodeKey).maybeSingle()
+    if (!node0) return NextResponse.json({ error: "unknown node_key" }, { status: 404 })
+
+    const [{ data: evs }, { data: marchRow }, { data: sheets }, { data: boats }] = await Promise.all([
+      dbc.from("travel_node_events").select("id,kind,title,body,payload,fires_once,priority").eq("node_id", node0.id),
+      dbc.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle(),
+      dbc.from("characters").select("id,name,level,str_score,dex_score,con_score,int_score,wis_score,cha_score,proficiency_bonus,passive_perception,sheet_skill_proficiencies,exhaustion").eq("is_player", true),
+      dbc.from("party_vessels").select("id,lost_at").is("lost_at", null),
+    ])
+    const authored: NodeOption[] = ((evs ?? []) as { payload: Record<string, unknown> }[]).flatMap((e) => readOptions(e.payload))
+    // The same gate the card drew: a hidden option is only choosable once the
+    // passive roll found something here, and a requirement is a requirement.
+    const lastNotice = await dbc
+      .from("travel_arrivals").select("outcome").eq("node_id", node0.id).order("arrived_at", { ascending: false }).limit(1).maybeSingle()
+    const noticed = !!(lastNotice.data?.outcome as { notice?: { noticed?: boolean } } | null)?.notice?.noticed
+    const offered = offerOptions(authored, { noticed, has: (boats ?? []).length ? ["boat"] : [] })
+    const picked = offered.find((o) => o.key === optionKey)
+    if (!picked) return NextResponse.json({ error: "no such option here", offered: offered.map((o) => o.key) }, { status: 404 })
+    if (!picked.available) return NextResponse.json({ error: `the party lacks: ${picked.blocked_by.join(", ")}` }, { status: 409 })
+
+    const party = (sheets ?? []) as unknown as SheetSlice[]
+    const outcome = resolveChoice(picked, party, Math.random)
+
+    // THE COSTS. Hours go on the day like a leg of road; exhaustion goes on the
+    // sheets (clamped at 6, lib/exhaustion.ts). Both are charged whether the
+    // check passed or failed - the time was spent either way.
+    const dayBefore = normaliseDay(marchRow as Record<string, unknown> | null)
+    let dayAfter = dayBefore
+    const hours = outcome.cost.hours ?? 0
+    if (hours > 0) {
+      dayAfter = { ...dayBefore, hours_today: dayBefore.hours_today + hours }
+      await saveDay(dbc, runId, dayAfter)
+      // The clock's event vocabulary is closed (lib/time-tracking.ts). Hours spent
+      // at a stop are still hours on the road, so they log as travel_march.
+      await logTimeEvent(dbc, await clockSessionId(dbc), { eventType: "travel_march", minutesAdvanced: Math.round(hours * 60) })
+    }
+    const exhausted: { id: string; name: string; to: number }[] = []
+    if (outcome.cost.exhaustion) {
+      for (const c of (sheets ?? []) as Record<string, unknown>[]) {
+        const to = Math.min(MAX_EXHAUSTION, normaliseExhaustion(c.exhaustion) + outcome.cost.exhaustion)
+        await dbc.from("characters").update({ exhaustion: to }).eq("id", String(c.id))
+        exhausted.push({ id: String(c.id), name: String(c.name ?? "?"), to })
+      }
+    }
+    let revealedName: string | null = null
+    if (outcome.reveals) {
+      const { data: hidden } = await dbc.from("travel_nodes").select("id,name,discovered_at").eq("node_key", outcome.reveals).maybeSingle()
+      if (hidden) {
+        if (!hidden.discovered_at) await revealNode(dbc, hidden.id)
+        revealedName = hidden.name ?? outcome.reveals
+      }
+    }
+
+    // Malachar comments, because something happened (ruling 5).
+    const { data: dials } = await dbc.from("lich_personality").select("snark, cruelty, crassness, swearing, fourth_wall, roast_target").limit(1).maybeSingle()
+    const line = await malacharRoadLine(
+      {
+        nodeName: node0.name ?? node0.node_key,
+        haltKind: "option",
+        title: picked.label,
+        body: [outcome.text, outcome.roll ? `${outcome.roll.name}: ${outcome.roll.arithmetic} (${outcome.roll.success ? "success" : "failure"})` : null].filter(Boolean).join(" "),
+        notice: null,
+        hoursToday: dayAfter.hours_today,
+        pace: dayAfter.pace,
+        exhausted: exhausted.map((e) => ({ name: e.name, levels: outcome.cost.exhaustion ?? 0 })),
+      },
+      formatPersonality((dials as LichPersonality | null) ?? null) || null,
+    )
+    if (line) await sayOnTheRoad(dbc, line)
+
+    return NextResponse.json({
+      ok: true,
+      action,
+      node_key: node0.node_key,
+      option: { key: picked.key, label: picked.label },
+      success: outcome.success,
+      roll: outcome.roll,
+      text: outcome.text,
+      revealed: revealedName,
+      cost: outcome.cost,
+      exhausted,
+      day: dayAfter,
+      line,
+      source: outcome.source,
+    })
+  }
+
+  // ==========================================================================
+  // ENTER — the party steps off the overworld into a great place.
+  // ==========================================================================
+  if (action === "enter") {
+    const dbe = createAdminClient()
+    const { data: node0 } = await dbe.from("travel_nodes").select("id,node_key,name,node_type,metadata,discovered_at").eq("node_key", nodeKey).maybeSingle()
+    if (!node0) return NextResponse.json({ error: "unknown node_key" }, { status: 404 })
+    const entrance = entranceFor(
+      { node_key: node0.node_key, name: node0.name, node_type: node0.node_type, metadata: (node0.metadata as Record<string, unknown> | null) ?? null },
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    )
+    if (!entrance) return NextResponse.json({ error: "this place has no painted entrance" }, { status: 404 })
+
+    // THE STATE MACHINE, finally called (lib/game-context.ts). It is the
+    // authority on whether this edge is legal; a refusal is an answer, not a bug.
+    const runId = runIdA
+    const { data: run } = runId
+      ? await dbe.from("campaign_runs").select("game_context").eq("id", runId).maybeSingle()
+      : { data: null }
+    const current = (run?.game_context as "overworld" | "exploration" | "combat" | "camp" | null) ?? "overworld"
+    const step = applyTransition(current, {
+      type: "arrive",
+      nodeId: node0.node_key,
+      hasMap: !!entrance.scene,
+      discoveredAt: node0.discovered_at as string | null,
+    })
+    if (!step.ok) return NextResponse.json({ error: step.error, context: current, entrance }, { status: 409 })
+
+    let remembered = false
+    if (runId) {
+      const { error: cerr } = await dbe.from("campaign_runs").update({ game_context: step.next }).eq("id", runId)
+      if (cerr) console.warn("[travel] game_context not saved (apply migration campaign_runs_game_context?):", cerr.message)
+      else remembered = true
+    }
+    return NextResponse.json({ ok: true, action, node_key: node0.node_key, entrance, context: step.next, reason: step.reason, remembered })
   }
 
   const db = createAdminClient()
@@ -780,6 +933,19 @@ export async function POST(req: NextRequest) {
       if (line) await sayOnTheRoad(db, line)
     }
 
+    // THE ENTRANCE and THE OPTIONS. Both are authored, never invented: a place
+    // has an entrance only if its plate was painted and approved, and a node has
+    // options only if the DM wrote them into its event payload.
+    const entrance = entranceFor(
+      { node_key: node.node_key, name: full?.name ?? null, node_type: String(full?.node_type ?? node.node_type), metadata: (full?.metadata as Record<string, unknown> | null) ?? null },
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    )
+    const authored: NodeOption[] = events.flatMap((e) => readOptions(e.payload))
+    const offered = offerOptions(authored, {
+      noticed: !!notice?.noticed,
+      has: (boatsRes.data ?? []).length ? ["boat"] : [],
+    }).map((o) => ({ ...o, cost_line: costLine(o) }))
+
     return NextResponse.json({
       ok: true,
       action,
@@ -787,6 +953,8 @@ export async function POST(req: NextRequest) {
       arrival_id: arrivalId,
       stinger,
       cues,
+      entrance,
+      options: offered,
       notice: notice ? { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, best: notice.best, text: notice.text, revealed: revealedName, source: notice.source } : null,
       line,
       ...outcome,
