@@ -415,8 +415,44 @@ const NAT_W = 2400, NAT_H = 1339, CELL = 20, GW = Math.ceil(NAT_W / CELL), GH = 
 const FULL_PARTY = ["kenta", "samson", "scott", "freia"];
 let PARTY = FULL_PARTY.slice();
 function seatedSlugs(seated){
-  const names = new Set((Array.isArray(seated) ? seated : []).map(s => String(s.name || "").toLowerCase()));
-  return FULL_PARTY.filter(id => names.has(String(PLAYS_AS[id] || "").toLowerCase()));
+  const list = Array.isArray(seated) ? seated : [], lc = v => String(v || "").toLowerCase();
+  for (const s of list) if (!PREMADE.some(id => lc(PLAYS_AS[id]) === lc(s.name))) forgeHero(s);
+  const names = new Set(list.map(s => lc(s.name))), ids = new Set(list.map(s => s && s.id).filter(Boolean));
+  return FULL_PARTY.filter(id => FORGED_ID[id] ? ids.has(FORGED_ID[id]) : names.has(lc(PLAYS_AS[id])));
+}
+// HEROES FROM THE FORGE. The four above were written into this page by hand; anyone made at the Forge
+// since was unknown to it, so the map drew the first premade in their place — Alejandro's Gandalf walked
+// the pen as Kenta, with Kenta's sheet (Sam, 2026-10-23: "My son created a character named gandalf but
+// kenta is the pixel art"). A seat the page does not know becomes a hero of its own here: their name,
+// their sheet (/api/map-stage sends it, lib/walk-sheet.ts builds it from their `characters` row), and
+// their own sprite when one has been baked for them (scripts/velkynvelve-walk/heroes.json). Until it has,
+// they wear a STAND-IN: the premade of the nearest class, under their own name — said here so nobody
+// mistakes it for the bug coming back.
+const PREMADE = FULL_PARTY.slice();
+const HERO_SPRITES = {};   // characters.id -> sprite slug in /sprites
+const STAND_IN = {wizard: "kenta", sorcerer: "kenta", warlock: "kenta", cleric: "samson", paladin: "samson", druid: "samson", monk: "samson", bard: "scott"};   // anyone else: Fifi's
+const FORGED_ID = {};   // slug -> characters.id, for every hero added this way
+function standInFor(cls){ return STAND_IN[String(cls || "").toLowerCase().split(/[^a-z]/)[0]] || "freia"; }
+function forgeHero(s){
+  if (!s || !s.id) return null;
+  let slug = Object.keys(FORGED_ID).find(k => FORGED_ID[k] === s.id);
+  if (!slug){
+    const baked = HERO_SPRITES[s.id];
+    slug = baked && SPR[baked] ? baked : `pc-${String(s.id).slice(0, 8)}`;
+    if (!SPR[slug]){ const base = SPR[standInFor(s.sheet && s.sheet.cls)]; SPR[slug] = {json: {...base.json, name: s.name}, img: base.img, standIn: true}; }
+    FORGED_ID[slug] = s.id; PLAYS_AS[slug] = s.name; SHORT[slug] = String(s.name).split(" ")[0];
+    FULL_PARTY.push(slug);
+  }
+  if (s.sheet) applyForgedSheet(slug, s.sheet);
+  return slug;
+}
+function applyForgedSheet(slug, sh){
+  // the walk resolves the spells in SPELLS; any other spell on the sheet stays the dashboard's to cast
+  const ok = n => Object.prototype.hasOwnProperty.call(SPELLS, n);
+  const m = sh.magic ? {...sh.magic, cantrips: sh.magic.cantrips.filter(ok), prepared: sh.magic.prepared.filter(ok)} : null;
+  SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m && (m.cantrips.length || m.prepared.length) ? m : null});
+  PCS[slug] = {name: sh.name, race: sh.race || "", cls: String(sh.cls || "").toLowerCase()};
+  if (SPR[slug].standIn){ const base = SPR[standInFor(sh.cls)]; SPR[slug] = {json: {...base.json, name: sh.name}, img: base.img, standIn: true}; }
 }
 // A DM-run companion (lib/seats.ts, seat.dm): walks with the party, led only from the DM's browser,
 // marked on hover. Sam, 2026-10-14: "The DM can add characters but will treat them like an NPC, with
@@ -432,7 +468,7 @@ function noteSeats(seated){
   renderSeats();
   if (!gearLoaded && seatsSeen.length){ gearLoaded = true; setTimeout(() => loadGear(), 0); }   // what each hero really carries
 }
-function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
+function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; if (FORGED_ID[slug]) return FORGED_ID[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
 async function seatCompanion(slug){
   const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({name: PLAYS_AS[slug] || slug})});
@@ -2066,7 +2102,7 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
+const SCHOOL_OF = {"Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
 const RUNE_SCHOOL = {abjuration: "runeAbjuration", conjuration: "runeConjuration", divination: "runeDivination", enchantment: "runeEnchantment", evocation: "runeEvocation", illusion: "runeIllusion", necromancy: "runeNecromancy", transmutation: "runeTransmutation"};
@@ -2214,6 +2250,9 @@ const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b6537
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
 const SPELLS = {
   "Ray of Frost":       {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "cold", fx: "#9fdcff", note: "speed −10 ft"},
+  // Gandalf's (2026-10-23). lib/data/spells.json: "ranged spell attack; 1d10 fire", 120 ft. The SRD's
+  // flammable-object rider has nothing to ignite on the plate and is left out.
+  "Fire Bolt":          {lvl: 0, kind: "attack", range: 120, dmg: "1d10", type: "fire", fx: "#ff8a3a"},
   "Shocking Grasp":     {lvl: 0, kind: "attack", range: 5, dmg: "1d8", type: "lightning", fx: "#fff27a", note: "no reactions"},
   "Chill Touch":        {lvl: 0, kind: "attack", range: 5, dmg: "1d10", type: "necrotic", fx: "#8fd48f", note: "can't regain HP"},
   "Toll the Dead":      {lvl: 0, kind: "save", save: "wis", range: 60, dmg: "1d8", dmgHurt: "1d12", type: "necrotic", fx: "#b39ddb"},
