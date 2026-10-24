@@ -5,7 +5,8 @@ Python only (Sam's machine has no Node). From the repo root:  python scripts/vel
 Inputs, all in this folder:
   template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/ /*__KIT__*/
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
-  spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots (built by spec.py)
+  spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots (built by spec.py); _handoffs = the cavern
+                 plates a 'leave' exit hands the party to, _layout = Sam's editor board (not used by the page)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
   fx.json        lamp/crystal glows and waterfall masks per plate
 Sprite metadata is read from public/sprites/<slug>/sprite.json and inlined; the sheets are loaded at
@@ -212,11 +213,14 @@ for i in P + N + F + V:
     meta[i] = {'json': j, 'sheets': sh}
 
 spec = json.load(open(os.path.join(HERE, 'spec.json')))
+# beyond the edge (spec.py CAVERNS / LAYOUT): not plates of this page. The hand-offs reach the page as HANDOFFS so a
+# 'leave' exit knows where it sends the party; the editor layout stays in spec.json only.
+handoffs = spec.pop('_handoffs', {}); spec.pop('_layout', None)
 story = json.load(open(os.path.join(HERE, 'story.json')))
 for k, v in story.items():
     if k.startswith('_'): continue
     n = spec[k]; n['npcs'] = n.get('npcs', []) + v.get('npcs', [])
-    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props', 'loot', 'lift'):
+    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props', 'loot', 'lift', 'objects'):
         if f in v: n[f] = v[f]
     n['cross'] = v.get('cross', {})
 # exits that lead to several places become one strip per destination, split across the way out
@@ -247,6 +251,7 @@ fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
+      .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
       .replace('/*__HEROES__*/{}', json.dumps(HEROES, separators=(',', ':')))
       .replace('/*__VOICE_BANK__*/{}', open(os.path.join(HERE, 'voice-bank.json')).read())
