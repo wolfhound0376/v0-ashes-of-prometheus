@@ -201,8 +201,23 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .btn.primary{border-color:var(--ember);color:var(--ember)}
 .btn.danger{border-color:var(--blood);color:#ff9b8f}
 
-.dm{position:absolute;top:10px;right:12px;width:min(300px,calc(100% - 24px));background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:10px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.dm{position:absolute;top:10px;right:12px;width:min(320px,calc(100% - 24px));max-height:calc(100% - 20px);overflow-y:auto;overscroll-behavior:contain;z-index:7;align-content:start;background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:10px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .dm[hidden]{display:none}
+/* Sam, 2026-10-23: "I can't see all my options on this view." The drawer had no height limit, so everything below
+   the fold was cut off by the picture's edge. It now scrolls inside the window, folds by section, and closes from
+   its own corner. */
+.dm .dmHead{display:flex;align-items:center;justify-content:space-between;position:sticky;top:-12px;margin:-12px -12px 0;padding:10px 12px 6px;background:var(--panel-solid);z-index:1;border-bottom:1px solid var(--rule)}
+.dm .dmHead b{font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.14em;text-transform:uppercase;color:var(--ember);font-weight:500}
+.dm details{display:grid;gap:6px}
+.dm details>summary{cursor:pointer;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);list-style:none;padding:4px 0}
+.dm details>summary::before{content:"▸ ";color:var(--ember)}
+.dm details[open]>summary::before{content:"▾ "}
+.dm details[open]{display:grid;gap:6px}
+.dm .seats .row{display:flex;align-items:center;gap:6px}
+.dm .seats .row span{flex:1;min-width:0;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm .seats .row small{color:var(--ink-dim);font-family:var(--face-mono);font-size:.62rem;letter-spacing:.06em}
+.dm .seats .row .btn{flex:0 0 auto;padding:4px 8px;font-size:12px}
+@media (max-width:700px){.dm{top:6px;right:6px;width:calc(100% - 12px);max-height:calc(100% - 12px)}}
 .inv{position:absolute;top:10px;left:12px;width:min(360px,calc(100% - 24px));max-height:calc(100% - 20px);overflow:auto;background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:6}
 .inv[hidden]{display:none}
 .invHead{display:flex;justify-content:space-between;align-items:center;font-family:var(--face-display);font-size:var(--s1)}
@@ -342,9 +357,17 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <div class="invFoot">I opens and closes · Esc closes</div>
     </div>
     <div class="dm" id="dm" hidden>
-      <h4>Jump to area</h4>
+      <div class="dmHead"><b>DM tools</b><button class="tbtn" id="dmClose" aria-label="Close DM tools">✕</button></div>
+      <details open><summary>Characters on the map</summary>
+      <div id="dmSeats" class="seats"></div>
+      </details>
+      <details><summary>Prisoners with the party</summary>
+      <div id="dmCompany" class="seats"></div>
+      </details>
+      <details open><summary>Jump to area</summary>
       <select id="jump" aria-label="Jump to area"></select>
-      <h4>World</h4>
+      </details>
+      <details open><summary>World</summary>
       <button class="btn" id="dmTime">Stop time</button>
       <button class="btn" id="dmOoze">Gray ooze: to the bridge → up from the chasm → away (preview)</button>
       <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
@@ -355,15 +378,16 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmBark">Make an NPC comment</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
       <button class="btn" id="dmAmbush" aria-pressed="false">Ambushes: on</button>
-      <h4>Items</h4>
+      </details>
+      <details><summary>Items</summary>
       <input id="dmItemQ" class="dmq" placeholder="Search the item catalogue" aria-label="Search the item catalogue">
       <select id="dmItem" size="6" aria-label="Catalogue items"></select>
       <button class="btn" id="dmPlace">Put it on the floor (then click where)</button>
       <div id="dmPiles" class="seats"></div>
-      <h4>Confiscated gear</h4>
+      </details>
+      <details><summary>Confiscated gear</summary>
       <div id="dmLoot" class="seats lootDm"></div>
-      <h4>Companions</h4>
-      <div id="dmSeats" class="seats"></div>
+      </details>
     </div>
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
@@ -470,10 +494,18 @@ function noteSeats(seated){
 }
 function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; if (FORGED_ID[slug]) return FORGED_ID[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
-async function seatCompanion(slug){
-  const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({name: PLAYS_AS[slug] || slug})});
-  if (!res.ok){ toast(res.status === 403 ? "Seating a companion needs the DM code. Enter it on the dashboard first." : "Could not seat them."); return; }
-  const j = await res.json(); noteSeats(j.seated); if (mode === "explore") partyJoins(slug);
+async function seatCompanion(who){
+  const body = typeof who === "string" ? {name: PLAYS_AS[who] || who} : {characterId: who.id, name: who.name};
+  const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)});
+  if (!res.ok){ toast(res.status === 403 ? "Adding a character needs the DM code. Enter it on the dashboard first." : "Could not add them."); return; }
+  // the seat answer carries no sheet; /api/map-stage does, so a Forge hero arrives with their own stats, not a stand-in's
+  let seated = (await res.json()).seated;
+  try { const j = await fetch("/api/map-stage", {cache: "no-store"}).then(r => r.json()); if (Array.isArray(j.seated)) seated = j.seated; } catch (e) {}
+  noteSeats(seated);
+  const seat = seated.find(x => (body.characterId && x.id === body.characterId) || String(x.name || "").toLowerCase() === String(body.name || "").toLowerCase());
+  const slug = seat ? seatedSlugs([seat])[0] : null;
+  if (slug && mode === "explore") partyJoins(slug);
+  renderSeats();
 }
 async function unseatCompanion(slug){
   const id = characterIdOf(slug); if (!id) return;
@@ -481,16 +513,74 @@ async function unseatCompanion(slug){
   if (!res.ok){ toast(res.status === 409 ? "That seat belongs to a player." : "Could not send them away."); return; }
   const j = await res.json(); noteSeats(j.seated); partyLeaves(slug);
 }
+// Sam, 2026-10-23: "I should also be able to add characters on to the map from DM tools." The drawer listed only the
+// four premades. It now lists every player character in the game (/api/seat GET `roster`), the ones made at the Forge
+// included: seated by a player, run by the DM, or not here yet with a button to bring them in.
+let roster = [];
+async function loadRoster(){ try { const j = await fetch("/api/seat", {cache: "no-store"}).then(r => r.json()); if (Array.isArray(j.roster)) roster = j.roster; if (Array.isArray(j.seated) && !seatsSeen.length) seatsSeen = j.seated; } catch (e) {} }
 function renderSeats(){
   const el = $("dmSeats"); if (!el) return; el.innerHTML = "";
-  for (const id of FULL_PARTY){
-    const nm = SHORT[id] || (SPR[id] && SPR[id].json.name) || id;
-    const seatedAsPlayer = PARTY.includes(id) && !dmRun.has(id) && seatsSeen.some(x => String(x.name || "").toLowerCase() === String(PLAYS_AS[id] || "").toLowerCase() && !x.dm);
+  const list = roster.length ? roster : FULL_PARTY.map(id => ({id: characterIdOf(id), name: PLAYS_AS[id] || id, cls: (SHEETS[id] || {}).cls || ""}));
+  if (!list.length){ el.innerHTML = '<small class="dmNote">No player characters found.</small>'; return; }
+  for (const ch of list){
+    const seat = seatsSeen.find(x => (ch.id && x.id === ch.id) || String(x.name || "").toLowerCase() === String(ch.name || "").toLowerCase());
+    const slug = seat ? seatedSlugs([seat])[0] : null, onMap = !!(slug && party.some(p => p.id === slug));
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<span>${esc(ch.name)} <small>${esc(ch.cls || "")}</small></span>`;
     const b = document.createElement("button"); b.className = "btn";
-    if (seatedAsPlayer){ b.textContent = `${nm}: a player's seat`; b.disabled = true; }
-    else if (dmRun.has(id)){ b.textContent = `${nm}: DM-run — send away`; b.onclick = () => unseatCompanion(id); }
-    else { b.textContent = `${nm}: add as DM-run companion`; b.onclick = () => seatCompanion(id); }
-    el.appendChild(b);
+    if (seat && !seat.dm){ b.textContent = onMap ? "Player's" : "Bring in"; b.disabled = onMap; b.title = "A player sits in this seat"; if (!onMap) b.onclick = () => slug && partyJoins(slug); }
+    else if (seat && seat.dm){ b.textContent = "Send away"; b.title = "You run this character as the DM"; b.onclick = () => unseatCompanion(slug); }
+    else { b.textContent = "Add"; b.title = "Put them on the map as a DM-run companion"; b.onclick = () => seatCompanion(ch); }
+    row.appendChild(b); el.appendChild(row);
+  }
+}
+// THE PRISONERS COME ALONG. Sam, 2026-10-23: "why are the NPCs not joining me when I leave the pen?" The ten
+// prisoners were painted into the pen's plate (spec.json node 11) and nowhere else, and nothing in the walk ever
+// moved an NPC from one area to the next, so leaving the pen left them all behind. Now everyone still standing in
+// the pen when the party leaves it (walking out or the DM's jump) goes with them — Out of the Abyss's escape is the
+// prisoners' escape — and each area the party enters has them beside it. The DM can leave one behind, or bring one
+// back, from DM tools ("Prisoners with the party"). The four who fight (ALLY_SHEETS) fight wherever they are.
+const PEN = 11;
+const PEN_NPCS = ((SPEC[PEN] && SPEC[PEN].npcs) || []).filter(n => !n.hostile && !n.backdrop);
+let booted = false;
+function companyNow(){ if (!Array.isArray(state.company)) state.company = []; if (!Array.isArray(state.leftBehind)) state.leftBehind = []; return state.company; }
+function prisonersJoin(){
+  const comp = companyNow();
+  const joined = npcs.filter(n => PEN_NPCS.some(d => d.id === n.id) && !n.down && !n.body && !n.offStage && !n.hostile && n.alpha > .2)
+    .map(n => n.id).filter(id => !comp.includes(id) && !state.leftBehind.includes(id));
+  comp.push(...joined);
+  return joined;
+}
+function spawnCompanion(id, near, placed, face){
+  const def = PEN_NPCS.find(d => d.id === id) || {};
+  const p = nearestWalkable(near.x, near.y, placed); if (placed) placed.push(p);
+  // no "a word, if you've a moment" on every arrival: that opener belongs to the pen; out here they are talked to like anyone (Talk)
+  const a = mkActor(id, p.x, p.y, "npc", {face: face || 0, talk: false, barks: def.barks || [], home: {x: p.x, y: p.y}, company: true});
+  a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000;
+  return a;
+}
+function renderCompany(){
+  const el = $("dmCompany"); if (!el) return; el.innerHTML = "";
+  const comp = companyNow();
+  if (!PEN_NPCS.length){ el.innerHTML = '<small class="dmNote">No prisoners on record.</small>'; return; }
+  for (const d of PEN_NPCS){
+    const nm = SHORT[d.id] || (SPR[d.id] && SPR[d.id].json.name) || d.id;
+    const behind = state.leftBehind.includes(d.id), inPen = cur === PEN && npcs.some(n => n.id === d.id && !n.company);
+    const along = comp.includes(d.id) || (inPen && !behind);
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<span>${esc(nm)} <small>${along ? (inPen ? "will come with you" : "with the party") : (inPen ? "stays in the pen" : "left behind")}</small></span>`;
+    const b = document.createElement("button"); b.className = "btn";
+    if (along){ b.textContent = "Leave behind"; b.onclick = () => {
+        state.company = comp.filter(x => x !== d.id); if (!state.leftBehind.includes(d.id)) state.leftBehind.push(d.id);
+        if (cur !== PEN){ const a = npcs.find(n => n.id === d.id); if (a){ a.fading = true; setTimeout(() => { npcs = npcs.filter(n => n !== a); actors = actors.filter(n => n !== a); }, 1300); } }
+        renderCompany(); }; }
+    else { b.textContent = "Bring along"; b.onclick = () => {
+        state.leftBehind = state.leftBehind.filter(x => x !== d.id);
+        if (!inPen){ comp.push(d.id);
+          if (leader && !npcs.some(n => n.id === d.id) && SPR[d.id]){ const a = spawnCompanion(d.id, {x: leader.x - 70 + Math.random() * 140, y: leader.y + 70}, party.map(q => ({x: q.x, y: q.y})), leader.face);
+            a.alpha = 0; a.fadeIn = true; npcs.push(a); actors = [...party, ...npcs, ...foes]; narrate(a, `${nm} is with you.`); } }
+        renderCompany(); }; }
+    row.appendChild(b); el.appendChild(row);
   }
 }
 function partyLeaves(slug){
@@ -1269,6 +1359,12 @@ function zoneAt(x, y){ return node.zones.find(z => inRect(z.rect, x, y)) || null
 
 async function enterNode(n, opts = {}){
   const from = cur, fromScale = node.scale;
+  // the freed prisoners come out of the pen with the party, and a companion who fell stays where they fell
+  let joined = [];
+  if (booted){
+    state.company = companyNow().filter(id => { const a = npcs.find(x => x.id === id); return !a || !(a.down || a.body); });
+    if (from === PEN && n !== PEN) joined = prisonersJoin();
+  }
   mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
   $("combat").hidden = true; stage.classList.remove("fight"); cbt = null; combatBusy = false; $("vignette").classList.remove("on");
   bubbles.forEach(b => b.until = 0);
@@ -1307,12 +1403,20 @@ async function enterNode(n, opts = {}){
   party.forEach(p => p.face = face);
   party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 3000 + Math.random() * 6000; });
   party.sort((a, b) => PARTY.indexOf(a.id) - PARTY.indexOf(b.id));
+  const comp = companyNow().filter(id => SPR[id]);
   for (const np of node.npcs || []){
     if (np.hostile && state.cleared[n]) continue;
+    if (comp.includes(np.id)) continue;                 // a companion walks with the party, not at their old spot
     const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
       hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
   }
+  // they gather loosely around the party (two rings, the inner one first), not in a heap on the leader
+  comp.forEach((id, i) => {
+    const ring = i < 6 ? 0 : 1, k = ring ? i - 6 : i, cnt = ring ? Math.max(1, comp.length - 6) : Math.min(6, comp.length);
+    const ang = (k + .5) / cnt * Math.PI * 2 + ring * .4, r = (170 + ring * 90) * node.scale;
+    npcs.push(spawnCompanion(id, {x: spawn.x + Math.cos(ang) * r, y: spawn.y + Math.sin(ang) * r * .7}, placed, face));
+  });
   actors = [...party, ...npcs];
   trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: L.x, y: L.y}]);
   ackZone = arrival; hoverZone = null;
@@ -1334,6 +1438,8 @@ async function enterNode(n, opts = {}){
   $("titlecard").classList.add("on"); clearTimeout(enterNode.t); enterNode.t = setTimeout(() => $("titlecard").classList.remove("on"), 1900);
   mode = "explore"; setTrack("explore");
   if (opts.note) log(opts.note);
+  if (joined.length) log(`${joined.map(id => esc(SHORT[id] || SPR[id].json.name)).join(", ")} ${joined.length > 1 ? "come" : "comes"} with you out of the pen.`);
+  if (!$("dm").hidden) renderCompany();
   nextAmbient = now + 6000 + Math.random() * 6000;
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -2454,7 +2560,7 @@ function nextTurn(first){
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
   if (!a || a.down) return;                                    // the fallen get no commands; passWhenSettled moves the turn on
-  const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; cbt.phase = "menu"; cbt.pend = null;
+  const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; m.dataset.kind = "combat"; exploreKey = ""; cbt.phase = "menu"; cbt.pend = null;
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
     const sic = SPELL_ICON[label];
     b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
@@ -2563,6 +2669,49 @@ function openMenu(a, sub){
   placeMenu();
 }
 function closeMenu(){ $("cbtMenu").hidden = true; hint(""); }
+// THE COMMAND BAR OUTSIDE A FIGHT. Sam, 2026-10-23: "I should have action options like I do during combat at the
+// bottom for my character." Out of combat the bar was empty and everything hid behind keys and clicks on the
+// picture (E, I, Tab, clicking a gate). The same bar now carries what the hero can do right here, built from the
+// walk's own actions — nothing new is resolved: Talk is approach(), Pick up / Use is interact() and the plate's
+// interactables, Bag is the bag, Attack starts the fight the way walking into a watching drow does, and anything
+// else ("I search the cell", "I hide") goes to Malachar on the dashboard, who rules on it.
+let exploreKey = "";
+function exploreOptions(){
+  const L = leader; if (!L) return null;
+  const sc = node.scale, dist = n => Math.hypot(n.x - L.x, n.y - L.y);
+  const talkable = npcs.filter(n => canTalkTo(n) && !n.offStage && !n.body && !n.down && n.alpha > .5).sort((a, b) => dist(a) - dist(b))[0];
+  const talkNear = talkable && dist(talkable) < 260 * sc ? talkable : null;
+  const pile = pilesHere().map(p => [p, feetToPile(L, p)]).filter(([, d]) => d <= 6).sort((x, y) => x[1] - y[1])[0];
+  const body = npcs.filter(n => n.body && dist(n) < 190 * sc).sort((a, b) => dist(a) - dist(b))[0];
+  const obj = node.zones.find(z => z.interact && Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y) < 320 * sc);
+  const foe = npcs.filter(n => n.hostile && !n.offStage && !n.down && !n.body && n.alpha > .5).sort((a, b) => dist(a) - dist(b))[0];
+  return {talkNear, talkable, pile: pile && pile[0], body, obj, foe};
+}
+function renderExploreBar(){
+  const m = $("cbtMenu");
+  if (mode !== "explore" || !leader){ if (m.dataset.kind === "explore" && !m.hidden){ m.hidden = true; exploreKey = ""; } return; }
+  if (!m.hidden && m.dataset.kind === "combat") return;
+  const o = exploreOptions(); if (!o) return;
+  const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, party.length].join("|");
+  if (key === exploreKey && !m.hidden) return;
+  exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
+  const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
+    b.innerHTML = `${icon ? `<img class="ico" src="${ICON_BASE}${icon}.png" alt="">` : `<i class="ico glyph">${glyph}</i>`}<span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}`;
+    if (fn) b.onclick = () => { unlockAudio(); fn(); exploreKey = ""; }; else b.disabled = true; m.appendChild(b); return b; };
+  const nm = n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name) || n.id;
+  add(o.talkNear ? `Talk to ${nm(o.talkNear)}` : "Talk", "❝", null, o.talkNear ? "E · say something to them" : o.talkable ? `walk closer to ${nm(o.talkable)}` : "no one here to talk to",
+      o.talkNear ? () => approach(o.talkNear) : o.talkable ? () => { leader.path = findPath(leader, nearestWalkable(o.talkable.x, o.talkable.y + 40)); } : null, o.talkNear ? "primary" : "");
+  if (o.pile) add(`Pick up ${o.pile.name}`, "⇩", "use-object", "E · it is at your feet", () => interact());
+  else if (o.body) add(`Search ${nm(o.body)}`, "⌕", "search", "E · see what they carried", () => interact());
+  else if (o.obj) add(o.obj.interact.name, "✋", "use-object", state.gateOpen ? "use it" : "locked · see your options", () => openInteract(o.obj));
+  add("Bag", "▣", null, "I · what you carry", () => toggleBag());
+  if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => startCombat([o.foe], `${who} attacks!`), "end");
+  if (party.length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const i = party.indexOf(leader); setLeader(party[(i + 1) % party.length]); });
+  add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
+    const q = new URLSearchParams({view: "full", from: "map", return: "/velkynvelve", area: node.name, as: PLAYS_AS[leader.id] || ""});
+    const url = (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); });
+}
 // The dashboard's painted action icons (public/icons/actions), 96 px copies under velkynvelve-walk/icons.
 const ICON_BASE = APP ? "/velkynvelve-walk/icons/" : "icons/";
 // Sam, 2026-10-14: "We have more icons for magic under cast that can be used." The commissioned spell icons
@@ -4671,7 +4820,7 @@ $("talkGo").onclick = (e) => {
 // The walk survives a trip to the dashboard and back: where everyone stood, who has been talked to, the gate.
 function saveWalk(){
   if (!leader || !party.length || !leader.x) return;
-  try { sessionStorage.setItem("aop_walk_state", JSON.stringify({cur, leader: leader && leader.id, party: party.map(p => ({id: p.id, x: Math.round(p.x), y: Math.round(p.y), face: p.face})), state})); } catch (e) {}
+  try { sessionStorage.setItem("aop_walk_state", JSON.stringify({cur, run: runSeen, leader: leader && leader.id, party: party.map(p => ({id: p.id, x: Math.round(p.x), y: Math.round(p.y), face: p.face})), state})); } catch (e) {}
 }
 function loadWalk(){
   try { const s = JSON.parse(sessionStorage.getItem("aop_walk_state") || "null"); return s && SPEC[s.cur] && Array.isArray(s.party) && s.party.length ? s : null; } catch (e) { return null; }
@@ -4805,9 +4954,10 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderDmItems(); renderDmLoot(); } }
+function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
 $("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
+$("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
   state.jumped = n;   // the DM put them here: nothing springs on them until they walk in for real (Sam, 2026-10-22: "why is this always starting a fight even in DM tools?")
@@ -5829,6 +5979,7 @@ function update(dt){
   if (mode === "combat" && !combatBusy) keyboardMove(activeActor(), dt);
   // idle life: whoever you're not moving potters about, like at camp
   if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
+  if (now - (renderExploreBar.at || 0) > 250){ renderExploreBar.at = now; renderExploreBar(); }
 }
 let lastT = performance.now();
 // Stopped time (the DM's switch, the "time-stopped" world flag): the world's clock stands still, so
@@ -5866,7 +6017,8 @@ function frame(t){
     try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
     if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }
-  const saved = APP ? loadWalk() : null;
+  let saved = APP ? loadWalk() : null;
+  if (saved && saved.run != null && runSeen != null && saved.run !== runSeen) saved = null;   // saved before a restart: that world is gone
   if (saved) saved.party = saved.party.filter(p => PARTY.includes(p.id));
   if (saved && saved.party.length){
     Object.assign(state, saved.state || {});
@@ -5878,6 +6030,7 @@ function frame(t){
     if (mine) leader = {id: mine};
     await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
   }
+  booted = true;
   requestAnimationFrame(frame);
 })();
 </script>
