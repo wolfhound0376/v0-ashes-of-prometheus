@@ -474,7 +474,7 @@ function applyForgedSheet(slug, sh){
   // the walk resolves the spells in SPELLS; any other spell on the sheet stays the dashboard's to cast
   const ok = n => Object.prototype.hasOwnProperty.call(SPELLS, n);
   const m = sh.magic ? {...sh.magic, cantrips: sh.magic.cantrips.filter(ok), prepared: sh.magic.prepared.filter(ok)} : null;
-  SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m && (m.cantrips.length || m.prepared.length) ? m : null});
+  SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m && (m.cantrips.length || m.prepared.length) ? m : null, caster: !!sh.magic});
   PCS[slug] = {name: sh.name, race: sh.race || "", cls: String(sh.cls || "").toLowerCase()};
   if (SPR[slug].standIn){ const base = SPR[standInFor(sh.cls)]; SPR[slug] = {json: {...base.json, name: sh.name}, img: base.img, standIn: true}; }
 }
@@ -2560,7 +2560,7 @@ function nextTurn(first){
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
   if (!a || a.down) return;                                    // the fallen get no commands; passWhenSettled moves the turn on
-  const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; m.dataset.kind = "combat"; exploreKey = ""; cbt.phase = "menu"; cbt.pend = null;
+  const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; m.dataset.kind = "combat"; exploreKey = ""; castOpen = null; cbt.phase = "menu"; cbt.pend = null;
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
     const sic = SPELL_ICON[label];
     b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
@@ -2689,8 +2689,9 @@ function exploreOptions(){
 }
 function renderExploreBar(){
   const m = $("cbtMenu");
-  if (mode !== "explore" || !leader){ if (m.dataset.kind === "explore" && !m.hidden){ m.hidden = true; exploreKey = ""; } return; }
+  if (mode !== "explore" || !leader){ castOpen = null; if (m.dataset.kind === "explore" && !m.hidden){ m.hidden = true; exploreKey = ""; } return; }
   if (!m.hidden && m.dataset.kind === "combat") return;
+  if (castOpen){ if (castOpen.leader === leader.id) return; castOpen = null; }   // the cast list stays up until it is used or closed
   const o = exploreOptions(); if (!o) return;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   const key = [leader.id, o.talkNear && o.talkNear.id, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, party.length].join("|");
@@ -2706,11 +2707,74 @@ function renderExploreBar(){
   else if (o.body) add(`Search ${nm(o.body)}`, "⌕", "search", "E · see what they carried", () => interact());
   else if (o.obj) add(o.obj.interact.name, "✋", "use-object", state.gateOpen ? "use it" : "locked · see your options", () => openInteract(o.obj));
   add("Bag", "▣", null, "I · what you carry", () => toggleBag());
+  const sh = SHEETS[leader.id];
+  if (sh && (sh.magic || sh.caster)) add("Cast", "✦", "cast-spell", wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => startCombat([o.foe], `${who} attacks!`), "end");
   if (party.length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const i = party.indexOf(leader); setLeader(party[(i + 1) % party.length]); });
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
     const q = new URLSearchParams({view: "full", from: "map", return: "/velkynvelve", area: node.name, as: PLAYS_AS[leader.id] || ""});
     const url = (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); });
+}
+// CASTING OUTSIDE A FIGHT (Sam, 2026-10-23: "there should be a way for the magic users to use magic that they've
+// memorized when out of the sigil"). The list is the caster's own sheet (/api/walk-cast GET: every cantrip and
+// prepared spell, with slots left), not the handful the fight menu resolves. Out here a spell is cast for real by
+// /api/walk-cast: the slot is spent on their sheet, a healing spell puts the hit points back on the target's row,
+// and Malachar is told. A spell aimed at an enemy in sight opens the fight instead, and the fight resolves it.
+// Inside the pen's ward there is no Cast at all: the wards drink every spell there (story.json `wards`).
+let castOpen = null;
+async function openCastMenu(o){
+  const caster = leader, cid = characterIdOf(caster.id); if (!cid){ toast("This character has no sheet to cast from."); return; }
+  castOpen = {leader: caster.id};
+  const m = $("cbtMenu"); m.dataset.kind = "explore"; m.innerHTML = '<button disabled><i class="ico glyph">✦</i><span>Reading the spellbook…</span></button>'; m.hidden = false;
+  let list = [];
+  try { const j = await fetch(`/api/walk-cast?characterId=${encodeURIComponent(cid)}`, {cache: "no-store"}).then(r => r.json()); list = j.spells || []; } catch (e) {}
+  if (!castOpen || castOpen.leader !== caster.id) return;
+  renderCastMenu(caster, cid, list, o);
+}
+function closeCastMenu(){ castOpen = null; exploreKey = ""; renderExploreBar(); }
+function renderCastMenu(caster, cid, list, o, healing){
+  const m = $("cbtMenu"); m.innerHTML = ""; m.dataset.kind = "explore"; m.hidden = false;
+  const who = SHORT[caster.id] || (SHEETS[caster.id] && SHEETS[caster.id].name.split(" ")[0]) || caster.id;
+  const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls; const sic = SPELL_ICON[label.replace(/ (at|on) .*$/, "")];
+    b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : icon ? `<img class="ico" src="${ICON_BASE}${icon}.png" alt="">` : `<i class="ico glyph">${glyph}</i>`}<span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}`;
+    if (fn) b.onclick = () => { unlockAudio(); fn(); }; else b.disabled = true; m.appendChild(b); };
+  if (healing){   // who the healing spell is for: the party, and the prisoners with a sheet of their own
+    const pool = [...party.map(p => ({a: p, id: characterIdOf(p.id)})), ...npcs.filter(n => ALLY_ROW[n.id] && !n.down && !n.body).map(n => ({a: n, id: ALLY_ROW[n.id]}))].filter(x => x.id);
+    for (const t of pool) add(`${healing.name} on ${fname(t.a.kind === "pc" ? t.a : {id: t.a.id})}`, "✚", null, t.a === caster ? "yourself" : "", () => doCast(caster, cid, healing, t.a, t.id));
+    add("Back", "↩", null, "", () => renderCastMenu(caster, cid, list, o));
+    return;
+  }
+  if (!list.length) add("No spells on the sheet", "·", null, "", null);
+  for (const sp of list){
+    const lvl = sp.level === 0 ? "cantrip" : `level ${sp.level} · ${sp.left} slot${sp.left === 1 ? "" : "s"} left`;
+    if (sp.left === 0){ add(sp.name, "✦", null, `${lvl} · a long rest brings them back`, null); continue; }
+    if (sp.kind === "fight"){
+      if (o.foe) add(`${sp.name} at ${SHORT[o.foe.id] || SPR[o.foe.id].json.name}`, "✦", null, `${lvl} · starts the fight`, () => { castOpen = null; startCombat([o.foe], `${who} opens with ${sp.name}!`); }, "end");
+      else add(sp.name, "✦", null, `${lvl} · cast at an enemy, none in sight`, null);
+    } else if (sp.kind === "heal") add(sp.name, "✚", null, `${lvl} · choose who`, () => renderCastMenu(caster, cid, list, o, sp));
+    else add(sp.name, "✦", null, `${lvl} · Malachar rules what it does`, () => doCast(caster, cid, sp, null, null));
+  }
+  add("Close", "↩", null, "", closeCastMenu);
+}
+async function doCast(caster, cid, sp, target, targetId){
+  const mine = (() => { try { return localStorage.getItem("aop_character_id") === cid ? localStorage.getItem("aop_claim_token") : null; } catch (e) { return null; } })();
+  const res = await fetch("/api/walk-cast", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+    body: JSON.stringify({characterId: cid, claimToken: mine || undefined, spell: sp.name, targetId: targetId || undefined, targetName: target ? fname(target.kind === "pc" ? target : {id: target.id}) : undefined})}).catch(() => null);
+  const j = res ? await res.json().catch(() => ({})) : {};
+  if (!res || res.status === 403){ toast("Only this character's player, or the DM, can cast for them."); return; }
+  if (!j.ok){ toast(j.why || "The spell would not come."); return; }
+  castOpen = null; exploreKey = "";
+  // the cast, drawn the way the fight draws one: the hands light, the rune ring, the release
+  const school = SCHOOL_OF[sp.name] || (j.kind === "heal" ? "evocation" : "evocation"), rune = j.kind === "heal" ? RUNE_OF.heal : (RUNE_SCHOOL[school] || "runeEvocation");
+  const tgt = target || caster; if (target) caster.face = faceOf(target.x - caster.x, target.y - caster.y);
+  bank(`magic/${j.kind === "heal" ? "holy" : "arcane"}_windup`, .55);
+  spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", until: now + 1400, alpha: .9});
+  playOnce(caster, SPR[caster.id].img.cast ? "cast" : "idle", () => setAnim(caster, "idle"));
+  setTimeout(() => { bank(`magic/${j.kind === "heal" ? "holy" : "arcane"}_release`, .7); if (tgt !== caster) spawnFx(rune, {at: tgt, sq: 1.4, anchor: "mid", until: now + 1200, alpha: .85}); }, 700);
+  const slot = j.level > 0 ? ` (${j.slotsLeft} level ${j.level} slot${j.slotsLeft === 1 ? "" : "s"} left)` : "";
+  if (j.healed){ log(`<b>${esc(fname(caster))}</b> casts <b>${esc(sp.name)}</b>: ${esc(j.healed.name)} regains ${j.healed.amount} HP (${j.healed.hp}/${j.healed.hpMax}).${slot}`); toast(`${j.healed.name} regains ${j.healed.amount} HP.`); }
+  else log(`<b>${esc(fname(caster))}</b> casts <b>${esc(sp.name)}</b>.${slot} <i>Malachar will say what comes of it.</i>`);
+  renderExploreBar();
 }
 // The dashboard's painted action icons (public/icons/actions), 96 px copies under velkynvelve-walk/icons.
 const ICON_BASE = APP ? "/velkynvelve-walk/icons/" : "icons/";
