@@ -645,6 +645,40 @@ let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
 const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}};
+
+// ---------- the party's situation, told to the game (POST /api/party/situation, lib/situation.ts) ----------
+// What the walk knows and the DM core did not: which plate the party actually stands on, who leads, who walks
+// with them, who else is on the plate, whether they are talking, fighting or just looking around, and the
+// last thing that happened. Written on every change of those (arriving, a talk opening or closing, a fight
+// starting or ending, the gate, the lift, a new leader) — never per frame — and the game only ever reads it.
+// Only the live game writes (APP): the stand-alone preview keeps its hands off the real party. A write the
+// game refuses or cannot take yet (the table not made, nobody seated) is dropped without a word: the walk
+// must never wait on this.
+let sitLast = "", sitTimer = 0;
+function situationNow(activity, extra){
+  const nameOf = a => (a && SPR[a.id] && SPR[a.id].json.name) || (a && a.id) || "";
+  const comp = companyNow();
+  return {
+    activity, place: "Velkynvelve", areaKey: node.slug, areaNo: Number(cur), areaName: node.name,
+    talkingTo: extra.talkingTo || (mode === "talk" && talkNpc ? nameOf(talkNpc) : null),
+    leader: leader ? (PLAYS_AS[leader.id] || nameOf(leader)) : null,
+    party: party.map(p => ({slug: p.id, name: PLAYS_AS[p.id] || nameOf(p), characterId: characterIdOf(p.id), down: !!p.down})),
+    company: comp.filter(id => SPR[id]).map(id => ({slug: id, name: SPR[id].json.name})),
+    nearby: npcs.filter(n => !n.offStage && !comp.includes(n.id)).map(n => ({slug: n.id, name: nameOf(n), hostile: !!n.hostile, down: !!n.down, body: !!n.body})),
+    flags: {gateOpen: !!state.gateOpen, clearedHere: !!state.cleared[cur], penKey: hasPenKey()},
+    note: extra.note || log.last || null,
+    characterId: (leader && characterIdOf(leader.id)) || (seatsSeen[0] && seatsSeen[0].id) || null,
+  };
+}
+function reportSituation(activity, extra){
+  if (!APP || !booted || !node) return;
+  clearTimeout(sitTimer);
+  sitTimer = setTimeout(() => {
+    let body; try { body = JSON.stringify(situationNow(activity, extra || {})); } catch (e) { return; }
+    if (body === sitLast) return; sitLast = body;
+    try { fetch("/api/party/situation", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body, keepalive: true}).catch(() => {}); } catch (e) {}
+  }, 250);
+}
 let now = performance.now();
 
 function mkActor(id, x, y, kind, extra = {}){
@@ -1163,6 +1197,7 @@ function updateOverlay(){
 const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; over.appendChild(tip);
 const nameTag = document.createElement("div"); nameTag.className = "nametag"; nameTag.hidden = true; over.appendChild(nameTag);
 function log(html){
+  log.last = String(html).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 240) || log.last;
   const el = $("log"); const p = document.createElement("p"); p.innerHTML = html; el.appendChild(p);
   [...el.children].forEach((c, i, all) => c.classList.toggle("old", i < all.length - 1));
   while (el.children.length > 3) el.firstChild.remove();
@@ -1373,6 +1408,7 @@ function setLeader(a){
   stopActivity(a); a.path = []; a.actUntil = 0;
   leader = a; trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: a.x, y: a.y}]);
   renderParty(); log(`Now moving <em>${esc(SHORT[a.id] || SPR[a.id].json.name)}</em>. The others stay put until the party leaves.`);
+  reportSituation(mode === "talk" ? "talking" : "exploring");
 }
 const followers = () => party.filter(p => p !== leader);
 function followOrder(){ return followers().sort((a, b) => Math.hypot(a.x - leader.x, a.y - leader.y) - Math.hypot(b.x - leader.x, b.y - leader.y)); }
@@ -1464,6 +1500,7 @@ async function enterNode(n, opts = {}){
   mode = "explore"; setTrack("explore");
   if (opts.note) log(opts.note);
   if (joined.length) log(`${joined.map(id => esc(SHORT[id] || SPR[id].json.name)).join(", ")} ${joined.length > 1 ? "come" : "comes"} with you out of the pen.`);
+  reportSituation("exploring", {note: `The party is in the ${node.name}.`});
   if (!$("dm").hidden) renderCompany();
   nextAmbient = now + 6000 + Math.random() * 6000;
 }
@@ -1834,6 +1871,7 @@ function liftArrived(){
     if (aboard(leader)){ const s = party.find(p => !aboard(p) && !p.down); if (s) setLeader(s); }
   } else log("The basket swings back up level with the platform.");
   mode = "explore"; openLift();
+  reportSituation("exploring");
 }
 function openLift(){
   const L = node.lift; if (!L || (mode !== "explore" && mode !== "dialog") || lift.moving) return;
@@ -2138,6 +2176,7 @@ function unlockGate(forced){
   state.gateOpen = true; state.doorShut = false;
   if (cur === 11){ setDoor(true); sfx("door-open", forced ? 1 : .85); }
   log("The pen gate swings open.");
+  reportSituation(mode === "talk" ? "talking" : "exploring", {note: "The pen gate swings open."});
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
   const z = doorGate(); if (z) setTimeout(() => { if (mode === "explore") openInteract(z); }, 1700);
 }
@@ -2148,6 +2187,7 @@ function openGate(){
   // Jorlan leaves his post on the landing, goes round behind the pillar, unlocks the door from outside and steps in.
   state.gateOpen = true; state.doorShut = false;                 // saved now; the door itself swings when he gets there
   log("Someone is at the lock. <em>Jorlan's gambit.</em>");
+  reportSituation("exploring", {note: "Jorlan is at the pen gate's lock."});
   j.static = false; j.patrol = null; stopActivity(j);
   const room = y => 1 / (node.scale * depthAt(y)), fs = j.fixedScale || 1.35;   // his size on the landing = Sarith's
   j.big = fs * room(j.y); j.fixedScale = 0;
@@ -2456,6 +2496,7 @@ function fighterFor(a){
 function startCombat(foeIds, label){
   if (mode !== "explore") return;
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
+  reportSituation("fighting", {note: label ? `A fight: ${String(label).replace(/<[^>]*>/g, "")}` : "A fight breaks out."});
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
   const allies = alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
   hoverZone = null; tip.hidden = true;
@@ -3668,6 +3709,7 @@ function endCombat(won){
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
     mode = "explore"; setTrack("explore"); log(won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
+    reportSituation("exploring", {note: won ? "The fight is over; the party won." : "The fight is over."});
   }, 700);
 }
 $("endCombat").onclick = () => endCombat(false);
@@ -4642,6 +4684,7 @@ async function openTalk(npc, opts = {}){
   $("talkGo").href = talkUrl(npc, "");
   $("talk").hidden = false; $("talkGo").focus();
   talkNpc = npc;
+  reportSituation("talking", {talkingTo: nm, note: `${nm} and ${PLAYS_AS[leader && leader.id] || "the party"} are talking.`});
   if (talkQuiet){                                   // you came to them: no opener, no voice, they wait for you
     const look = npc.barks && npc.barks.length ? npc.barks[Math.floor(Math.random() * npc.barks.length)] : `${nm} waits for you to speak first.`;
     $("talkLine").innerHTML = `<p class="narr">${esc(look.replace(/^\(|\)$/g, ""))}</p>`;
@@ -4671,6 +4714,7 @@ function closeTalk(talked){
   if (talked){ state.talked[talkNpc.id] = true; state.declined[talkNpc.id] = false; }
   else if (!talkQuiet) state.declined[talkNpc.id] = true;   // turning down someone who wanted a word: the "!" stays over their head
   $("talk").hidden = true; talkNpc = null; mode = "explore";
+  reportSituation("exploring");
 }
 $("talkGo").onclick = (e) => {
   if (!APP){ setTimeout(() => closeTalk(true), 50); return; }
@@ -5991,6 +6035,7 @@ function frame(t){
     await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
   }
   booted = true;
+  reportSituation("exploring", {note: `The party is in the ${node.name}.`});
   // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,
   // so it reached only the allies: a hero's pack and hands stayed empty until something else asked, and an equipped
   // crossbow never became an attack.
