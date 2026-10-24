@@ -20,11 +20,20 @@ function authorized(req: NextRequest): boolean {
   return safeEquals(normalizeCode(req.headers.get("x-dm-key") ?? ""), normalizeCode(required))
 }
 
+// `roster` is every player character in the game (names and classes only — nothing a player at the table
+// could not already see on the map), so the DM tools can bring in anyone, a hero made at the Forge included
+// (Sam, 2026-10-23: "I should also be able to add characters on to the map from DM tools").
 export async function GET() {
   try {
-    return NextResponse.json({ seated: await readSeated(createAdminClient()) })
+    const db = createAdminClient()
+    const [seated, { data }] = await Promise.all([
+      readSeated(db),
+      db.from("characters").select("id, name, class").eq("is_player", true).is("archived_at", null).order("created_at", { ascending: true }),
+    ])
+    const roster = (data ?? []).map((c) => ({ id: c.id as string, name: c.name as string, cls: (c.class as string | null) ?? "" }))
+    return NextResponse.json({ seated, roster })
   } catch (e) {
-    return NextResponse.json({ seated: [], error: String(e) })
+    return NextResponse.json({ seated: [], roster: [], error: String(e) })
   }
 }
 
