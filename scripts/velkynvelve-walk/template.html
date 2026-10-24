@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script src="/test-copy-silence.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Velkynvelve Walk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -162,8 +163,8 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .cbt-mini{all:unset;display:none;justify-self:center;cursor:pointer;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.08em;color:var(--ember);background:rgba(16,10,8,.94);border:1px solid var(--ember);border-radius:6px 6px 0 0;padding:3px 14px;margin:0 auto}
 body.dm-open .cbt-menu:not([hidden]){display:none}
 body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
-.cbt-menu button{all:unset;display:grid;grid-template-columns:38px 1fr;grid-template-rows:auto auto;column-gap:7px;align-items:center;width:168px;min-height:46px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
-.cbt-menu button .ico{grid-row:1/3;width:38px;height:38px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
+.cbt-menu button{all:unset;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;column-gap:6px;align-items:center;box-sizing:border-box;flex:1 1 132px;min-width:0;max-width:172px;min-height:44px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
+.cbt-menu button .ico{grid-row:1/3;width:34px;height:34px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
 .cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:20px;color:var(--ember)}
 .cbt-menu button span{grid-column:2}
 .cbt-menu button small{grid-column:2;font-family:var(--face-mono);font-size:.54rem;color:var(--ink-dim);letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -172,6 +173,9 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu button.end{margin-left:auto;border-color:rgba(255,155,143,.4);color:#ff9b8f}
 .cbt-menu button:disabled{opacity:.36;cursor:default}
 .cbt-menu .sep{width:1px;align-self:stretch;background:var(--rule);margin:3px 2px}
+/* two rows, not three (Sam, 2026-10-22: "Can you make this two rows high and not three?"): the chips share the row and
+   shrink to fit before they wrap, and the group labels give way on narrower windows */
+@media (max-width:1500px){.cbt-menu .grp{display:none}.cbt-menu .sep{margin:3px 0}}
 .cbt-menu .grp{align-self:center;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--face-mono);font-size:.5rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim);padding:2px 0;opacity:.8}
 .cbt-hint{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);background:rgba(14,8,10,.9);border:1px solid var(--rule);border-radius:999px;padding:4px 14px;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink)}
 .cbt-hint[hidden]{display:none}
@@ -350,6 +354,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
       <button class="btn" id="dmBark">Make an NPC comment</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
+      <button class="btn" id="dmAmbush" aria-pressed="false">Ambushes: on</button>
       <h4>Items</h4>
       <input id="dmItemQ" class="dmq" placeholder="Search the item catalogue" aria-label="Search the item catalogue">
       <select id="dmItem" size="6" aria-label="Catalogue items"></select>
@@ -755,7 +760,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor(); drawProps(); drawPropHighlight(); drawLootHighlight(); drawFloorItems();
+  drawDoor(); drawProps(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -1235,7 +1240,7 @@ async function enterNode(n, opts = {}){
   cur = n; node = SPEC[n];
   plateImg.src = `${ASSET}img/${node.slug}.jpg`;
   try { await plateImg.decode(); } catch (e) {}
-  buildFx(node.slug); buildMarks(node.slug); buildGrid(); buildDoor(); buildProps();
+  buildFx(node.slug); buildMarks(node.slug); buildGrid(); buildDoor(); buildProps(); buildLift();
   // spawn: the arrival zone in this plate that links back to where we came from
   let spawn, entryDir = {x: 0, y: 1}, arrival = null;
   if (opts.from != null) arrival = node.zones.find(z => z.to.includes(opts.from)) || null;
@@ -1300,6 +1305,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 // the camera slides to the neighbouring plate, and they walk in from its matching edge.
 async function travel(to, z){
   if (mode === "travel") return;
+  state.jumped = null;
   mode = "travel"; hoverZone = null; tip.hidden = true; bubbles.forEach(b => b.until = 0);
   const zc = zoneCenter(z), exitDir = norm({x: zc.x - centroid.x, y: zc.y - centroid.y});
   const offs = party.map(p => { let dx = p.x - leader.x, dy = p.y - leader.y; const d = Math.hypot(dx, dy), cap = 170 * node.scale;
@@ -1352,6 +1358,12 @@ function chooseDestination(z){
 function triggerZone(z){
   leader.path = [];
   if (z.interact){ openInteract(z); return; }
+  // Sam, 2026-10-22: "why does the party always fall when crossing the bridge?" The bridge across the falls (area 9)
+  // runs right over the spot where you can drop into the pool, so walking from one side to the other used to drop
+  // everyone through the falls. It is a choice now.
+  if (z.kind === "water" && cur === 9){ showDialog({title: "The falls", body: `The bridge passes over the falls. ${z.label}.`, buttons: [
+    {label: "Jump into the falls", primary: true, fn: () => travel(z.to[0], z)}, {label: "Keep crossing"}]}); return; }
+  if (z.kind === "leave" && node.lift){ openLift(); return; }
   if (z.kind === "leave"){ toast(z.label + ". That way leaves Velkynvelve, beyond this proof for now."); return; }
   travel(z.to[0], z);
 }
@@ -1555,6 +1567,139 @@ function openProp(pr, opts = {}){
     add("Pick the lock (thieves' tools)", ask("Dexterity with thieves' tools", 15, () => { needle(pr); sfx("lock-picked", .9); st.locked = false; setTimeout(() => openChest(pr), 700); }, () => { needle(pr); sfx("lock-pick-fail", .8); toast("The lock holds.", 2800); }), "primary");
     add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
     add("Leave it", close);
+  }
+  $("obj").hidden = false; box.firstChild?.focus();
+}
+// ---------- the lift (area 5) ----------
+// Sam, 2026-10-22: "Should be a way to interact with the crank and move on it if possible." The book, OotA ch.1 area 5:
+// a winch-and-basket on a swinging arm; "Up to four Medium creatures can fit somewhat snugly in the basket, which is
+// swung out over the edge of the platform and lowered to the cavern floor below by turning the spool using attached
+// handles. This requires a successful DC 18 Strength check ... (one of which makes the check while the other assists
+// with the Help action) ... It takes 4 rounds for the basket to move between the platform and the floor." So: climb
+// in (four at most), someone left on the platform turns the spool (rolled on the dashboard), and down it goes. The
+// cavern floor is not on this map, so there the card hands over to Malachar, and the basket can be cranked back up.
+const lift = {dy: 0, target: 0, img: null, riders: [], moving: false};
+function buildLift(){
+  lift.dy = lift.target = 0; lift.riders = []; lift.img = null; lift.hole = null; lift.moving = false; const L = node.lift; if (!L) return;
+  const [x0, y0, x1, y1] = L.basket, c = document.createElement("canvas"); c.width = x1 - x0; c.height = y1 - y0;
+  const k = plateImg.naturalWidth / NAT_W; try { c.getContext("2d").drawImage(plateImg, x0 * k, y0 * k, (x1 - x0) * k, (y1 - y0) * k, 0, 0, x1 - x0, y1 - y0); } catch (e) {}
+  lift.img = c; liftMatte();
+}
+// The basket is cut out of the painting with its own outline (warm wood and silk against the cold chasm, filled in from
+// the edges), and the chasm behind it is filled in row by row from either side, so it can move without a box around it.
+// Needs the plate's pixels; where the browser will not give them (a cross-origin plate), the plain cut-out is used.
+function liftMatte(){
+  const L = node.lift, slug = node.slug, [x0, y0, x1, y1] = L.basket, im = new Image(); im.crossOrigin = "anonymous";
+  im.onload = () => { try {
+    if (node.slug !== slug) return;
+    const k = im.naturalWidth / NAT_W, W = Math.round((x1 - x0) * k), H = Math.round((y1 - y0) * k), n = W * H;
+    const c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d"); g.drawImage(im, x0 * k, y0 * k, W, H, 0, 0, W, H);
+    const id = g.getImageData(0, 0, W, H), d = id.data, warm = new Uint8Array(n);
+    for (let i = 0; i < n; i++) warm[i] = d[i * 4] > d[i * 4 + 2] + 4 ? 1 : 0;
+    const morph = (src, rad, isMax) => { const a = new Uint8Array(n), b = new Uint8Array(n);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){ let v = isMax ? 0 : 1; for (let j = Math.max(0, x - rad); j <= Math.min(W - 1, x + rad); j++){ const s = src[y * W + j]; if (isMax ? s : !s){ v = isMax ? 1 : 0; break; } } a[y * W + x] = v; }
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){ let v = isMax ? 0 : 1; for (let j = Math.max(0, y - rad); j <= Math.min(H - 1, y + rad); j++){ const s = a[j * W + x]; if (isMax ? s : !s){ v = isMax ? 1 : 0; break; } } b[y * W + x] = v; }
+      return b; };
+    const fg = morph(warm, 5, true), bg = new Uint8Array(n), q = [];
+    const seed = i => { if (!fg[i] && !bg[i]){ bg[i] = 1; q.push(i); } };
+    for (let x = 0; x < W; x++){ seed(x); seed((H - 1) * W + x); } for (let y = 0; y < H; y++){ seed(y * W); seed(y * W + W - 1); }
+    while (q.length){ const i = q.pop(), x = i % W, y = (i - x) / W; if (x > 0) seed(i - 1); if (x < W - 1) seed(i + 1); if (y > 0) seed(i - W); if (y < H - 1) seed(i + W); }
+    const keep = morph(bg.map(v => v ? 0 : 1), 3, false), fill = morph(keep, 7, true);
+    const bd = new ImageData(new Uint8ClampedArray(d), W, H), hd = new ImageData(new Uint8ClampedArray(d), W, H);
+    for (let i = 0; i < n; i++) bd.data[i * 4 + 3] = keep[i] ? 255 : 0;
+    for (let y = 0; y < H; y++){ let x = 0;
+      while (x < W){ if (!fill[y * W + x]){ x++; continue; }
+        let e = x; while (e < W && fill[y * W + e]) e++;
+        const L0 = x > 0 ? (y * W + x - 1) * 4 : -1, R0 = e < W ? (y * W + e) * 4 : -1;
+        for (let j = x; j < e; j++){ const f = (j - x + 1) / (e - x + 1), o = (y * W + j) * 4;
+          for (let ch = 0; ch < 3; ch++){ const l = L0 >= 0 ? d[L0 + ch] : d[R0 + ch], r = R0 >= 0 ? d[R0 + ch] : l; hd.data[o + ch] = l + (r - l) * f; } }
+        x = e; } }
+    const bc = document.createElement("canvas"); bc.width = W; bc.height = H; bc.getContext("2d").putImageData(bd, 0, 0);
+    const hc = document.createElement("canvas"); hc.width = W; hc.height = H; const hg = hc.getContext("2d"); hg.putImageData(hd, 0, 0);
+    const hb = document.createElement("canvas"); hb.width = W; hb.height = H; const hbg = hb.getContext("2d"); hbg.filter = "blur(8px)"; hbg.drawImage(hc, 0, 0);
+    lift.img = bc; lift.hole = {c: hb, pad: 0, fit: true};
+  } catch (e) {} };
+  im.src = plateImg.currentSrc || plateImg.src;
+}
+const aboard = a => lift.riders.some(r => r.a === a);
+function tickLift(dt){
+  const L = node.lift; if (!L) return;
+  if (lift.dy !== lift.target){
+    const sp = 170 * dt; lift.dy = lift.target > lift.dy ? Math.min(lift.target, lift.dy + sp) : Math.max(lift.target, lift.dy - sp);
+    if (lift.dy === lift.target && lift.moving){ lift.moving = false; liftArrived(); }
+  }
+  for (const r of lift.riders){
+    if (r.a.path.length) continue;
+    r.a.x = r.seat[0]; r.a.y = r.seat[1] + lift.dy;
+    r.a.alpha = Math.max(0, Math.min(1, (NAT_H + 30 - r.a.y) / 140));
+  }
+}
+function drawLift(){
+  const L = node.lift; if (!L || !lift.img || lift.dy <= 0) return;
+  const [x0, y0, x1, y1] = L.basket;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, NAT_W, NAT_H); ctx.clip();
+  // where the basket hung: the chasm behind it, smeared from the painting around it so no hard edge shows
+  if (!lift.hole){ const pad = 60, w = x1 - x0 + pad * 2, h = y1 - y0 + pad * 2, c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"), k = plateImg.naturalWidth / NAT_W;
+    g.filter = "blur(26px) brightness(.62)"; try { g.drawImage(plateImg, (x0 - pad) * k, (y0 - pad) * k, w * k, h * k, 0, 0, w, h); } catch (e) {} lift.hole = {c, pad}; }
+  ctx.save(); ctx.beginPath(); ctx.rect(x0 - 4, y0, x1 - x0 + 8, Math.min(y1 - y0, lift.dy + 8)); ctx.clip();
+  if (lift.hole.fit) ctx.drawImage(lift.hole.c, x0, y0, x1 - x0, y1 - y0); else ctx.drawImage(lift.hole.c, x0 - lift.hole.pad, y0 - lift.hole.pad); ctx.restore();
+  ctx.strokeStyle = "rgba(170,140,100,.85)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(L.rope, y0); ctx.lineTo(L.rope, y0 + lift.dy + 10); ctx.stroke();   // the spider-silk cord paying out
+  ctx.drawImage(lift.img, x0, y0 + lift.dy, x1 - x0, y1 - y0);
+  ctx.restore();
+}
+function liftAt(w){ return node.lift && inPoly(node.lift.crank, w.x, w.y) ? node.lift : null; }
+function climbIn(a){
+  const L = node.lift, used = lift.riders.map(r => r.seat), seat = L.seats.find(s => !used.includes(s)); if (!seat) return;
+  stopActivity(a); a.riding = true; lift.riders.push({a, seat});
+  const go = findPath(a, {x: L.board[0], y: L.board[1]});
+  a.path = [...go, {x: seat[0], y: seat[1], jump: true}]; a.slow = false;
+  a.onArrive = () => { a.fixedScale = node.scale * depthAt(seat[1]) * (a.big || 1); a.face = faceOf(0, 1); bank("movement/jump_land", .4); };
+}
+function climbOut(a){
+  const L = node.lift; lift.riders = lift.riders.filter(r => r.a !== a); a.riding = false; a.fixedScale = 0; a.alpha = 1;
+  a.path = [{x: L.board[0], y: L.board[1], jump: true}]; a.onArrive = () => { a.home = {x: a.x, y: a.y}; bank("movement/jump_land", .3); };
+}
+function liftArrived(){
+  if (lift.dy > 0){
+    const who = lift.riders.map(r => fname(r.a)).join(", ");
+    log(`The basket settles on the cavern floor with <b>${esc(who)}</b> in it.`);
+    if (APP) handOff(`The lift basket reaches the cavern floor below Velkynvelve with ${who} in it (4 rounds down). Say what is down there.`);
+    if (aboard(leader)){ const s = party.find(p => !aboard(p) && !p.down); if (s) setLeader(s); }
+  } else log("The basket swings back up level with the platform.");
+  mode = "explore"; openLift();
+}
+function openLift(){
+  const L = node.lift; if (!L || (mode !== "explore" && mode !== "dialog") || lift.moving) return;
+  mode = "dialog"; party.forEach(p => { if (!aboard(p)) p.path = []; }); tip.hidden = true;
+  const c = $("objPic"), g = c.getContext("2d"), [x0, y0, x1, y1] = L.basket, sz = Math.max(x1 - x0, y1 - y0), k = plateImg.naturalWidth / NAT_W;
+  g.clearRect(0, 0, 128, 128); try { g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = "The lift";
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const close = () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
+  const down = lift.dy > 0, standing0 = party.filter(p => !p.down), onDeck = standing0.filter(p => !aboard(p)), riders = lift.riders.map(r => r.a);
+  const spool = onDeck.includes(leader) ? leader : onDeck[0], help = onDeck.length > 1;
+  const crank = (label, to) => add(label, () => {
+    $("objText").textContent = `${fname(spool)} turns the spool: Strength, DC 18 (OotA area 5)${help ? `; ${fname(onDeck.find(p => p !== spool))} can Help, so roll with advantage` : ""}. Roll it on the dashboard. What did it come to?`;
+    box.innerHTML = "";
+    add("18 or more", () => { $("obj").hidden = true; mode = "dialog"; lift.target = to; lift.moving = true; bank("movement/chains_rattle", .6);
+      log(`${fname(spool)} turns the spool. The basket ${to > 0 ? "swings out and sinks into the dark" : "rises out of the dark"}.`); }, "primary");
+    add("Under 18", () => { close(); toast("The spool does not budge. The silk cord creaks and holds.", 3200); });
+    add("Back", () => { close(); openLift(); });
+    box.firstChild?.focus();
+  }, "primary");
+  if (down){
+    $("objText").textContent = `The basket rests on the cavern floor, 4 rounds below, with ${riders.map(fname).join(", ")} in it. What is down there is Malachar's to say.`;
+    if (spool) crank("Crank it back up (DC 18 Strength)", 0);
+    else $("objText").textContent += " Nobody is left on the platform to turn the spool.";
+    add("Leave it", close);
+  } else {
+    $("objText").textContent = riders.length ? `In the basket: ${riders.map(fname).join(", ")}. It holds four.` : "A woven basket on a swinging arm, and a hand-cranked spool of spider silk. It holds four.";
+    if (riders.length < 4) for (const p of onDeck) add(`Climb in: ${fname(p)}`, () => { climbIn(p); close(); setTimeout(openLift, 900); });
+    if (riders.length && spool) crank(`Lower the basket (DC 18 Strength, ${fname(spool)} at the spool)`, 620);
+    if (riders.length && !spool) $("objText").textContent += " Nobody is left on the platform to turn the spool.";
+    if (riders.length) add("Everyone out", () => { riders.forEach(climbOut); close(); });
+    add("Leave it", () => { if (aboard(leader)){ const s = onDeck[0]; if (s) setLeader(s); else { riders.forEach(climbOut); } } close(); });
   }
   $("obj").hidden = false; box.firstChild?.focus();
 }
@@ -2261,8 +2406,9 @@ function nextTurn(first){
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
-  if (a.ally){ bank("ui/turn_chime", .5); allyTurn(a); return; }
-  bank(CLASS_TURN[a.c.sheet.cls] || "ui/turn_chime", .7);
+  if (a.ally){ allyTurn(a); return; }
+  // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
+  // say bard", then "Please remove the bell between players as the system move to the active player")
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
   openMenu(a);
 }
@@ -3875,7 +4021,11 @@ function castMovesTo(n, where){
   n.stageWhere = where;
   const s = spotFor(where); if (!s || (Math.hypot(s.x - n.x, s.y - n.y) < 40 && !n.path.length)) return;
   n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n);
-  n.path = [{x: s.x, y: s.y}]; n.slow = true;
+  // Someone standing on the floor goes where the floor goes: a spot beyond it (the gate, the landing, the bridge are all
+  // outside the bars) becomes the nearest point inside, and the walk goes round, not through the wall (Sam, 2026-10-22:
+  // "why does jimjar sometimes walk out of the pen?"). The figures out on the balcony keep their straight line.
+  const onFloor = walkable(n.x, n.y), goal = onFloor && !walkable(s.x, s.y) ? nearestWalkable(s.x, s.y) : s;
+  n.path = onFloor ? findPath(n, goal) : [{x: s.x, y: s.y}]; if (!n.path.length) n.path = [{x: goal.x, y: goal.y}]; n.slow = true;
   n.onArrive = () => { n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; setAnim(n, "idle"); n.face = faceOf(leader.x - n.x, leader.y - n.y); };
   narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} moves ${where}.`);
 }
@@ -3899,14 +4049,20 @@ function plateEdge(a){
 function castLeaves(n, dead, quiet){
   n.offStage = true; n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n); n.talk = false;
   if (dead){ n.path = []; n.down = true; if (SPR[n.id].img.dead) playOnce(n, "dead", () => {}); else n.deadT0 = now; narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} is dead.`); return; }
-  const e = plateEdge(n); n.path = [{x: e.x, y: e.y, out: true}]; n.slow = false;
+  // out of the pen by its gate, not through its wall: a prisoner the story takes away walks to the bars and is gone
+  const gate = cur === 11 && walkable(n.x, n.y) ? doorGate() : null;
+  if (gate){ const g = nearestWalkable(822, 880); n.path = [...findPath(n, g), {x: 812, y: 812, out: true}]; n.slow = false; }
+  else { const e = plateEdge(n); n.path = [{x: e.x, y: e.y, out: true}]; n.slow = false; }
   n.onArrive = () => { n.alpha = 0; };
   if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} goes out of sight.`);
 }
 function castReturns(n, quiet){
   n.offStage = false; n.down = false; n.fading = false;
-  const e = plateEdge(n.post); n.x = e.x; n.y = e.y; n.alpha = 0; n.fadeIn = true; setAnim(n, "idle");
-  n.path = [{x: n.post.x, y: n.post.y}]; n.slow = true;
+  const viaGate = cur === 11 && doorGate() && walkable(n.post.x, n.post.y);       // back into the pen by its gate
+  const e = viaGate ? {x: 812, y: 812} : plateEdge(n.post); n.x = e.x; n.y = e.y; n.alpha = 0; n.fadeIn = true; setAnim(n, "idle");
+  if (viaGate){ const g = nearestWalkable(822, 880); n.path = [{x: g.x, y: g.y}, ...findPath({...n, x: g.x, y: g.y}, n.post)]; }
+  else n.path = [{x: n.post.x, y: n.post.y}];
+  n.slow = true;
   n.onArrive = () => { if (n.keep){ n.patrol = n.keep.patrol; n.static = n.keep.static; } n.home = {x: n.x, y: n.y}; };
   if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} comes back into view.`);
 }
@@ -4224,6 +4380,8 @@ stage.addEventListener("pointermove", e => {
   hoverLoot = mode === "explore" && !hoverActor && !hoverObj && !hoverProp ? lootSpotAt(w) : null;
   if (hoverLoot){ tip.textContent = `${hoverLoot.name}: click to look inside`; tip.className = "tip"; tip.hidden = false;
     tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
+  if (mode === "explore" && !hoverActor && !hoverObj && !hoverProp && liftAt(w)){ tip.textContent = "The lift: click to use the spool"; tip.className = "tip"; tip.hidden = false;
+    tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   const hp = !hoverActor && (mode === "explore" || mode === "combat") ? pileAt(w) : null;
   if (hp){ tip.textContent = mode === "combat" ? `${hp.name}: pick it up from the menu when you are beside it (${PICKUP_FT} ft of movement)` : `${hp.name}: click to pick up`; tip.className = "tip"; tip.hidden = false;
     tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
@@ -4265,6 +4423,7 @@ function click(w){
     const me = hitActor(party, w);
     if (me && me !== leader){ setLeader(me); return; }
     const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
+    if (liftAt(w)){ walkTo(nearestWalkable(node.lift.spool[0], node.lift.spool[1]), () => openLift()); return; }
     const ls = !hitActor(npcs, w) ? lootSpotAt(w) : null; if (ls){ const lc = lootCenter(ls); walkTo(nearestWalkable(lc.x, lc.y), () => openLootSpot(ls)); return; }
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
@@ -4319,6 +4478,7 @@ $("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
+  state.jumped = n;   // the DM put them here: nothing springs on them until they walk in for real (Sam, 2026-10-22: "why is this always starting a fight even in DM tools?")
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
@@ -4382,6 +4542,8 @@ $("dmTalk").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   else log("Nobody here wants to talk. The pen (Area 11) has Eldeth."); };
 $("dmBark").onclick = () => { toggleDm(false); const n = npcs.filter(a => a.barks && a.barks.length); if (n.length) ambient(n[Math.floor(Math.random() * n.length)]); else log("No one here to comment."); };
 $("dmReset").onclick = () => { toggleDm(false); state.cleared = {}; log("Ambushes reset."); };
+$("dmAmbush").onclick = () => { state.ambushOff = !state.ambushOff; $("dmAmbush").textContent = `Ambushes: ${state.ambushOff ? "off" : "on"}`; $("dmAmbush").setAttribute("aria-pressed", String(!!state.ambushOff));
+  log(state.ambushOff ? "Ambushes are off: nothing springs on the party until the DM turns them back on." : "Ambushes are on."); };
 
 // ---------- things on the floor, and what the party carries ----------
 // Sam, 2026-10-15: "Can we have a dagger show up in the DM menu and her be able to pick it up (in fact) characters
@@ -5147,7 +5309,7 @@ const ACTS = [
 function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
 function idleLife(a){
   if (a.stroll && strollBack(a)) return;                                                 // a guard back from a walk off the plate
-  if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body) return;   // creatures move by tickCreatures, not the idle wander
+  if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body || a.riding) return;   // creatures move by tickCreatures, not the idle wander
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
     if (now < (a.actUntil || 0)) return;
@@ -5220,7 +5382,7 @@ function step(a, dt, speed){
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
 }
 function update(dt){
-  tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt);
+  tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt);
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
@@ -5251,11 +5413,11 @@ function update(dt){
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
     const hz = node.hazard;
-    if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))) startCombat(hz.foes, hz.label);
+    if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && !state.ambushOff && state.jumped !== cur && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))) startCombat(hz.foes, hz.label);
     // drow who are on watch
     if (mode === "explore" && !state.cleared[cur]){
       const watch = npcs.filter(n => n.hostile && !n.offStage);
-      if (!APP && watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
+      if (!APP && !state.ambushOff && state.jumped !== cur && watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
     }
     // NPC comments and the one who wants to talk
     for (const n of npcs){
