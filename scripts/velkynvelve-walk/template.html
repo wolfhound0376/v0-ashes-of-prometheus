@@ -457,6 +457,10 @@ const SPEC = /*__SPEC__*/;
 // plates of this page; the hand-over is a link to the travel map, and lib/travel/handoff.ts reads it there.
 const HANDOFFS = /*__HANDOFFS__*/{};
 const nameOf = t => (SPEC[t] || HANDOFFS[t] || {}).name || String(t);   // an exit's target may be a cavern, not a plate
+// Where a plate's painting is. The fourteen originals live in the Supabase bucket; a plate added since (the guard tower's
+// two chambers, the six cavern plates) ships in the repo under public/velkynvelve-walk/img/ and says so with `img`.
+const PLATE_DIR = APP ? "/velkynvelve-walk/img/" : "img/";
+const plateUrl = n => SPEC[n].img ? PLATE_DIR + SPEC[n].img : `${ASSET}img/${SPEC[n].slug}.jpg`;
 const FX = /*__FX__*/;
 const SPR_META = /*__SPRITES__*/;
 const LANDY = {"node-09-waterfall":690, "node-10-guard-tower":1275};
@@ -664,7 +668,7 @@ function situationNow(activity, extra){
   const nameOf = a => (a && SPR[a.id] && SPR[a.id].json.name) || (a && a.id) || "";
   const comp = companyNow();
   return {
-    activity, place: "Velkynvelve", areaKey: node.slug, areaNo: Number(cur), areaName: node.name,
+    activity, place: HANDOFFS[cur] ? HANDOFFS[cur].name : "Velkynvelve", areaKey: node.slug, areaNo: /^\d+$/.test(String(cur)) ? Number(cur) : null, areaName: node.name,
     talkingTo: extra.talkingTo || (mode === "talk" && talkNpc ? nameOf(talkNpc) : null),
     leader: leader ? (PLAYS_AS[leader.id] || nameOf(leader)) : null,
     party: party.map(p => ({slug: p.id, name: PLAYS_AS[p.id] || nameOf(p), characterId: characterIdOf(p.id), down: !!p.down})),
@@ -712,13 +716,18 @@ function inFloor(f, x, y){
   return false;
 }
 const inRect = (r, x, y) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+// A plate may carry a painted walkable mask instead of traced shapes: Sam's brush on the wiring board writes one cell per
+// walk-grid cell (120 x 67, CELL px each) as run-length pairs starting with a run of 0s ("12,5,103,..."). When a plate
+// has one, the mask IS the floor (the obstacles are already painted out); the exit rects still count as floor.
+function unpackMask(s){ const m = new Uint8Array(GW * GH); let i = 0, v = 0; for (const r of String(s).split(",")){ const k = Number(r); if (v) m.fill(1, i, i + k); i += k; v ^= 1; } return m; }
 function buildGrid(){
   grid = new Uint8Array(GW * GH);
   let sx = 0, sy = 0, n = 0; depthMin = 1e9; depthMax = -1e9;
+  const mask = node.mask ? unpackMask(node.mask) : null;
   for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++){
     const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
-    const inside = node.floors.some(f => inFloor(f, x, y)) || node.zones.some(z => inRect(z.rect, x, y) && !(z.landing && !(state.gateOpen && !state.doorShut)));
-    const blocked = (node.obstacles || []).some(o => ((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1);
+    const inside = (mask ? mask[cy * GW + cx] === 1 : node.floors.some(f => inFloor(f, x, y))) || node.zones.some(z => inRect(z.rect, x, y) && !(z.landing && !(state.gateOpen && !state.doorShut)));
+    const blocked = !mask && (node.obstacles || []).some(o => ((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1);
     if (inside && !blocked){ grid[cy * GW + cx] = 1; sx += x; sy += y; n++; depthMin = Math.min(depthMin, y); depthMax = Math.max(depthMax, y); }
   }
   centroid = n ? {x: sx / n, y: sy / n} : {x: 1200, y: 700};
@@ -1440,7 +1449,7 @@ async function enterNode(n, opts = {}){
   bubbles.forEach(b => b.until = 0);
   if (!opts.slide) await new Promise(r => setTimeout(r, 360));
   cur = n; node = SPEC[n];
-  plateImg.src = `${ASSET}img/${node.slug}.jpg`;
+  plateImg.src = plateUrl(n);
   try { await plateImg.decode(); } catch (e) {}
   buildFx(node.slug); buildMarks(node.slug); buildGrid(); buildDoor(); buildProps(); buildLift();
   // spawn: the arrival zone in this plate that links back to where we came from
@@ -1542,7 +1551,7 @@ async function travel(to, z){
   await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, note: `${verb} to <em>${esc(SPEC[to].name)}</em>.`});
 }
 async function slideTo(to, dir){
-  const p2 = $("plate2"); p2.src = `${ASSET}img/${SPEC[to].slug}.jpg`;
+  const p2 = $("plate2"); p2.src = plateUrl(to);
   try { await p2.decode(); } catch (e) {}
   p2.style.inset = "auto"; p2.style.left = dir.x * NAT_W + "px"; p2.style.top = dir.y * NAT_H + "px"; p2.hidden = false;
   const r = stage.getBoundingClientRect(), s = base;
@@ -1578,7 +1587,7 @@ function triggerZone(z){
   // everyone through the falls. It is a choice now.
   if (z.kind === "water" && cur === 9){ fallsDialog(z); return; }
   if (z.kind === "leave" && node.lift){ openLift(); return; }
-  if (z.kind === "leave" || HANDOFFS[z.to[0]]){ leaveVelkynvelve(z); return; }   // the way out of the outpost, by any name
+  if (z.kind === "leave" || HANDOFFS[z.to[0]]){ goBeyond(z); return; }   // the way out of the outpost, by any name
   travel(z.to[0], z);
 }
 // ---------- the falls (area 9) ----------
@@ -1644,8 +1653,13 @@ function pushOverFalls(t, to){ const z = cur === 9 ? node.zones.find(z => z.kind
 // Those plates belong to the travel map, not to this page, so the hand-over is a link: /map carries which way the party
 // came out and which camp plate stands in for it (lib/travel/handoff.ts reads both). Nothing beyond the edge is walked here;
 // a way out whose cavern is not in HANDOFFS still only says so.
+// Sam, 2026-10-24: "make all the sprite plates walkable". The cavern plates are plates of this page now (spec.py CAVERNS
+// carry floors and a painting), so a way out of the outpost is walked like any other exit, onto the cavern plate; the
+// hand-over to the map happens at THAT plate's outward edge (a `leave` zone with no destination), and the cavern the
+// party is standing on is the one /map hears about.
+function goBeyond(z){ const t = z.to[0]; if (t != null && SPEC[t]) travel(t, z); else leaveVelkynvelve(z); }
 function leaveVelkynvelve(z){
-  const key = z.to[0], h = key != null && HANDOFFS[key], head = z.label.split(":")[0].replace(/\s*[—-]\s*PROPOSED$/, "").replace(/^PROPOSED:\s*/, "");
+  const key = z.to[0] != null ? z.to[0] : cur, h = key != null && HANDOFFS[key], head = z.label.split(":")[0].replace(/\s*[—-]\s*PROPOSED$/, "").replace(/^PROPOSED:\s*/, "");
   if (!h){ toast(head + ". That way leaves Velkynvelve, and where it comes out is not drawn yet."); return; }
   const proposed = z.proposed || /PROPOSED/.test(z.label);
   showDialog({title: head, body: `${z.label}. Past here the party is out of the outpost and on the Underdark map.${proposed ? " This way out is a proposal from the guide, not yet reviewed by Sam." : ""}`,
@@ -1980,7 +1994,7 @@ function openLift(){
     $("objText").textContent = `The basket rests on the cavern floor, 4 rounds below, with ${riders.map(fname).join(", ")} in it. What is down there is Malachar's to say.`;
     if (spool) crank("Crank it back up (DC 18 Strength)", 0);
     const way = node.zones.find(z => z.kind === "leave");   // where the basket sets them down (spec.py: the wastes)
-    if (riders.length && way && HANDOFFS[way.to[0]]) add(`Climb out onto the cavern floor → ${nameOf(way.to[0])}`, () => { close(); leaveVelkynvelve(way); });
+    if (riders.length && way && (SPEC[way.to[0]] || HANDOFFS[way.to[0]])) add(`Climb out onto the cavern floor → ${nameOf(way.to[0])}`, () => { close(); goBeyond(way); });
     else $("objText").textContent += " Nobody is left on the platform to turn the spool.";
     add("Leave it", close);
   } else {
@@ -4791,7 +4805,7 @@ const PLAYS_AS = {kenta: "Kenta", samson: "Samson", scott: "Scott", freia: "Fifi
 // to the camp's talk window (Sam, 2026-10-11: "still goes to camp UI").
 const PLATES = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/";
 function talkUrl(npc, said){
-  const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: "/velkynvelve", scene: `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
+  const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
   if (said) q.set("line", said.slice(0, 280));
   return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
 }
