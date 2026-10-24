@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { applyStageEvents, readStage, type StageEvent } from "@/lib/stage-roster"
 import { readSeated } from "@/lib/seats"
+import { situationPromptNote } from "@/lib/situation"
+import { readPartySituation } from "@/lib/situation-store"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
@@ -1467,13 +1469,23 @@ ${combatantRows
   // row is scene art and may be named for a place the party has left.
   const currentLocation =
     worldContext.campaign?.currentLocation || worldContext.environment?.name || "Velkynvelve (slave pen)"
+  // The painted map's own account of where the party stands INSIDE the place (lib/situation.ts): the walk
+  // moves them between Velkynvelve's plates without touching the travel graph, so the graph still says
+  // "Slave Pen" while they stand in Shoor's quarters. Trusted only while the graph agrees on the place;
+  // a party that has walked out onto the road leaves the row behind. Best-effort: never holds up a turn.
+  let situation: { note: string; where: string } | null = null
+  try {
+    if (timeAdmin) situation = situationPromptNote(await readPartySituation(timeAdmin), { location: currentLocation })
+  } catch (e) { console.error("[situation] skipped:", e) }
+  // The stage follows the finer location when the map has one: out of the pen is loose in the outpost.
+  const stageLocation = (situation?.where ?? currentLocation).toLowerCase()
   let stageContext = ""
 
-  if (currentLocation.toLowerCase().includes("slave pen") || currentLocation.toLowerCase().includes("pen")) {
+  if (stageLocation.includes("slave pen") || stageLocation.includes("pen")) {
     stageContext = "CURRENT STAGE: Slave Pen (Stage 1-2). The party is imprisoned and manacled. Describe their confinement and the other prisoners; the scavenged-possessions roll is the game's to run, never yours to ask for."
-  } else if (currentLocation.toLowerCase().includes("outpost") || currentLocation.toLowerCase().includes("velkynvelve") && !currentLocation.toLowerCase().includes("pen")) {
+  } else if (stageLocation.includes("outpost") || stageLocation.includes("velkynvelve") && !stageLocation.includes("pen")) {
     stageContext = "CURRENT STAGE: Velkynvelve Outpost (Stage 4). The party has escaped the slave pens and is now loose in the drow outpost. Describe the architecture, markets, bridges, patrols. They must find an exit."
-  } else if (currentLocation.toLowerCase().includes("tunnel") || currentLocation.toLowerCase().includes("underdark")) {
+  } else if (stageLocation.includes("tunnel") || stageLocation.includes("underdark")) {
     stageContext = "CURRENT STAGE: Underdark Tunnels (Stage 5+). The party has fled Velkynvelve. Describe vast caverns, bioluminescent fungi, distant echoes. They are beginning their journey through the Underdark."
   }
 
@@ -1523,6 +1535,8 @@ ${combatantRows
       if (here.length) stageContext += ` ON STAGE NOW (keep these positions unless you move them with [NPC_MOVE:]): ${here.map((e) => `${e.name} — ${e.where || "position not stated"}${e.hp != null ? ` (${e.hp}/${e.hpMax ?? "?"} hp)` : ""}${e.wantsWord ? ` [wants a word with ${e.wantsWord.who ?? "anyone"} — not yet spoken]` : ""}`).join("; ")}.`
     }
   } catch (e) { console.error("[stage] context skipped:", e) }
+  // And the map's account of the room, after the roster so "on stage" above means what the note says it means.
+  if (situation) stageContext += ` ${situation.note}`
   // Not in a conversation, but someone is in the NPC window: a line that names no one ("who are you?",
   // "what do you want?") is said to them, and they answer it (Sam, 2026-10-12: "it should be implied I am
   // speaking to Buppido. The NPC needs to act smarter").
