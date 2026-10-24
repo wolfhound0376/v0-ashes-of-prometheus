@@ -360,6 +360,94 @@
       899,
       592
      ]
+    },
+    "balcony": {
+     "_note": "Sam, 2026-10-23: 'The drow should be able to open the gate and come in and vice versa.' Outside the bars: the rope bridge and the rock landing by Jorlan's post, traced on the plate. In a fight it is floor. Once the gate is open, the way between the landing and the threshold goes round behind the pillar (Jorlan's own route in openGate), out of sight, and costs passFt of movement. Drawn at the guards' size (scale, = their fixedScale), not by the pen's depth. keys: who carries the gate key (house assumption: the outpost's guards and Jorlan).",
+     "poly": [
+      [
+       20,
+       370
+      ],
+      [
+       120,
+       395
+      ],
+      [
+       230,
+       440
+      ],
+      [
+       320,
+       480
+      ],
+      [
+       410,
+       540
+      ],
+      [
+       480,
+       575
+      ],
+      [
+       525,
+       625
+      ],
+      [
+       540,
+       690
+      ],
+      [
+       510,
+       730
+      ],
+      [
+       440,
+       738
+      ],
+      [
+       365,
+       712
+      ],
+      [
+       325,
+       655
+      ],
+      [
+       285,
+       615
+      ],
+      [
+       195,
+       570
+      ],
+      [
+       105,
+       520
+      ],
+      [
+       20,
+       480
+      ]
+     ],
+     "scale": 1.35,
+     "landing": [
+      500,
+      688
+     ],
+     "behind": [
+      545,
+      702
+     ],
+     "threshold": [
+      812,
+      812
+     ],
+     "inside": [
+      822,
+      880
+     ],
+     "passFt": 15,
+     "keys": "^(drow|jorlan)"
     }
    }
   },
