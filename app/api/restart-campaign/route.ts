@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
+import { startingSituation } from "@/lib/situation"
 
 // POST /api/restart-campaign — the real "start over" button.
 //
@@ -547,6 +548,14 @@ export async function POST(req: Request) {
           )
         note("party position reset", posErr)
         report.partyNode = STARTING_NODE_KEY
+
+        // The party's situation (lib/situation.ts): back to captive in the pen, gate locked, ward up.
+        // Same one-row rule as party_position — the old run's row goes before the new one lands.
+        const { error: oldSitErr } = await admin.from("party_situation").delete().neq("campaign_run_id", runId)
+        note("party situation (old runs)", oldSitErr)
+        const { error: sitErr } = await admin.from("party_situation").upsert(startingSituation(runId), { onConflict: "campaign_run_id" })
+        note("party situation reset", sitErr)
+        report.partySituation = sitErr ? null : "captive"
 
         const { error: fogErr } = await admin.rpc("subnodal_reset_to_start", {
           p_slug: STARTING_SUBNODAL_MAP,
