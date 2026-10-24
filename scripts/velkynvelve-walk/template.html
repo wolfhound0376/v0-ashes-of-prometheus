@@ -678,7 +678,7 @@ function buildGrid(){
   let sx = 0, sy = 0, n = 0; depthMin = 1e9; depthMax = -1e9;
   for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++){
     const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
-    const inside = node.floors.some(f => inFloor(f, x, y)) || node.zones.some(z => inRect(z.rect, x, y));
+    const inside = node.floors.some(f => inFloor(f, x, y)) || node.zones.some(z => inRect(z.rect, x, y) && !(z.landing && !(state.gateOpen && !state.doorShut)));
     const blocked = (node.obstacles || []).some(o => ((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1);
     if (inside && !blocked){ grid[cy * GW + cx] = 1; sx += x; sy += y; n++; depthMin = Math.min(depthMin, y); depthMax = Math.max(depthMax, y); }
   }
@@ -761,10 +761,14 @@ function gridPath(from, to){
 // and it costs `passFt` of movement. findPath takes it in either direction, so a drow comes in by it and a hero goes
 // out by it, and everything that walks (a Move, an approach, an ally closing on a foe) gets it for free.
 //
-// Outside a fight none of this exists: the gate's own crossing card still handles leaving, exactly as before.
+// Sam, 2026-10-24: "walk out of the door (when unlocked or opened or destroyed) in the pen and walk toward the guard
+// tower." So the balcony is floor out of a fight too, as soon as the gate stands open: the leader walks into the
+// doorway, round behind the pillar and out onto the landing, where the `landing` zone (spec.py) asks which way —
+// the stairs down to the den or the bridge to the tower. The gate's card keeps its route buttons for anyone who would
+// rather use it; walking into the open doorway no longer pops it.
 function balcony(){ const z = doorGate(); return (z && z.interact && z.interact.balcony) || null; }
 function onBalcony(p){ const B = balcony(); return !!(B && p && p.x != null && inPoly(B.poly, p.x, p.y)); }
-const balconyFloor = () => mode === "combat" && !!balcony();
+const balconyFloor = () => !!balcony() && (mode === "combat" || (state.gateOpen && !state.doorShut));
 const gatePassable = () => balconyFloor() && state.gateOpen && !state.doorShut;
 // whether `a` can reach `b` only by going through the gate (one inside the pen, one out on the balcony)
 const gateWayTo = (a, b) => gatePassable() && onBalcony(a) !== onBalcony(b);
@@ -1486,7 +1490,7 @@ async function travel(to, z){
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
     else if (climb){ a.waitUntil = now + i * 650; a.path = [{x: climb.foot[0], y: climb.foot[1]}]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
-    else a.path = route.map(p => ({...p}));
+    else { const j = route.findIndex(p => p.jump); a.path = (j >= 0 && onBalcony(a) ? route.slice(j + 1) : route).map(p => ({...p})); }
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   await wait(drop ? 1900 : climb ? 1600 + order.length * 650 : cr ? 2600 : 1500);
@@ -1519,12 +1523,13 @@ function showDialog({title, body, src = "", buttons}){
 function chooseDestination(z){
   if (z.to.length === 1){ travel(z.to[0], z); return; }
   showDialog({title: z.label.split(":")[0], body: "Where does the party head?", buttons: [
-    ...z.to.map(t => ({label: `${t} · ${SPEC[t].name}`, primary: true, fn: () => travel(t, z)})),
+    ...z.to.map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${SPEC[t].name}`, primary: true, fn: () => travel(t, z)})),
     {label: "Stay here"}]});
 }
 function triggerZone(z){
   leader.path = [];
-  if (z.interact){ openInteract(z); return; }
+  if (z.interact){ if (z.kind === "gate" && gatePassable()) return; openInteract(z); return; }   // the open doorway is just a doorway
+  if (z.to.length > 1){ chooseDestination(z); return; }                                        // the landing: stairs or bridge
   // Sam, 2026-10-22: "why does the party always fall when crossing the bridge?" The bridge across the falls (area 9)
   // runs right over the spot where you can drop into the pool, so walking from one side to the other used to drop
   // everyone through the falls. It is a choice now.
@@ -2090,12 +2095,12 @@ function openInteract(z, opts = {}){
     add("Step back", close);
   } else if (state.doorShut){
     $("objText").textContent = "The gate is shut, but no longer locked.";
-    add("Open it", () => { close(); state.doorShut = false; setDoor(true); sfx("door-open"); setTimeout(() => openInteract(z), 1500); }, "primary");
+    add("Open it", () => { close(); state.doorShut = false; setDoor(true); sfx("door-open"); if (balcony()) buildGrid(); setTimeout(() => openInteract(z), 1500); }, "primary");
     add("Step back", close);
   } else {
     for (const t of z.to) add(it.routes?.[t] || `To ${SPEC[t].name}`, () => { $("obj").hidden = true; mode = "explore"; travel(t, z); }, "primary");
     calls();
-    if (isDoor) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); setTimeout(() => sfx("door-close"), 650); });
+    if (isDoor && !state.gateBroken) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650); });
     add("Stay inside", close);
   }
   $("obj").hidden = false; box.firstChild?.focus();
@@ -2135,9 +2140,10 @@ function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
 function unlockGate(forced){
   if (state.gateOpen) return;
-  state.gateOpen = true; state.doorShut = false;
+  state.gateOpen = true; state.doorShut = false; if (forced) state.gateBroken = true;   // torn from its bolts: it will not shut again
   if (cur === 11){ setDoor(true); sfx("door-open", forced ? 1 : .85); }
-  log("The pen gate swings open.");
+  if (balcony()) buildGrid();
+  log(forced ? "The pen gate tears open and hangs from one hinge." : "The pen gate swings open.");
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
   const z = doorGate(); if (z) setTimeout(() => { if (mode === "explore") openInteract(z); }, 1700);
 }

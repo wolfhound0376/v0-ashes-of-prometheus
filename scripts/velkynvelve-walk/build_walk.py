@@ -223,7 +223,7 @@ for k, v in story.items():
 for k, n in spec.items():
     out = []
     for z in n['zones']:
-        if len(z['to']) <= 1 or z.get('kind') == 'gate': out.append(z); continue
+        if len(z['to']) <= 1 or z.get('kind') == 'gate' or z.get('nosplit'): out.append(z); continue
         x0, y0, x1, y1 = z['rect']; m = len(z['to'])
         xs, ys = [], []
         for f in n['floors']:
@@ -240,6 +240,7 @@ for k, n in spec.items():
     n['zones'] = out
     for z in n['zones']:
         if z.get('kind') == 'gate': z['crossBy'] = n.get('cross', {}); z['interact'] = n.get('interact', {}).get('gate')
+        elif z.get('nosplit'): z['crossBy'] = n.get('cross', {})
         elif z['to'] and str(z['to'][0]) in n.get('cross', {}): z['cross'] = n['cross'][str(z['to'][0])]
 
 fx = open(os.path.join(HERE, 'fx.json')).read()

@@ -82,7 +82,13 @@ NODES = {
    walls=[dict(line=P((500,1339),(620,1000),(640,900),(740,885)), label="the pen wall"),
           dict(line=P((740,885),(906,795)), kind="gate", label="the gate's bars"),
           dict(line=P((906,795),(960,740),(985,400),(1000,0)), label="the pen wall")],
-   zones=[dict(rect=[730,790,915,940], to=[10,12], kind="gate", label="The pen gate: heavy iron bolted into the stone. Locked: DC 20 to pick or force (OotA p.18)")],
+   zones=[dict(rect=[730,790,915,940], to=[10,12], kind="gate", label="The pen gate: heavy iron bolted into the stone. Locked: DC 20 to pick or force (OotA p.18)"),
+          # Sam, 2026-10-24: "walk out of the door ... as soon as you hit the gate you have the option of going down the
+          # ladder to #12 the Quaggoth Den or to the right where the guard tower #10 is." The rock landing outside the bars
+          # (story.json interact.gate.balcony.landing) is floor once the gate stands open; stepping onto it asks which way.
+          # `landing` = only floor while the gate is open; `nosplit` = one zone with two ways, never cut into strips.
+          dict(rect=[400,640,545,745], to=[10,12], label="The landing outside the gate: the rope bridge to the Guard Tower, or the cliff stairs down to the Quaggoth Den",
+               landing=True, nosplit=True, routes={"10": "Across the rope bridge to the Guard Tower", "12": "Down the cliff stairs to the Quaggoth Den"})],
    npcs=[dict(id="ront",x=1700,y=760,face=2,talk=False,barks=["Ront mutters something about orc blood and drow throats."]),
          dict(id="eldeth",x=1300,y=1000,face=6,talk=True,talkLine="Eldeth Feldrun catches your eye. She wants a word."),
          dict(id="derendil",x=2050,y=900,face=2,talk=False,barks=["Derendil reminds everyone, again, that he is a prince of Nelrindenvane."]),
