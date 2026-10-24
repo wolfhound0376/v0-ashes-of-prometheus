@@ -218,12 +218,31 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .dm .seats .row small{color:var(--ink-dim);font-family:var(--face-mono);font-size:.62rem;letter-spacing:.06em}
 .dm .seats .row .btn{flex:0 0 auto;padding:4px 8px;font-size:12px}
 @media (max-width:700px){.dm{top:6px;right:6px;width:calc(100% - 12px);max-height:calc(100% - 12px)}}
-.inv{position:absolute;top:10px;left:12px;width:min(360px,calc(100% - 24px));max-height:calc(100% - 20px);overflow:auto;background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:6}
+.inv{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(760px,calc(100% - 24px));max-height:calc(100% - 20px);overflow:auto;background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:6}
 .inv[hidden]{display:none}
 .invHead{display:flex;justify-content:space-between;align-items:center;font-family:var(--face-display);font-size:var(--s1)}
 .invEcon,.invFoot{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim)}
 .invTabs{display:flex;flex-wrap:wrap;gap:4px}
 .invTabs .tbtn[aria-pressed="true"]{color:var(--ink);border-color:var(--ember)}
+/* THE RAG DOLL (Sam, 2026-10-24: "Instead of bag use inventory and that pop up the inventory with the rag doll so you
+   can select/equip/remove items"): the hero in the middle, the dashboard's ten slots around them with its own icons. */
+.invBody{display:grid;grid-template-columns:minmax(250px,300px) 1fr;gap:12px;align-items:start}
+@media (max-width:700px){.invBody{grid-template-columns:1fr}}
+.invDoll{position:relative;aspect-ratio:1/1.15;border:1px solid var(--rule);border-radius:8px;background:radial-gradient(circle at 50% 55%,#24203a,#0b0a10 72%)}
+.invDoll canvas{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:58%;image-rendering:pixelated}
+.invHand[hidden]{display:none}
+.invDoll .slot{all:unset;box-sizing:border-box;position:absolute;width:21%;aspect-ratio:1;display:grid;place-items:center;border:1px solid var(--rule);border-radius:8px;background:rgba(10,8,14,.82);cursor:pointer}
+.invDoll .slot:hover,.invDoll .slot:focus-visible{border-color:var(--ember)}
+.invDoll .slot[aria-pressed="true"]{border-color:var(--ember);box-shadow:0 0 0 2px rgba(232,162,74,.35)}
+.invDoll .slot img{width:78%;height:78%;object-fit:contain}
+.invDoll .slot.empty img{opacity:.38;filter:grayscale(1)}
+.invDoll .slot .lbl{position:absolute;bottom:-1px;left:0;right:0;text-align:center;font-family:var(--face-mono);font-size:.5rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);background:rgba(10,8,14,.75);border-radius:0 0 7px 7px}
+.invSel{margin-top:8px;display:grid;gap:6px;min-height:0}
+.invSel .what{font-size:var(--s-1);color:var(--ink-dim)}
+.invSel .what b{color:var(--ink)}
+.invSel .btns{display:flex;flex-wrap:wrap;gap:4px}.invSel .btn{padding:3px 9px;font-size:var(--s-1)}
+.invPackHead{font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px}
+.invRow.fits{background:rgba(232,162,74,.08);border-radius:5px}
 .invHand{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--rule);border-radius:6px;padding:6px 8px}
 .invList{display:grid;gap:6px}
 .invRow{display:grid;grid-template-columns:40px 1fr;gap:4px 8px;align-items:center;border-bottom:1px solid var(--rule);padding-bottom:6px}
@@ -317,7 +336,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <input type="range" id="vol" min="0" max="100" value="40" aria-label="Music volume">
       <button class="tbtn" id="motionBtn" aria-pressed="true">Motion on</button>
       <button class="tbtn" id="voicesBtn" aria-pressed="true" title="Hear the story's lines on the map">Voices on</button>
-      <button class="tbtn" id="bagBtn" aria-expanded="false" title="What the hero carries (I)">Bag (I)</button>
+      <button class="tbtn" id="bagBtn" aria-expanded="false" title="What the hero carries and wears (I)">Inventory (I)</button>
       <button class="tbtn" id="dmBtn" aria-expanded="false">DM tools</button>
     </div>
   </header>
@@ -349,12 +368,15 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <div class="cbt-hint" id="cbtHint" hidden></div>
     </div>
     <div class="inv" id="inv" role="dialog" aria-label="Inventory" hidden>
-      <div class="invHead"><b id="invWho"></b><button class="tbtn" id="invClose" aria-label="Close the bag">✕</button></div>
+      <div class="invHead"><b id="invWho"></b><button class="tbtn" id="invClose" aria-label="Close the inventory">✕</button></div>
       <div class="invEcon" id="invEcon"></div>
       <div class="invTabs" id="invTabs"></div>
-      <div class="invHand" id="invHand"></div>
-      <div class="invList" id="invList"></div>
-      <div class="invFoot">I opens and closes · Esc closes</div>
+      <div class="invBody">
+        <div class="invDollWrap"><div class="invDoll" id="invDoll"></div><div class="invSel" id="invSel"></div></div>
+        <div class="invPack"><div class="invPackHead" id="invPackHead">Carried</div><div class="invList" id="invList"></div></div>
+      </div>
+      <div class="invHand" id="invHand" hidden></div>
+      <div class="invFoot">Click a slot to see what fits it · I opens and closes · Esc closes</div>
     </div>
     <div class="dm" id="dm" hidden>
       <div class="dmHead"><b>DM tools</b><button class="tbtn" id="dmClose" aria-label="Close DM tools">✕</button></div>
@@ -2678,7 +2700,7 @@ function openMenu(a, sub){
     }
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("walk:innate-sorcery", .8); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
-    ACTION_ICON["Bag"] = "use-object"; add("Bag", "equip, put away, drink a potion (I)", () => toggleBag(true, a));
+    ACTION_ICON["Inventory"] = "use-object"; add("Inventory", "equip, put away, drink a potion (I)", () => toggleBag(true, a));
     for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
@@ -2728,7 +2750,7 @@ function renderExploreBar(){
   if (o.pile) add(`Pick up ${o.pile.name}`, "⇩", "use-object", "E · it is at your feet", () => interact());
   else if (o.body) add(`Search ${nm(o.body)}`, "⌕", "search", "E · see what they carried", () => interact());
   else if (o.obj) add(o.obj.interact.name, "✋", "use-object", state.gateOpen ? "use it" : "locked · see your options", () => openInteract(o.obj));
-  add("Bag", "▣", null, "I · what you carry", () => toggleBag());
+  add("Inventory", "▣", null, "I · equip, use, consume", () => toggleBag());
   const sh = SHEETS[leader.id];
   if (sh && (sh.magic || sh.caster)) add("Cast", "✦", "cast-spell", wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => startCombat([o.foe], `${who} attacks!`), "end");
@@ -3001,7 +3023,19 @@ function meleeOf(h){ const a = h.c.sheet.attacks || []; return a.find(k => (k.re
 function attackWith(att, tgt, atk, done, offhand, reaction){
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
-  approachThen(att, tgt, reach, () => {
+  // A BOW OR CROSSBOW SHOOTS FROM WHERE YOU STAND (Sam, 2026-10-24: "be able to fire from a distance. Not sure why fifi
+  // had to move closer"). approachThen walks into reach first, and for a target beyond the pen's bars it walks to the
+  // gate (gateWayTo), so a shot from inside the pen sent the archer to the gate before she loosed. A ranged weapon
+  // never walks: within its long range it fires from here (beyond normal range at disadvantage, advantageOn), and past
+  // the long range it is refused with the action given back.
+  const shooting = !atk.flask && !atk.thrown && (atk.reach || 5) > 10;
+  const go = shooting ? (then) => {
+    const ft = feetBetween(att, tgt), far = atk.long || atk.reach;
+    if (ft > far + 2.5){ toast(`Too far: ${Math.round(ft)} ft, and the ${atk.name} reaches ${far} ft.`); if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = true; else c.action = true; }
+      combatBusy = false; if (cbt){ cbt.phase = "idle"; if (att.kind === "pc") openMenu(att); } return; }
+    then();
+  } : (then) => approachThen(att, tgt, reach, then);
+  go(() => {
     pushCam(att, tgt);
     const ws = weaponSfx(atk, tgt), cs = CREATURE_SFX[att.id];
     if (cs && cs.call && now - (att.lastCall || 0) > 1500){ att.lastCall = now; bank(cs.call, .7); }
@@ -3062,7 +3096,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
       }
-    }, () => Promise.resolve(shieldWait).then(() => flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)));
+    }, () => Promise.resolve(shieldWait).then(() => flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)), shot);
   });
 }
 function castSpell(caster, tgt, name, done){
@@ -3434,10 +3468,14 @@ function approachThen(att, tgt, ft, then){
   att.path = findPath(att, goal); att.onArrive = () => { if (Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 40 && att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; } then(); };
   if (!att.path.length) then();
 }
-function strike(att, tgt, onHit, after){
+function strike(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
-  playOnce(att, "attack", () => { setAnim(att, "idle"); setTimeout(after, 320); });
-  att.once && (att.once.hit = onHit);
+  // A shot is not a punch. A sprite with a "shoot" sheet plays it; one without stands and takes aim (no fist thrown),
+  // looses after a beat, and the bolt or arrow does the rest. Until now every shot played the cross-punch.
+  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : "attack";
+  if (!pose){ setAnim(att, "idle"); att.aimHold = now; setTimeout(() => { onHit(); setTimeout(after, 380); }, 420); return; }
+  playOnce(att, pose, () => { setAnim(att, "idle"); setTimeout(after, 320); });
+  if (att.once) att.once.hit = onHit; else { onHit(); setTimeout(after, 320); }
 }
 // BERSERK (Sam, 2026-10-15: "Do not have quaggoths retreat when bloodied. Instead, describe them entering a
 // berserk state. Direct a wounded quaggoth toward fragile backline characters (wizards, sorcerers) where that
@@ -4309,7 +4347,7 @@ function partyJoins(id){
   const a = mkActor(id, p.x, p.y, "pc", {alpha: 0, fadeIn: true, home: {x: p.x, y: p.y}, face: leader.face});
   a.actUntil = now + 3000 + Math.random() * 6000;
   party.push(a); party.sort((x, y) => PARTY.indexOf(x.id) - PARTY.indexOf(y.id)); actors = [...party, ...npcs, ...foes];
-  renderParty(); narrate(a, `${SHORT[id] || SPR[id].json.name} is here.`);
+  renderParty(); narrate(a, `${SHORT[id] || SPR[id].json.name} is here.`); if (APP) loadGear(id);
 }
 // A cast member goes where Malachar's [NPC_MOVE: name | where] put them — the pen's story layer names the
 // spots ("gate"/"bars" is outside the bars, "landing" is Jorlan's post, "bridge", "tower"); a wording that names
@@ -4889,7 +4927,10 @@ const isWeapon = it => !!it && ((it.item_type || "") === "weapon" || !!baseWeapo
 // an attack line from a catalogue weapon, the way the sheet's own lines are written
 function attackFromItem(sheet, it){
   const p = it.properties || {}, wp = (p.weapon_properties || []).map(s => String(s).toLowerCase());
-  const finesse = wp.includes("finesse") || p.finesse === true, light = wp.includes("light") || p.light === true, thrown = wp.includes("thrown"), ammo = wp.includes("ammunition");
+  const finesse = wp.includes("finesse") || p.finesse === true, light = wp.includes("light") || p.light === true, thrown = wp.includes("thrown");
+  // a launcher is ammunition even when its catalogue row forgets to say so: the hand crossbow's row has no
+  // weapon_properties at all, so it was read as a 5-ft melee weapon and the shooter walked up to use it
+  const ammo = wp.includes("ammunition") || (!thrown && !!p.range && !!SHOT_OF(String(baseWeapon(it) || it.name || "").toLowerCase()));
   const rng = String(p.range || "").split("/").map(Number), die = (String(p.damage || "1").match(/^\s*(\d+d\d+|\d+)/) || [0, "1"])[1];
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
   const str = sheet.saves.str || 0, dex = sheet.saves.dex || 0, mod = ammo ? dex : finesse ? Math.max(str, dex) : str;
@@ -4910,8 +4951,8 @@ function refreshAttacks(id){
     return;
   }
   const s = SHEETS[id]; if (!s) return; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
-  const g = GEAR[id], eq = g && g.main && g.carried.find(c => c.name === g.main);
-  s.attacks = eq && isWeapon(eq) ? [attackFromItem(s, eq), ...s.baseAttacks] : s.baseAttacks.slice();
+  const g = GEAR[id], held = g ? [g.main, g.off].map(n => n && g.carried.find(c => c.name === n)).filter(it => it && isWeapon(it)) : [];
+  s.attacks = [...held.map(it => attackFromItem(s, it)), ...s.baseAttacks];
 }
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
@@ -4920,9 +4961,11 @@ async function loadGear(only){
     try {
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
+        eslot: normSlot(r.equippable_slot || r.items?.equippable_slot || cat?.equippable_slot || ""),
         qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || ""}; });
-      const main = (j.equipped || []).find(e => e.slot === "main_hand" && e.equipped !== false);
-      GEAR[id] = {carried, main: main ? main.name : null}; refreshAttacks(id);
+      const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
+      const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
+      GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand")}; refreshAttacks(id);
     } catch (e) {}
   }
   if (cbt) renderParty();
@@ -4975,6 +5018,74 @@ async function pickUp(a, p){
 // (/api/equipment, lib/ground-items interactionCost): the SRD gives one free object interaction a turn — "draw or
 // sheathe a sword" is its own example — and a second costs the action. A SWAP is two (sheathe one, draw the other),
 // so it takes the free interaction AND the action. Out of a fight nothing is counted.
+// THE RAG DOLL'S SLOTS, the dashboard's ten (components/dashboard/right-column.tsx EQUIPMENT_SLOTS) with its icons.
+// The slot rules are lib/equipped.ts's: the catalogue's equippable_slot decides; a ring fits either finger; boots go on
+// the legs (there is no feet slot); a one-handed weapon may also go in the off hand. /api/equipment checks them again.
+const DOLL_SLOTS = [
+  {id: "head", label: "Head", icon: "head", at: [39.5, 2]}, {id: "neck", label: "Neck", icon: "neck", at: [76, 8]},
+  {id: "back", label: "Cloak", icon: "back", at: [3, 8]}, {id: "hands", label: "Hands", icon: "hands", at: [2, 32]},
+  {id: "torso", label: "Torso", icon: "torso", at: [77, 32]}, {id: "main_hand", label: "Main hand", icon: "main-hand", at: [2, 56]},
+  {id: "off_hand", label: "Off hand", icon: "off-hand", at: [77, 56]}, {id: "ring1", label: "Ring", icon: "ring", at: [6, 79]},
+  {id: "legs", label: "Legs", icon: "legs", at: [39.5, 80]}, {id: "ring2", label: "Ring", icon: "ring2", at: [73, 79]}];
+const SLOT_ICON_BASE = APP ? "/icons/equipment/" : "https://ashes.playacartagena.com/icons/equipment/";
+const SLOT_ALIAS = {ring_1: "ring1", ring_2: "ring2", cloak: "back", gloves: "hands", gauntlets: "hands", feet: "legs", boots: "legs"};
+function normSlot(sl){ const k = String(sl || "").trim().toLowerCase(); return SLOT_ALIAS[k] || k; }
+const HAND = sl => sl === "main_hand" || sl === "off_hand";
+const slotLabel = sl => (DOLL_SLOTS.find(d => d.id === sl) || {label: sl}).label;
+function twoHanded(it){ return ((it.properties || {}).weapon_properties || []).map(x => String(x).toLowerCase()).includes("two-handed"); }
+function fitsSlot(it, sl){
+  const want = it.eslot || (isWeapon(it) ? "main_hand" : ""); if (!want) return false;
+  if (want === sl) return true;
+  if ((want === "ring" || want === "ring1" || want === "ring2") && (sl === "ring1" || sl === "ring2")) return true;
+  return sl === "off_hand" && want === "main_hand" && isWeapon(it) && !twoHanded(it);
+}
+const wornIn = (g, sl) => (g.doll || []).find(d => d.slot === sl) || null;
+const wornSlotsOf = (g, it) => (g.doll || []).filter(d => d.item_key && it.item_key ? d.item_key === it.item_key : d.name === it.name).map(d => d.slot);
+function homeSlot(g, it){   // where "Wear" puts it: its own slot, a ring on the first free finger
+  const want = it.eslot || (isWeapon(it) ? "main_hand" : ""); if (!want) return null;
+  if (want === "ring" || want === "ring1" || want === "ring2") return !wornIn(g, "ring1") ? "ring1" : !wornIn(g, "ring2") ? "ring2" : "ring1";
+  return DOLL_SLOTS.some(d => d.id === want) ? want : null;
+}
+// put it on / take it off: here at once, then in the character's real equipment (/api/equipment), which can still
+// refuse — then the doll is reloaded from the server and the reason is said
+function equipTo(a, it, sl){
+  const g = GEAR[a.id]; if (!g || !bagCan(a)) return;
+  const fight = inFightNow(), was = wornIn(g, sl);
+  if (fight && !HAND(sl)){ toast("Not in the middle of a fight: getting into or out of that takes longer than a turn."); return; }
+  const other = sl === "main_hand" ? "off_hand" : sl === "off_hand" ? "main_hand" : null;
+  if (other && (it.qty || 1) < 2 && (wornIn(g, other) || {}).name === it.name){ toast(`There is only one ${it.name}, and it is already in the other hand.`); return; }
+  // a two-handed weapon takes both hands (SRD 5.1 "Two-Handed: This weapon requires two hands when you attack with it")
+  const heldIn = sl2 => { const w = wornIn(g, sl2); return w && g.carried.find(x => x.name === w.name); };
+  if (sl === "off_hand" && heldIn("main_hand") && twoHanded(heldIn("main_hand"))){ toast(`The ${heldIn("main_hand").name} takes both hands. Put it away first.`); return; }
+  if (sl === "main_hand" && twoHanded(it) && wornIn(g, "off_hand")){ toast(`The ${it.name} takes both hands. Put away the ${wornIn(g, "off_hand").name} first.`); return; }
+  let paid = "";
+  if (fight){ const k = gearCost(a, was ? 2 : 1); if (!k.ok){ toast(k.why); return; } k.pay(); paid = ` (${k.label})`; }
+  g.doll = (g.doll || []).filter(d => d.slot !== sl).concat([{slot: sl, name: it.name, item_key: it.item_key || null}]);
+  if (sl === "main_hand") g.main = it.name; if (sl === "off_hand") g.off = it.name;
+  if (HAND(sl)) refreshAttacks(a.id);
+  popText(a, HAND(sl) ? `${it.name} in hand` : it.name, "#e8d9a8", .8);
+  log(`${fname(a)} ${was && was.name !== it.name ? `takes off the ${esc(was.name)} and ` : ""}${HAND(sl) ? "readies" : "puts on"} the <b>${esc(it.name)}</b>${HAND(sl) ? "" : ` (${slotLabel(sl).toLowerCase()})`}${paid}.`);
+  if (APP){ const cid = characterIdOf(a.id);
+    const send = () => { const k = it.item_key || ((GEAR[a.id].carried.find(c => c.name === it.name) || {}).item_key); if (!cid || !k) return false;
+      fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: sl, item_key: k})})
+        .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); return true; };
+    if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }
+  if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
+}
+function removeFrom(a, sl){
+  const g = GEAR[a.id], was = g && wornIn(g, sl); if (!was || !bagCan(a)) return;
+  const fight = inFightNow();
+  if (fight && !HAND(sl)){ toast("Not in the middle of a fight: getting out of that takes longer than a turn."); return; }
+  if (fight){ const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
+  g.doll = g.doll.filter(d => d.slot !== sl);
+  if (sl === "main_hand") g.main = null; if (sl === "off_hand") g.off = null;
+  if (HAND(sl)) refreshAttacks(a.id);
+  popText(a, `${was.name} off`, "#e8d9a8", .8); log(`${fname(a)} ${HAND(sl) ? "puts away" : "takes off"} the <b>${esc(was.name)}</b>.`);
+  if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "unequip", character_id: cid, slot: sl})}).then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); }
+  if (fight){ renderParty(); if (cbt.phase === "menu") openMenu(a); }
+  renderBag();
+}
 function gearCost(a, n){
   const c = a.c, free = c.objFree !== false ? 1 : 0;
   if (n <= free) return {ok: true, label: "free", pay(){ c.objFree = false; }};
@@ -4982,18 +5093,7 @@ function gearCost(a, n){
   return {ok: false, why: n >= 2 ? "A swap is two object interactions: your free one and your action." : "Your free object interaction is spent, and so is your action."};
 }
 function gearHint(a, n){ if (!inFightNow()) return ""; const k = gearCost(a, n); return k.ok ? k.label : "nothing left to pay with"; }
-function equipItem(a, name){
-  const g = GEAR[a.id]; if (!g) return; const it = g.carried.find(c => c.name === name); if (!it) return;
-  const inFight = mode === "combat" && cbt; let paid = "";
-  if (inFight){ const k = gearCost(a, g.main ? 2 : 1); if (!k.ok){ toast(k.why); return; } k.pay(); paid = k.label; }
-  const was = g.main; g.main = name; refreshAttacks(a.id);
-  popText(a, `${name} in hand`, "#e8d9a8"); log(`${fname(a)} ${was && was !== name ? `puts away the ${esc(was)} and ` : ""}readies the <b>${esc(name)}</b>${inFight ? ` (${paid})` : ""}.`);
-  if (APP){ const cid = characterIdOf(a.id);
-    const send = () => { const k = (GEAR[a.id].carried.find(c => c.name === name) || {}).item_key; if (!cid || !k) return false;
-      fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: "main_hand", item_key: k})}).catch(() => {}); return true; };
-    if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }               // a fresh pickup gets its key from the server first
-  if (inFight){ renderParty(); afterAction(a); }
-}
+function equipItem(a, name){ const g = GEAR[a.id], it = g && g.carried.find(c => c.name === name); if (it) equipTo(a, it, "main_hand"); }
 // what is in a hero's hand after a throw: it left with the throw
 function throwAway(a, name){
   const g = GEAR[a.id]; if (!g) return null; const it = g.carried.find(c => c.name === name); if (!it) return null;
@@ -5154,9 +5254,32 @@ function shotPos(s, p){
 }
 function endAngle(s){ const dx = s.to.x - s.from.x, dy = s.to.y - s.from.y + s.arc * 4; return Math.atan2(dy, dx); }
 // one shaft: the tip at (x, y) pointing along ang; `show` is how much of it is out of whatever it is in
-function drawShaft(x, y, ang, kind, pxft, show = 1, alpha = 1){
+// SAM'S ARROW AND BOLT (2026-10-23: "put them on the pixel map too"; again 2026-10-24: "Archery shots should use the
+// archery animations I uploaded"). Painted flight art from his projectile pack, heading E, 16 frames 4x4 at 60 ms,
+// baked by scripts/vfx/bake_projectile_atlas.py. It replaces the drawn shaft for these two kinds, in flight and stuck;
+// until a sheet has loaded (or if it never does) the drawn shaft stands in. Carried over from claude/sweet-shannon-
+// qar6pz (6cd1470), which never reached main; that branch's battle-board retirement is not part of this.
+// cell = one atlas frame in px; tip = how far in from the cell's right edge the point sits; drawn = point to nock.
+const SHAFT_ART = {
+  arrow: {file: "arrow.webp",         cell: [352, 112], tip: 4, drawn: 344},
+  bolt:  {file: "crossbow-bolt.webp", cell: [264, 116], tip: 4, drawn: 256},
+};
+for (const k in SHAFT_ART) loadImg(VFX_BASE + "projectiles/" + SHAFT_ART[k].file).then(i => SHAFT_ART[k].img = i).catch(() => {});
+// `frame` < 0 holds still on frame 0 (a shaft in a body or the floor); otherwise the flutter runs off the clock
+function drawShaftArt(x, y, ang, kind, len, show, frame){
+  const A = SHAFT_ART[kind]; if (!A || !A.img) return false;
+  const k = len / A.drawn, [cw, ch] = A.cell, f = frame < 0 ? 0 : Math.floor(frame / 60) % 16;
+  ctx.translate(x, y); ctx.rotate(ang);
+  if (show < 1){ ctx.beginPath(); ctx.rect(-len - cw * k, -ch * k, len * show + cw * k, ch * k * 2); ctx.clip(); }   // only the part that is out
+  // Painted, not pixel art: smoothed, or a 340-px painting shrunk to a few dozen pixels sparkles.
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(A.img, (f % 4) * cw, Math.floor(f / 4) * ch, cw, ch, -(cw - A.tip) * k, -ch / 2 * k, cw * k, ch * k);
+  return true;
+}
+function drawShaft(x, y, ang, kind, pxft, show = 1, alpha = 1, frame = -1){
   const L = SHOT_LOOK[kind], len = L.len * pxft, w = Math.max(1.6, L.w * pxft), cx = Math.cos(ang), cy = Math.sin(ang);
   ctx.save(); ctx.globalAlpha = alpha;
+  if (drawShaftArt(x, y, ang, kind, len, show, frame)){ ctx.restore(); return; }
   if (kind === "stone"){ ctx.fillStyle = L.shaft; ctx.fillRect(x - w / 2, y - w / 2, w, w); ctx.restore(); return; }
   const tail = {x: x - cx * len, y: y - cy * len}, start = show < 1 ? {x: x - cx * len * (1 - show), y: y - cy * len * (1 - show)} : {x, y};
   ctx.lineCap = "butt"; ctx.strokeStyle = "#1a120c"; ctx.lineWidth = w + 1.4;                        // a dark outline, like the sprites
@@ -5188,7 +5311,7 @@ function drawShots(){
       else { ctx.fillStyle = "#cfd8e2"; ctx.fillRect(P.x - 2, P.y - 2, 4, 4); }
       continue;
     }
-    drawShaft(P.x, P.y, ang, s.kind, pxft);
+    drawShaft(P.x, P.y, ang, s.kind, pxft, 1, 1, now - s.t0);
   }
 }
 // stuck in a body: drawn right after that body, so it sits in front of it and behind whoever stands in front. It
@@ -5234,7 +5357,7 @@ function drawStuckGround(){
 //   - throwables (acid, alchemist's fire, holy water), poisons and anything that asks for a save: shown with what the
 //     catalogue says, used through the DM. The map has no throw yet, and nothing gets spent by mistake.
 // Using a thing spends it: one off the stack (/api/walk-items "consume"), and a line in the story so Malachar knows.
-const inv = {who: null};
+const inv = {who: null, slot: null};
 const inFightNow = () => mode === "combat" && !!cbt;
 function useOf(it){
   const p = it.properties || {}, n = String(it.name || "").toLowerCase();
@@ -5257,34 +5380,58 @@ function bagHero(){
 const bagOpen = () => !$("inv").hidden;
 function toggleBag(on, who){
   if (on === undefined) on = !bagOpen();
-  if (on){ inv.who = who || null; if (APP && !gearLoaded && seatsSeen.length){ gearLoaded = true; loadGear(); } renderBag(); }
+  if (on){ inv.who = who || null; inv.slot = null; if (APP && !gearLoaded && seatsSeen.length){ gearLoaded = true; loadGear(); }
+    const h = bagHero(); if (APP && h && !GEAR[h.id]) loadGear(h.id); renderBag(); }
   $("inv").hidden = !on; $("bagBtn").setAttribute("aria-expanded", String(on));
 }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
 function bagCan(a){ return !inFightNow() || (a === activeActor() && !combatBusy && !a.down); }
 function renderBag(){
-  const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null});
+  const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
-  $("invWho").textContent = `${fname(a)}'s pack`;
+  $("invWho").textContent = `${fname(a)}'s inventory`;
   $("invEcon").textContent = !fight ? "out of combat: nothing costs a turn"
     : !mine ? "not their turn: look, don't touch"
-    : `this turn: ${c.action ? "action ready" : "action spent"} · ${c.bonus ? "bonus action ready" : "bonus action spent"}`;
+    : `this turn: ${c.action ? "action ready" : "action spent"} · ${c.bonus ? "bonus action ready" : "bonus action spent"} · only what is in hand can change mid-fight`;
   const tabs = $("invTabs"); tabs.innerHTML = "";
   for (const p of party){ const b = document.createElement("button"); b.className = "tbtn"; b.textContent = SHEETS[p.id] ? SHEETS[p.id].name.split(" ")[0] : p.id;
-    b.setAttribute("aria-pressed", String(p === a)); b.onclick = () => { inv.who = p; renderBag(); }; tabs.appendChild(b); }
-  const hand = $("invHand"); hand.innerHTML = "";
-  const held = g.main ? g.carried.find(x => x.name === g.main) : null;
-  hand.innerHTML = `<span>In hand: <b>${esc(g.main || "nothing (fists)")}</b></span>`;
-  if (held){ const b = document.createElement("button"); b.className = "btn"; b.textContent = "Put away"; b.title = fight ? gearHint(a, 1) : "";
-    b.disabled = !mine || (fight && !gearCost(a, 1).ok); b.onclick = () => unequipItem(a); hand.appendChild(b); }
+    b.setAttribute("aria-pressed", String(p === a)); b.onclick = () => { inv.who = p; inv.slot = null; renderBag(); }; tabs.appendChild(b); }
+  // the doll
+  const doll = $("invDoll"); doll.innerHTML = "";
+  const pic = document.createElement("canvas"); portrait(a.id, pic, 256); doll.appendChild(pic);
+  for (const d of DOLL_SLOTS){
+    const w = wornIn(g, d.id), it = w && g.carried.find(x => x.name === w.name);
+    const b = document.createElement("button"); b.className = "slot" + (w ? "" : " empty"); b.style.left = d.at[0] + "%"; b.style.top = d.at[1] + "%";
+    b.setAttribute("aria-pressed", String(inv.slot === d.id)); b.title = w ? `${d.label}: ${w.name}` : `${d.label}: empty`;
+    const src = w ? (it && (it.icon || (it.pixel ? ITEM_PX + it.pixel : ""))) || "" : "";
+    b.innerHTML = `<img src="${esc(src || SLOT_ICON_BASE + d.icon + ".png")}" alt=""><span class="lbl">${esc(d.label)}</span>`;
+    b.onclick = () => { inv.slot = inv.slot === d.id ? null : d.id; renderBag(); };
+    doll.appendChild(b);
+  }
+  // the selected slot
+  const sel = $("invSel"); sel.innerHTML = "";
+  if (inv.slot){
+    const w = wornIn(g, inv.slot), nFit = g.carried.filter(x => fitsSlot(x, inv.slot) && !(w && x.name === w.name)).length;
+    const what = document.createElement("div"); what.className = "what";
+    what.innerHTML = w ? `<b>${esc(slotLabel(inv.slot))}</b>: ${esc(w.name)}`
+      : `<b>${esc(slotLabel(inv.slot))}</b> is empty. ${nFit ? `What fits it is at the top of the list.` : "Nothing carried goes here."}`;
+    sel.appendChild(what);
+    if (w){ const bx = document.createElement("div"); bx.className = "btns"; const b = document.createElement("button"); b.className = "btn";
+      b.textContent = HAND(inv.slot) ? "Put away" : "Take off"; b.disabled = !mine || (fight && (!HAND(inv.slot) || !gearCost(a, 1).ok)); b.title = fight ? (HAND(inv.slot) ? gearHint(a, 1) : "not mid-fight") : "";
+      b.onclick = () => removeFrom(a, inv.slot); bx.appendChild(b); sel.appendChild(bx); }
+  } else sel.innerHTML = '<div class="what">Click a slot to equip or remove. Use, drink, eat and throw are on each item.</div>';
+  $("invPackHead").textContent = inv.slot ? `Carried · fits the ${slotLabel(inv.slot).toLowerCase()} first` : "Carried";
   const list = $("invList"); list.innerHTML = "";
   if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
   const order = {weapon: 0, heal: 1, drink: 2, throw: 3, food: 4, dm: 5, none: 6};
-  const rows = g.carried.map(it => ({it, u: useOf(it)})).sort((x, y) => order[x.u.kind] - order[y.u.kind] || x.it.name.localeCompare(y.it.name));
-  for (const {it, u} of rows){
-    const row = document.createElement("div"); row.className = "invRow";
+  const rows = g.carried.map(it => ({it, u: useOf(it), fit: !!inv.slot && fitsSlot(it, inv.slot)}))
+    .sort((x, y) => (y.fit - x.fit) || order[x.u.kind] - order[y.u.kind] || x.it.name.localeCompare(y.it.name));
+  for (const {it, u, fit} of rows){
+    const row = document.createElement("div"); row.className = "invRow" + (fit ? " fits" : "");
+    const worn = wornSlotsOf(g, it);
     const pic = it.icon || (it.pixel ? ITEM_PX + it.pixel : "");
-    const what = u.kind === "weapon" ? (g.main === it.name ? "in hand" : "a weapon")
+    const what = worn.length ? `${worn.map(slotLabel).join(" and ").toLowerCase()}${u.kind === "weapon" ? "" : " · worn"}`
+      : u.kind === "weapon" ? "a weapon"
       : u.kind === "heal" ? `restores ${u.dice} HP`
       : u.kind === "drink" ? (u.effect || "a draught")
       : u.kind === "food" ? (u.verb === "drink" ? "a drink" : "food")
@@ -5294,8 +5441,18 @@ function renderBag(){
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
     const btns = row.querySelector(".invBtns");
     const btn = (label, ok, why, fn) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; btns.appendChild(b); };
-    if (u.kind === "weapon" && g.main !== it.name)
-      btn("Equip", mine && (!fight || gearCost(a, g.main ? 2 : 1).ok), fight ? gearHint(a, g.main ? 2 : 1) : "", () => { equipItem(a, it.name); if (inFightNow()) toggleBag(false); else renderBag(); });
+    // equip: into the selected slot when one is picked and it fits; otherwise to its own place (a one-handed weapon
+    // can also go in the off hand). Each button says where it goes and, mid-fight, what it costs.
+    const cost = sl => fight ? (HAND(sl) ? gearHint(a, wornIn(g, sl) ? 2 : 1) : "not mid-fight") : "";
+    const can = sl => mine && (!fight || (HAND(sl) && gearCost(a, wornIn(g, sl) ? 2 : 1).ok));
+    if (inv.slot && fit && !worn.includes(inv.slot)) btn(`Equip · ${slotLabel(inv.slot).toLowerCase()}`, can(inv.slot), cost(inv.slot), () => equipTo(a, it, inv.slot));
+    else if (!inv.slot){
+      const home = homeSlot(g, it);
+      if (home && !worn.includes(home)) btn(isWeapon(it) ? "Equip · main hand" : `Wear · ${slotLabel(home).toLowerCase()}`, can(home), cost(home), () => equipTo(a, it, home));
+      const both = (() => { const w = wornIn(g, "main_hand"), h = w && g.carried.find(x => x.name === w.name); return h && twoHanded(h); })();
+      if (isWeapon(it) && !twoHanded(it) && !worn.includes("off_hand") && !both) btn("Equip · off hand", can("off_hand"), cost("off_hand"), () => equipTo(a, it, "off_hand"));
+    }
+    for (const sl of worn) btn(HAND(sl) ? `Put away (${slotLabel(sl).toLowerCase()})` : "Take off", mine && (!fight || (HAND(sl) && gearCost(a, 1).ok)), fight ? (HAND(sl) ? gearHint(a, 1) : "not mid-fight") : "", () => removeFrom(a, sl));
     if (u.kind === "heal" || u.kind === "drink"){
       btn("Drink", mine && (!fight || c.bonus), fight ? "your bonus action" : "", () => drinkItem(a, it, a));
       if (u.kind === "heal") for (const t of party){ if (t === a) continue;
@@ -5344,16 +5501,7 @@ function eatItem(a, it, verb){
   log(`${fname(a)} ${verb === "drink" ? "drinks" : "eats"} the <b>${esc(it.name)}</b>${fight ? " (action)" : ""}.`);
   if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
 }
-function unequipItem(a){
-  const g = GEAR[a.id]; if (!g || !g.main || !bagCan(a)) return;
-  if (inFightNow()){ const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
-  const was = g.main; g.main = null; refreshAttacks(a.id);
-  popText(a, `${was} away`, "#e8d9a8", .8); log(`${fname(a)} puts the <b>${esc(was)}</b> away.`);
-  if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({action: "unequip", character_id: cid, slot: "main_hand"})}).catch(() => {}); }
-  if (inFightNow()){ renderParty(); if (cbt.phase === "menu") openMenu(a); }
-  renderBag();
-}
+function unequipItem(a){ removeFrom(a, "main_hand"); }
 $("bagBtn").onclick = () => toggleBag();
 $("invClose").onclick = () => toggleBag(false);
 // ---------- death saving throws (SRD 5.1, Combat > Damage and Healing > Dropping to 0 Hit Points) ----------
@@ -5806,6 +5954,10 @@ function frame(t){
     await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
   }
   booted = true;
+  // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,
+  // so it reached only the allies: a hero's pack and hands stayed empty until something else asked, and an equipped
+  // crossbow never became an attack.
+  if (APP) loadGear();
   requestAnimationFrame(frame);
 })();
 </script>
