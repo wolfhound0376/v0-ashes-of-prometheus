@@ -8,12 +8,17 @@ import { StageLink } from "@/components/stage/stage-provider"
 import UnderdarkMap from "./underdark-map"
 import UnderdarkMap3D from "./underdark-map-3d"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
+import { parseWalkHandoff, type WalkArrival } from "@/lib/travel/handoff"
 
 export default function MapShell() {
   const [mode, setMode] = useState<"2d" | "3d">("2d")
   const [dm, setDm] = useState(false)
+  // The party just walked out of Velkynvelve: the walk page sends them here with the way out in the query string
+  // (lib/travel/handoff.ts). Read from the window, not useSearchParams, so the page still prerenders.
+  const [arrival, setArrival] = useState<WalkArrival | null>(null)
   useEffect(() => {
     setDm(hasDmKey())
+    try { setArrival(parseWalkHandoff(window.location.search)) } catch { setArrival(null) }
     return onDmKeyChange(() => setDm(hasDmKey()))
   }, [])
   const btn = (active: boolean) =>
@@ -56,6 +61,13 @@ export default function MapShell() {
           {dm ? "MALACHAR \u2726 ON" : "MALACHAR"}
         </button>
       </div>
+      {arrival && (
+        <div className="flex items-center gap-3 px-3 pt-2 max-w-[1360px] mx-auto text-xs font-mono tracking-wider text-[#e1d0a8]">
+          <span className="px-2 py-1 rounded border border-[#6b5123] bg-[#221936]">OUT OF VELKYNVELVE</span>
+          <span className="text-[#9a8fb0]">{arrival.name}. The cavern beyond the outpost is not painted yet; the road from here is the map’s.</span>
+          <button className="text-[#9a8fb0] hover:text-[#f5c34d]" onClick={() => setArrival(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
       {mode === "2d" ? <UnderdarkMap /> : <UnderdarkMap3D />}
     </div>
   )

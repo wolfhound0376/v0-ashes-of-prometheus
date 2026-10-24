@@ -1,5 +1,5 @@
 {
- "_note": "Story layer on top of the walk spec: who stands where, scripted crossings, props. Coordinates in 2400x1339 plate pixels. Bark lines are placeholders, not book text. Pen: two drow guards patrol the rope bridge outside the gate and Jorlan Duskryn stands on the landing by the door (Sam, 2026-10-11).",
+ "_note": "Story layer on top of the walk spec: who stands where, scripted crossings, props. Coordinates in 2400x1339 plate pixels. Bark lines are placeholders, not book text. Pen: two drow guards patrol the rope bridge outside the gate and Jorlan Duskryn stands on the landing by the door (Sam, 2026-10-11). objects (Sam's editor, 2026-10-24): what is in each room and whether it can be used (interact) or is only set dressing (decor); names from OotA p.17-20, no positions yet.",
  "10": {
   "npcs": [
    {
@@ -33,7 +33,21 @@
     ]
    }
   ],
-  "hostileLabel": "The drow guards in the tower see you coming."
+  "hostileLabel": "The drow guards in the tower see you coming.",
+  "objects": [
+   {
+    "name": "Guards' gate keys",
+    "kind": "interact"
+   },
+   {
+    "name": "Dice game",
+    "kind": "interact"
+   },
+   {
+    "name": "Armory (upper chamber)",
+    "kind": "interact"
+   }
+  ]
  },
  "11": {
   "npcs": [
@@ -547,7 +561,21 @@
     90,
     450
    ]
-  }
+  },
+  "objects": [
+   {
+    "name": "Clay chamber pots",
+    "kind": "decor"
+   },
+   {
+    "name": "Clay bowls of mushroom broth",
+    "kind": "interact"
+   },
+   {
+    "name": "Manacles, collars",
+    "kind": "interact"
+   }
+  ]
  },
  "7": {
   "props": [
@@ -635,6 +663,16 @@
      "closed": "A heavy chest of black-stained zurkhwood at the foot of the bed. Locked.",
      "open": "Ilvara's chest stands open."
     }
+   }
+  ],
+  "objects": [
+   {
+    "name": "Silver-framed mirror",
+    "kind": "interact"
+   },
+   {
+    "name": "Small shrine to Lolth",
+    "kind": "interact"
    }
   ]
  },
@@ -727,6 +765,12 @@
      "open": "A chest against the wall of Shoor's quarters. Your own things are in here, the ones the drow took off you."
     }
    }
+  ],
+  "objects": [
+   {
+    "name": "Pewter pitcher and matched goblets",
+    "kind": "interact"
+   }
   ]
  },
  "2": {
@@ -782,6 +826,24 @@
      ]
     ],
     "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
+   }
+  ],
+  "objects": [
+   {
+    "name": "Pallet with gear beneath",
+    "kind": "interact"
+   },
+   {
+    "name": "Resting drow in trance",
+    "kind": "interact"
+   },
+   {
+    "name": "Side tables",
+    "kind": "interact"
+   },
+   {
+    "name": "Wall webbing with hooks",
+    "kind": "interact"
    }
   ]
  },
@@ -839,6 +901,342 @@
      905
     ]
    ]
-  }
+  },
+  "objects": [
+   {
+    "name": "Two quaggoth attendants",
+    "kind": "interact"
+   }
+  ]
+ },
+ "1": {
+  "objects": [
+   {
+    "name": "Warning trumpet",
+    "kind": "interact"
+   },
+   {
+    "name": "Two drow sentries",
+    "kind": "interact"
+   }
+  ]
+ },
+ "14": {
+  "objects": [
+   {
+    "name": "The pool",
+    "kind": "interact"
+   },
+   {
+    "name": "Webs overhead",
+    "kind": "interact"
+   }
+  ]
+ },
+ "9": {
+  "objects": [
+   {
+    "name": "Water barrels",
+    "kind": "interact"
+   }
+  ]
+ },
+ "12": {
+  "objects": [
+   {
+    "name": "Scattered bones of past meals",
+    "kind": "decor"
+   }
+  ]
+ },
+ "10b": {
+  "objects": [
+   {
+    "name": "Side table with lantern and small chest",
+    "kind": "interact"
+   },
+   {
+    "name": "Weapon rack and hooks on the wall",
+    "kind": "interact"
+   },
+   {
+    "name": "Two drow + one elite warrior on duty",
+    "kind": "interact"
+   },
+   {
+    "name": "Dice and cups on the table",
+    "kind": "interact"
+   },
+   {
+    "name": "Zurkhwood table and chairs",
+    "kind": "decor"
+   },
+   {
+    "name": "Ladder to the upper chamber",
+    "kind": "interact"
+   }
+  ]
+ },
+ "3": {
+  "objects": [
+   {
+    "name": "The larder",
+    "kind": "interact"
+   },
+   {
+    "name": "Iron brazier",
+    "kind": "decor"
+   },
+   {
+    "name": "Dice and cards on the tables",
+    "kind": "interact"
+   },
+   {
+    "name": "Food stocks",
+    "kind": "interact"
+   }
+  ]
+ },
+ "4": {
+  "objects": [
+   {
+    "name": "Pallet with gear beneath",
+    "kind": "interact"
+   },
+   {
+    "name": "Finer furniture",
+    "kind": "decor"
+   },
+   {
+    "name": "Chests (four chambers)",
+    "kind": "interact"
+   },
+   {
+    "name": "Rope ladder through the trapdoor",
+    "kind": "interact"
+   }
+  ]
+ },
+ "10c": {
+  "objects": [
+   {
+    "name": "Trapdoor and ladder down",
+    "kind": "interact"
+   },
+   {
+    "name": "Two chests",
+    "kind": "interact"
+   },
+   {
+    "name": "Window to the cavern",
+    "kind": "decor"
+   }
+  ],
+  "loot": [
+   {
+    "id": "armory-crossbows",
+    "name": "Hand crossbows",
+    "_src": "OotA p.18 area 10 Treasure. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      273,
+      204
+     ],
+     [
+      675,
+      204
+     ],
+     [
+      675,
+      477
+     ],
+     [
+      273,
+      477
+     ]
+    ],
+    "text": "Six hand crossbows racked on the wall."
+   },
+   {
+    "id": "armory-bolts",
+    "name": "Cases of bolts",
+    "_src": "OotA p.18: 20 cases, each of 20 bolts. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      287,
+      491
+     ],
+     [
+      675,
+      491
+     ],
+     [
+      675,
+      735
+     ],
+     [
+      287,
+      735
+     ]
+    ],
+    "text": "Twenty cases of hand crossbow bolts, twenty to a case."
+   },
+   {
+    "id": "armory-rope-sacks",
+    "name": "Rope and sacks",
+    "_src": "OotA p.18: 4 coils of 100-ft silk rope, 6 bags of caltrops (20 each), 2 bags of iron spikes (10 each). What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      115,
+      376
+     ],
+     [
+      287,
+      376
+     ],
+     [
+      287,
+      591
+     ],
+     [
+      115,
+      591
+     ]
+    ],
+    "text": "Four 100-foot coils of silk rope; sacks of caltrops and iron spikes."
+   },
+   {
+    "id": "armory-chain",
+    "name": "Chain shirts",
+    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      789,
+      276
+     ],
+     [
+      1148,
+      276
+     ],
+     [
+      1148,
+      563
+     ],
+     [
+      789,
+      563
+     ]
+    ],
+    "text": "Six chain shirts on hangers."
+   },
+   {
+    "id": "armory-studded",
+    "name": "Studded leather",
+    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      1335,
+      319
+     ],
+     [
+      1694,
+      319
+     ],
+     [
+      1694,
+      563
+     ],
+     [
+      1335,
+      563
+     ]
+    ],
+    "text": "Six suits of studded leather armour."
+   },
+   {
+    "id": "armory-shields",
+    "name": "Shields",
+    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      1823,
+      247
+     ],
+     [
+      2239,
+      247
+     ],
+     [
+      2239,
+      520
+     ],
+     [
+      1823,
+      520
+     ]
+    ],
+    "text": "Six shields on the wall."
+   },
+   {
+    "id": "armory-blades",
+    "name": "Shortswords and daggers",
+    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      1823,
+      563
+     ],
+     [
+      2239,
+      563
+     ],
+     [
+      2239,
+      792
+     ],
+     [
+      1823,
+      792
+     ]
+    ],
+    "text": "Six shortswords and ten daggers in the racks."
+   },
+   {
+    "id": "armory-hammers",
+    "name": "Building hammers and chests",
+    "_src": "OotA p.18: 2 building hammers (not usable as weapons). The chests are in the painting only; the book lists nothing in them. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "poly": [
+     [
+      1321,
+      620
+     ],
+     [
+      1651,
+      620
+     ],
+     [
+      1651,
+      764
+     ],
+     [
+      1321,
+      764
+     ]
+    ],
+    "text": "Two building hammers (not weapons) by two chests."
+   }
+  ]
+ },
+ "13": {
+  "objects": [
+   {
+    "name": "Two drow sentries",
+    "kind": "interact"
+   },
+   {
+    "name": "Warning horn",
+    "kind": "interact"
+   }
+  ]
  }
 }
