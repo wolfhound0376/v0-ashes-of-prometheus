@@ -472,9 +472,9 @@ function forgeHero(s){
 }
 function applyForgedSheet(slug, sh){
   // the walk resolves the spells in SPELLS; any other spell on the sheet stays the dashboard's to cast
-  const ok = n => Object.prototype.hasOwnProperty.call(SPELLS, n);
+  const ok = n => Object.prototype.hasOwnProperty.call(SPELLS, n) || !!SPELL_VARIANTS[n];
   const m = sh.magic ? {...sh.magic, cantrips: sh.magic.cantrips.filter(ok), prepared: sh.magic.prepared.filter(ok)} : null;
-  SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m && (m.cantrips.length || m.prepared.length) ? m : null, caster: !!sh.magic});
+  SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m && (m.cantrips.length || m.prepared.length) ? m : null, magicAll: sh.magic || null, caster: !!sh.magic});
   PCS[slug] = {name: sh.name, race: sh.race || "", cls: String(sh.cls || "").toLowerCase()};
   if (SPR[slug].standIn){ const base = SPR[standInFor(sh.cls)]; SPR[slug] = {json: {...base.json, name: sh.name}, img: base.img, standIn: true}; }
 }
@@ -2208,7 +2208,7 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
+const SCHOOL_OF = {"Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
 const RUNE_SCHOOL = {abjuration: "runeAbjuration", conjuration: "runeConjuration", divination: "runeDivination", enchantment: "runeEnchantment", evocation: "runeEvocation", illusion: "runeIllusion", necromancy: "runeNecromancy", transmutation: "runeTransmutation"};
@@ -2354,11 +2354,28 @@ const ALLY_SHEETS = {
 const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b65375-f25e-4773-bf41-641be0f12b86",
                   derendil: "e0c652fe-2f68-40ff-823d-bb7ac34f529f", sarith: "cc309888-e98d-4cfe-8bf1-d75787b8ec8e"};
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
+// a spell with a choice in it is offered as its choices (the sheet says "Chromatic Orb"; the menu offers each type)
+const SPELL_VARIANTS = {"Chromatic Orb": ["Chromatic Orb (acid)", "Chromatic Orb (cold)", "Chromatic Orb (fire)", "Chromatic Orb (lightning)", "Chromatic Orb (poison)", "Chromatic Orb (thunder)"]};
 const SPELLS = {
   "Ray of Frost":       {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "cold", fx: "#9fdcff", note: "speed −10 ft"},
   // Gandalf's (2026-10-23). lib/data/spells.json: "ranged spell attack; 1d10 fire", 120 ft. The SRD's
   // flammable-object rider has nothing to ignite on the plate and is left out.
   "Fire Bolt":          {lvl: 0, kind: "attack", range: 120, dmg: "1d10", type: "fire", fx: "#ff8a3a"},
+  // Gandalf's prepared spells (Sam, 2026-10-23: "why doesn't gandalf have his spells"). The map dropped every spell it
+  // could not resolve, so his fight menu held only two cantrips. Range, dice and saves are lib/data/spells.json's
+  // where it records them (Magic Missile "1d4+1 force", 120 ft; Thunderwave "Constitution save (half); 2d8 thunder;
+  // 15-foot cube"; Chromatic Orb 90 ft, ranged spell attack). Recalled from the SRD, as the dataset leaves them out:
+  // Magic Missile's three darts, Chromatic Orb's 3d8 of a type the caster picks, Shield's +5 AC as a reaction.
+  // Not done here: splitting the darts between targets, and Thunderwave's 10-ft push.
+  "Magic Missile":      {lvl: 1, kind: "auto", range: 120, dmg: "1d4+1", darts: 3, type: "force", fx: "#c9a7ff"},
+  "Thunderwave":        {lvl: 1, kind: "save", save: "con", range: 15, area: 15, selfArea: true, dmg: "2d8", type: "thunder", fx: "#bfe3ff"},
+  "Chromatic Orb (acid)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "acid", fx: "#9be37a"},
+  "Chromatic Orb (cold)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "cold", fx: "#9fdcff"},
+  "Chromatic Orb (fire)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "fire", fx: "#ff8a3a"},
+  "Chromatic Orb (lightning)": {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "lightning", fx: "#fff27a"},
+  "Chromatic Orb (poison)":    {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "poison", fx: "#8fd48f"},
+  "Chromatic Orb (thunder)":   {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "thunder", fx: "#bfe3ff"},
+  "Shield":             {lvl: 1, kind: "reaction", fx: "#cfe8ff"},
   "Shocking Grasp":     {lvl: 0, kind: "attack", range: 5, dmg: "1d8", type: "lightning", fx: "#fff27a", note: "no reactions"},
   "Chill Touch":        {lvl: 0, kind: "attack", range: 5, dmg: "1d10", type: "necrotic", fx: "#8fd48f", note: "can't regain HP"},
   "Toll the Dead":      {lvl: 0, kind: "save", save: "wis", range: 60, dmg: "1d8", dmgHurt: "1d12", type: "necrotic", fx: "#b39ddb"},
@@ -2374,7 +2391,7 @@ const SPELLS = {
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
 const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
-                    shielded: ["◇", "#cfe8ff", "+2 AC"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
+                    shielded: ["◇", "#cfe8ff", "+2 AC"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
                     sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], dodging: ["◈", "#cfe8ff", "Dodging"],
@@ -2533,7 +2550,7 @@ function nextTurn(first){
   if (a.down){ renderTurns(); renderParty(); if (deathSaveTurn(a)) return; }
   if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
-  a.c.conds.delete("dodging"); a.c.reactionUsed = false;
+  a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
   renderTurns(); renderParty();
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
@@ -2586,9 +2603,14 @@ function openMenu(a, sub){
     if (!c.action) add("— action already used —", c.leveledSpell ? "you cast a leveled spell with it: no other spell this turn but a cantrip, and your action is spent" : c.bonus ? "only a bonus-action spell is left" : "and the bonus action too", null);
     for (const nm of [...s.magic.cantrips, ...s.magic.prepared]) ACTION_ICON[nm] = "cast-spell";
     for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
-    for (const nm of s.magic.prepared){ const sp = SPELLS[nm]; if (!sp) continue; const left = c.slots[sp.lvl] || 0;
+    for (const base of s.magic.prepared) for (const nm of (SPELL_VARIANTS[base] || [base])){ const sp = SPELLS[nm]; if (!sp) continue; ACTION_ICON[nm] = "cast-spell";
+      if (sp.kind === "reaction"){ add(nm, `level ${sp.lvl} slot · your reaction · offered when an attack would hit you`, null); continue; }
+      const left = c.slots[sp.lvl] || 0;
       const why = left <= 0 ? "no slot left" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
-      add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"}${sp.conc ? (c.conc ? ` · concentration: ends ${c.conc.spell}` : " · concentration") : ""} · ${sp.dmg ? sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
+      add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"}${sp.conc ? (c.conc ? ` · concentration: ends ${c.conc.spell}` : " · concentration") : ""} · ${sp.dmg ? (sp.darts ? sp.darts + " darts × " : "") + sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
+    // anything else on the sheet is shown, not hidden: the map cannot resolve it in a fight yet, Malachar can
+    { const all = s.magicAll || s.magic, have = new Set([...s.magic.cantrips, ...s.magic.prepared]);
+      for (const nm of [...(all.cantrips || []), ...(all.prepared || [])]) if (!have.has(nm) && !SPELLS[nm] && !SPELL_VARIANTS[nm]){ ACTION_ICON[nm] = "cast-spell"; add(nm, "not in the map's fights yet · cast it outside a fight, or tell Malachar", null); } }
     add("Back", "", () => openMenu(a));
   } else {
     grp("attack");
@@ -2953,7 +2975,22 @@ function afterAttackRoll(att){ if (att.c.conds.has("hidden")){ att.c.conds.delet
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
 function skillCheck(a, skill){ const r = d20(), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
-function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0); }
+function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
+// SHIELD, THE REACTION (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions like shield"). When an
+// attack is about to hit a caster who has Shield prepared, a level 1 slot and their reaction, and +5 AC would turn it,
+// the fight stops and asks. Yes: the slot and the reaction are spent and they have +5 AC until the start of their
+// next turn, the attack that triggered it included. A critical hit is not offered (it hits whatever the AC).
+function canShield(t){
+  const s = SHEETS[t.id], all = s && (s.magicAll || s.magic); if (!all || !t.c) return false;
+  return [...(all.prepared || []), ...(all.always_prepared || [])].includes("Shield") && (t.c.slots[1] || 0) > 0 && !t.c.reactionUsed && !incapacitated(t) && !t.down;
+}
+function askShield(t, att, atk, total, ac, cb){
+  showDialog({title: `${fname(t)}: cast Shield?`, body: `${fname(att)}'s ${atk.name} would hit: ${total} against AC ${ac}. Shield raises AC to ${ac + 5} until the start of ${fname(t)}'s next turn, so this one misses. It uses the reaction and a level 1 slot (${t.c.slots[1]} left).`,
+    src: "Shield · 1 reaction · level 1", buttons: [
+      {label: "Cast Shield", primary: true, fn: () => { t.c.reactionUsed = true; t.c.slots[1] = Math.max(0, (t.c.slots[1] || 0) - 1); addCond(t, "shieldSpell");
+        bank("magic/arcane_release", .6); spawnFx("sigilAbjurationRing", {at: t, sq: 2, flat: true, spin: 1}); popText(t, "Shield +5", "#cfe8ff"); log(`${fname(t)} casts <b>Shield</b> (reaction): AC ${ac + 5}.`); renderParty(); cb(true); }},
+      {label: "Take the hit", fn: () => cb(false)}]});
+}
 // a weapon attack: close to reach, swing, roll on the hit frame, then the number
 // `offhand`: two-weapon fighting's bonus-action swing (SRD 5.1) — the bonus action, not the action, and no
 // ability modifier on its damage unless that modifier is negative.
@@ -2975,12 +3012,18 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     const ranged = !!shot || feetBetween(att, tgt) > (atk.reach || 5) + 2;
     // a thrown weapon or flask leaves the hand: out of the bag now (the flask is spent; the weapon lands on the floor)
     if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
-    let flying = null, landed = null;
+    let flying = null, landed = null, shieldWait = null;
     strike(att, tgt, () => {
       // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
-      const cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
-      const adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
+      let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + insp < acVs + 5){
+        shieldWait = new Promise(res => askShield(tgt, att, atk, r + atk.hit + insp, acVs, used => { if (used){ acVs += 5; hit = false; } rest(); res(); }));
+        return;
+      }
+      rest();
+      function rest(){
       const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
@@ -3018,7 +3061,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
-    }, () => Promise.resolve(flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)));
+      }
+    }, () => Promise.resolve(shieldWait).then(() => flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)));
   });
 }
 function castSpell(caster, tgt, name, done){
@@ -3111,8 +3155,15 @@ function castSpell(caster, tgt, name, done){
           tgt.sofFx = spawnFx("shieldOfFaith", {at: tgt, sq: 1.9, anchor: "base", lift: -.2, tail: 8, holdAlpha: .5, whileCond: "shielded"}); }
         else spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8});
         addCond(tgt, sp.cond); concHolds(caster, tgt, sp.cond, name); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
+      else if (sp.kind === "auto"){                                             // Magic Missile: the darts never miss
+        const rolls = []; for (let i = 0; i < (sp.darts || 1); i++) rolls.push(roll(sp.dmg).total);
+        const tot = rolls.reduce((x, y) => x + y, 0);
+        land(tgt, true, sp.type); knock(tgt, caster, 10 * actorScale(tgt)); if (tgt.kind === "pc") redFlash(); damage(tgt, tot, sp.type, false, caster);
+        narrate(caster, `${fname(caster)}'s darts of light strike ${fname(tgt)}.`);
+        log(`${fname(caster)} ${name}: ${rolls.length} darts strike ${fname(tgt)}, ${rolls.join(" + ")} = <b>${tot}</b> ${sp.type}.`);
+      }
       else {                                                                    // a save
-        const targets = sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt];
+        const targets = (sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
