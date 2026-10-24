@@ -5,6 +5,7 @@ Python only (Sam's machine has no Node). From the repo root:  python scripts/vel
 Inputs, all in this folder:
   template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/ /*__KIT__*/
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
+                 /*__RAGE__*/ is lib/rage.mjs pasted in whole (see rage_rules): Rage and Wounded Fury have ONE copy
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots (built by spec.py)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
   fx.json        lamp/crystal glows and waterfall masks per plate
@@ -137,6 +138,15 @@ def _adapt(spec):
     return out
 
 
+def rage_rules(root):
+    """lib/rage.mjs, pasted into the page whole minus its `export` keywords. The map then reads the SAME
+    functions lib/rage.test.ts tests (Rage's damage bonus, uses, end-of-turn test; Wounded Fury's
+    threshold; the tint), so there is no hand-typed copy in the page to drift. Plain JS on purpose:
+    this build runs on Sam's machine, where there is no Node to compile TypeScript."""
+    src = open(os.path.join(root, 'lib', 'rage.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def build_kit_tables(root):
     src = open(os.path.join(root, KIT_TS), encoding="utf-8").read()
     types = _ts_to_obj(_ts_block(src, "const TYPES"))
@@ -245,7 +255,7 @@ for k, n in spec.items():
 
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
-t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT))
+t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
       .replace('/*__HEROES__*/{}', json.dumps(HEROES, separators=(',', ':')))
