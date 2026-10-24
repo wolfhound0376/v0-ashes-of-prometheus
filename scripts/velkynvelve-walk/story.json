@@ -696,5 +696,61 @@
     "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
    }
   ]
+ },
+ "5": {
+  "lift": {
+   "_src": "OotA ch.1 area 5: winch-and-basket on a swinging arm; up to four Medium creatures; DC 18 Strength to turn the spool (another can Help); 4 rounds between the platform and the cavern floor. Traced by eye on the painted plate, 2026-10-22.",
+   "crank": [
+    [
+     960,
+     440
+    ],
+    [
+     1260,
+     440
+    ],
+    [
+     1270,
+     740
+    ],
+    [
+     960,
+     760
+    ]
+   ],
+   "spool": [
+    1150,
+    800
+   ],
+   "board": [
+    1490,
+    890
+   ],
+   "basket": [
+    1665,
+    700,
+    1900,
+    1045
+   ],
+   "rope": 1800,
+   "seats": [
+    [
+     1745,
+     925
+    ],
+    [
+     1795,
+     935
+    ],
+    [
+     1845,
+     925
+    ],
+    [
+     1795,
+     905
+    ]
+   ]
+  }
  }
 }
