@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { readStage } from "@/lib/stage-roster"
 import { readSeated } from "@/lib/seats"
+import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk-sheet"
 
 // /api/map-stage — who is in the area with the party, as Malachar has narrated it (lib/stage-roster.ts).
 //
@@ -35,11 +36,21 @@ export async function GET() {
     // Each seated character's level, so the map can switch on class features as they are earned
     // (Cunning Action at rogue level 2). Best-effort: a failed read leaves level off and the map
     // keeps its own snapshot.
+    //
+    // And each one's whole walk sheet (lib/walk-sheet.ts), so a hero made at the Forge after the map was
+    // built walks and fights as themselves instead of as the first premade (Sam, 2026-10-23: "My son
+    // created a character named gandalf but kenta is the pixel art"). The premades keep the page's own
+    // snapshots; the map only uses this for a seat it does not already know.
     const ids = seated.map((s) => s.id)
     const levels = new Map<string, number>()
+    const sheets = new Map<string, WalkSheet>()
     if (ids.length) {
-      const { data } = await admin.from("characters").select("id, level").in("id", ids)
-      for (const r of data ?? []) if (typeof r.level === "number") levels.set(r.id, r.level)
+      const { data } = await admin.from("characters").select(WALK_SHEET_COLUMNS).in("id", ids)
+      for (const r of (data ?? []) as unknown as Record<string, unknown>[]) {
+        const id = String(r.id)
+        if (typeof r.level === "number") levels.set(id, r.level)
+        sheets.set(id, walkSheetFromRow(r))
+      }
     }
     return NextResponse.json({
       area: stage.area,
@@ -47,7 +58,7 @@ export async function GET() {
       present: Object.values(stage.present),
       gone: Object.values(stage.gone),
       run: runRes.data?.run_number ?? null,
-      seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm, level: levels.get(s.id) ?? null })),
+      seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm, level: levels.get(s.id) ?? null, sheet: sheets.get(s.id) ?? null })),
     })
   } catch (e) {
     return NextResponse.json({ area: null, present: [], gone: [], run: null, seated: [], error: String(e) }, { status: 200 })

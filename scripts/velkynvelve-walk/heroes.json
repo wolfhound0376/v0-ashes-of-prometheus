@@ -1,0 +1,4 @@
+{
+  "_": "Heroes made at the Forge who have a sprite of their own: characters.id -> slug in public/sprites. The map (template.html, HEROES FROM THE FORGE) gives a seated hero this sprite; one not listed here wears the stand-in of their class under their own name. Add a line when a new hero's sprite is baked (scripts/sprites/build-sprite.py), then rebuild with build_walk.py.",
+  "614cac3d-f119-4b35-af78-766ddb510619": "gandalf"
+}

@@ -179,6 +179,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SPR = os.path.join(ROOT, "public", "sprites")
 P = ['kenta', 'samson', 'scott', 'freia']
+# Heroes made at the Forge, with their own sprite (heroes.json: characters.id -> slug). Baked with the
+# premades' sheets; a slug whose folder is not there yet is skipped so the page still builds.
+HEROES = {k: v for k, v in json.load(open(os.path.join(HERE, 'heroes.json'))).items() if not k.startswith('_') and os.path.exists(os.path.join(SPR, v, 'sprite.json'))}
+P = P + [v for v in HEROES.values() if v not in P]
 N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turvy', 'shuushar', 'stool', 'jorlan', 'drow-guard-male', 'drow-guard-female']
 F = ['quaggoth', 'giant-spider']
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
@@ -188,7 +192,7 @@ for i in P + N + F + V:
     # 'jump' is asked for on both sides now that heroes long-jump too (arcTo/planLeap in the
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
-    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage'] if i in F else [])
+    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage'] if i in F else [])
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
@@ -212,14 +216,14 @@ story = json.load(open(os.path.join(HERE, 'story.json')))
 for k, v in story.items():
     if k.startswith('_'): continue
     n = spec[k]; n['npcs'] = n.get('npcs', []) + v.get('npcs', [])
-    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props'):
+    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props', 'loot', 'lift'):
         if f in v: n[f] = v[f]
     n['cross'] = v.get('cross', {})
 # exits that lead to several places become one strip per destination, split across the way out
 for k, n in spec.items():
     out = []
     for z in n['zones']:
-        if len(z['to']) <= 1 or z.get('kind') == 'gate': out.append(z); continue
+        if len(z['to']) <= 1 or z.get('kind') == 'gate' or z.get('nosplit'): out.append(z); continue
         x0, y0, x1, y1 = z['rect']; m = len(z['to'])
         xs, ys = [], []
         for f in n['floors']:
@@ -236,6 +240,7 @@ for k, n in spec.items():
     n['zones'] = out
     for z in n['zones']:
         if z.get('kind') == 'gate': z['crossBy'] = n.get('cross', {}); z['interact'] = n.get('interact', {}).get('gate')
+        elif z.get('nosplit'): z['crossBy'] = n.get('cross', {})
         elif z['to'] and str(z['to'][0]) in n.get('cross', {}): z['cross'] = n['cross'][str(z['to'][0])]
 
 fx = open(os.path.join(HERE, 'fx.json')).read()
@@ -243,6 +248,7 @@ t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
+      .replace('/*__HEROES__*/{}', json.dumps(HEROES, separators=(',', ':')))
       .replace('/*__VOICE_BANK__*/{}', open(os.path.join(HERE, 'voice-bank.json')).read())
       .replace('/*__ITEMS__*/[]', open(os.path.join(HERE, 'items.json')).read())
       .replace('const APP = /*__APP__*/false;', 'const APP = true;').replace('<title>Velkynvelve Walk</title>', '<title>Velkynvelve</title>'))

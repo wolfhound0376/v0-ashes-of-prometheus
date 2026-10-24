@@ -360,6 +360,94 @@
       899,
       592
      ]
+    },
+    "balcony": {
+     "_note": "Sam, 2026-10-23: 'The drow should be able to open the gate and come in and vice versa.' Outside the bars: the rope bridge and the rock landing by Jorlan's post, traced on the plate. In a fight it is floor. Once the gate is open, the way between the landing and the threshold goes round behind the pillar (Jorlan's own route in openGate), out of sight, and costs passFt of movement. Drawn at the guards' size (scale, = their fixedScale), not by the pen's depth. keys: who carries the gate key (house assumption: the outpost's guards and Jorlan).",
+     "poly": [
+      [
+       20,
+       370
+      ],
+      [
+       120,
+       395
+      ],
+      [
+       230,
+       440
+      ],
+      [
+       320,
+       480
+      ],
+      [
+       410,
+       540
+      ],
+      [
+       480,
+       575
+      ],
+      [
+       525,
+       625
+      ],
+      [
+       540,
+       690
+      ],
+      [
+       510,
+       730
+      ],
+      [
+       440,
+       738
+      ],
+      [
+       365,
+       712
+      ],
+      [
+       325,
+       655
+      ],
+      [
+       285,
+       615
+      ],
+      [
+       195,
+       570
+      ],
+      [
+       105,
+       520
+      ],
+      [
+       20,
+       480
+      ]
+     ],
+     "scale": 1.35,
+     "landing": [
+      500,
+      688
+     ],
+     "behind": [
+      545,
+      702
+     ],
+     "threshold": [
+      812,
+      812
+     ],
+     "inside": [
+      822,
+      880
+     ],
+     "passFt": 15,
+     "keys": "^(drow|jorlan)"
     }
    }
   },
@@ -549,5 +637,208 @@
     }
    }
   ]
+ },
+ "8": {
+  "props": [
+   {
+    "id": "shoor-chest",
+    "name": "Shoor's chest",
+    "_src": "Sam's ruling, 2026-10-22: the party's confiscated weapons and gear are kept in Shoor's quarters. Traced by eye on the painted plate. Lid traced by eye, 2026-10-22 (Sam: \"This chest should also be able to open and have an animation\"). Not locked: the book says nothing of a lock on it.",
+    "locked": false,
+    "poly": [
+     [
+      1290,
+      330
+     ],
+     [
+      1370,
+      315
+     ],
+     [
+      1525,
+      350
+     ],
+     [
+      1520,
+      470
+     ],
+     [
+      1440,
+      495
+     ],
+     [
+      1290,
+      450
+     ]
+    ],
+    "lid": {
+     "poly": [
+      [
+       1288,
+       408
+      ],
+      [
+       1292,
+       360
+      ],
+      [
+       1318,
+       312
+      ],
+      [
+       1478,
+       348
+      ],
+      [
+       1528,
+       385
+      ],
+      [
+       1520,
+       440
+      ],
+      [
+       1400,
+       436
+      ],
+      [
+       1340,
+       425
+      ]
+     ],
+     "hinge": [
+      [
+       1318,
+       316
+      ],
+      [
+       1478,
+       352
+      ]
+     ],
+     "front": [
+      1400,
+      434
+     ]
+    },
+    "text": {
+     "closed": "A heavy iron-bound chest against the wall of Shoor's quarters.",
+     "unlocked": "A heavy iron-bound chest against the wall. It is not locked.",
+     "open": "A chest against the wall of Shoor's quarters. Your own things are in here, the ones the drow took off you."
+    }
+   }
+  ]
+ },
+ "2": {
+  "loot": [
+   {
+    "id": "barracks-west",
+    "name": "The barracks chests (west)",
+    "_src": "OotA ch.1 area 2: six chests in each barracks; drow poison, clothing, trinkets. Traced by eye on the painted plate.",
+    "poly": [
+     [
+      835,
+      610
+     ],
+     [
+      925,
+      610
+     ],
+     [
+      930,
+      690
+     ],
+     [
+      840,
+      695
+     ]
+    ],
+    "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
+   },
+   {
+    "id": "barracks-east",
+    "name": "The barracks chests (east)",
+    "_src": "OotA ch.1 area 2 (the same six chests, the other cave). Traced by eye on the painted plate.",
+    "poly": [
+     [
+      1140,
+      945
+     ],
+     [
+      1340,
+      930
+     ],
+     [
+      1345,
+      1060
+     ],
+     [
+      1240,
+      1140
+     ],
+     [
+      1140,
+      1140
+     ]
+    ],
+    "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
+   }
+  ]
+ },
+ "5": {
+  "lift": {
+   "_src": "OotA ch.1 area 5: winch-and-basket on a swinging arm; up to four Medium creatures; DC 18 Strength to turn the spool (another can Help); 4 rounds between the platform and the cavern floor. Traced by eye on the painted plate, 2026-10-22.",
+   "crank": [
+    [
+     960,
+     440
+    ],
+    [
+     1260,
+     440
+    ],
+    [
+     1270,
+     740
+    ],
+    [
+     960,
+     760
+    ]
+   ],
+   "spool": [
+    1150,
+    800
+   ],
+   "board": [
+    1490,
+    890
+   ],
+   "basket": [
+    1665,
+    700,
+    1900,
+    1045
+   ],
+   "rope": 1800,
+   "seats": [
+    [
+     1745,
+     925
+    ],
+    [
+     1795,
+     935
+    ],
+    [
+     1845,
+     925
+    ],
+    [
+     1795,
+     905
+    ]
+   ]
+  }
  }
 }

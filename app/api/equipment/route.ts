@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
   if (!itemKey) return NextResponse.json({ error: "item_key required to equip" }, { status: 400 })
 
   const { data: carried } = await db.from("inventory_items")
-    .select("id,name,item_key,item_type,equippable_slot,icon_url,items(equippable_slot)")
+    .select("id,name,item_key,item_type,equippable_slot,icon_url,items(equippable_slot,item_type,properties)")
     .eq("character_id", characterId).eq("item_key", itemKey).limit(1).maybeSingle()
   if (!carried) {
     // You cannot draw what you are not carrying. The pack is the gate, and it

@@ -52,8 +52,22 @@ interface Entry extends SpeechRequest {
 
 type Player = (blob: Blob, offsetSeconds: number) => Promise<SpeechPlayback>
 
+/** Who holds the floor right now — the line that is actually coming out of the
+ *  speakers, not one that is waiting. `null` when the table is silent. */
+export interface SpeechFloor {
+  rank: SpeechRank
+  speaker: string | null
+}
+
 export function createSpeechQueue(play: Player) {
   let nextId = 1
+  let floor: SpeechFloor | null = null
+  const listeners = new Set<(f: SpeechFloor | null) => void>()
+  function setFloor(next: SpeechFloor | null) {
+    if (floor === next || (floor && next && floor.rank === next.rank && floor.speaker === next.speaker)) return
+    floor = next
+    for (const l of listeners) l(floor)
+  }
   const waiting: Entry[] = []
   let current: (Entry & { playback: SpeechPlayback; startedAt: number }) | null = null
   let pumping = false
@@ -100,9 +114,11 @@ export function createSpeechQueue(play: Player) {
         }
         const playback = await play(entry.blob, entry.offset)
         current = Object.assign(entry, { playback, startedAt: Date.now() })
+        setFloor({ rank: entry.rank, speaker: entry.speaker ?? null })
         if (entry.offset === 0) entry.onStart?.()
         const reason = await playback.finished
         current = null
+        setFloor(null)
         // A pause is our own doing: the same entry is already back in the queue
         // waiting to resume, so it is NOT over and must not settle.
         if (entry.pausing) {
@@ -162,7 +178,13 @@ export function createSpeechQueue(play: Player) {
     }
   }
 
-  return { speak, silenceAll, isSpeaking: () => current !== null }
+  /** Subscribe to floor changes. Returns the unsubscribe. */
+  function onFloorChange(listener: (f: SpeechFloor | null) => void): () => void {
+    listeners.add(listener)
+    return () => { listeners.delete(listener) }
+  }
+
+  return { speak, silenceAll, isSpeaking: () => current !== null, getFloor: () => floor, onFloorChange }
 }
 
 const queue = createSpeechQueue(playSpeech)
@@ -170,6 +192,8 @@ const queue = createSpeechQueue(playSpeech)
 export const speak = queue.speak
 export const silenceAll = queue.silenceAll
 export const isSpeaking = queue.isSpeaking
+export const getSpeechFloor = queue.getFloor
+export const onSpeechFloorChange = queue.onFloorChange
 
 /**
  * Drop-in for `playSpeech` at call sites that already hold their audio: same

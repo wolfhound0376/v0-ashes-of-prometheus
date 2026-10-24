@@ -90,3 +90,17 @@ describe("canEquip with the new slots", () => {
     expect(canEquip({ item: { name: "Signet Ring", items: { equippable_slot: "ring" } }, slot: "ring2", doll: [] }).ok).toBe(true)
   })
 })
+
+describe("a one-handed weapon in the off hand (two-weapon fighting)", () => {
+  const dagger = { name: "Dagger", equippable_slot: "main_hand", items: { item_type: "weapon", properties: { weapon_properties: ["finesse", "light", "thrown"] } } }
+  const crossbow = { name: "Light Crossbow", equippable_slot: "main_hand", items: { item_type: "weapon", properties: { weapon_properties: ["ammunition", "loading", "two-handed"] } } }
+  it("lets a dagger go in the off hand", () => {
+    expect(canEquip({ item: dagger, slot: "off_hand", doll: [] })).toEqual({ ok: true, slot: "off_hand", replacing: null })
+  })
+  it("never puts a two-handed weapon in the off hand", () => {
+    expect(canEquip({ item: crossbow, slot: "off_hand", doll: [] }).ok).toBe(false)
+  })
+  it("still refuses a non-weapon main-hand item there", () => {
+    expect(canEquip({ item: { name: "Wand", equippable_slot: "main_hand", items: { item_type: "focus" } }, slot: "off_hand", doll: [] }).ok).toBe(false)
+  })
+})

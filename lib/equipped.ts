@@ -150,14 +150,30 @@ export type EquipVerdict =
  * (see slotAccepts). Refusing here rather than at the write means the reason
  * can be a sentence rather than a constraint violation.
  */
+/**
+ * A weapon held in the OFF hand. The catalogue files every weapon under `main_hand` (it does not know which hand),
+ * but a one-handed weapon can be held in either — that is how two-weapon fighting works (SRD 5.1: "When you take the
+ * Attack action and attack with a light melee weapon that you're holding in one hand, you can use a bonus action to
+ * attack with a different light melee weapon that you're holding in the other hand"). Fifi fights with twin daggers.
+ * A two-handed weapon never goes in the off hand.
+ */
+function offHandWeapon(item: { item_type?: string | null; properties?: Record<string, unknown> | null; items?: { item_type?: string | null; properties?: Record<string, unknown> | null } | null }): boolean {
+  const type = String(item.items?.item_type ?? item.item_type ?? "").toLowerCase()
+  if (type !== "weapon") return false
+  const props = (item.items?.properties ?? item.properties ?? {}) as Record<string, unknown>
+  const wp = Array.isArray(props.weapon_properties) ? props.weapon_properties.map((x) => String(x).toLowerCase()) : []
+  return !wp.includes("two-handed")
+}
+
 export function canEquip(opts: {
-  item: { name: string; equippable_slot?: string | null; items?: { equippable_slot?: string | null } | null }
+  item: { name: string; equippable_slot?: string | null; item_type?: string | null; properties?: Record<string, unknown> | null; items?: { equippable_slot?: string | null; item_type?: string | null; properties?: Record<string, unknown> | null } | null }
   slot: string
   doll: EquippedRow[]
 }): EquipVerdict {
   const allowed = normalizeSlot(opts.item.equippable_slot ?? opts.item.items?.equippable_slot)
   if (!allowed) return { ok: false, reason: `${opts.item.name} is not something you can wear or hold.` }
-  if (!slotAccepts(allowed, opts.slot)) {
+  const offHand = normalizeSlot(opts.slot) === "off_hand" && allowed === "main_hand" && offHandWeapon(opts.item)
+  if (!offHand && !slotAccepts(allowed, opts.slot)) {
     return { ok: false, reason: `${opts.item.name} does not go in the ${opts.slot.replace("_", " ")}.` }
   }
   // A slot holds one thing. Naming what is being displaced lets the log say
