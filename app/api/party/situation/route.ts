@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { readSeated } from "@/lib/seats"
 import { describeSituation, parseSituationInput, situationRow, type PartySituationRow } from "@/lib/situation"
+import { activeRun, SITUATION_TABLE as TABLE } from "@/lib/situation-store"
 
 // /api/party/situation — what the party is in the middle of, as the painted walk sees it (lib/situation.ts).
 //
@@ -18,23 +19,10 @@ import { describeSituation, parseSituationInput, situationRow, type PartySituati
 
 export const dynamic = "force-dynamic"
 
-type Db = ReturnType<typeof createAdminClient>
-const TABLE = "party_situation"
-
 function hasDmKey(req: NextRequest): boolean {
   const required = process.env.DM_ACCESS_CODE
   if (!required) return true
   return safeEquals(normalizeCode(req.headers.get("x-dm-key") ?? ""), normalizeCode(required))
-}
-
-/** The run everything else keys on: the same answer party_location_label() uses. */
-async function activeRun(db: Db): Promise<string | null> {
-  const { data, error } = await db.rpc("subnodal_active_run")
-  if (!error && typeof data === "string" && data) return data
-  const { data: runs } = await db.from("campaign_runs").select("id, status, started_at, created_at")
-    .order("started_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(5)
-  const active = (runs ?? []).find((r) => r.status === "active") ?? (runs ?? [])[0]
-  return (active?.id as string | undefined) ?? null
 }
 
 /** The table is missing until Sam pastes the migration: PostgREST says PGRST205 / Postgres 42P01. */
