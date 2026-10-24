@@ -398,6 +398,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
+      <button class="btn" id="dmThrow">Throw the active character into the falls (area 9)</button>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
       <button class="btn" id="dmBark">Make an NPC comment</button>
@@ -1482,6 +1483,7 @@ async function travel(to, z){
   const offs = party.map(p => { let dx = p.x - leader.x, dy = p.y - leader.y; const d = Math.hypot(dx, dy), cap = 170 * node.scale;
     if (d > cap){ dx *= cap / d; dy *= cap / d; } return {id: p.id, dx, dy}; });
   const drop = z.kind === "water" && cur === 9, climb = z.climb;
+  if (drop && (state.inPool || []).length){ for (const p of party) if (!actors.includes(p)){ actors.push(p); p.alpha = 1; p.fall = 0; p.x = zc.x; p.y = zc.y; } state.inPool = []; }
   const cr = z.cross || (z.crossBy && z.crossBy[String(to)]);
   const route = cr ? cr.map(([x, y, s, f]) => ({x, y, s, out: f === "out", jump: f === "jump"}))
     : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 900, y: zc.y + exitDir.y * 900}];
@@ -1533,12 +1535,69 @@ function triggerZone(z){
   // Sam, 2026-10-22: "why does the party always fall when crossing the bridge?" The bridge across the falls (area 9)
   // runs right over the spot where you can drop into the pool, so walking from one side to the other used to drop
   // everyone through the falls. It is a choice now.
-  if (z.kind === "water" && cur === 9){ showDialog({title: "The falls", body: `The bridge passes over the falls. ${z.label}.`, buttons: [
-    {label: "Jump into the falls", primary: true, fn: () => travel(z.to[0], z)}, {label: "Keep crossing"}]}); return; }
+  if (z.kind === "water" && cur === 9){ fallsDialog(z); return; }
   if (z.kind === "leave" && node.lift){ openLift(); return; }
   if (z.kind === "leave"){ toast(z.label + ". That way leaves Velkynvelve, beyond this proof for now."); return; }
   travel(z.to[0], z);
 }
+// ---------- the falls (area 9) ----------
+// Sam, 2026-10-24: "you should be given the option to jump after someone has insight enough to notice that there are
+// spider webs that should break our fall, or has feather fall, or has a barbarian in the party that would suggest it.
+// Additionally, being thrown in also a possibility." The book: the falls pour into a pool and a fall lands there for
+// no damage (OotA p.18); the drow keep webs stretched beneath the outpost (p.14). Nobody on the bridge knows that
+// until they have a reason to. The look over the edge is a Wisdom (Perception) check rolled on the dashboard; its
+// DC (12) is a house number, the book sets none.
+const FALLS_DC = 12;
+function fallsSafeKnown(){
+  if (state.fallsNoticed) return state.fallsNoticed;
+  const names = s => [...((s.magicAll || s.magic || {}).cantrips || []), ...((s.magicAll || s.magic || {}).prepared || [])];
+  for (const p of party){ const s = SHEETS[p.id] || {}; if (names(s).some(n => /feather fall/i.test(n))) return `${fname(p)} knows feather fall`; }
+  for (const p of party){ const s = SHEETS[p.id] || PCS[p.id] || {}; if (/barbarian/i.test(s.cls || "")) return `${fname(p)} says: "Just jump."`; }
+  const inPool = (state.inPool || []).filter(id => party.some(p => p.id === id));
+  if (inPool.length) return `${inPool.map(id => fname(party.find(p => p.id === id))).join(" and ")} went over the edge`;
+  return null;
+}
+function fallsDialog(z){
+  const why = fallsSafeKnown();
+  if (why){
+    showDialog({title: "The falls", body: `The bridge passes over the falls. ${why}. ${z.secret || ""}`, src: "OotA p.14, p.18 · DC house rule", buttons: [
+      {label: /went over/.test(why) ? `Follow ${why.replace(/ went over.*/, "")} down` : "Jump into the falls", primary: true, fn: () => travel(z.to[0], z)}, {label: "Keep crossing"}]});
+    return;
+  }
+  showDialog({title: "The falls", body: "The bridge passes right over the drop. Spray, noise, and the dark below — no telling what is down there.", buttons: [
+    {label: `${fname(leader)} looks over the edge`, primary: true, fn: () => {
+      showDialog({title: "Looking over the edge", body: `Wisdom (Perception), DC ${FALLS_DC} (house rule — the book sets none): roll it on the dashboard. What did it come to?`, buttons: [
+        {label: `${FALLS_DC} or more`, primary: true, fn: () => { state.fallsNoticed = `${fname(leader)} made out the webs and the pool below`; log(`${fname(leader)} leans out over the falls. ${z.secret || ""}`); saveWalk(); setTimeout(() => fallsDialog(z), 300); }},
+        {label: `Under ${FALLS_DC}`, fn: () => { log(`${fname(leader)} leans out over the falls and sees only spray.`); toast("Nothing but spray and dark. You could still jump blind, from DM tools.", 3600); }},
+        {label: "Back", fn: () => setTimeout(() => fallsDialog(z), 100)}]});
+    }},
+    {label: "Keep crossing"}]});
+}
+// Someone goes over, thrown by a foe's shove, a shove of the DM's, or their own choice from DM tools. They fall out of
+// the plate; the book says they land in the pool unhurt. A hero in the pool waits there (state.inPool) until the party
+// comes down the falls, and that is the party's reason to jump. A foe just leaves the fight.
+function overTheFalls(t, by){
+  t.path = []; stopActivity(t); t.fall = now; t.onArrive = null;
+  const who = fname(t);
+  if (t.kind === "pc"){
+    state.inPool = [...new Set([...(state.inPool || []), t.id])];
+    log(`${who} goes over the edge into the falls${by ? `, thrown by ${fname(by)}` : ""}.`);
+    narrate(by || leader, by ? `${fname(by)} hurls ${who} off the bridge.` : `${who} drops into the falls.`);
+  } else { log(`${who} goes over the edge into the falls${by ? `, shoved by ${fname(by)}` : ""}.`); }
+  setTimeout(() => {
+    actors = actors.filter(a => a !== t); if (t.kind !== "pc"){ npcs = npcs.filter(n => n !== t); foes = foes.filter(n => n !== t); }
+    if (t.kind === "pc"){
+      const left = party.filter(p => actors.includes(p));
+      if (!left.length){ const z = node.zones.find(z => z.kind === "water"); if (z && mode !== "combat") travel(z.to[0], z); return; }
+      if (leader === t) setLeader(left[0]);
+    }
+    if (mode === "combat") checkEnd();
+    saveWalk();
+  }, 950);
+}
+function applyInPool(){ for (const id of state.inPool || []){ const p = party.find(q => q.id === id); if (p) actors = actors.filter(a => a !== p); } if (leader && !actors.includes(leader)){ const l = party.find(p => actors.includes(p)); if (l) setLeader(l); } }
+// the push that sends someone over: only on the bridge over the falls, only when the push lands in the water zone
+function pushOverFalls(t, to){ const z = cur === 9 ? node.zones.find(z => z.kind === "water") : null; return !!(z && inRect(z.rect, to.x, to.y)); }
 // ---------- sound effects (door, lock) ----------
 // WebAudio like the voices: decoded once, played instantly. Files live beside the plates (sfx/*.mp3).
 const SFX = {};
@@ -3257,7 +3316,7 @@ function doShove(a, t, what){
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
-      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const to = nearestWalkable(t.x + d.x * ftPx(t) * 5, t.y + d.y * ftPx(t) * 5); t.x = to.x; t.y = to.y; narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
+      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y); if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { t.x = to.x; t.y = to.y; } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
       log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>${what === "prone" ? "prone" : what === "push" ? "pushed 5 ft" : "grappled"}</b>.`);
     }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(a); });
@@ -4833,6 +4892,7 @@ $("jump").onchange = e => { const n = +e.target.value; if (n === cur || mode ===
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+$("dmThrow").onclick = () => { if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
 $("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };
 $("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { const f = creatures.get("gray-ooze"); if (!f.inside) creatureCrosses("gray-ooze"); else creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
@@ -5992,6 +6052,7 @@ function frame(t){
     leader = {id: L.id};
     await enterNode(saved.cur, {spawn: {x: L.x, y: L.y}, offs: saved.party.map(p => ({id: p.id, dx: p.x - L.x, dy: p.y - L.y}))});
     for (const p of party){ const s = saved.party.find(q => q.id === p.id); if (s){ p.x = s.x; p.y = s.y; p.face = s.face || 0; p.home = {x: s.x, y: s.y}; } }
+    if (saved.cur === 9) applyInPool(); else state.inPool = [];
   } else {
     if (mine) leader = {id: mine};
     await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
