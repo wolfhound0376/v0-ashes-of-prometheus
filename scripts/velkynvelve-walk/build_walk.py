@@ -179,6 +179,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SPR = os.path.join(ROOT, "public", "sprites")
 P = ['kenta', 'samson', 'scott', 'freia']
+# Heroes made at the Forge, with their own sprite (heroes.json: characters.id -> slug). Baked with the
+# premades' sheets; a slug whose folder is not there yet is skipped so the page still builds.
+HEROES = {k: v for k, v in json.load(open(os.path.join(HERE, 'heroes.json'))).items() if not k.startswith('_') and os.path.exists(os.path.join(SPR, v, 'sprite.json'))}
+P = P + [v for v in HEROES.values() if v not in P]
 N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turvy', 'shuushar', 'stool', 'jorlan', 'drow-guard-male', 'drow-guard-female']
 F = ['quaggoth', 'giant-spider']
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
@@ -243,6 +247,7 @@ t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
+      .replace('/*__HEROES__*/{}', json.dumps(HEROES, separators=(',', ':')))
       .replace('/*__VOICE_BANK__*/{}', open(os.path.join(HERE, 'voice-bank.json')).read())
       .replace('/*__ITEMS__*/[]', open(os.path.join(HERE, 'items.json')).read())
       .replace('const APP = /*__APP__*/false;', 'const APP = true;').replace('<title>Velkynvelve Walk</title>', '<title>Velkynvelve</title>'))
