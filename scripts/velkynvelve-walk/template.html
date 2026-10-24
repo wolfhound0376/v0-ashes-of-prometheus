@@ -242,6 +242,9 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invSel .what b{color:var(--ink)}
 .invSel .btns{display:flex;flex-wrap:wrap;gap:4px}.invSel .btn{padding:3px 9px;font-size:var(--s-1)}
 .invPackHead{font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px}
+.invGhost{position:fixed;z-index:60;width:52px;height:52px;margin:-26px 0 0 -26px;display:grid;place-items:center;pointer-events:none;border:1px solid var(--ember);border-radius:8px;background:rgba(10,8,14,.85);box-shadow:0 6px 20px rgba(0,0,0,.6)}
+.invGhost img{width:80%;height:80%;object-fit:contain}
+.invDoll .slot:not(.empty),.invPic{cursor:grab}
 .invRow.fits{background:rgba(232,162,74,.08);border-radius:5px}
 .invHand{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--rule);border-radius:6px;padding:6px 8px}
 .invList{display:grid;gap:6px}
@@ -376,7 +379,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
         <div class="invPack"><div class="invPackHead" id="invPackHead">Carried</div><div class="invList" id="invList"></div></div>
       </div>
       <div class="invHand" id="invHand" hidden></div>
-      <div class="invFoot">Click a slot to see what fits it · I opens and closes · Esc closes</div>
+      <div class="invFoot">Click a slot to see what fits it · drag gear on or off the body · I opens and closes · Esc closes</div>
     </div>
     <div class="dm" id="dm" hidden>
       <div class="dmHead"><b>DM tools</b><button class="tbtn" id="dmClose" aria-label="Close DM tools">✕</button></div>
@@ -5021,12 +5024,14 @@ async function pickUp(a, p){
 // THE RAG DOLL'S SLOTS, the dashboard's ten (components/dashboard/right-column.tsx EQUIPMENT_SLOTS) with its icons.
 // The slot rules are lib/equipped.ts's: the catalogue's equippable_slot decides; a ring fits either finger; boots go on
 // the legs (there is no feet slot); a one-handed weapon may also go in the off hand. /api/equipment checks them again.
+// No HANDS slot (Sam, 2026-10-24: "Please remove 'hands' that's redundant" — beside the main and off hand it read as a
+// third hand). Gloves have nowhere to go on this doll until that is decided; the catalogue has three.
 const DOLL_SLOTS = [
-  {id: "head", label: "Head", icon: "head", at: [39.5, 2]}, {id: "neck", label: "Neck", icon: "neck", at: [76, 8]},
-  {id: "back", label: "Cloak", icon: "back", at: [3, 8]}, {id: "hands", label: "Hands", icon: "hands", at: [2, 32]},
-  {id: "torso", label: "Torso", icon: "torso", at: [77, 32]}, {id: "main_hand", label: "Main hand", icon: "main-hand", at: [2, 56]},
-  {id: "off_hand", label: "Off hand", icon: "off-hand", at: [77, 56]}, {id: "ring1", label: "Ring", icon: "ring", at: [6, 79]},
-  {id: "legs", label: "Legs", icon: "legs", at: [39.5, 80]}, {id: "ring2", label: "Ring", icon: "ring2", at: [73, 79]}];
+  {id: "head", label: "Head", icon: "head", at: [39.5, 2]},
+  {id: "back", label: "Cloak", icon: "back", at: [3, 9]}, {id: "neck", label: "Neck", icon: "neck", at: [76, 9]},
+  {id: "torso", label: "Torso", icon: "torso", at: [2, 33]}, {id: "legs", label: "Legs", icon: "legs", at: [77, 33]},
+  {id: "main_hand", label: "Main hand", icon: "main-hand", at: [2, 57]}, {id: "off_hand", label: "Off hand", icon: "off-hand", at: [77, 57]},
+  {id: "ring1", label: "Ring", icon: "ring", at: [22, 80]}, {id: "ring2", label: "Ring", icon: "ring2", at: [57, 80]}];
 const SLOT_ICON_BASE = APP ? "/icons/equipment/" : "https://ashes.playacartagena.com/icons/equipment/";
 const SLOT_ALIAS = {ring_1: "ring1", ring_2: "ring2", cloak: "back", gloves: "hands", gauntlets: "hands", feet: "legs", boots: "legs"};
 function normSlot(sl){ const k = String(sl || "").trim().toLowerCase(); return SLOT_ALIAS[k] || k; }
@@ -5045,6 +5050,26 @@ function homeSlot(g, it){   // where "Wear" puts it: its own slot, a ring on the
   const want = it.eslot || (isWeapon(it) ? "main_hand" : ""); if (!want) return null;
   if (want === "ring" || want === "ring1" || want === "ring2") return !wornIn(g, "ring1") ? "ring1" : !wornIn(g, "ring2") ? "ring2" : "ring1";
   return DOLL_SLOTS.some(d => d.id === want) ? want : null;
+}
+// DRAG. Pointer-based (works with a mouse and on a tablet): press on an icon, move past a few pixels, and a copy follows
+// the pointer; let go and `drop(x, y)` decides. A press that never moved is still a click.
+let dragJustEnded = false;
+function slotUnder(x, y){ const el = document.elementFromPoint(x, y), s = el && el.closest && el.closest("#invDoll .slot"); return s ? s.dataset.slot : null; }
+function dragSource(el, img, drop){
+  el.style.touchAction = "none";
+  // the browser's own image drag would cancel the pointer the moment it moves
+  el.addEventListener("dragstart", e => e.preventDefault()); el.querySelectorAll("img").forEach(i => i.draggable = false);
+  el.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    const x0 = e.clientX, y0 = e.clientY; let ghost = null;
+    const move = ev => { if (!ghost && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 7){
+        ghost = document.createElement("div"); ghost.className = "invGhost"; ghost.innerHTML = img ? `<img src="${esc(img)}" alt="">` : "◆"; document.body.appendChild(ghost); }
+      if (ghost){ ghost.style.left = ev.clientX + "px"; ghost.style.top = ev.clientY + "px"; } };
+    // capture phase: the map under the window stops pointerup from bubbling, which used to swallow a drag-off
+    const up = ev => { removeEventListener("pointermove", move, true); removeEventListener("pointerup", up, true); removeEventListener("pointercancel", up, true);
+      if (!ghost) return; ghost.remove(); dragJustEnded = true; setTimeout(() => dragJustEnded = false, 0); if (ev.type === "pointerup") drop(ev.clientX, ev.clientY); };
+    addEventListener("pointermove", move, true); addEventListener("pointerup", up, true); addEventListener("pointercancel", up, true);
+  });
 }
 // put it on / take it off: here at once, then in the character's real equipment (/api/equipment), which can still
 // refuse — then the doll is reloaded from the server and the reason is said
@@ -5072,7 +5097,9 @@ function equipTo(a, it, sl){
     if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }
   if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
 }
-function removeFrom(a, sl){
+// Sam, 2026-10-24: "add a subtle dull click for removing an object and a unequipping sound when something gets dragged
+// off". Both are his ElevenLabs picks, shipped with the app (public/sfx/walk).
+function removeFrom(a, sl, how){
   const g = GEAR[a.id], was = g && wornIn(g, sl); if (!was || !bagCan(a)) return;
   const fight = inFightNow();
   if (fight && !HAND(sl)){ toast("Not in the middle of a fight: getting out of that takes longer than a turn."); return; }
@@ -5080,6 +5107,7 @@ function removeFrom(a, sl){
   g.doll = g.doll.filter(d => d.slot !== sl);
   if (sl === "main_hand") g.main = null; if (sl === "off_hand") g.off = null;
   if (HAND(sl)) refreshAttacks(a.id);
+  if (how !== "move") sfx(how === "drag" ? "walk:unequip-drag" : "walk:unequip-click", how === "drag" ? .55 : .4);   // moving between slots is not taking it off
   popText(a, `${was.name} off`, "#e8d9a8", .8); log(`${fname(a)} ${HAND(sl) ? "puts away" : "takes off"} the <b>${esc(was.name)}</b>.`);
   if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action: "unequip", character_id: cid, slot: sl})}).then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); }
@@ -5405,7 +5433,14 @@ function renderBag(){
     b.setAttribute("aria-pressed", String(inv.slot === d.id)); b.title = w ? `${d.label}: ${w.name}` : `${d.label}: empty`;
     const src = w ? (it && (it.icon || (it.pixel ? ITEM_PX + it.pixel : ""))) || "" : "";
     b.innerHTML = `<img src="${esc(src || SLOT_ICON_BASE + d.icon + ".png")}" alt=""><span class="lbl">${esc(d.label)}</span>`;
-    b.onclick = () => { inv.slot = inv.slot === d.id ? null : d.id; renderBag(); };
+    b.onclick = () => { if (dragJustEnded) return; inv.slot = inv.slot === d.id ? null : d.id; renderBag(); };
+    b.dataset.slot = d.id;
+    if (w) dragSource(b, src || SLOT_ICON_BASE + d.icon + ".png", (x, y) => {
+      const r = doll.getBoundingClientRect(), off = x < r.left || x > r.right || y < r.top || y > r.bottom;
+      const to = slotUnder(x, y);
+      if (off) removeFrom(a, d.id, "drag");
+      else if (to && to !== d.id && it && fitsSlot(it, to)){ removeFrom(a, d.id, "move"); equipTo(a, it, to); }
+    });
     doll.appendChild(b);
   }
   // the selected slot
@@ -5419,7 +5454,7 @@ function renderBag(){
     if (w){ const bx = document.createElement("div"); bx.className = "btns"; const b = document.createElement("button"); b.className = "btn";
       b.textContent = HAND(inv.slot) ? "Put away" : "Take off"; b.disabled = !mine || (fight && (!HAND(inv.slot) || !gearCost(a, 1).ok)); b.title = fight ? (HAND(inv.slot) ? gearHint(a, 1) : "not mid-fight") : "";
       b.onclick = () => removeFrom(a, inv.slot); bx.appendChild(b); sel.appendChild(bx); }
-  } else sel.innerHTML = '<div class="what">Click a slot to equip or remove. Use, drink, eat and throw are on each item.</div>';
+  } else sel.innerHTML = '<div class="what">Click a slot to equip or remove, or drag: an item onto a slot to wear it, a slot off the doll to take it off.</div>';
   $("invPackHead").textContent = inv.slot ? `Carried · fits the ${slotLabel(inv.slot).toLowerCase()} first` : "Carried";
   const list = $("invList"); list.innerHTML = "";
   if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
@@ -5440,6 +5475,8 @@ function renderBag(){
       + `<span class="invTxt"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}</b><small>${esc(what)}</small></span><span class="invBtns"></span>`;
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
     const btns = row.querySelector(".invBtns");
+    { const ic = row.querySelector(".invPic"); if (ic) dragSource(ic, pic || "", (x, y) => { const to = slotUnder(x, y); if (!to) return;
+        if (fitsSlot(it, to) && !worn.includes(to)) equipTo(a, it, to); else toast(`${it.name} does not go in the ${slotLabel(to).toLowerCase()}.`); }); }
     const btn = (label, ok, why, fn) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; btns.appendChild(b); };
     // equip: into the selected slot when one is picked and it fits; otherwise to its own place (a one-handed weapon
     // can also go in the off hand). Each button says where it goes and, mid-fight, what it costs.
