@@ -19,6 +19,7 @@ import MapPanel from "@/components/map/map-panel"
 import { StageLink, useStage } from "@/components/stage/stage-provider"
 import { DmNarration } from "./dm-narration"
 import { speakBlob } from "@/lib/speech-queue"
+import { useSpeechFloor } from "@/lib/hooks/use-speech-floor"
 import { unlockSpeechAudio } from "@/lib/speech-playback"
 import { markVoicedElsewhere } from "@/lib/voiced-elsewhere"
 import { TimeStoppedBanner } from "./time-stop"
@@ -308,6 +309,10 @@ interface V4DashboardProps {
    *  invisible from the dashboard and left the badge and the toggle disagreeing
    *  about who was DM. */
   dmMode?: boolean
+  /** This browser is the DM's screen (entered as DM, or DM Mode on, and not
+   *  holding a player's seat). Sam projects it for the table, so Malachar
+   *  appears here — in the NPC / DM window — while his voice is playing. */
+  dmScreen?: boolean
   audioSlot?: React.ReactNode
   /** Camp talk mini-dashboard. When set, only the NPC / DM window renders —
    *  the side columns stay mounted but hidden so music, party chat and
@@ -404,6 +409,10 @@ function PortraitCycler({ canCycle, nextName, onCycle, children }: { canCycle: b
   )
 }
 
+// Malachar's talking loop (transparent VP9 cut-out, 720x404, 5 s) — the canon
+// asset uploaded 2026-08-18. Played only on the DM screen.
+const LICH_TALKING_LOOP = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/character-loops/lich_king_talking.webm"
+
 export function V4Dashboard(props: V4DashboardProps) {
   const stage = useStage()
   const { roll, announce, busy: diceBusy } = useDice()
@@ -494,6 +503,22 @@ export function V4Dashboard(props: V4DashboardProps) {
   // else. The speaker wins while they are talking; the scene's active NPC is
   // the resting state.
   const [speakingNpc, setSpeakingNpc] = useState<{ id: string; name: string } | null>(null)
+  // THE LICH TAKES THE WINDOW WHEN HE SPEAKS — DM screen only (Sam, 2026-10-23:
+  // "I want my screen to show the Lich on my screen when he talks using his
+  // loop, just on mine when I enter as DM. Since I'm projecting it they should
+  // be able to see it."). Driven by the shared speech queue, so it follows the
+  // actual voice: whenever Malachar's narration is coming out of the speakers
+  // (rank "dm"), his talking loop fades in over the stage; when he stops, it
+  // holds a beat (so back-to-back narration chunks don't flicker) and fades
+  // out to whoever was on stage. Players' seats never see it.
+  const floor = useSpeechFloor()
+  const lichVoiced = Boolean(props.dmScreen && floor?.rank === "dm")
+  const [lichShown, setLichShown] = useState(false)
+  useEffect(() => {
+    if (lichVoiced) { setLichShown(true); return }
+    const t = window.setTimeout(() => setLichShown(false), 900)
+    return () => window.clearTimeout(t)
+  }, [lichVoiced])
   // Camp talk: whoever the player sat down with OWNS the window — their idle
   // loop at rest, their talking loop and voice when they speak — no matter who
   // else is active in the scene. Matched on name or alias against the FULL
@@ -926,8 +951,8 @@ export function V4Dashboard(props: V4DashboardProps) {
         </div>
       ) : null}
       <div className={cn("grid h-[235px] shrink-0 overflow-hidden p-3 pb-4", narrowTalk ? "grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-3" : "grid-cols-[190px_minmax(240px,1fr)] gap-4")}>
-        <div className="relative"><h2 className="font-serif text-sm font-bold text-white">{npcName}</h2><p className="text-[9px] text-[#a4916d]">{speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? shownNpc?.description || "Present in the scene" : "No one has stepped forward yet"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}<button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-0 left-0" title="Open Dice Roller" aria-label="Open Dice Roller" /></div>
-        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{stageBackdrop ? (<><img src={stageBackdrop} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" style={talkPlate ? { objectPosition: "51% 64%" } : undefined} />{/* The backdrop is a lit room, so the figure needs somewhere dark to stand against. Vignette, not a flat scrim, or the art goes muddy. */}<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_80%,transparent_18%,#050403d9_80%)]" /></>) : null}{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className="absolute inset-0 h-full w-full object-contain object-top" /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className="aop-npc-still absolute inset-0 h-full w-full object-contain object-top" />) : <div className="flex h-full flex-col items-center justify-end"><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</span></div>}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : onStage ? <>Silent <span className="ml-2">▯▯▯▯</span></> : <>Awaiting an entrance</>}</div>
+        <div className="relative"><h2 className="font-serif text-sm font-bold text-white">{lichShown ? "Malachar" : npcName}</h2><p className="text-[9px] text-[#a4916d]">{lichShown ? "The Lich" : speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? shownNpc?.description || "Present in the scene" : "No one has stepped forward yet"}</p>{lastNpcLine ? <blockquote className="mt-3 border-l-2 border-red-700 pl-2 text-[11px] italic leading-[1.45] text-[#e4d8bf]">“{lastNpcLine}”</blockquote> : null}{activeNpc ? <button className="mt-5 w-full rounded border border-[#695326] py-2 text-[10px] text-[#cdb276]">View {npcName}</button> : null}<button onClick={() => setDiceOpen(true)} className="aop-log-d20 absolute bottom-0 left-0" title="Open Dice Roller" aria-label="Open Dice Roller" /></div>
+        <div className="flex min-w-0 flex-col"><div className="relative min-h-0 flex-1 overflow-hidden rounded border border-[#6b5123] bg-[radial-gradient(circle_at_50%_30%,#302314,#050403_70%)]">{stageBackdrop ? (<><img src={stageBackdrop} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" style={talkPlate ? { objectPosition: "51% 64%" } : undefined} />{/* The backdrop is a lit room, so the figure needs somewhere dark to stand against. Vignette, not a flat scrim, or the art goes muddy. */}<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_80%,transparent_18%,#050403d9_80%)]" /></>) : null}{npcPortrait ? (isVideoUrl(npcPortrait) ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className={cn("absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-500", lichShown && "opacity-0")} /> : <img src={npcPortrait} alt={npcName} style={npcFrame} className={cn("aop-npc-still absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-500", lichShown && "opacity-0")} />) : <div className={cn("flex h-full flex-col items-center justify-end transition-opacity duration-500", lichShown && "opacity-0")}><div className="h-28 w-20 rounded-t-[45%] bg-gradient-to-b from-[#9b7846] via-[#45341e] to-[#171008] shadow-[0_0_30px_#b3874033]" /><span className="absolute bottom-2 rounded bg-black/70 px-2 py-1 text-[8px] uppercase tracking-wider text-[#cdb276]">{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</span></div>}{props.dmScreen ? <video src={LICH_TALKING_LOOP} autoPlay loop muted playsInline preload="auto" aria-hidden className={cn("pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom transition-opacity duration-500", lichShown ? "opacity-100" : "opacity-0")} /> : null}<div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-[#c49b4e]/20" /></div><div className={cn("mt-1.5 flex h-7 items-center justify-center rounded border text-[9px] uppercase tracking-[.16em] transition-colors", speakingNpc || lichShown ? "border-[#b8913f] bg-[#1c1408] text-[#f0cd7a]" : "border-[#3b3325] bg-black/40 text-[#6d6450]")}>{lichShown ? <>Malachar speaks <span className="ml-2 animate-pulse">▮▮▯▯</span></> : speakingNpc ? <>Speaking <span className="ml-2 animate-pulse">▮▮▯▯</span></> : onStage ? <>Silent <span className="ml-2">▯▯▯▯</span></> : <>Awaiting an entrance</>}</div>
           {/* MERGE NOTE: Codex's redesign dropped the third column, which held
               disposition / CR / DM-only health. Those are real row data, not
               mock text, so they are re-homed here as a compact strip beneath

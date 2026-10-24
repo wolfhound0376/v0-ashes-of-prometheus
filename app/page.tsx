@@ -312,6 +312,10 @@ export default function DashboardPage() {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const [autoSave, setAutoSave] = useState(true)
   const [dmMode, setDmMode] = useState(false)
+  // This browser came in through the DM door (/join DM code). It is the DM /
+  // shared-TV screen Sam projects — Malachar appears in its NPC / DM window
+  // while he speaks (see V4Dashboard `dmScreen`).
+  const [enteredAsDm, setEnteredAsDm] = useState(false)
 
   // Default campaign is Out of the Abyss
   const [activeCampaign, setActiveCampaign] = useState<Campaign>(CAMPAIGNS["abyss"])
@@ -795,7 +799,7 @@ export default function DashboardPage() {
         })()
         return
       }
-      if (storedRole === 'dm') return // DM / shared-TV mode, already unlocked.
+      if (storedRole === 'dm') { setEnteredAsDm(true); return } // DM / shared-TV mode, already unlocked.
 
       // Unknown browser. Only send it to the gate if the gate is actually armed —
       // if DM_ACCESS_CODE is unset the dashboard stays open exactly as before, so
@@ -1921,6 +1925,7 @@ if (error) {
         onQuickReply={(text) => void handleQuickReply(text)}
         // The look-around chip replays cinematics only while this is on.
         dmMode={dmMode && !claimLocked}
+        dmScreen={!claimLocked && (dmMode || enteredAsDm)}
         characters={players}
         selectedCharacter={selectedCharacter}
         selectedCharacterId={selectedCharacterId}
