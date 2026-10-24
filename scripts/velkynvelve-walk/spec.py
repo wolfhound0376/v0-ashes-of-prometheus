@@ -66,7 +66,11 @@ NODES = {
    obstacles=[],
    zones=[dict(rect=[240,790,420,870], to=[8], label="Rope bridge down-left"),
           dict(rect=[1990,800,2140,900], to=[10], label="Rope bridge down-right"),
-          dict(rect=[1100,760,1320,805], to=[14], kind="water", label="Drop into the waterfall: you land in the pool for no damage")]),
+          # Sam, 2026-10-24: the jump is offered only once someone has reason to think it survivable — a look over the edge
+          # (Perception, DC homebrew) that finds the pool and the webs below, feather fall in the party, a barbarian who
+          # would jump anyway, or someone already thrown in. The hover label gives nothing away; `secret` is what a look finds.
+          dict(rect=[1100,760,1320,805], to=[14], kind="water", label="The falls: the bridge passes right over the drop",
+               secret="Below, through the spray: the webs the drow keep stretched beneath the outpost (OotA p.14), and past them the falls pouring into a pool on the cavern floor (p.18). A drop here lands in water.")]),
  10: dict(slug="node-10-guard-tower", name="Guard Tower", scale=0.9,
    floors=[dict(poly=P((1060,700),(1240,640),(1600,660),(1860,680),(1920,800),(1900,940),(1760,1020),(1400,1040),(1120,980),(1040,860))),dict(poly=P((320,840),(1050,895),(1050,950),(320,905))),dict(rect=[0,720,330,950]),dict(poly=P((1900,875),(2400,810),(2400,870),(1900,935)))],
    obstacles=[dict(cx=1480,cy=880,rx=140,ry=60),dict(cx=1780,cy=870,rx=60,ry=40)],
