@@ -21,16 +21,35 @@ export interface WalkHandoff {
   biome: CampBiome
   /** Whether the way out is still Claude's draw from the guide, unreviewed by Sam. */
   proposed: boolean
+  /**
+   * THE NODAL SIDE (Sam, 2026-10-24: "wire the nodal map to the different 'leave the map' options").
+   * The `travel_nodes.node_key`s this cavern comes out onto. The map keeps only those that an edge in
+   * `travel_edges` actually joins to the place the party left, so a key listed here that has no edge in
+   * the data is simply not offered — the data decides, never this list alone. Empty means the cavern
+   * leads to no road the map knows yet (the lair, the grove and the crystal passage are caverns beyond
+   * caverns in Sam's export, not ways off the outpost).
+   */
+  roads: readonly string[]
 }
 
-/** Mirrors spec.py CAVERNS: name and biome per key. Keep the two in step by hand. */
+/**
+ * Mirrors spec.py CAVERNS: name and biome per key. Keep the two in step by hand.
+ *
+ * Roads are an APPROXIMATE call, the same caveat spec.py puts on its own exits (Claude, 2026-10-24,
+ * not yet Sam's): the painted overworld gives Velkynvelve two roads, both leaving from below the
+ * outpost (`path--road-10--velkynvelve` west, `road--velkynvelve--road-15` east). The south passage
+ * and the lift both put the party on the cavern floor those roads start from, so each offers both and
+ * the party picks a direction on the map. The river has no edge in the data yet: `road-11` is the
+ * nearest Darklake marker straight below the outpost, and until an edge joins it the shore hand-off
+ * offers no road at all (see the PR body for the proposed edge).
+ */
 export const WALK_HANDOFFS: Readonly<Record<WalkHandoffKey, WalkHandoff>> = {
-  tunnels: { name: "The tunnels", biome: "tunnels", proposed: true },
-  wastes: { name: "The wastes", biome: "tunnels", proposed: true },
-  shore: { name: "The Darklake shore", biome: "shore", proposed: true },
-  lair: { name: "The lair", biome: "tunnels", proposed: true },
-  grove: { name: "The grove", biome: "fungal", proposed: false },
-  crystal: { name: "The crystal passage", biome: "tunnels", proposed: false },
+  tunnels: { name: "The tunnels", biome: "tunnels", proposed: true, roads: ["road-10", "road-15"] },
+  wastes: { name: "The wastes", biome: "tunnels", proposed: true, roads: ["road-10", "road-15"] },
+  shore: { name: "The Darklake shore", biome: "shore", proposed: true, roads: ["road-11"] },
+  lair: { name: "The lair", biome: "tunnels", proposed: true, roads: [] },
+  grove: { name: "The grove", biome: "fungal", proposed: false, roads: [] },
+  crystal: { name: "The crystal passage", biome: "tunnels", proposed: false, roads: [] },
 }
 
 export interface WalkArrival {
@@ -41,6 +60,64 @@ export interface WalkArrival {
   biome: CampBiome
   /** The plate URL the map can show behind the arrival note. */
   plate: string
+  /** The travel nodes this way out may come onto, before the map checks them against its edges. */
+  roads: readonly string[]
+}
+
+/** The least the map needs to know about a node or an edge to pick the roads a way out opens. */
+export interface RoadNode {
+  id: string
+  node_key: string
+  metadata?: { map_x?: unknown; map_y?: unknown } | null
+}
+export interface RoadEdge {
+  from_node_id: string
+  to_node_id: string
+}
+
+/** A road the party may take off the plate: the node, and which way it lies from where they stand. */
+export interface RoadChoice {
+  node: RoadNode
+  /** Eight-point compass word from the party's node by map pixels, so the choice needs no invented place-name. */
+  heading: Heading
+}
+export type Heading = "north" | "north-east" | "east" | "south-east" | "south" | "south-west" | "west" | "north-west"
+const HEADINGS: readonly Heading[] = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
+
+/**
+ * Where `to` lies from `at`, by the map's pixel axes (y grows downward), on eight points. Four would do
+ * for one road, but Velkynvelve's two both leave to the south and only "south-west" / "south-east"
+ * tells them apart.
+ */
+export function headingBetween(at: { map_x: number; map_y: number }, to: { map_x: number; map_y: number }): Heading {
+  const a = Math.atan2(to.map_y - at.map_y, to.map_x - at.map_x) // 0 = east, +pi/2 = south
+  const slot = Math.round((a < 0 ? a + Math.PI * 2 : a) / (Math.PI / 4)) % 8
+  return HEADINGS[slot]
+}
+
+/**
+ * The roads a hand-off opens from the node the party stands on: the arrival's `roads` that exist in
+ * `nodes` AND share an edge with `here`, in the order the hand-off lists them. Anything else is dropped
+ * without comment — a road the data does not join to this place is not a road the party can take.
+ */
+export function roadsOpenedBy(arrival: WalkArrival, here: RoadNode, nodes: readonly RoadNode[], edges: readonly RoadEdge[]): RoadChoice[] {
+  const xy = (n: RoadNode) =>
+    n.metadata && typeof n.metadata.map_x === "number" && typeof n.metadata.map_y === "number"
+      ? { map_x: n.metadata.map_x, map_y: n.metadata.map_y }
+      : null
+  const at = xy(here)
+  const out: RoadChoice[] = []
+  for (const key of arrival.roads) {
+    const node = nodes.find((n) => n.node_key === key)
+    if (!node) continue
+    const joined = edges.some(
+      (e) => (e.from_node_id === here.id && e.to_node_id === node.id) || (e.from_node_id === node.id && e.to_node_id === here.id),
+    )
+    if (!joined) continue
+    const to = xy(node)
+    out.push({ node, heading: at && to ? headingBetween(at, to) : "south" })
+  }
+  return out
 }
 
 const isKey = (v: string | null): v is WalkHandoffKey => !!v && v in WALK_HANDOFFS
@@ -63,5 +140,5 @@ export function parseWalkHandoff(search: string | URLSearchParams): WalkArrival 
   const h = WALK_HANDOFFS[via]
   const plate = q.get("plate")
   const biome: CampBiome = plate && plate in CAMP_PLATES ? (plate as CampBiome) : h.biome
-  return { from: q.get("from") || "velkynvelve", via, name: h.name, biome, plate: CAMP_PLATES[biome] }
+  return { from: q.get("from") || "velkynvelve", via, name: h.name, biome, plate: CAMP_PLATES[biome], roads: h.roads }
 }

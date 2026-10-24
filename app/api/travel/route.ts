@@ -66,6 +66,9 @@ import type { SheetSlice } from "@/lib/game-context"
 //                       lib/travel/arrival.ts for the order of precedence.
 //     action "continue"→ clear the open halt so the party walks on. The DM's
 //                       hand, always: nothing resumes a stopped march by itself.
+//   action "leave"   → the party walks back out of a great place onto the
+//                       overworld (the mirror of "enter": exploration →
+//                       overworld in the state machine; position unchanged).
 //   POST {action: "vessel", op: "acquire", kind, name?}
 //                    → the party gains a boat (keelboat | coracle | barrel), stats
 //                      copied from lib/travel/vessels.ts. node_key not needed.
@@ -399,7 +402,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader", "choose", "enter"]
+  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader", "choose", "enter", "leave"]
   const NO_NODE = ["continue", "vessel", "depart", "vote", "leader"]
   if (!KNOWN.includes(action) || (!nodeKey && !NO_NODE.includes(action))) {
     return NextResponse.json({ error: `expected { action: ${KNOWN.join("|")}, node_key }` }, { status: 400 })
@@ -417,7 +420,7 @@ export async function POST(req: NextRequest) {
   const party = await roster(dbA)
   const tally = tallyLeader(lead.votes, party.map((c) => c.id))
   const leaderId = lead.leader ?? tally.leader
-  if (["depart", "move", "arrive", "continue", "choose", "enter"].includes(action) && !mayLead(who, leaderId)) {
+  if (["depart", "move", "arrive", "continue", "choose", "enter", "leave"].includes(action) && !mayLead(who, leaderId)) {
     return NextResponse.json({ error: "only the party's leader (or the DM) may move the party", leader: leaderId }, { status: 403 })
   }
   const force = body?.force === true
@@ -696,6 +699,35 @@ export async function POST(req: NextRequest) {
       else remembered = true
     }
     return NextResponse.json({ ok: true, action, node_key: node0.node_key, entrance, context: step.next, reason: step.reason, remembered })
+  }
+
+  // ==========================================================================
+  // LEAVE — the party walks out of a great place back onto the overworld.
+  // ==========================================================================
+  // The mirror of ENTER (Sam, 2026-10-24: wire the nodal map to the walk's "leave the map" options).
+  // The walk page sends the party to /map with the way out in the query string (lib/travel/handoff.ts);
+  // the map tells the state machine here, so campaign_runs.game_context is back on "overworld" before
+  // the departure sheet asks which road. The party's position does not move: they are still AT the
+  // place (its node), just outside it — the march that follows is the ordinary "depart" + "move".
+  // Already on the overworld (the DM jumped straight to the walk, so ENTER never ran) is not an error:
+  // nothing to undo, the answer is the same.
+  if (action === "leave") {
+    const dbl = createAdminClient()
+    const { data: node0 } = await dbl.from("travel_nodes").select("id,node_key,node_type").eq("node_key", nodeKey).maybeSingle()
+    if (!node0) return NextResponse.json({ error: "unknown node_key" }, { status: 404 })
+    const runId = runIdA
+    const { data: run } = runId ? await dbl.from("campaign_runs").select("game_context").eq("id", runId).maybeSingle() : { data: null }
+    const current = (run?.game_context as "overworld" | "exploration" | "combat" | "camp" | null) ?? "overworld"
+    if (current === "overworld") return NextResponse.json({ ok: true, action, node_key: node0.node_key, context: current, reason: "already on the overworld", remembered: false })
+    const step = applyTransition(current, { type: "depart" })
+    if (!step.ok) return NextResponse.json({ error: step.error, context: current }, { status: 409 })
+    let remembered = false
+    if (runId) {
+      const { error: cerr } = await dbl.from("campaign_runs").update({ game_context: step.next }).eq("id", runId)
+      if (cerr) console.warn("[travel] game_context not saved (apply migration campaign_runs_game_context?):", cerr.message)
+      else remembered = true
+    }
+    return NextResponse.json({ ok: true, action, node_key: node0.node_key, context: step.next, reason: step.reason, remembered })
   }
 
   const db = createAdminClient()

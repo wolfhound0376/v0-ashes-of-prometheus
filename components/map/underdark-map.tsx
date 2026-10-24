@@ -22,6 +22,7 @@ import { StageLink, useStage } from "@/components/stage/stage-provider"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import { VESSELS, seats, type VesselKind, type VesselRow } from "@/lib/travel/vessels"
 import { FRESH_DAY, MARCH_HOURS_PER_DAY, PACES, legPreview, paceSummary, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
+import { parseWalkHandoff, roadsOpenedBy, type RoadChoice, type WalkArrival } from "@/lib/travel/handoff"
 import { STINGER_GAIN, stingerUrl, type StingerCue } from "@/lib/travel/stingers"
 import { speakBlob } from "@/lib/speech-queue"
 import { emitCheckCue } from "@/lib/check-cue"
@@ -179,6 +180,15 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
   const [entrance, setEntrance] = useState<{ node: NodeRow; info: EntranceInfo } | null>(null)
   const [entering, setEntering] = useState(false)
   const beatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // OUT OF VELKYNVELVE (Sam, 2026-10-24: wire the nodal map to the walk's "leave the map" options).
+  // The walk page lands here with the way out in the query string (lib/travel/handoff.ts). Once the
+  // party and the graph are loaded, the roads that way out opens are the hand-off's roads that an edge
+  // really joins to the party's node: one road arms the departure sheet for it, several ask which way,
+  // none leaves only the shell's banner. The state machine is told once (POST leave), then the query
+  // string is cleared so a reload does not ask again.
+  const [arrival, setArrival] = useState<WalkArrival | null>(null)
+  const [roadChoice, setRoadChoice] = useState<RoadChoice[] | null>(null)
+  const leftRef = useRef(false)
 
   // camera
   const cam = useRef({ x: 0, y: 0, w: MAP_W })
@@ -195,6 +205,7 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
     } catch {
       /* private mode: no claim, no lead */
     }
+    try { setArrival(parseWalkHandoff(window.location.search)) } catch { setArrival(null) }
     return onDmKeyChange(() => setDmKeyState(getDmKey()))
   }, [])
 
@@ -415,6 +426,25 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
 
   // ---------- derived geometry ----------
   const byId = new Map(nodes.map((n) => [n.id, n]))
+
+  // The walk's way out meets the graph (see `arrival` above).
+  useEffect(() => {
+    if (!arrival || !loaded || !party || leftRef.current) return
+    const here = byId.get(party.node_id)
+    if (!here || here.node_key !== arrival.from) return // the party is not where the walk says; the banner alone
+    if (!canLead) return // a player who does not lead sees the banner; the leader's (or DM's) browser arms the march
+    leftRef.current = true
+    // Tell the state machine the party is back on the overworld. Best-effort: a refusal is logged, not shown —
+    // the departure sheet's own "depart" is what moves them, and it does not read game_context.
+    void fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody({ action: "leave", node_key: here.node_key }) })
+      .then(async (r) => { if (!r.ok) console.warn("[map] leave not recorded:", (await r.json().catch(() => null))?.error) })
+      .catch(() => {})
+    const roads = roadsOpenedBy(arrival, here, nodes, edges)
+    if (roads.length === 1) setConfirmNode(roads[0].node as NodeRow)
+    else if (roads.length > 1) setRoadChoice(roads)
+    try { window.history.replaceState(null, "", window.location.pathname) } catch { /* the query string stays; leftRef still holds */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrival, loaded, party?.node_id, nodes.length, edges.length, canLead])
   const placed = nodes.filter(
     (n) => n.node_type !== "waypoint" && n.metadata && typeof n.metadata.map_x === "number",
   )
@@ -1015,6 +1045,33 @@ export default function UnderdarkMap({ embedded = false, onBack }: { embedded?: 
             </g>
           )}
         </svg>
+
+        {roadChoice && !confirmNode && (
+          <div className="absolute inset-0 grid place-items-center bg-[#05030acc] p-3">
+            <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 w-full max-w-[52ch]">
+              <div className="text-[#9a8fb0] text-xs tracking-widest">OUT OF {(arrival?.from ?? "the outpost").toUpperCase()}</div>
+              <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">{arrival?.name ?? "The cavern floor"}. Which way?</div>
+              <div className="text-[#9a8fb0] text-xs mt-1">The roads the map knows from here. Pick one and the departure sheet asks the pace and who leads.</div>
+              <div className="mt-4 grid gap-2">
+                {roadChoice.map((r) => (
+                  <button
+                    key={r.node.id}
+                    onClick={() => { setRoadChoice(null); setConfirmNode(r.node as NodeRow) }}
+                    className="rounded border-2 border-[#c99a49] bg-[#2a1f10] px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-[#f5c34d] hover:bg-[#3a2a14]"
+                  >
+                    The road {r.heading}
+                    <span className="block text-[10px] font-normal normal-case tracking-normal text-[#c9bcd8]">
+                      {(r.node as NodeRow).name && (dmKey || (r.node as NodeRow).name_known !== false) ? (r.node as NodeRow).name : "A road into the dark"}
+                    </span>
+                  </button>
+                ))}
+                <button onClick={() => setRoadChoice(null)} className="rounded border-2 border-[#3a2c56] bg-[#221936] px-4 py-2 text-xs uppercase tracking-widest text-[#9a8fb0]">
+                  Stay at the gates
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {confirmNode && (() => {
           // The departure sheet. Pace and navigator are declared before the
