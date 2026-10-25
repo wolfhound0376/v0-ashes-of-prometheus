@@ -7,7 +7,7 @@
 // entrance "should only be an administrative way with the code." So the door is three choices and
 // nothing else:
 //
-//   START NEW GAME     → /forge   the Forge wizard; no code, no detour
+//   START NEW GAME     → /choose  one of the four canon heroes, or Forge Your Own (Sam, 2026-10-25)
 //   PLAY SAVED GAME    → /join    pick your card, speak your three words, wake in the pen
 //   Dungeon Master     → DM_HREF  small, bottom-left, out of a player's way
 //
@@ -215,7 +215,7 @@ export default function TitleScreen() {
                 Continue
               </MenuButton>
             )}
-            <MenuButton primary={!seated} onClick={() => go("/forge")} delay={seated ? ".16s" : ".08s"} sub="Forge a hero. The drow will take the rest.">
+            <MenuButton primary={!seated} onClick={() => go("/choose")} delay={seated ? ".16s" : ".08s"} sub="Choose your hero. The drow will take the rest.">
               Start New Game
             </MenuButton>
             <MenuButton onClick={() => go("/join")} delay={seated ? ".24s" : ".16s"} sub="Speak your three words">
