@@ -418,7 +418,21 @@ export default function DashboardPage() {
   }, [])
 
   // Simple lich connection - uses Vercel AI Gateway, stores dialogue in Supabase
-  const { sendMessage: sendToLich, isLoading: lichLoading } = useLich(activeCampaign.id)
+  const { sendMessage: sendToLichLive, isLoading: lichLoading } = useLich(activeCampaign.id)
+  // SANDBOX — /?sandbox=1 (the same flag as /battle?sandbox=1). Every turn from this browser is a
+  // rehearsal: Malachar answers in full, the voices play, and NOTHING is written — no dialogue row,
+  // no wound, no item, no clock, no art bought (lib/dry-run.ts in /api/chat). The flag stays in the
+  // address so a refresh keeps the mode, and the bar below the nav says so the whole time.
+  // Read from the address at the moment of sending, not from state: the opening direction goes out
+  // from a mount effect, before any state set in another effect has landed, and that first turn
+  // must be a rehearsal too. The state copy only drives the bar.
+  const isSandbox = () => { try { return new URL(window.location.href).searchParams.get("sandbox") === "1" } catch { return false } }
+  const [sandbox, setSandbox] = useState(false)
+  useEffect(() => { setSandbox(isSandbox()) }, [])
+  const sendToLich = useCallback<typeof sendToLichLive>(
+    (message, characterId, claimToken, opts) => sendToLichLive(message, characterId, claimToken, { ...(opts ?? {}), sandbox: isSandbox() }),
+    [sendToLichLive],
+  )
   // The player accepted an NPC's "a word" on the map and came over: ask Malachar for what the NPC
   // wanted to say, as a stage direction (nobody at the table spoke), so her real first line is written
   // and voiced here — not the opener again.
@@ -1477,8 +1491,10 @@ if (error) {
       // Feed line, visible on all browsers. Optimistic → reconciled by the
       // realtime echo of the inserted row.
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: line, pending: true }))
-      const { error } = await supabase.from("dialogue").insert({ speaker: playerName, speaker_type: "player", channel: "dm", text: line })
-      if (error) console.error("[Dice] failed to persist roll announcement:", error)
+      if (!isSandbox()) {
+        const { error } = await supabase.from("dialogue").insert({ speaker: playerName, speaker_type: "player", channel: "dm", text: line })
+        if (error) console.error("[Dice] failed to persist roll announcement:", error)
+      }
 
       let dmMessage: string | null = null
       if (request && opts.result) {
@@ -1705,6 +1721,12 @@ if (error) {
   return (
     <DiceProvider onAnnounce={handleDiceAnnounce}>
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
+      {sandbox && (
+        <div role="status" className="flex shrink-0 items-center justify-center gap-3 border-b border-[#c9563f]/60 bg-[#2a120c] px-4 py-1.5 text-center font-serif text-[11px] uppercase tracking-[0.22em] text-[#ff9a7a]">
+          <span className="font-semibold">Sandbox</span>
+          <span className="normal-case tracking-normal text-[#e8b9a9]">A rehearsal. Malachar answers, nothing is saved: no log, no wounds, no loot, no time passes.</span>
+        </div>
+      )}
       {/* Top command bar (v3.0 design) */}
       {view === "full" && <TopNav
         onCompact={() => switchView("compact")}
