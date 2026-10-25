@@ -926,6 +926,7 @@ function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
   const sp = SPR[a.id];
   if (a.down && a.iced) return {img: a.iced.img, f: a.iced.f, pose: "iced", dead: true};
+  if (a.down && !hero(a) && pickCadaver(a)) return {img: sp.img.idle, f: 0, pose: "cadaver", dead: true};
   if (a.down && !hero(a) && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
   if (asleepNow(a)){
     const A = sp.json.animations;
@@ -1063,7 +1064,14 @@ function draw(){
     }
     const held = !pose && !a.climbing && heldWeapon(a);                              // what is in their hand, drawn on the sprite
     if (held && held.behind) drawHeld(a, held, sc, py, cw, fy);
-    if (pose === "iced"){                          // frozen solid: the last standing frame, drained of colour, under a rime of ice
+    if (pose === "cadaver"){                       // the species' body, lying where they fell; fades in over the fall
+      const C = a.cadaver, im = cadaverImg(C.key), k = Math.min(1, (now - C.t0) / 450);
+      if (im.complete && im.naturalWidth){
+        const side = C.sq * ftPx(a) * 5, a0 = ctx.globalAlpha; ctx.filter = "none"; ctx.globalAlpha = a.alpha * (.4 + .6 * k);   // the canvas spans `sq` squares
+        ctx.save(); ctx.translate(a.x, a.y - side * .35); if (C.flip) ctx.scale(-1, 1);
+        ctx.drawImage(im, -side / 2, -side / 2, side, side); ctx.restore(); ctx.globalAlpha = a0;
+      } else { ctx.filter = "brightness(.55) saturate(.45)"; ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); }   // until the body image has loaded
+    } else if (pose === "iced"){                          // frozen solid: the last standing frame, drained of colour, under a rime of ice
       ctx.filter = "brightness(1.05) saturate(.25) contrast(1.1)";
       ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.filter = "none";
       drawIcicles(a, dx, dy, dw, dh);
@@ -2873,6 +2881,34 @@ const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creatu
 function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
 // The heroes' side of a fight: the party plus the allies fighting beside them (cbt.allies).
 const hero = a => !!a && (a.kind === "pc" || !!a.ally);
+// CADAVER SETS (Sam, 2026-10-24: "for humanoids you can create a set of cadavers/skeletons for death animations" → "make
+// them on the pixel ai" → "these are fine"). PixelLab Pro Flash objects, 128 px, low top-down, each species anchored to its
+// own in-game sprite, approved by Sam the same night; shipped in the repo under public/sprites/cadavers/. A creature with
+// a death sheet of its own still plays it (the drow guards, the spider, the bhut); one WITHOUT a death sheet used to be
+// drawn as its idle frame tipped on its side — now it lies as one of its species' three bodies, picked at the moment of
+// death and kept. `sq` is how many 5-ft squares the 128-px canvas spans on the floor: a gnome's body is small, a
+// quaggoth's is not. Species by sprite id; anyone unmatched keeps the tipped frame. The frozen drow and the two
+// skeletons are in the folder for later (set dressing / a lying alternative to the iced standing body), not drawn here.
+const CADAVER_DIR = APP ? "/sprites/cadavers/" : "sprites/cadavers/";
+const CADAVER_POSES = ["facedown", "onback", "curled"];
+// sq = 128 / (ppu / 5) / 5: the body's pixels land at the same density as its species' standing sprite (drow ppu 103, bandit 107, duergar 142, deep gnome 197, quaggoth 66)
+const CADAVER_SETS = {drow: {sq: 1.25}, human: {sq: 1.2}, duergar: {sq: 0.9}, deepgnome: {sq: 0.65}, quaggoth: {sq: 1.95}};
+function cadaverSpecies(id){
+  if (/^drow|^jorlan$|^shoor$|^asha$|^ilvara$/.test(id)) return "drow";
+  if (/^quaggoth/.test(id)) return "quaggoth";
+  if (/^duergar/.test(id)) return "duergar";
+  if (/^deep-gnome|^buppido$|^jimjar$|^topsy$|^turvy$/.test(id)) return "deepgnome";
+  if (/^bandit|^thug|^cultist|^cult-fanatic|^underdark-barbarian|^mage$|^necromancer$/.test(id)) return "human";
+  return null;
+}
+const cadaverImgs = {};
+function cadaverImg(key){ if (!cadaverImgs[key]){ const i = new Image(); i.src = `${CADAVER_DIR}${key}.png`; cadaverImgs[key] = i; } return cadaverImgs[key]; }
+function pickCadaver(a){
+  if (a.cadaver !== undefined) return a.cadaver;
+  const sp = cadaverSpecies(a.id); if (!sp || (SPR[a.id].json.animations.dead && SPR[a.id].img.dead)) return (a.cadaver = null);
+  const pose = CADAVER_POSES[Math.floor(Math.random() * CADAVER_POSES.length)];
+  return (a.cadaver = {key: `${sp}-${pose}`, sq: CADAVER_SETS[sp].sq, flip: Math.random() < .5, t0: now});
+}
 const heroes = () => [...party, ...(cbt ? cbt.allies : [])];
 // Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
 const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
