@@ -27,6 +27,12 @@
 //
 // Invented vs sourced: the situation is the book's; the hook lines, the wakers' lines and Malachar's
 // "let's see what you kept" are written lines Sam approved in the storyboard.
+//
+// SKIPPABLE (Sam, 2026-10-11: sitting through it every time is annoying; 2026-10-24: "an option to
+// not have cinematics or intro scores"). A Skip button is up for the whole of the show; with
+// Cinematics OFF in the settings (lib/settings.ts) the show is replaced by one still line and the
+// page goes straight to the roll. The ROLL itself is never skipped — it is gameplay, and the bag
+// depends on it. Intro music OFF keeps "Dark and Stormy" silent; the voices still speak.
 
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -36,6 +42,7 @@ import { useLich } from "@/lib/hooks/use-lich"
 import { MusicToggle } from "@/components/music-toggle"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { isMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
+import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { sanitizeForTTS } from "@/lib/tts"
 
 const PEN_ROUTE = "/velkynvelve"
@@ -50,6 +57,8 @@ const DREAM_TEXT =
   "Mistress Ilvara of House Mizzrym, telling you, scourge in hand, that your life belongs to her now.\n\n" +
   "“Accept your fate. Learn to obey. And you may survive.”"
 const PREROLL_TEXT = "They stripped you to your underclothes.\nBut the drow count bolts, not pockets.\n\nLet's see what you kept."
+/** The still line that stands in for the whole show when Cinematics is off (his words, cut to one card). */
+const STILL_TEXT = "Captured by the drow. A collar at your throat, a priestess who says your life is hers now.\n\nLet's see what you kept."
 
 /** Per-character pieces, keyed by the character's first name (lower-case). Anyone else: the shared speech alone. */
 const PCS: Record<string, { hook: string }> = {
@@ -94,10 +103,16 @@ export default function AwakenPage() {
   const [talking, setTalking] = useState(false)
   const [waker, setWaker] = useState<WakerKey | null>(null)
   const [laughOn, setLaughOn] = useState(false)
+  const [skipShown, setSkipShown] = useState(false)
   const { sendMessage } = useLich("abyss")
 
   const started = useRef(false)
   const dead = useRef(false)
+  // Skip: pressed once, it wins every wait in the show (sleep, clip, video) from then on. The
+  // sequence checks it between beats and jumps to the roll (or, past the roll, to the pen).
+  const skipped = useRef(false)
+  const skipResolve = useRef<() => void>(() => {})
+  const skipP = useRef<Promise<void>>(new Promise<void>((r) => { skipResolve.current = r }))
   const music = useRef<HTMLAudioElement>(null)
   const clip = useRef<HTMLAudioElement>(null)
   const idleVid = useRef<HTMLVideoElement>(null)
@@ -131,17 +146,38 @@ export default function AwakenPage() {
   }, [router])
 
   // --- helpers ------------------------------------------------------------------------------------
+  /** A wait the Skip button can cut short. */
+  const race = useCallback(<T,>(p: Promise<T>): Promise<T | void> => Promise.race([p, skipP.current]), [])
+  const wait = useCallback((ms: number) => race(sleep(ms)), [race])
+
   const playClip = useCallback(async (src: string): Promise<void> => {
     const a = clip.current
-    if (!a || dead.current) return
+    if (!a || dead.current || skipped.current) return
     a.src = src
     a.currentTime = 0
-    await new Promise<void>((res) => {
+    await race(new Promise<void>((res) => {
       const done = () => { a.removeEventListener("ended", done); a.removeEventListener("error", done); res() }
       a.addEventListener("ended", done)
       a.addEventListener("error", done)
       a.play().catch(done)
-    })
+    }))
+    if (skipped.current) { a.pause() }
+  }, [race])
+
+  const skip = useCallback(() => {
+    if (skipped.current) return
+    skipped.current = true
+    setSkipShown(false)
+    skipResolve.current()
+    try { clip.current?.pause() } catch { /* nothing playing */ }
+    try { laughVid.current?.pause() } catch { /* nothing playing */ }
+    setCrawl(null); setCaption(null); setFaceOpen(false); setTalking(false); setLaughOn(false)
+  }, [])
+
+  /** Skipping the show must not also skip what comes after the roll, so the button is re-armed between acts. */
+  const rearmSkip = useCallback(() => {
+    skipped.current = false
+    skipP.current = new Promise<void>((r) => { skipResolve.current = r })
   }, [])
 
   const musicTo = useCallback((vol: number, ms: number) => {
@@ -160,15 +196,20 @@ export default function AwakenPage() {
 
   const musicIn = useCallback((at: number, vol: number, ms: number) => {
     const m = music.current
-    if (!m || isMusicOff()) return
+    if (!m || isMusicOff() || !introMusicOn()) return
     m.currentTime = at
     m.volume = 0
     m.play().catch(() => {})
     musicTo(vol, ms)
   }, [musicTo])
 
-  // "Music off" silences the bed at once; "on" again lets the next cue start it.
-  useEffect(() => onMusicPrefChange(() => { if (isMusicOff()) music.current?.pause() }), [])
+  // "Music off" (either switch) silences the bed at once; "on" again lets the next cue start it.
+  useEffect(() => {
+    const hush = () => { if (isMusicOff() || !introMusicOn()) music.current?.pause() }
+    const a = onMusicPrefChange(hush)
+    const b = onSettingsChange(hush)
+    return () => { a(); b() }
+  }, [])
 
   // Malachar's words on the roll — the direction comes from FortuneRoll. His voice is /api/tts (the
   // same route the dashboard uses for him); the text is what he wrote.
@@ -211,119 +252,152 @@ export default function AwakenPage() {
     setWaker(w)
     const guard = () => { if (dead.current) throw new Error("left") }
 
+    const show = cinematicsOn()
+
     const run = async () => {
-      // 1 — black. The character's voice. (A page loaded cold has no gesture yet: if the browser
-      //     refuses the first sound, ask for one tap and start again from the top.)
-      setStep("where")
-      await sleep(1400); guard()
-      if (pcKey) {
-        const a = clip.current!
-        a.src = `${MEDIA}/where-${pcKey}.mp3`
-        try { await a.play() } catch {
-          setStep("tap")
-          await new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true }))
-          guard(); setStep("where"); await sleep(600)
-          await a.play().catch(() => {})
+      if (show) {
+        setSkipShown(true)
+        // 1 — black. The character's voice. (A page loaded cold has no gesture yet: if the browser
+        //     refuses the first sound, ask for one tap and start again from the top.)
+        setStep("where")
+        await wait(1400); guard()
+        if (pcKey && !skipped.current) {
+          const a = clip.current!
+          a.src = `${MEDIA}/where-${pcKey}.mp3`
+          try { await a.play() } catch {
+            setStep("tap")
+            await race(new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true })))
+            guard(); setStep("where"); await wait(600)
+            if (!skipped.current) await a.play().catch(() => {})
+          }
+          await race(new Promise<void>((res) => { if (a.ended || a.paused) return res(); a.addEventListener("ended", () => res(), { once: true }) }))
+          if (skipped.current) a.pause()
+        } else if (!skipped.current) {
+          setCaption("…where am I?"); await wait(2200); setCaption(null)
         }
-        await new Promise<void>((res) => { if (a.ended || a.paused) return res(); a.addEventListener("ended", () => res(), { once: true }) })
-      } else {
-        setCaption("…where am I?"); await sleep(2200); setCaption(null)
+        await wait(1400); guard()
+
+        // 2 — the dream. Dark and Stormy in under him; his words as the crawl.
+        if (!skipped.current) {
+          setStep("dream")
+          musicIn(0, 0.45, 4000)
+          const hook = pcKey ? PCS[pcKey].hook : null
+          const dreamSeconds = 22 + (hook ? 9 : 0) + 6
+          setCrawl({ text: DREAM_TEXT + (hook ? `\n\n${hook}` : ""), seconds: dreamSeconds, key: 1 })
+          await playClip(`${MEDIA}/lich-dream.mp3`); guard()
+          if (pcKey) { await wait(500); await playClip(`${MEDIA}/hook-${pcKey}.mp3`); guard() }
+          await wait(1200); setCrawl(null)
+        }
+
+        // 3 — the title. The music swells, then cuts on the last frame.
+        if (!skipped.current) {
+          setStep("title"); musicTo(0.6, 1500)
+          await wait(4200); guard()
+          music.current?.pause()
+          setStep("waker")
+          await wait(700); guard()
+        }
+
+        // 4 — the waker. Eyes open on the idle loop; the talking loop takes the line.
+        if (!skipped.current) {
+          idleVid.current?.play().catch(() => {})
+          await wait(250)
+          setFaceOpen(true)
+          await wait(2800); guard()
+          talkVid.current?.play().catch(() => {})
+          setTalking(true)
+          await playClip(`${MEDIA}/wake-${w}.mp3`); guard()
+          setTalking(false); talkVid.current?.pause()
+          await wait(1200)
+          setFaceOpen(false)
+          await wait(1200); guard()
+          idleVid.current?.pause()
+        }
       }
-      await sleep(1400); guard()
-
-      // 2 — the dream. Dark and Stormy in under him; his words as the crawl.
-      setStep("dream")
-      musicIn(0, 0.45, 4000)
-      const hook = pcKey ? PCS[pcKey].hook : null
-      const dreamSeconds = 22 + (hook ? 9 : 0) + 6
-      setCrawl({ text: DREAM_TEXT + (hook ? `\n\n${hook}` : ""), seconds: dreamSeconds, key: 1 })
-      await playClip(`${MEDIA}/lich-dream.mp3`); guard()
-      if (pcKey) { await sleep(500); await playClip(`${MEDIA}/hook-${pcKey}.mp3`); guard() }
-      await sleep(1200); setCrawl(null)
-
-      // 3 — the title. The music swells, then cuts on the last frame.
-      setStep("title"); musicTo(0.6, 1500)
-      await sleep(4200); guard()
-      music.current?.pause()
-      setStep("waker")
-      await sleep(700); guard()
-
-      // 4 — the waker. Eyes open on the idle loop; the talking loop takes the line.
-      idleVid.current?.play().catch(() => {})
-      await sleep(250)
-      setFaceOpen(true)
-      await sleep(2800); guard()
-      talkVid.current?.play().catch(() => {})
-      setTalking(true)
-      await playClip(`${MEDIA}/wake-${w}.mp3`); guard()
-      setTalking(false); talkVid.current?.pause()
-      await sleep(1200)
-      setFaceOpen(false)
-      await sleep(1200); guard()
-      idleVid.current?.pause()
 
       // 5 — back into the dark: the music returns, "let's see what you kept", then the real roll.
+      //     (Cinematics off, or skipped: the still line stands in for the whole show.)
+      setSkipShown(false)
       setStep("roll")
-      musicIn(30, 0.45, 2500)
-      await sleep(600); guard()
-      setCrawl({ text: PREROLL_TEXT, seconds: 6 + 5, key: 2 })
-      await playClip(`${MEDIA}/lich-preroll.mp3`); guard()
-      setCrawl(null)
+      music.current?.pause()
+      const showWasSkipped = skipped.current
+      rearmSkip()
+      if (show && !showWasSkipped) {
+        musicIn(30, 0.45, 2500)
+        await wait(600); guard()
+        setCrawl({ text: PREROLL_TEXT, seconds: 6 + 5, key: 2 })
+        await playClip(`${MEDIA}/lich-preroll.mp3`); guard()
+        setCrawl(null)
+      } else {
+        // The bed still plays under the roll when the score is allowed; only the show is gone.
+        musicIn(30, 0.35, 2500)
+        setCaption(STILL_TEXT)
+        await sleep(2600); guard()
+        setCaption(null)
+      }
       const rolled = await new Promise<boolean>((res) => { rollDone.current = res })
       guard()
       if (!rolled) { goToPen(); return }
 
       // 6 — what you have: his narration of the actual result, in his voice, then the laugh.
+      //     Skip here means straight to the pen; the roll already happened and the bag is written.
       setStep("result")
-      const said = narration.current ? await narration.current : { text: "", audio: null }
+      setSkipShown(true)
+      const said = narration.current ? await race(narration.current) : { text: "", audio: null }
       guard()
-      if (said.text) {
+      if (said && said.text && !skipped.current) {
         if (said.audio) {
           // His voice: learn how long it runs so the crawl keeps pace with him.
           const a = clip.current!
           a.src = said.audio
-          await new Promise<void>((res) => {
+          await race(new Promise<void>((res) => {
             a.addEventListener("loadedmetadata", () => res(), { once: true })
             a.addEventListener("error", () => res(), { once: true })
             a.load()
-          })
+          }))
           const seconds = isFinite(a.duration) && a.duration > 0 ? a.duration : 20
-          setCrawl({ text: said.text, seconds: seconds + 5, key: 3 })
-          await new Promise<void>((res) => {
+          if (show) setCrawl({ text: said.text, seconds: seconds + 5, key: 3 })
+          else setCaption(said.text)
+          await race(new Promise<void>((res) => {
             a.addEventListener("ended", () => res(), { once: true })
             a.addEventListener("error", () => res(), { once: true })
             a.play().catch(() => res())
-          })
+          }))
+          if (skipped.current) a.pause()
           URL.revokeObjectURL(said.audio)
         } else {
           const seconds = Math.max(8, said.text.length / 14)
-          setCrawl({ text: said.text, seconds: seconds + 5, key: 3 })
-          await sleep(seconds * 1000)
+          if (show) setCrawl({ text: said.text, seconds: seconds + 5, key: 3 })
+          else setCaption(said.text)
+          await wait(seconds * 1000)
         }
         guard()
-        await sleep(800); setCrawl(null); await sleep(300)
+        await wait(800); setCrawl(null); setCaption(null); await wait(300)
       }
-      setStep("laugh")
-      const lv = laughVid.current
-      if (lv) {
-        lv.currentTime = 0; lv.volume = 1
-        setLaughOn(true); musicTo(0.2, 600)
-        await new Promise<void>((res) => {
-          lv.addEventListener("ended", () => res(), { once: true })
-          lv.addEventListener("error", () => res(), { once: true })
-          lv.play().catch(() => res())
-        })
-        guard()
-        setLaughOn(false)
+      if (show && !showWasSkipped && !skipped.current) {
+        setStep("laugh")
+        const lv = laughVid.current
+        if (lv) {
+          lv.currentTime = 0; lv.volume = 1
+          setLaughOn(true); musicTo(0.2, 600)
+          await race(new Promise<void>((res) => {
+            lv.addEventListener("ended", () => res(), { once: true })
+            lv.addEventListener("error", () => res(), { once: true })
+            lv.play().catch(() => res())
+          }))
+          guard()
+          setLaughOn(false)
+        }
       }
-      musicTo(0, 1800)
-      await sleep(1600); guard()
+      setSkipShown(false)
+      musicTo(0, skipped.current ? 400 : 1800)
+      await sleep(skipped.current ? 300 : 1600); guard()
 
       // 7 — the pen.
       goToPen()
     }
     run().catch((e) => { if (!dead.current) console.error("[awaken]", e) })
-  }, [seat, playClip, musicIn, musicTo, goToPen])
+  }, [seat, playClip, musicIn, musicTo, goToPen, race, wait, rearmSkip])
 
   const wakerLoop = waker ? WAKERS.find((x) => x.key === waker)!.loop : null
   const dark = step === "where" || step === "dream" || step === "tap" || step === "roll" || step === "result"
@@ -397,9 +471,20 @@ export default function AwakenPage() {
       <div className="relative mx-auto flex min-h-screen w-full max-w-2xl flex-col items-center justify-center px-6 py-14 text-center">
         {step === "seat" && <div className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Finding your seat…</div>}
         {step === "tap" && <div className="animate-pulse text-[11px] uppercase tracking-[0.4em] text-stone-500">Tap to wake</div>}
-        {caption && dark && <div className="text-xl italic text-[#cfd8e6]">{caption}</div>}
+        {caption && dark && <div className="whitespace-pre-line font-serif text-xl leading-relaxed text-[#cfd8e6] [text-wrap:balance]">{caption}</div>}
         {step === "go" && <GoNow onGo={goToPen} />}
       </div>
+
+      {/* Skip — up for the whole show, re-armed for the aftermath. Never shown over the roll. */}
+      {skipShown && (
+        <button
+          type="button"
+          onClick={skip}
+          className="fixed bottom-6 right-8 z-50 rounded-sm border border-[#8a6a3a]/50 bg-black/50 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-400 backdrop-blur-sm transition-colors hover:border-[#c9a868] hover:text-[#e8c56a]"
+        >
+          Skip ▸
+        </button>
+      )}
     </div>
   )
 }
