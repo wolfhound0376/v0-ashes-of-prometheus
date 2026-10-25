@@ -20,6 +20,7 @@
 // next session found nothing saved. So the gate makes the sandbox AVAILABLE, and live is the big
 // button. Sam's call to flip it.
 
+import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Check, DoorOpen, Eye, FlaskConical, Play, Swords, UserMinus, UserPlus, X } from "lucide-react"
@@ -181,7 +182,9 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
 
   const begin = (sandbox: boolean) => {
     try { window.localStorage.setItem(ROLE_LS_KEY, "dm"); window.sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
-    router.push(sandbox ? "/?sandbox=1" : "/")
+    // The session opens on the pixel map, not the dashboard (Sam, 2026-10-25; lib/map-entry.ts).
+    try { window.sessionStorage.setItem(ENTERED_KEY, "1") } catch { /* storage blocked */ }
+    router.push(mapHref(sandbox))
   }
 
   const seatOf = (id: string) => seated.find((s) => s.id === id)

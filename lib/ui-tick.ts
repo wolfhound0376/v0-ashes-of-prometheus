@@ -227,3 +227,77 @@ function playTick(ac: AudioContext, strength: "soft" | "firm"): void {
     // A click that cannot play is not worth an error. Silence is fine.
   }
 }
+
+/**
+ * The map button's click (Sam, 2026-10-25: "an audible click when you hit it"). Heavier than the key
+ * tap on purpose — this one moves you to another place, so it sounds like a brass latch giving way:
+ * a crisp snap on top, a low wooden thunk under it, and a short gold ring that dies fast.
+ */
+export function uiLatch(): void {
+  const ac = audio()
+  if (!ac) return
+  if (ac.state !== "running") {
+    ac.resume().then(() => playLatch(ac)).catch(() => {})
+    return
+  }
+  playLatch(ac)
+}
+
+function playLatch(ac: AudioContext): void {
+  try {
+    const now = ac.currentTime + 0.001
+    const out = ac.createGain()
+    out.gain.value = 0.3
+    const soften = ac.createBiquadFilter()
+    soften.type = "lowpass"
+    soften.frequency.value = 7000
+    out.connect(soften).connect(ac.destination)
+
+    // Snap: a short band-passed noise transient.
+    const dur = 0.022
+    const frames = Math.max(1, Math.floor(ac.sampleRate * dur))
+    const buf = ac.createBuffer(1, frames, ac.sampleRate)
+    const data = buf.getChannelData(0)
+    for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / frames, 6)
+    const noise = ac.createBufferSource()
+    noise.buffer = buf
+    const band = ac.createBiquadFilter()
+    band.type = "bandpass"
+    band.frequency.value = 2400
+    band.Q.value = 0.9
+    const ng = ac.createGain()
+    ng.gain.value = 0.85
+    noise.connect(band).connect(ng).connect(out)
+    noise.start(now)
+    noise.stop(now + dur + 0.005)
+
+    // Thunk: a falling low sine, the weight of the latch.
+    const thunk = ac.createOscillator()
+    thunk.type = "sine"
+    thunk.frequency.setValueAtTime(190, now)
+    thunk.frequency.exponentialRampToValueAtTime(80, now + 0.07)
+    const tg = ac.createGain()
+    tg.gain.setValueAtTime(0.0001, now)
+    tg.gain.exponentialRampToValueAtTime(0.75, now + 0.003)
+    tg.gain.exponentialRampToValueAtTime(0.0001, now + 0.09)
+    thunk.connect(tg).connect(out)
+    thunk.start(now)
+    thunk.stop(now + 0.1)
+
+    // Ring: two quick inharmonic partials, the gold.
+    for (const [freq, level, decay] of [[1320, 0.12, 0.16], [3640, 0.04, 0.07]] as const) {
+      const osc = ac.createOscillator()
+      osc.type = "sine"
+      osc.frequency.value = freq
+      const g = ac.createGain()
+      g.gain.setValueAtTime(0.0001, now + 0.004)
+      g.gain.exponentialRampToValueAtTime(level, now + 0.008)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + decay)
+      osc.connect(g).connect(out)
+      osc.start(now)
+      osc.stop(now + decay + 0.02)
+    }
+  } catch {
+    // Silence is fine.
+  }
+}

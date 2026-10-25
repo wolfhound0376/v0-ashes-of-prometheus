@@ -42,6 +42,7 @@ import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib
 import type { Campaign } from "@/lib/world-ai/campaigns"
 import { rollMatchesRequest, type RollRequestSpec } from "@/lib/roll-requests"
 import { parseAddress, resolveAddressee, storedText } from "@/lib/address"
+import { ENTERED_KEY, mapHref, shouldEnterOnMap } from "@/lib/map-entry"
 
 // A dialogue message carries the DB row `id` so we can dedupe. Optimistic
 // entries added before the row exists get a temporary id and `pending: true`.
@@ -806,6 +807,19 @@ export default function DashboardPage() {
       if (!window.sessionStorage.getItem("aop_intro_seen") && !introSeenEver) {
         window.location.replace("/intro")
         return
+      }
+
+      // The game starts on the pixel map, not here (lib/map-entry.ts; Sam, 2026-10-25). A first arrival
+      // in this browser session goes to the map; every later "/" (back from the map, camp, a talk) stays.
+      {
+        let entered = false
+        try { entered = window.sessionStorage.getItem(ENTERED_KEY) === "1" } catch { /* storage blocked */ }
+        const enter = shouldEnterOnMap(params, entered)
+        try { window.sessionStorage.setItem(ENTERED_KEY, "1") } catch { /* storage blocked */ }
+        if (enter) {
+          window.location.replace(mapHref(params.get("sandbox") === "1"))
+          return
+        }
       }
 
       const storedRole = window.localStorage.getItem(ROLE_LS_KEY)
