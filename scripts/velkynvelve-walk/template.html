@@ -2682,7 +2682,7 @@ function drawFxLayer(flat){
     ctx.save(); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1) * (e.tail && e.until ? Math.min(1, (e.until - now) / 350) : 1) * (e.holdAlpha ? 1 - (1 - e.holdAlpha) * Math.min(1, Math.max(0, el - m.frames) / 6) : 1);
     if (e.flat){ ctx.translate(P.x, P.y + 2); ctx.scale(1, .5); if (e.spin) ctx.rotate((now - e.t0) / 1000 * e.spin); ctx.drawImage(img, sx, sy, cw, ch, -w / 2, -w / 2, w, w); }
     else {
-      const y = e.anchor === "feet" || e.anchor === "base" ? P.y : e.anchor === "top" ? P.top : P.mid; let dx = e.dx || 0, lift = e.lift, flip = false;
+      const y = e.anchor === "feet" || e.anchor === "base" ? P.y : e.anchor === "top" ? P.top : P.mid; let dx = e.dx || 0, lift = e.lift, flip = !!e.mirror;   // `mirror`: an arc drawn swinging right, thrown leftward
       // `tailLift`: the held frames float up to it (Bardic Inspiration's note rises to sit over the head), with a slow bob
       if (e.tailLift){ const over = Math.min(1, Math.max(0, el - (m.frames - e.tail)) / e.tail); lift += e.tailLift * over * over * (3 - 2 * over) + over * .03 * Math.sin(now / 420); }
       if (e.orbit){ const th = (now - e.t0) / 1000 * e.orbit.speed + e.orbit.phase; dx += Math.cos(th) * e.orbit.r; lift += Math.sin(th) * e.orbit.ry; flip = Math.sin(th + Math.PI / 2) < 0; ctx.globalAlpha *= .7 + .3 * (Math.sin(th) + 1) / 2; }
@@ -2761,7 +2761,20 @@ function weaponSfx(atk, tgt){
     : ac >= 17 ? "combat/melee_hit_plate" : ac >= 14 ? "combat/melee_hit_chainmail" : "combat/melee_hit_flesh";
   return {swing, hit, miss: ranged ? "combat/arrow_hit_stone" : "combat/melee_miss"};
 }
-function strikeSheet(atk, sneak){ const n = atk.name.toLowerCase(); return sneak ? "strikeSneak" : n.includes("unarmed") ? "strikePunch" : n.includes("claw") || n.includes("bite") ? "strikeSpecial" : "physicalImpact"; }
+// Which hit spark a melee blow plays. The rules are lib/martial-arts-rules.mjs, pasted in whole by build_walk.py
+// at the MARTIAL placeholder, so this map and the old battle board pick strikes the same way: Sam's six drawn
+// sparks (2026-10-22) — jab, side kick, flying knee (sneak), roundhouse (claws, smites, flurries), uppercut
+// (Stunning Strike, and a bare-fisted crit), sweep (trips and shove-to-prone). A plain Unarmed Strike alternates
+// fist and foot per fighter. Returns the sheet and whether to mirror it: the arcs are drawn swinging left-to-right,
+// so a blow aimed at someone on the attacker's LEFT plays them mirrored (the starbursts read the same either way).
+/*__MARTIAL__*/
+function strikeSheet(atk, sneak, att, tgt, crit){
+  const fist = !sneak && !!(att && att.c) && isPlainUnarmed(atk.name);   // a bare "Unarmed Strike": fist, then foot, per fighter
+  const art = walkStrike(atk.name, {sneak, crit, nth: fist ? (att.c.blows || 0) : 0});
+  if (fist) att.c.blows = (att.c.blows || 0) + 1;
+  if (!art) return {name: "physicalImpact", mirror: false};
+  return {name: MARTIAL_IMPACT[art], mirror: MARTIAL_DIRECTIONAL.has(art) && !!(att && tgt) && tgt.x < att.x};
+}
 // Wards (lib/world-ai/campaigns.ts: "Magical wards block spells cast inside pen (but not from outside)"):
 // in a warded area the Cast command is shut, and the reason is said.
 const wardsHere = () => node.wards || null;
@@ -3017,7 +3030,7 @@ function startCombat(foeIds, label){
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
   bank("ui/initiative_start", .8);
-  for (const nm of ["physicalImpact", "strikePunch", "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
+  for (const nm of ["physicalImpact", ...ALL_MARTIAL_IMPACTS, "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
   setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f)) bark(f, b[i % b.length], 2600); }, i * 500)), 700);
   setTimeout(() => { if (cbt) nextTurn(true); }, 1400);
 }
@@ -3679,7 +3692,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       if (!shot){ swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90); }
-      spawnFx(strikeSheet(atk, sneak), {at: tgt, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2});
+      { const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }
       if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
@@ -3878,7 +3891,7 @@ function doShove(a, t, what){
       const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(rageAdvantage(t.c.rage, (t.c.sheet.saves.str || 0) >= (t.c.sheet.saves.dex || 0) ? "str" : "dex")), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
-      bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
+      bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
       else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y); if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { t.x = to.x; t.y = to.y; } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }

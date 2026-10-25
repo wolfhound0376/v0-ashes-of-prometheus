@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
   ALL_MARTIAL_IMPACTS, MARTIAL_DIRECTIONAL, MARTIAL_IMPACT, MARTIAL_SCALE,
-  martialArtFor, martialImpactFor, strikeFacesLeft,
+  isPlainUnarmed, martialArtFor, martialImpactFor, strikeFacesLeft, unarmedBlow, walkStrike,
 } from "./martial-arts"
 
 describe("martialArtFor", () => {
@@ -137,5 +138,67 @@ describe("facing", () => {
   it("draws a blow straight into the screen as drawn, facing right", () => {
     expect(strikeFacesLeft(0, 0, 0, -3, 1, 0)).toBe(false)
     expect(strikeFacesLeft(2, 2, 2, 2, 1, 0)).toBe(false)
+  })
+})
+
+describe("the painted map's strikes (walkStrike)", () => {
+  it("a sneak attack that applied is the sneak spark, whatever the weapon", () => {
+    expect(walkStrike("Dagger", { sneak: true })).toBe("sneak")
+    expect(walkStrike("Unarmed Strike", { sneak: true, crit: true })).toBe("sneak")
+  })
+
+  it("claws and bites keep the roundhouse arc the walk already gave them", () => {
+    for (const n of ["Claw", "Claws", "Bite", "Multiattack: Bite"]) expect(walkStrike(n)).toBe("special")
+  })
+
+  it("a weapon swing is still the ordinary physical hit", () => {
+    for (const n of ["Longsword", "Dagger", "Club", "Light Crossbow"]) expect(walkStrike(n)).toBeNull()
+  })
+
+  it("named moves get their own spark — the kick, uppercut and sweep the map never asked for", () => {
+    expect(walkStrike("Kick")).toBe("kick")
+    expect(walkStrike("Stunning Strike")).toBe("uppercut")
+    expect(walkStrike("Trip Attack")).toBe("sweep")
+    expect(walkStrike("Flurry of Blows")).toBe("special")
+    expect(walkStrike("Punch")).toBe("punch")
+    // a named move does not vary with the count or a crit
+    expect(walkStrike("Kick", { nth: 0, crit: true })).toBe("kick")
+    expect(walkStrike("Punch", { nth: 1 })).toBe("punch")
+  })
+
+  it("a plain Unarmed Strike alternates fist and foot, and a crit is the uppercut", () => {
+    expect([0, 1, 2, 3].map(nth => walkStrike("Unarmed Strike", { nth }))).toEqual(["punch", "kick", "punch", "kick"])
+    expect(walkStrike("Unarmed Strike", { nth: 1, crit: true })).toBe("uppercut")
+    expect(unarmedBlow(0, false)).toBe("punch")
+    expect(unarmedBlow(7, false)).toBe("kick")
+  })
+
+  it("knows which names are plain", () => {
+    expect(isPlainUnarmed("Unarmed Strike")).toBe(true)
+    for (const n of ["Unarmed Strike (punch)", "Unarmed kick", "Stunning Strike", "Dagger", "", null]) expect(isPlainUnarmed(n)).toBe(false)
+  })
+
+  it("every spark the map can pick is a sheet the manifest has", () => {
+    const manifest = JSON.parse(readFileSync(new URL("../public/vfx/manifest.json", import.meta.url), "utf8"))
+    for (const k of ALL_MARTIAL_IMPACTS) expect(manifest[k], k).toBeTruthy()
+  })
+})
+
+describe("the painted map reads these rules, it does not keep its own copy", () => {
+  const template = readFileSync(new URL("../scripts/velkynvelve-walk/template.html", import.meta.url), "utf8")
+  const built = readFileSync(new URL("../public/velkynvelve-walk/index.html", import.meta.url), "utf8")
+
+  it("template carries the placeholder build_walk.py fills from lib/martial-arts-rules.mjs", () => {
+    expect(template).toContain("/*__MARTIAL__*/")
+    expect(template).not.toMatch(/function walkStrike\(/)
+    // the old one-sheet picker is gone: no hand-written strike names left in the page
+    expect(template).not.toMatch(/"strike(Punch|Kick|Sneak|Special|Sweep|Uppercut)"/)
+  })
+
+  it("the built page carries the functions and calls them", () => {
+    for (const fn of ["martialArtFor", "walkStrike", "unarmedBlow", "isPlainUnarmed"]) expect(built).toMatch(new RegExp(`function ${fn}\\(`))
+    expect(built).not.toContain("/*__MARTIAL__*/")
+    expect(built).not.toMatch(/^export /m)
+    for (const call of ["walkStrike(", "isPlainUnarmed(", "MARTIAL_IMPACT.sweep", "MARTIAL_DIRECTIONAL.has("]) expect(template).toContain(call)
   })
 })

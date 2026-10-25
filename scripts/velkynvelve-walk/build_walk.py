@@ -6,6 +6,7 @@ Inputs, all in this folder:
   template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/ /*__KIT__*/
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
                  /*__RAGE__*/ is lib/rage.mjs pasted in whole (see rage_rules): Rage and Wounded Fury have ONE copy
+                 /*__MARTIAL__*/ is lib/martial-arts-rules.mjs pasted in whole (see martial_rules): which hit spark a strike plays
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
                  plates a 'leave' exit hands the party to, _layout = Sam's editor board (not used by the page)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
@@ -162,6 +163,15 @@ def poison_cloud_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def martial_rules(root):
+    """lib/martial-arts-rules.mjs, pasted into the page whole minus its `export` keywords, exactly as
+    rage_rules does. The map picks a strike's hit spark (punch, kick, uppercut, sweep...) with the SAME
+    functions lib/martial-arts.test.ts tests and the board reads, so there is no hand-typed strike
+    table in the page to drift from the board's."""
+    src = open(os.path.join(root, 'lib', 'martial-arts-rules.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def build_kit_tables(root):
     src = open(os.path.join(root, KIT_TS), encoding="utf-8").read()
     types = _ts_to_obj(_ts_block(src, "const TYPES"))
@@ -274,6 +284,7 @@ for k, n in spec.items():
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
