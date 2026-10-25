@@ -225,7 +225,9 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   // Nothing flies and nothing blooms: the fog IS the arrival. The storm sigil
   // is the closest rune to a weather conjuration, and a spell still needs a
   // charge — that is what casting looks like.
-  fog:      { rune: "runeStorm",    route: "impact-only",                                             charge: 0.60, tint: 0xffffff, decal: "aoeFog" },
+  // Fog stands as a billowing bank on the painted map (Sam, 2026-10-25: billow "like the cloud of poison"), his
+  // pack's fog loop; the board keeps its flat floor loop.
+  fog:      { rune: "runeStorm",    route: "impact-only",                                             charge: 0.60, tint: 0xffffff, decal: "aoeFog", cloud: "aoeFogCloud" },
 }
 
 /**

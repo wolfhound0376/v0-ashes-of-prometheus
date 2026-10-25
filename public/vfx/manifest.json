@@ -25,6 +25,17 @@
     "loop": true,
     "rows": 6
   },
+  "aoeFogCloud": {
+    "bytes": 230548,
+    "cols": 8,
+    "file": "aoeFogCloud.webp",
+    "fps": 12.5,
+    "frames": 32,
+    "grow": 32,
+    "loop": true,
+    "rows": 4,
+    "skulls": false
+  },
   "aoeFrost": {
     "bytes": 136466,
     "cols": 6,
