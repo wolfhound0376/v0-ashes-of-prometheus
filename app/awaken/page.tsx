@@ -46,6 +46,8 @@ import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { sanitizeForTTS } from "@/lib/tts"
 
 const PEN_ROUTE = "/velkynvelve"
+/** How long the Act I card holds when it plays on its own (a saved game, or Cinematics off). */
+const ACT_CARD_MS = 4200
 const MEDIA = "/awaken"
 /** The NPC idle/talking loops the dashboard uses (public bucket). */
 const LOOPS = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/character-loops"
@@ -75,7 +77,7 @@ const WAKERS = [
 ] as const
 type WakerKey = (typeof WAKERS)[number]["key"]
 
-type Step = "seat" | "tap" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "go"
+type Step = "seat" | "tap" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "go"
 
 const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
 
@@ -138,7 +140,7 @@ export default function AwakenPage() {
       ])
         .then(([claim, fortune]) => {
           if (!claim?.valid) { router.replace("/join"); return }
-          if (fortune?.rolled) { setStep("go"); return }
+          if (fortune?.rolled) { setStep("act"); return }   // a saved game: the Act I card, then the pen
           setSeat({ id, token, name: claim?.character?.name ?? null })
         })
         .catch(() => router.replace("/join"))
@@ -317,6 +319,10 @@ export default function AwakenPage() {
 
       // 5 — back into the dark: the music returns, "let's see what you kept", then the real roll.
       //     (Cinematics off, or skipped: the still line stands in for the whole show.)
+      // The Act I card always plays (Sam, 2026-10-25: "Always, even in saved games, play the ACT 1 cinematic location
+      // screen unless it is already queued to play"). The show above carries it; with Cinematics off it was not
+      // queued, so it plays here on its own, before the roll.
+      if (!show){ setStep("title"); await sleep(ACT_CARD_MS); guard() }
       setSkipShown(false)
       setStep("roll")
       music.current?.pause()
@@ -449,7 +455,7 @@ export default function AwakenPage() {
       )}
 
       {/* the title card */}
-      <div className={`pointer-events-none absolute inset-0 grid place-items-center bg-black transition-opacity duration-[1200ms] ${step === "title" ? "opacity-100" : "opacity-0"}`}>
+      <div className={`pointer-events-none absolute inset-0 grid place-items-center bg-black transition-opacity duration-[1200ms] ${step === "title" || step === "act" ? "opacity-100" : "opacity-0"}`}>
         <div className="text-center px-6">
           <div className="text-[12px] uppercase tracking-[0.5em] text-[#8a6a3a]">Act I</div>
           <h1 className="mt-3 font-serif text-[clamp(26px,5vw,56px)] tracking-[0.14em] text-[#c9a868]">Awakening into the Nightmare</h1>
@@ -472,6 +478,7 @@ export default function AwakenPage() {
         {step === "seat" && <div className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Finding your seat…</div>}
         {step === "tap" && <div className="animate-pulse text-[11px] uppercase tracking-[0.4em] text-stone-500">Tap to wake</div>}
         {caption && dark && <div className="whitespace-pre-line font-serif text-xl leading-relaxed text-[#cfd8e6] [text-wrap:balance]">{caption}</div>}
+        {step === "act" && <ActCard onDone={goToPen} musicIn={musicIn} />}
         {step === "go" && <GoNow onGo={goToPen} />}
       </div>
 
@@ -487,6 +494,16 @@ export default function AwakenPage() {
       )}
     </div>
   )
+}
+
+/** A saved game (fortune already rolled this run): the Act I card on its own, the score swelling under it, then the pen. */
+function ActCard({ onDone, musicIn }: { onDone: () => void; musicIn: (at: number, vol: number, ms: number) => void }) {
+  useEffect(() => {
+    musicIn(0, 0.5, 1200)
+    const t = window.setTimeout(onDone, ACT_CARD_MS)
+    return () => window.clearTimeout(t)
+  }, [onDone, musicIn])
+  return null
 }
 
 /** Already rolled this run (a return visit): no sequence — straight to the pen after a beat. */

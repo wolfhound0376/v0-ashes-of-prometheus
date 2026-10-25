@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation"
 import { Check, DoorOpen, Eye, FlaskConical, Play, Swords, UserMinus, UserPlus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { setDmKey, clearDmKey } from "@/lib/dm-key"
+import { HomeButton } from "@/components/home-button"
 
 const ROLE_LS_KEY = "aop_access_role"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -54,6 +55,7 @@ export default function DmPage() {
   return (
     <div className="relative min-h-screen bg-[#0a0908] text-stone-200">
       <div className="pointer-events-none fixed inset-0 bg-[url('/images/intro-poster.webp')] bg-cover bg-center opacity-15" />
+      <HomeButton className="right-4" />
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_50%_0%,rgba(0,0,0,0.3)_0%,rgba(0,0,0,0.85)_60%,#0a0908_100%)]" />
       <div className="relative mx-auto w-full max-w-5xl px-4 pb-20 pt-10 sm:px-6">
         <div className="mb-8 text-center">
