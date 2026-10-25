@@ -31,6 +31,7 @@ import { useRouter } from "next/navigation"
 import { Camera, Check, ClipboardCopy, Mic, Play, RotateCcw, Square, Volume2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MusicToggle } from "@/components/music-toggle"
+import { HomeButton } from "@/components/home-button"
 import { useThemeAudio, fadeOutThemeAudio } from "@/components/theme-audio"
 import { LOOK_OPTIONS, describeSprite, type ForgeAssets, type SpriteJob, type VoiceChoice, type FaceChoice, cleanName } from "@/lib/forge-submission"
 
@@ -164,6 +165,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen bg-[#0a0908] text-stone-200">
       <MusicToggle />
+      <HomeButton />
       <div className="pointer-events-none fixed inset-0 bg-[url('/images/forge-creation-bg.webp')] bg-cover bg-center opacity-40" />
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_50%_20%,rgba(0,0,0,0.2)_0%,rgba(0,0,0,0.7)_60%,#0a0908_100%)]" />
       <div className="relative mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6">

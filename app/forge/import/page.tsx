@@ -20,6 +20,7 @@ import Link from "next/link"
 import { Anvil, ArrowLeft, Check, ClipboardCopy, Hammer, ScrollText, ShieldAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MusicToggle } from "@/components/music-toggle"
+import { HomeButton } from "@/components/home-button"
 
 interface ParsedPreview {
   name: string
@@ -185,6 +186,7 @@ export default function ForgePage() {
   return (
     <div className="min-h-screen bg-[#0a0908] text-stone-200">
       <MusicToggle />
+      <HomeButton />
       <div className="max-w-3xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

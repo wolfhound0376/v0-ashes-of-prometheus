@@ -20,6 +20,7 @@ import { Anvil, ArrowLeft, Check, ClipboardCopy, Music2, RefreshCw, ScrollText, 
 import { cn } from "@/lib/utils"
 import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 import { MusicToggle } from "@/components/music-toggle"
+import { HomeButton } from "@/components/home-button"
 import { isMusicOff, setMusicOff } from "@/lib/audio-prefs"
 
 const CHARACTER_LS_KEY = "aop_character_id"
@@ -282,6 +283,7 @@ export default function ForgeBuilderPage() {
   return (
     <div className="min-h-screen bg-[#0a0908] bg-[url('/images/forge-creation-bg.webp')] bg-cover bg-fixed bg-center text-stone-200">
       <MusicToggle />
+      <HomeButton />
       <div className="min-h-screen bg-[#0a0908]/75">
         <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
         {/* Header */}

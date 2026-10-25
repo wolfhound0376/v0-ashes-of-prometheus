@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, type FormEvent } from "react
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { MusicToggle } from "@/components/music-toggle"
+import { HomeButton } from "@/components/home-button"
 import { useThemeAudio } from "@/components/theme-audio"
 
 // The front door (Sam, 2026-10-14: "a cool dark screen that asks you who you are playing or if you
@@ -161,6 +162,7 @@ export default function JoinPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
       <MusicToggle />
+      <HomeButton />
       {/* the key art, far back in the dark */}
       <div className="pointer-events-none absolute inset-0 bg-[url('/images/intro-poster.webp')] bg-cover bg-center opacity-25" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.15)_0%,rgba(0,0,0,0.85)_70%,#000_100%)]" />
