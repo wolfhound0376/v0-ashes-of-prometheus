@@ -124,7 +124,7 @@ export default function TitleScreen() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
       <style>{`
-        @keyframes ttl-drift { from { transform: scale(1.02) translate3d(0,0,0) } to { transform: scale(1.09) translate3d(-1.5%,-1%,0) } }
+        @keyframes ttl-drift { from { transform: scale(1) } to { transform: scale(1.03) } }
         @keyframes ttl-ember { 0% { transform: translate3d(0,0,0) scale(1); opacity: 0 } 10% { opacity: .9 } 90% { opacity: .5 } 100% { transform: translate3d(var(--dx), -110vh, 0) scale(.3); opacity: 0 } }
         @keyframes ttl-rise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: translateY(0) } }
         @keyframes ttl-rule { from { transform: scaleX(0) } to { transform: scaleX(1) } }
@@ -135,9 +135,12 @@ export default function TitleScreen() {
         @media (prefers-reduced-motion: reduce) { .ttl-art, .ttl-ember, .ttl-menu > *, .ttl-rule { animation: none !important; } }
       `}</style>
 
-      {/* THE KEY ART — full bleed, drifting slowly, with the dark drawn in from the edges. */}
+      {/* THE KEY ART — the whole painting, never cropped (Sam, 2026-10-25: "the head of the lich is cut
+          off"). On a wide screen it stands at full height with a blurred copy of itself filling the
+          sides; on a phone it covers, because the menu sits over the bottom there anyway. */}
       <div className={cn("absolute inset-0 transition-opacity duration-1000", filmUp ? "opacity-0" : "opacity-100")}>
-        <div className="ttl-art absolute inset-0 bg-[url('/images/intro-poster.webp')] bg-cover bg-[center_30%] md:bg-[center_72%]" />
+        <div className="absolute inset-0 hidden scale-110 bg-[url('/images/intro-poster.webp')] bg-cover bg-center opacity-80 blur-2xl md:block" />
+        <div className="ttl-art absolute inset-0 bg-[url('/images/intro-poster.webp')] bg-cover bg-[center_30%] md:bg-contain md:bg-center md:bg-no-repeat" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(0,0,0,0)_0%,rgba(0,0,0,0.35)_55%,rgba(0,0,0,0.85)_100%)]" />
         <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent" />
         {/* embers */}
@@ -168,7 +171,7 @@ export default function TitleScreen() {
 
       {/* THE MENU — right of centre on a wide screen, below the art's focus on a phone. */}
       {stage === "title" && (
-        <div className={cn("absolute inset-0 flex items-end justify-center pb-[9vh] transition-opacity duration-500 md:items-center md:justify-end md:pb-0 md:pr-[8vw]", leaving ? "opacity-0" : "opacity-100")}>
+        <div className={cn("absolute inset-0 flex items-end justify-center pb-[9vh] transition-opacity duration-500 md:items-center md:justify-end md:pb-0 md:pr-[4vw]", leaving ? "opacity-0" : "opacity-100")}>
           <div className="ttl-menu relative w-[min(92vw,380px)]">
             {/* a soft scrim so the buttons read against the busiest part of the painting */}
             <div className="pointer-events-none absolute -inset-10 -z-10 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.85)_0%,rgba(0,0,0,0.55)_55%,transparent_78%)]" />
