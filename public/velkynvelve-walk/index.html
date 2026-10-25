@@ -2512,6 +2512,29 @@ function openBody(b){
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 function handOff(text){ try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", text}, "*"); } catch (e) {} }
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
+// WHO MOVES WHOM (Sam, 2026-10-25): "The DM is the only instance that can move characters that are not his" and a
+// player "CAN ONLY control his character on the dashboard UI and the pixel map." Everyone seated still walks together
+// on every screen (his ruling the same day); only the hero you play takes your clicks, keys and combat menu. The DM
+// moves anyone. The stand-alone preview (no game around it) is one person at a desk, so it moves everyone too.
+// `mySlug` is the walker of the claim this browser verified at boot.
+let mySlug = null;
+function canControl(a){
+  if (!a) return false;
+  if (!APP || isDm()) return true;
+  if (dmRun.has(a.id)) return false;
+  return !!mySlug && a.id === mySlug;
+}
+const heroName = a => (SHORT[a.id] || (SPR[a.id] && SPR[a.id].json.name) || "That hero");
+function notYours(a){ toast(dmRun.has(a.id) ? `${heroName(a)} is in the DM's hands.` : `${heroName(a)} belongs to another player — only they move them.`); }
+/** A leader change the PERSON asked for (a click, 1-4, Tab, Next hero): refused for a hero who is not theirs. */
+function pickLeader(a){ if (!canControl(a)){ notYours(a); return; } setLeader(a); }
+/** The hero this browser may move right now: the leader if theirs, else their own hero takes the lead back. */
+function ownLeader(){
+  if (canControl(leader)) return leader;
+  const own = party.find(p => p.id === mySlug && !p.ko);
+  if (own){ setLeader(own); return own; }
+  return null;
+}
 function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === PEN_KEY)); }
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
 function unlockGate(forced){
@@ -3965,6 +3988,10 @@ function nextTurn(first){
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
+  // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
+  // rather than freeze this one on a turn its player cannot take, that hero fights on its own the way the freed
+  // prisoners do. The DM's screen drives every hero. (Sam, 2026-10-25: only the DM moves a hero who is not his.)
+  if (a.kind === "pc" && !canControl(a)){ log(`${fname(a)} acts on their own instincts here — their player drives them on their own screen.`); allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
   // say bard", then "Please remove the bell between players as the system move to the active player")
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
@@ -4161,7 +4188,7 @@ function renderExploreBar(){
   const sh = SHEETS[leader.id];
   if (sh && (sh.magic || sh.caster)) add("Cast", "✦", "cast-spell", wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => startCombat([o.foe], `${who} attacks!`), "end");
-  if (party.length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const i = party.indexOf(leader); setLeader(party[(i + 1) % party.length]); });
+  if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
   if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
     const q = new URLSearchParams({view: "full", from: "map", return: "/velkynvelve", area: node.name, as: PLAYS_AS[leader.id] || ""});
@@ -4332,7 +4359,7 @@ function fireDarts(a){
 function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && cbt.phase === "move"){ openMenu(activeActor()); } }
 function combatClick(w){
   if (!cbt || combatBusy) return;
-  const a = activeActor(); if (!a || a.kind !== "pc") return;
+  const a = activeActor(); if (!a || a.kind !== "pc" || !canControl(a)) return;
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
@@ -7032,7 +7059,7 @@ function click(w){
     const pile = !hitActor(npcs, w) ? pileAt(w) : null;
     if (pile){ const me0 = leader; walkTo(nearestWalkable(pile.x, pile.y + 8), () => pickUp(me0, pile)); return; }
     const me = hitActor(party, w);
-    if (me && me !== leader){ setLeader(me); return; }
+    if (me && me !== leader){ pickLeader(me); return; }
     const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
     if (liftAt(w)){ walkTo(nearestWalkable(node.lift.spool[0], node.lift.spool[1]), () => openLift()); return; }
     const ls = !hitActor(npcs, w) ? lootSpotAt(w) : null; if (ls){ const lc = lootCenter(ls); walkTo(nearestWalkable(lc.x, lc.y), () => openLootSpot(ls)); return; }
@@ -7046,7 +7073,7 @@ function click(w){
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
 function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); return nearestWalkable(n.x + d.x * 80, n.y + d.y * 80); }
-function walkTo(p, cb){ if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
 $("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyView(); };
@@ -7065,8 +7092,8 @@ addEventListener("keydown", e => {
   }
   if (MOVE_KEYS.has(e.code) && (mode === "explore" || mode === "combat")){ keys.add(e.code); e.preventDefault(); unlockAudio(); }
   if (mode === "explore"){
-    if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) setLeader(a); }
-    if (e.code === "Tab"){ e.preventDefault(); const i = party.indexOf(leader); setLeader(party[(i + (e.shiftKey ? party.length - 1 : 1)) % party.length]); }
+    if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) pickLeader(a); }
+    if (e.code === "Tab"){ e.preventDefault(); const mine = party.filter(canControl); if (mine.length > 1){ const i = mine.indexOf(leader); setLeader(mine[(i + (e.shiftKey ? mine.length - 1 : 1)) % mine.length]); } }
     if (e.code === "KeyE" || e.code === "Space"){ e.preventDefault(); interact(); }
   } else if (mode === "combat"){ if (e.code === "Enter" && !e.target.closest("button")){ if (cbt && cbt.phase === "target" && cbt.pend && cbt.pend.darts && cbt.pend.darts.length) fireDarts(activeActor()); else nextTurn(); } if (e.key === "Escape") cancelAim(); }
   if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
@@ -7090,9 +7117,12 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
+function toggleDm(on){ if (on && APP && !isDm()) return; $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
 $("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
+// The DM tools are the DM's (Sam, 2026-10-25). A player's screen never shows the button; the server-backed tools
+// were already refused without the DM code, but the local ones (jump, gate, start a fight, ambush) ran for anyone.
+if (APP && !isDm()) $("dmBtn").hidden = true;
 $("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v : v; /* "10b" is a plate too */ if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
@@ -7830,7 +7860,7 @@ function toggleBag(on, who){
   $("inv").hidden = !on; $("bagBtn").setAttribute("aria-expanded", String(on));
 }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
-function bagCan(a){ return !inFightNow() || (a === activeActor() && !combatBusy && !a.down); }
+function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
 function renderBag(){
   const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
@@ -8376,7 +8406,7 @@ function update(dt){
   if (mode === "explore" && leader){
     const last = trail[trail.length - 1];
     if (!last || Math.hypot(leader.x - last.x, leader.y - last.y) > 6){ trail.push({x: leader.x, y: leader.y}); if (trail.length > 500) trail.shift(); }
-    keyboardMove(leader, dt);
+    if (canControl(leader)) keyboardMove(leader, dt);
     tickCreatures();
     tickGateWatch();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
@@ -8420,7 +8450,7 @@ function update(dt){
         if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
     }
   }
-  if (mode === "combat" && !combatBusy) keyboardMove(activeActor(), dt);
+  if (mode === "combat" && !combatBusy && canControl(activeActor())) keyboardMove(activeActor(), dt);
   // idle life: whoever you're not moving potters about, like at camp
   if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
   if (now - (renderExploreBar.at || 0) > 250){ renderExploreBar.at = now; renderExploreBar(); }
@@ -8456,6 +8486,7 @@ function frame(t){
       if (id && token){
         const v = await fetch("/api/verify-claim", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({characterId: id, claimToken: token})}).then(r => r.json());
         if (v && v.valid && v.character) mine = seatedSlugs([v.character])[0] || null;
+        mySlug = mine;
       }
     } catch (e) {}
     try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
@@ -8473,7 +8504,7 @@ function frame(t){
     if (saved.cur === 9) applyInPool(); else state.inPool = [];
   } else {
     if (mine) leader = {id: mine};
-    await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
+    await enterNode(11, {spawn: {x: 1560, y: 960}, note: (!APP || isDm()) ? "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere." : "You wake in the slave pen. The gate is locked."});
   }
   booted = true;
   // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,
