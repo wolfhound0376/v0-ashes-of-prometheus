@@ -426,6 +426,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
         <button class="btn" id="dmCloud">Place it: click the floor</button>
       </div>
       <button class="btn" id="dmCombat">Start a fight here</button>
+      <div class="dmCloudRow" id="dmGrudgeRow">
+        <label><select id="dmGrudgeBy" aria-label="Who turns on them"></select></label>
+        <label>beats <select id="dmGrudgeAt" aria-label="Who they beat"></select></label>
+        <label>says <input id="dmGrudgeLine" style="width:11em" value="You're an idiot." aria-label="What they say over the body"></label>
+        <button class="btn" id="dmGrudge">Turn on them (knock out, not kill)</button>
+        <button class="btn" id="dmWake" hidden>Wake the knocked out (1d4 hours pass)</button>
+      </div>
       <label class="dmMood">Fight music <select id="dmMood" aria-label="Fight music">
         <option value="auto">Auto (by the odds)</option><option value="regular">Regular</option><option value="scary">Scary</option>
         <option value="boss">Boss</option><option value="overwhelming">Overwhelming odds</option></select></label>
@@ -1594,7 +1601,7 @@ function setLeader(a){
   leader = a; trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: a.x, y: a.y}]);
   renderParty(); log(`Now moving <em>${esc(SHORT[a.id] || SPR[a.id].json.name)}</em>. The others stay put until the party leaves.`);
 }
-const followers = () => party.filter(p => p !== leader);
+const followers = () => party.filter(p => p !== leader && !p.ko);
 function followOrder(){ return followers().sort((a, b) => Math.hypot(a.x - leader.x, a.y - leader.y) - Math.hypot(b.x - leader.x, b.y - leader.y)); }
 
 // ---------- travel ----------
@@ -3024,17 +3031,19 @@ let cbt = null;                                   // the running fight
 const activeActor = () => cbt ? cbt.order[cbt.idx] : null;
 let combatBusy = false;
 function fighterFor(a){
-  const s = a.kind === "pc" ? SHEETS[a.id] : a.ally ? ALLY_SHEETS[a.id] : FOE_BLOCKS[a.id];
-  const own = a.kind === "pc" || a.ally;
+  // an ally who turns on the party (DM tools → Turn on them) still fights with his own block, not a stand-in's
+  const turned = a.kind !== "pc" && !a.ally && !FOE_BLOCKS[a.id] && !!ALLY_SHEETS[a.id];
+  const s = a.kind === "pc" ? SHEETS[a.id] : a.ally || turned ? ALLY_SHEETS[a.id] : FOE_BLOCKS[a.id];
+  const own = a.kind === "pc" || a.ally || turned;
   const hpMax = own ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = own ? s.hp : (a.hp ?? hpMax);
   return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
-function startCombat(foeIds, label){
+function startCombat(foeIds, label, opts = {}){
   if (mode !== "explore") return;
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
-  const allies = alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
+  const allies = opts.noAllies ? [] : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
   hoverZone = null; tip.hidden = true;
   const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
   let dir;
@@ -4134,6 +4143,12 @@ function damage(t, n, type, crit, from, magical = false){
     return;
   }
   const over = n - t.c.hp;
+  // KNOCKING A CREATURE OUT (SRD 5.1, Combat: "When an attacker reduces a creature to 0 hit points with a melee attack,
+  // the attacker can knock the creature out ... The creature falls unconscious and is stable"). The DM's grudge fight
+  // (DM tools → Turn on them) always takes it. Claude's reading, flagged: the knockout is chosen the instant the damage is
+  // dealt, so it comes before the massive-damage rule — the blow is pulled, not lethal.
+  const koNow = t.kind === "pc" && n >= t.c.hp && t.c.hp > 0 && cbt && cbt.grudge && cbt.grudge.att === from && cbt.grudge.tgt === t && feetBetween(from, t) <= 10;
+  if (koNow) t.ko = true;
   // A COLD KILL LEAVES AN ICED CADAVER (Sam, 2026-10-24: "Ray of frost should leave dead people like icicles or iced
   // cadavers"): anyone but a hero who is brought to 0 by cold damage does not fall — they stop where they stand, in the
   // frame they were in, rimed over, icicles hanging off them. The body is still a body: it can be searched like any other.
@@ -4152,7 +4167,7 @@ function damage(t, n, type, crit, from, magical = false){
     if (t.kind !== "pc" && !/ooze/.test(t.id)){ const fr = frameOf(t); t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + DEATH_TOUCH_SWAP_MS}; } }
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
-  if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
+  if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax && !koNow){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
   t.flash = now + 180; t.flashCol = "#fff";
   popText(t, String(n), crit ? "#ffd166" : hero(t) ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
@@ -4230,7 +4245,7 @@ function fall(t){
   if (t.c.rage) endRage(t, "knocked unconscious");
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
-  if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: false, dead: false};
+  if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: !!t.ko, dead: false};
   const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_downed" : cs && cs.death ? cs.death : "creature/death_beast", .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
@@ -4244,7 +4259,8 @@ function fall(t){
   { const fz = t.iced || (t.cadaver && t.cadaver.frozen), dn = hero(t) && !t.withered;
     popText(t, dn ? "down" : t.withered ? "withered" : fz ? "frozen" : "slain", dn ? "#ff6b5e" : t.withered ? "#b6f04a" : fz ? "#bfe9ff" : "#ffd166", 1.3); } hitstop(160); shake(10);
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
-    const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
+    if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
+    else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
   renderTurns();
   if (cbt && activeActor() === t) passWhenSettled(t);
@@ -4399,7 +4415,9 @@ function foeTurn(f){
   // someone it can see if it can (no wall between them); otherwise the nearest, and it goes round with its blade
   const inSight = seen0.filter(p => !coverOf(f, p).total), blind = !inSight.length && seen0.length > 0;
   const seen = inSight.length ? inSight : seen0;
-  const tgt = f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  if (cbt && cbt.grudge && cbt.grudge.att === f && (cbt.grudge.done || cbt.grudge.tgt.down)){ setTimeout(() => passTurn(f), 400); return; }   // the score is settled: he does not go looking for another
+  const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
+  const tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
@@ -4552,7 +4570,7 @@ function endCombat(won){
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
-    party.forEach(p => { if (p.down && !(p.c && p.c.ds && p.c.ds.dead)){ p.down = false; setAnim(p, "idle"); if (p.c){ p.c.hp = 1; p.c.ds = null; } } });
+    party.forEach(p => { if (p.down && !p.ko && !(p.c && p.c.ds && p.c.ds.dead)){ p.down = false; setAnim(p, "idle"); if (p.c){ p.c.hp = 1; p.c.ds = null; } } });
     // the allies the same way as the party (knocked down, not killed — the DM core rules on wounds), then back to
     // being people on the plate, standing where the fight left them
     allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
@@ -5976,7 +5994,7 @@ function click(w){
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
 function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); return nearestWalkable(n.x + d.x * 80, n.y + d.y * 80); }
-function walkTo(p, cb){ stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+function walkTo(p, cb){ if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
 $("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyView(); };
@@ -6020,7 +6038,7 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
+function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
 $("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 $("dmClose").onclick = () => toggleDm(false);
@@ -6113,6 +6131,61 @@ $("dmCombat").onclick = () => { toggleDm(false); if (mode !== "explore") return;
 $("dmMood").value = dmMood;
 $("dmMood").onchange = e => { dmMood = e.target.value; try { localStorage.setItem("vk-fight-music", dmMood); } catch (er) {}
   if (mode === "combat"){ pickCombatTrack(moodFor(foes)); toast(`Fight music: ${MOOD_LABEL[combatMood]}`); } else toast(dmMood === "auto" ? "Fight music follows the odds." : `Next fight's music: ${MOOD_LABEL[dmMood]}`); };
+// TURN ON THEM (Sam, 2026-10-25: "have ront kill kingasaur in the game with his pixel art attacking him until he is
+// unconscious. Let him say 'You're an idiot'"). The DM picks someone on the plate who fights (an ally with a sheet: Ront,
+// Eldeth, Derendil, Sarith) and a hero. The ally turns hostile and the fight is rolled like any other — initiative, real
+// attack rolls, his own swing animations — but he goes only for that one, the other allies stand aside, and the blow
+// that drops the hero is a knockout (damage(), SRD 5.1 "Knocking a Creature Out"). Then he stands over them, says the
+// line in his own voice, and stands down: back to being a person on the plate. The hero stays down, stable, until
+// healed or until the DM wakes them (1d4 hours, SRD). The other players may still act on their turns: that is theirs.
+function dmGrudgeLists(){
+  const by = $("dmGrudgeBy"), at = $("dmGrudgeAt"), pb = by.value, pa = at.value; by.innerHTML = ""; at.innerHTML = "";
+  for (const n of npcs) if (ALLY_SHEETS[n.id] && !n.down && !n.offStage && !n.backdrop && actors.includes(n)){ const o = document.createElement("option"); o.value = n.id; o.textContent = SHORT[n.id] || SPR[n.id].json.name; by.appendChild(o); }
+  for (const p of party) if (!p.down){ const o = document.createElement("option"); o.value = p.id; o.textContent = fname(p); at.appendChild(o); }
+  if ([...by.options].some(o => o.value === pb)) by.value = pb; else if ([...by.options].some(o => o.value === "ront")) by.value = "ront";
+  if ([...at.options].some(o => o.value === pa)) at.value = pa;
+  $("dmWake").hidden = !party.some(p => p.ko);
+}
+$("dmGrudgeBy").onfocus = dmGrudgeLists; $("dmGrudgeAt").onfocus = dmGrudgeLists;
+$("dmGrudge").onclick = () => {
+  if (mode !== "explore"){ toast("Only outside a fight."); return; }
+  dmGrudgeLists();
+  const att = npcs.find(n => n.id === $("dmGrudgeBy").value), tgt = party.find(p => p.id === $("dmGrudgeAt").value);
+  if (!att){ toast("Nobody here to do it: Ront, Eldeth, Derendil or Sarith must be on this plate."); return; }
+  if (!tgt){ toast("Pick who they beat."); return; }
+  toggleDm(false);
+  const line = $("dmGrudgeLine").value.trim();
+  att.hostile = true; att.talking = false;
+  startCombat([att], `${SHORT[att.id] || fname(att)} turns on ${fname(tgt)}.`, {noAllies: true});
+  if (!cbt){ att.hostile = false; return; }
+  cbt.grudge = {att, tgt, line};
+  narrate(att, `${SHORT[att.id] || fname(att)} rounds on ${fname(tgt)}.`);
+};
+function settleGrudge(t){
+  const g = cbt && cbt.grudge; if (!g || g.tgt !== t || g.done) return;
+  const att = g.att; g.done = true;
+  setTimeout(() => {
+    if (!cbt || !actors.includes(att) || att.down) return;
+    att.face = faceOf(t.x - att.x, t.y - att.y); setAnim(att, "idle");
+    if (g.line) bark(att, g.line, 4200, {voice: true});
+    setTimeout(() => {
+      if (!cbt) return;
+      // he stands down: no longer a foe (endCombat would fade the living foes out), back among the people on the plate
+      foes = foes.filter(f => f !== att); att.kind = "npc"; att.hostile = false; att.ally = false; att.path = [];
+      att.home = {x: att.x, y: att.y}; att.post = {x: att.x, y: att.y}; if (!npcs.includes(att)) npcs.push(att);
+      log(`<em>${SHORT[att.id] || fname(att)} stands down.</em>`);
+      endCombat(false);
+      setTimeout(dmGrudgeLists, 900);
+    }, 3600);
+  }, 1100);
+}
+$("dmWake").onclick = () => {
+  const out = party.filter(p => p.ko); if (!out.length) return;
+  const h = Math.floor(Math.random() * 4) + 1;
+  for (const p of out){ p.ko = false; p.down = false; if (p.c){ p.c.hp = 1; p.c.ds = null; } setAnim(p, "idle"); }
+  log(`${h} hour${h > 1 ? "s" : ""} pass. ${out.map(fname).join(", ")} come${out.length > 1 ? "" : "s"} round with 1 HP.`);
+  renderParty(); $("dmWake").hidden = true;
+};
 $("dmTalk").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   const n = npcs.find(a => a.talk);
   if (n){ state.talked[n.id] = false; state.declined[n.id] = false; openTalk(n); }
@@ -6993,7 +7066,7 @@ function keyDir(){
   return x || y ? {x, y} : null;
 }
 function keyboardMove(a, dt){
-  if (!a || a.kind !== "pc" || a.once) return;
+  if (!a || a.kind !== "pc" || a.once || a.ko) return;
   const kd = keyDir();
   if (!kd){ if (a.kbd){ a.kbd = false; a.kbdOut = false; if (a.anim === "walk") setAnim(a, "idle");
       if (mode === "combat" && cbt && a === activeActor() && cbt.phase === "menu") openMenu(a); }   // the menu's "ft left" catches up
