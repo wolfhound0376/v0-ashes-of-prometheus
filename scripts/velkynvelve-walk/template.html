@@ -1146,7 +1146,7 @@ function draw(){
     if (sp){ a.kx -= sp.ox; a.ky -= sp.oy; }
   }
   while (cloudQ.length) drawPuff(cloudQ.shift());
-  if (mode === "combat") drawFxLayer(false);
+  drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawCombatFx(); drawShots();
   ctx.globalAlpha = 1;
 }
@@ -2551,8 +2551,10 @@ async function vfxLoad(name){
   } catch (e) { return null; }
 }
 // spawn a sheet: at an actor (follows it) or a point; `sq` = width in 5-ft squares; flat = laid on the ground
+// `always`: plays whether or not a fight is on, and keeps playing when one ends under it. Everything else is a
+// fight's effect and is drawn only while the fight lasts, as before.
 async function spawnFx(name, o){
-  const v = await vfxLoad(name); if (!v || !cbt) return null;
+  const v = await vfxLoad(name); if (!v || (!cbt && !o.always)) return null;
   const e = Object.assign({name, m: v.m, img: v.img, t0: now, sq: 2, flat: false, spin: 0, lift: 0, alpha: 1, loop: v.m.loop && !o.once}, o);
   fx.push(e); return e;
 }
@@ -2676,7 +2678,7 @@ function drawPuff(q){
 function fxPos(e){ const a = e.at; if (a && a.id){ const sc = actorScale(a), m = SPR[a.id].json; return {x: a.x, y: a.y, top: a.y - m.pivot[1] * sc, mid: a.y - m.pivot[1] * sc * .55, ref: a}; } return {x: e.x, y: e.y, top: e.y - 40, mid: e.y - 20, ref: null}; }
 function drawFxLayer(flat){
   for (let i = fx.length - 1; i >= 0; i--){
-    const e = fx[i]; if (!!e.flat !== flat) continue;
+    const e = fx[i]; if (!!e.flat !== flat || (mode !== "combat" && !e.always)) continue;
     if (e.drift){                                                      // travels: an orb from the caster's hands to the ally
       const k = Math.min(1, (now - e.t0) / e.drift.ms), s = k * k * (3 - 2 * k), A = e.drift.from, B = e.drift.to;
       const am = SPR[A.id].json, bm = SPR[B.id].json, ax = A.x, ay = A.y - am.pivot[1] * actorScale(A) * .6, bx = B.x, by = B.y - bm.pivot[1] * actorScale(B) * .55;
@@ -3091,7 +3093,9 @@ function pickCadaver(a){
 const DEATH_TOUCH_SWAP_MS = 1000;
 function deathTouch(t){
   const m = SPR[t.id].json, figure = m.pivot[1] * actorScale(t), sq = figure * 1.55 / (ftPx(t) * 5);   // the art's figure fills ~2/3 of its cell
-  spawnFx("deathTouch", {at: t, sq, anchor: "base", once: true});
+  // `always`: the last foe's death ends the fight 0.6 s later, and the blaze must not be cut off with it; and a kill
+  // Malachar makes outside a fight ([NPC_DAMAGE: Name 12 necrotic]) plays the same way (witherOutside, below)
+  spawnFx("deathTouch", {at: t, sq, anchor: "base", once: true, always: true});
   // its own sound (Sam, 2026-10-25: "create a matching necrotic sound effect"): 2.4 s, the ghost-fire swelling in,
   // peaking with the blaze, the bones going down at about a second, the ash hiss trailing out (public/sfx/walk)
   bank("walk:death-touch", .85);
@@ -3099,6 +3103,16 @@ function deathTouch(t){
     const sp = cadaverSpecies(t.id), base = sp ? CADAVER_SETS[sp].sq : 1.2 * Math.max(1, t.big || 1);
     t.cadaver = {key: "skeleton-scattered", sq: base, flip: Math.random() < .5, t0: t.withered.swap};
   }
+}
+// A NECROTIC KILL OUTSIDE A FIGHT (Sam, 2026-10-25: "A necrotic kill should be the same even out of combat"). Malachar
+// kills on the dashboard: [NPC_DAMAGE: Name 12 necrotic] puts the cause on the stage roster's `gone` entry, and the map
+// reads it here. Same as in a fight: frozen in the last frame, the blaze, withered to the bone pile, which stays.
+function witherOutside(t){
+  if (t.withered || t.cadaver) return;
+  if (/ooze/.test(t.id)){ t.path = []; t.down = true; t.deadT0 = now; deathTouch(t); return; }
+  const fr = frameOf(t); t.path = []; t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + DEATH_TOUCH_SWAP_MS};
+  t.down = true; deathTouch(t);
+  popText(t, "withered", "#b6f04a", 1.3); log(`<b>${fname(t)}</b> withers to bones.`);
 }
 const heroes = () => [...party, ...(cbt ? cbt.allies : [])];
 // Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
@@ -5135,10 +5149,11 @@ function creatureCrosses(slug){
   };
   if (!f.path.length) f.onArrive();
 }
-function creatureLeaves(slug, dead){
+function creatureLeaves(slug, dead, cause){
   const f = creatures.get(slug); if (!f) return;
   creatures.delete(slug);
   const gone = () => { f.fading = true; setTimeout(() => { npcs = npcs.filter(n => n !== f); foes = foes.filter(n => n !== f); actors = actors.filter(n => n !== f); }, 1200); };
+  if (dead && cause === "necrotic"){ witherOutside(f); narrate(f, `${f.creature.name} withers to bones.`); return; }   // the bones stay to be searched
   if (dead){ f.path = []; f.down = true; playOnce(f, "dead", () => { setTimeout(gone, 2500); }); narrate(f, `${f.creature.name} is dead.`); return; }
   const a = arrivalFor(slug); f.path = findPath(f, nearestWalkable(a.from.x, a.from.y)); f.onArrive = gone;
   narrate(f, `${f.creature.name} slides away.`);
@@ -5198,13 +5213,13 @@ async function pollStage(){
       if (!creatures.has(c.slug) && await loadSpriteManifest(c.slug)) creatureArrives(c);
       const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; if (c.inside && !f.inside) creatureCrosses(c.slug); }
     }
-    for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)))){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead)); }
+    for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)))){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead), g && g.cause); }
     // the cast: off the plate when the game says they have gone, back when it says they are here;
     // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
     for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature)){
       const here = present.find(c => stageMatch(c, n.id));
       const off = gone.some(g => stageMatch(g, n.id)) && !here;
-      if (off){ n.stroll = null; if (!n.offStage) castLeaves(n, !!gone.find(g => stageMatch(g, n.id)).dead); }   // gone in the story: not just out for a walk
+      if (off){ n.stroll = null; if (!n.offStage){ const g = gone.find(g => stageMatch(g, n.id)); castLeaves(n, !!g.dead, false, g.cause); } }   // gone in the story: not just out for a walk
       else if (n.offStage && !n.stroll) castReturns(n);                    // a guard out for a walk comes back on their own clock
       if (!n.offStage){ castMovesTo(n, here ? here.where : null); castAsks(n, here ? here.wantsWord : null); }
     }
@@ -5289,8 +5304,9 @@ function plateEdge(a){
   const c = [{x: -120, y: a.y}, {x: NAT_W + 120, y: a.y}, {x: a.x, y: -120}, {x: a.x, y: NAT_H + 120}];
   return c.sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0];
 }
-function castLeaves(n, dead, quiet){
+function castLeaves(n, dead, quiet, cause){
   n.offStage = true; n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n); n.talk = false;
+  if (dead && cause === "necrotic"){ witherOutside(n); narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} withers to bones.`); return; }
   if (dead){ n.path = []; n.down = true; if (SPR[n.id].img.dead) playOnce(n, "dead", () => {}); else n.deadT0 = now; narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} is dead.`); return; }
   // out of the pen by its gate, not through its wall: a prisoner the story takes away walks to the bars and is gone
   const gate = cur === 11 && walkable(n.x, n.y) ? doorGate() : null;

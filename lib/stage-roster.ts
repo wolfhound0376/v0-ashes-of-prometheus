@@ -22,6 +22,11 @@ export type StageEntry = {
   hpMax: number | null
   since: string
   dead?: boolean
+  /**
+   * What killed them, when Malachar's [NPC_DAMAGE: Name 12 necrotic] named a damage type on the killing blow.
+   * The map draws some deaths by it (Sam, 2026-10-25: a necrotic kill withers to bones, in a fight or out of one).
+   */
+  cause?: string | null
   /** Where in the area Malachar last put them, in his words ("on the bridge", "inside the pen"). */
   where?: string | null
   /** Inside the party's own space (the pen) — the map's threshold. Set by [NPC_MOVE:] wording. */
@@ -65,7 +70,7 @@ async function writeStage(db: SupabaseClient, stage: Stage) {
 
 export type StageEvent =
   | { kind: "arrive"; name: string; aliases?: string[] | null; hp?: number | null; hpMax?: number | null }
-  | { kind: "leave"; name: string; dead: boolean }
+  | { kind: "leave"; name: string; dead: boolean; cause?: string | null }
   | { kind: "move"; area: string }
   | { kind: "place"; name: string; where: string }
   | { kind: "wantsWord"; name: string; who: string | null }
@@ -131,7 +136,7 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
       } else {
         const prev = stage.present[slug] ?? stage.gone[slug]
         delete stage.present[slug]
-        stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead, wantsWord: null }
+        stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead, cause: e.dead ? (e.cause ?? prev?.cause ?? null) : null, wantsWord: null }
       }
     }
     await writeStage(db, stage)
