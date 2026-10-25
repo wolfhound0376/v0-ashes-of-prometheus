@@ -27,9 +27,8 @@ import { SettingsSheet } from "@/components/settings-sheet"
 import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 
-/** Where the small "Dungeon Master" link goes. The DM gate page lands in its own lane; until then the
- *  door at /join still has the DM code behind it. */
-const DM_HREF = "/join"
+/** Where the small "Dungeon Master" link goes: the DM door (/dm) — code, then the table. */
+const DM_HREF = "/dm"
 const FILM_SEEN_KEY = "aop_title_film_seen" // sessionStorage: the film plays once per browser session
 
 type Stage = "film" | "title"
