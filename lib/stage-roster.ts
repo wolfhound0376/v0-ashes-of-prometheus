@@ -40,23 +40,41 @@ export type StageEntry = {
    */
   wantsWord?: { who: string | null; since: string } | null
 }
+/**
+ * The outpost's watch on the party (Sam, 2026-10-25: "If there is a guard rotation then they must perform a change.
+ * If they leave it unattended they all MUST be gone"). `posted`: the guards are at their posts. `changing`: one
+ * watch hands over to the next (the map walks the old pair off and the relief on). `unattended`: nobody is at the
+ * posts — every guard and Jorlan off the plate until the watch is posted again. `since` lets the map play a
+ * change once, however many times it polls.
+ */
+export type WatchState = "posted" | "changing" | "unattended"
+export type Watch = { state: WatchState; since: string } | null
+/**
+ * The pen gate as the story has it. The map has its own lock for what the party does with their hands; this is
+ * what happens to the gate from OUTSIDE — Jorlan leaving it unlocked, a guard swinging it open — so the door
+ * answers the story with no DM button (Sam, 2026-10-25: "I shouldn't have to as the DM prompt the door to escape").
+ */
+export type GateState = "locked" | "unlocked" | "open"
+export type Gate = { state: GateState; since: string } | null
 export type Stage = {
   area: string | null
   present: Record<string, StageEntry>   // by slug
   gone: Record<string, StageEntry>      // left or died here, so the map walks them off
+  watch?: Watch                         // optional: a stage written before 2026-10-25 has neither
+  gate?: Gate
   updatedAt: string
 }
 
 export const slugOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 
-const empty = (): Stage => ({ area: null, present: {}, gone: {}, updatedAt: new Date().toISOString() })
+const empty = (): Stage => ({ area: null, present: {}, gone: {}, watch: null, gate: null, updatedAt: new Date().toISOString() })
 
 export async function readStage(db: SupabaseClient): Promise<Stage> {
   const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", STAGE_FLAG).maybeSingle()
   const v = data?.value
   if (!v || typeof v !== "object" || Array.isArray(v)) return empty()
   const s = v as Partial<Stage>
-  return { area: s.area ?? null, present: s.present ?? {}, gone: s.gone ?? {}, updatedAt: s.updatedAt ?? new Date().toISOString() }
+  return { area: s.area ?? null, present: s.present ?? {}, gone: s.gone ?? {}, watch: s.watch ?? null, gate: s.gate ?? null, updatedAt: s.updatedAt ?? new Date().toISOString() }
 }
 
 async function writeStage(db: SupabaseClient, stage: Stage) {
@@ -75,6 +93,35 @@ export type StageEvent =
   | { kind: "place"; name: string; where: string }
   | { kind: "wantsWord"; name: string; who: string | null }
   | { kind: "heard"; name: string }
+  | { kind: "watch"; state: WatchState }
+  | { kind: "gate"; state: GateState }
+
+/** [WATCH: change | unattended | posted] — the words Malachar may use, to the one state the map knows. */
+export function watchStateOf(word: string): WatchState | null {
+  const w = word.toLowerCase().trim()
+  if (/^(change|changing|changes|shift|shift[- ]change|rotation|rotate|relief|relieved)$/.test(w)) return "changing"
+  if (/^(unattended|empty|abandoned|away|gone|left|deserted|unguarded|unmanned)$/.test(w)) return "unattended"
+  if (/^(posted|back|return|returned|returns|guarded|manned|on duty|on watch)$/.test(w)) return "posted"
+  return null
+}
+/** [GATE: unlocked | open | locked]. */
+export function gateStateOf(word: string): GateState | null {
+  const w = word.toLowerCase().trim()
+  if (/^(unlocked|left unlocked|unbarred)$/.test(w)) return "unlocked"
+  if (/^(open|opened|ajar|wide open|swung open)$/.test(w)) return "open"
+  if (/^(locked|shut|closed|barred|relocked)$/.test(w)) return "locked"
+  return null
+}
+/** Every [WATCH:] and [GATE:] tag in a reply, in order, as stage events. Unknown words are dropped, not guessed. */
+export function watchAndGateTags(text: string): StageEvent[] {
+  const out: StageEvent[] = []
+  for (const m of text.matchAll(/\[(WATCH|GATE):\s*([^\]]+)\]/gi)) {
+    const st = m[1].toUpperCase() === "WATCH" ? watchStateOf(m[2]) : gateStateOf(m[2])
+    if (!st) continue
+    out.push(m[1].toUpperCase() === "WATCH" ? { kind: "watch", state: st as WatchState } : { kind: "gate", state: st as GateState })
+  }
+  return out
+}
 
 /** "inside the pen", "through the bars", "in the cell" → inside the party's space; "bridge", "outside", "beyond the gate" → not. */
 export function isInsideWording(where: string): boolean {
@@ -97,9 +144,19 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
     const now = new Date().toISOString()
     for (const e of events) {
       if (e.kind === "move") {
-        // A new area: the story places its own cast there, and Malachar's tags fill in the rest.
-        if (stage.area && stage.area.toLowerCase() !== e.area.toLowerCase()) { stage.present = {}; stage.gone = {} }
+        // A new area: the story places its own cast there, and Malachar's tags fill in the rest. The watch is the
+        // old area's; the gate is the pen's and stays what it was (a gate left open does not shut behind them).
+        if (stage.area && stage.area.toLowerCase() !== e.area.toLowerCase()) { stage.present = {}; stage.gone = {}; stage.watch = null }
         stage.area = e.area
+        continue
+      }
+      if (e.kind === "watch") {
+        if (stage.watch?.state !== e.state || e.state === "changing") stage.watch = { state: e.state, since: now }
+        continue
+      }
+      if (e.kind === "gate") {
+        // a gate already open is not "unlocked" again by a later line that only remembers it was left unlocked
+        if (!(e.state === "unlocked" && stage.gate?.state === "open") && stage.gate?.state !== e.state) stage.gate = { state: e.state, since: now }
         continue
       }
       const slug = slugOf(e.name)
