@@ -114,8 +114,11 @@ export default function JoinPage() {
           window.localStorage.setItem(ROLE_LS_KEY, "dm")
           window.localStorage.removeItem(TOKEN_LS_KEY)
           window.localStorage.setItem(FORGE_KEY_LS_KEY, code.trim())
+          // Mint the DM session cookie too (best-effort), then the table: who is seated, who is
+          // waiting at the Forge, Begin session or Rehearsal (/dm).
+          await fetch("/api/dm/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }).catch(() => {})
           setStatus("welcome")
-          setTimeout(() => router.replace("/"), 900)
+          setTimeout(() => router.replace("/dm"), 900)
           return
         }
 
