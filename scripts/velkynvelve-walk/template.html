@@ -2775,7 +2775,8 @@ function startCombat(foeIds, label){
   const order = [...party, ...allies, ...foes].filter(a => !a.down);
   for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
-  cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null};
+  cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
+    id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
   bank("ui/initiative_start", .8);
@@ -3983,7 +3984,7 @@ function endCombat(won){
   if (balcony()) buildGrid();
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
-  const allies = cbt ? cbt.allies : [];
+  const allies = cbt ? cbt.allies : [], fightId = cbt ? cbt.id : null;
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby();
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
@@ -3997,6 +3998,7 @@ function endCombat(won){
     bank("ui/victory", .9);
     setTimeout(() => victoryBanner(`${xp} XP`, `${slain.map(f => fname(f)).join(", ")} slain · ${Math.floor(xp / live)} each`), 300);
     log(`<b>Victory.</b> ${xp} XP (${Math.floor(xp / live)} each).`);
+    payXp(fightId, slain);
   }
   setTimeout(() => {
     for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = `${cur}-${Math.round(f.x)}-${Math.round(f.y)}`; npcs.push(f); }
@@ -4014,6 +4016,29 @@ function endCombat(won){
   }, 700);
 }
 $("endCombat").onclick = () => endCombat(false);
+
+// XP ONTO THE SHEETS (Sam, 2026-10-24: "I just went up 300XP and didn't go up a level"). The banner above used to
+// be the whole of it: nothing was written, so every sheet stayed at 0. /api/walk-xp now pays the win: split evenly
+// across the party's player characters (NPC companions get no share — Sam, 2026-09-27), once per fight. Levelling
+// is still done at camp (camp house rules, 2026-09-26); the map only says who is ready.
+async function payXp(fightId, slain){
+  if (!fightId) return;
+  const recipients = [...new Set(party.map(p => characterIdOf(p.id)).filter(Boolean))];
+  if (!recipients.length){ log("<i>XP not saved: nobody in the party has a character sheet.</i>"); return; }
+  const mine = (() => { try { const id = localStorage.getItem("aop_character_id"); return id && recipients.includes(id) ? localStorage.getItem("aop_claim_token") : null; } catch (e) { return null; } })();
+  const res = await fetch("/api/walk-xp", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+    body: JSON.stringify({fightId, recipients, claimToken: mine || undefined, slain: slain.map(f => ({name: fname(f), xp: (f.c && f.c.sheet && f.c.sheet.xp) || 0}))})}).catch(() => null);
+  const j = res ? await res.json().catch(() => ({})) : {};
+  if (!res || !res.ok){ log(`<i>XP not saved${res && res.status === 403 ? ": only the DM screen or a player in the fight can save it" : ""}.</i>`); toast("The XP was not saved to the sheets."); return; }
+  if (j.already) return;
+  const ready = (j.paid || []).filter(p => p.ready);
+  log(`<i>${j.share} XP saved to ${(j.paid || []).map(p => esc(p.name.split(" ")[0])).join(", ")}.</i>`);
+  if (ready.length){
+    const names = ready.map(p => `${esc(p.name.split(" ")[0])} (level ${p.nextLevel})`).join(", ");
+    log(`<b>Ready to level up:</b> ${names}. Level up at camp.`);
+    setTimeout(() => toast(`Ready to level up: ${ready.map(p => p.name.split(" ")[0]).join(", ")}. Level up at camp.`, 6000), 2400);
+  }
+}
 
 // ----- presentation: numbers, bursts, hit-stop, shake, camera -----
 const pops = [], sparks = []; let hitstopUntil = 0, shakeAmt = 0, camPushed = null;

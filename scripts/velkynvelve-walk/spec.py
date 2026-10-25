@@ -100,7 +100,10 @@ NODES = {
    floors=[dict(poly=P((61,961),(580,838),(914,803),(2179,803),(2179,1031),(2400,1119),(2400,1339),(0,1339),(0,1066)))],
    obstacles=[dict(cx=1300,cy=803,rx=404,ry=193),dict(cx=2047,cy=750,rx=193,ry=105)],
    zones=[dict(rect=[870, 2, 1057, 316], to=[10], label="the ladder up to the upper chamber", climb=dict(foot=[887, 838], ladder=[887, 750], dir="up"))]),
- "10c": dict(slug="node-10c-guard-tower-armory", name="Guard Tower, armory (upper chamber)", scale=0.95, img="node-10c-guard-tower-armory.jpg",
+ "10c": dict(slug="node-10c-guard-tower-armory", name="Guard Tower, armory (upper chamber)", scale=3.2, img="node-10c-guard-tower-armory.jpg",
+   # scale 3.2, not 0.95 (Sam, 2026-10-24: "We are tiny in the armory. Make us proportionately bigger"). The plate is a
+   # close-up interior: the mail shirts and sword racks on the back wall measure ~65 px per foot, so a 6-ft hero there
+   # stands ~390 px; at 0.95 he stood ~100. Checked by compositing Samson, Kenta and a drow guard onto the plate.
    # OotA p.18 area 10, upper chamber: the armory. What is on the racks is in lib/walk-loot.ts (BOOK_CONTAINERS) and
    # story.json 10c.loot, every entry with its page.
    # Floor and blocking shapes traced by Sam in the editor, 2026-10-24. `img`: the plate ships in the repo (see 10b).
