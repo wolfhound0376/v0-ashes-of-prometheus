@@ -3093,23 +3093,38 @@ const hero = a => !!a && (a.kind === "pc" || !!a.ally);
 // except the scattered skeleton, which is what a necrotic kill leaves (deathTouch, below).
 const CADAVER_DIR = APP ? "/sprites/cadavers/" : "sprites/cadavers/";
 const CADAVER_POSES = ["facedown", "onback", "curled"];
-// sq = 128 / (ppu / 5) / 5: the body's pixels land at the same density as its species' standing sprite (drow ppu 103, bandit 107, duergar 142, deep gnome 197, quaggoth 66)
-const CADAVER_SETS = {drow: {sq: 1.25}, human: {sq: 1.2}, duergar: {sq: 0.9}, deepgnome: {sq: 0.65}, quaggoth: {sq: 1.95}};
+// sq = 128 / ppu: the body's pixels land at the same density as its species' standing sprite (drow ppu 103, bandit 107,
+// townswoman 103, duergar 142, deep gnome 197/205, quaggoth 66, vampire 107, hag 115, goblin 169, myconid 115, kuo-toa 119).
+// `female`: the species has a woman's set too (Sam, 2026-10-25: "we need female versions of the male humans, duergar,
+// and gnomes"); `sexed`: every key names the sex (the vampires, a lord and a lady); `poses` overrides the three (a vampire
+// crumbles to ash instead of curling up). Witch, goblin, myconid, kuo-toa: one set each, approved the same night.
+const CADAVER_SETS = {
+  drow: {sq: 1.25}, human: {sq: 1.2, female: true}, duergar: {sq: 0.9, female: true}, deepgnome: {sq: 0.65, female: true}, quaggoth: {sq: 1.95},
+  vampire: {sq: 1.2, sexed: true, poses: ["facedown", "onback", "ash"]}, witch: {sq: 1.1}, goblin: {sq: 0.76}, myconid: {sq: 1.1}, kuotoa: {sq: 1.08},
+};
 function cadaverSpecies(id){
   if (/^drow|^jorlan$|^shoor$|^asha$|^ilvara$/.test(id)) return "drow";
   if (/^quaggoth/.test(id)) return "quaggoth";
   if (/^duergar/.test(id)) return "duergar";
   if (/^deep-gnome|^buppido$|^jimjar$|^topsy$|^turvy$/.test(id)) return "deepgnome";
-  if (/^bandit|^thug|^cultist|^cult-fanatic|^underdark-barbarian|^mage$|^necromancer$/.test(id)) return "human";
+  if (/^vampire/.test(id)) return "vampire";
+  if (/hag$|^witch/.test(id)) return "witch";
+  if (/^goblin/.test(id)) return "goblin";
+  if (/^myconid|^stool$/.test(id)) return "myconid";
+  if (/^kuo-toa|^shuushar$/.test(id)) return "kuotoa";
+  if (/^bandit|^thug|^cultist|^cult-fanatic|^underdark-barbarian|^mage$|^necromancer$|^townswoman|^townsman|^wandering-peddler|^hooded-stranger/.test(id)) return "human";
   return null;
 }
+// a woman's body for a woman: the sprite id says so (…-female, …-woman, townswoman), or the named NPC is one (Topsy)
+const isFemaleId = id => /female|woman|^topsy$/.test(id);
 const cadaverImgs = {};
 function cadaverImg(key){ if (!cadaverImgs[key]){ const i = new Image(); i.src = `${CADAVER_DIR}${key}.png`; cadaverImgs[key] = i; } return cadaverImgs[key]; }
 function pickCadaver(a){
   if (a.cadaver !== undefined) return a.cadaver;
   const sp = cadaverSpecies(a.id); if (!sp || (SPR[a.id].json.animations.dead && SPR[a.id].img.dead)) return (a.cadaver = null);
-  const pose = CADAVER_POSES[Math.floor(Math.random() * CADAVER_POSES.length)];
-  return (a.cadaver = {key: `${sp}-${pose}`, sq: CADAVER_SETS[sp].sq, flip: Math.random() < .5, t0: now});
+  const set = CADAVER_SETS[sp], poses = set.poses || CADAVER_POSES, pose = poses[Math.floor(Math.random() * poses.length)];
+  const fem = isFemaleId(a.id), mid = set.sexed ? (fem ? "female-" : "male-") : set.female && fem ? "female-" : "";
+  return (a.cadaver = {key: `${sp}-${mid}${pose}`, sq: set.sq, flip: Math.random() < .5, t0: now});
 }
 // THE DEATH TOUCH (Sam, 2026-10-25): his green-black necrotic blaze, baked to pixels by scripts/vfx/bake_death_touch.py
 // (public/vfx/deathTouch.webp — the light only; the armoured figure in his source art is keyed out, so the blaze wraps
