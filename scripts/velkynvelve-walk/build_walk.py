@@ -195,7 +195,7 @@ P = ['kenta', 'samson', 'scott', 'freia']
 HEROES = {k: v for k, v in json.load(open(os.path.join(HERE, 'heroes.json'))).items() if not k.startswith('_') and os.path.exists(os.path.join(SPR, v, 'sprite.json'))}
 P = P + [v for v in HEROES.values() if v not in P]
 N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turvy', 'shuushar', 'stool', 'jorlan', 'drow-guard-male', 'drow-guard-female']
-F = ['quaggoth', 'giant-spider']
+F = ['quaggoth', 'giant-spider', 'ghost-male']   # ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24)
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
 
 meta = {}
@@ -203,7 +203,7 @@ for i in P + N + F + V:
     # 'jump' is asked for on both sides now that heroes long-jump too (arcTo/planLeap in the
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
-    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage'] if i in F else [])
+    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage', 'curse'] if i in F else [])
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
