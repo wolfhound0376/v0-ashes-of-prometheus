@@ -6,6 +6,9 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { applyStageEvents, readStage, type StageEvent } from "@/lib/stage-roster"
 import { readSeated } from "@/lib/seats"
+import { situationPromptNote } from "@/lib/situation"
+import { readPartySituation } from "@/lib/situation-store"
+import { dryRun, newDryRunLog } from "@/lib/dry-run"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
@@ -492,11 +495,19 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false } = await req.json()
+  // SANDBOX (rehearsal). `sandbox: true` is the same door the alchemy routes and the rehearsal board
+  // have: resolve the turn in full — the room as it is, Malachar's answer, the voices — and write
+  // NOTHING. No dialogue row, no wound, no item, no clock, no stage change, no art bought. It works by
+  // handing every write a client that reads normally and swallows writes (lib/dry-run.ts), so a helper
+  // that takes a client is covered too. The dashboard sends it from /?sandbox=1 and badges the reply.
+  const sandbox = sandboxRaw === true
+  const dry = newDryRunLog()
+  const adminClient = () => (sandbox ? dryRun(createAdminClient(), dry) : createAdminClient())
   // The DM has stopped time (components/dashboard/time-stop.tsx): no turns, nothing written, nothing
   // narrated, until it starts again. Checked first, before the player's line is persisted.
   try {
-    const { data: stopped } = await createAdminClient().from("world_flags").select("key")
+    const { data: stopped } = await adminClient().from("world_flags").select("key")
       .eq("campaign_id", "ashes-of-prometheus").eq("key", "time-stopped").maybeSingle()
     if (stopped) return Response.json({ error: "time-stopped", message: "Time is stopped. The world waits for the DM." }, { status: 423 })
   } catch { /* flag unreadable: carry on as before rather than block the table */ }
@@ -554,7 +565,7 @@ export async function POST(req: Request) {
     )
   }
 
-  const supabase = await createClient()
+  const supabase = sandbox ? dryRun(await createClient(), dry) : await createClient()
   const campaign = CAMPAIGNS[campaignId as keyof typeof CAMPAIGNS] || CAMPAIGNS.abyss
 
   // Resolve the active session FIRST — it carries active_character_id, which is
@@ -600,7 +611,7 @@ export async function POST(req: Request) {
   if (characterId && claimToken) {
     let admin
     try {
-      admin = createAdminClient()
+      admin = adminClient()
     } catch (e) {
       console.error("[v0] chat: admin client unavailable for claim verification:", e)
       return Response.json({ error: "Claim verification unavailable" }, { status: 500 })
@@ -843,7 +854,7 @@ STRICT LIMITS ON USING THESE:
   // ban list, never the turn.
   let phrasebook: ReturnType<typeof createAdminClient> | null = null
   try {
-    phrasebook = createAdminClient()
+    phrasebook = adminClient()
   } catch (e) {
     console.warn("[v0] dm_phrasebook: admin client unavailable, ban list disabled:", e)
   }
@@ -929,7 +940,7 @@ STRICT LIMITS ON USING THESE:
   // anyone has come through the door): everyone, as before.
   let tableBlock = ""
   try {
-    const seats = await readSeated(createAdminClient())
+    const seats = await readSeated(adminClient())
     if (seats.length) {
       const byId = new Map(seats.map((x) => [x.id, x]))
       const all = worldContext.characters
@@ -958,7 +969,7 @@ ${companions.length ? `RUN BY THE DM AS NPCs: ${companions.map((c) => c.name).jo
   // configure the service role never breaks the rest of the turn.
   let timeAdmin: ReturnType<typeof createAdminClient> | null = null
   try {
-    timeAdmin = createAdminClient()
+    timeAdmin = adminClient()
   } catch (e) {
     console.warn("[time] admin client unavailable; time-tracking disabled this turn:", e)
   }
@@ -1467,13 +1478,23 @@ ${combatantRows
   // row is scene art and may be named for a place the party has left.
   const currentLocation =
     worldContext.campaign?.currentLocation || worldContext.environment?.name || "Velkynvelve (slave pen)"
+  // The painted map's own account of where the party stands INSIDE the place (lib/situation.ts): the walk
+  // moves them between Velkynvelve's plates without touching the travel graph, so the graph still says
+  // "Slave Pen" while they stand in Shoor's quarters. Trusted only while the graph agrees on the place;
+  // a party that has walked out onto the road leaves the row behind. Best-effort: never holds up a turn.
+  let situation: { note: string; where: string } | null = null
+  try {
+    if (timeAdmin) situation = situationPromptNote(await readPartySituation(timeAdmin), { location: currentLocation })
+  } catch (e) { console.error("[situation] skipped:", e) }
+  // The stage follows the finer location when the map has one: out of the pen is loose in the outpost.
+  const stageLocation = (situation?.where ?? currentLocation).toLowerCase()
   let stageContext = ""
 
-  if (currentLocation.toLowerCase().includes("slave pen") || currentLocation.toLowerCase().includes("pen")) {
+  if (stageLocation.includes("slave pen") || stageLocation.includes("pen")) {
     stageContext = "CURRENT STAGE: Slave Pen (Stage 1-2). The party is imprisoned and manacled. Describe their confinement and the other prisoners; the scavenged-possessions roll is the game's to run, never yours to ask for."
-  } else if (currentLocation.toLowerCase().includes("outpost") || currentLocation.toLowerCase().includes("velkynvelve") && !currentLocation.toLowerCase().includes("pen")) {
+  } else if (stageLocation.includes("outpost") || stageLocation.includes("velkynvelve") && !stageLocation.includes("pen")) {
     stageContext = "CURRENT STAGE: Velkynvelve Outpost (Stage 4). The party has escaped the slave pens and is now loose in the drow outpost. Describe the architecture, markets, bridges, patrols. They must find an exit."
-  } else if (currentLocation.toLowerCase().includes("tunnel") || currentLocation.toLowerCase().includes("underdark")) {
+  } else if (stageLocation.includes("tunnel") || stageLocation.includes("underdark")) {
     stageContext = "CURRENT STAGE: Underdark Tunnels (Stage 5+). The party has fled Velkynvelve. Describe vast caverns, bioluminescent fungi, distant echoes. They are beginning their journey through the Underdark."
   }
 
@@ -1492,7 +1513,7 @@ ${combatantRows
   let acquaintance = ""
   if (talkWith && playerCharacter) {
     try {
-      const db = createAdminClient()
+      const db = adminClient()
       if (saysOwnName(String(message ?? ""), playerCharacter.name)) await learnName(db, talkWith, playerCharacter)
       const known = await npcKnowsName(db, talkWith, playerCharacter.id)
       const row = await findNpcRow(db, talkWith)
@@ -1523,6 +1544,8 @@ ${combatantRows
       if (here.length) stageContext += ` ON STAGE NOW (keep these positions unless you move them with [NPC_MOVE:]): ${here.map((e) => `${e.name} — ${e.where || "position not stated"}${e.hp != null ? ` (${e.hp}/${e.hpMax ?? "?"} hp)` : ""}${e.wantsWord ? ` [wants a word with ${e.wantsWord.who ?? "anyone"} — not yet spoken]` : ""}`).join("; ")}.`
     }
   } catch (e) { console.error("[stage] context skipped:", e) }
+  // And the map's account of the room, after the roster so "on stage" above means what the note says it means.
+  if (situation) stageContext += ` ${situation.note}`
   // Not in a conversation, but someone is in the NPC window: a line that names no one ("who are you?",
   // "what do you want?") is said to them, and they answer it (Sam, 2026-10-12: "it should be implied I am
   // speaking to Buppido. The NPC needs to act smarter").
@@ -2425,7 +2448,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
       // write above, and the failure mode was worse here — these beats are
       // best-effort and only console.error, so a denied insert would have
       // emptied the shotlist with nothing but a server log to show for it.
-      const { error: beatError } = await createAdminClient().from("session_beats").insert({
+      const { error: beatError } = await adminClient().from("session_beats").insert({
         session_id: activeSessionId,
         beat_type: "item_award",
         character_id: playerCharacter.id,
@@ -2674,7 +2697,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
           console.warn("[v0] item_loss beat skipped: no active session")
         } else {
           // Service-role write: see the item_award beat above.
-          const { error: lossBeatError } = await createAdminClient().from("session_beats").insert({
+          const { error: lossBeatError } = await adminClient().from("session_beats").insert({
             session_id: activeSessionId,
             beat_type: "item_loss",
             character_id: playerCharacter.id,
@@ -2710,7 +2733,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
           const newHp = Math.max(0, (char.hp_current || 0) - amount)
           // Service-role write: characters is read-only to the anon key
           // since the 2026-08-20 security pass.
-          const { error } = await createAdminClient()
+          const { error } = await adminClient()
             .from("characters")
             .update({ hp_current: newHp })
             .eq("id", playerCharacter.id)
@@ -2745,7 +2768,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
           const newHp = Math.min(char.hp_max || 10, (char.hp_current || 0) + amount)
           // Service-role write: characters is read-only to the anon key
           // since the 2026-08-20 security pass.
-          const { error } = await createAdminClient()
+          const { error } = await adminClient()
             .from("characters")
             .update({ hp_current: newHp })
             .eq("id", playerCharacter.id)
@@ -2819,14 +2842,14 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
       }
       // Service-role write: characters is read-only to the anon key
       // since the 2026-08-20 security pass.
-      return createAdminClient().from("characters").update({ conditions: next }).eq("id", target.id)
+      return adminClient().from("characters").update({ conditions: next }).eq("id", target.id)
     }
 
     // Best-effort session beat, mirroring the item-award beat writer.
     const writeConditionBeat = async (subjectName: string, verb: "gained" | "lost", condition: string, charId: string | null) => {
       if (!activeSessionId) return
       // Service-role write: see the item_award beat above.
-      const { error: beatError } = await createAdminClient().from("session_beats").insert({
+      const { error: beatError } = await adminClient().from("session_beats").insert({
         session_id: activeSessionId,
         beat_type: "condition_change",
         character_id: charId,
@@ -2985,7 +3008,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
         // exists — never regenerate. This is the fix: an alias hit now short-
         // circuits generation instead of paying Fal to remake an existing face.
         console.log("[v0] Skipping portrait generation — existing NPC identity for:", canonicalName)
-      } else {
+      } else if (!sandbox) {
         try {
           const result = await fal.subscribe("fal-ai/flux/schnell", {
             input: {
@@ -3180,7 +3203,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
         // (lib/camp.ts `xpShares`). Service-role reads and writes: characters
         // is read-only to the anon key since the 2026-08-20 security pass.
         if (npc.xp_value && (npc.hp_current || 0) <= 0) {
-          const xpAdmin = createAdminClient()
+          const xpAdmin = adminClient()
           const { data: roster } = await xpAdmin
             .from("characters")
             .select("id, name, xp, level, is_player, character_type, in_party, archived_at")
@@ -3237,7 +3260,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
   // Parse NPC_IMAGE tag and generate an image using Fal
   let npcImageUrl: string | null = null
   const npcImageMatch = rawText.match(/\[NPC_IMAGE:\s*([^\]]+)\]/)
-  if (npcImageMatch) {
+  if (npcImageMatch && !sandbox) {
     const npcDescription = npcImageMatch[1].trim()
     try {
       const result = await fal.subscribe("fal-ai/flux/schnell", {
@@ -3328,7 +3351,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
 
     if (existingArt) {
       locationImageUrl = existingArt.url
-    } else {
+    } else if (!sandbox) {
       // No existing image found, generate with Fal
       console.log("[v0] Generating location image with Fal:", locationDescription.substring(0, 60))
       try {
@@ -3398,7 +3421,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
           const existingArt = await resolveExistingSceneArt(updatedLocation)
           if (existingArt) locationImageUrl = existingArt.url
         }
-        if (!locationImageUrl && !canonicalEnv.background_image_url) {
+        if (!locationImageUrl && !canonicalEnv.background_image_url && !sandbox) {
           console.log("[v0] Auto-generating location image for:", updatedLocation)
           try {
             const result = await fal.subscribe("fal-ai/flux/schnell", {
@@ -3803,7 +3826,7 @@ Rules:
           let autoPortraitUrl: string | null = null
           if (isKnownSpeaker || canonPortrait) {
             console.log("[v0] Skipping auto portrait — existing NPC identity for:", npcName)
-          } else {
+          } else if (!sandbox) {
             try {
               const result = await fal.subscribe("fal-ai/flux/schnell", {
                 input: {
@@ -4984,7 +5007,7 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
   let rollRequest: RollRequestSpec | undefined
   if (playerCharacter) {
     try {
-      const admin = createAdminClient()
+      const admin = adminClient()
       const committedResultId = /\[ROLL_RESULT:([0-9a-f-]{36})\]/i.exec(message)?.[1]
       if (committedResultId) {
         await admin
@@ -5076,5 +5099,7 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
     // see the note in lib/sfx-cues.ts about table-wide delivery.
     sfxCues,
     rollRequest,
+    // A rehearsal names itself, with the count of rows it would have written and did not.
+    sandbox: sandbox ? { suppressedWrites: dry.writes.length } : undefined,
   })
 }

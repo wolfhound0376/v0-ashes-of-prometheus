@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ACTIVITIES, describeSituation, parseSituationInput, situationRow } from "./situation"
+import { ACTIVITIES, TRANSIENT_AFTER_MS, ageWords, describeSituation, parseSituationInput, situationPromptNote, situationRow } from "./situation"
 
 const RUN = "11111111-2222-3333-4444-555555555555"
 
@@ -128,5 +128,49 @@ describe("describeSituation", () => {
     const text = describeSituation(situationRow(r.value, RUN))!
     expect(text).toContain("Kenta leads, with Samson.")
     expect(text).toContain("They are looking around.")
+  })
+})
+
+describe("situationPromptNote", () => {
+  const fresh = () => {
+    const r = parseSituationInput(walkPayload)
+    if (!r.ok) throw new Error(r.error)
+    return situationRow(r.value, RUN)
+  }
+
+  it("is null for no row", () => {
+    expect(situationPromptNote(null)).toBe(null)
+  })
+
+  it("trusts the row while the travel graph agrees on the place", () => {
+    const out = situationPromptNote(fresh(), { location: "Velkynvelve — Slave Pen" })
+    expect(out).not.toBe(null)
+    expect(out!.where).toBe("Velkynvelve — Shoor's Quarters")
+    expect(out!.note).toContain("reported just now")
+    expect(out!.note).toContain("They are talking with Jorlan Duskryn.")
+    expect(out!.note).toContain("Do not move the party to another area yourself")
+  })
+
+  it("drops the row once the party has left the place on the travel map", () => {
+    expect(situationPromptNote(fresh(), { location: "Darklake shore" })).toBe(null)
+    expect(situationPromptNote(fresh(), { location: null })).not.toBe(null)
+  })
+
+  it("lets an old talk or fight lapse but keeps the place", () => {
+    const row = fresh()
+    const later = new Date(Date.parse(row.updated_at) + TRANSIENT_AFTER_MS + 60_000)
+    const out = situationPromptNote(row, { now: later })!
+    expect(out.note).toContain("31 minutes ago")
+    expect(out.note).not.toContain("talking with")
+    expect(out.note).toContain("They are looking around.")
+    expect(out.note).toContain("The talk it reported has had time to end.")
+    expect(out.where).toBe("Velkynvelve — Shoor's Quarters")
+  })
+
+  it("says how old the account is in plain words", () => {
+    expect(ageWords(10_000)).toBe("just now")
+    expect(ageWords(5 * 60_000)).toBe("5 minutes ago")
+    expect(ageWords(3 * 3_600_000)).toBe("3 hours ago")
+    expect(ageWords(3 * 86_400_000)).toBe("3 days ago")
   })
 })

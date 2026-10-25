@@ -700,7 +700,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     // for — that ARRIVING somewhere is not an event happening there.
     if (AUTO_OPEN_BOARD_ON_COMBAT
         && shouldRedirectToBoard({ inCombat, previous: wasInCombat.current, isDm: hasDmKey(), leftDeliberately })) {
-      window.location.assign("/battle")
+      window.location.assign("/velkynvelve")
     }
     if (rosterObserved) wasInCombat.current = inCombat
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -993,16 +993,14 @@ export function V4Dashboard(props: V4DashboardProps) {
           <div className="absolute bottom-3 left-3 rounded border border-[#6b5123] bg-[#080705]/85 px-2 py-1"><span className="block text-[8px] uppercase tracking-wider text-[#8f8061]">{talkMode ? (props.talkFrom === "map" ? "In Velkynvelve" : "By the fire") : "Point of view"}</span><b className="font-serif text-[10px] text-[#e1d0a8]">{selected?.name ?? "Active character"} · {talkBiome ? CAMP_BIOME_LABEL[talkBiome] : props.talkFrom === "map" && mapScene?.area ? mapScene.area : props.environment.name}</b></div>
         </> : <>
           <MapPanel initial="location" onBack={() => setStageMode("scene")} />
-          {/* The battle board is a PLACE, not a panel. Rendering it inside
-              this strip buried a 3D scene under the stage's own chrome —
-              Sam: "too cluttered and it's really dark". /battle gets the
-              whole viewport. */}
+          {/* Fights are fought on the pixel map (/velkynvelve). The 3D
+              battle board this used to open is retired (Sam, 2026-10-23). */}
   {props.dmMode ? <a
-  href="/battle"
-  onClick={(e) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); void stage.go("/battle", { caption: inCombat ? "Steel is already out. Try to keep up." : "The board, then. Mind where you stand." }) }}
+  href="/velkynvelve"
+  onClick={(e) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); void stage.go("/velkynvelve", { caption: inCombat ? "Steel is already out. Try to keep up." : "The map, then. Mind where you stand." }) }}
   className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1.5 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] hover:text-[#fff3cf]"
   >
-  <Map className="h-3 w-3" />Open Battle Board{inCombat ? " · Live" : ""} ↗
+  <Map className="h-3 w-3" />Open the Map{inCombat ? " · Live" : ""} ↗
   </a> : null}
         </>}
       </div>
