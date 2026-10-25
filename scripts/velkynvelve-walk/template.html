@@ -928,7 +928,9 @@ function approachViaGate(att, tgt, ft, then){
 }
 
 // ---------- scale & drawing ----------
-function depthAt(y){ return 0.8 + 0.32 * Math.min(1, Math.max(0, (y - depthMin) / (depthMax - depthMin))); }
+// Far-to-near size of a figure on the floor. A plate may carry its own `depth: [far, near]` when its painting has
+// steeper perspective than the default 0.8 → 1.12 (10b, the guard room: Sam, 2026-10-24).
+function depthAt(y){ const D = (node && node.depth) || [0.8, 1.12]; return D[0] + (D[1] - D[0]) * Math.min(1, Math.max(0, (y - depthMin) / (depthMax - depthMin))); }
 function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE * a.fixedScale * (96 / m.ppu); return BASE * paceAt(a) * (96 / m.ppu) * (a.big || 1); }
 function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
