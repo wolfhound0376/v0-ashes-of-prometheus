@@ -658,6 +658,11 @@ export function V4Dashboard(props: V4DashboardProps) {
    */
   const AUTO_OPEN_BOARD_ON_COMBAT = false
   const wasInCombat = useRef<PriorCombat>(null)
+  // The walk carries the dashboard's sandbox flag (/?sandbox=1, PR #828) so a rehearsal stays one across the
+  // map and back: the walk's Talk hands the flag back. Set after mount, never at render, so SSR and the first
+  // client render agree on the href.
+  const [walkHref, setWalkHref] = useState("/velkynvelve")
+  useEffect(() => { try { if (new URLSearchParams(window.location.search).get("sandbox") === "1") setWalkHref("/velkynvelve?sandbox=1") } catch { /* no window */ } }, [])
   // Has the roster actually loaded? It starts as an empty array, and an empty
   // array reads as "no fight" — which is the condition that used to delete the
   // deliberate-exit mark, milliseconds before the data landed and the redirect
@@ -700,7 +705,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     // for — that ARRIVING somewhere is not an event happening there.
     if (AUTO_OPEN_BOARD_ON_COMBAT
         && shouldRedirectToBoard({ inCombat, previous: wasInCombat.current, isDm: hasDmKey(), leftDeliberately })) {
-      window.location.assign("/velkynvelve")
+      window.location.assign(walkHref)
     }
     if (rosterObserved) wasInCombat.current = inCombat
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -996,8 +1001,8 @@ export function V4Dashboard(props: V4DashboardProps) {
           {/* Fights are fought on the pixel map (/velkynvelve). The 3D
               battle board this used to open is retired (Sam, 2026-10-23). */}
   {props.dmMode ? <a
-  href="/velkynvelve"
-  onClick={(e) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); void stage.go("/velkynvelve", { caption: inCombat ? "Steel is already out. Try to keep up." : "The map, then. Mind where you stand." }) }}
+  href={walkHref}
+  onClick={(e) => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); void stage.go(walkHref, { caption: inCombat ? "Steel is already out. Try to keep up." : "The map, then. Mind where you stand." }) }}
   className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded border border-[#8b6427] bg-[#1c1408]/95 px-3 py-1.5 text-[9px] uppercase tracking-wider text-[#f0cd7a] hover:border-[#f4e0a8] hover:text-[#fff3cf]"
   >
   <Map className="h-3 w-3" />Open the Map{inCombat ? " · Live" : ""} ↗

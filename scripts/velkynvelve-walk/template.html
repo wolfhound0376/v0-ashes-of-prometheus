@@ -454,6 +454,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 // APP: true when served inside the game at /velkynvelve (assets from Supabase storage, sprites from /sprites,
 // the NPC opener from /api/npc-opener, voices from /api/npc-tts). false for the stand-alone preview.
 const APP = /*__APP__*/false;
+// SANDBOX — the dashboard's rehearsal flag (/?sandbox=1, PR #828), carried here as /velkynvelve?sandbox=1 by the
+// dashboard's own link to the map. The walk itself still plays as normal; what changes is the way back: Talk hands
+// the conversation to the dashboard WITH the flag, and the return link keeps it, so a rehearsal that started in the
+// dashboard stays one through the map and back. Read once at load; a framed copy also looks at the page around it.
+const SANDBOX = (() => { try { if (new URLSearchParams(location.search).get("sandbox") === "1") return true; if (window.top !== window && new URLSearchParams(window.top.location.search).get("sandbox") === "1") return true; } catch (e) {} return false; })();
 const ASSET = APP ? "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/" : "";
 const SPRITE_BASE = APP ? "/sprites/" : "sprites/";
 const SPEC = /*__SPEC__*/;
@@ -4934,8 +4939,9 @@ const PLAYS_AS = {kenta: "Kenta", samson: "Samson", scott: "Scott", freia: "Fifi
 // to the camp's talk window (Sam, 2026-10-11: "still goes to camp UI").
 const PLATES = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/";
 function talkUrl(npc, said){
-  const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
+  const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
   if (said) q.set("line", said.slice(0, 280));
+  if (SANDBOX) q.set("sandbox", "1");                 // a rehearsal stays a rehearsal on the far side
   return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
 }
 function closeTalk(talked){
