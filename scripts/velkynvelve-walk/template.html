@@ -3826,6 +3826,10 @@ function castSpell(caster, tgt, name, done, darts){
   // starts as any other — the hands light, the wind-up sounds — and at release the sigil on the wall flares
   // and drinks it: no bolt, no sigil under the target, nothing happens to anyone. The action and the slot are
   // spent (the ward soaks the magic up); a cantrip costs only the action.
+  // Declared before the ward branch, which reads it to pick the caster's pose: below it, the branch threw a
+  // ReferenceError (temporal dead zone) after combatBusy was set, so a cast in the pen froze the fight instead of
+  // playing the ward drinking the spell.
+  const bardic = isMusical(caster), noteCol = sp.fx || "#ffd36a";
   if (wardsHere()){
     bank(`magic/${family}_windup`, .55);
     const ring0 = spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
@@ -3842,7 +3846,6 @@ function castSpell(caster, tgt, name, done, darts){
     return;
   }
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
-  const bardic = isMusical(caster), noteCol = sp.fx || "#ffd36a";
   if (sp.conc) startConc(caster, name);
   const ring = quiet || bardic ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
   if (bardic) singAt(caster, quiet ? "#b0b8ff" : noteCol, 900);   // Sleep too (Sam, 2026-10-14: "sleep should be music"): a lullaby, sung
