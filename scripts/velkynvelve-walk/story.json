@@ -1054,6 +1054,22 @@
         "name": "Webs overhead",
         "kind": "interact"
       }
+    ],
+    "decor": [
+      {
+        "img": "skeleton-scattered",
+        "x": 1750,
+        "y": 720,
+        "sq": 1.0,
+        "_src": "OotA p.19 area 14: the drow dump waste and garbage in the pool; the ooze feeds on it and the occasional creature"
+      },
+      {
+        "img": "skeleton-scattered",
+        "x": 1480,
+        "y": 1000,
+        "sq": 0.9,
+        "flip": true
+      }
     ]
   },
   "9": {
@@ -1106,6 +1122,35 @@
           "(a quaggoth sleeps curled in a nest of bone and refuse)"
         ],
         "_src": "OotA p.18 area 12: 1d4 quaggoths resting here at any given time; they attack anything in the den that is not a drow, a spider or their own kind."
+      }
+    ],
+    "decor": [
+      {
+        "img": "skeleton-scattered",
+        "x": 1250,
+        "y": 620,
+        "sq": 1.1,
+        "_src": "OotA p.18 area 12: 'the scattered bones of the quaggoths' past meals'"
+      },
+      {
+        "img": "skeleton-scattered",
+        "x": 800,
+        "y": 850,
+        "sq": 1.0,
+        "flip": true
+      },
+      {
+        "img": "skeleton-scattered",
+        "x": 1450,
+        "y": 980,
+        "sq": 1.2
+      },
+      {
+        "img": "skeleton-whole",
+        "x": 1900,
+        "y": 620,
+        "sq": 1.2,
+        "flip": true
       }
     ]
   },
