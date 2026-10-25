@@ -35,20 +35,24 @@ export interface WalkHandoff {
 /**
  * Mirrors spec.py CAVERNS: name and biome per key. Keep the two in step by hand.
  *
- * Roads are an APPROXIMATE call, the same caveat spec.py puts on its own exits (Claude, 2026-10-24,
- * not yet Sam's): the painted overworld gives Velkynvelve two roads, both leaving from below the
- * outpost (`path--road-10--velkynvelve` west, `road--velkynvelve--road-15` east). The south passage
- * and the lift both put the party on the cavern floor those roads start from, so each offers both and
- * the party picks a direction on the map. The river has no edge in the data yet: `road-11` is the
- * nearest Darklake marker straight below the outpost, and until an edge joins it the shore hand-off
- * offers no road at all (see the PR body for the proposed edge).
+ * Roads are SAM'S PICKS, made on the Velkynvelve Exit Picker (2026-10-24, read back from its `picks` store) — one
+ * list per cavern whose outward exit (a `leave` zone with no plate in `to`) steps the party onto the Underdark map:
+ *   wastes  "Tunnel to the Oozing Temple"  → road-10
+ *   lair    "Hook Horror Layer"            → road-21
+ *   shore   "Traverse the Darklake"        → cliff-pool (the Glowing pool)
+ *   grove   "New exit"                     → road-09
+ *   tunnels "On west to the Darklake"      → road-07, road-10 (that zone walks onto the shore plate today, so this list
+ *                                             waits for an outward exit on the tunnels plate)
+ *   crystal — nothing picked.
+ * The lift is not a way off the map (Sam: it goes down to the pool plate, area 14), so it has no entry here.
+ * A pick with no edge in `travel_edges` from the party's node is not offered until the edge exists (see roadsOpenedBy).
  */
 export const WALK_HANDOFFS: Readonly<Record<WalkHandoffKey, WalkHandoff>> = {
-  tunnels: { name: "The tunnels", biome: "tunnels", proposed: true, roads: ["road-10", "road-15"] },
-  wastes: { name: "The wastes", biome: "tunnels", proposed: true, roads: ["road-10", "road-15"] },
-  shore: { name: "The Darklake shore", biome: "shore", proposed: true, roads: ["road-11"] },
-  lair: { name: "The lair", biome: "tunnels", proposed: true, roads: [] },
-  grove: { name: "The grove", biome: "fungal", proposed: false, roads: [] },
+  tunnels: { name: "The tunnels", biome: "tunnels", proposed: true, roads: ["road-07", "road-10"] },
+  wastes: { name: "The wastes", biome: "tunnels", proposed: true, roads: ["road-10"] },
+  shore: { name: "The Darklake shore", biome: "shore", proposed: true, roads: ["cliff-pool"] },
+  lair: { name: "The lair", biome: "tunnels", proposed: true, roads: ["road-21"] },
+  grove: { name: "The grove", biome: "fungal", proposed: false, roads: ["road-09"] },
   crystal: { name: "The crystal passage", biome: "tunnels", proposed: false, roads: [] },
 }
 
