@@ -2607,8 +2607,9 @@ async function spawnFx(name, o){
  */
 
 /**
- * @typedef {{frames: number, fps: number, grow: number}} CloudSheet
+ * @typedef {{frames: number, fps: number, grow: number, loop?: boolean}} CloudSheet
  * `grow` is the first frame of the hold; frames before it are the grow, played once.
+ * `loop` marks a sheet that cycles seamlessly (the fog): it is played round and round, never ping-ponged.
  */
 
 /** The art is 960x540 — every quad is 16:9, height from width. */
@@ -2630,6 +2631,10 @@ const CLOUD_ASPECT = 540 / 960
 function cloudFrame(sheet, t, holdOffset = 0, startAt = 0) {
   const { frames, fps, grow } = sheet
   const f = startAt + Math.floor(Math.max(0, t) * fps)
+  // A TRUE LOOP (the fog, 2026-10-25: its last frame is closer to its first than one frame is to the next) just
+  // cycles, offset per puff from the start — there is no painted grow to protect, and ping-ponging a loop would
+  // run its wisps backwards. `grow` still times the spread (growSeconds).
+  if (sheet.loop) return (((f + Math.round(holdOffset)) % frames) + frames) % frames
   if (f < grow) return f
   const span = frames - 1 - grow
   if (span <= 0) return frames - 1
@@ -2785,12 +2790,15 @@ const SKULL_ALPHA = 0.85
 let clouds = [];
 async function spawnCloud(key, x, y, sp, caster, spell, holdMs, opt = {}){
   const v = await vfxLoad(key); if (!v || !v.m.grow) return null;
-  const heads = opt.skulls === false ? null : await vfxLoad("aoePoisonSkullHeads");
+  // `skulls: false` in the manifest marks art with no skulls painted in it (the fog): no heads surface in it, and
+  // there is no skull-laden opening to skip, so it starts at its own frame 0.
+  const skullArt = v.m.skulls !== false;
+  const heads = opt.skulls === false || !skullArt ? null : await vfxLoad("aoePoisonSkullHeads");
   const sqPx = ftPx({y}) * 5, r = aoeRadiusAt(sp, y);
   const seed = (Math.round(x * 31 + y * 17) & 0xffff) || 1;
   const c = {img: v.img, m: v.m, x, y, sqPx, puffs: layoutPuffs(2 * r / sqPx, seed), t0: now, end: 0,
              until: holdMs ? now + holdMs : (sp.conc ? Infinity : now + 6000), caster, spell,
-             zone: opt.zone || null, heads, startAt: opt.skulls === false ? SKULL_FREE_FROM : 0, seed};
+             zone: opt.zone || null, heads, startAt: opt.skulls === false && skullArt ? SKULL_FREE_FROM : 0, seed};
   clouds.push(c); return c;
 }
 // Every live puff this frame, back to front, for the actor loop to interleave.
@@ -3061,7 +3069,7 @@ function drawFxLayer(flat){
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
 const SCHOOL_OF = {"Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
-  "Stinking Cloud": "conjuration", "Cloudkill": "conjuration"};
+  "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
 const RUNE_SCHOOL = {abjuration: "runeAbjuration", conjuration: "runeConjuration", divination: "runeDivination", enchantment: "runeEnchantment", evocation: "runeEvocation", illusion: "runeIllusion", necromancy: "runeNecromancy", transmutation: "runeTransmutation"};
 const SIGIL_OF = {necromancy: ["sigilNecroticRing", "sigilNecroticPlume"], enchantment: ["sigilEnchantmentRing", "sigilEnchantmentPlume"], evocation: ["sigilEvocationRing", "sigilEvocationPlume"],
@@ -3341,7 +3349,7 @@ const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
   kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
-           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: []}},
+           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: ["Fog Cloud"]}},
   samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
@@ -3482,6 +3490,11 @@ const SPELLS = {
   // `area` is the map's diameter in feet, so a 20-foot radius is 40. Concentration: 1 minute and 10 minutes.
   "Stinking Cloud":     {lvl: 3, kind: "cloud", save: "con", range: 90, area: 40, type: "poison", fx: "#c9d65a", conc: 10},
   "Cloudkill":          {lvl: 5, kind: "cloud", save: "con", range: 120, area: 40, type: "poison", dmg: "5d8", fx: "#8fd48f", conc: 100},
+  // Fog Cloud (Kenta has it prepared; until 2026-10-25 the map listed it as "not in the map's fights yet"). SRD 5.1:
+  // 1st level, 120 ft, "a 20-foot-radius sphere of fog", heavily obscured, Concentration up to 1 hour (600 rounds).
+  // `kind: "fog"`: the cast raises the billowing fog (the kit's `cloud`, Sam's pack) and nothing else — no save, no
+  // damage. NOT YET: the heavily-obscured rule (effectively blinded inside it) does not touch attacks or sight here.
+  "Fog Cloud":          {lvl: 1, kind: "fog", range: 120, area: 40, type: "fog", fx: "#d6dbe0", conc: 600},
   "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
@@ -4238,7 +4251,7 @@ function combatClick(w){
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(heroes(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
-  if (sp && sp.kind === "cloud" && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
+  if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
   if (p.darts){ placeDart(a, t); return; }
@@ -4582,6 +4595,8 @@ function castSpell(caster, tgt, name, done, darts){
       const m = c.sheet.magic;
       if (sp.kind === "cloud"){ placePoisonCloud(caster, at, name, m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), sp.lvl); return; }
       if (sp.area && kit && kit.cloud) spawnCloud(kit.cloud, at.x, at.y, sp, caster, name);   // the gas arrives with the spell
+      if (sp.kind === "fog"){ log(`<b>${fname(caster)}</b> casts <b>${name}</b>: a 20-ft sphere of fog, heavily obscured, while ${fname(caster)} concentrates.`);
+        narrate(caster, `Grey fog rolls out where ${fname(caster)} points and swallows the ground.`); return; }
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
         const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
@@ -5479,7 +5494,8 @@ const KIT = {
     }
   },
   "fog": {
-    "route": "impact"
+    "route": "impact",
+    "cloud": "aoeFogCloud"
   }
 };
 const KIT_BY_SPELL = {

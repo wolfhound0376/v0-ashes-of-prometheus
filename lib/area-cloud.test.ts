@@ -64,6 +64,61 @@ describe("cloudFrame", () => {
   })
 })
 
+// The fog (Sam's "Poison and Fog 4K" pack, 2026-10-25), baked by scripts/vfx/bake_fog_cloud.py.
+const FOG = manifest.aoeFogCloud as { frames: number; fps: number; grow: number; cols: number; rows: number; loop?: boolean; skulls?: boolean; file: string }
+
+describe("the fog sheet", () => {
+  it("is in the manifest as a seamless loop with no skulls", () => {
+    expect(FOG).toBeTruthy()
+    expect(FOG.file).toBe("aoeFogCloud.webp")
+    expect(FOG.frames).toBe(32)             // 16 drawn frames, each gap cross-faded once
+    expect(FOG.fps).toBe(12.5)              // so the loop is still the pack's 2.56 s
+    expect(FOG.frames / FOG.fps).toBeCloseTo(2.56, 5)
+    expect(FOG.loop).toBe(true)
+    expect(FOG.skulls).toBe(false)          // the map must not lay skull heads in fog
+    expect(FOG.grow).toBeGreaterThan(0)     // the map refuses a cloud sheet with no grow
+    expect(FOG.cols * FOG.rows).toBeGreaterThanOrEqual(FOG.frames)
+  })
+
+  it("spreads to fill its area in about the same time the poison does", () => {
+    expect(growSeconds(FOG)).toBeCloseTo(2.56, 2)
+    expect(Math.abs(growSeconds(FOG) - growSeconds(SHEET))).toBeLessThan(0.5)
+  })
+})
+
+describe("cloudFrame on a looping sheet", () => {
+  const L = { frames: 32, fps: 12.5, grow: 32, loop: true }
+
+  it("cycles round, wrapping from the last frame straight to the first", () => {
+    expect(cloudFrame(L, 0)).toBe(0)
+    expect(cloudFrame(L, 31.5 / 12.5)).toBe(31)
+    expect(cloudFrame(L, 32.5 / 12.5)).toBe(0)
+    expect(cloudFrame(L, 33.5 / 12.5)).toBe(1)
+  })
+
+  it("never runs backwards — every step is +1 or the wrap", () => {
+    // sampled mid-frame: a time exactly on a frame boundary can floor either side in floating point
+    let prev = cloudFrame(L, 0.5 / 12.5)
+    for (let i = 1; i < 500; i++) {
+      const f = cloudFrame(L, (i + 0.5) / 12.5)
+      expect(f === prev + 1 || (prev === 31 && f === 0)).toBe(true)
+      prev = f
+    }
+  })
+
+  it("offsets each puff from the very start, so neighbours are out of step", () => {
+    expect(cloudFrame(L, 0, 17)).toBe(17)
+    expect(cloudFrame(L, 0, 40)).toBe(8)
+    expect(cloudFrame(L, 0, -3)).toBe(29)
+  })
+
+  it("leaves the poison's grow-then-ping-pong untouched", () => {
+    const S = { frames: 100, fps: 20, grow: 50 }
+    expect(cloudFrame(S, 0, 17)).toBe(0)
+    expect(cloudFrame(S, 2.5, 17)).toBe(67)
+  })
+})
+
 describe("the spread", () => {
   it("lasts exactly as long as the grow frames", () => {
     expect(growSeconds({ frames: 100, fps: 20, grow: 50 })).toBe(2.5)
