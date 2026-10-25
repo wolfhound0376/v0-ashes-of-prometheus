@@ -24,6 +24,7 @@ import {
   Drama,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { addressTagFor } from "@/lib/address"
 import { useDice, describeRoll } from "@/components/dice/dice-provider"
 
 // Deterministic per-speaker color for the Interactive Log. Malachar (DM) and the
@@ -52,6 +53,7 @@ function speakerColorFor(name: string): string {
 interface DialogueEntry {
   id?: string
   speaker: string
+  speaker_type?: string | null
   text: string
 }
 
@@ -122,6 +124,10 @@ interface LeftColumnProps {
   isTTSMuted?: boolean
   /** Send a specific line (quick replies). Falls back to the input flow. */
   onQuickReply?: (text: string) => void
+  /** Who a plain line goes to: the NPC in the window (addressee) or the DM. lib/address.ts. */
+  addressee?: string | null
+  addressMode?: "npc" | "dm"
+  onAddressModeChange?: (mode: "npc" | "dm") => void
   /** Initiative modifier for the Roll for Initiative button. */
   initiativeModifier?: number
 }
@@ -137,6 +143,9 @@ export function LeftColumn({
   isWorldAIThinking = false,
   isTTSMuted = false,
   onQuickReply,
+  addressee = null,
+  addressMode = "npc",
+  onAddressModeChange,
   initiativeModifier = 0,
 }: LeftColumnProps) {
   const [logFilter, setLogFilter] = useState<LogFilter>("all")
@@ -354,6 +363,10 @@ export function LeftColumn({
               // gets a stable hashed color so it never changes between beats.
               const usesHashedColor = kind !== "system" && kind !== "combat" && !isSelf && !isMalachar
               const hashedColor = usesHashedColor ? speakerColorFor(entry.speaker) : undefined
+              // A player's line carries who it was to on the text itself: "(…)" for the DM, "@Ront …" for an
+              // NPC (lib/address.ts). Shown as a small tag, so reading back later a question to the DM is
+              // not mistaken for a line to Eldeth.
+              const mark = (isSelf || entry.speaker_type === "player") ? addressTagFor(entry.text) : null
               return (
                 <div key={entry.id ?? index} className="text-sm leading-relaxed">
                   <span
@@ -373,8 +386,13 @@ export function LeftColumn({
                   >
                     {entry.speaker}:
                   </span>
-                  <span className={cn("ml-2", kind === "narration" && !isMalachar ? "text-stone-400" : "text-stone-300")}>
-                    {entry.text}
+                  {mark && (
+                    <span className={cn("ml-1.5 rounded-[2px] border px-1 py-px align-middle text-[9px] uppercase tracking-wider", mark.tag === "the DM" ? "border-[#8b5cf6]/40 text-[#a68bd6]" : "border-[#7a5f33]/50 text-[#b9a070]")}>
+                      to {mark.tag}
+                    </span>
+                  )}
+                  <span className={cn("ml-2", kind === "narration" && !isMalachar ? "text-stone-400" : "text-stone-300", mark?.tag === "the DM" && "italic text-stone-400")}>
+                    {mark ? mark.body : entry.text}
                   </span>
                   {isMalachar && (
                     <button
@@ -425,12 +443,36 @@ export function LeftColumn({
         {/* Input area */}
         <div className="p-2">
           <div className="flex items-center gap-2 rounded-[3px] border border-[#7a5f33]/50 bg-[#0a0908] p-1">
+            {/* WHO THE LINE IS TO (Sam, 2026-10-25). Two-way: the NPC in the window, or the DM across the table.
+                Defaults to the NPC, as it always was; a /dm, (…) or @Name in the text overrides it for one line. */}
+            {onAddressModeChange && (
+              <div role="group" aria-label="Who the line is to" className="flex shrink-0 overflow-hidden rounded-[3px] border border-[#7a5f33]/50 text-[10px] uppercase tracking-wider">
+                <button
+                  type="button"
+                  aria-pressed={addressMode !== "dm"}
+                  onClick={() => onAddressModeChange("npc")}
+                  title={addressee ? `Lines go to ${addressee}` : "Lines go to the scene"}
+                  className={cn("max-w-[7.5rem] truncate px-2 py-1 transition-colors", addressMode !== "dm" ? "bg-[#241a10] text-[#e0cfa0]" : "text-stone-500 hover:text-stone-300")}
+                >
+                  To {addressee ?? "the room"}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={addressMode === "dm"}
+                  onClick={() => onAddressModeChange("dm")}
+                  title="Ask the DM across the table. Nobody in the scene hears it. Shortcut: /dm or (brackets)"
+                  className={cn("px-2 py-1 transition-colors", addressMode === "dm" ? "bg-[#2a1a3a] text-[#c9a6f0]" : "text-stone-500 hover:text-stone-300")}
+                >
+                  To the DM
+                </button>
+              </div>
+            )}
             <input
               type="text"
               value={dialogueInput}
               onChange={(e) => setDialogueInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onDialogueSubmit()}
-              placeholder="Type your response or action..."
+              placeholder={addressMode === "dm" ? "Ask the DM — nobody in the scene hears this…" : "Type your response or action..."}
               className="flex-1 bg-transparent px-2 py-1 text-sm text-stone-200 placeholder:text-stone-600 focus:outline-none"
             />
             <button

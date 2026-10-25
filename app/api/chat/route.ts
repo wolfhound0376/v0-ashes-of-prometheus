@@ -7,6 +7,7 @@ import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName }
 import { applyStageEvents, readStage, type StageEvent } from "@/lib/stage-roster"
 import { readSeated } from "@/lib/seats"
 import { situationForChat } from "@/lib/situation"
+import { storedText } from "@/lib/address"
 import { readPartySituation } from "@/lib/situation-store"
 import { dryRun, newDryRunLog } from "@/lib/dry-run"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
@@ -495,7 +496,13 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null } = await req.json()
+  // WHO THE LINE IS TO (lib/address.ts; Sam, 2026-10-25). "dm": the player is speaking to the DM across the
+  // table, out of character — nobody in the scene heard it, no NPC answers, Malachar answers as himself. A
+  // name: this one line goes to that NPC instead of whoever is in the window. Absent: as before.
+  const addressTo = typeof addressToRaw === "string" ? (addressToRaw.trim().toLowerCase() === "dm" ? "dm" : addressToRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null) : null
+  const toDm = addressTo === "dm"
+  const addressNpc = addressTo && !toDm ? addressTo : null
   // SANDBOX (rehearsal). `sandbox: true` is the same door the alchemy routes and the rehearsal board
   // have: resolve the turn in full — the room as it is, Malachar's answer, the voices — and write
   // NOTHING. No dialogue row, no wound, no item, no clock, no stage change, no art bought. It works by
@@ -513,7 +520,7 @@ export async function POST(req: Request) {
   } catch { /* flag unreadable: carry on as before rather than block the table */ }
   // Camp talk partner, sent by the talk mini-dashboard. A name only — letters,
   // spaces, apostrophes, hyphens — so it can never smuggle instructions in.
-  const talkWith = typeof talkWithRaw === "string" ? talkWithRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
+  const talkWith = toDm ? null : addressNpc ?? (typeof talkWithRaw === "string" ? talkWithRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null)
   // Where a map talk is happening ("Slave Pen"): set only by the painted map. Absent = by the camp fire.
   const talkWhere = talkWith && typeof talkWhereRaw === "string" ? talkWhereRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
 
@@ -1466,7 +1473,9 @@ ${combatantRows
       speaker: playerName,
       speaker_type: "player",
       channel: "dm",
-      text: message,
+      // The addressee rides on the text: "(…)" to the DM, "@Ront …" to an NPC (lib/address.ts), so the
+      // log can show who each line was to without a new column.
+      text: storedText(String(message ?? ""), toDm ? { to: "dm" } : addressNpc ? { to: "npc", name: addressNpc } : null),
     })
     if (playerDialogueError) {
       console.error("[v0] Error inserting player dialogue:", playerDialogueError)
@@ -1549,7 +1558,12 @@ ${combatantRows
   // Not in a conversation, but someone is in the NPC window: a line that names no one ("who are you?",
   // "what do you want?") is said to them, and they answer it (Sam, 2026-10-12: "it should be implied I am
   // speaking to Buppido. The NPC needs to act smarter").
-  const facing = !talkWith && typeof facingRaw === "string" ? facingRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
+  const facing = !talkWith && !toDm && typeof facingRaw === "string" ? facingRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
+  if (toDm) {
+    // Out of character, across the table. Mirrors how a stage direction stays out of the fiction, from the
+    // other side: the player speaks to the DM, and nobody in the scene heard a word.
+    stageContext += ` OUT OF CHARACTER — this line is from the player to YOU, the DM, across the table. Nobody in the scene heard it. Answer as Malachar in your own voice: narration of what they can see or know, a ruling, or a plain answer. No NPC reacts to it, quotes it or answers it, and the scene does not move on unless the question asks you to move it. Do not write it into anyone's mouth.`
+  }
   if (facing) {
     stageContext += ` The player is facing ${facing}, who is in front of them. Any question or remark that does not name someone else ("who are you?", "what do you want?", "are you all right?") is addressed to ${facing}, and ${facing} answers it in their own voice, quoted and attributed to ${facing} by name. Do not have anyone else answer for them.`
   }
@@ -2166,7 +2180,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
           role: "user",
           content: director
             ? `[STAGE DIRECTION — from the director, not from the table. Nobody spoke. Do exactly what it asks, in the fiction, addressed to the party. Never quote it, never mention it, never reply to it as though a player had said it.]\n${message}`
-            : `${playerName}: ${message}`,
+            : toDm ? `${playerName} (to the DM, out of character): ${message}` : `${playerName}: ${message}`,
         }
       ],
     })

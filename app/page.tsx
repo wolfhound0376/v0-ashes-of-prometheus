@@ -41,6 +41,7 @@ import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
 import { rollMatchesRequest, type RollRequestSpec } from "@/lib/roll-requests"
+import { parseAddress, resolveAddressee, storedText } from "@/lib/address"
 
 // A dialogue message carries the DB row `id` so we can dedupe. Optimistic
 // entries added before the row exists get a temporary id and `pending: true`.
@@ -215,7 +216,8 @@ export default function DashboardPage() {
   // with no named addressee is put to. Read at send time.
   const facingRef = useRef<string | null>(null)
   const facingShownRef = useRef(false)
-  const handleFacingChange = useCallback((name: string | null) => { facingRef.current = name; facingShownRef.current = Boolean(name) }, [])
+  const [facingName, setFacingName] = useState<string | null>(null)
+  const handleFacingChange = useCallback((name: string | null) => { facingRef.current = name; facingShownRef.current = Boolean(name); setFacingName(name) }, [])
   const talkOptsRef = useRef<{ talkWith: string; talkWhere: string | null } | null>(null)
   const [npcEncounters, setNpcEncounters] = useState<{ id: string; name: string; description: string | null; portrait_url: string | null; face_url: string | null; idle_url: string | null; talking_url: string | null; voice_id: string | null; voice_description: string | null; is_active: boolean; hp_current: number | null; hp_max: number | null; challenge_rating: string | number | null; conditions: string[] | null }[]>([])
   // The WHOLE NPC roster, not just the active-on-stage one. `is_active` is a
@@ -375,6 +377,26 @@ export default function DashboardPage() {
   // Read at send time by every path to Malachar (typed, quick replies): who you are talking with, or else
   // who is in the NPC window.
   talkOptsRef.current = campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : null
+  // WHO A LINE IS TO (lib/address.ts; Sam, 2026-10-25). The switch beside the send box: "To <the NPC in the
+  // window>" or "To the DM". It defaults to the NPC, exactly the old behaviour, and remembers the choice until
+  // the window turns to someone else. A shortcut in the text (/dm …, (…), @Ront …) overrides it for one line.
+  const [addressMode, setAddressMode] = useState<"npc" | "dm">("npc")
+  const addressee = campTalkWith ?? facingName ?? ((npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null)
+  useEffect(() => { setAddressMode("npc") }, [addressee])
+  /** Read a typed line: the text to send, and who it goes to (the shortcut first, then the switch). */
+  const addressLine = useCallback((raw: string): { line: string; addressTo: string | null; shown: string } => {
+    const parsed = parseAddress(raw)
+    let addressTo: string | null = null
+    let line = parsed.text
+    if (parsed.address?.to === "dm" || (!parsed.address && addressMode === "dm")) addressTo = "dm"
+    else if (parsed.address?.to === "npc") {
+      const who = resolveAddressee(parsed.address.name, npcEncounters.filter((n) => n.is_active))
+      if (who) addressTo = who
+      else line = raw.trim()                      // nobody on stage by that name: the line goes as typed
+    }
+    const shown = storedText(line, addressTo === "dm" ? { to: "dm" } : addressTo ? { to: "npc", name: addressTo } : null)
+    return { line, addressTo, shown }
+  }, [addressMode, npcEncounters])
   // The NPC window reports who it shows (onFacingChange); until it has, the active NPC.
   if (!facingShownRef.current) facingRef.current = (npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
@@ -467,10 +489,10 @@ export default function DashboardPage() {
   // the typed-input path uses. A 403 (stale claim) is caught once and handled;
   // any other error propagates as before.
   const dispatchToLich = useCallback(
-    async (text: string) => {
+    async (text: string, extra?: { addressTo?: string | null }) => {
       const { characterId, claimToken: token } = claimRef.current
       try {
-        return await sendToLich(text, characterId, token, talkOptsRef.current ?? { facing: facingRef.current })
+        return await sendToLich(text, characterId, token, { ...(talkOptsRef.current ?? { facing: facingRef.current }), ...(extra ?? {}) })
       } catch (err) {
         if ((err as { claimRejected?: boolean })?.claimRejected) {
           handleClaimRejected()
@@ -1330,7 +1352,15 @@ if (error) {
           // scene gains a beat toward "this has gone on long enough".
           pacing.current = onPlayerMessage(pacing.current, Date.now())
           replyOwedSince.current = Date.now()
-          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: message, pending: true }))
+          // Who the line is to (lib/address.ts): a shortcut in the text, else the switch. Same rule as the
+          // main send box, so "/dm what do I see?" works from the talk window too. A mechanical line the app
+          // itself composed ("[Reaction] Shield — declared when: …") is not spoken to anyone and is never
+          // wrapped: the switch is for what the player SAYS.
+          const mechanical = /^\s*(\[\s*dice\s*roll\s*\]|\[\s*reaction\s*\]|🎲)/i.test(message)
+          const addressed = mechanical ? { line: message, addressTo: null, shown: message } : addressLine(message)
+          if (!addressed.line) return null
+          message = addressed.line
+          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: addressed.shown, pending: true }))
 
           // Send to Lich, carrying THIS browser's character + claim token.
           // In the camp talk window, name the partner so Malachar answers as them.
@@ -1338,7 +1368,7 @@ if (error) {
           // Naming someone else who is in the room turns the conversation to them.
           const named = campTalkWith ? addressedNpc(message, npcEncounters.filter((n) => n.is_active)) : null
           const partner = named && turnTo(named) ? (npcEncounters.find((n) => n.name.toLowerCase() === named.toLowerCase())?.name ?? named) : campTalkWith
-          const response = await sendToLich(message, selectedCharacterId, claimToken, partner ? { talkWith: partner, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current })
+          const response = await sendToLich(message, selectedCharacterId, claimToken, { ...(partner ? { talkWith: partner, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current }), ...(addressed.addressTo ? { addressTo: addressed.addressTo } : {}) })
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1374,7 +1404,7 @@ if (error) {
             // Refresh character data to pick up any XP or items from the Lich
             await fetchCharacterData()
           }
-  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith, talkFrom, talkArea, npcEncounters, turnTo])
+  }, [selectedCharacter, selectedCharacterId, claimToken, fetchCharacterData, campTalkWith, talkFrom, talkArea, npcEncounters, turnTo, addressLine])
 
   // Typed messages cannot impersonate the app. "[Dice Roll]" and the 🎲 prefix
   // are reserved for rolls the physics engine actually resolved; "[Reaction]"
@@ -1405,20 +1435,22 @@ if (error) {
   const handleDialogueSubmit = async () => {
     if (timeStopped) return                       // time is stopped: the line stays in the box until it starts again
     if (dialogueInput.trim()) {
-      const text = stripReservedPrefixes(dialogueInput.trim())
+      const { line: text, addressTo, shown } = addressLine(stripReservedPrefixes(dialogueInput.trim()))
+      if (!text) return                           // "/dm" with nothing after it
       setDialogueInput("")
 
       // Optimistically add player message to dialogue immediately. It is marked
       // pending so the realtime echo of the persisted row reconciles onto it by
-      // id instead of appending a duplicate.
+      // id instead of appending a duplicate. Shown as it will be stored, with its
+      // addressee mark, so the pending copy and the echo match.
       const playerName = selectedCharacter?.name || "Player"
-      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
+      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: shown, pending: true }))
 
       // Send to the Lich, carrying THIS browser's character + claim token so
       // the chat route attributes the message to the right player.
       let response: Awaited<ReturnType<typeof dispatchToLich>> = null
       try {
-        response = await dispatchToLich(text)
+        response = await dispatchToLich(text, addressTo ? { addressTo } : undefined)
       } catch (err) {
         reportDmFailure(err)
         return
@@ -1453,11 +1485,13 @@ if (error) {
     async (text: string) => {
       if (timeStopped) return
       const playerName = selectedCharacter?.name || "Player"
+      const { line, addressTo, shown } = addressLine(text)
+      if (!line) return
       setDialogueInput("")
-      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text, pending: true }))
+      setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: shown, pending: true }))
       let response: Awaited<ReturnType<typeof dispatchToLich>> = null
       try {
-        response = await dispatchToLich(text)
+        response = await dispatchToLich(line, addressTo ? { addressTo } : undefined)
       } catch (err) {
         reportDmFailure(err)
         return
@@ -1474,7 +1508,7 @@ if (error) {
         await fetchCharacterData()
       }
     },
-    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure, captureRollRequest, timeStopped],
+    [selectedCharacter, dispatchToLich, fetchCharacterData, reportDmFailure, captureRollRequest, timeStopped, addressLine],
   )
 
   // Announce a completed sheet roll to the table. Every browser sees the roll
@@ -2009,6 +2043,9 @@ if (error) {
   isWorldAIThinking={lichLoading}
   isTTSMuted={isTTSMuted}
   initiativeModifier={selectedCharacter?.initiative ?? 0}
+  addressee={addressee}
+  addressMode={addressMode}
+  onAddressModeChange={setAddressMode}
   onQuickReply={(text) => {
     setDialogueInput(text)
     // Send immediately so a quick reply is one click, not two.
