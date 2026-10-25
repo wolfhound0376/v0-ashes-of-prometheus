@@ -304,7 +304,7 @@ export default function ForgeBuilderPage() {
               {musicOn ? <Music2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               {musicOn ? "Theme" : "Muted"}
             </button>
-            <Link href="/forge" className="flex items-center gap-1.5 text-stone-400 transition-colors hover:text-[#c9a868]">
+            <Link href="/forge/import" className="flex items-center gap-1.5 text-stone-400 transition-colors hover:text-[#c9a868]">
               <ScrollText className="h-4 w-4" /> Import JSON
             </Link>
             <Link href="/" className="flex items-center gap-1.5 text-stone-400 transition-colors hover:text-[#c9a868]">

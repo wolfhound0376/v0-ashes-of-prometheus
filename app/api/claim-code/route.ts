@@ -117,6 +117,16 @@ export async function POST(req: Request) {
   }
 
   if (!secretRow || !secretRow.claim_token) {
+    // A hero forged at /forge whose cell the DM has not opened yet: the words are real, the seat is
+    // not (Sam, 2026-10-24: "will only play if it has been activated"). Say so, rather than
+    // "not recognised", so the player knows to wait, not to retype. Missing table = no pending heroes.
+    const { data: pending } = await admin
+      .from("forge_submissions")
+      .select("status, hero_name")
+      .eq("claim_code", code)
+      .maybeSingle()
+    if (pending?.status === "pending") return Response.json({ ok: false, reason: "pending", heroName: pending.hero_name }, { status: 200 })
+    if (pending?.status === "rejected") return Response.json({ ok: false, reason: "rejected", heroName: pending.hero_name }, { status: 200 })
     await sleep(500) // blunt the guessing rate without punishing honest typists much
     return Response.json({ ok: false, reason: "invalid" }, { status: 200 })
   }
