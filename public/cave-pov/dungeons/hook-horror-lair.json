@@ -1,0 +1,240 @@
+{
+ "id": "hook-horror-lair",
+ "name": "Hook Horror Lair",
+ "kind": "authored",
+ "place": "Hook Horror Hunt — a hook horror lair in the tunnels (Out of the Abyss, ch. 2 Into Darkness, p.33)",
+ "intro": "Dark tunnels. Somewhere ahead, a clacking of claws on stone — and behind it, giggling.",
+ "_source": "Out of the Abyss ch.2 'Hook Horror Hunt' (print p.33; campaign_chunks ids 1259, 1260, 1262, 1263). Areas: 1 second entrance where the party arrives; 2A gnoll hunters (four gnolls); 2B the rest of the hunt (four gnolls + gnoll pack lord carrying two bloodstones 50 gp and a brown tourmaline 100 gp); 3 Cornered — single-file passage into a dead-end cave where the pair of hook horrors wait in ambush and fight to the death, hole C in the 10-ft ceiling, DC 12 Strength (Athletics) up to 4; 4 Hook Horror Nest — four 1-ft rocky eggs half-buried in a sandy pit, 10% per hour one hatches; 5 Gnoll Camp — three gnolls guard the main entrance. P passages: Large creatures squeeze (1 extra ft per ft). The lair is completely dark. LAYOUT NOTE: the book's map is not ingested as an image; this grid is Claude's reading of the TEXT (which area joins which, what is narrow, what is a dead end), not a trace of the printed map — Sam can redraw it in the builder.",
+ "look": {
+  "wall": "tex.wall",
+  "floor": "tex.floor",
+  "crystal": "tex.crystal",
+  "music": "music"
+ },
+ "map": [
+  "##############################",
+  "#.........##########.........#",
+  "#.........##########.........#",
+  "#.........P........P.........#",
+  "#.........##########.........#",
+  "#.........##########.........#",
+  "####################....#.####",
+  "####################....#.####",
+  "####################....#.####",
+  "#..........#########.........#",
+  "#..........P.......P.........#",
+  "#..........#########.........#",
+  "###.##########################",
+  "###P##########################",
+  "###P##########################",
+  "###.##############....########",
+  "##....############....########",
+  "#.....############....########",
+  "#.....############....########",
+  "##...#############....########",
+  "##############################"
+ ],
+ "start": [
+  1.5,
+  10.5,
+  0
+ ],
+ "_startNote": "The party wanders in from the second entrance at the west end of area 1 (p.33).",
+ "creatures": [
+  {
+   "kind": "hook",
+   "x": 14.5,
+   "y": 10.5,
+   "heading": 3.14,
+   "wary": true,
+   "refuge": [
+    2.5,
+    17.5
+   ],
+   "_note": "Area 1: the mated pair dash in from 2A toward 3; they attack only in self-defence and fear the gnolls more than the party (p.33). `wary` keeps them from hunting the party; they run for area 3 (their refuge) and turn to fight anything that follows them in (3. Cornered: ambush, fight to the death)."
+  },
+  {
+   "kind": "hook",
+   "x": 15.5,
+   "y": 10.5,
+   "heading": 3.14,
+   "wary": true,
+   "refuge": [
+    3.5,
+    18.5
+   ]
+  },
+  {
+   "kind": "gnoll",
+   "x": 22.5,
+   "y": 10.5,
+   "heading": 3.14,
+   "_note": "Area 2A: four gnolls, hunting; they cannot resist attacking anything that crosses their path, shrieking 'Sacrifices for Yeenoghu!' (p.33). NOT YET IN THE ENGINE — there is no gnoll in manifest.js (creature stats + sprite). The record keeps them where the book puts them so they appear the day a gnoll lands; the engine skips a creature kind it does not know."
+  },
+  {
+   "kind": "gnoll",
+   "x": 24.5,
+   "y": 10.5,
+   "heading": 3.14
+  },
+  {
+   "kind": "gnoll",
+   "x": 23.5,
+   "y": 11.5,
+   "heading": 3.14
+  },
+  {
+   "kind": "gnoll",
+   "x": 25.5,
+   "y": 11.5,
+   "heading": 3.14
+  },
+  {
+   "kind": "gnoll",
+   "x": 22.5,
+   "y": 3.5,
+   "heading": 1.57,
+   "_note": "Area 2B: four gnolls and the gnoll pack lord (p.33)."
+  },
+  {
+   "kind": "gnoll",
+   "x": 24.5,
+   "y": 2.5,
+   "heading": 1.57
+  },
+  {
+   "kind": "gnoll",
+   "x": 26.5,
+   "y": 3.5,
+   "heading": 1.57
+  },
+  {
+   "kind": "gnoll",
+   "x": 24.5,
+   "y": 4.5,
+   "heading": 1.57
+  },
+  {
+   "kind": "gnoll-pack-lord",
+   "x": 25.5,
+   "y": 3.5,
+   "heading": 1.57,
+   "drops": [
+    "bloodstone",
+    "bloodstone",
+    "brown-tourmaline"
+   ],
+   "_note": "The gnoll pack lord carries two bloodstones worth 50 gp each and a brown tourmaline worth 100 gp (p.33). Drops resolve against the items catalog; the three rows are proposed in the PR, not yet inserted."
+  },
+  {
+   "kind": "gnoll",
+   "x": 3.5,
+   "y": 3.5,
+   "heading": 0,
+   "_note": "Area 5: the gnoll camp at the main entrance — three gnolls guard it and attack anything that is not gnoll coming out of the tunnels (p.33)."
+  },
+  {
+   "kind": "gnoll",
+   "x": 5.5,
+   "y": 2.5,
+   "heading": 0
+  },
+  {
+   "kind": "gnoll",
+   "x": 5.5,
+   "y": 4.5,
+   "heading": 0
+  }
+ ],
+ "chests": [],
+ "nests": [
+  {
+   "x": 20.5,
+   "y": 18.5,
+   "label": "The nest",
+   "text": "The sandy floor holds a clutch of four 1-foot eggs with rocky shells, half-buried in a shallow pit. Under a hand, one of them trembles.",
+   "loot": [
+    [
+     "hook-horror-egg",
+     4
+    ]
+   ],
+   "_note": "Area 4 (p.33). 10% per hour one hatches and the infant imprints on the first creature it sees — the hatch clock and the Hook Horror Maturation table (p.34) are not in the engine; the eggs are items the party can carry out."
+  }
+ ],
+ "climbs": [
+  {
+   "x": 3.5,
+   "y": 17.5,
+   "dc": 12,
+   "ability": "str",
+   "label": "the hole in the ceiling (Athletics DC 12)",
+   "to": [
+    20.5,
+    17.5,
+    1.57
+   ],
+   "_note": "Area 3: a hole in the 10-ft ceiling, marked C, DC 12 Strength (Athletics) to climb up into; it leads to area 4 (p.33)."
+  },
+  {
+   "x": 19.5,
+   "y": 15.5,
+   "dc": 0,
+   "label": "the hole back down to the cave below",
+   "to": [
+    3.5,
+    17.5,
+    0
+   ],
+   "_note": "The way back down. The book gives no check for descending; none is rolled — Sam's call if one is wanted."
+  }
+ ],
+ "forage": [],
+ "props": [
+  {
+   "kind": "boulder",
+   "x": 2.5,
+   "y": 1.5
+  },
+  {
+   "kind": "stalagmite-cluster",
+   "x": 8.5,
+   "y": 4.5
+  },
+  {
+   "kind": "boulder",
+   "x": 27.5,
+   "y": 1.5
+  },
+  {
+   "kind": "stalagmite-large",
+   "x": 28.5,
+   "y": 11.5
+  },
+  {
+   "kind": "rock-spire",
+   "x": 9.5,
+   "y": 9.5
+  },
+  {
+   "kind": "stalagmite-small",
+   "x": 1.5,
+   "y": 18.5
+  },
+  {
+   "kind": "boulder",
+   "x": 21.5,
+   "y": 15.5
+  }
+ ],
+ "traps": [],
+ "lore": [],
+ "hazards": [],
+ "dressing": {
+  "seed": 3301,
+  "stalactites": 36,
+  "props": 22,
+  "violets": 0,
+  "_note": "No lights: the lair is completely dark (p.33), so there are no '*' crystals on this map and no violet fungi. The party's own darkvision/light is what they get."
+ }
+}

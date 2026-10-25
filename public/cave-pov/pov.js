@@ -19,7 +19,7 @@ const DQ=new URLSearchParams(location.search), DID=DQ.get("d")||"darklake";
 const BLD={enabled:DQ.has("build")||!!A.__artifact,open:false};
 let D=null; try{ const sd=localStorage.getItem("aop_dungeon_draft_"+DID); if(sd){ D=JSON.parse(sd); D.__draft=true; } }catch(e){}
 if(!D) D=JSON.parse(JSON.stringify((A.dungeons&&(A.dungeons[DID]||Object.values(A.dungeons)[0]))||null));
-for(const k of ["creatures","chests","forage","props","traps","lore","hazards"]) D[k]=D[k]||[];
+for(const k of ["creatures","chests","forage","props","traps","lore","hazards","nests","climbs"]) D[k]=D[k]||[];
 D.dressing=Object.assign({seed:9301,stalactites:44,props:46,violets:7},D.dressing||{});
 const MAP=D.map.map(r=>r.split("")), MH=MAP.length, MW=MAP[0].length;
 const cell=(x,y)=>{ const r=MAP[Math.floor(y)]; return r?r[Math.floor(x)]||"#":"#"; };
@@ -50,7 +50,8 @@ const PCS={
 const LINES={fifi:[[0,1.23],[1.23,2.49],[2.49,4.6]],kenta:[[0,1.08],[1.08,2.03],[2.03,3.8]],samson:[[0,1.37],[1.37,2.67],[2.67,4.15]],scott:[[0,.59],[.59,2.18],[2.18,4.0]]};
 // Items: every find resolves to a row in the items catalog (slug → name). Nothing is invented.
 const ITEMS={"bluecap":"Bluecap","barrelstalk":"Barrelstalk","trillimac":"Trillimac","waterorb":"Waterorb","ripplebark":"Ripplebark","fire-lichen":"Fire Lichen","torchstalk":"Torchstalk",
-  "potion-of-healing":"Potion of Healing","gold-coin":"Gold coin","flint-shard":"Flint shard","silk-rope":"Silk rope","candle-of-the-deep":"Candle of the Deep","carnelian-gem":"Carnelian gem"};
+  "potion-of-healing":"Potion of Healing","gold-coin":"Gold coin","flint-shard":"Flint shard","silk-rope":"Silk rope","candle-of-the-deep":"Candle of the Deep","carnelian-gem":"Carnelian gem",
+  "hook-horror-egg":"Hook horror egg","bloodstone":"Bloodstone","brown-tourmaline":"Brown tourmaline"};
 const FORAGE=["bluecap","barrelstalk","trillimac","waterorb","ripplebark","fire-lichen","torchstalk"];
 const CHEST_LOOT=[[["potion-of-healing",1],["gold-coin","2d6"]],[["flint-shard",1],["silk-rope",1]],[["candle-of-the-deep",1],["carnelian-gem",1]]];
 
@@ -103,13 +104,19 @@ const ENTS=[];
 function addEnt(e){ const o={...e,id:ENTS.length,frame:0,ft:0,hp:e.hp??1,max:e.hp??1,cool:1.5,state:"idle",flash:0,dead:false,mode:"idle",home:[e.x,e.y],pops:[],
   webReady:e.sprite==="spider",webT:0,roarT:-99,sleep:0,incap:0,slow:0,faerie:0,guided:0,mocked:false,sapped:false,flee:0,lure:null,lastSeen:null,opened:false,spent:false}; ENTS.push(o); return o; }
 // the record's pieces become entities; `src` points back at the record entry so the builder can erase it
-function entFor(kind,o){ if(kind==="creature"){ const L=A.creatures[o.kind]; return L&&{...L,x:o.x,y:o.y,heading:o.heading??0,src:o}; }
+function entFor(kind,o){ if(kind==="creature"){ const L=A.creatures[o.kind]; if(!L) return null; // a kind the manifest has no stats or sprite for is skipped, not guessed
+    // Hook Horror Lair (OotA p.33): a record may name the creature, give it its own drops (the pack lord's gems), and mark it
+    // `wary` with a `refuge` — it runs for that spot instead of hunting the party, and fights only when followed in or hurt.
+    return {...L,x:o.x,y:o.y,heading:o.heading??0,src:o,...(o.name?{name:o.name}:{}),...(o.drops?{drops:o.drops}:{}),...(o.wary?{wary:true,refuge:o.refuge?{x:o.refuge[0],y:o.refuge[1]}:null}:{})}; }
   if(kind==="chest") return {name:"chest",sprite:"chest",x:o.x,y:o.y,scale:.45,solid:true,chest:true,loot:o.loot&&o.loot.length?o.loot:null,src:o};
+  // a nest: opened like a chest (E), but it is a pit in the floor, not a box — drawn as the rocky clutch (boulder art until an egg sprite is approved), its own words on opening
+  if(kind==="nest") return {name:o.label||"nest",sprite:"p_boulder",x:o.x,y:o.y,scale:.5,solid:false,chest:true,nest:true,label:o.label||"The nest",text:o.text||"",loot:o.loot&&o.loot.length?o.loot:null,src:o};
   if(kind==="forage") return {name:"mushrooms",sprite:"p_fungi-bluecap",x:o.x,y:o.y,scale:.34,glow:"rgba(90,230,255,A)",forage:true,src:o};
   if(kind==="crystal") return {name:"crystal",sprite:"p_crystal-cluster",x:o.x,y:o.y,scale:.72,glow:"rgba(120,180,255,A)",solid:true,rad:.42,src:o};
   return null; }
 for(const c of D.creatures){ const e=entFor("creature",c); if(e) addEnt(e); }
 for(const c of D.chests) addEnt(entFor("chest",c));
+for(const n of D.nests) addEnt(entFor("nest",n));
 for(const f of D.forage) addEnt(entFor("forage",f));
 for(let y=0;y<MH;y++) for(let x=0;x<MW;x++) if(MAP[y][x]==="*") addEnt(entFor("crystal",{x:x+.5,y:y+.5,cell:true}));
 let CHESTN=0; for(const e of ENTS) if(e.chest&&!e.loot) e.loot=CHEST_LOOT[(CHESTN++)%CHEST_LOOT.length];
@@ -445,7 +452,7 @@ function breakHide(){ if(P.hidden){ P.hidden=0; say(`${PC.name} is seen.`,"#d7a0
 function reveal(e){ if(!e.dead&&e.mode!=="hunt"&&!e.sleep&&!e.incap){ e.mode="hunt"; e.lastSeen={x:P.x,y:P.y}; roar(e); } }
 
 // ---- damage to a creature
-function hurt(e,dmg,type){ if(e.dead) return; e.hp-=dmg; e.flash=.25; e.state="hurt"; e.stun=.3; e.pops.push({t:`${dmg}`,c:"#ffd36a",age:0});
+function hurt(e,dmg,type){ if(e.dead) return; if(e.wary&&!e.provoked){ e.provoked=true; e.mode="hunt"; } e.hp-=dmg; e.flash=.25; e.state="hurt"; e.stun=.3; e.pops.push({t:`${dmg}`,c:"#ffd36a",age:0});
   if(e.sleep){ e.sleep=0; say(`The ${e.name.toLowerCase()} wakes with a start.`,"#b9c8ff"); }
   if(e.hp<=0){ e.dead=true; e.state="dead"; say(`The ${e.name.toLowerCase()} is dead.`,"#e3b95c"); playBuf(e.roar,{x:e.x,y:e.y,vol:.6,rate:.7}); if(P.frightSrc===e){ P.fright=0; } return; }
   reveal(e); }
@@ -692,6 +699,12 @@ function flyArrow(f,dt){ f.trail.push({x:f.x,y:f.y,z:f.z}); if(f.trail.length>40
 function dropDagger(pt){ const q=aimSafe(pt); FX.push({kind:"dagger",x:q.x,y:q.y,life:1e9}); }
 function aimSafe(pt){ let x=pt.x, y=pt.y; for(let k=0;k<10&&solid(x,y);k++){ x-=Math.cos(P.a)*.2; y-=Math.sin(P.a)*.2; } return {x,y}; }
 
+// ---- climbs (OotA p.33, area 3: "a hole in the 10-foot-high ceiling ... DC 12 Strength (Athletics) check to climb up into. It leads to area 4").
+// D.climbs: [{x,y,dc,ability,label,to:[x,y,a]}]. dc 0 = no roll (the book names no check for coming back down).
+function climbNear(r=1.4){ let best=null, bd=r; for(const c of D.climbs){ const dd=Math.hypot(c.x-P.x,c.y-P.y); if(dd<bd){ bd=dd; best=c; } } return best; }
+function doClimb(c){ if(P.cool>0) return; P.cool=1;
+  if(c.dc>0){ const mod=PC.mods[c.ability||"str"]||0; const r=check(`Climb ${c.label} (${(c.ability||"str").toUpperCase()})`,mod,c.dc); if(!r.ok){ say(`${PC.name} scrabbles at the rock and slides back down.`,"#9d9281"); noise(.4,{type:"lowpass",f0:600,vol:.25}); return; } }
+  breakHide(); P.x=c.to[0]; P.y=c.to[1]; if(c.to.length>2) P.a=c.to[2]; P.bob=0; say(`${PC.name} climbs ${c.label}.`,"#bfe3a0"); SND.step(1.2); }
 // ---- E: whatever is in front of her
 function nearest(pred,r=1.4){ let best=null, bd=r; for(const e of ENTS){ if(!pred(e)) continue; const dd=Math.hypot(e.x-P.x,e.y-P.y); if(dd<bd){ bd=dd; best=e; } } return best; }
 function interact(){ if(!$("lore").hidden){ closeLore(); return; } if(!started||P.dead) return;
@@ -699,6 +712,7 @@ function interact(){ if(!$("lore").hidden){ closeLore(); return; } if(!started||
   if(P.restrained){ const r=check("Break the web (Strength)",PC.mods.str,12); P.cool=1; if(r.ok){ P.restrained=false; say(`${PC.name} tears free of the webbing.`,"#bfe3a0"); } return; }
   if(P.inPit){ if(!(P.climb>0)){ P.climb=2.5; say(`${PC.name} starts climbing the pit wall…`,"#9d9281"); noise(.4,{type:"lowpass",f0:600,vol:.25}); } return; }
   { const L=nearest(e=>e.lore&&!e.removed,1.4); if(L){ readLore(L); return; } }
+  { const C=climbNear(); if(C){ doClimb(C); return; } }
   { const T=trapNear(); if(T){ disarm(T); return; } }
   const as=FX.find(f=>{ if(f.kind!=="arrowStuck"||(f.ent&&!f.ent.dead)) return false; const q=stuckPos(f); return Math.hypot(q.x-P.x,q.y-P.y)<1.3; }); if(as){ FX.splice(FX.indexOf(as),1); P.arrows++; say(`Arrow pulled free — ${P.arrows} in the quiver.`,"#e3b95c"); noise(.12,{f0:900,q:2,vol:.25}); renderBar(); return; }
   const ag=FX.find(f=>f.kind==="arrowGround"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3); if(ag){ FX.splice(FX.indexOf(ag),1); P.arrows++; say(`Arrow recovered — ${P.arrows} in the quiver.`,"#e3b95c"); renderBar(); return; }
@@ -707,7 +721,7 @@ function interact(){ if(!$("lore").hidden){ closeLore(); return; } if(!started||
   const m=nearest(e=>e.forage&&!e.spent); if(m){ forage(m); return; } }
 function openChest(ch,magic){ ch.opened=true; SND.creak(ch.x,ch.y,.35); burstAt(ch.x,ch.y,"#ffd36a","sparkle");
   later(.6,()=>{ const got=ch.loot.map(([slug,q])=>{ const n=typeof q==="string"?dice(+q[0],+q.slice(2)):q; BAG[slug]=(BAG[slug]||0)+n; return `${ITEMS[slug]}${n>1?` ×${n}`:""}`; });
-    SND.chime(); say(`${magic?"Mage Hand lifts the lid. ":""}Chest: ${got.join(", ")}.`,"#ffd36a"); }); }
+    SND.chime(); say(ch.nest?`${ch.text?ch.text+" ":""}${ch.label}: ${got.join(", ")}.`:`${magic?"Mage Hand lifts the lid. ":""}Chest: ${got.join(", ")}.`,"#ffd36a"); }); }
 // Sam, 9/30: on a find the character says one of three things, in their own ElevenLabs voice (characters.voice_id).
 // One take per character, cut at the pauses: [start,end] seconds, in the order of FOUND_TXT.
 const FOUND_TXT=["This might be edible.","I bet I can make something from this.","This is probably garbage… but maybe…"];
@@ -753,7 +767,7 @@ const fields=new Map();
 function field(gx,gy){ const key=gx+","+gy; const f=fields.get(key); if(f&&t-f.t<.4) return f.d; const dd=new Int16Array(MW*MH).fill(-1); const q=[gy*MW+gx]; dd[q[0]]=0;
   for(let h=0;h<q.length;h++){ const i=q[h], x=i%MW, y=(i/MW)|0; for(const [ax,ay] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=x+ax, ny=y+ay; if(nx<0||ny<0||nx>=MW||ny>=MH) continue; const j=ny*MW+nx; if(dd[j]>=0||solid(nx+.5,ny+.5)) continue; dd[j]=dd[i]+1; q.push(j); } }
   fields.set(key,{t,d:dd}); return dd; }
-function steer(e,tx,ty,dt,away=false){ const spd=(e.speed||1.4)*(e.slow>0?.66:1)*dt; let hx, hy;
+function steer(e,tx,ty,dt,away=false){ const squeeze=(e.large||(e.reach||0)>=2)&&cell(e.x,e.y)==="P"?.5:1; const spd=(e.speed||1.4)*(e.slow>0?.66:1)*squeeze*dt; let hx, hy;
   if(!away&&clearLine(e.x,e.y,tx,ty)&&Math.hypot(tx-e.x,ty-e.y)<3){ hx=tx; hy=ty; }
   else { const dd=field(Math.floor(tx),Math.floor(ty)); const cx=Math.floor(e.x), cy=Math.floor(e.y); let best=null, bv=away?-1:1e9; const cur=dd[cy*MW+cx];
     for(const [ax,ay] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=cx+ax, ny=cy+ay; if(nx<0||ny<0||nx>=MW||ny>=MH) continue; const v=dd[ny*MW+nx]; if(v<0) continue; if(away?v>bv:v<bv){ bv=v; best=[nx+.5,ny+.5]; } }
@@ -770,6 +784,11 @@ function updateEnts(dt){ for(const e of ENTS){ e.pops.forEach(p=>p.age+=dt); e.p
     const dx=P.x-e.x, dy=P.y-e.y, dist=Math.hypot(dx,dy), sees=!P.dead&&perceives(e);
     if(sees&&P.hidden) foundHidden(e,dist);
     // hidden: a creature whose passive Perception beats her Stealth finds her
+    // Wary (OotA p.33, the hook horror pair): seen, it runs for its refuge rather than at the party; once there it waits, and
+    // anyone who follows it in (within 3 squares) or hurts it gets the fight-to-the-death the book promises in area 3.
+    if(e.wary&&!e.provoked){ if(e.refuge){ const rd=Math.hypot(e.refuge.x-e.x,e.refuge.y-e.y); if(rd>.8){ if(sees||e.fleeing){ e.fleeing=true; steer(e,e.refuge.x,e.refuge.y,dt); if(!e.roared&&sees){ e.roared=true; roar(e); } continue; } }
+        else if(dist<3&&clearLine(e.x,e.y,P.x,P.y)){ e.provoked=true; say(`${e.name}: cornered, it turns and comes at ${PC.name}.`,"#ff9a6a"); } }
+      if(!e.provoked){ e.state="idle"; e.heading=Math.atan2(dy,dx); continue; } }
     if(sees){ e.lastSeen={x:P.x,y:P.y}; if(e.mode!=="hunt"){ e.mode="hunt"; roar(e); } }
     else if(e.mode==="hunt"&&!P.dead){ if(e.lastSeen&&Math.hypot(e.lastSeen.x-e.x,e.lastSeen.y-e.y)<.6){ e.mode="search"; e.searchT=6; } }
     if(e.flee>0){ steer(e,P.x,P.y,dt,true); continue; }
@@ -1249,11 +1268,12 @@ function prompt(){ let s=""; if(P.dead) s=""; else if(BLD.open) s="BUILDER — t
   else if(P.restrained&&P.netted) s="E — get free of the net (Strength DC 10)"; else if(P.restrained) s="E — tear free of the web (Strength DC 12)";
   else if(P.inPit) s=P.climb>0?"Climbing out…":"E — climb out of the pit";
   else if(nearest(e=>e.lore&&!e.removed,1.4)) s=`E — read: ${nearest(e=>e.lore&&!e.removed,1.4).lore.title||"lore"}`;
+  else if(climbNear()) s=`E — climb ${climbNear().label}`;
   else if(trapNear()) s=`E — disarm the ${trapNear().name} (thieves' tools, DEX DC 15)`;
   else if(FX.some(f=>f.kind==="dagger"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3)) s="E — pick up the dagger";
   else if(FX.some(f=>f.kind==="arrowGround"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3)) s="E — pick up the arrow";
   else if(FX.some(f=>{ if(f.kind!=="arrowStuck"||(f.ent&&!f.ent.dead)) return false; const q=stuckPos(f); return Math.hypot(q.x-P.x,q.y-P.y)<1.3; })) s="E — pull the arrow free";
-  else { const ch=nearest(e=>e.chest&&!e.opened); if(ch) s="E — open the chest"; else { const m=nearest(e=>e.forage&&!e.spent); if(m) s="E — forage (Survival DC 15)"; else if(!locked&&started) s="Click the view to look around with the mouse"; } }
+  else { const ch=nearest(e=>e.chest&&!e.opened); if(ch) s=ch.nest?`E — search ${ch.label.toLowerCase()}`:"E — open the chest"; else { const m=nearest(e=>e.forage&&!e.spent); if(m) s="E — forage (Survival DC 15)"; else if(!locked&&started) s="Click the view to look around with the mouse"; } }
   if($("prompt").textContent!==s) $("prompt").textContent=s; }
 
 // =====================================================================================================================
