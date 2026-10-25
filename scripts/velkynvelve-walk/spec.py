@@ -93,7 +93,10 @@ NODES = {
           dict(rect=[2321, 777, 2427, 892], to=[11], label="Rope bridge east to the slave pen"),
           dict(rect=[1445, 1238, 1602, 1336], to=["10b"], label="Ladder to lower chamber"),
           dict(rect=[1719, 822, 1840, 909], to=["10c"], label="Ladder to Upper Chamber")]),
- "10b": dict(slug="node-10b-guard-tower-lower", name="Guard Tower, lower chamber", scale=0.95, img="node-10b-guard-tower-lower.jpg",
+ "10b": dict(slug="node-10b-guard-tower-lower", name="Guard Tower, lower chamber", scale=3.2, depth=[0.8, 1.6], img="node-10b-guard-tower-lower.jpg",
+   # scale 3.2 and depth 0.8→1.6, not 0.95 and the default 0.8→1.12 (Sam, 2026-10-24: "fix both guard room and armory").
+   # A close-up with steep perspective: ladder rungs at the back wall ~56 px/ft, the table and chairs mid-room ~105 px/ft.
+   # Checked by compositing Samson (at the ladder), a drow guard (by the table) and Kenta (foreground) onto the plate.
    # OotA p.18 area 10, lower chamber: the guards' room (two drow and an elite warrior on duty, dice and cups).
    # Floor and blocking shapes traced by Sam in the editor, 2026-10-24. `img`: the plate ships in the repo
    # (public/velkynvelve-walk/img/, Sam's painting cut to 2400x1339) rather than the Supabase bucket, so no upload step.
